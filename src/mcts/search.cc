@@ -42,6 +42,7 @@
 #include "neural/encoder.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
+#include "utils/softmax.h"
 
 namespace lczero {
 
@@ -358,18 +359,29 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
-  std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score](EdgeAndNode a, EdgeAndNode b) {
-              return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
-                     std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
-            });
+  const bool use_rents = params_.GetUseRENTS();
+  if (use_rents) {
+    std::sort(edges.begin(), edges.end(), [](EdgeAndNode a, EdgeAndNode b) {
+      return std::forward_as_tuple(a.GetPolicy(), a.GetN()) <
+             std::forward_as_tuple(b.GetPolicy(), b.GetN());
+    });
+  } else {
+    std::sort(edges.begin(), edges.end(),
+              [&fpu, &U_coeff, &draw_score](EdgeAndNode a,
+                                                        EdgeAndNode b) {
+                return std::forward_as_tuple(
+                           a.GetN(), a.GetQ(fpu, draw_score) +
+                                         a.GetU(U_coeff)) <
+                       std::forward_as_tuple(
+                           b.GetN(), b.GetQ(fpu, draw_score) +
+                                         b.GetU(U_coeff));
+              });
+  }
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
   };
-  auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p) {
+  auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p, auto pol) {
     *oss << std::fixed;
     print(oss, "", label, " ", 5);
     print(oss, "(", i, ") ", 4);
@@ -377,6 +389,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     print(oss, "N: ", n, " ", 7);
     print(oss, "(+", f, ") ", 2);
     print(oss, "(P: ", p * 100, "%) ", 5, p >= 0.99995f ? 1 : 2);
+    print(oss, "(Pol: ", pol * 100, "%) ", 5, p >= 0.99995f ? 1 : 2);
   };
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
@@ -387,7 +400,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
     }
-    print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
+    //print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
+    print(oss, "(Q: ", n && n->GetParent() ? sign * n->GetOwnEdge()->GetRENTSQ() : fpu, ") ", 8, 5);
   };
   auto print_tail = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
@@ -433,7 +447,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     // TODO: should this be displaying transformed index?
     print_head(&oss, edge.GetMove(is_black_to_move).as_string(),
                edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
-               edge.GetP());
+               edge.GetP(), edge.GetPolicy());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
@@ -444,7 +458,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   // Include stats about the node in similar format to its children above.
   std::ostringstream oss;
   print_head(&oss, "node ", node->GetNumEdges(), node->GetN(),
-             node->GetNInFlight(), node->GetVisitedPolicy());
+             node->GetNInFlight(), node->GetVisitedPolicy(), 1.0f);
   print_stats(&oss, node);
   print_tail(&oss, node);
   infos.emplace_back(oss.str());
@@ -630,9 +644,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
                           : edges.end();
+  const bool use_rents = params_.GetUseRENTS();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [draw_score](const auto& a, const auto& b) {
+      [draw_score, use_rents](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
@@ -672,13 +687,17 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
+          // With RENTS we prefer the highest policy move:
+          if (use_rents && a.GetP() != b.GetP()) return a.GetP() > b.GetP();
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
           // Default doesn't matter here so long as they are the same as either
           // both are N==0 (thus we're comparing equal defaults) or N!=0 and
           // default isn't used.
-          if (a.GetQ(0.0f, draw_score) != b.GetQ(0.0f, draw_score)) {
-            return a.GetQ(0.0f, draw_score) > b.GetQ(0.0f, draw_score);
+          if (a.GetQ(0.0f, draw_score) !=
+              b.GetQ(0.0f, draw_score)) {
+            return a.GetQ(0.0f, draw_score) >
+                   b.GetQ(0.0f, draw_score);
           }
           return a.GetP() > b.GetP();
         }
@@ -1220,6 +1239,8 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 
     m_evaluator.SetParent(node);
     bool can_exit = false;
+    const float rand_value = Random::Get().GetFloat(1.0);
+    float cum_policy = 0.0;
     for (auto child : node->Edges()) {
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
@@ -1240,30 +1261,40 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
         }
       }
 
-      const float Q = child.GetQ(fpu, draw_score);
-      const float M = m_evaluator.GetM(child, Q);
-
-      const float score = child.GetU(puct_mult) + Q + M;
-      if (score > best) {
-        second_best = best;
-        second_best_edge = best_edge;
-        best = score;
-        best_without_u = Q + M;
+      if (params_.GetUseRENTS()) {
+        const float child_policy = child.GetPolicy();
         best_edge = child;
-      } else if (score > second_best) {
-        second_best = score;
-        second_best_edge = child;
-      }
-      if (can_exit) break;
-      if (child.GetNStarted() == 0) {
-        // One more loop will get 2 unvisited nodes, which is sufficient to
-        // ensure second best is correct. This relies upon the fact that edges
-        // are sorted in policy decreasing order.
-        can_exit = true;
+        if (cum_policy + child_policy > rand_value) {
+          // Found the chosen move, break here
+          break;
+        } else {
+          cum_policy += child_policy;
+        }
+      } else {
+        const float Q = child.GetQ(fpu, draw_score);
+        const float M = m_evaluator.GetM(child, Q);
+        const float score = child.GetU(puct_mult) + Q + M;
+        if (score > best) {
+          second_best = best;
+          second_best_edge = best_edge;
+          best = score;
+          best_without_u = Q + M;
+          best_edge = child;
+        } else if (score > second_best) {
+          second_best = score;
+          second_best_edge = child;
+        }
+        if (can_exit) break;
+        if (child.GetNStarted() == 0) {
+          // One more loop will get 2 unvisited nodes, which is sufficient
+          // to ensure second best is correct. This relies upon the fact
+          // that edges are sorted in policy decreasing order.
+          can_exit = true;
+        }
       }
     }
 
-    if (second_best_edge) {
+    if (!params_.GetUseRENTS() && second_best_edge) {
       int estimated_visits_to_change_best =
           best_edge.GetVisitsToReachU(second_best, puct_mult, best_without_u);
       // Only cache for n-2 steps as the estimate created by GetVisitsToReachU
@@ -1507,7 +1538,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score),
+    scores.emplace_back(-edge.GetU(puct_mult) -
+                            edge.GetQ(fpu, draw_score),
                         edge);
   }
 
@@ -1613,11 +1645,16 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     intermediate[i] = p;
     total += p;
   }
+  const float unif = 1.0 / (float)counter;
   counter = 0;
   // Normalize P values to add up to 1.0.
   const float scale = total > 0.0f ? 1.0f / total : 1.0f;
   for (auto edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
+    const float p = intermediate[counter++] * scale;
+    edge.edge()->SetP(p);
+    edge.edge()->SetPolicy(p);
+    edge.edge()->SetRENTSQ(
+        tanh(atanh(-node_to_process->v) + atanh(p - unif)));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
@@ -1678,6 +1715,36 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = n->GetM();
     }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    if (p && !p->IsTerminal() && params_.GetUseRENTS()) {
+      if (n == node) {
+        n->GetOwnEdge()->SetRENTSQ(v);
+	  }
+      std::array<float, 256> prior_policy;
+      std::array<float, 256> q_values;
+      float n_visits = 0.0f;
+      int counter = 0;
+      for (auto edge : p->Edges()) {
+        prior_policy[counter] = edge.edge()->GetP();
+        n_visits += edge.GetN();
+        q_values[counter++] = edge.edge()->GetRENTSQ();
+      }
+      auto [new_v, new_p] = RelativeEntropySoftmax(
+          q_values, prior_policy, counter, params_.GetRENTSTemp());
+      const int n_children = counter;
+      counter = 0;
+      const float lambda_s =
+          n_children == 0 ? 1.0
+                          : std::clamp(params_.GetRENTSExplorationFactor() *
+                                           n_children / FastLog(n_visits + 1),
+                                       0.0f, 1.0f);
+      for (auto edge : p->Edges()) {
+        edge.edge()->SetPolicy((1 - lambda_s) * new_p[counter++] +
+                               lambda_s / n_children);
+      }
+      v = new_v;
+      if (p->GetParent())
+		p->GetOwnEdge()->SetRENTSQ(-v);
+    }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }

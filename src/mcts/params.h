@@ -83,6 +83,7 @@ class SearchParams {
   }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
+  float GetRENTSTemp() const { return kRENTSTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
@@ -111,6 +112,8 @@ class SearchParams {
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
+  bool GetUseRENTS() const { return kUseRENTS; }
+  float GetRENTSExplorationFactor() const { return kRENTSExplorationFactor; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -140,6 +143,7 @@ class SearchParams {
   static const OptionId kFpuValueAtRootId;
   static const OptionId kCacheHistoryLengthId;
   static const OptionId kPolicySoftmaxTempId;
+  static const OptionId kRENTSTempId;
   static const OptionId kMaxCollisionEventsId;
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
@@ -164,6 +168,8 @@ class SearchParams {
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;
+  static const OptionId kUseRENTSId;
+  static const OptionId kRENTSExplorationFactorId;
 
  private:
   const OptionsDict& options_;
@@ -187,6 +193,7 @@ class SearchParams {
   const float kFpuValueAtRoot;
   const int kCacheHistoryLength;
   const float kPolicySoftmaxTemp;
+  const float kRENTSTemp;
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
   const bool kOutOfOrderEval;
@@ -209,6 +216,8 @@ class SearchParams {
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
+  const bool kUseRENTS;
+  const float kRENTSExplorationFactor;
 };
 
 }  // namespace lczero

@@ -95,6 +95,14 @@ class Edge {
   float GetP() const;
   void SetP(float val);
 
+  float GetPolicy() const;
+  void SetPolicy(float val);
+
+  // Returns the initial Q value assigned to dangling edges, before the node is
+  // expanded. Must be in [-1, 1]
+  float GetRENTSQ() const { return q_; }
+  void SetRENTSQ(float val) { q_ = val; };
+
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -107,6 +115,8 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+  uint16_t policy_ = 0;
+  float q_ = 0.0f;
   friend class Node;
 };
 
@@ -389,9 +399,7 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score) const {
-    return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
-  }
+  float GetQ(float default_q, float draw_score) const;
   float GetWL(float default_wl) const {
     return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
   }
@@ -416,6 +424,7 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
+  float GetPolicy() const { return edge_->GetPolicy(); }
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }

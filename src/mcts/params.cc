@@ -275,6 +275,18 @@ const OptionId SearchParams::kSolidTreeThresholdId{
     "solid-tree-threshold", "SolidTreeThreshold",
     "Only nodes with at least this number of visits will be considered for "
     "solidification for improved cache locality."};
+const OptionId SearchParams::kUseRENTSId{
+    "use-rents", "UseRENTS",
+    "Use the RENTS algorithm instead of the PUCT algorithm to search."};
+const OptionId SearchParams::kRENTSTempId{
+    "rents-softmax-temp", "RENTSTemperature",
+    "Policy softmax temperature used in RENTS. Higher values flatten the "
+	"distribution of Q values, widening the search."};
+const OptionId SearchParams::kRENTSExplorationFactorId{
+    "rents-exploration-factor", "RENTSExplorationFactor",
+    "Controls the amount of uniform exploration which is mixed into the "
+    "policy. Larger values result in more exploration and flatter policies."
+};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -341,6 +353,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
+  options->Add<BoolOption>(kUseRENTSId) = false;
+  options->Add<FloatOption>(kRENTSExplorationFactorId, 0.0f, 10.0f) = 0.01f;
+  options->Add<FloatOption>(kRENTSTempId, 0.0001f, 10.0f) = 1.0f;
+
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -407,7 +423,10 @@ SearchParams::SearchParams(const OptionsDict& options)
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
-      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)) {
+      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
+      kUseRENTS(options.Get<bool>(kUseRENTSId)),
+	  kRENTSExplorationFactor(options.Get<float>(kRENTSExplorationFactorId)),
+      kRENTSTemp(options.Get<float>(kRENTSTempId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

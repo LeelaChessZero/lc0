@@ -174,6 +174,23 @@ float Edge::GetP() const {
   return ret;
 }
 
+void Edge::SetPolicy(float p) {
+  assert(0.0f <= p && p <= 1.0f);
+  constexpr int32_t roundings = (1 << 11) - (3 << 28);
+  int32_t tmp;
+  std::memcpy(&tmp, &p, sizeof(float));
+  tmp += roundings;
+  policy_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
+}
+
+float Edge::GetPolicy() const {
+  // Reshift into place and set the assumed-set exponent bits.
+  uint32_t tmp = (static_cast<uint32_t>(policy_) << 12) | (3 << 28);
+  float ret;
+  std::memcpy(&ret, &tmp, sizeof(uint32_t));
+  return ret;
+}
+
 std::string Edge::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
@@ -598,6 +615,10 @@ std::string EdgeAndNode::DebugString() const {
   if (!edge_) return "(no edge)";
   return edge_->DebugString() + " " +
          (node_ ? node_->DebugString() : "(no node)");
+}
+
+float EdgeAndNode::GetQ(float default_q, float draw_score) const {
+  return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
 }
 
 /////////////////////////////////////////////////////////////////////////
