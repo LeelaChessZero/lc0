@@ -432,7 +432,6 @@ class SearchWorker {
   std::vector<PickTask> picking_tasks_;
   std::atomic<int> task_count_ = -1;
   std::atomic<int> task_taker_ = 0;
-  std::atomic<int> computation_spin_lock_ = 0;
   std::atomic<int> next_task_available_ = 0;
   std::atomic<int> completed_tasks_ = 0;
   std::condition_variable task_added_;

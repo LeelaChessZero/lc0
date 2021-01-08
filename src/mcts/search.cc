@@ -1097,6 +1097,7 @@ void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
+  computation_->Reserve(params_.GetMiniBatchSize());
   minibatch_.clear();
   minibatch_.reserve(2 * params_.GetMiniBatchSize());
 }
@@ -1160,9 +1161,6 @@ void SearchWorker::GatherMinibatch() {
     bool needs_wait = false;
     if (USE_WORKERS && non_collisions > 20) {
       needs_wait = true;
-      // Ensure computation has enough space for whatever we throw at it and
-      // won't resize.
-      computation_->Reserve(minibatch_.size());
       const int num_child_tasks = std::clamp(non_collisions / 10, 1, 4);
       // Round down, left overs can go to main thread.
       int per_worker = non_collisions / (num_child_tasks + 1);
@@ -1265,6 +1263,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   // This code runs multiple passes of work across the same input in order to
   // reduce taking/dropping mutexes in quick succession.
   PositionHistory history = search_->played_history_;
+  history.Reserve(search_->played_history_.GetLength() + 30);
 
   // First pass - Extend nodes.
   for (int i = start_idx; i < end_idx; i++) {
@@ -1275,8 +1274,6 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
-      history.Reserve(search_->played_history_.GetLength() +
-                      picked_node.moves_to_visit.size());
       // Node was never visited, extend it.
       ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
       if (!node->IsTerminal()) {
