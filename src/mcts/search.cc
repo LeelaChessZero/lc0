@@ -1225,7 +1225,12 @@ void SearchWorker::GatherMinibatch() {
     bool some_ooo = false;
     for (int i = to_remove_idx.size() - 1; i >= 0; i--) {
       some_ooo = true;
-      minibatch_.erase(minibatch_.begin() + to_remove_idx[i]);
+      // Its okay to reorder the items since we're just going to sort them
+      // afterwards, so just swap to end if not already there.
+      if (to_remove_idx[i] + 1 < minibatch_.size()) {
+        std::swap(minibatch_.back(), minibatch_[to_remove_idx[i]]);
+      }
+      minibatch_.pop_back();
       --minibatch_size;
       ++number_out_of_order_;
     }
