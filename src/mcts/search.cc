@@ -1159,11 +1159,14 @@ void SearchWorker::GatherMinibatch() {
       ++minibatch_size;
     }
     bool needs_wait = false;
-    if (USE_WORKERS && non_collisions > 20) {
+    if (params_.GetTaskWorkersPerSearchWorker() > 0 &&
+        non_collisions >= params_.GetMinimumWorkSizeForProcessing()) {
+      const int num_tasks = std::clamp(
+          non_collisions / params_.GetMinimumWorkPerTaskForProcessing(), 2,
+          params_.GetTaskWorkersPerSearchWorker() + 1);
+      // Round down, left overs can go to main thread so it waits less.
+      int per_worker = non_collisions / num_tasks;
       needs_wait = true;
-      const int num_child_tasks = std::clamp(non_collisions / 10, 1, 4);
-      // Round down, left overs can go to main thread.
-      int per_worker = non_collisions / (num_child_tasks + 1);
       {
         // Ensure nothing takes tasks yet
         task_count_.store(0, std::memory_order_release);
@@ -1186,7 +1189,7 @@ void SearchWorker::GatherMinibatch() {
             task_count_.fetch_add(1, std::memory_order_acq_rel);
             prev_size = i + 1;
             found = 0;
-            if (picking_tasks_.size() == num_child_tasks) {
+            if (picking_tasks_.size() == num_tasks - 1) {
               break;
             }
           }
@@ -1441,10 +1444,13 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         node->IncrementNInFlight(cur_limit);
       }
       // !is_root_node only for clarity, it can never pass the second condition.
-      if (USE_WORKERS && !is_root_node && cur_limit > 10 &&
+      if (params_.GetTaskWorkersPerSearchWorker() > 0 && !is_root_node &&
+          cur_limit > params_.GetMinimumWorkSizeForPicking() &&
           cur_limit <
               ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
-          cur_limit + passed_off + completed_visits < collision_limit - 20) {
+          cur_limit + passed_off + completed_visits <
+              collision_limit -
+                  params_.GetMinimumRemainingWorkSizeForPicking()) {
         bool passed = false;
         {
           // Multiple writers, so need mutex here.
