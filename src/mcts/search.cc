@@ -983,12 +983,16 @@ void SearchWorker::RunTasks(int tid) {
             }
             task_taker_.store(0, std::memory_order_release);
           }
+          SpinloopPause();
           spins = 0;
           continue;
         } else if (task_count_.load(std::memory_order_acquire) != -1) {
           spins++;
-          if (spins > 1000) {
+          if (spins >= 512) {
             std::this_thread::yield();
+            spins = 0;
+          } else {
+            SpinloopPause();
           }
           continue;
         }
@@ -1203,6 +1207,7 @@ void SearchWorker::GatherMinibatch() {
         int completed = completed_tasks_.load(std::memory_order_acquire);
         int todo = task_count_.load(std::memory_order_acquire);
         if (todo == completed) break;
+        SpinloopPause();
       }
     }
     bool some_ooo = false;
@@ -1339,6 +1344,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
       int completed = completed_tasks_.load(std::memory_order_acquire);
       int todo = task_count_.load(std::memory_order_acquire);
       if (todo == completed) break;
+      SpinloopPause();
     }
     for (int i = 0; i < picking_tasks_.size(); i++) {
       for (int j = 0; j < picking_tasks_[i].results.size(); j++) {

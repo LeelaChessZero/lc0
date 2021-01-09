@@ -32,6 +32,11 @@
 #include <shared_mutex>
 #include <thread>
 
+#if !defined(__arm__) && !defined(__aarch64__) && !defined(_M_ARM) && \
+    !defined(_M_ARM64)
+#include <emmintrin.h>
+#endif
+
 #include "utils/cppattributes.h"
 
 namespace lczero {
@@ -120,6 +125,13 @@ class CAPABILITY("mutex") SharedMutex {
   std::shared_timed_mutex mutex_;
 };
 
+static inline void SpinloopPause() {
+#if !defined(__arm__) && !defined(__aarch64__) && !defined(_M_ARM) && \
+    !defined(_M_ARM64)
+  _mm_pause();
+#endif
+}
+
 // A very simple spin lock.
 class CAPABILITY("mutex") SpinMutex {
  public:
@@ -145,6 +157,8 @@ class CAPABILITY("mutex") SpinMutex {
       // needed.
       if (spins % 512 == 0) {
         std::this_thread::yield();
+      } else {
+        SpinloopPause();
       }
     }
   }
