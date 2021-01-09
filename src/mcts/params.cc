@@ -287,7 +287,7 @@ const OptionId SearchParams::kMinimumWorkSizeForPickingId{
     "Search branches with this many collisions may be split off to task "
     "workers."};
 const OptionId SearchParams::kMinimumRemainingWorkSizeForPickingId{
-    "minimum-picking-work", "MinimumRemainingPickingWork",
+    "minimum-remaining-picking-work", "MinimumRemainingPickingWork",
     "Search branches won't be split off to task workers unless there is at "
     "least this much work left to do afterwards."};
 const OptionId SearchParams::kMinimumWorkPerTaskForProcessingId{
