@@ -68,7 +68,7 @@ class StoppersHints {
   void Reset();
   void UpdateEstimatedRemainingTimeMs(int64_t v);
   int64_t GetEstimatedRemainingTimeMs() const;
-  void UpdateEstimatedRemainingRemainingPlayouts(int64_t v);
+  void UpdateEstimatedRemainingPlayouts(int64_t v);
   int64_t GetEstimatedRemainingPlayouts() const;
   void UpdateEstimatedNps(float v);
   std::optional<float> GetEstimatedNps() const;
