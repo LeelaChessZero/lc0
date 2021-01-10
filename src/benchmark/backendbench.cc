@@ -75,7 +75,7 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
-  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.1f;
+  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.2f;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -88,7 +88,7 @@ void BackendBenchmark::Run() {
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
     const int batches = option_dict.Get<int>(kBatchesId);
 
-    int best = 0;
+    int best = 1;
     float best_nps = 0.0f;
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
@@ -118,14 +118,12 @@ void BackendBenchmark::Run() {
       if (option_dict.Get<bool>(kClippyId)) {
         const float threshold = option_dict.Get<float>(kClippyThresholdId);
 
-        if (nps > best_nps) {
-          if (best==0 ||
-             ((i*1.0f/best*1.0f-1.0f)*threshold < nps/best_nps-1.0f)) {
-            best_nps = nps;
-            best = i;
-            if (!pending) {
-              pending = std::chrono::steady_clock::now();
-            }
+        if (nps > best_nps &&
+            threshold * (i - best) * best_nps < (nps - best_nps) * best) {
+          best_nps = nps;
+          best = i;
+          if (!pending) {
+            pending = std::chrono::steady_clock::now();
           }
         }
         if (pending) {
