@@ -105,10 +105,29 @@ int ChooseTransform(const ChessBoard& board) {
 }
 }  // namespace
 
+bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format) {
+  return input_format >=
+         pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION;
+}
+bool IsCanonicalArmageddonFormat(
+    pblczero::NetworkFormat::InputFormat input_format) {
+  return input_format ==
+             pblczero::NetworkFormat::
+                 INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON ||
+         input_format == pblczero::NetworkFormat::
+                             INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON;
+}
+bool IsHectopliesFormat(pblczero::NetworkFormat::InputFormat input_format) {
+  return input_format >=
+         pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES;
+}
+bool Is960CastlingFormat(pblczero::NetworkFormat::InputFormat input_format) {
+  return input_format >= pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE;
+}
+
 int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
                          const PositionHistory& history) {
-  if (input_format !=
-      pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+  if (!IsCanonicalFormat(input_format)) {
     return 0;
   }
   const ChessBoard& board = history.Last().GetBoard();
@@ -125,16 +144,14 @@ InputPlanes EncodePositionForNN(
   // Canonicalization format needs to stop early to avoid applying transform in
   // history across incompatible transitions.  It is also more canonical since
   // history before these points is not relevant to the final result.
-  bool stop_early =
-      input_format == pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION;
+  bool stop_early = IsCanonicalFormat(input_format);
   // When stopping early, we want to know if castlings has changed, so capture
   // it for the first board.
   ChessBoard::Castlings castlings;
   {
     const ChessBoard& board = history.Last().GetBoard();
     const bool we_are_black = board.flipped();
-    if (input_format ==
-        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    if (IsCanonicalFormat(input_format)) {
       transform = ChooseTransform(board);
     }
     switch (input_format) {
@@ -154,7 +171,13 @@ InputPlanes EncodePositionForNN(
       }
 
       case pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE:
-      case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION: {
+      case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION:
+      case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES:
+      case pblczero::NetworkFormat::
+          INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON:
+      case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2:
+      case pblczero::NetworkFormat::
+          INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON: {
         // - Plane 104 for positions of rooks (both white and black) which
         // have
         // a-side (queenside) castling right.
@@ -175,20 +198,32 @@ InputPlanes EncodePositionForNN(
         throw Exception("Unsupported input plane encoding " +
                         std::to_string(input_format));
     };
-    if (input_format ==
-        pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION) {
+    if (IsCanonicalFormat(input_format)) {
       result[kAuxPlaneBase + 4].mask = board.en_passant().as_int();
     } else {
       if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
     }
-    result[kAuxPlaneBase + 5].Fill(history.Last().GetRule50Ply());
-    // Plane kAuxPlaneBase + 6 used to be movecount plane, now it's all zeros.
+    if (IsHectopliesFormat(input_format)) {
+      result[kAuxPlaneBase + 5].Fill(history.Last().GetRule50Ply() / 100.0f);
+    } else {
+      result[kAuxPlaneBase + 5].Fill(history.Last().GetRule50Ply());
+    }
+    // Plane kAuxPlaneBase + 6 used to be movecount plane, now it's all zeros
+    // unless we need it for canonical armageddon side to move.
+    if (IsCanonicalArmageddonFormat(input_format)) {
+      if (we_are_black) result[kAuxPlaneBase + 6].SetAll();
+    }
     // Plane kAuxPlaneBase + 7 is all ones to help NN find board edges.
     result[kAuxPlaneBase + 7].SetAll();
     if (stop_early) {
       castlings = board.castlings();
     }
   }
+  bool skip_non_repeats =
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2 ||
+      input_format == pblczero::NetworkFormat::
+                          INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON;
   bool flip = false;
   int history_idx = history.GetLength() - 1;
   for (int i = 0; i < std::min(history_planes, kMoveHistory);
@@ -211,6 +246,19 @@ InputPlanes EncodePositionForNN(
         position.GetBoard() == ChessBoard::kStartposBoard) {
       break;
     }
+    const int repetitions = position.GetRepetitions();
+    // Canonical v2 only writes an item if it is a repeat, unless its the most
+    // recent position.
+    if (skip_non_repeats && repetitions == 0 && i > 0) {
+      if (history_idx > 0) flip = !flip;
+      // If no capture no pawn is 0, the previous was start of game, capture or
+      // pawn push, so there can't be any more repeats that are worth
+      // considering.
+      if (position.GetRule50Ply() == 0) break;
+      // Decrement i so it remains the same as the history_idx decrements.
+      --i;
+      continue;
+    }
 
     const int base = i * kPlanesPerBoard;
     result[base + 0].mask = (board.ours() & board.pawns()).as_int();
@@ -227,7 +275,6 @@ InputPlanes EncodePositionForNN(
     result[base + 10].mask = (board.theirs() & board.queens()).as_int();
     result[base + 11].mask = (board.theirs() & board.kings()).as_int();
 
-    const int repetitions = position.GetRepetitions();
     if (repetitions >= 1) result[base + 12].SetAll();
 
     // If en passant flag is set, undo last pawn move by removing the pawn from

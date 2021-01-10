@@ -42,6 +42,7 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
+#include "utils/numa.h"
 
 namespace lczero {
 
@@ -78,15 +79,12 @@ class Search {
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
 
-  struct BestEval {
-    float wl;
-    float d;
-    float ml;
-  };
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
-  // return results from different possible moves.
-  BestEval GetBestEval() const;
+  // return results from different possible moves. If @move and @is_terminal are
+  // not nullptr they are set to the best move and whether it leads to a
+  // terminal node respectively.
+  Eval GetBestEval(Move* move = nullptr, bool* is_terminal = nullptr) const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -95,6 +93,9 @@ class Search {
   // If called after GetBestMove, another call to GetBestMove will have results
   // from temperature having been applied again.
   void ResetBestMove();
+
+  // Returns NN eval for a given node from cache, if that node is cached.
+  NNCacheLock GetCachedNNEval(const Node* node) const;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -130,9 +131,6 @@ class Search {
   // Node can only be root or ponder (depth 1).
   std::vector<std::string> GetVerboseStats(Node* node) const;
 
-  // Returns NN eval for a given node from cache, if that node is cached.
-  NNCacheLock GetCachedNNEval(const Node* node) const;
-
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
   // Depth of a root node is 0 (even number).
@@ -155,8 +153,8 @@ class Search {
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
-  EdgeAndNode final_bestmove_ GUARDED_BY(counters_mutex_);
-  EdgeAndNode final_pondermove_ GUARDED_BY(counters_mutex_);
+  Move final_bestmove_ GUARDED_BY(counters_mutex_);
+  Move final_pondermove_ GUARDED_BY(counters_mutex_);
   std::unique_ptr<SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;
@@ -172,7 +170,7 @@ class Search {
   const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
-  const int64_t initial_visits_;
+  int64_t initial_visits_;
   // tb_hits_ must be initialized before root_move_filter_.
   std::atomic<int> tb_hits_{0};
   const MoveList root_move_filter_;
@@ -204,12 +202,14 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search, const SearchParams& params)
+  SearchWorker(Search* search, const SearchParams& params, int id)
       : search_(search),
         history_(search_->played_history_),
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
-                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {}
+                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {
+    Numa::BindThread(id);
+  }
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -303,7 +303,7 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  void ExtendNode(Node* node);
+  void ExtendNode(Node* node, int depth);
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,

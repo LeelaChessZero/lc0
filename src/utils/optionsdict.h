@@ -28,6 +28,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -92,7 +93,8 @@ class OptionsDict : TypeDict<bool>,
                     TypeDict<std::string>,
                     TypeDict<float> {
  public:
-  OptionsDict(const OptionsDict* parent = nullptr) : parent_(parent) {}
+  OptionsDict(const OptionsDict* parent = nullptr)
+      : parent_(parent), aliases_{this} {}
 
   // e.g. dict.Get<int>("threads")
   // Returns value of given type. Throws exception if not found.
@@ -101,11 +103,25 @@ class OptionsDict : TypeDict<bool>,
   template <typename T>
   T Get(const OptionId& option_id) const;
 
+  // Returns the own value of given type (doesn't fall back to querying parent).
+  // Returns nullopt if doesn't exist.
+  template <typename T>
+  std::optional<T> OwnGet(const std::string& key) const;
+  template <typename T>
+  std::optional<T> OwnGet(const OptionId& option_id) const;
+
   // Checks whether the given key exists for given type.
   template <typename T>
   bool Exists(const std::string& key) const;
   template <typename T>
   bool Exists(const OptionId& option_id) const;
+
+  // Checks whether the given key exists for given type. Does not fall back to
+  // check parents.
+  template <typename T>
+  bool OwnExists(const std::string& key) const;
+  template <typename T>
+  bool OwnExists(const OptionId& option_id) const;
 
   // Returns value of given type. Returns default if not found.
   template <typename T>
@@ -144,6 +160,9 @@ class OptionsDict : TypeDict<bool>,
   // Returns list of subdictionaries.
   std::vector<std::string> ListSubdicts() const;
 
+  // Adds alias dictionary.
+  void AddAliasDict(const OptionsDict* dict);
+
   // Creates options dict from string. Example of a string:
   // option1=1, option_two = "string val", subdict(option3=3.14)
   //
@@ -165,14 +184,16 @@ class OptionsDict : TypeDict<bool>,
 
   const OptionsDict* parent_ = nullptr;
   std::map<std::string, OptionsDict> subdicts_;
+  // Dictionaries where to search for "own" parameters. By default contains only
+  // this.
+  std::vector<const OptionsDict*> aliases_;
 };
 
 template <typename T>
 T OptionsDict::Get(const std::string& key) const {
-  const auto& dict = TypeDict<T>::dict_;
-  auto iter = dict.find(key);
-  if (iter != dict.end()) {
-    return iter->second.Get();
+  for (const auto* alias : aliases_) {
+    const auto value = alias->OwnGet<T>(key);
+    if (value) return *value;
   }
   if (parent_) return parent_->Get<T>(key);
   throw Exception("Key [" + key + "] was not set in options.");
@@ -181,27 +202,48 @@ template <typename T>
 T OptionsDict::Get(const OptionId& option_id) const {
   return Get<T>(GetOptionId(option_id));
 }
+template <typename T>
+std::optional<T> OptionsDict::OwnGet(const std::string& key) const {
+  const auto& dict = TypeDict<T>::dict_;
+  auto iter = dict.find(key);
+  if (iter != dict.end()) {
+    return iter->second.Get();
+  }
+  return {};
+}
+template <typename T>
+std::optional<T> OptionsDict::OwnGet(const OptionId& option_id) const {
+  return OwnGet<T>(GetOptionId(option_id));
+}
 
 template <typename T>
 bool OptionsDict::Exists(const std::string& key) const {
-  const auto& dict = TypeDict<T>::dict_;
-  auto iter = dict.find(key);
-  if (iter != dict.end()) return true;
-  if (!parent_) return false;
-  return parent_->Exists<T>(key);
+  for (const auto* alias : aliases_) {
+    if (alias->OwnExists<T>(key)) return true;
+  }
+  return parent_ && parent_->Exists<T>(key);
 }
 template <typename T>
 bool OptionsDict::Exists(const OptionId& option_id) const {
   return Exists<T>(GetOptionId(option_id));
 }
+template <typename T>
+bool OptionsDict::OwnExists(const std::string& key) const {
+  const auto& dict = TypeDict<T>::dict_;
+  auto iter = dict.find(key);
+  return iter != dict.end();
+}
+template <typename T>
+bool OptionsDict::OwnExists(const OptionId& option_id) const {
+  return OwnExists<T>(GetOptionId(option_id));
+}
 
 template <typename T>
 T OptionsDict::GetOrDefault(const std::string& key,
                             const T& default_val) const {
-  const auto& dict = TypeDict<T>::dict_;
-  auto iter = dict.find(key);
-  if (iter != dict.end()) {
-    return iter->second.Get();
+  for (const auto* alias : aliases_) {
+    const auto value = alias->OwnGet<T>(key);
+    if (value) return *value;
   }
   if (parent_) return parent_->GetOrDefault<T>(key, default_val);
   return default_val;
@@ -233,8 +275,9 @@ T& OptionsDict::GetRef(const OptionId& option_id) {
 template <typename T>
 bool OptionsDict::IsDefault(const std::string& key) const {
   if (!parent_) return true;
-  const auto& dict = TypeDict<T>::dict_;
-  if (dict.find(key) != dict.end()) return false;
+  for (const auto* alias : aliases_) {
+    if (alias->OwnExists<T>(key)) return false;
+  }
   return parent_->IsDefault<T>(key);
 }
 template <typename T>

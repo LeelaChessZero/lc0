@@ -350,6 +350,206 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
   }
 }
 
+
+// input is in transformed space (HWNC layout) --- output of GEMM
+// output is also in transformed space (HWNC layout) --- input to GEMM (for next layer)
+// 'C' threads per block
+// 'N' blocks
+// every thread generates an entire board/plane (8x8 elements)
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+__global__ 
+void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* output,
+                                                              const T* input, const T* skip,
+                                                              const T* bias, const T* w1, const T* b1,
+                                                              const T* w2, const T* b2) {
+  const bool fp16 = std::is_same<half, T>::value;
+
+  int k = threadIdx.x;
+  int n = blockIdx.x;
+
+  T board[8][8];
+  T b = bias[k];
+
+#pragma unroll
+  for (int hStart = 0; hStart < 8; hStart += 4)
+#pragma unroll
+    for (int wStart = 0; wStart < 8; wStart += 4) {
+      //  i) read to per thread registers (for doing output transform)
+      int shln = n * 4 + (hStart / 4) * 2 + (wStart / 4);
+      T outElTransformed[6][6];
+#pragma unroll
+      for (int y = 0; y < 6; y++)
+#pragma unroll
+        for (int x = 0; x < 6; x++)
+          outElTransformed[y][x] = input[TEMP_INDEX_HWNC(y, x, shln, k)];
+
+      // ii) transform it
+      T outEl[4][4];
+      OutputTransform4x4(&outEl[0][0], &outElTransformed[0][0]);
+
+#pragma unroll
+      for (int y = 0; y < 4; y++)
+#pragma unroll
+        for (int x = 0; x < 4; x++) board[hStart + y][wStart + x] = outEl[y][x];
+    }
+
+  // Add bias, and compute the average for SE.
+  float S = 0;
+  float B = 0;
+
+#pragma unroll
+  for (int y = 0; y < 8; y++)
+#pragma unroll
+    for (int x = 0; x < 8; x++) {
+      if (use_bias) board[y][x] += b;
+      if (use_se) S += (float)board[y][x];
+    }
+
+  if (use_se) {
+    __shared__ float shared_data[1024];
+    float avg = S / 64;
+    shared_data[k] = avg;
+    __syncthreads();
+
+    // First fully-connected layer for SE
+    if (k < se_K) {
+      S = 0;
+      for (int i = 0; i < C; i++) {
+        S += shared_data[i] * float(readw1(i, k));
+      }
+      S += (float)b1[k];
+      if (S < 0) S = 0;  // relu
+      shared_data[k] = S;
+    }
+    __syncthreads();
+
+    // Second fully-connected layer for SE
+    S = 0;
+    for (int i = 0; i < se_K; i++) {
+      float val = shared_data[i];
+      S += val * float(readw2(i, k));
+      B += val * float(readw2(i, k + C));
+    }
+    S += (float)b2[k];
+    B += (float)b2[k + C];
+
+    // Sigmoid (only on the scale part).
+    S = 1.0f / (1.0f + exp(-S));
+  }
+
+  // Scale/bias, add skip connection, perform relu, and write to output.
+  for (int h = 0; h < 8; h++) {
+    if (use_se)
+#pragma unroll
+      for (int w = 0; w < 8; w++) board[h][w] = (T)(float(board[h][w]) * S + B);
+
+    // residual add
+    if (use_skip) {
+      T skipInp[8];
+      *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 0)]));
+      if (!fp16)
+        *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 4)]));
+#pragma unroll
+      for (int w = 0; w < 8; w++) board[h][w] += skipInp[w];
+    }
+
+    // relu
+    if (relu) {
+#pragma unroll
+      for (int w = 0; w < 8; w++)
+        if (board[h][w] < (T)0) board[h][w] = 0;
+    }
+
+    // write un-transformed output to 'skip' if required
+    if (use_skip)
+    {
+      // Write to skip (use 128 bit writes to store one row a time)
+      *((uint4*)(&skip[INDEX_NCHW(n, k, h, 0)])) = *((uint4*)&board[h][0]);
+      if (!fp16)
+        *((uint4*)(&skip[INDEX_NCHW(n, k, h, 4)])) = *((uint4*)&board[h][4]);
+    }
+  }
+
+  // perform input transform    
+
+  int c = k;
+  // top-left
+  {
+    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+#pragma unroll
+    for (int i = 0; i < 5; i++)
+#pragma unroll
+      for (int j = 0; j < 5; j++) inEl[i + 1][j + 1] = board[i][j];
+
+    InputTransform4x4(&inEl[0][0], &inEl[0][0]);
+
+#pragma unroll
+    for (int y = 0; y < 6; y++)
+#pragma unroll
+      for (int x = 0; x < 6; x++)
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 0, c)] = inEl[y][x];
+  }
+
+  // top-right
+  {
+    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+#pragma unroll
+    for (int i = 0; i < 5; i++)
+#pragma unroll
+      for (int j = 0; j < 5; j++) inEl[i + 1][j] = board[i][j + 3];
+
+    InputTransform4x4(&inEl[0][0], &inEl[0][0]);
+
+#pragma unroll
+    for (int y = 0; y < 6; y++)
+#pragma unroll
+      for (int x = 0; x < 6; x++)
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 1, c)] = inEl[y][x];
+  }
+
+  // bottom-left
+  {
+    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+#pragma unroll
+    for (int i = 0; i < 5; i++)
+#pragma unroll
+      for (int j = 0; j < 5; j++) inEl[i][j + 1] = board[i + 3][j];
+
+    InputTransform4x4(&inEl[0][0], &inEl[0][0]);
+
+#pragma unroll
+    for (int y = 0; y < 6; y++)
+#pragma unroll
+      for (int x = 0; x < 6; x++)
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 2, c)] = inEl[y][x];
+  }
+
+  // bottom-right
+  {
+    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+#pragma unroll
+    for (int i = 0; i < 5; i++)
+#pragma unroll
+      for (int j = 0; j < 5; j++) inEl[i][j] = board[i + 3][j + 3];
+
+    InputTransform4x4(&inEl[0][0], &inEl[0][0]);
+
+#pragma unroll
+    for (int y = 0; y < 6; y++)
+#pragma unroll
+      for (int x = 0; x < 6; x++)
+        output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
+  } 
+}
+
 template <typename T>
 void FilterTransform(int N, int C, T* transformedFilter, const T* filter) {
   // Each thread processes entire filter block (input 3x3 elements -> output 6x6
@@ -380,6 +580,17 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
       <<<N, C>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
   ReportCUDAErrors(cudaGetLastError());
 }
+
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
+                         const T* skip, const T* bias, const T* w1, const T* b1,
+                         const T* w2, const T* b2) {
+  // Each thread processes entire chess board
+  OutputTransform_SE_relu_InputTransform_kernel<T, use_se, relu, use_bias, use_skip>
+                    <<<N, C>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 
 }  // namespace cudnn_backend
 }  // namespace lczero
