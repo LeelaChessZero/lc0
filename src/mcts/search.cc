@@ -820,8 +820,26 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   const auto m_evaluator = network_->GetCapabilities().has_mlh()
                                ? MEvaluator(params_, root_node_)
                                : MEvaluator();
+  uint64_t* pv_hash_list;
+  for (int ply = 1; ply <= 7; ply++) {
+    // next = pv.best_edge.position();
+    // pv_hash_list.push_back(next.hash());
+
+  }
+
+
   for (const auto& edge : root_node_->Edges()) {
-    const auto n = edge.GetN();
+    int n_transpos = 0;
+    for (int ply = 1; ply <= 7; ply++) {
+      // next = pv.best_edge.position();
+      // if (next.hash() == pv_hash_list[ply]) {
+      //   if (ply == 1) break;
+      //   n_transpos = next.GetN();
+      //   break;
+      // }
+
+    }
+    const auto n = edge.GetN() - n_transpos;
     const auto q = edge.GetQ(fpu, draw_score);
     const auto m = m_evaluator.GetM(edge, q);
     const auto q_plus_m = q + m;
