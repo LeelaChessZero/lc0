@@ -534,7 +534,7 @@ endif
     deps += cc.find_library('libprofiler',
       dirs: ['/usr/local/lib'], required: false)
   endif
-
+deps += cc.find_library('libatomic', required: false)
 
 #############################################################################
 ## Main Executable
