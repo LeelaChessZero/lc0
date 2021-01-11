@@ -823,6 +823,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   stats->win_found = false;
+  stats->num_losing_edges = 0;
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
 
   // If root node hasn't finished first visit, none of this code is safe.
@@ -844,6 +845,9 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       stats->edge_n.push_back(n);
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
         stats->win_found = true;
+      }
+      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) < 0.0f) {
+        stats->num_losing_edges += 1;
       }
       if (max_n < n) {
         max_n = n;
