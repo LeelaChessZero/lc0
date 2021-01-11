@@ -536,7 +536,7 @@ class HashKeyedCache {
       hash_[idx].metadata = 0;
     }
     size_t next = idx + 1;
-    if (next > hash_.size()) next -= hash_.size();
+    if (next >= hash_.size()) next -= hash_.size();
     while (true) {
       if (hash_[next].metadata == 0) {
         break;
@@ -547,7 +547,7 @@ class HashKeyedCache {
         idx = next;
       }
       ++next;
-      if (next > hash_.size()) next -= hash_.size();
+      if (next >= hash_.size()) next -= hash_.size();
     }
   }
 
