@@ -79,15 +79,12 @@ class Search {
   // May or may not use temperature, according to the settings.
   std::pair<Move, Move> GetBestMove();
 
-  struct BestEval {
-    float wl;
-    float d;
-    float ml;
-  };
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
-  // return results from different possible moves.
-  BestEval GetBestEval() const;
+  // return results from different possible moves. If @move and @is_terminal are
+  // not nullptr they are set to the best move and whether it leads to a
+  // terminal node respectively.
+  Eval GetBestEval(Move* move = nullptr, bool* is_terminal = nullptr) const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
   // Returns the search parameters.
@@ -96,6 +93,9 @@ class Search {
   // If called after GetBestMove, another call to GetBestMove will have results
   // from temperature having been applied again.
   void ResetBestMove();
+
+  // Returns NN eval for a given node from cache, if that node is cached.
+  NNCacheLock GetCachedNNEval(const Node* node) const;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -130,9 +130,6 @@ class Search {
   // Returns verbose information about given node, as vector of strings.
   // Node can only be root or ponder (depth 1).
   std::vector<std::string> GetVerboseStats(Node* node) const;
-
-  // Returns NN eval for a given node from cache, if that node is cached.
-  NNCacheLock GetCachedNNEval(const Node* node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
@@ -188,7 +185,9 @@ class Search {
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cumulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
-  std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
+
+  std::optional<std::chrono::steady_clock::time_point> nps_start_time_
+      GUARDED_BY(counters_mutex_);
 
   std::atomic<int> pending_searchers_{0};
 
