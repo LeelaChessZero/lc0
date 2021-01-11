@@ -110,6 +110,12 @@ class Edge {
   friend class Node;
 };
 
+struct Eval {
+  float wl;
+  float d;
+  float ml;
+};
+
 class EdgeAndNode;
 template <bool is_const>
 class Edge_Iterator;
@@ -218,11 +224,12 @@ class Node {
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V5TrainingData GetV5TrainingData(
+  V6TrainingData GetV6TrainingData(
       GameResult result, const PositionHistory& history,
       FillEmptyHistory fill_empty_history,
-      pblczero::NetworkFormat::InputFormat input_format, float best_q,
-      float best_d, float best_m) const;
+      pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
+      Eval played_eval, Eval orig_eval, bool best_is_proven, Move best_move,
+      Move played_move) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
