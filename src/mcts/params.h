@@ -53,7 +53,7 @@ class SearchParams {
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
-  bool GetTwoFoldDraws() const { return options_.Get<bool>(kTwoFoldDrawsId); }
+  bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
     return options_.Get<float>(kTemperatureVisitOffsetId);
@@ -200,6 +200,7 @@ class SearchParams {
   const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
   const float kCpuctFactorAtRoot;
+  const bool kTwoFoldDraws;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
   const bool kFpuAbsolute;

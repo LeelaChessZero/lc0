@@ -26,6 +26,7 @@
 */
 
 #include "utils/logging.h"
+
 #include <iomanip>
 #include <iostream>
 #include <thread>
@@ -93,13 +94,23 @@ std::chrono::time_point<std::chrono::system_clock> SteadyClockToSystemClock(
 
 std::string FormatTime(
     std::chrono::time_point<std::chrono::system_clock> time) {
+  static Mutex mutex;
+
   std::ostringstream ss;
   using namespace std::chrono;
   const auto us =
       duration_cast<microseconds>(time.time_since_epoch()).count() % 1000000;
   auto timer = std::chrono::system_clock::to_time_t(time);
-  ss << std::put_time(std::localtime(&timer), "%m%d %T") << '.'
-     << std::setfill('0') << std::setw(6) << us;
+  // std::localtime is not thread safe. Since this is the only place
+  // std::localtime is used in the program, guard by mutex.
+  // TODO: replace with std::localtime_r or s once they are properly
+  // standardised. Or some other more c++ like time component thing, whichever
+  // comes first...
+  {
+    Mutex::Lock lock(mutex);
+    ss << std::put_time(std::localtime(&timer), "%m%d %T") << '.'
+       << std::setfill('0') << std::setw(6) << us;
+  }
   return ss.str();
 }
 

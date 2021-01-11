@@ -206,7 +206,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }
 }  // namespace
 
-void Search::SendUciInfo() REQUIRES(nodes_mutex_) {
+void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
@@ -330,7 +330,7 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
-int64_t Search::GetTimeSinceFirstBatch() const {
+int64_t Search::GetTimeSinceFirstBatch() const REQUIRES(counters_mutex_) {
   if (!nps_start_time_) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - *nps_start_time_)
@@ -600,6 +600,7 @@ void Search::ResetBestMove() {
 void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     REQUIRES(counters_mutex_) {
   if (bestmove_is_sent_) return;
+  if (root_node_->GetN() == 0) return;
   if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
@@ -629,7 +630,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
                            : GetBestChildNoTemperature(root_node_, 0);
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
-  if (bestmove_edge.HasNode() && bestmove_edge.node()->HasChildren()) {
+  if (bestmove_edge.GetN() > 0 && bestmove_edge.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(bestmove_edge.node(), 1)
                             .GetMove(!played_history_.IsBlackToMove());
   }
@@ -639,6 +640,9 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                                                               int count,
                                                               int depth) const {
+  // Even if Edges is populated at this point, its a race condition to access
+  // the node, so exit quickly.
+  if (parent->GetN() == 0) return {};
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
   // Best child is selected using the following criteria:
@@ -677,7 +681,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
           // This default isn't used as wl only checked for case edge is
           // terminal.
           const auto wl = edge.GetWL(0.0f);
-          if (!edge.IsTerminal() || !wl) return kNonTerminal;
+          // Not safe to access IsTerminal if GetN is 0.
+          if (edge.GetN() == 0 || !edge.IsTerminal() || !wl) {
+            return kNonTerminal;
+          }
           if (edge.IsTbTerminal()) {
             return wl < 0.0 ? kTablebaseLoss : kTablebaseWin;
           }
@@ -690,7 +697,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         if (a_rank != b_rank) return a_rank > b_rank;
 
         // If both are terminal draws, try to make it shorter.
-        if (a_rank == kNonTerminal && a.IsTerminal() && b.IsTerminal()) {
+        // Not safe to access IsTerminal if GetN is 0.
+        if (a_rank == kNonTerminal && a.GetN() != 0 && b.GetN() != 0 &&
+            a.IsTerminal() && b.IsTerminal()) {
           if (a.IsTbTerminal() != b.IsTbTerminal()) {
             // Prefer non-tablebase draws.
             return a.IsTbTerminal() < b.IsTbTerminal();
@@ -830,9 +839,12 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
-  stats->time_since_first_batch = GetTimeSinceFirstBatch();
-  if (!nps_start_time_ && total_playouts_ > 0) {
-    nps_start_time_ = std::chrono::steady_clock::now();
+  {
+    Mutex::Lock counters_lock(counters_mutex_);
+    stats->time_since_first_batch = GetTimeSinceFirstBatch();
+    if (!nps_start_time_ && total_playouts_ > 0) {
+      nps_start_time_ = std::chrono::steady_clock::now();
+    }
   }
   stats->total_nodes = total_playouts_ + initial_visits_;
   stats->nodes_since_movestart = total_playouts_;
@@ -842,33 +854,38 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->win_found = false;
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
 
-  const auto draw_score = GetDrawScore(true);
-  const float fpu =
-      GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
-  float max_q_plus_m = -1000;
-  uint64_t max_n = 0;
-  bool max_n_has_max_q_plus_m = true;
-  const auto m_evaluator = network_->GetCapabilities().has_mlh()
-                               ? MEvaluator(params_, root_node_)
-                               : MEvaluator();
-  for (const auto& edge : root_node_->Edges()) {
-    const auto n = edge.GetN();
-    const auto q = edge.GetQ(fpu, draw_score);
-    const auto m = m_evaluator.GetM(edge, q);
-    const auto q_plus_m = q + m;
-    stats->edge_n.push_back(n);
-    if (edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) stats->win_found = true;
-    if (max_n < n) {
-      max_n = n;
-      max_n_has_max_q_plus_m = false;
+  // If root node hasn't finished first visit, none of this code is safe.
+  if (root_node_->GetN() > 0) {
+    const auto draw_score = GetDrawScore(true);
+    const float fpu =
+        GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
+    float max_q_plus_m = -1000;
+    uint64_t max_n = 0;
+    bool max_n_has_max_q_plus_m = true;
+    const auto m_evaluator = network_->GetCapabilities().has_mlh()
+                                 ? MEvaluator(params_, root_node_)
+                                 : MEvaluator();
+    for (const auto& edge : root_node_->Edges()) {
+      const auto n = edge.GetN();
+      const auto q = edge.GetQ(fpu, draw_score);
+      const auto m = m_evaluator.GetM(edge, q);
+      const auto q_plus_m = q + m;
+      stats->edge_n.push_back(n);
+      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
+        stats->win_found = true;
+      }
+      if (max_n < n) {
+        max_n = n;
+        max_n_has_max_q_plus_m = false;
+      }
+      if (max_q_plus_m <= q_plus_m) {
+        max_n_has_max_q_plus_m = (max_n == n);
+        max_q_plus_m = q_plus_m;
+      }
     }
-    if (max_q_plus_m <= q_plus_m) {
-      max_n_has_max_q_plus_m = (max_n == n);
-      max_q_plus_m = q_plus_m;
+    if (!max_n_has_max_q_plus_m) {
+      stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNeedMoreTime;
     }
-  }
-  if (!max_n_has_max_q_plus_m) {
-    stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNeedMoreTime;
   }
 }
 
@@ -1083,7 +1100,11 @@ void SearchWorker::ExecuteOneIteration() {
   // If required, waste time to limit nps.
   if (params_.GetNpsLimit() > 0) {
     while (search_->IsSearchActive()) {
-      auto time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
+      int64_t time_since_first_batch_ms = 0;
+      {
+        Mutex::Lock lock(search_->counters_mutex_);
+        time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
+      }
       if (time_since_first_batch_ms <= 0) {
         time_since_first_batch_ms = search_->GetTimeSinceStart();
       }
@@ -2016,6 +2037,7 @@ template <typename Computation>
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          const Computation& computation,
                                          int idx_in_computation) {
+  if (node_to_process->IsCollision()) return;
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
