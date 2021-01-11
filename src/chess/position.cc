@@ -74,7 +74,6 @@ GameResult PositionHistory::ComputeGameResult() const {
 
   if (!board.HasMatingMaterial()) return GameResult::DRAW;
   if (Last().GetRule50Ply() >= 100) return GameResult::DRAW;
-  if (Last().GetGamePly() >= 450) return GameResult::DRAW;
   if (Last().GetRepetitions() >= 2) return GameResult::DRAW;
 
   return GameResult::UNDECIDED;
