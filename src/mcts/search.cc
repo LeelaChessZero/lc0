@@ -601,7 +601,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
                            : GetBestChildNoTemperature(root_node_, 0);
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
-  if (bestmove_edge.GetN() > 0 && bestmove_edge.HasNode() && bestmove_edge.node()->HasChildren()) {
+  if (bestmove_edge.GetN() > 0 && bestmove_edge.HasNode() &&
+      bestmove_edge.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(bestmove_edge.node(), 1)
                             .GetMove(!played_history_.IsBlackToMove());
   }
@@ -611,7 +612,8 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                                                               int count,
                                                               int depth) const {
-  // Even if Edges is populated at this point, its a race condition to access the node, so exit quickly.
+  // Even if Edges is populated at this point, its a race condition to access
+  // the node, so exit quickly.
   if (parent->GetN() == 0) return {};
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
@@ -652,7 +654,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
           // terminal.
           const auto wl = edge.GetWL(0.0f);
           // Not safe to access IsTerminal if GetN is 0.
-          if (edge.GetN() == 0 || !edge.IsTerminal() || !wl) return kNonTerminal;
+          if (edge.GetN() == 0 || !edge.IsTerminal() || !wl) {
+            return kNonTerminal;
+          }
           if (edge.IsTbTerminal()) {
             return wl < 0.0 ? kTablebaseLoss : kTablebaseWin;
           }
@@ -666,7 +670,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // If both are terminal draws, try to make it shorter.
         // Not safe to access IsTerminal if GetN is 0.
-        if (a_rank == kNonTerminal && a.GetN() != 0 && b.GetN() != 0 && a.IsTerminal() && b.IsTerminal()) {
+        if (a_rank == kNonTerminal && a.GetN() != 0 && b.GetN() != 0 &&
+            a.IsTerminal() && b.IsTerminal()) {
           if (a.IsTbTerminal() != b.IsTbTerminal()) {
             // Prefer non-tablebase draws.
             return a.IsTbTerminal() < b.IsTbTerminal();
@@ -838,7 +843,9 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       const auto m = m_evaluator.GetM(edge, q);
       const auto q_plus_m = q + m;
       stats->edge_n.push_back(n);
-      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) stats->win_found = true;
+      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
+        stats->win_found = true;
+      }
       if (max_n < n) {
         max_n = n;
         max_n_has_max_q_plus_m = false;

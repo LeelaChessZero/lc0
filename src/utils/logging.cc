@@ -26,6 +26,7 @@
 */
 
 #include "utils/logging.h"
+
 #include <iomanip>
 #include <iostream>
 #include <thread>
@@ -102,8 +103,9 @@ std::string FormatTime(
   auto timer = std::chrono::system_clock::to_time_t(time);
   // std::localtime is not thread safe. Since this is the only place
   // std::localtime is used in the program, guard by mutex.
-  // TODO: replace with std::localtime_r or s once they are properly standardised.
-  // Or some other more c++ like time component thing, whichever comes first...
+  // TODO: replace with std::localtime_r or s once they are properly
+  // standardised. Or some other more c++ like time component thing, whichever
+  // comes first...
   {
     Mutex::Lock lock(mutex);
     ss << std::put_time(std::localtime(&timer), "%m%d %T") << '.'
