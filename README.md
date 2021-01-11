@@ -166,12 +166,11 @@ Or.
  * Install Xcode command-line tools: ``xcode-select --install``
  * Install "XCode Developer Tools" through the app store. (First one on the list of Apps if searched.)
  * Associate the SDK headers in XCode with a command: export CPATH=\`xcrun --show-sdk-path\`/usr/include
-
+ 
 Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page.
 
 6. Go to the lc0 directory.
-7. Run `./build.sh` (needs step 5)
-8. The resulting binary will be in build/release
+7. Run `./build.sh -Dgtest=false` (needs step 5)
 
 ### Raspberry Pi
 
