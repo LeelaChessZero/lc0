@@ -861,8 +861,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       bool flip = played_history_.IsBlackToMove();
       int depth = 0;
       for (auto iter = edge; iter;
-           iter = GetBestChildNoTemperature(iter.node(), depth).edge(),
-            flip = !flip) {
+           iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
         if (!iter.node()) break;  // Last edge was dangling, cannot continue.
         cur_pos = Position::Position(cur_pos, iter.GetMove());
         if (pv_hash_list[depth] == cur_pos.Hash()) {
