@@ -843,14 +843,14 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     std::vector<uint64_t> pv_hash_list;
     EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
     bool flip = played_history_.IsBlackToMove();
+    int hist_length = played_history_.GetLength();
     unsigned int depth = 0;
     PositionHistory history_pv = played_history_;
     for (EdgeAndNode iter = best_edge; iter;
          iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-      history_pv.Append(iter.GetMove(flip));
+      history_pv.Append(iter.GetMove());
       pv_hash_list.push_back(history_pv.Last().Hash());
-      depth += 1;
       if (depth >= 7) break; // We only count transpositions until 7 plies.
     }
     for (const auto& edge : root_node_->Edges()) {
@@ -859,14 +859,16 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       int n_transpos = 0;
       bool flip = played_history_.IsBlackToMove();
       unsigned int depth = 0;
-      history_pv.Trim(played_history_.GetLength());
+      history_pv.Trim(hist_length);
       for (EdgeAndNode iter = edge; iter;
            iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
         if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-        history_pv.Append(edge.GetMove(flip));
+        history_pv.Append(iter.GetMove());
         if (pv_hash_list[depth] == history_pv.Last().Hash()) {
-          if (depth == 0) break; // We hit the best_edge, so no transposition.
-          n_transpos = iter.GetN();
+          if (depth > 0) {
+            // A transposition at depth 0 is the actual PV.
+            n_transpos = iter.GetN();
+          }
           break; // We only care for the first transposition into the PV.
         }
         depth += 1;
