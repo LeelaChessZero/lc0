@@ -839,32 +839,32 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
 
     // For smart pruning in time manager to work as intended when dealing with
     // transpositions, we subtract the transposition visits for each edge.
-    Position cur_pos = played_history_.Last();
     // Step 1: Create a hash list for the PV up to 7 plies.
     std::vector<uint64_t> pv_hash_list;
     EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
     bool flip = played_history_.IsBlackToMove();
-    int depth = 0;
-    for (auto iter = best_edge; iter;
+    unsigned int depth = 0;
+    PositionHistory history_pv = played_history_;
+    for (EdgeAndNode iter = best_edge; iter;
          iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-      cur_pos = Position::Position(cur_pos, iter.GetMove());
-      pv_hash_list.push_back(cur_pos.Hash());
+      history_pv.Append(iter.GetMove(flip));
+      pv_hash_list.push_back(history_pv.Last().Hash());
       depth += 1;
       if (depth >= 7) break; // We only count transpositions until 7 plies.
     }
     for (const auto& edge : root_node_->Edges()) {
-      cur_pos = played_history_.Last();
       // Step 2: For each edge, check whether the PV reaches a position
       // identical to the best_edge PV at some depth.
       int n_transpos = 0;
       bool flip = played_history_.IsBlackToMove();
-      int depth = 0;
-      for (auto iter = edge; iter;
+      unsigned int depth = 0;
+      history_pv.Trim(played_history_.GetLength());
+      for (EdgeAndNode iter = edge; iter;
            iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
         if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-        cur_pos = Position::Position(cur_pos, iter.GetMove());
-        if (pv_hash_list[depth] == cur_pos.Hash()) {
+        history_pv.Append(edge.GetMove(flip));
+        if (pv_hash_list[depth] == history_pv.Last().Hash()) {
           if (depth == 0) break; // We hit the best_edge, so no transposition.
           n_transpos = iter.GetN();
           break; // We only care for the first transposition into the PV.
