@@ -1249,9 +1249,10 @@ void SearchWorker::GatherMinibatch() {
       }
     }
     for (int i = new_start; i < minibatch_.size(); i++) {
-      // If there was no OOO, ther can stil be collisions.
+      // If there was no OOO, there can stil be collisions.
       // There are no OOO though.
-      if (minibatch_[i].IsCollision()) continue;
+      // Also terminals when OOO is disabled.
+      if (!minibatch_[i].nn_queried) continue;
       if (minibatch_[i].is_cache_hit) {
         // Since minibatch_[i] holds cache lock, this is guaranteed to succeed.
         computation_->AddInputByHash(minibatch_[i].hash,
