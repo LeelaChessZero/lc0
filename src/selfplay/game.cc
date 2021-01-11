@@ -277,6 +277,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
           played_eval, orig_eval, best_is_proof, best_move, move));
     }
+    // Must reset the search before mutating the tree.
+    search_.reset();
 
     // Add best move to the tree.
     tree_[0]->MakeMove(move);
