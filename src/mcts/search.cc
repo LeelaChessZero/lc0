@@ -820,18 +820,17 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   const auto m_evaluator = network_->GetCapabilities().has_mlh()
                                ? MEvaluator(params_, root_node_)
                                : MEvaluator();
-  uint64_t* pv_hash_list;
+  std::vector<uint64_t> pv_hash_list(7);
   for (int ply = 1; ply <= 7; ply++) {
-    // next = pv.best_edge.position();
-    // pv_hash_list.push_back(next.hash());
-
+    next = pv.best_edge;
+    if (next) { pv_hash_list[ply - 1] = next.position().hash(); }
   }
 
 
   for (const auto& edge : root_node_->Edges()) {
     int n_transpos = 0;
     for (int ply = 1; ply <= 7; ply++) {
-      // next = pv.best_edge.position();
+      next = pv.best_edge.position();
       // if (next.hash() == pv_hash_list[ply]) {
       //   if (ply == 1) break;
       //   n_transpos = next.GetN();
