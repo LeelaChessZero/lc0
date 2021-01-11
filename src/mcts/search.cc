@@ -842,12 +842,11 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     // Step 1: Create a hash list for the PV up to 7 plies.
     std::vector<uint64_t> pv_hash_list;
     EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
-    bool flip = played_history_.IsBlackToMove();
     int hist_length = played_history_.GetLength();
     unsigned int depth = 0;
     PositionHistory history_pv = played_history_;
     for (EdgeAndNode iter = best_edge; iter;
-         iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
+         iter = GetBestChildNoTemperature(iter.node(), depth)) {
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
       history_pv.Append(iter.GetMove());
       pv_hash_list.push_back(history_pv.Last().Hash());
@@ -857,16 +856,15 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       // Step 2: For each edge, check whether the PV reaches a position
       // identical to the best_edge PV at some depth.
       int n_transpos = 0;
-      bool flip = played_history_.IsBlackToMove();
       unsigned int depth = 0;
       history_pv.Trim(hist_length);
       for (EdgeAndNode iter = edge; iter;
-           iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
+           iter = GetBestChildNoTemperature(iter.node(), depth)) {
         if (!iter.node()) break;  // Last edge was dangling, cannot continue.
         history_pv.Append(iter.GetMove());
         if (pv_hash_list[depth] == history_pv.Last().Hash()) {
           if (depth > 0) {
-            // A transposition at depth 0 is the actual PV.
+            // A transposition at depth 0 would be the actual PV.
             n_transpos = iter.GetN();
           }
           break; // We only care for the first transposition into the PV.
