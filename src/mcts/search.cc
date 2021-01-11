@@ -825,7 +825,9 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
 
   // For smart pruning in time manager to work as intended when dealing with
   // transpositions, we subtract the transposition visits for each edge.
-  // Create a hash list for the PV up to 7 plies.
+  Position cur_pos =
+   history_.GetPositionAt(search_->played_history_.GetLength());
+  // Step 1: Create a hash list for the PV up to 7 plies.
   std::vector<uint64_t> pv_hash_list;
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
   bool flip = played_history_.IsBlackToMove();
@@ -833,20 +835,24 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   for (auto iter = best_edge; iter;
        iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
     if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-    pv_hash_list.push_back(iter.node().position().hash());
+    cur_pos = Position(cur_pos, iter.GetMove());
+    pv_hash_list.push_back(cur_pos.Hash());
     depth += 1;
     if (depth >= 7) break; // We only count transpositions until 7 plies.
   }
   for (const auto& edge : root_node_->Edges()) {
-    // For each edge, check whether the PV reaches a position identical to the
-    // best_edge PV at some depth.
+    cur_pos =
+     history_.GetPositionAt(search_->played_history_.GetLength());
+    // Step 2: For each edge, check whether the PV reaches a position
+    // identical to the best_edge PV at some depth.
     int n_transpos = 0;
     bool flip = played_history_.IsBlackToMove();
     int depth = 0;
     for (auto iter = edge; iter;
          iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-      if (pv_hash_list[depth] == iter.node().position().hash()) {
+      cur_pos = Position(cur_pos, iter.GetMove());
+      if (pv_hash_list[depth] == cur_pos.Hash()) {
         if (depth == 0) break; // We hit the best_edge, so no transposition.
         n_transpos = iter.GetN();
         break; // We only care for the first transposition into the PV.
