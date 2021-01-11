@@ -822,19 +822,24 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   const auto m_evaluator = network_->GetCapabilities().has_mlh()
                                ? MEvaluator(params_, root_node_)
                                : MEvaluator();
-  std::vector<uint64_t> pv_hash_list(7);
+
+  // For smart pruning in time manager to work as intended when dealing with
+  // transpositions, we subtract the transposition visits for each edge.
+  // Create a hash list for the PV up to 7 plies.
+  std::vector<uint64_t> pv_hash_list;
   EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
   bool flip = played_history_.IsBlackToMove();
   int depth = 0;
   for (auto iter = best_edge; iter;
        iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
     if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-    pv_hash_list[depth] = iter.node().position().hash();
+    pv_hash_list.push_back(iter.node().position().hash());
     depth += 1;
     if (depth >= 7) break; // We only count transpositions until 7 plies.
   }
-
   for (const auto& edge : root_node_->Edges()) {
+    // For each edge, check whether the PV reaches a position identical to the
+    // best_edge PV at some depth.
     int n_transpos = 0;
     bool flip = played_history_.IsBlackToMove();
     int depth = 0;
@@ -842,12 +847,12 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
          iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
       if (pv_hash_list[depth] == iter.node().position().hash()) {
-        if (depth == 1) break; // We hit the best_edge, so no transposition.
+        if (depth == 0) break; // We hit the best_edge, so no transposition.
         n_transpos = iter.GetN();
         break; // We only care for the first transposition into the PV.
       }
       depth += 1;
-      if (depth >= 7) break; // We only count transpositions until 7 plies.
+      if (depth >= pv_hash_list.size()) break;
     }
 
     const auto n = edge.GetN() - n_transpos;

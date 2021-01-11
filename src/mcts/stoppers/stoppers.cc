@@ -238,16 +238,6 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     }
   }
 
-  // When using the smart pruning logic, we only want to treat moves
-  // as separate moves if they don't transpose into each other.
-  // We therefore look for the highest visit move which won't transpose
-  // into the top PV after 3 ... 7 plies and use this as second_largest_n.
-
-  // 1. Sort edges by n
-  // 2. Check from the top if PVs lead to identical positions
-  // 3. Repeat until a move doesn't transpose and use second_largest_n
-  // 4. If all moves lead to transpositions, we can probably stop search
-
   if (remaining_playouts < (largest_n - second_largest_n)) {
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
