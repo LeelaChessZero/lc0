@@ -601,8 +601,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
                            : GetBestChildNoTemperature(root_node_, 0);
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
-  if (bestmove_edge.GetN() > 0 && bestmove_edge.HasNode() &&
-      bestmove_edge.node()->HasChildren()) {
+  if (bestmove_edge.GetN() > 0 && bestmove_edge.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(bestmove_edge.node(), 1)
                             .GetMove(!played_history_.IsBlackToMove());
   }
