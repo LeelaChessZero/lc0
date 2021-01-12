@@ -98,7 +98,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         SyzygyTablebase* syzygy_tb, bool tb_adjudicate,
-			bool enable_resign) {
+                        bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
   // Do moves while not end of the game. (And while not abort_)
@@ -106,30 +106,32 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 
     // Support adjudications START
-    if (syzygy_tb != nullptr && tb_adjudicate && game_result_ == GameResult::UNDECIDED) {
+    if (syzygy_tb != nullptr && tb_adjudicate &&
+        game_result_ == GameResult::UNDECIDED) {
       auto board = tree_[0]->GetPositionHistory().Last().GetBoard();
       if (board.castlings().no_legal_castle() &&
-	  (board.ours() | board.theirs()).count() <=
-	  syzygy_tb->max_cardinality()) {
-	auto tb_side_black = (tree_[0]->GetPlyCount() % 2) == 1;
-	ProbeState state;
-	const WDLScore wdl = syzygy_tb->probe_wdl(tree_[0]->GetPositionHistory().Last(), &state);
-	// Only fail state means the WDL is wrong, probe_wdl may produce
-	// correct result with a stat other than OK.
-	if (state != FAIL) {
-	  if (wdl == WDL_WIN) {
-	    game_result_ = tb_side_black ? GameResult::BLACK_WON
-	      : GameResult::WHITE_WON;
-	  } else if (wdl == WDL_LOSS) {
-	    game_result_ = tb_side_black ? GameResult::WHITE_WON
-	      : GameResult::BLACK_WON;
-	  } else {  // Cursed wins and blessed losses count as draws.
-	    game_result_ = GameResult::DRAW;
-	  }
-	  // adjudicated_ = true;
-	  // uncomment this to write consistent v6 training data.
-	  break;
-	}
+          (board.ours() | board.theirs()).count() <=
+              syzygy_tb->max_cardinality()) {
+        auto tb_side_black = (tree_[0]->GetPlyCount() % 2) == 1;
+        ProbeState state;
+        const WDLScore wdl =
+            syzygy_tb->probe_wdl(tree_[0]->GetPositionHistory().Last(), &state);
+        // Only fail state means the WDL is wrong, probe_wdl may produce
+        // correct result with a stat other than OK.
+        if (state != FAIL) {
+          if (wdl == WDL_WIN) {
+            game_result_ =
+                tb_side_black ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+          } else if (wdl == WDL_LOSS) {
+            game_result_ =
+                tb_side_black ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          } else {  // Cursed wins and blessed losses count as draws.
+            game_result_ = GameResult::DRAW;
+          }
+          // adjudicated_ = true;
+          // uncomment this to write consistent v6 training data.
+          break;
+        }
       }
     }
     // Support adjudications STOP
@@ -158,7 +160,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             std::move(responder), tree_[idx]->HeadPosition().GetBoard());
       }
 
-     search_ = std::make_unique<Search>(
+      search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
@@ -337,7 +339,8 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
     const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  // always set VisitsStopper to avoid exceeding the limit 4000000000, the default value when visits = 0
+  // always set VisitsStopper to avoid exceeding the limit 4000000000, the
+  // default value when visits = 0
   result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
   if (playouts >= 0) {
     result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
