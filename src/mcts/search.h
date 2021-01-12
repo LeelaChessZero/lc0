@@ -211,7 +211,7 @@ class SearchWorker {
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
     Numa::BindThread(id);
-    for (size_t i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
+    for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
       task_workspaces_.emplace_back();
       task_threads_.emplace_back([this, i]() {
         Numa::BindThread(i);

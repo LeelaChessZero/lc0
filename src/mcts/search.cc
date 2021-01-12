@@ -993,8 +993,8 @@ void SearchWorker::RunTasks(int tid) {
           if (task_taker_.compare_exchange_weak(val, 1,
                                                 std::memory_order_acq_rel,
                                                 std::memory_order_relaxed)) {
-            int nta = next_task_available_.load(std::memory_order_acquire);
-            int tc = task_count_.load(std::memory_order_acquire);
+            nta = next_task_available_.load(std::memory_order_acquire);
+            tc = task_count_.load(std::memory_order_acquire);
             // We got the spin lock, double check we're still in the clear.
             if (nta < tc) {
               id = next_task_available_.fetch_add(1, std::memory_order_acq_rel);
@@ -1151,7 +1151,7 @@ void SearchWorker::GatherMinibatch() {
          number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
-    int prev_size = minibatch_.size();
+    int prev_size = static_cast<int>(minibatch_.size());
     int new_start = prev_size;
     PickNodesToExtend(
         std::min(collision_events_left,
@@ -1225,7 +1225,8 @@ void SearchWorker::GatherMinibatch() {
         }
       }
     }
-    ProcessPickedTask(prev_size, minibatch_.size(), &main_workspace_);
+    ProcessPickedTask(prev_size, static_cast<int>(minibatch_.size()),
+                      &main_workspace_);
     if (needs_wait) {
       // Spinwait, no sleeps - other tasks should be done 'very soon'.
       while (true) {
@@ -1236,7 +1237,7 @@ void SearchWorker::GatherMinibatch() {
       }
     }
     bool some_ooo = false;
-    for (int i = minibatch_.size() - 1; i >= new_start; i--) {
+    for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start; i--) {
       if (minibatch_[i].ooo_completed) {
         some_ooo = true;
         break;
@@ -1244,7 +1245,8 @@ void SearchWorker::GatherMinibatch() {
     }
     if (some_ooo) {
       SharedMutex::Lock lock(search_->nodes_mutex_);
-      for (int i = minibatch_.size() - 1; i >= new_start; i--) {
+      for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start;
+           i--) {
         // If there was any OOO, revert 'all' new collisions - it isn't possible
         // to identify exactly which ones are afterwards and only prune those.
         // This may remove too many items, but hopefully most of the time they
@@ -1294,7 +1296,7 @@ void SearchWorker::GatherMinibatch() {
 }
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
-                                     TaskWorkspace* workspace) {
+                                     TaskWorkspace*) {
   // This code runs multiple passes of work across the same input in order to
   // reduce taking/dropping mutexes in quick succession.
   PositionHistory history = search_->played_history_;
@@ -1315,7 +1317,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.nn_queried = true;
         const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
         picked_node.hash = hash;
-        picked_node.lock = std::move(NNCacheLock(search_->cache_, hash));
+        picked_node.lock = NNCacheLock(search_->cache_, hash);
         picked_node.is_cache_hit = picked_node.lock;
         if (!picked_node.is_cache_hit) {
           int transform;
@@ -1450,8 +1452,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           // ensure the outer gather loop gives up.
           if (node->TryStartScoreUpdate()) {
             cur_limit -= 1;
-            minibatch_.push_back(
-                NodeToProcess::Visit(node, current_path.size() + base_depth));
+            minibatch_.push_back(NodeToProcess::Visit(
+                node, static_cast<uint16_t>(current_path.size() + base_depth)));
             completed_visits++;
           }
         }
@@ -1463,7 +1465,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             max_count = max_limit;
           }
           receiver->push_back(NodeToProcess::Collision(
-              node, current_path.size() + base_depth, cur_limit, max_count));
+              node, static_cast<uint16_t>(current_path.size() + base_depth),
+              cur_limit, max_count));
           completed_visits += cur_limit;
         }
         node = node->GetParent();
@@ -1563,7 +1566,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         float best_without_u = std::numeric_limits<float>::lowest();
         float second_best = std::numeric_limits<float>::lowest();
         bool can_exit = false;
-        int idx = -1;
         best_edge.Reset();
         for (int idx = 0; idx < max_needed; ++idx) {
           if (idx > cache_filled_idx) {
@@ -1708,7 +1710,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           // doesn't include this visit.
           visits_to_perform.back()[best_idx] -= 1;
           receiver->push_back(NodeToProcess::Visit(
-              child_node, current_path.size() + 1 + base_depth));
+              child_node,
+              static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
           completed_visits++;
           receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
           receiver->back().moves_to_visit = moves_to_path;
