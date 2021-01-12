@@ -97,7 +97,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        SyzygyTablebase* syzygy_tb, bool adjudicate,
+                        SyzygyTablebase* syzygy_tb, bool tb_adjudicate,
 			bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
@@ -106,7 +106,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 
     // Support adjudications START
-    if (syzygy_tb != nullptr && adjudicate) {
+    if (syzygy_tb != nullptr && tb_adjudicate && game_result_ == GameResult::UNDECIDED) {
       auto board = tree_[0]->GetPositionHistory().Last().GetBoard();
       if (board.castlings().no_legal_castle() &&
 	  (board.ours() | board.theirs()).count() <=
@@ -126,6 +126,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 	  } else {  // Cursed wins and blessed losses count as draws.
 	    game_result_ = GameResult::DRAW;
 	  }
+	  // adjudicated_ = true;
+	  // uncomment this to write consistent v6 training data.
 	  break;
 	}
       }

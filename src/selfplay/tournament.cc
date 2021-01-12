@@ -37,7 +37,7 @@
 
 namespace lczero {
 namespace {
-const OptionId kAdjudicateId{"adjudicate", "Adjudicate",
+const OptionId kAdjudicateId{"tb-adjudicate", "Adjudicate",
   "When the game reaches a position covered by the endgame table database, "
   "adjudicate the game according to the result given by the database."};
 const OptionId kShareTreesId{"share-trees", "ShareTrees",
