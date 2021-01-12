@@ -986,15 +986,17 @@ void SearchWorker::RunTasks(int tid) {
     {
       int spins = 0;
       while (true) {
-        if (next_task_available_.load(std::memory_order_acquire) <
-            task_count_.load(std::memory_order_acquire)) {
+        int nta = next_task_available_.load(std::memory_order_acquire);
+        int tc = task_count_.load(std::memory_order_acquire);
+        if (nta < tc) {
           int val = 0;
           if (task_taker_.compare_exchange_weak(val, 1,
                                                 std::memory_order_acq_rel,
                                                 std::memory_order_relaxed)) {
+            int nta = next_task_available_.load(std::memory_order_acquire);
+            int tc = task_count_.load(std::memory_order_acquire);
             // We got the spin lock, double check we're still in the clear.
-            if (next_task_available_.load(std::memory_order_acquire) <
-                task_count_.load(std::memory_order_acquire)) {
+            if (nta < tc) {
               id = next_task_available_.fetch_add(1, std::memory_order_acq_rel);
               task = &picking_tasks_[id];
               task_taker_.store(0, std::memory_order_release);
@@ -1005,7 +1007,7 @@ void SearchWorker::RunTasks(int tid) {
           SpinloopPause();
           spins = 0;
           continue;
-        } else if (task_count_.load(std::memory_order_acquire) != -1) {
+        } else if (tc != -1) {
           spins++;
           if (spins >= 512) {
             std::this_thread::yield();
@@ -1018,16 +1020,16 @@ void SearchWorker::RunTasks(int tid) {
         spins = 0;
         // Looks like sleep time.
         std::unique_lock<std::mutex> lock(picking_tasks_mutex_);
-        if (task_count_.load(std::memory_order_acquire) != -1) continue;
-        if (next_task_available_.load(std::memory_order_acquire) >=
-                task_count_.load(std::memory_order_acquire) &&
-            exiting_)
-          return;
+        // Refresh them now we have the lock.
+        nta = next_task_available_.load(std::memory_order_acquire);
+        tc = task_count_.load(std::memory_order_acquire);
+        if (tc != -1) continue;
+        if (nta >= tc && exiting_) return;
         task_added_.wait(lock);
-        if (next_task_available_.load(std::memory_order_acquire) >=
-                task_count_.load(std::memory_order_acquire) &&
-            exiting_)
-          return;
+        // And refresh again now we're awake.
+        nta = next_task_available_.load(std::memory_order_acquire);
+        tc = task_count_.load(std::memory_order_acquire);
+        if (nta >= tc && exiting_) return;
       }
     }
     if (task != nullptr) {
