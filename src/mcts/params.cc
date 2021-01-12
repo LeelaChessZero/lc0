@@ -290,7 +290,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = true;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
-  options->Add<IntOption>(kTempDecayMovesId, 0, 100) = 0;
+  options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
   options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;
   options->Add<IntOption>(kTemperatureCutoffMoveId, 0, 1000) = 0;
   options->Add<FloatOption>(kTemperatureEndgameId, 0.0f, 100.0f) = 0.0f;
