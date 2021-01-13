@@ -843,7 +843,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     std::vector<uint64_t> pv_hash_list;
     EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
     // To make the computation lighter, restrict PV search to top moves.
-    int pv_visit_threshold = best_edge.GetN() / 5;
+    int pv_visit_threshold = best_edge.GetN() / 10;
     int hist_length = played_history_.GetLength();
     unsigned int depth = 0;
     PositionHistory history_pv = played_history_;
