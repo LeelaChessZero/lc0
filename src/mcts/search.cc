@@ -1033,7 +1033,7 @@ void SearchWorker::RunTasks(int tid) {
       }
     }
     if (task != nullptr) {
-      if (task->task_type == 0) {
+      if (task->task_type == PickTask::kGathering) {
         PickNodesToExtendTask(task->start, task->base_depth,
                               task->collision_limit, task->moves_to_base,
                               &(task->results), &(task_workspaces_[tid]));
@@ -1384,7 +1384,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode2(node, picked_node.depth, picked_node.moves_to_visit, &history);
+      ExtendNode2(node, picked_node.depth, picked_node.moves_to_visit,
+                  &history);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
         const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
@@ -1830,8 +1831,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
 }
 
 void SearchWorker::ExtendNode2(Node* node, int depth,
-                              const std::vector<Move>& moves_to_node,
-                              PositionHistory* history) {
+                               const std::vector<Move>& moves_to_node,
+                               PositionHistory* history) {
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
   for (int i = 0; i < moves_to_node.size(); i++) {
@@ -2419,8 +2420,8 @@ void SearchWorker::FetchMinibatchResults() {
 
 template <typename Computation>
 void SearchWorker::FetchSingleNodeResult2(NodeToProcess* node_to_process,
-                                         const Computation& computation,
-                                         int idx_in_computation) {
+                                          const Computation& computation,
+                                          int idx_in_computation) {
   if (node_to_process->IsCollision()) return;
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {

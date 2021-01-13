@@ -448,7 +448,7 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMinimumRemainingWorkSizeForPickingId)),
       kMinimumWorkPerTaskForProcessing(
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)) {
-    if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
+  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
     throw Exception(

@@ -256,7 +256,6 @@ class Node {
   VisitedNode_Iterator<true> VisitedNodes() const;
   VisitedNode_Iterator<false> VisitedNodes();
 
-
   // Deletes all children.
   void ReleaseChildren();
 

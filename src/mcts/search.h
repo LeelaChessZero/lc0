@@ -363,7 +363,8 @@ class SearchWorker {
     }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit, int max_count)
+    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
+                  int max_count)
         : node(node),
           multivisit(multivisit),
           maxvisit(max_count),
@@ -378,10 +379,7 @@ class SearchWorker {
   };
 
   struct PickTask {
-    enum PickTaskType {
-        kGathering,
-        kProcessing
-    };
+    enum PickTaskType { kGathering, kProcessing };
     PickTaskType task_type;
 
     // For task type gathering.
@@ -416,7 +414,8 @@ class SearchWorker {
                              int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
-  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta, float* d_delta, float* m_delta) const;
+  bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
+                      float* d_delta, float* m_delta) const;
   void PickNodesToExtend2(int collision_limit);
   void PickNodesToExtendTask(Node* starting_point, int collision_limit,
                              int base_depth,
@@ -426,11 +425,11 @@ class SearchWorker {
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
   void ExtendNode2(Node* node, int depth, const std::vector<Move>& moves_to_add,
-                  PositionHistory* history);
+                   PositionHistory* history);
   template <typename Computation>
   void FetchSingleNodeResult2(NodeToProcess* node_to_process,
-                             const Computation& computation,
-                             int idx_in_computation);
+                              const Computation& computation,
+                              int idx_in_computation);
   void RunTasks(int tid);
 
   Search* const search_;
