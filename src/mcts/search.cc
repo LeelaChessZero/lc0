@@ -839,9 +839,11 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
 
     // For smart pruning in time manager to work as intended when dealing with
     // transpositions, we subtract the transposition visits for each edge.
-    // Step 1: Create a hash list for the PV up to 7 plies.
+    // Step 1: Create a hash list for the PV up to 4 plies.
     std::vector<uint64_t> pv_hash_list;
     EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
+    // To make the computation lighter, restrict PV search to top moves.
+    int pv_visit_threshold = best_edge.GetN() / 5;
     int hist_length = played_history_.GetLength();
     unsigned int depth = 0;
     PositionHistory history_pv = played_history_;
@@ -849,8 +851,12 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
          iter = GetBestChildNoTemperature(iter.node(), depth)) {
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
       history_pv.Append(iter.GetMove());
-      pv_hash_list.push_back(history_pv.Last().Hash());
-      if (depth >= 7) break; // We only count transpositions until 7 plies.
+      if (depth > 0) {
+        // There aren't transpositions at 1 ply, so skip the hash calculation.
+        pv_hash_list.push_back(history_pv.Last().Hash());
+      }
+      depth += 1;
+      if (depth >= 3) break; // We only count transpositions until 4 plies.
     }
     for (const auto& edge : root_node_->Edges()) {
       // Step 2: For each edge, check whether the PV reaches a position
@@ -858,19 +864,19 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       int n_transpos = 0;
       unsigned int depth = 0;
       history_pv.Trim(hist_length);
-      for (EdgeAndNode iter = edge; iter;
-           iter = GetBestChildNoTemperature(iter.node(), depth)) {
-        if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-        history_pv.Append(iter.GetMove());
-        if (pv_hash_list[depth] == history_pv.Last().Hash()) {
-          if (depth > 0) {
-            // A transposition at depth 0 would be the actual PV.
+      if ((edge != best_edge) && (edge.GetN() > pv_visit_threshold)) {
+        for (EdgeAndNode iter = edge; iter;
+             iter = GetBestChildNoTemperature(iter.node(), depth)) {
+          if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+          history_pv.Append(iter.GetMove());
+          if ((depth > 0) &&
+              (pv_hash_list[depth - 1] == history_pv.Last().Hash())) {
             n_transpos = iter.GetN();
+            break; // We only care for the first transposition into the PV.
           }
-          break; // We only care for the first transposition into the PV.
-        }
-        depth += 1;
-        if (depth >= pv_hash_list.size()) break;
+          depth += 1;
+          if (depth > pv_hash_list.size()) break;
+      }
       }
 
       const auto n = edge.GetN() - n_transpos;
