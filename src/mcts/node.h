@@ -646,7 +646,10 @@ class VisitedNode_Iterator {
     } else {
       do {
         node_ptr_ = node_ptr_->sibling_.get();
-        // If n started is 0, can jump direct to end.
+        // If n started is 0, can jump direct to end due to sorted policy
+        // ensuring that each time a new edge becomes best for the first time,
+        // it is always the first of the section at the end that has NStarted of
+        // 0.
         if (node_ptr_ != nullptr && node_ptr_->GetN() == 0 &&
             node_ptr_->GetNInFlight() == 0) {
           node_ptr_ = nullptr;
