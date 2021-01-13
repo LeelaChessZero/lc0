@@ -108,6 +108,10 @@ class PositionHistory {
     positions_.erase(positions_.begin() + size, positions_.end());
   }
 
+  // Can be used to reduce allocation cost while performing a sequence of moves
+  // in succession.
+  void Reserve(int size) { positions_.reserve(size); }
+
   // Number of positions in history.
   int GetLength() const { return positions_.size(); }
 
