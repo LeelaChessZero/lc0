@@ -856,7 +856,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
         pv_hash_list.push_back(history_pv.Last().Hash());
       }
       depth += 1;
-      if (depth >= 3) break; // We only count transpositions until 4 plies.
+      if (depth >= 4) break; // We only count transpositions until 4 plies.
     }
     for (const auto& edge : root_node_->Edges()) {
       // Step 2: For each edge, check whether the PV reaches a position
