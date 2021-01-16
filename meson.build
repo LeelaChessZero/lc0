@@ -460,8 +460,9 @@ if get_option('build_backends')
     if host_machine.system() != 'windows'
       nvcc_extra_args = ['-arch=compute_60']
       nvcc_sm_list += ['sm_60']
-      if host_machine.cpu_family() == 'arm'
+      if ['arm', 'aarch64'].contains(host_machine.cpu_family())
         # Add Jetson versions to the list.
+        message('Jetson support enabled.')
         nvcc_extra_args = ['-arch=compute_53']
         nvcc_sm_list += ['sm_72', 'sm_62', 'sm_53']
       endif
