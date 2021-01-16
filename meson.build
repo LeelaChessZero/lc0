@@ -190,8 +190,8 @@ if get_option('build_backends')
   ## Tensorflow
   ## ~~~~~~~~~~
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_cc_lib = dependency('tensorflow_cc',
-                                    required: false, include_type:'system')
+  # We had `is_system: true` to reduce warnings, but meson > 0.56.0 breaks.
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc', required: false)
   if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
     deps += [tf_dl_lib, tf_tensorflow_cc_lib]
     files += 'src/neural/network_tf_cc.cc'
