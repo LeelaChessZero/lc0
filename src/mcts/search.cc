@@ -1254,8 +1254,9 @@ void SearchWorker::GatherMinibatch2() {
           }
         }
         if (--collision_events_left <= 0) should_exit = true;
-        if ((collisions_left -= picked_node.multivisit) <= 0)
+        if ((collisions_left -= picked_node.multivisit) <= 0) {
           should_exit = true;
+        }
         if (search_->stop_.load(std::memory_order_acquire)) should_exit = true;
         continue;
       }
