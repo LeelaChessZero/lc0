@@ -441,6 +441,11 @@ if get_option('build_backends')
     if get_option('nvcc_ccbin') != ''
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
     endif
+    cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
+    nvcc_extra_args = []
+    if cuda_cc != ''
+      nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
+    endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
     endforeach
@@ -454,25 +459,29 @@ if get_option('build_backends')
         arguments: cuda_arguments,
       )
 	 files += cuda_files
-    files += cuda_gen.process(cuda_files_nvcc_common)
-    nvcc_extra_args = ['-arch=compute_70']
+    files += cuda_gen.process(cuda_files_nvcc_common, extra_args: nvcc_extra_args)
+    nvcc_arch = '-arch=compute_70'
     nvcc_sm_list = ['sm_80', 'sm_75', 'sm_86', 'sm_70']
     if host_machine.system() != 'windows'
-      nvcc_extra_args = ['-arch=compute_60']
+      nvcc_arch = '-arch=compute_60'
       nvcc_sm_list += ['sm_60']
       if ['arm', 'aarch64'].contains(host_machine.cpu_family())
         # Add Jetson versions to the list.
         message('Jetson support enabled.')
-        nvcc_extra_args = ['-arch=compute_53']
+        nvcc_arch = '-arch=compute_53'
         nvcc_sm_list += ['sm_72', 'sm_62', 'sm_53']
       endif
     endif
-    nvcc_help = run_command(nvcc, '-h').stdout()
-    foreach x : nvcc_sm_list
-      if nvcc_help.contains(x)
-        nvcc_extra_args += '-code=' + x
-      endif
-    endforeach
+    # Ignore the given CC for fp16 when it is not in the supported list.
+    if cuda_cc == '' or not nvcc_sm_list.contains('sm_' + cuda_cc)
+      nvcc_extra_args = [nvcc_arch]
+      nvcc_help = run_command(nvcc, '-h').stdout()
+      foreach x : nvcc_sm_list
+        if nvcc_help.contains(x)
+          nvcc_extra_args += '-code=' + x
+        endif
+      endforeach
+    endif
     files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
     has_backends = true
   endif
