@@ -450,8 +450,8 @@ class SearchWorker {
   Mutex picking_tasks_mutex_;
   std::vector<PickTask> picking_tasks_;
   std::atomic<int> task_count_ = -1;
-  std::atomic<int> task_taker_ = 0;
-  std::atomic<int> next_task_available_ = 0;
+  std::atomic<int> task_taking_started_ = 0;
+  std::atomic<int> tasks_taken_ = 0;
   std::atomic<int> completed_tasks_ = 0;
   std::condition_variable task_added_;
   std::vector<std::thread> task_threads_;

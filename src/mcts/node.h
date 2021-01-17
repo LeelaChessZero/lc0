@@ -635,7 +635,10 @@ class VisitedNode_Iterator {
       while (++current_idx_ != total_count_ &&
              node_ptr_[current_idx_].GetN() == 0) {
         if (node_ptr_[current_idx_].GetNInFlight() == 0) {
-          // Once there is not even n in flight, we can skip to the end.
+          // Once there is not even n in flight, we can skip to the end. This is
+          // due to policy being in sorted order meaning that additional n in
+          // flight are always selected from the front of the section with no n
+          // in flight or visited.
           current_idx_ = total_count_;
           break;
         }
