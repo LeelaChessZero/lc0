@@ -1294,13 +1294,7 @@ void SearchWorker::GatherMinibatch2() {
     ProcessPickedTask(prev_size, static_cast<int>(minibatch_.size()),
                       &main_workspace_);
     if (needs_wait) {
-      // Spinwait, no sleeps - other tasks should be done 'very soon'.
-      while (true) {
-        int completed = completed_tasks_.load(std::memory_order_acquire);
-        int todo = task_count_.load(std::memory_order_acquire);
-        if (todo == completed) break;
-        SpinloopPause();
-      }
+      WaitForTasks();
     }
     bool some_ooo = false;
     for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start; i--) {
@@ -1422,6 +1416,16 @@ void SearchWorker::ResetTasks() {
   picking_tasks_.reserve(100);
 }
 
+int SearchWorker::WaitForTasks() {
+  // Spin lock, other tasks should be done soon.
+  while (true) {
+    int completed = completed_tasks_.load(std::memory_order_acquire);
+    int todo = task_count_.load(std::memory_order_acquire);
+    if (todo == completed) return completed;
+    SpinloopPause();
+  }
+}
+
 void SearchWorker::PickNodesToExtend2(int collision_limit) {
   ResetTasks();
   {
@@ -1438,13 +1442,7 @@ void SearchWorker::PickNodesToExtend2(int collision_limit) {
   PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist,
                         &minibatch_, &main_workspace_);
 
-  // Spin lock, other tasks should be done soon.
-  while (true) {
-    int completed = completed_tasks_.load(std::memory_order_acquire);
-    int todo = task_count_.load(std::memory_order_acquire);
-    if (todo == completed) break;
-    SpinloopPause();
-  }
+  WaitForTasks();
   for (int i = 0; i < static_cast<int>(picking_tasks_.size()); i++) {
     for (int j = 0; j < static_cast<int>(picking_tasks_[i].results.size()); j++) {
       minibatch_.emplace_back(std::move(picking_tasks_[i].results[j]));

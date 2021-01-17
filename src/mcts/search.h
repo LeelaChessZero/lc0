@@ -433,6 +433,8 @@ class SearchWorker {
                               int idx_in_computation);
   void RunTasks(int tid);
   void ResetTasks();
+  // Returns how many tasks there were.
+  int WaitForTasks();
 
   Search* const search_;
   // List of nodes to process.
