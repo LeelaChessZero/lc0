@@ -1407,13 +1407,15 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   }
 }
 
+#define MAX_TASKS 100
+
 void SearchWorker::ResetTasks() {
   task_count_.store(0, std::memory_order_release);
   tasks_taken_.store(0, std::memory_order_release);
   completed_tasks_.store(0, std::memory_order_release);
   picking_tasks_.clear();
   // Reserve because resizing breaks pointers held by the task threads.
-  picking_tasks_.reserve(100);
+  picking_tasks_.reserve(MAX_TASKS);
 }
 
 int SearchWorker::WaitForTasks() {
@@ -1467,9 +1469,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   std::vector<int> current_path;
   current_path.reserve(30);
   std::vector<Move> moves_to_path = moves_to_base;
-  if (moves_to_path.capacity() < 30) {
-    moves_to_path.reserve(30);
-  }
+  moves_to_path.reserve(30);
   // Sometimes receiver is reused, othertimes not, so only jump start if small.
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
@@ -1507,7 +1507,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       // Need to do n visits, where n is either collision_limit, or comes from
       // visits_to_perform for the current path.
       int cur_limit = collision_limit;
-      if (current_path.size() - 1 > 0) {
+      if (current_path.size() > 1) {
         cur_limit =
             (*visits_to_perform.back())[current_path[current_path.size() - 2]];
       }
@@ -1559,7 +1559,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           // Multiple writers, so need mutex here.
           Mutex::Lock lock(picking_tasks_mutex_);
           // Ensure not to exceed size of reservation.
-          if (picking_tasks_.size() < 100) {
+          if (picking_tasks_.size() < MAX_TASKS) {
             picking_tasks_.emplace_back(node,
                                         current_path.size() - 1 + base_depth,
                                         moves_to_path, cur_limit);
