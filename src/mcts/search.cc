@@ -1518,7 +1518,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
       // First check if node is terminal or not-expanded.  If either than create
       // a collision of appropriate size and pop current_path.
-      if (!node->HasChildren() || node->GetN() == 0) {
+      if (node->GetN() == 0 || node->IsTerminal()) {
         if (is_root_node) {
           // Root node is special - since its not reached from anywhere else, so
           // it needs its own logic. Still need to create the collision to
@@ -1770,7 +1770,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           current_nstarted[best_idx]++;
           new_visits -= 1;
           decremented = true;
-          if (child_node->HasChildren()) {
+          if (child_node->GetN() > 0 && !child_node->IsTerminal()) {
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
           }
@@ -1778,7 +1778,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
         }
-        if ((decremented && !child_node->HasChildren())) {
+        if ((decremented && (child_node->GetN() == 0 || child_node->IsTerminal()))) {
           // Reduce 1 for the visits_to_perform to ensure the collision created
           // doesn't include this visit.
           visits_to_perform.back()[best_idx] -= 1;
