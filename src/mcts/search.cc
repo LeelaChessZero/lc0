@@ -1226,44 +1226,27 @@ void SearchWorker::GatherMinibatch2() {
          number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
-    int prev_size = static_cast<int>(minibatch_.size());
-    int new_start = prev_size;
+
+    int new_start = static_cast<int>(minibatch_.size());
+
     PickNodesToExtend2(
         std::min({collision_events_left, collisions_left,
                   params_.GetMiniBatchSize() - minibatch_size,
                   params_.GetMaxOutOfOrderEvals() - number_out_of_order_}));
-    bool should_exit = false;
-    int non_collisions = 0;
-    for (int i = prev_size; i < static_cast<int>(minibatch_.size()); i++) {
-      auto& picked_node = minibatch_[i];
 
-      // There was a collision. If limit has been reached, mark to return once
-      // we've finished the current collected set.
+    // Count the non-collisions.
+    int non_collisions = 0;
+    for (int i = new_start; i < static_cast<int>(minibatch_.size()); i++) {
+      auto& picked_node = minibatch_[i];
       if (picked_node.IsCollision()) {
-        if (picked_node.maxvisit > 0 &&
-            collisions_left > picked_node.multivisit) {
-          SharedMutex::Lock lock(search_->nodes_mutex_);
-          int extra = std::min(picked_node.maxvisit, collisions_left) -
-                      picked_node.multivisit;
-          picked_node.multivisit += extra;
-          Node* node = picked_node.node;
-          for (node = node->GetParent();
-               node != search_->root_node_->GetParent();
-               node = node->GetParent()) {
-            node->IncrementNInFlight(extra);
-          }
-        }
-        if (--collision_events_left <= 0) should_exit = true;
-        if ((collisions_left -= picked_node.multivisit) <= 0) {
-          should_exit = true;
-        }
-        if (search_->stop_.load(std::memory_order_acquire)) should_exit = true;
         continue;
       }
       ++non_collisions;
       ++minibatch_size;
     }
+
     bool needs_wait = false;
+    int ppt_start = new_start;
     if (params_.GetTaskWorkersPerSearchWorker() > 0 &&
         non_collisions >= params_.GetMinimumWorkSizeForProcessing()) {
       const int num_tasks = std::clamp(
@@ -1274,16 +1257,16 @@ void SearchWorker::GatherMinibatch2() {
       needs_wait = true;
       ResetTasks();
       int found = 0;
-      for (int i = prev_size; i < static_cast<int>(minibatch_.size()); i++) {
+      for (int i = new_start; i < static_cast<int>(minibatch_.size()); i++) {
         auto& picked_node = minibatch_[i];
         if (picked_node.IsCollision()) {
           continue;
         }
         ++found;
         if (found == per_worker) {
-          picking_tasks_.emplace_back(prev_size, i + 1);
+          picking_tasks_.emplace_back(ppt_start, i + 1);
           task_count_.fetch_add(1, std::memory_order_acq_rel);
-          prev_size = i + 1;
+          ppt_start = i + 1;
           found = 0;
           if (picking_tasks_.size() == num_tasks - 1) {
             break;
@@ -1291,7 +1274,7 @@ void SearchWorker::GatherMinibatch2() {
         }
       }
     }
-    ProcessPickedTask(prev_size, static_cast<int>(minibatch_.size()),
+    ProcessPickedTask(ppt_start, static_cast<int>(minibatch_.size()),
                       &main_workspace_);
     if (needs_wait) {
       WaitForTasks();
@@ -1318,14 +1301,6 @@ void SearchWorker::GatherMinibatch2() {
                node = node->GetParent()) {
             node->CancelScoreUpdate(minibatch_[i].multivisit);
           }
-          ++collision_events_left;
-          collisions_left += minibatch_[i].multivisit;
-          // Reverting the collision might mean that should_exit was calculated
-          // incorrectly previously, if so update it.
-          if (should_exit && !search_->stop_.load(std::memory_order_acquire) &&
-              collisions_left > 0 && collision_events_left > 0) {
-            should_exit = false;
-          }
           minibatch_.erase(minibatch_.begin() + i);
         } else if (minibatch_[i].ooo_completed) {
           DoBackupUpdateSingleNode(minibatch_[i]);
@@ -1350,8 +1325,31 @@ void SearchWorker::GatherMinibatch2() {
                                std::move(minibatch_[i].probabilities_to_cache));
       }
     }
+
     // Check for stop at the end so we have at least one node.
-    if (should_exit || search_->stop_.load(std::memory_order_acquire)) return;
+    for (int i = new_start; i < static_cast<int>(minibatch_.size()); i++) {
+      auto& picked_node = minibatch_[i];
+
+      if (picked_node.IsCollision()) {
+        // Check to see if we can upsize the collision to exit sooner.
+        if (picked_node.maxvisit > 0 &&
+            collisions_left > picked_node.multivisit) {
+          SharedMutex::Lock lock(search_->nodes_mutex_);
+          int extra = std::min(picked_node.maxvisit, collisions_left) -
+                      picked_node.multivisit;
+          picked_node.multivisit += extra;
+          Node* node = picked_node.node;
+          for (node = node->GetParent();
+               node != search_->root_node_->GetParent();
+               node = node->GetParent()) {
+            node->IncrementNInFlight(extra);
+          }
+        }
+        if (--collision_events_left <= 0) return;
+        if ((collisions_left -= picked_node.multivisit) <= 0) return;
+        if (search_->stop_.load(std::memory_order_acquire)) return;
+      }
+    }
   }
 }
 
@@ -1446,7 +1444,8 @@ void SearchWorker::PickNodesToExtend2(int collision_limit) {
 
   WaitForTasks();
   for (int i = 0; i < static_cast<int>(picking_tasks_.size()); i++) {
-    for (int j = 0; j < static_cast<int>(picking_tasks_[i].results.size()); j++) {
+    for (int j = 0; j < static_cast<int>(picking_tasks_[i].results.size());
+         j++) {
       minibatch_.emplace_back(std::move(picking_tasks_[i].results[j]));
     }
   }
