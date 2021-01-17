@@ -1271,31 +1271,21 @@ void SearchWorker::GatherMinibatch2() {
       // Round down, left overs can go to main thread so it waits less.
       int per_worker = non_collisions / num_tasks;
       needs_wait = true;
-      {
-        // Ensure nothing takes tasks yet
-        task_count_.store(0, std::memory_order_release);
-        tasks_taken_.store(0, std::memory_order_release);
-        completed_tasks_.store(0, std::memory_order_release);
-        picking_tasks_.clear();
-        // Reserve because resizing breaks pointers held by the task threads.
-        // Reserve 100 - since we already did that in picking and why use a
-        // different size?
-        picking_tasks_.reserve(100);
-        int found = 0;
-        for (int i = prev_size; i < minibatch_.size(); i++) {
-          auto& picked_node = minibatch_[i];
-          if (picked_node.IsCollision()) {
-            continue;
-          }
-          ++found;
-          if (found == per_worker) {
-            picking_tasks_.emplace_back(prev_size, i + 1);
-            task_count_.fetch_add(1, std::memory_order_acq_rel);
-            prev_size = i + 1;
-            found = 0;
-            if (picking_tasks_.size() == num_tasks - 1) {
-              break;
-            }
+      ResetTasks();
+      int found = 0;
+      for (int i = prev_size; i < minibatch_.size(); i++) {
+        auto& picked_node = minibatch_[i];
+        if (picked_node.IsCollision()) {
+          continue;
+        }
+        ++found;
+        if (found == per_worker) {
+          picking_tasks_.emplace_back(prev_size, i + 1);
+          task_count_.fetch_add(1, std::memory_order_acq_rel);
+          prev_size = i + 1;
+          found = 0;
+          if (picking_tasks_.size() == num_tasks - 1) {
+            break;
           }
         }
       }
@@ -1422,14 +1412,18 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
   }
 }
 
+void SearchWorker::ResetTasks() {
+  task_count_.store(0, std::memory_order_release);
+  tasks_taken_.store(0, std::memory_order_release);
+  completed_tasks_.store(0, std::memory_order_release);
+  picking_tasks_.clear();
+  // Reserve because resizing breaks pointers held by the task threads.
+  picking_tasks_.reserve(100);
+}
+
 void SearchWorker::PickNodesToExtend2(int collision_limit) {
+  ResetTasks();
   {
-    task_count_.store(0, std::memory_order_release);
-    tasks_taken_.store(0, std::memory_order_release);
-    completed_tasks_.store(0, std::memory_order_release);
-    picking_tasks_.clear();
-    // Reserve because resizing breaks pointers held by the task threads.
-    picking_tasks_.reserve(100);
     // While nothing is ready yet - wake the task runners so they are ready to
     // receive quickly.
     Mutex::Lock lock(picking_tasks_mutex_);

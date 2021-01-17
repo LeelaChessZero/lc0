@@ -431,6 +431,7 @@ class SearchWorker {
                               const Computation& computation,
                               int idx_in_computation);
   void RunTasks(int tid);
+  void ResetTasks();
 
   Search* const search_;
   // List of nodes to process.
