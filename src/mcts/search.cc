@@ -1229,7 +1229,7 @@ void SearchWorker::GatherMinibatch2() {
 
     int new_start = static_cast<int>(minibatch_.size());
 
-    PickNodesToExtend2(
+    PickNodesToExtend(
         std::min({collision_events_left, collisions_left,
                   params_.GetMiniBatchSize() - minibatch_size,
                   params_.GetMaxOutOfOrderEvals() - number_out_of_order_}));
@@ -1426,7 +1426,7 @@ int SearchWorker::WaitForTasks() {
   }
 }
 
-void SearchWorker::PickNodesToExtend2(int collision_limit) {
+void SearchWorker::PickNodesToExtend(int collision_limit) {
   ResetTasks();
   {
     // While nothing is ready yet - wake the task runners so they are ready to
