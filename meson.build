@@ -278,7 +278,7 @@ if get_option('build_backends')
         ispc_extra_args += ['--pic']
         outputnames = [ '@BASENAME@.o']
         if not ispc_native_only
-          outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
+          outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o',
                           '@BASENAME@_avx.o', '@BASENAME@_avx2.o',
                           '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
@@ -485,16 +485,16 @@ if get_option('build_backends')
     files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
     has_backends = true
   endif
-  
+
   ## ~~~~~~~~
   ## DirectX
   ## ~~~~~~~~
-  
-  # we should always be able to build DirectX12 backend on windows platform  
+
+  # we should always be able to build DirectX12 backend on windows platform
   if host_machine.system() == 'windows' and get_option('dx')
     dx_d3d12 = cc.find_library('d3d12')
     dx_dxgi = cc.find_library('dxgi')
-  
+
     dx_files = [
       'src/neural/dx/network_dx.cc',
       'src/neural/dx/shader_wrapper.cc',
@@ -507,8 +507,7 @@ if get_option('build_backends')
     subdir('src/neural/dx/shaders')
 
     has_backends = true
-  endif  
- 
+  endif
 
 endif # if get_option('build_backends')
 
@@ -598,12 +597,11 @@ if get_option('gtest')
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
-  test('EncodePositionForNN', 
+  test('EncodePositionForNN',
     executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
     include_directories: includes, link_with: lc0_lib,
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
-
 endif
 
 
@@ -616,7 +614,7 @@ if get_option('python_bindings')
   python = pymod.find_installation('python3')
   if python.language_version() < '3.7'
     error('You need python 3.7 or newer')
-  endif  
+  endif
   py_bindings_generator = find_program('scripts/gen_py_bindings.py')
 
   gen_py_bindings = custom_target('backends', input:[], output:['backends.cc'],
