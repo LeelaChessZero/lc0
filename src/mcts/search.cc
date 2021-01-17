@@ -1228,10 +1228,8 @@ void SearchWorker::GatherMinibatch2() {
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
     int prev_size = static_cast<int>(minibatch_.size());
     int new_start = prev_size;
-    PickNodesToExtend2(
-        std::min(collision_events_left,
-                 std::min(collisions_left,
-                          params_.GetMiniBatchSize() - minibatch_size)));
+    PickNodesToExtend2(std::min({collision_events_left, collisions_left,
+                                 params_.GetMiniBatchSize() - minibatch_size}));
     bool should_exit = false;
     int non_collisions = 0;
     for (int i = prev_size; i < minibatch_.size(); i++) {
