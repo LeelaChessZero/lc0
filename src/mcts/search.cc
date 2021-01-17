@@ -1234,7 +1234,7 @@ void SearchWorker::GatherMinibatch2() {
                   params_.GetMaxOutOfOrderEvals() - number_out_of_order_}));
     bool should_exit = false;
     int non_collisions = 0;
-    for (int i = prev_size; i < minibatch_.size(); i++) {
+    for (int i = prev_size; i < static_cast<int>(minibatch_.size()); i++) {
       auto& picked_node = minibatch_[i];
 
       // There was a collision. If limit has been reached, mark to return once
@@ -1274,7 +1274,7 @@ void SearchWorker::GatherMinibatch2() {
       needs_wait = true;
       ResetTasks();
       int found = 0;
-      for (int i = prev_size; i < minibatch_.size(); i++) {
+      for (int i = prev_size; i < static_cast<int>(minibatch_.size()); i++) {
         auto& picked_node = minibatch_[i];
         if (picked_node.IsCollision()) {
           continue;
@@ -1437,18 +1437,17 @@ void SearchWorker::PickNodesToExtend2(int collision_limit) {
   SharedMutex::Lock lock(search_->nodes_mutex_);
   PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist,
                         &minibatch_, &main_workspace_);
-  {
-    // Spin lock, other tasks should be done soon.
-    while (true) {
-      int completed = completed_tasks_.load(std::memory_order_acquire);
-      int todo = task_count_.load(std::memory_order_acquire);
-      if (todo == completed) break;
-      SpinloopPause();
-    }
-    for (int i = 0; i < picking_tasks_.size(); i++) {
-      for (int j = 0; j < picking_tasks_[i].results.size(); j++) {
-        minibatch_.emplace_back(std::move(picking_tasks_[i].results[j]));
-      }
+
+  // Spin lock, other tasks should be done soon.
+  while (true) {
+    int completed = completed_tasks_.load(std::memory_order_acquire);
+    int todo = task_count_.load(std::memory_order_acquire);
+    if (todo == completed) break;
+    SpinloopPause();
+  }
+  for (int i = 0; i < static_cast<int>(picking_tasks_.size()); i++) {
+    for (int j = 0; j < static_cast<int>(picking_tasks_[i].results.size()); j++) {
+      minibatch_.emplace_back(std::move(picking_tasks_[i].results[j]));
     }
   }
 }
