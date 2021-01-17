@@ -1392,15 +1392,15 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
           }
         }
         // If the colors seem backwards, check the checkmate check above.
-        if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON, m,
-                             Node::Terminal::Tablebase);
-        } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON, m,
-                             Node::Terminal::Tablebase);
-        } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
-        }
+        const auto use_50_move_rule = params_.GetSyzygy50MoveRule();
+        // Cursed wins and blessed losses also are draws using 50 move rule.
+        node->MakeTerminal(
+            wdl >= (use_50_move_rule ? WDL_WIN : WDL_CURSED_WIN)
+                ? GameResult::BLACK_WON
+                : wdl <= (use_50_move_rule ? WDL_LOSS : WDL_BLESSED_LOSS)
+                      ? GameResult::WHITE_WON
+                      : GameResult::DRAW,
+            m, Node::Terminal::Tablebase);
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
         return;
       }
