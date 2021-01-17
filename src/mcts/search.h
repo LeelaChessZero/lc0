@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <array>
 #include <functional>
 #include <optional>
 #include <shared_mutex>
@@ -374,8 +375,8 @@ class SearchWorker {
 
   // Holds per task worker scratch data
   struct TaskWorkspace {
-    Node::Iterator cur_iters[256];
-    std::vector<std::unique_ptr<int[]>> vtp_buffer;
+    std::array<Node::Iterator, 256> cur_iters;
+    std::vector<std::unique_ptr<std::array<int, 256>>> vtp_buffer;
   };
 
   struct PickTask {

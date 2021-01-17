@@ -1461,7 +1461,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
-  std::vector<std::unique_ptr<int[]>> visits_to_perform;
+  std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
   auto& vtp_buffer = workspace->vtp_buffer;
   visits_to_perform.reserve(30);
   std::vector<int> vtp_last_filled;
@@ -1478,12 +1478,12 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   }
 
   // These 2 are 'filled pre-emptively'.
-  float current_pol[256];
-  float current_util[256];
+  std::array<float, 256> current_pol;
+  std::array<float, 256> current_util;
 
   // These 3 are 'filled on demand'.
-  float current_score[256];
-  int current_nstarted[256];
+  std::array<float, 256> current_score;
+  std::array<int, 256> current_nstarted;
   auto& cur_iters = workspace->cur_iters;
 
   Node::Iterator best_edge;
@@ -1511,7 +1511,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       int cur_limit = collision_limit;
       if (current_path.size() - 1 > 0) {
         cur_limit =
-            visits_to_perform.back()[current_path[current_path.size() - 2]];
+            (*visits_to_perform.back())[current_path[current_path.size() - 2]];
       }
       // First check if node is terminal or not-expanded.  If either than create
       // a collision of appropriate size and pop current_path.
@@ -1583,7 +1583,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         visits_to_perform.push_back(std::move(vtp_buffer.back()));
         vtp_buffer.pop_back();
       } else {
-        visits_to_perform.push_back(std::make_unique<int[]>(256));
+        visits_to_perform.push_back(std::make_unique<std::array<int, 256>>());
       }
       vtp_last_filled.push_back(-1);
 
@@ -1600,7 +1600,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       // node to stay at 64 bytes).
       int max_needed = std::min(static_cast<int>(node->GetNumEdges()),
                                 node->GetNStarted() + cur_limit + 2);
-      node->CopyPolicy(current_pol, max_needed);
+      node->CopyPolicy(current_pol.data(), max_needed);
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
@@ -1712,11 +1712,11 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           new_visits = cur_limit;
         }
         if (best_idx >= vtp_last_filled.back()) {
-          auto* vtp_array = visits_to_perform.back().get();
+          auto* vtp_array = visits_to_perform.back().get()->data();
           std::fill(vtp_array + (vtp_last_filled.back() + 1),
                     vtp_array + best_idx + 1, 0);
         }
-        visits_to_perform.back()[best_idx] += new_visits;
+        (*visits_to_perform.back())[best_idx] += new_visits;
         cur_limit -= new_visits;
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
         bool decremented = false;
@@ -1779,7 +1779,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
              (child_node->GetN() == 0 || child_node->IsTerminal()))) {
           // Reduce 1 for the visits_to_perform to ensure the collision created
           // doesn't include this visit.
-          visits_to_perform.back()[best_idx] -= 1;
+          (*visits_to_perform.back())[best_idx] -= 1;
           receiver->push_back(NodeToProcess::Visit(
               child_node,
               static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
@@ -1789,7 +1789,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           receiver->back().moves_to_visit.push_back(best_edge.GetMove());
         }
         if (best_idx > vtp_last_filled.back() &&
-            visits_to_perform.back()[best_idx] > 0) {
+            (*visits_to_perform.back())[best_idx] > 0) {
           vtp_last_filled.back() = best_idx;
         }
       }
@@ -1802,7 +1802,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       int idx = -1;
       for (auto& child : node->Edges()) {
         idx++;
-        if (idx > min_idx && visits_to_perform.back()[idx] > 0) {
+        if (idx > min_idx && (*visits_to_perform.back())[idx] > 0) {
           if (moves_to_path.size() != current_path.size() + base_depth) {
             moves_to_path.push_back(child.GetMove());
           } else {
