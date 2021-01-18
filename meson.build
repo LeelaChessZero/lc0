@@ -534,7 +534,12 @@ endif
     deps += cc.find_library('libprofiler',
       dirs: ['/usr/local/lib'], required: false)
   endif
-deps += cc.find_library('libatomic', required: false)
+
+  deps += cc.find_library('libatomic', required: false)
+
+  if get_option('malloc') != ''
+    deps += cc.find_library(get_option('malloc'), required: true)
+  endif
 
 #############################################################################
 ## Main Executable
