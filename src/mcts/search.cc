@@ -1038,10 +1038,12 @@ void SearchWorker::RunTasks(int tid) {
           PickNodesToExtendTask(task->start, task->base_depth,
                                 task->collision_limit, task->moves_to_base,
                                 &(task->results), &(task_workspaces_[tid]));
+          break;
         }
         case PickTask::kProcessing: {
           ProcessPickedTask(task->start_idx, task->end_idx,
                             &(task_workspaces_[tid]));
+          break;
         }
       }
       picking_tasks_[id].complete = true;
