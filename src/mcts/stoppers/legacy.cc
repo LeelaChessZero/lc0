@@ -71,7 +71,8 @@ class LegacyTimeManager : public TimeManager {
         time_curve_midpoint_(
             params.GetOrDefault<float>("midpoint-move", 51.5f)),
         time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
-        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)) {}
+        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)),
+        first_move_bonus_(params.GetOrDefault<float>("first-move-bonus", 1.0f)) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
@@ -81,6 +82,9 @@ class LegacyTimeManager : public TimeManager {
   const float time_curve_midpoint_;
   const float time_curve_steepness_;
   const float spend_saved_time_;
+  // When starting a game from a book exit, add bonus time per ply of the book.
+  const float first_move_bonus_;
+  bool first_move_of_game_ = true;
   // No need to be atomic as only one thread will update it.
   int64_t time_spared_ms_ = 0;
 };
@@ -123,6 +127,13 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
 
   // Evenly split total time between all moves.
   float this_move_time = total_moves_time / movestogo;
+
+  // Add bonus time per ply of the opening book to compensate starting from an
+  // uncommon position without a tree to reuse.
+  if (first_move_of_game_) {
+    this_move_time *= (1.0f + first_move_bonus_ * position.GetGamePly());
+    first_move_of_game_ = false;
+  }
 
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
