@@ -174,8 +174,8 @@ class Search {
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
   int64_t initial_visits_;
-  // dtz_position_ must be initialized before root_move_filter_.
-  bool dtz_position_ = false;
+  // root_is_in_dtz_ must be initialized before root_move_filter_.
+  bool root_is_in_dtz_ = false;
   // tb_hits_ must be initialized before root_move_filter_.
   std::atomic<int> tb_hits_{0};
   const MoveList root_move_filter_;

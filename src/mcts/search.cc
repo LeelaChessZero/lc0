@@ -53,6 +53,8 @@ MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
                             const PositionHistory& history, bool fast_play,
                             std::atomic<int>* tb_hits, bool* dtz_success) {
+  assert(tb_hits);
+  assert(dtz_success);
   // Search moves overrides tablebase.
   if (!searchmoves.empty()) return searchmoves;
   const auto& board = history.Last().GetBoard();
@@ -159,7 +161,7 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       root_move_filter_(MakeRootMoveFilter(
           searchmoves_, syzygy_tb_, played_history_,
-          params_.GetSyzygyFastPlay(), &tb_hits_, &dtz_position_)),
+          params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
@@ -1352,7 +1354,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     // Disable TB position lookup if playing from dtz as it just reduces
     // liklihood of good play.
-    if (search_->syzygy_tb_ && !search_->dtz_position_ &&
+    if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
         board.castlings().no_legal_castle() &&
         history_.Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
