@@ -81,6 +81,17 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   return result;
 }
 
+  // Stuff required for switching NN during play START
+  bool second_nn_already_loaded_ = false;
+  int k_pieces_left = 32;
+
+  float CPuct_for_primary_NN;
+  float FPU_for_primary_NN;
+  float PolicyTemperature_for_primary_NN;
+
+  std::string weights_currently_in_use;
+  // Stuff required for switching NN during play STOP
+
 }  // namespace
 
 EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
@@ -108,6 +119,19 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
+}
+
+void EngineController::SetSearchParamsforSecondNN(OptionsParser* options) {
+  options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId, options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsCpuctId));
+  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId, options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsFpuValueId));
+  options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId, options->GetOptionsDict().Get<float>(NetworkFactory::kSecondWeightsPolicySoftmaxTempId));
+}
+
+void EngineController::ResetSearchParamsforPrimaryNN(OptionsParser* options) {
+  options->GetMutableOptions()->Set<float>(SearchParams::kCpuctId, CPuct_for_primary_NN);
+  options->GetMutableOptions()->Set<float>(SearchParams::kFpuValueId, FPU_for_primary_NN);
+  options->GetMutableOptions()->Set<float>(SearchParams::kPolicySoftmaxTempId, PolicyTemperature_for_primary_NN);
+  LOGFILE << "Resetting Cpuct, FPU and PolicySoftmaxTemp to the values for the primary NN.";
 }
 
 void EngineController::ResetMoveTimer() {
@@ -150,6 +174,7 @@ void EngineController::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
+  EngineController::SwitchToSecondaryNN();
   ResetMoveTimer();
 }
 
@@ -163,6 +188,16 @@ void EngineController::NewGame() {
   tree_.reset();
   CreateFreshTimeManager();
   current_position_.reset();
+  // reload the main NN every new game in a tournament
+  if(second_nn_already_loaded_){
+    const auto network_configuration = NetworkFactory::BackendConfiguration(options_);
+    network_ = NetworkFactory::LoadNetwork(options_);
+    network_configuration_ = network_configuration;
+    second_nn_already_loaded_ = false;
+    k_pieces_left = 32;
+    weights_currently_in_use = options_.Get<std::string>(NetworkFactory::kWeightsId);
+    LOGFILE << "Reloaded Leela NN: " << weights_currently_in_use;
+  }
   UpdateFromUciOptions();
 }
 
@@ -285,6 +320,9 @@ void EngineController::Go(const GoParams& params) {
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
   search_->StartThreads(options_.Get<int>(kThreadsOptionId));
+  // Count the remaining pieces on the board
+  auto board = search_->PublicHistory().Last().GetBoard();
+  k_pieces_left = board.ours().count() + board.theirs().count();
 }
 
 void EngineController::PonderHit() {
@@ -295,6 +333,29 @@ void EngineController::PonderHit() {
 
 void EngineController::Stop() {
   if (search_) search_->Stop();
+}
+
+void EngineController::SwitchToSecondaryNN() {
+  if(!second_nn_already_loaded_ &&
+   options_.Get<std::string>(NetworkFactory::kSecondWeightsId) != "" &&
+   k_pieces_left <= options_.Get<int>(NetworkFactory::kSecondWeightsSwitchAtId)){
+    // Store the values for the primary NN so we can switch back when a new game starts.
+    CPuct_for_primary_NN = options_.Get<float>(SearchParams::kCpuctId);
+    FPU_for_primary_NN = options_.Get<float>(SearchParams::kFpuValueId);
+    PolicyTemperature_for_primary_NN = options_.Get<float>(SearchParams::kPolicySoftmaxTempId);
+
+    std::string net_path = options_.Get<std::string>(NetworkFactory::kSecondWeightsId);
+    std::string backend = options_.Get<std::string>(NetworkFactory::kBackendId);
+    std::string backend_options = options_.Get<std::string>(NetworkFactory::kBackendOptionsId);
+    LOGFILE << "Will switch to second NN on backend " << backend << " with options " << backend_options;
+    CERR << "Loading weights file from: " << net_path;
+    WeightsFile weights = LoadWeightsFromFile(net_path);
+    OptionsDict network_options(&options_);
+    network_options.AddSubdictFromString(backend_options);
+    network_ = NetworkFactory::Get()->Create(backend, weights, network_options);
+    second_nn_already_loaded_ = true;
+    weights_currently_in_use = net_path;
+  }
 }
 
 EngineLoop::EngineLoop()
@@ -323,7 +384,13 @@ void EngineLoop::CmdUci() {
 }
 
 void EngineLoop::CmdIsReady() {
+  bool nn_changed = second_nn_already_loaded_;
   engine_.EnsureReady();
+  // If EnsureReady() actually switched NN, then also set cpuct etc to
+  // fit the new NN, if these are defined.
+  if(nn_changed != second_nn_already_loaded_){
+    engine_.SetSearchParamsforSecondNN(&options_);
+  }
   SendResponse("readyok");
 }
 
@@ -335,7 +402,14 @@ void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
       options_.GetOptionsDict().Get<std::string>(kLogFileId));
 }
 
-void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
+void EngineLoop::CmdUciNewGame() {
+  bool nn_changed = second_nn_already_loaded_;
+  engine_.NewGame();
+  if(nn_changed != second_nn_already_loaded_){
+    // Reset Search parameters too (cpuct et al)
+    engine_.ResetSearchParamsforPrimaryNN(&options_);
+  }
+}
 
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {

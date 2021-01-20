@@ -90,6 +90,9 @@ class Search {
   // Returns the search parameters.
   const SearchParams& GetParams() const { return params_; }
 
+  // A public version of history, needed to get piece count in engine.cc
+  const PositionHistory& PublicHistory() { return played_history_; }
+
   // If called after GetBestMove, another call to GetBestMove will have results
   // from temperature having been applied again.
   void ResetBestMove();

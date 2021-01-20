@@ -279,6 +279,8 @@ const OptionId SearchParams::kSolidTreeThresholdId{
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
+  // For defaults on cpuct, fpur and policy softmax temp for the second NN,
+  // see neural/factory.cc
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 2.147f;
