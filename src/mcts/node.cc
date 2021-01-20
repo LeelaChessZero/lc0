@@ -39,6 +39,7 @@
 #include "neural/network.h"
 #include "utils/exception.h"
 #include "utils/hashcat.h"
+#include "utils/fastmath.h"
 
 namespace lczero {
 
@@ -351,10 +352,20 @@ void Node::CancelScoreUpdate(int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
+void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit,
+                               float p0, float a, float pmin, float cap) {
   // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
+  double p = std::max(1.25f + a * (FastLog2(1.0 + n_) - 10.55f), pmin);
+  double invp = 1.0 / p;
+  double wl_p = std::copysign(std::pow(std::abs(wl_), p), wl_);
+  double vp = std::copysign(std::pow(std::abs(v), p), v);
+  double w0 = wl_p + multivisit * (vp - wl_p) / (n_ + multivisit);
+  double d_p = std::pow(d_, p);
+  double dp = std::pow(d, p);
+  double d0 = d_p + multivisit * (dp - d_p) / (n_ + multivisit);
+  wl_ = (float) std::clamp(std::copysign(std::pow(std::abs(w0), invp), w0),
+                           -1.0, 1.0);
+  d_ =  (float) std::clamp(std::pow(d0, invp), 0.0, 1.0);
   m_ += multivisit * (m - m_) / (n_ + multivisit);
 
   // If first visit, update parent's sum of policies visited at least once.
