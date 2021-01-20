@@ -108,6 +108,11 @@ option('accelerate',
        value: true,
        description: 'Enable Accelerate BLAS support')
 
+option('malloc',
+       type : 'string',
+       value: '',
+       description: 'Use alternative memory allocator, e.g. tcmalloc/jemalloc')
+
 option('popcnt',
        type: 'boolean',
        value: true,
