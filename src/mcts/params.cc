@@ -436,10 +436,12 @@ SearchParams::SearchParams(const OptionsDict& options)
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
-      kMultiGatherEnabled(options.Get<bool>(kMultiGatherEnabledId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
+      kMultiGatherEnabled(options.Get<bool>(kMultiGatherEnabledId)),
       kTaskWorkersPerSearchWorker(
-          options.Get<int>(kTaskWorkersPerSearchWorkerId)),
+          options.Get<bool>(kMultiGatherEnabledId)
+              ? options.Get<int>(kTaskWorkersPerSearchWorkerId)
+              : 0),
       kMinimumWorkSizeForProcessing(
           options.Get<int>(kMinimumWorkSizeForProcessingId)),
       kMinimumWorkSizeForPicking(

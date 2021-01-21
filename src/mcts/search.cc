@@ -110,15 +110,7 @@ class MEvaluator {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     const float child_m = child.GetM(parent_m_);
     float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
-    // Microsoft compiler does not have a builtin for copysign and emits a
-    // library call which is too expensive for a hot path like this.
-#if defined(_MSC_VER)
-    // This doesn't treat signed 0's the same way that copysign does, but it
-    // should be good enough...
-    if (q > 0) m *= -1.0f;
-#else
-    m *= std::copysign(1.0f, -q);
-#endif
+    m *= FastSign(-q);
     m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
     return m;
   }
@@ -127,15 +119,7 @@ class MEvaluator {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     const float child_m = child->GetM();
     float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
-    // Microsoft compiler does not have a builtin for copysign and emits a
-    // library call which is too expensive for a hot path like this.
-#if defined(_MSC_VER)
-    // This doesn't treat signed 0's the same way that copysign does, but it
-    // should be good enough...
-    if (q > 0) m *= -1.0f;
-#else
-    m *= std::copysign(1.0f, -q);
-#endif
+    m *= FastSign(-q);
     m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
     return m;
   }
@@ -1644,7 +1628,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       // node to stay at 64 bytes).
       int max_needed = std::min(static_cast<int>(node->GetNumEdges()),
                                 node->GetNStarted() + cur_limit + 2);
-      node->CopyPolicy(current_pol.data(), max_needed);
+      node->CopyPolicy(max_needed, current_pol.data());
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
