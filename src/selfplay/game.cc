@@ -211,7 +211,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
 
-      for (auto edge : node->Edges()) {
+      for (auto& edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }

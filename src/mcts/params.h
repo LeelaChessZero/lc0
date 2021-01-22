@@ -112,6 +112,23 @@ class SearchParams {
   float GetNpsLimit() const { return kNpsLimit; }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
 
+  bool GetMultiGatherEnabled() const { return kMultiGatherEnabled; }
+  int GetTaskWorkersPerSearchWorker() const {
+    return kTaskWorkersPerSearchWorker;
+  }
+  int GetMinimumWorkSizeForProcessing() const {
+    return kMinimumWorkSizeForProcessing;
+  }
+  int GetMinimumWorkSizeForPicking() const {
+    return kMinimumWorkSizeForPicking;
+  }
+  int GetMinimumRemainingWorkSizeForPicking() const {
+    return kMinimumRemainingWorkSizeForPicking;
+  }
+  int GetMinimumWorkPerTaskForProcessing() const {
+    return kMinimumWorkPerTaskForProcessing;
+  }
+
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
@@ -164,6 +181,12 @@ class SearchParams {
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;
+  static const OptionId kMultiGatherEnabledId;
+  static const OptionId kTaskWorkersPerSearchWorkerId;
+  static const OptionId kMinimumWorkSizeForProcessingId;
+  static const OptionId kMinimumWorkSizeForPickingId;
+  static const OptionId kMinimumRemainingWorkSizeForPickingId;
+  static const OptionId kMinimumWorkPerTaskForProcessingId;
 
  private:
   const OptionsDict& options_;
@@ -210,6 +233,12 @@ class SearchParams {
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
+  const bool kMultiGatherEnabled;
+  const int kTaskWorkersPerSearchWorker;
+  const int kMinimumWorkSizeForProcessing;
+  const int kMinimumWorkSizeForPicking;
+  const int kMinimumRemainingWorkSizeForPicking;
+  const int kMinimumWorkPerTaskForProcessing;
 };
 
 }  // namespace lczero
