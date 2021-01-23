@@ -1344,11 +1344,11 @@ void SearchWorker::GatherMinibatch2() {
 }
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
-                                     TaskWorkspace*) {
+                                     TaskWorkspace* workspace) {
+  auto& history = workspace->history;
   // This code runs multiple passes of work across the same input in order to
   // reduce taking/dropping mutexes in quick succession.
-  PositionHistory history = search_->played_history_;
-  history.Reserve(search_->played_history_.GetLength() + 30);
+  history = search_->played_history_;
 
   // First pass - Extend nodes.
   for (int i = start_idx; i < end_idx; i++) {
@@ -1491,15 +1491,15 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
-  std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
   auto& vtp_buffer = workspace->vtp_buffer;
-  visits_to_perform.reserve(30);
-  std::vector<int> vtp_last_filled;
-  vtp_last_filled.reserve(30);
-  std::vector<int> current_path;
-  current_path.reserve(30);
-  std::vector<Move> moves_to_path = moves_to_base;
-  moves_to_path.reserve(30);
+  auto& visits_to_perform = workspace->visits_to_perform;
+  visits_to_perform.clear();
+  auto& vtp_last_filled = workspace->vtp_last_filled;
+  vtp_last_filled.clear();
+  auto& current_path = workspace->current_path;
+  current_path.clear();
+  auto& moves_to_path = workspace->moves_to_path;
+  moves_to_path = moves_to_base;
   // Sometimes receiver is reused, othertimes not, so only jump start if small.
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
