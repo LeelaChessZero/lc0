@@ -1721,10 +1721,17 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             can_exit = true;
           }
         }
+        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
         int new_visits = 0;
         if (second_best_edge) {
           int estimated_visits_to_change_best = std::numeric_limits<int>::max();
-          if (best_without_u < second_best) {
+          // Leaf nodes only get n_in_flight increment at most once, so unless
+          // GetNStarted returns 0, this calculation is wrong for leaf nodes.
+          // Even if GetNStarted is 0, this technically wrong, but next loop
+          // around that will be fixed.
+          if (best_without_u < second_best &&
+              (child_node->GetNStarted() == 0 ||
+               child_node->GetN() > 0 && !child_node->IsTerminal())) {
             const auto n1 = current_nstarted[best_idx] + 1;
             estimated_visits_to_change_best = static_cast<int>(
                 std::max(1.0f, std::min(current_pol[best_idx] * puct_mult /
@@ -1746,7 +1753,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
         (*visits_to_perform.back())[best_idx] += new_visits;
         cur_limit -= new_visits;
-        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
 
         // Probably best place to check for two-fold draws consistently.
         // Depth starts with 1 at root, so real depth is depth - 1.
