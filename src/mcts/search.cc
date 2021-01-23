@@ -1181,7 +1181,8 @@ void SearchWorker::GatherMinibatch() {
     // out of order eval for it.
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
       // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+      FetchSingleNodeResult(&picked_node, *computation_,
+                            computation_->GetBatchSize() - 1);
       {
         // Nodes mutex for doing node updates.
         SharedMutex::Lock lock(search_->nodes_mutex_);
@@ -1389,7 +1390,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     }
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
       // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult2(&picked_node, picked_node, 0);
+      FetchSingleNodeResult(&picked_node, picked_node, 0);
       picked_node.ooo_completed = true;
     }
   }
@@ -2405,15 +2406,15 @@ void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
-    FetchSingleNodeResult(&node_to_process, idx_in_computation);
+    FetchSingleNodeResult(&node_to_process, *computation_, idx_in_computation);
     if (node_to_process.nn_queried) ++idx_in_computation;
   }
 }
 
 template <typename Computation>
-void SearchWorker::FetchSingleNodeResult2(NodeToProcess* node_to_process,
-                                          const Computation& computation,
-                                          int idx_in_computation) {
+void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
+                                         const Computation& computation,
+                                         int idx_in_computation) {
   if (node_to_process->IsCollision()) return;
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
@@ -2438,60 +2439,6 @@ void SearchWorker::FetchSingleNodeResult2(NodeToProcess* node_to_process,
   int counter = 0;
   for (auto& edge : node->Edges()) {
     float p = computation.GetPVal(
-        idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform));
-    intermediate[counter++] = p;
-    max_p = std::max(max_p, p);
-  }
-  float total = 0.0;
-  for (int i = 0; i < counter; i++) {
-    // Perform softmax and take into account policy softmax temperature T.
-    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    float p =
-        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
-    intermediate[i] = p;
-    total += p;
-  }
-  counter = 0;
-  // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  for (auto& edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
-  }
-  // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
-                        params_.GetNoiseAlpha());
-  }
-  node->SortEdges();
-}
-
-void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
-                                         int idx_in_computation) {
-  if (node_to_process->IsCollision()) return;
-  Node* node = node_to_process->node;
-  if (!node_to_process->nn_queried) {
-    // Terminal nodes don't involve the neural NetworkComputation, nor do
-    // they require any further processing after value retrieval.
-    node_to_process->v = node->GetWL();
-    node_to_process->d = node->GetD();
-    node_to_process->m = node->GetM();
-    return;
-  }
-  // For NN results, we need to populate policy as well as value.
-  // First the value...
-  node_to_process->v = -computation_->GetQVal(idx_in_computation);
-  node_to_process->d = computation_->GetDVal(idx_in_computation);
-  node_to_process->m = computation_->GetMVal(idx_in_computation);
-  // ...and secondly, the policy data.
-  // Calculate maximum first.
-  float max_p = -std::numeric_limits<float>::infinity();
-  // Intermediate array to store values when processing policy.
-  // There are never more than 256 valid legal moves in any legal position.
-  std::array<float, 256> intermediate;
-  int counter = 0;
-  for (auto& edge : node->Edges()) {
-    float p = computation_->GetPVal(
         idx_in_computation,
         edge.GetMove().as_nn_index(node_to_process->probability_transform));
     intermediate[counter++] = p;
