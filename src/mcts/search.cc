@@ -1142,11 +1142,14 @@ void SearchWorker::InitializeIteration(
       if (!any_changes) break;
     }
   }
-  while (static_cast<int>(main_workspace_.node_source.size()) < params_.GetMiniBatchSize() * 3) {
+  main_workspace_.node_source.reserve(params_.GetMiniBatchSize() * 4);
+  while (static_cast<int>(main_workspace_.node_source.size()) <
+         params_.GetMiniBatchSize() * 4) {
     main_workspace_.node_source.push_back(std::make_unique<Node>(nullptr, 0));
   }
   for (int i = 0; i < static_cast<int>(task_workspaces_.size()); i++) {
-    while (static_cast<int>(task_workspaces_[i].node_source.size()) < params_.GetMiniBatchSize() * 3) {
+    task_workspaces_[i].node_source.reserve(params_.GetMiniBatchSize() * 4);
+    while (static_cast<int>(task_workspaces_[i].node_source.size()) < params_.GetMiniBatchSize() * 4) {
       task_workspaces_[i].node_source.push_back(
           std::make_unique<Node>(nullptr, 0));
     }
@@ -1774,7 +1777,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           node_source = &(workspace->node_source.back());
         }
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, node_source);
-        if (!workspace->node_source.empty()) {
+        if (!workspace->node_source.empty() && !workspace->node_source.back()) {
           workspace->node_source.pop_back();
         }
 
