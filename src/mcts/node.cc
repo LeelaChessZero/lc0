@@ -241,7 +241,8 @@ std::string Node::DebugString() const {
   return oss.str();
 }
 
-bool Node::MakeSolid() {
+bool Node::MakeSolid(std::vector<std::unique_ptr<Node>>* node_cache) {
+  assert(node_cache);
   if (solid_children_ || num_edges_ == 0 || IsTerminal()) return false;
   // Can only make solid if no immediate leaf childredn are in flight since we
   // allow the search code to hold references to leaf nodes across locks.
@@ -276,7 +277,8 @@ bool Node::MakeSolid() {
     new_children[index] = std::move(*old_child.get());
     // This isn't needed, but it helps crash things faster if something has gone wrong.
     old_child->parent_ = nullptr;
-    gNodeGc.AddToGcQueue(std::move(old_child));
+    old_child->PrepareForReinit();
+    node_cache->push_back(std::move(old_child));
     new_children[index].UpdateChildrenParents();
     old_child = std::move(new_children[index].sibling_);
   }
