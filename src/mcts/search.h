@@ -379,6 +379,8 @@ class SearchWorker {
   struct TaskWorkspace {
     std::array<Node::Iterator, 256> cur_iters;
     std::vector<std::unique_ptr<std::array<int, 256>>> vtp_buffer;
+    std::vector<NodeToProcess> picking_results;
+    std::vector<std::vector<Move>> move_list_cache;
   };
 
   struct PickTask {
