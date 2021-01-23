@@ -1576,35 +1576,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // as its not handled on the path to it, since there isn't one.
         node->IncrementNInFlight(cur_limit);
       }
-      // !is_root_node only for clarity, it can never pass the second condition.
-      if (params_.GetTaskWorkersPerSearchWorker() > 0 && !is_root_node &&
-          cur_limit > params_.GetMinimumWorkSizeForPicking() &&
-          cur_limit <
-              ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
-          cur_limit + passed_off + completed_visits <
-              collision_limit -
-                  params_.GetMinimumRemainingWorkSizeForPicking()) {
-        bool passed = false;
-        {
-          // Multiple writers, so need mutex here.
-          Mutex::Lock lock(picking_tasks_mutex_);
-          // Ensure not to exceed size of reservation.
-          if (picking_tasks_.size() < MAX_TASKS) {
-            picking_tasks_.emplace_back(node,
-                                        current_path.size() - 1 + base_depth,
-                                        moves_to_path, cur_limit);
-            task_count_.fetch_add(1, std::memory_order_acq_rel);
-            task_added_.notify_all();
-            passed = true;
-            passed_off += cur_limit;
-          }
-        }
-        if (passed) {
-          node = node->GetParent();
-          current_path.pop_back();
-          continue;
-        }
-      }
 
       // Create visits_to_perform new back entry for this level.
       if (vtp_buffer.size() > 0) {
@@ -1785,6 +1756,42 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
       }
       is_root_node = false;
+      // Actively do any splits now rather than waiting for potentially long tree walk to get there.
+      for (int i = 0; i <= vtp_last_filled.back(); i++) {
+        int child_limit = (*visits_to_perform.back())[i];
+        if (params_.GetTaskWorkersPerSearchWorker() > 0 &&
+            child_limit > params_.GetMinimumWorkSizeForPicking() &&
+            child_limit <
+                ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
+            child_limit + passed_off + completed_visits <
+                collision_limit -
+                    params_.GetMinimumRemainingWorkSizeForPicking()) {
+          Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
+          // Don't split if not expanded or terminal.
+          if (child_node->GetN() == 0 || child_node->IsTerminal()) continue;
+
+          bool passed = false;
+          {
+            // Multiple writers, so need mutex here.
+            Mutex::Lock lock(picking_tasks_mutex_);
+            // Ensure not to exceed size of reservation.
+            if (picking_tasks_.size() < MAX_TASKS) {
+              moves_to_path.push_back(cur_iters[i].GetMove());
+              picking_tasks_.emplace_back(child_node,
+                                          current_path.size() - 1 + base_depth + 1,
+                                          moves_to_path, child_limit);
+              moves_to_path.pop_back();
+              task_count_.fetch_add(1, std::memory_order_acq_rel);
+              task_added_.notify_all();
+              passed = true;
+              passed_off += child_limit;
+            }
+          }
+          if (passed) {
+            (*visits_to_perform.back())[i] = 0;
+          }
+        }        
+      }
       // Fall through to select the first child.
     }
     int min_idx = current_path.back();
