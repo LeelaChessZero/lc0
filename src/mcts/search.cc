@@ -1142,6 +1142,15 @@ void SearchWorker::InitializeIteration(
       if (!any_changes) break;
     }
   }
+  while (static_cast<int>(main_workspace_.node_source.size()) < params_.GetMiniBatchSize() * 3) {
+    main_workspace_.node_source.push_back(std::make_unique<Node>(nullptr, 0));
+  }
+  for (int i = 0; i < static_cast<int>(task_workspaces_.size()); i++) {
+    while (static_cast<int>(task_workspaces_[i].node_source.size()) < params_.GetMiniBatchSize() * 3) {
+      task_workspaces_[i].node_source.push_back(
+          std::make_unique<Node>(nullptr, 0));
+    }
+  }
 }
 
 // 2. Gather minibatch.
@@ -1503,8 +1512,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          const std::vector<Move>& moves_to_base,
                                          std::vector<NodeToProcess>* receiver,
                                          TaskWorkspace* workspace) {
-  // TODO: Bring back pre-cached nodes created outside locks in a way that works
-  // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
   std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
