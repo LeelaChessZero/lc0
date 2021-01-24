@@ -426,8 +426,6 @@ class SearchWorker {
   void ExtendNode(Node* node, int depth);
   bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
-  void FetchSingleNodeResult(NodeToProcess* node_to_process,
-                             int idx_in_computation);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
@@ -441,12 +439,12 @@ class SearchWorker {
   void EnsureNodeTwoFoldCorrectForDepth(Node* node, int depth);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
-  void ExtendNode2(Node* node, int depth, const std::vector<Move>& moves_to_add,
-                   PositionHistory* history);
+  void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
+                  PositionHistory* history);
   template <typename Computation>
-  void FetchSingleNodeResult2(NodeToProcess* node_to_process,
-                              const Computation& computation,
-                              int idx_in_computation);
+  void FetchSingleNodeResult(NodeToProcess* node_to_process,
+                             const Computation& computation,
+                             int idx_in_computation);
   void RunTasks(int tid);
   void ResetTasks();
   // Returns how many tasks there were.
