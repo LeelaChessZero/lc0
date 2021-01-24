@@ -1980,45 +1980,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
-    // If terminal, we either found a twofold draw to be reverted, or
-    // reached the end of this playout.
+
+    // Probably best place to check for two-fold draws consistently.
+    // Depth starts with 1 at root, so real depth is depth - 1.
+    EnsureNodeTwoFoldCorrectForDepth(node, depth - 1);
+
+    // If terminal, we reached the end of this playout.
     if (node->IsTerminal()) {
-      // Probably best place to check for two-fold draws consistently.
-      // Depth starts with 1 at root, so real depth is depth - 1.
-      // Check whether first repetition was before root. If yes, remove
-      // terminal status of node and revert all visits in the tree.
-      // Length of repetition was stored in m_. This code will only do
-      // something when tree is reused and twofold visits need to be reverted.
-      if (node->IsTwoFoldTerminal() && depth - 1 < node->GetM()) {
-        int depth_counter = 0;
-        // Cache node's values as we reset them in the process. We could
-        // manually set wl and d, but if we want to reuse this for reverting
-        // other terminal nodes this is the way to go.
-        const auto wl = node->GetWL();
-        const auto d = node->GetD();
-        const auto m = node->GetM();
-        const auto terminal_visits = node->GetN();
-        for (Node* node_to_revert = node; node_to_revert != nullptr;
-             node_to_revert = node_to_revert->GetParent()) {
-          // Revert all visits on twofold draw when making it non terminal.
-          node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
-                                               terminal_visits);
-          depth_counter++;
-          // Even if original tree still exists, we don't want to revert more
-          // than until new root.
-          if (depth_counter > depth - 1) break;
-          // If wl != 0, we would have to switch signs at each depth.
-        }
-        // Mark the prior twofold draw as non terminal to extend it again.
-        node->MakeNotTerminal();
-        // When reverting the visits, we also need to revert the initial
-        // visits, as we reused fewer nodes than anticipated.
-        search_->initial_visits_ -= terminal_visits;
-        // Max depth doesn't change when reverting the visits, and cum_depth_
-        // only counts the average depth of new nodes, not reused ones.
-      } else {
-        return NodeToProcess::Visit(node, depth);
-      }
+      return NodeToProcess::Visit(node, depth);
     }
     // If unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
