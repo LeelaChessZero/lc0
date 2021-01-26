@@ -1220,6 +1220,14 @@ void SearchWorker::GatherMinibatch2() {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
 
+    // If there is backend work to be done, and the backend is idle - exit
+    // immediately.
+    if (minibatch_size > 0 && computation_->GetCacheMisses() > 0 &&
+        search_->backend_waiting_counter_.load(std::memory_order_relaxed) ==
+            0) {
+      return;
+    }
+
     int new_start = static_cast<int>(minibatch_.size());
 
     PickNodesToExtend(
@@ -1342,12 +1350,6 @@ void SearchWorker::GatherMinibatch2() {
         if ((collisions_left -= picked_node.multivisit) <= 0) return;
         if (search_->stop_.load(std::memory_order_acquire)) return;
       }
-    }
-    // If only collisions and there is backend work to be done, and the backend is idle - exit immediately.
-    if (non_collisions == 0 && minibatch_size > 0 &&
-        computation_->GetCacheMisses() > 0 && 
-        search_->backend_waiting_counter_.load(std::memory_order_relaxed) == 0) {
-      return;
     }
   }
 }
