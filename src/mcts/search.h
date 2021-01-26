@@ -449,6 +449,7 @@ class SearchWorker {
   const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;
+  std::atomic<int> backend_waiting_counter_{0};
 
   // Multigather task related fields.
 

@@ -1073,6 +1073,7 @@ void SearchWorker::ExecuteOneIteration() {
   } else {
     GatherMinibatch();
   }
+  backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
   // 2b. Collect collisions.
   CollectCollisions();
@@ -1086,6 +1087,7 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 4. Run NN computation.
   RunNNComputation();
+  backend_waiting_counter_.fetch_add(-1, std::memory_order_relaxed);
 
   // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
@@ -1340,6 +1342,12 @@ void SearchWorker::GatherMinibatch2() {
         if ((collisions_left -= picked_node.multivisit) <= 0) return;
         if (search_->stop_.load(std::memory_order_acquire)) return;
       }
+    }
+    // If only collisions and there is backend work to be done, and the backend is idle - exit immediately.
+    if (non_collisions == 0 && minibatch_size > 0 &&
+        computation_->GetCacheMisses() > 0 && 
+        backend_waiting_counter_.load(std::memory_order_relaxed) == 0) {
+      return;
     }
   }
 }
