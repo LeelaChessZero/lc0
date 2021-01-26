@@ -795,6 +795,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 void Search::StartThreads(size_t how_many) {
+  thread_count_.store(how_many, std::memory_order_release);
   Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
@@ -1212,6 +1213,9 @@ void SearchWorker::GatherMinibatch2() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
+  bool multithreaded =
+      search_->thread_count_.load(std::memory_order_acquire) > 1;
+
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
@@ -1222,7 +1226,12 @@ void SearchWorker::GatherMinibatch2() {
 
     // If there is backend work to be done, and the backend is idle - exit
     // immediately.
-    if (minibatch_size > 0 && computation_->GetCacheMisses() > 0 &&
+    // Only do this fancy work if there are multiple threads as otherwise we
+    // early exit from every batch since there is never another search thread to
+    // be keeping the backend busy. Which would mean that threads=1 has a
+    // massive nps drop.
+    if (multithreaded && minibatch_size > 0 &&
+        computation_->GetCacheMisses() > 0 &&
         search_->backend_waiting_counter_.load(std::memory_order_relaxed) ==
             0) {
       return;
