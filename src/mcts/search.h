@@ -193,6 +193,7 @@ class Search {
       GUARDED_BY(counters_mutex_);
 
   std::atomic<int> pending_searchers_{0};
+  std::atomic<int> backend_waiting_counter_{0};
 
   std::vector<std::pair<Node*, int>> shared_collisions_
       GUARDED_BY(nodes_mutex_);
@@ -449,7 +450,6 @@ class SearchWorker {
   const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;
-  std::atomic<int> backend_waiting_counter_{0};
 
   // Multigather task related fields.
 
