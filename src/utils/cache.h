@@ -31,6 +31,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -60,8 +61,8 @@ class HashKeyedCache {
     assert(allocated_ == 0);
   }
 
-  // Inserts the element under key @key with value @val.
-  // Puts element to front of the queue (makes it last to evict).
+  // Inserts the element under key @key with value @val. Unless the key is
+  // already in the cache.
   void Insert(uint64_t key, std::unique_ptr<V> val) {
     if (capacity_.load(std::memory_order_relaxed) == 0) return;
 
@@ -88,7 +89,7 @@ class HashKeyedCache {
     ShrinkToCapacity(capacity_);
   }
 
-  // Checks whether a key exists. Doesn't lock. Of course the next moment the
+  // Checks whether a key exists. Doesn't pin. Of course the next moment the
   // key may be evicted.
   bool ContainsKey(uint64_t key) {
     if (capacity_.load(std::memory_order_relaxed) == 0) return false;
@@ -107,8 +108,7 @@ class HashKeyedCache {
   }
 
   // Looks up and pins the element by key. Returns nullptr if not found.
-  // If found, brings the element to the head of the queue (makes it last to
-  // evict); furthermore, a call to Unpin must be made for each such element.
+  // If found, a call to Unpin must be made for each such element.
   // Use of HashedKeyCacheLock is recommended to automate this pin management.
   V* LookupAndPin(uint64_t key) {
     if (capacity_.load(std::memory_order_relaxed) == 0) return nullptr;
@@ -128,8 +128,8 @@ class HashKeyedCache {
     return nullptr;
   }
 
-  // Unpins the element given key and value. Use of LruCacheLock is recommended
-  // to automate this pin management.
+  // Unpins the element given key and value. Use of HashedKeyCacheLock is
+  // recommended to automate this pin management.
   void Unpin(uint64_t key, V* value) {
     SpinMutex::Lock lock(mutex_);
 
