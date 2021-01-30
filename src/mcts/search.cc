@@ -1213,8 +1213,7 @@ void SearchWorker::GatherMinibatch2() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
-  bool multithreaded =
-      search_->thread_count_.load(std::memory_order_acquire) > 1;
+  int thread_count = search_->thread_count_.load(std::memory_order_acquire);
 
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
@@ -1230,10 +1229,11 @@ void SearchWorker::GatherMinibatch2() {
     // early exit from every batch since there is never another search thread to
     // be keeping the backend busy. Which would mean that threads=1 has a
     // massive nps drop.
-    if (multithreaded && minibatch_size > 0 &&
-        computation_->GetCacheMisses() > 0 &&
-        search_->backend_waiting_counter_.load(std::memory_order_relaxed) ==
-            0) {
+    if (thread_count > 1 && minibatch_size > 0 &&
+        computation_->GetCacheMisses() > params_.GetIdlingMinimumWork() &&
+        thread_count - search_->backend_waiting_counter_.load(
+                           std::memory_order_relaxed) >
+            params_.GetThreadIdlingThreshold()) {
       return;
     }
 

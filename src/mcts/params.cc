@@ -297,6 +297,16 @@ const OptionId SearchParams::kMinimumWorkPerTaskForProcessingId{
     "minimum-per-task-processing", "MinimumPerTaskProcessing",
     "Processing work won't be split into chunks smaller than this (unless its "
     "more than half of MinimumProcessingWork)."};
+const OptionId SearchParams::kIdlingMinimumWorkId{
+    "idling-minimum-work", "IdlingMinimumWork",
+    "Only early exit gathering due to 'idle' backend if more than this many "
+    "nodes will be sent to the backend."};
+const OptionId SearchParams::kThreadIdlingThresholdId{
+    "thread-idling-threshold", "ThreadIdlingThreshold",
+    "If there are more than this number of search threads that are not "
+    "actively in the process of either sending data to the backend or waiting "
+    "for data from the backend, assume that the backend is idle."};
+
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
@@ -369,6 +379,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =
       20;
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
+  options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
+  options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -449,7 +461,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMinimumRemainingWorkSizeForPicking(
           options.Get<int>(kMinimumRemainingWorkSizeForPickingId)),
       kMinimumWorkPerTaskForProcessing(
-          options.Get<int>(kMinimumWorkPerTaskForProcessingId)) {
+          options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
+      kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
+      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
