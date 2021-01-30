@@ -141,6 +141,8 @@ class HashKeyedCache {
           --allocated_;
           evicted_.erase(it);
           return;
+        } else {
+          return;
         }
       }
     }
@@ -259,7 +261,7 @@ class HashKeyedCache {
   }
 
   bool InRange(size_t target, size_t start, size_t end) {
-    if (start < end) {
+    if (start <= end) {
       return target >= start && target <= end;
     } else {
       return target >= start || target <= end;
