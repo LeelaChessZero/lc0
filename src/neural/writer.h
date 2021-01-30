@@ -87,7 +87,7 @@ struct V6TrainingData {
 } PACKED_STRUCT;
 static_assert(sizeof(V6TrainingData) == 8356, "Wrong struct size");
 
-InputPlanes PlanesFromTrainingData(const V5TrainingData& data);
+InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
 
 #pragma pack(pop)
 
@@ -124,7 +124,7 @@ class TrainingDataReader {
   ~TrainingDataReader();
 
   // Reads a chunk. Returns true if a chunk was read.
-  bool ReadChunk(V5TrainingData* data);
+  bool ReadChunk(V6TrainingData* data);
 
   // Gets full filename of the file being read.
   std::string GetFileName() const { return filename_; }
@@ -132,7 +132,7 @@ class TrainingDataReader {
  private:
   std::string filename_;
   gzFile fin_;
-  bool format_v5 = false;
+  bool format_v6 = false;
 };
 
 }  // namespace lczero
