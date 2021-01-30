@@ -227,6 +227,13 @@ void Validate(const std::vector<V6TrainingData>& fileContents) {
       if (prob >= 0.0f) {
         sum += prob;
       }
+      // Only check best_idx/played_idx for real v6 data.
+      if (data.visits > 0) {
+        // Best_idx and played_idx must be marked legal in probabilities.
+        if (j == data.best_idx || j == data.played_idx) {
+          DataAssert(prob >= 0.0f);
+        }
+      }
     }
     if (sum < 0.99f || sum > 1.01f) {
       throw Exception("Probability sum error is huge!");
@@ -259,10 +266,14 @@ void Validate(const std::vector<V6TrainingData>& fileContents,
   history.Reset(board, rule50ply, gameply);
   for (int i = 0; i < moves.size(); i++) {
     int transform = TransformForPosition(input_format, history);
-    // TODO: if visits > 0 (indicating real v6 data) check that played_idx
-    // matches moves[i]. Move shouldn't be marked illegal unless there is 0
-    // visits, which should only happen if invariance_info is marked with the
-    // placeholder bit.
+    // If real v6 data, can confirm that played_idx matches the inferred move.
+    if (fileContents[i].visits > 0) {
+      if (fileContents[i].played_idx != moves[i].as_nn_index(transform)) {
+        throw Exception("Move performed is not listed as played.");
+      }
+    }
+    // Move shouldn't be marked illegal unless there is 0 visits, which should
+    // only happen if invariance_info is marked with the placeholder bit.
     if (!(fileContents[i].probabilities[moves[i].as_nn_index(transform)] >=
           0.0f) &&
         (fileContents[i].invariance_info & 64) == 0) {
@@ -1007,7 +1018,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             std::cerr << "Deblundering: "
                       << fileContents[history.GetLength() - 1].best_q << " "
                       << fileContents[history.GetLength() - 1].best_d << " "
-                      << (int)fileContents[history.GetLength() - 1].result << " "
+                      << (int)fileContents[history.GetLength() - 1].result << "
+            "
                       << (int)activeZ << std::endl;
                       */
             if (activeZ == 0) {
