@@ -69,22 +69,28 @@ const OptionId kNewInputFormatId{
     "Input format to convert training data to during rescoring."};
 const OptionId kDeblunderZ{
     "deblunder-z", "",
-    "If true, whether to use move Q information to infer a different Z value if the the selected move appears to be a blunder."};
+    "If true, whether to use move Q information to infer a different Z value "
+    "if the the selected move appears to be a blunder."};
 const OptionId kDeblunderZPolicyStrictCutoff{
     "deblunder-z-policy-strict-cutoff", "",
-    "The multiplier for the max policy under which a selected move is considered a definite blunder."};
+    "The multiplier for the max policy under which a selected move is "
+    "considered a definite blunder."};
 const OptionId kDeblunderZPolicyWeakCutoff{
     "deblunder-z-policy-weak-cutoff", "",
-    "The multiplier for the max policy which forms the upper bound of the range where q based blunder detection is used.."};
+    "The multiplier for the max policy which forms the upper bound of the "
+    "range where q based blunder detection is used.."};
 const OptionId kDeblunderZQBlunderThreshod{
     "deblunder-z-q-blunder-threshold", "",
-    "The amount Q needs to have gotten worse in order to assume a weak cutoff move is a blunder."};
+    "The amount Q needs to have gotten worse in order to assume a weak cutoff "
+    "move is a blunder."};
 const OptionId kDeblunderZQLastMoveBlunderThreshod{
     "deblunder-z-q-last-move-blunder-threshold", "",
-    "The amount the final outcome needs to be worse than prior position Q in order to assume the final move was a blunder."};
+    "The amount the final outcome needs to be worse than prior position Q in "
+    "order to assume the final move was a blunder."};
 const OptionId kDeblunderZQSoftmaxTemp{
     "deblunder-z-q-softmax-temp", "",
-    "The temperature to apply to the WDL distribution before selecting the new Z value. Set to 0 to take maximum."};
+    "The temperature to apply to the WDL distribution before selecting the new "
+    "Z value. Set to 0 to take maximum."};
 
 const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
@@ -127,7 +133,7 @@ int SelectNewZ(float random, float q, float d) {
   // q+2l+d = 1.0
   // l = (1.0-d-q)/2.0
   float l = (1.0f - d - q) / 2.0f;
-  float w = q+l;
+  float w = q + l;
   if (deblunderQSoftmaxTemp == 0.0f) {
     if (w > d && w > l) {
       return 1;
@@ -158,7 +164,7 @@ void DataAssert(bool check_result) {
   if (!check_result) throw Exception("Range Violation");
 }
 
-void Validate(const std::vector<V5TrainingData>& fileContents) {
+void Validate(const std::vector<V6TrainingData>& fileContents) {
   if (fileContents.empty()) throw Exception("Empty File");
 
   for (int i = 0; i < fileContents.size(); i++) {
@@ -210,7 +216,8 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
       DataAssert(data.side_to_move_or_enpassant >= 0 &&
                  data.side_to_move_or_enpassant <= 1);
     }
-    DataAssert(data.result >= -1 && data.result <= 1);
+    DataAssert(data.result_q >= -1 && data.result_q <= 1);
+    DataAssert(data.result_d >= 0 && data.result_q <= 1);
     DataAssert(data.rule50_count >= 0 && data.rule50_count <= 100);
     float sum = 0.0f;
     for (int j = 0; j < sizeof(data.probabilities) / sizeof(float); j++) {
@@ -224,10 +231,22 @@ void Validate(const std::vector<V5TrainingData>& fileContents) {
     if (sum < 0.99f || sum > 1.01f) {
       throw Exception("Probability sum error is huge!");
     }
+    DataAssert(data.best_idx <= 1858);
+    DataAssert(data.played_idx <= 1858);
+    DataAssert(data.played_q >= -1.0f && data.played_q <= 1.0f);
+    DataAssert(data.played_d >= 0.0f && data.played_d <= 1.0f);
+    DataAssert(data.played_m >= 0.0f);
+    DataAssert(std::isnan(data.orig_q) ||
+               data.orig_q >= -1.0f && data.orig_q <= 1.0f);
+    DataAssert(std::isnan(data.orig_d) ||
+               data.orig_d >= 0.0f && data.orig_d <= 1.0f);
+    DataAssert(std::isnan(data.orig_m) || data.orig_m >= 0.0f);
+    // TODO: if visits > 0 - assert best_idx/played_idx are valid in
+    // probabilities.
   }
 }
 
-void Validate(const std::vector<V5TrainingData>& fileContents,
+void Validate(const std::vector<V6TrainingData>& fileContents,
               const MoveList& moves) {
   PositionHistory history;
   int rule50ply;
@@ -240,9 +259,13 @@ void Validate(const std::vector<V5TrainingData>& fileContents,
   history.Reset(board, rule50ply, gameply);
   for (int i = 0; i < moves.size(); i++) {
     int transform = TransformForPosition(input_format, history);
-    // Move shouldn't be marked illegal unless there is 0 visits, which should only happen if invariance_info is marked with the placeholder bit.
+    // TODO: if visits > 0 (indicating real v6 data) check that played_idx
+    // matches moves[i]. Move shouldn't be marked illegal unless there is 0
+    // visits, which should only happen if invariance_info is marked with the
+    // placeholder bit.
     if (!(fileContents[i].probabilities[moves[i].as_nn_index(transform)] >=
-          0.0f) && (fileContents[i].invariance_info & 64) == 0) {
+          0.0f) &&
+        (fileContents[i].invariance_info & 64) == 0) {
       std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
       throw Exception("Move performed is marked illegal in probabilities.");
     }
@@ -345,7 +368,7 @@ void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
   tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info, &dtm);
 }
 
-void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
+void ChangeInputFormat(int newInputFormat, V6TrainingData* data,
                        const PositionHistory& history) {
   data->input_format = newInputFormat;
   auto input_format =
@@ -368,6 +391,15 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
       int i = move.as_nn_index(transform);
       int j = move.as_nn_index(data->invariance_info & 7);
       newProbs[i] = data->probabilities[j];
+      // For V6 data only, the played/best idx need updating.
+      if (data->visits > 0) {
+        if (data->played_idx == j) {
+          data->played_idx = i;
+        }
+        if (data->best_idx == j) {
+          data->best_idx = i;
+        }
+      }
     }
     for (int i = 0; i < 1858; i++) {
       data->probabilities[i] = newProbs[i];
@@ -391,7 +423,8 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
   data->castling_them_ooo = castlings.they_can_000() ? queen_side : 0;
   data->castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
-  bool marked = (data->invariance_info & 64) != 0;
+  // Save the bits that aren't connected to the input_format.
+  uint8_t invariance_mask = data->invariance_info & 0x78;
   // Other params.
   if (IsCanonicalFormat(input_format)) {
     data->side_to_move_or_enpassant =
@@ -408,9 +441,19 @@ void ChangeInputFormat(int newInputFormat, V5TrainingData* data,
     data->side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
     data->invariance_info = 0;
   }
-  if (marked) {
-    data->invariance_info |= 64;
-  }
+  // Put the mask back.
+  data->invariance_info |= invariance_mask;
+}
+
+int ResultForData(const V6TrainingData& data) {
+  // Ensure we aren't reprocessing some data that has had custom adjustments to
+  // result training target applied.
+  DataAssert(data.result_q == -1.0f || data.result_q == 1.0f ||
+             data.result_q == 0.0f);
+  // Paranoia - ensure int cast never breaks the value.
+  DataAssert(data.result_q ==
+             static_cast<float>(static_cast<int>(data.result_q)));
+  return static_cast<int>(data.result_q);
 }
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
@@ -420,8 +463,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
   {
     try {
       TrainingDataReader reader(file);
-      std::vector<V5TrainingData> fileContents;
-      V5TrainingData data;
+      std::vector<V6TrainingData> fileContents;
+      V6TrainingData data;
       while (reader.ReadChunk(&data)) {
         fileContents.push_back(data);
       }
@@ -453,9 +496,10 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         PolicySubNode* rootNode = &policy_subs[rootHash];
         for (int i = 0; i < fileContents.size(); i++) {
           if (rootNode->active) {
-            /* Some logic for choosing a softmax to apply to better align the new policy with the old policy...
-            double bestkld = std::numeric_limits<double>::max();
-            float besttemp = 1.0f;
+            /* Some logic for choosing a softmax to apply to better align the
+            new policy with the old policy...
+            double bestkld =
+              std::numeric_limits<double>::max(); float besttemp = 1.0f;
             // Minima is usually in this range for 'better' data.
             for (float temp = 1.0f; temp < 3.0f; temp += 0.1f) {
               float soft[1858];
@@ -473,7 +517,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 if (soft[j] >= 0.0) soft[j] /= sum;
                 if (rootNode->policy[j] > 0.0 &&
                     fileContents[i].probabilities[j] > 0) {
-                  kld += -1.0f * soft[j] * std::log(fileContents[i].probabilities[j] / soft[j]);
+                  kld += -1.0f * soft[j] *
+                    std::log(fileContents[i].probabilities[j] / soft[j]);
                 }
               }
               if (kld < bestkld) {
@@ -509,8 +554,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                     &board, &rule50ply, &gameply);
       history.Reset(board, rule50ply, gameply);
       int last_rescore = -1;
-      orig_counts[fileContents[0].result + 1]++;
-      fixed_counts[fileContents[0].result + 1]++;
+      orig_counts[ResultForData(fileContents[0]) + 1]++;
+      fixed_counts[ResultForData(fileContents[0]) + 1]++;
       for (int i = 0; i < moves.size(); i++) {
         history.Append(moves[i]);
         const auto& board = history.Last().GetBoard();
@@ -530,9 +575,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               score_to_apply = -1;
             }
             for (int j = i + 1; j > last_rescore; j--) {
-              if (fileContents[j].result != score_to_apply) {
+              if (ResultForData(fileContents[j]) != score_to_apply) {
                 if (j == i + 1 && last_rescore == -1) {
-                  fixed_counts[fileContents[0].result + 1]--;
+                  fixed_counts[ResultForData(fileContents[0]) + 1]--;
                   bool flip = (i % 2) == 0;
                   fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
                   /*
@@ -543,7 +588,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                             */
                 }
                 rescored += 1;
-                delta += abs(fileContents[j].result - score_to_apply);
+                delta += abs(ResultForData(fileContents[j]) - score_to_apply);
                 /*
               std::cerr << "Rescoring: " << (int)fileContents[j].result << " ->
               "
@@ -552,7 +597,12 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                         */
               }
 
-              fileContents[j].result = score_to_apply;
+              if (score_to_apply == 0) {
+                fileContents[j].result_d = 1.0f;
+              } else {
+                fileContents[j].result_d = 0.0f;
+              }
+              fileContents[j].result_q = static_cast<float>(score_to_apply);
               score_to_apply = -score_to_apply;
             }
             last_rescore = i + 1;
@@ -586,13 +636,14 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             // correct or draw, so best we can do is change scores that don't
             // agree, to be a draw. If score was a draw this is a no-op, if it
             // was opposite it becomes a draw.
-            int8_t new_score = fileContents[i + 1].result != score_to_apply
-                                   ? 0
-                                   : fileContents[i + 1].result;
+            int8_t new_score =
+                ResultForData(fileContents[i + 1]) != score_to_apply
+                    ? 0
+                    : ResultForData(fileContents[i + 1]);
             bool dtz_rescored = false;
             // if score is not already right, and the score to apply isn't 0,
             // dtz can let us know its definitely correct.
-            if (fileContents[i + 1].result != score_to_apply &&
+            if (ResultForData(fileContents[i + 1]) != score_to_apply &&
                 score_to_apply != 0) {
               // Any repetitions in the history since last 50 ply makes it risky
               // to assume dtz is still correct.
@@ -630,8 +681,8 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             // check if 50 move rule has advanced so far its obviously a draw.
             // Obviously not needed if we've already proven with dtz that its a
             // win/loss.
-            if (fileContents[i + 1].result != 0 && score_to_apply != 0 &&
-                !dtz_rescored) {
+            if (ResultForData(fileContents[i + 1]) != 0 &&
+                score_to_apply != 0 && !dtz_rescored) {
               int depth = tablebase->probe_dtz(history.Last(), &state);
               if (state != FAIL) {
                 int steps = history.Last().GetRule50Ply();
@@ -644,7 +695,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 }
               }
             }
-            if (new_score != fileContents[i + 1].result) {
+            if (new_score != ResultForData(fileContents[i + 1])) {
               rescored2 += 1;
               /*
             std::cerr << "Rescoring: " << (int)fileContents[j].result << " -> "
@@ -653,7 +704,12 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                       */
             }
 
-            fileContents[i + 1].result = new_score;
+            if (new_score == 0) {
+              fileContents[i + 1].result_d = 1.0f;
+            } else {
+              fileContents[i + 1].result_d = 0.0f;
+            }
+            fileContents[i + 1].result_q = static_cast<float>(new_score);
           }
         }
       }
@@ -761,7 +817,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           chunk.plies_left = (int)(fileContents.size() - offset);
         }
         offset++;
-        all_draws = all_draws && (chunk.result == 0);
+        all_draws = all_draws && (ResultForData(chunk) == 0);
       }
 
       // Correct plies_left using Gaviota TBs for 5 piece and less positions.
@@ -776,7 +832,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 
           // Gaviota TBs don't have 50 move rule.
           // Only consider positions that are not draw after rescoring.
-          if ((fileContents[i + 1].result != 0) &&
+          if ((ResultForData(fileContents[i + 1]) != 0) &&
               board.castlings().no_legal_castle() &&
               (board.ours() | board.theirs()).count() <= 5) {
             std::vector<int> dtms;
@@ -912,22 +968,24 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             break;
           }
         }
-        int activeZ = fileContents.back().result;
+        int activeZ = ResultForData(fileContents.back());
         bool deblunderingStarted = false;
         while (true) {
           if (history.GetLength() == fileContents.size()) {
-              // Game doesn't get to TB, so we need to check if final position is a blunder.
+            // Game doesn't get to TB, so we need to check if final position is
+            // a blunder.
             auto& last = fileContents.back();
-            if (last.best_q - static_cast<float>(last.result) >
+            if (last.best_q - last.result_q >
                 deblunderQLastMoveBlunderThreshold) {
-              activeZ = SelectNewZ(Random::Get().GetFloat(1.0), last.best_q, last.best_d);
+              activeZ = SelectNewZ(Random::Get().GetFloat(1.0), last.best_q,
+                                   last.best_d);
               deblunderingStarted = true;
             }
           } else {
             auto played = moves[history.GetLength() - 1];
             auto& cur = fileContents[history.GetLength() - 1];
             float max_policy = *std::max_element(std::begin(cur.probabilities),
-                             std::end(cur.probabilities));
+                                                 std::end(cur.probabilities));
             int transform = TransformForPosition(input_format, history);
             int prob_index = played.as_nn_index(transform);
             float move_policy = cur.probabilities[prob_index];
@@ -952,7 +1010,13 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                       << (int)fileContents[history.GetLength() - 1].result << " "
                       << (int)activeZ << std::endl;
                       */
-            fileContents[history.GetLength() - 1].result = activeZ;
+            if (activeZ == 0) {
+              fileContents[history.GetLength() - 1].result_d = 1.0f;
+            } else {
+              fileContents[history.GetLength() - 1].result_d = 0.0f;
+            }
+            fileContents[history.GetLength() - 1].result_q =
+                static_cast<float>(activeZ);
           }
           if (history.GetLength() == 1) break;
           activeZ = -activeZ;
@@ -1005,8 +1069,8 @@ void ProcessFiles(const std::vector<std::string>& files,
 void BuildSubs(const std::vector<std::string>& files) {
   for (auto& file : files) {
     TrainingDataReader reader(file);
-    std::vector<V5TrainingData> fileContents;
-    V5TrainingData data;
+    std::vector<V6TrainingData> fileContents;
+    V6TrainingData data;
     while (reader.ReadChunk(&data)) {
       fileContents.push_back(data);
     }
