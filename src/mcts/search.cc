@@ -795,6 +795,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 void Search::StartThreads(size_t how_many) {
+  thread_count_.store(how_many, std::memory_order_release);
   Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
@@ -1073,6 +1074,7 @@ void SearchWorker::ExecuteOneIteration() {
   } else {
     GatherMinibatch();
   }
+  search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
   // 2b. Collect collisions.
   CollectCollisions();
@@ -1086,6 +1088,7 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 4. Run NN computation.
   RunNNComputation();
+  search_->backend_waiting_counter_.fetch_add(-1, std::memory_order_relaxed);
 
   // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
@@ -1210,6 +1213,8 @@ void SearchWorker::GatherMinibatch2() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
+  int thread_count = search_->thread_count_.load(std::memory_order_acquire);
+
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
@@ -1217,6 +1222,20 @@ void SearchWorker::GatherMinibatch2() {
          number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
+
+    // If there is backend work to be done, and the backend is idle - exit
+    // immediately.
+    // Only do this fancy work if there are multiple threads as otherwise we
+    // early exit from every batch since there is never another search thread to
+    // be keeping the backend busy. Which would mean that threads=1 has a
+    // massive nps drop.
+    if (thread_count > 1 && minibatch_size > 0 &&
+        computation_->GetCacheMisses() > params_.GetIdlingMinimumWork() &&
+        thread_count - search_->backend_waiting_counter_.load(
+                           std::memory_order_relaxed) >
+            params_.GetThreadIdlingThreshold()) {
+      return;
+    }
 
     int new_start = static_cast<int>(minibatch_.size());
 
