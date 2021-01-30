@@ -161,6 +161,7 @@ files += [
   'src/utils/esc_codes.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
+  'src/utils/numa.cc',
   'src/utils/optionsdict.cc',
   'src/utils/optionsparser.cc',
   'src/utils/random.cc',
@@ -209,8 +210,8 @@ if get_option('build_backends')
   ## Tensorflow
   ## ~~~~~~~~~~
   tf_dl_lib = cc.find_library('dl', required: false)
-  tf_tensorflow_cc_lib = dependency('tensorflow_cc',
-                                    required: false, include_type:'system')
+  # We had `is_system: true` to reduce warnings, but meson > 0.56.0 breaks.
+  tf_tensorflow_cc_lib = dependency('tensorflow_cc', required: false)
   if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
     deps += [tf_dl_lib, tf_tensorflow_cc_lib]
     files += 'src/neural/network_tf_cc.cc'
@@ -297,7 +298,7 @@ if get_option('build_backends')
         ispc_extra_args += ['--pic']
         outputnames = [ '@BASENAME@.o']
         if not ispc_native_only
-          outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o', 
+          outputnames += ['@BASENAME@_sse2.o', '@BASENAME@_sse4.o',
                           '@BASENAME@_avx.o', '@BASENAME@_avx2.o',
                           '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
@@ -412,8 +413,7 @@ if get_option('build_backends')
 
   #.cc files
   cuda_files = [
-    'src/neural/cuda/network_cudnn.cc',
-	'src/neural/cuda/layers.cc',
+	 'src/neural/cuda/layers.cc',
   ]
 
   # .cu files compiled without any specific sm version
@@ -426,8 +426,16 @@ if get_option('build_backends')
     'src/neural/cuda/fp16_kernels.cu',
   ]
 
-  if get_option('cudnn') and cu_blas.found() and cu_dnn.found() and cu_dart.found() and nvcc.found()
-    deps += [cu_blas, cu_dnn, cu_dart]
+  if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
+    deps += [cu_blas, cu_dart]
+    if get_option('cudnn') and cu_dnn.found()
+      deps += cu_dnn
+      cuda_files += 'src/neural/cuda/network_cudnn.cc'
+      add_project_arguments('-DUSE_CUDNN', language : 'cpp')
+    endif
+    if get_option('plain_cuda')
+      cuda_files += 'src/neural/cuda/network_cuda.cc'
+    endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d).returncode() == 0
         includes += include_directories(d)
@@ -453,6 +461,11 @@ if get_option('build_backends')
     if get_option('nvcc_ccbin') != ''
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
     endif
+    cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
+    nvcc_extra_args = []
+    if cuda_cc != ''
+      nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
+    endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
     endforeach
@@ -466,20 +479,42 @@ if get_option('build_backends')
         arguments: cuda_arguments,
       )
 	 files += cuda_files
-    files += cuda_gen.process(cuda_files_nvcc_common)
-    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: ['-arch=compute_70', '-code=sm_70'])
+    files += cuda_gen.process(cuda_files_nvcc_common, extra_args: nvcc_extra_args)
+    nvcc_arch = '-arch=compute_70'
+    nvcc_sm_list = ['sm_80', 'sm_75', 'sm_86', 'sm_70']
+    if host_machine.system() != 'windows'
+      nvcc_arch = '-arch=compute_60'
+      nvcc_sm_list += ['sm_60']
+      if ['arm', 'aarch64'].contains(host_machine.cpu_family())
+        # Add Jetson versions to the list.
+        message('Jetson support enabled.')
+        nvcc_arch = '-arch=compute_53'
+        nvcc_sm_list += ['sm_72', 'sm_62', 'sm_53']
+      endif
+    endif
+    # Ignore the given CC for fp16 when it is not in the supported list.
+    if cuda_cc == '' or not nvcc_sm_list.contains('sm_' + cuda_cc)
+      nvcc_extra_args = [nvcc_arch]
+      nvcc_help = run_command(nvcc, '-h').stdout()
+      foreach x : nvcc_sm_list
+        if nvcc_help.contains(x)
+          nvcc_extra_args += '-code=' + x
+        endif
+      endforeach
+    endif
+    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
     has_backends = true
   endif
-  
+
   ## ~~~~~~~~
   ## DirectX
   ## ~~~~~~~~
-  
-  # we should always be able to build DirectX12 backend on windows platform  
+
+  # we should always be able to build DirectX12 backend on windows platform
   if host_machine.system() == 'windows' and get_option('dx')
     dx_d3d12 = cc.find_library('d3d12')
     dx_dxgi = cc.find_library('dxgi')
-  
+
     dx_files = [
       'src/neural/dx/network_dx.cc',
       'src/neural/dx/shader_wrapper.cc',
@@ -492,8 +527,7 @@ if get_option('build_backends')
     subdir('src/neural/dx/shaders')
 
     has_backends = true
-  endif  
- 
+  endif
 
 endif # if get_option('build_backends')
 
@@ -530,6 +564,11 @@ endif
       dirs: ['/usr/local/lib'], required: false)
   endif
 
+  deps += cc.find_library('libatomic', required: false)
+
+  if get_option('malloc') != ''
+    deps += cc.find_library(get_option('malloc'), required: true)
+  endif
 
 #############################################################################
 ## Main Executable
@@ -583,12 +622,11 @@ if get_option('gtest')
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
 
-  test('EncodePositionForNN', 
+  test('EncodePositionForNN',
     executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
     include_directories: includes, link_with: lc0_lib,
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
-
 endif
 
 
@@ -601,7 +639,7 @@ if get_option('python_bindings')
   python = pymod.find_installation('python3')
   if python.language_version() < '3.7'
     error('You need python 3.7 or newer')
-  endif  
+  endif
   py_bindings_generator = find_program('scripts/gen_py_bindings.py')
 
   gen_py_bindings = custom_target('backends', input:[], output:['backends.cc'],

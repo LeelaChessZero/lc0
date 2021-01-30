@@ -110,9 +110,18 @@ class Edge {
   friend class Node;
 };
 
+struct Eval {
+  float wl;
+  float d;
+  float ml;
+};
+
 class EdgeAndNode;
 template <bool is_const>
 class Edge_Iterator;
+
+template <bool is_const>
+class VisitedNode_Iterator;
 
 class Node {
  public:
@@ -170,6 +179,15 @@ class Node {
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   uint8_t GetNumEdges() const { return num_edges_; }
 
+  // Output must point to at least max_needed floats.
+  void CopyPolicy(int max_needed, float* output) const {
+    if (!edges_) return;
+    int loops = std::min(static_cast<int>(num_edges_), max_needed);
+    for (int i = 0; i < loops; i++) {
+      output[i] = edges_[i].GetP();
+    }
+  }
+
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
                     Terminal type = Terminal::EndOfGame);
@@ -223,15 +241,20 @@ class Node {
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V5TrainingData GetV5TrainingData(
+  V6TrainingData GetV6TrainingData(
       GameResult result, const PositionHistory& history,
       FillEmptyHistory fill_empty_history,
-      pblczero::NetworkFormat::InputFormat input_format, float best_q,
-      float best_d, float best_m) const;
+      pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
+      Eval played_eval, Eval orig_eval, bool best_is_proven, Move best_move,
+      Move played_move) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
+
+  // Returns range for iterating over child nodes with N > 0.
+  VisitedNode_Iterator<true> VisitedNodes() const;
+  VisitedNode_Iterator<false> VisitedNodes();
 
   // Deletes all children.
   void ReleaseChildren();
@@ -255,6 +278,9 @@ class Node {
   bool MakeSolid();
 
   void SortEdges();
+
+  // Index in parent edges - useful for correlated ordering.
+  uint16_t Index() const { return index_; }
 
   ~Node() {
     if (solid_children_ && child_) {
@@ -346,6 +372,8 @@ class Node {
   friend class Edge_Iterator<true>;
   friend class Edge_Iterator<false>;
   friend class Edge;
+  friend class VisitedNode_Iterator<true>;
+  friend class VisitedNode_Iterator<false>;
 };
 
 // Define __i386__  or __arm__ also for 32 bit Windows.
@@ -562,6 +590,99 @@ class Edge_Iterator : public EdgeAndNode {
   uint16_t current_idx_ = 0;
   uint16_t total_count_ = 0;
 };
+
+// TODO(crem) Replace this with less hacky iterator once we support C++17.
+// This class has multiple hypostases within one class:
+// * Range (begin() and end() functions)
+// * Iterator (operator++() and operator*())
+// It's more customary to have those as two classes, but
+// creating zoo of classes and copying them around while iterating seems
+// excessive.
+//
+// All functions are not thread safe (must be externally synchronized).
+template <bool is_const>
+class VisitedNode_Iterator {
+ public:
+  // Creates "end()" iterator.
+  VisitedNode_Iterator() {}
+
+  // Creates "begin()" iterator. Also happens to be a range constructor.
+  // child_ptr will be nullptr if parent_node is solid children.
+  VisitedNode_Iterator(const Node& parent_node, Node* child_ptr)
+      : node_ptr_(child_ptr),
+        total_count_(parent_node.num_edges_),
+        solid_(parent_node.solid_children_) {
+    if (node_ptr_ != nullptr && node_ptr_->GetN() == 0) {
+      operator++();
+    }
+  }
+  // These are technically wrong, but are usable to compare with end().
+  bool operator==(const VisitedNode_Iterator<is_const>& other) const {
+    return node_ptr_ == other.node_ptr_;
+  }
+  bool operator!=(const VisitedNode_Iterator<is_const>& other) const {
+    return node_ptr_ != other.node_ptr_;
+  }
+
+  // Function to support range interface.
+  VisitedNode_Iterator<is_const> begin() { return *this; }
+  VisitedNode_Iterator<is_const> end() { return {}; }
+
+  // Functions to support iterator interface.
+  // Equality comparison operators are inherited from EdgeAndNode.
+  void operator++() {
+    if (solid_) {
+      while (++current_idx_ != total_count_ &&
+             node_ptr_[current_idx_].GetN() == 0) {
+        if (node_ptr_[current_idx_].GetNInFlight() == 0) {
+          // Once there is not even n in flight, we can skip to the end. This is
+          // due to policy being in sorted order meaning that additional n in
+          // flight are always selected from the front of the section with no n
+          // in flight or visited.
+          current_idx_ = total_count_;
+          break;
+        }
+      }
+      if (current_idx_ == total_count_) {
+        node_ptr_ = nullptr;
+      }
+    } else {
+      do {
+        node_ptr_ = node_ptr_->sibling_.get();
+        // If n started is 0, can jump direct to end due to sorted policy
+        // ensuring that each time a new edge becomes best for the first time,
+        // it is always the first of the section at the end that has NStarted of
+        // 0.
+        if (node_ptr_ != nullptr && node_ptr_->GetN() == 0 &&
+            node_ptr_->GetNInFlight() == 0) {
+          node_ptr_ = nullptr;
+          break;
+        }
+      } while (node_ptr_ != nullptr && node_ptr_->GetN() == 0);
+    }
+  }
+  Node* operator*() {
+    if (solid_) {
+      return &(node_ptr_[current_idx_]);
+    } else {
+      return node_ptr_;
+    }
+  }
+
+ private:
+  // Pointer to current node.
+  Node* node_ptr_ = nullptr;
+  uint16_t current_idx_ = 0;
+  uint16_t total_count_ = 0;
+  bool solid_ = false;
+};
+
+inline VisitedNode_Iterator<true> Node::VisitedNodes() const {
+  return {*this, child_.get()};
+}
+inline VisitedNode_Iterator<false> Node::VisitedNodes() {
+  return {*this, child_.get()};
+}
 
 class NodeTree {
  public:

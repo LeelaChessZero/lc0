@@ -77,4 +77,16 @@ inline float FastLog(const float a) {
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
 
+inline float FastSign(const float a) {
+  // Microsoft compiler does not have a builtin for copysign and emits a
+  // library call which is too expensive for hot paths.
+#if defined(_MSC_VER)
+  // This doesn't treat signed 0's the same way that copysign does, but it
+  // should be good enough, for our use case.
+  return a < 0 ? -1.0f : 1.0f;
+#else
+  return std::copysign(1.0f, a);
+#endif
+}
+
 }  // namespace lczero

@@ -39,6 +39,7 @@
 #include "neural/network.h"
 #include "utils/exception.h"
 #include "utils/hashcat.h"
+#include "utils/numa.h"
 
 namespace lczero {
 
@@ -98,6 +99,9 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
+    // Keep garbage collection on same core as where search workers are most
+    // likely to be to make any lock conention on gc mutex cheaper.
+    Numa::BindThread(0);
     while (!stop_.load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
       GarbageCollect();
@@ -470,15 +474,16 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   }
 }
 
-V5TrainingData Node::GetV5TrainingData(
+V6TrainingData Node::GetV6TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history,
-    pblczero::NetworkFormat::InputFormat input_format, float best_q,
-    float best_d, float best_m) const {
-  V5TrainingData result;
+    pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
+    Eval played_eval, Eval orig_eval, bool best_is_proven, Move best_move,
+    Move played_move) const {
+  V6TrainingData result;
 
   // Set version.
-  result.version = 5;
+  result.version = 6;
   result.input_format = input_format;
 
   // Populate planes.
@@ -540,31 +545,52 @@ V5TrainingData Node::GetV5TrainingData(
     result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
     result.invariance_info = 0;
   }
+  if (best_is_proven) {
+    result.invariance_info |= 1u << 3;  // Best node is proven best;
+  }
+  result.dummy = 0;
   result.rule50_count = position.GetRule50Ply();
 
   // Game result.
   if (game_result == GameResult::WHITE_WON) {
-    result.result = position.IsBlackToMove() ? -1 : 1;
+    result.result_q = position.IsBlackToMove() ? -1 : 1;
+    result.result_d = 0;
   } else if (game_result == GameResult::BLACK_WON) {
-    result.result = position.IsBlackToMove() ? 1 : -1;
+    result.result_q = position.IsBlackToMove() ? 1 : -1;
+    result.result_d = 0;
   } else {
-    result.result = 0;
+    result.result_q = 0;
+    result.result_d = 1;
   }
 
   // Aggregate evaluation WL.
   result.root_q = -GetWL();
-  result.best_q = best_q;
+  result.best_q = best_eval.wl;
+  result.played_q = played_eval.wl;
+  result.orig_q = orig_eval.wl;
 
   // Draw probability of WDL head.
   result.root_d = GetD();
-  result.best_d = best_d;
+  result.best_d = best_eval.d;
+  result.played_d = played_eval.d;
+  result.orig_d = orig_eval.d;
 
   result.root_m = GetM();
-  result.best_m = best_m;
+  result.best_m = best_eval.ml;
+  result.played_m = played_eval.ml;
+  result.orig_m = orig_eval.ml;
+
+  result.visits = n_;
+  if (position.IsBlackToMove()) {
+    best_move.Mirror();
+    played_move.Mirror();
+  }
+  result.best_idx = best_move.as_nn_index(transform);
+  result.played_idx = played_move.as_nn_index(transform);
+  result.reserved = 0;
 
   // Unknown here - will be filled in once the full data has been collected.
   result.plies_left = 0;
-
   return result;
 }
 

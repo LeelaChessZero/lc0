@@ -28,7 +28,12 @@
 
 #include <cstddef>
 #include <cublas_v2.h>
+
+#ifdef USE_CUDNN
 #include <cudnn.h>
+#else
+typedef void* cudnnHandle_t;
+#endif
 
 namespace lczero {
 namespace cudnn_backend {
@@ -63,6 +68,7 @@ class BaseLayer {
   bool nhwc_;   // tensor layout
 };
 
+#ifdef USE_CUDNN
 template <typename DataType>
 class ConvLayer : public BaseLayer<DataType> {
   using BaseLayer<DataType>::C;
@@ -124,6 +130,7 @@ class SoftMaxLayer : public BaseLayer<DataType> {
  private:
   cudnnTensorDescriptor_t out_tensor_desc_;
 };
+#endif
 
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
@@ -244,6 +251,87 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   DataType* b2_;
 
  void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
+                               DataType* Out, int M, int N, int K,
+                               int batchSize, cublasHandle_t cublas);
+};
+
+template <typename DataType>
+class Conv1Layer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::H;
+  using BaseLayer<DataType>::W;
+  using BaseLayer<DataType>::GetC;
+  using BaseLayer<DataType>::GetH;
+  using BaseLayer<DataType>::GetW;
+  using BaseLayer<DataType>::nhwc_;
+
+ public:
+  Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
+                         int Cin, bool relu, bool bias, bool use_gemm_ex);
+
+  ~Conv1Layer();
+  void LoadWeights(float* pfilter, float* pBias, void* scratch);
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2,
+            void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  const int c_input_;
+  const bool use_relu_;
+  const bool use_bias_;
+  const bool use_gemm_ex_;
+
+  DataType* biases_ = nullptr;
+  DataType* weights_ = nullptr;
+
+ void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
+                               DataType* Out, int M, int N, int K,
+                               int batchSize, cublasHandle_t cublas);
+};
+
+// Multi-pass Winograd Conv fused with (optional) SE
+template <typename DataType>
+class ResidualBlock : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::H;
+  using BaseLayer<DataType>::W;
+  using BaseLayer<DataType>::GetC;
+  using BaseLayer<DataType>::GetH;
+  using BaseLayer<DataType>::GetW;
+
+ public:
+  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last);
+
+  ~ResidualBlock();
+  void LoadWeights0(float* pfilter, float* pBias, void* scratch);
+  void LoadWeights1(float* pfilter, float* pBias, void* scratch);
+  void LoadSEWeights(float* w1, float* b1, float* w2, float* b2, void* scratch);
+
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2, void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+
+ private:
+  const bool has_se_;
+  const int se_k_;
+  const bool use_gemm_ex_;
+  const int c_input_;
+  const bool first_block_;
+  const bool last_block_;
+
+  DataType* biases0_ = nullptr;
+  DataType* biases1_ = nullptr;
+  DataType* transformed_weights0_ = nullptr;  // After winograd transform.
+  DataType* transformed_weights1_ = nullptr;  // After winograd transform.
+
+  // Weights and Biases for (optional) SE.
+  DataType* w1_;
+  DataType* w2_;
+  DataType* b1_;
+  DataType* b2_;
+
+  void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
                                DataType* Out, int M, int N, int K,
                                int batchSize, cublasHandle_t cublas);
 };

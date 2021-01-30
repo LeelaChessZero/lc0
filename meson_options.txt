@@ -38,7 +38,7 @@ option('dnnl_dir',
        value: '',
        description: 'Paths to DNNL install directory')
 
-option('cudnn_include', 
+option('cudnn_include',
        type: 'array',
        value: ['/opt/cuda/include/', '/usr/local/cuda/include/', '/usr/lib/cuda/include/'],
        description: 'Paths to cudnn include directory')
@@ -67,6 +67,11 @@ option('cudnn',
        type: 'boolean',
        value: true,
        description: 'Enable cuDNN backend')
+
+option('plain_cuda',
+       type: 'boolean',
+       value: true,
+       description: 'Enable CUDA backend')
 
 option('opencl',
        type: 'boolean',
@@ -103,6 +108,11 @@ option('accelerate',
        value: true,
        description: 'Enable Accelerate BLAS support')
 
+option('malloc',
+       type : 'string',
+       value: '',
+       description: 'Use alternative memory allocator, e.g. tcmalloc/jemalloc')
+
 option('popcnt',
        type: 'boolean',
        value: true,
@@ -132,3 +142,8 @@ option('python_bindings',
        type: 'boolean',
        value: false,
        description: 'Build Python bindings for the python to bind.')
+
+option('cc_cuda',
+       type: 'string',
+       value: '',
+       description: 'Build for a specific cuda CC, e.g. -Dcc_cuda=35 for CC 3.5')

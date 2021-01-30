@@ -108,6 +108,7 @@ class SelfPlayGame {
   std::unique_ptr<Search> search_;
   bool abort_ = false;
   GameResult game_result_ = GameResult::UNDECIDED;
+  bool adjudicated_ = false;
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
   float min_eval_[2] = {1.0f, 1.0f};
@@ -118,7 +119,7 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V5TrainingData> training_data_;
+  std::vector<V6TrainingData> training_data_;
 
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
 

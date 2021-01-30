@@ -82,7 +82,7 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
 
 template <typename T>
 __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
-                                    int W) {
+                                    int W, bool relu) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
   int size = N * C * H * W;
   if (i < size) {
@@ -93,18 +93,21 @@ __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
     float bVal = (float)b[biasIndex];
 
     float cVal = aVal + bVal;
+
+    if (relu && (cVal < 0)) cVal = 0;
+
     c[i] = (T)cVal;
   }
 }
 
 // Add bias to convolution's output.
 template <typename T>
-void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W) {
+void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu) {
   int size = N * C * H * W;
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
-  addBias_NCHW_kernel<<<blocks, kBlockSize>>>(c, a, b, N, C, H, W);
+  addBias_NCHW_kernel<<<blocks, kBlockSize>>>(c, a, b, N, C, H, W, relu);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -565,10 +568,10 @@ template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                bool use_sigmoid);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
-                                  int H, int W);
+                                  int H, int W, bool relu);
 
 template void addBias_NCHW<half>(half* c, half* a, half* b, int N, int C, int H,
-                                 int W);
+                                 int W, bool relu);
 
 template void globalAvgPool<float>(int N, int C, float* output,
                                    const float* input,
@@ -608,6 +611,26 @@ template void OutputTransform<float, false, true, true, false>(
     const float* w2, const float* b2);
 
 template void OutputTransform<float, false, true, true, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputTransform<float, false, false, true, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputInputTransform<float, true, true, true, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputInputTransform<float, false, true, true, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputInputTransform<float, false, true, true, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2);

@@ -61,7 +61,7 @@ class LruCache {
   void Insert(K key, std::unique_ptr<V> val) {
     if (capacity_.load(std::memory_order_relaxed) == 0) return;
 
-    Mutex::Lock lock(mutex_);
+    SpinMutex::Lock lock(mutex_);
 
     auto hash = hasher_(key) % hash_.size();
     auto& hash_head = hash_[hash];
@@ -86,7 +86,7 @@ class LruCache {
   bool ContainsKey(K key) {
     if (capacity_.load(std::memory_order_relaxed) == 0) return false;
 
-    Mutex::Lock lock(mutex_);
+    SpinMutex::Lock lock(mutex_);
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
       if (key == iter->key) return true;
@@ -101,7 +101,7 @@ class LruCache {
   V* LookupAndPin(K key) {
     if (capacity_.load(std::memory_order_relaxed) == 0) return nullptr;
 
-    Mutex::Lock lock(mutex_);
+    SpinMutex::Lock lock(mutex_);
 
     auto hash = hasher_(key) % hash_.size();
     for (Item* iter = hash_[hash]; iter; iter = iter->next_in_hash) {
@@ -117,7 +117,7 @@ class LruCache {
   // Unpins the element given key and value. Use of LruCacheLock is recommended
   // to automate this pin management.
   void Unpin(K key, V* value) {
-    Mutex::Lock lock(mutex_);
+    SpinMutex::Lock lock(mutex_);
 
     // Checking evicted list first.
     Item** cur = &evicted_head_;
@@ -149,7 +149,12 @@ class LruCache {
   // of the cache, oldest entries are evicted. In any case the hashtable is
   // rehashed.
   void SetCapacity(int capacity) {
-    Mutex::Lock lock(mutex_);
+    // This is the one operation that can be expected to take a long time, which
+    // usually means a SpinMutex is not a great idea. However we should only
+    // very rarely have any contention on the lock while this function is
+    // running, since its called very rarely and almost always before things
+    // start happening.
+    SpinMutex::Lock lock(mutex_);
 
     if (capacity_.load(std::memory_order_relaxed) == capacity) return;
     ShrinkToCapacity(capacity);
@@ -173,12 +178,12 @@ class LruCache {
 
   // Clears the cache;
   void Clear() {
-    Mutex::Lock lock(mutex_);
+    SpinMutex::Lock lock(mutex_);
     ShrinkToCapacity(0);
   }
 
   int GetSize() const {
-    Mutex::Lock lock(mutex_);
+    SpinMutex::Lock lock(mutex_);
     return size_;
   }
   int GetCapacity() const { 
@@ -279,7 +284,7 @@ class LruCache {
   std::vector<Item*> hash_ GUARDED_BY(mutex_);
   std::hash<K> hasher_ GUARDED_BY(mutex_);
 
-  mutable Mutex mutex_;
+  mutable SpinMutex mutex_;
 };
 
 // Convenience class for pinning cache items.
@@ -310,6 +315,7 @@ class LruCacheLock {
     other.value_ = nullptr;
   }
   void operator=(LruCacheLock&& other) {
+    if (value_) cache_->Unpin(key_, value_);
     cache_ = other.cache_;
     key_ = other.key_;
     value_ = other.value_;

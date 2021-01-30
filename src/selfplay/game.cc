@@ -117,7 +117,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // If endgame, stop.
     if (game_result_ != GameResult::UNDECIDED) break;
-
+    if (tree_[0]->GetPositionHistory().Last().GetGamePly() >= 450) {
+      adjudicated_ = true;
+      break;
+    }
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
@@ -139,7 +142,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             std::move(responder), tree_[idx]->HeadPosition().GetBoard());
       }
 
-     search_ = std::make_unique<Search>(
+      search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
@@ -153,20 +156,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
-    const auto best_eval = search_->GetBestEval();
-    if (training) {
-      // Append training data. The GameResult is later overwritten.
-      const auto best_wl = best_eval.wl;
-      const auto best_d = best_eval.d;
-      const auto best_m = best_eval.ml;
-      const auto input_format =
-          options_[idx].network->GetCapabilities().input_format;
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV5TrainingData(
-          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), input_format, best_wl, best_d,
-          best_m));
-    }
-
+    Move best_move;
+    bool best_is_terminal;
+    const auto best_eval = search_->GetBestEval(&best_move, &best_is_terminal);
     float eval = best_eval.wl;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
@@ -177,8 +169,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
-                                            kResignEarliestMoveId)) {
+    if (enable_resign &&
+        move_number >=
+            options_[idx].uci_options->Get<int>(kResignEarliestMoveId)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
@@ -186,37 +179,47 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         if (best_w > threshold) {
           game_result_ =
               blacks_move ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+          adjudicated_ = true;
           break;
         }
         if (best_l > threshold) {
           game_result_ =
               blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
           break;
         }
         if (best_d > threshold) {
           game_result_ = GameResult::DRAW;
+          adjudicated_ = true;
           break;
         }
       } else {
         if (eval < resignpct) {  // always false when resignpct == 0
           game_result_ =
               blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
           break;
         }
       }
     }
 
+    auto node = tree_[idx]->GetCurrentHead();
+    Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
-      for (auto edge : tree_[idx]->GetCurrentHead()->Edges()) {
+
+      for (auto& edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }
         if (edge.GetMove(tree_[idx]->IsBlackToMove()) == move) {
           cur_n = edge.GetN();
+          played_eval.wl = edge.GetWL(-node->GetWL());
+          played_eval.d = edge.GetD(node->GetD());
+          played_eval.ml = edge.GetM(node->GetM() - 1) + 1;
         }
       }
       // If 'best move' is less than allowed visits and not max visits,
@@ -240,6 +243,43 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       search_->ResetBestMove();
     }
+
+    if (training) {
+      bool best_is_proof = best_is_terminal;  // But check for better moves.
+      if (best_is_proof && best_eval.wl < 1) {
+        auto best =
+            (best_eval.wl == 0) ? GameResult::DRAW : GameResult::BLACK_WON;
+        auto upper = best;
+        for (const auto& edge : node->Edges()) {
+          upper = std::max(-edge.GetBounds().first, upper);
+        }
+        if (best < upper) {
+          best_is_proof = false;
+        }
+      }
+      // Append training data. The GameResult is later overwritten.
+      const auto input_format =
+          options_[idx].network->GetCapabilities().input_format;
+      Eval orig_eval;
+      NNCacheLock nneval =
+          search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
+      if (nneval) {
+        orig_eval.wl = nneval->q;
+        orig_eval.d = nneval->d;
+        orig_eval.ml = nneval->m;
+      } else {
+        orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
+        orig_eval.d = std::numeric_limits<float>::quiet_NaN();
+        orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
+      }
+      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
+          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
+          search_->GetParams().GetHistoryFill(), input_format, best_eval,
+          played_eval, orig_eval, best_is_proof, best_move, move));
+    }
+    // Must reset the search before mutating the tree.
+    search_.reset();
+
     // Add best move to the tree.
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
@@ -302,11 +342,20 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
       black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
     }
     if (game_result_ == GameResult::WHITE_WON) {
-      chunk.result = black_to_move ? -1 : 1;
+      chunk.result_q = black_to_move ? -1 : 1;
+      chunk.result_d = 0;
     } else if (game_result_ == GameResult::BLACK_WON) {
-      chunk.result = black_to_move ? 1 : -1;
+      chunk.result_q = black_to_move ? 1 : -1;
+      chunk.result_d = 0;
     } else {
-      chunk.result = 0;
+      chunk.result_q = 0;
+      chunk.result_d = 1;
+    }
+    if (adjudicated_) {
+      chunk.invariance_info |= 1u << 5; // Game adjudicated.
+    }
+    if (adjudicated_ && game_result_ == GameResult::UNDECIDED) {
+      chunk.invariance_info |= 1u << 4; // Max game length exceeded.
     }
     chunk.plies_left = m_estimate;
     m_estimate -= 1.0f;
