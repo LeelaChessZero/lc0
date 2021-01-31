@@ -795,6 +795,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 void Search::StartThreads(size_t how_many) {
+  thread_count_.store(how_many, std::memory_order_release);
   Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
@@ -1073,6 +1074,7 @@ void SearchWorker::ExecuteOneIteration() {
   } else {
     GatherMinibatch();
   }
+  search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
   // 2b. Collect collisions.
   CollectCollisions();
@@ -1086,6 +1088,7 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 4. Run NN computation.
   RunNNComputation();
+  search_->backend_waiting_counter_.fetch_add(-1, std::memory_order_relaxed);
 
   // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
@@ -1209,7 +1212,8 @@ void SearchWorker::GatherMinibatch() {
     // out of order eval for it.
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
       // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, computation_->GetBatchSize() - 1);
+      FetchSingleNodeResult(&picked_node, *computation_,
+                            computation_->GetBatchSize() - 1);
       {
         // Nodes mutex for doing node updates.
         SharedMutex::Lock lock(search_->nodes_mutex_);
@@ -1237,6 +1241,8 @@ void SearchWorker::GatherMinibatch2() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
+  int thread_count = search_->thread_count_.load(std::memory_order_acquire);
+
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
@@ -1244,6 +1250,20 @@ void SearchWorker::GatherMinibatch2() {
          number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
+
+    // If there is backend work to be done, and the backend is idle - exit
+    // immediately.
+    // Only do this fancy work if there are multiple threads as otherwise we
+    // early exit from every batch since there is never another search thread to
+    // be keeping the backend busy. Which would mean that threads=1 has a
+    // massive nps drop.
+    if (thread_count > 1 && minibatch_size > 0 &&
+        computation_->GetCacheMisses() > params_.GetIdlingMinimumWork() &&
+        thread_count - search_->backend_waiting_counter_.load(
+                           std::memory_order_relaxed) >
+            params_.GetThreadIdlingThreshold()) {
+      return;
+    }
 
     int new_start = static_cast<int>(minibatch_.size());
 
@@ -1372,11 +1392,11 @@ void SearchWorker::GatherMinibatch2() {
 }
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
-                                     TaskWorkspace*) {
+                                     TaskWorkspace* workspace) {
+  auto& history = workspace->history;
   // This code runs multiple passes of work across the same input in order to
   // reduce taking/dropping mutexes in quick succession.
-  PositionHistory history = search_->played_history_;
-  history.Reserve(search_->played_history_.GetLength() + 30);
+  history = search_->played_history_;
 
   // First pass - Extend nodes.
   for (int i = start_idx; i < end_idx; i++) {
@@ -1388,8 +1408,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode2(node, picked_node.depth, picked_node.moves_to_visit,
-                  &history);
+      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
         const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
@@ -1417,7 +1436,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     }
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
       // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult2(&picked_node, picked_node, 0);
+      FetchSingleNodeResult(&picked_node, picked_node, 0);
       picked_node.ooo_completed = true;
     }
   }
@@ -1517,15 +1536,15 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          TaskWorkspace* workspace) {
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
-  std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
   auto& vtp_buffer = workspace->vtp_buffer;
-  visits_to_perform.reserve(30);
-  std::vector<int> vtp_last_filled;
-  vtp_last_filled.reserve(30);
-  std::vector<int> current_path;
-  current_path.reserve(30);
-  std::vector<Move> moves_to_path = moves_to_base;
-  moves_to_path.reserve(30);
+  auto& visits_to_perform = workspace->visits_to_perform;
+  visits_to_perform.clear();
+  auto& vtp_last_filled = workspace->vtp_last_filled;
+  vtp_last_filled.clear();
+  auto& current_path = workspace->current_path;
+  current_path.clear();
+  auto& moves_to_path = workspace->moves_to_path;
+  moves_to_path = moves_to_base;
   // Sometimes receiver is reused, othertimes not, so only jump start if small.
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
@@ -1852,9 +1871,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   }
 }
 
-void SearchWorker::ExtendNode2(Node* node, int depth,
-                               const std::vector<Move>& moves_to_node,
-                               PositionHistory* history) {
+void SearchWorker::ExtendNode(Node* node, int depth,
+                              const std::vector<Move>& moves_to_node,
+                              PositionHistory* history) {
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
   for (int i = 0; i < moves_to_node.size(); i++) {
@@ -2013,45 +2032,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
-    // If terminal, we either found a twofold draw to be reverted, or
-    // reached the end of this playout.
+
+    // Probably best place to check for two-fold draws consistently.
+    // Depth starts with 1 at root, so real depth is depth - 1.
+    EnsureNodeTwoFoldCorrectForDepth(node, depth - 1);
+
+    // If terminal, we reached the end of this playout.
     if (node->IsTerminal()) {
-      // Probably best place to check for two-fold draws consistently.
-      // Depth starts with 1 at root, so real depth is depth - 1.
-      // Check whether first repetition was before root. If yes, remove
-      // terminal status of node and revert all visits in the tree.
-      // Length of repetition was stored in m_. This code will only do
-      // something when tree is reused and twofold visits need to be reverted.
-      if (node->IsTwoFoldTerminal() && depth - 1 < node->GetM()) {
-        int depth_counter = 0;
-        // Cache node's values as we reset them in the process. We could
-        // manually set wl and d, but if we want to reuse this for reverting
-        // other terminal nodes this is the way to go.
-        const auto wl = node->GetWL();
-        const auto d = node->GetD();
-        const auto m = node->GetM();
-        const auto terminal_visits = node->GetN();
-        for (Node* node_to_revert = node; node_to_revert != nullptr;
-             node_to_revert = node_to_revert->GetParent()) {
-          // Revert all visits on twofold draw when making it non terminal.
-          node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
-                                               terminal_visits);
-          depth_counter++;
-          // Even if original tree still exists, we don't want to revert more
-          // than until new root.
-          if (depth_counter > depth - 1) break;
-          // If wl != 0, we would have to switch signs at each depth.
-        }
-        // Mark the prior twofold draw as non terminal to extend it again.
-        node->MakeNotTerminal();
-        // When reverting the visits, we also need to revert the initial
-        // visits, as we reused fewer nodes than anticipated.
-        search_->initial_visits_ -= terminal_visits;
-        // Max depth doesn't change when reverting the visits, and cum_depth_
-        // only counts the average depth of new nodes, not reused ones.
-      } else {
-        return NodeToProcess::Visit(node, depth);
-      }
+      return NodeToProcess::Visit(node, depth);
     }
     // If unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
@@ -2148,8 +2136,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth) {
-  // Initialize position sequence with pre-move position.
-  history_.Trim(search_->played_history_.GetLength());
   std::vector<Move> to_add;
   // Could instead reserve one more than the difference between history_.size()
   // and history_.capacity().
@@ -2165,98 +2151,9 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       cur = prev;
     }
   }
-  for (int i = to_add.size() - 1; i >= 0; i--) {
-    history_.Append(to_add[i]);
-  }
+  std::reverse(to_add.begin(), to_add.end());
 
-  // We don't need the mutex because other threads will see that N=0 and
-  // N-in-flight=1 and will not touch this node.
-  const auto& board = history_.Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-
-  // Check whether it's a draw/lose by position. Importantly, we must check
-  // these before doing the by-rule checks below.
-  if (legal_moves.empty()) {
-    // Could be a checkmate or a stalemate
-    if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
-    } else {
-      node->MakeTerminal(GameResult::DRAW);
-    }
-    return;
-  }
-
-  // We can shortcircuit these draws-by-rule only if they aren't root;
-  // if they are root, then thinking about them is the point.
-  if (node != search_->root_node_) {
-    if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
-    }
-
-    if (history_.Last().GetRule50Ply() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
-    }
-
-    const auto repetitions = history_.Last().GetRepetitions();
-    // Mark two-fold repetitions as draws according to settings.
-    // Depth starts with 1 at root, so number of plies in PV is depth - 1.
-    if (repetitions >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
-    } else if (repetitions == 1 && depth - 1 >= 4 &&
-               params_.GetTwoFoldDraws() &&
-               depth - 1 >= history_.Last().GetPliesSincePrevRepetition()) {
-      const auto cycle_length = history_.Last().GetPliesSincePrevRepetition();
-      // use plies since first repetition as moves left; exact if forced draw.
-      node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
-                         Node::Terminal::TwoFold);
-      return;
-    }
-
-    // Neither by-position or by-rule termination, but maybe it's a TB position.
-    // Disable TB position lookup if playing from dtz as it just reduces
-    // liklihood of good play.
-    if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
-        board.castlings().no_legal_castle() &&
-        history_.Last().GetRule50Ply() == 0 &&
-        (board.ours() | board.theirs()).count() <=
-            search_->syzygy_tb_->max_cardinality()) {
-      ProbeState state;
-      const WDLScore wdl =
-          search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
-      // Only fail state means the WDL is wrong, probe_wdl may produce correct
-      // result with a stat other than OK.
-      if (state != FAIL) {
-        // TB nodes don't have NN evaluation, assign M from parent node.
-        float m = 0.0f;
-        // Need a lock to access parent, in case MakeSolid is in progress.
-        {
-          SharedMutex::SharedLock lock(search_->nodes_mutex_);
-          auto parent = node->GetParent();
-          if (parent) {
-            m = std::max(0.0f, parent->GetM() - 1.0f);
-          }
-        }
-        // If the colors seem backwards, check the checkmate check above.
-        if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON, m,
-                             Node::Terminal::Tablebase);
-        } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON, m,
-                             Node::Terminal::Tablebase);
-        } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
-        }
-        search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
-      }
-    }
-  }
-
-  // Add legal moves as edges of this node.
-  node->CreateEdges(legal_moves);
+  ExtendNode(node, depth, to_add, &history_);
 }
 
 // Returns whether node was already in cache.
@@ -2438,15 +2335,15 @@ void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
-    FetchSingleNodeResult(&node_to_process, idx_in_computation);
+    FetchSingleNodeResult(&node_to_process, *computation_, idx_in_computation);
     if (node_to_process.nn_queried) ++idx_in_computation;
   }
 }
 
 template <typename Computation>
-void SearchWorker::FetchSingleNodeResult2(NodeToProcess* node_to_process,
-                                          const Computation& computation,
-                                          int idx_in_computation) {
+void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
+                                         const Computation& computation,
+                                         int idx_in_computation) {
   if (node_to_process->IsCollision()) return;
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
@@ -2471,60 +2368,6 @@ void SearchWorker::FetchSingleNodeResult2(NodeToProcess* node_to_process,
   int counter = 0;
   for (auto& edge : node->Edges()) {
     float p = computation.GetPVal(
-        idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform));
-    intermediate[counter++] = p;
-    max_p = std::max(max_p, p);
-  }
-  float total = 0.0;
-  for (int i = 0; i < counter; i++) {
-    // Perform softmax and take into account policy softmax temperature T.
-    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    float p =
-        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
-    intermediate[i] = p;
-    total += p;
-  }
-  counter = 0;
-  // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  for (auto& edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
-  }
-  // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
-                        params_.GetNoiseAlpha());
-  }
-  node->SortEdges();
-}
-
-void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
-                                         int idx_in_computation) {
-  if (node_to_process->IsCollision()) return;
-  Node* node = node_to_process->node;
-  if (!node_to_process->nn_queried) {
-    // Terminal nodes don't involve the neural NetworkComputation, nor do
-    // they require any further processing after value retrieval.
-    node_to_process->v = node->GetWL();
-    node_to_process->d = node->GetD();
-    node_to_process->m = node->GetM();
-    return;
-  }
-  // For NN results, we need to populate policy as well as value.
-  // First the value...
-  node_to_process->v = -computation_->GetQVal(idx_in_computation);
-  node_to_process->d = computation_->GetDVal(idx_in_computation);
-  node_to_process->m = computation_->GetMVal(idx_in_computation);
-  // ...and secondly, the policy data.
-  // Calculate maximum first.
-  float max_p = -std::numeric_limits<float>::infinity();
-  // Intermediate array to store values when processing policy.
-  // There are never more than 256 valid legal moves in any legal position.
-  std::array<float, 256> intermediate;
-  int counter = 0;
-  for (auto& edge : node->Edges()) {
-    float p = computation_->GetPVal(
         idx_in_computation,
         edge.GetMove().as_nn_index(node_to_process->probability_transform));
     intermediate[counter++] = p;
