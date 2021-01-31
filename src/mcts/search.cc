@@ -1775,7 +1775,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
       }
       is_root_node = false;
-      // Actively do any splits now rather than waiting for potentially long tree walk to get there.
+      // Actively do any splits now rather than waiting for potentially long
+      // tree walk to get there.
       for (int i = 0; i <= vtp_last_filled.back(); i++) {
         int child_limit = (*visits_to_perform.back())[i];
         if (params_.GetTaskWorkersPerSearchWorker() > 0 &&
@@ -1796,9 +1797,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             // Ensure not to exceed size of reservation.
             if (picking_tasks_.size() < MAX_TASKS) {
               moves_to_path.push_back(cur_iters[i].GetMove());
-              picking_tasks_.emplace_back(child_node,
-                                          current_path.size() - 1 + base_depth + 1,
-                                          moves_to_path, child_limit);
+              picking_tasks_.emplace_back(
+                  child_node, current_path.size() - 1 + base_depth + 1,
+                  moves_to_path, child_limit);
               moves_to_path.pop_back();
               task_count_.fetch_add(1, std::memory_order_acq_rel);
               task_added_.notify_all();
@@ -1809,7 +1810,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           if (passed) {
             (*visits_to_perform.back())[i] = 0;
           }
-        }        
+        }
       }
       // Fall through to select the first child.
     }
