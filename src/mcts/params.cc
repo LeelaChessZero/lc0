@@ -287,8 +287,8 @@ const OptionId SearchParams::kMinimumWorkSizeForProcessingId{
     "accelerate processing."};
 const OptionId SearchParams::kMinimumWorkSizeForPickingId{
     "minimum-picking-work", "MinimumPickingWork",
-    "Search branches with this many collisions may be split off to task "
-    "workers."};
+    "Search branches with more than this many collisions/visits may be split "
+    "off to task workers."};
 const OptionId SearchParams::kMinimumRemainingWorkSizeForPickingId{
     "minimum-remaining-picking-work", "MinimumRemainingPickingWork",
     "Search branches won't be split off to task workers unless there is at "
@@ -375,7 +375,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kMultiGatherEnabledId) = false;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = 4;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
-  options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 10;
+  options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
   options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =
       20;
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
