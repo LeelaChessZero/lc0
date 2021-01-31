@@ -1366,11 +1366,8 @@ void SearchWorker::GatherMinibatch2() {
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
                                      TaskWorkspace* workspace) {
   auto& history = workspace->history;
-  // This code runs multiple passes of work across the same input in order to
-  // reduce taking/dropping mutexes in quick succession.
   history = search_->played_history_;
 
-  // First pass - Extend nodes.
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
