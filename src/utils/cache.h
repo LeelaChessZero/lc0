@@ -56,7 +56,7 @@ class HashKeyedCache {
         hash_(static_cast<size_t>(capacity * kLoadFactor + 1)) {}
 
   ~HashKeyedCache() {
-    ShrinkToCapacity(0);
+    EvictToCapacity(0);
     assert(size_ == 0);
     assert(allocated_ == 0);
   }
@@ -70,8 +70,8 @@ class HashKeyedCache {
 
     size_t idx = key % hash_.size();
     while (true) {
-      if (hash_[idx].metadata == 0) break;
-      if (hash_[idx].metadata == 1 && hash_[idx].key == key) {
+      if (!hash_[idx].in_use) break;
+      if (hash_[idx].key == key) {
         // Already exists.
         return;
       }
@@ -81,12 +81,12 @@ class HashKeyedCache {
     hash_[idx].key = key;
     hash_[idx].value = std::move(val);
     hash_[idx].pins = 0;
-    hash_[idx].metadata = 1;
+    hash_[idx].in_use = true;
     insertion_order_.push_back(key);
     ++size_;
     ++allocated_;
 
-    ShrinkToCapacity(capacity_);
+    EvictToCapacity(capacity_);
   }
 
   // Checks whether a key exists. Doesn't pin. Of course the next moment the
@@ -97,8 +97,8 @@ class HashKeyedCache {
     SpinMutex::Lock lock(mutex_);
     size_t idx = key % hash_.size();
     while (true) {
-      if (hash_[idx].metadata == 0) break;
-      if (hash_[idx].metadata == 1 && hash_[idx].key == key) {
+      if (!hash_[idx].in_use) break;
+      if (hash_[idx].key == key) {
         return true;
       }
       ++idx;
@@ -117,8 +117,8 @@ class HashKeyedCache {
 
     size_t idx = key % hash_.size();
     while (true) {
-      if (hash_[idx].metadata == 0) break;
-      if (hash_[idx].metadata == 1 && hash_[idx].key == key) {
+      if (!hash_[idx].in_use) break;
+      if (hash_[idx].key == key) {
         ++hash_[idx].pins;
         return hash_[idx].value.get();
       }
@@ -149,8 +149,8 @@ class HashKeyedCache {
     // Now the main list.
     size_t idx = key % hash_.size();
     while (true) {
-      if (hash_[idx].metadata == 0) break;
-      if (hash_[idx].metadata == 1 && hash_[idx].key == key &&
+      if (!hash_[idx].in_use) break;
+      if (hash_[idx].key == key &&
           hash_[idx].value.get() == value) {
         --hash_[idx].pins;
         return;
@@ -173,7 +173,7 @@ class HashKeyedCache {
     SpinMutex::Lock lock(mutex_);
 
     if (capacity_.load(std::memory_order_relaxed) == capacity) return;
-    ShrinkToCapacity(capacity);
+    EvictToCapacity(capacity);
     capacity_.store(capacity);
 
     std::vector<Entry> new_hash(
@@ -181,17 +181,17 @@ class HashKeyedCache {
 
     if (size_ != 0) {
       for (Entry& item : hash_) {
-        if (item.metadata != 1) continue;
+        if (!item.in_use) continue;
         size_t idx = item.key % new_hash.size();
         while (true) {
-          if (new_hash[idx].metadata == 0) break;
+          if (!new_hash[idx].in_use) break;
           ++idx;
           if (idx >= new_hash.size()) idx -= new_hash.size();
         }
-        hash_[idx].key = item.key;
-        hash_[idx].value = std::move(item.value);
-        hash_[idx].pins = item.pins;
-        hash_[idx].metadata = 1;
+        new_hash[idx].key = item.key;
+        new_hash[idx].value = std::move(item.value);
+        new_hash[idx].pins = item.pins;
+        new_hash[idx].in_use = true;
       }
     }
     hash_.swap(new_hash);
@@ -200,7 +200,7 @@ class HashKeyedCache {
   // Clears the cache;
   void Clear() {
     SpinMutex::Lock lock(mutex_);
-    ShrinkToCapacity(0);
+    EvictToCapacity(0);
   }
 
   int GetSize() const {
@@ -218,8 +218,7 @@ class HashKeyedCache {
     uint64_t key;
     std::unique_ptr<V> value;
     int pins = 0;
-    // 1 for populated.
-    int metadata = 0;
+    bool in_use = false;
   };
 
   void EvictItem() REQUIRES(mutex_) {
@@ -228,7 +227,7 @@ class HashKeyedCache {
     insertion_order_.pop_front();
     size_t idx = key % hash_.size();
     while (true) {
-      if (hash_[idx].metadata == 1 && hash_[idx].key == key) {
+      if (hash_[idx].in_use && hash_[idx].key == key) {
         break;
       }
       ++idx;
@@ -237,17 +236,17 @@ class HashKeyedCache {
     if (hash_[idx].pins == 0) {
       --allocated_;
       hash_[idx].value.reset();
-      hash_[idx].metadata = 0;
+      hash_[idx].in_use = false;
     } else {
       evicted_.emplace_back(hash_[idx].key, std::move(hash_[idx].value));
       evicted_.back().pins = hash_[idx].pins;
       hash_[idx].pins = 0;
-      hash_[idx].metadata = 0;
+      hash_[idx].in_use = false;
     }
     size_t next = idx + 1;
     if (next >= hash_.size()) next -= hash_.size();
     while (true) {
-      if (hash_[next].metadata == 0) {
+      if (!hash_[next].in_use) {
         break;
       }
       size_t target = hash_[next].key % hash_.size();
@@ -268,7 +267,7 @@ class HashKeyedCache {
     }
   }
 
-  void ShrinkToCapacity(int capacity) REQUIRES(mutex_) {
+  void EvictToCapacity(int capacity) REQUIRES(mutex_) {
     if (capacity < 0) capacity = 0;
     while (size_ > capacity) {
       EvictItem();
