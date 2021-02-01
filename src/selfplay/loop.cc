@@ -29,7 +29,7 @@
 
 #include <optional>
 
-#include "subprojects/gaviotatb/gtb-probe.h"
+#include "gtb-probe.h"
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "selfplay/tournament.h"

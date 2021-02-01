@@ -19,6 +19,7 @@ gaviotatb_src = [
 ]
 
 gaviotatb_includes = [
+  '.',
   'sysport',
   'compression',
   'compression/huffman',
