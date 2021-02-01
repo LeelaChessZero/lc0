@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,32 +27,36 @@
 
 #pragma once
 
-#include "chess/position.h"
 #include "neural/network.h"
-#include "proto/net.pb.h"
+#include "neural/writer.h"
 
 namespace lczero {
 
-constexpr int kMoveHistory = 8;
-constexpr int kPlanesPerBoard = 13;
-constexpr int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
+// Constructs InputPlanes from training data.
+//
+// NOTE: If the training data is a cannonical type, the canonicalization
+// transforms are reverted before returning, since it is assumed that the data
+// will be used with DecodeMoveFromInput or PopulateBoard which assume the
+// InputPlanes are not transformed.
+InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
 
-enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
+class TrainingDataReader {
+ public:
+  // Opens the given file to read chunk data from.
+  TrainingDataReader(std::string filename);
 
-// Returns the transform that would be used in EncodePositionForNN.
-int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
-                         const PositionHistory& history);
+  ~TrainingDataReader();
 
-// Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(
-    pblczero::NetworkFormat::InputFormat input_format,
-    const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out);
+  // Reads a chunk. Returns true if a chunk was read.
+  bool ReadChunk(V6TrainingData* data);
 
-bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format);
-bool IsCanonicalArmageddonFormat(
-    pblczero::NetworkFormat::InputFormat input_format);
-bool IsHectopliesFormat(pblczero::NetworkFormat::InputFormat input_format);
-bool Is960CastlingFormat(pblczero::NetworkFormat::InputFormat input_format);
+  // Gets full filename of the file being read.
+  std::string GetFileName() const { return filename_; }
+
+ private:
+  std::string filename_;
+  gzFile fin_;
+  bool format_v6 = false;
+};
 
 }  // namespace lczero
