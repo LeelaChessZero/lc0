@@ -67,30 +67,13 @@ const OptionId kMinDTZBoostId{
 const OptionId kNewInputFormatId{
     "new-input-format", "",
     "Input format to convert training data to during rescoring."};
-const OptionId kDeblunderZ{
-    "deblunder-z", "",
+const OptionId kDeblunder{
+    "deblunder", "",
     "If true, whether to use move Q information to infer a different Z value "
     "if the the selected move appears to be a blunder."};
-const OptionId kDeblunderZPolicyStrictCutoff{
-    "deblunder-z-policy-strict-cutoff", "",
-    "The multiplier for the max policy under which a selected move is "
-    "considered a definite blunder."};
-const OptionId kDeblunderZPolicyWeakCutoff{
-    "deblunder-z-policy-weak-cutoff", "",
-    "The multiplier for the max policy which forms the upper bound of the "
-    "range where q based blunder detection is used.."};
-const OptionId kDeblunderZQBlunderThreshod{
-    "deblunder-z-q-blunder-threshold", "",
-    "The amount Q needs to have gotten worse in order to assume a weak cutoff "
-    "move is a blunder."};
-const OptionId kDeblunderZQLastMoveBlunderThreshod{
-    "deblunder-z-q-last-move-blunder-threshold", "",
-    "The amount the final outcome needs to be worse than prior position Q in "
-    "order to assume the final move was a blunder."};
-const OptionId kDeblunderZQSoftmaxTemp{
-    "deblunder-z-q-softmax-temp", "",
-    "The temperature to apply to the WDL distribution before selecting the new "
-    "Z value. Set to 0 to take maximum."};
+const OptionId kDeblunderQBlunderThreshold{
+    "deblunder-q-blunder-threshold", "",
+    "The amount Q of played move needs to be worse than best move in order to assume the played move is a blunder."};
 
 const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
@@ -112,6 +95,7 @@ std::atomic<int> rescored(0);
 std::atomic<int> delta(0);
 std::atomic<int> rescored2(0);
 std::atomic<int> rescored3(0);
+std::atomic<int> blunders(0);
 std::atomic<int> orig_counts[3];
 std::atomic<int> fixed_counts[3];
 std::atomic<int> policy_bump(0);
@@ -122,43 +106,8 @@ std::atomic<int> gaviota_dtm_rescores(0);
 std::map<uint64_t, PolicySubNode> policy_subs;
 bool gaviotaEnabled = false;
 bool deblunderEnabled = false;
-float deblunderPolicyStrictCutoff = 0.0f;
-float deblunderPolicyWeakCutoff = 0.0f;
 float deblunderQBlunderThreshold = 2.0f;
-float deblunderQLastMoveBlunderThreshold = 2.0f;
-float deblunderQSoftmaxTemp = 1.0f;
 
-int SelectNewZ(float random, float q, float d) {
-  // q = w-l, w+l+d = 1.0
-  // q+2l+d = 1.0
-  // l = (1.0-d-q)/2.0
-  float l = (1.0f - d - q) / 2.0f;
-  float w = q + l;
-  if (deblunderQSoftmaxTemp == 0.0f) {
-    if (w > d && w > l) {
-      return 1;
-    }
-    if (l > d && l > w) {
-      return -1;
-    }
-    return 0;
-  }
-  w = std::pow(w, deblunderQSoftmaxTemp);
-  d = std::pow(d, deblunderQSoftmaxTemp);
-  l = std::pow(l, deblunderQSoftmaxTemp);
-  float sum = w + d + l;
-  w /= sum;
-  d /= sum;
-  l /= sum;
-  if (random < w) {
-    return 1;
-  }
-  random -= w;
-  if (random < l) {
-    return -1;
-  }
-  return 0;
-}
 
 void DataAssert(bool check_result) {
   if (!check_result) throw Exception("Range Violation");
@@ -964,7 +913,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
         }
       }
-      if (deblunderEnabled) {
+      // Deblunder only works from v6 data onwards. We therefore check
+      // the visits field which is 0 if we're dealing with upgraded data.
+      if (deblunderEnabled && fileContents.back().visits > 0) {
         PopulateBoard(input_format, PlanesFromTrainingData(fileContents[0]),
                       &board, &rule50ply, &gameply);
         history.Reset(board, rule50ply, gameply);
@@ -979,39 +930,27 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             break;
           }
         }
-        int activeZ = ResultForData(fileContents.back());
+        float activeZ[3] = { fileContents.back().result_q,
+                            fileContents.back().result_d,
+                            fileContents.back().plies_left };
         bool deblunderingStarted = false;
         while (true) {
-          if (history.GetLength() == fileContents.size()) {
-            // Game doesn't get to TB, so we need to check if final position is
-            // a blunder.
-            auto& last = fileContents.back();
-            if (last.best_q - last.result_q >
-                deblunderQLastMoveBlunderThreshold) {
-              activeZ = SelectNewZ(Random::Get().GetFloat(1.0), last.best_q,
-                                   last.best_d);
-              deblunderingStarted = true;
-            }
-          } else {
-            auto played = moves[history.GetLength() - 1];
-            auto& cur = fileContents[history.GetLength() - 1];
-            float max_policy = *std::max_element(std::begin(cur.probabilities),
-                                                 std::end(cur.probabilities));
-            int transform = TransformForPosition(input_format, history);
-            int prob_index = played.as_nn_index(transform);
-            float move_policy = cur.probabilities[prob_index];
-            if (move_policy <= deblunderPolicyStrictCutoff * max_policy) {
-              activeZ = SelectNewZ(Random::Get().GetFloat(1.0), cur.best_q,
-                                   cur.best_d);
-              deblunderingStarted = true;
-            } else if (move_policy <= deblunderPolicyWeakCutoff * max_policy) {
-              float q_after = -fileContents[history.GetLength()].best_q;
-              if (cur.best_q - q_after > deblunderQBlunderThreshold) {
-                activeZ = SelectNewZ(Random::Get().GetFloat(1.0), cur.best_q,
-                                     cur.best_d);
-                deblunderingStarted = true;
-              }
-            }
+          auto& cur = fileContents[history.GetLength() - 1];
+          // A blunder is defined by the played move being worse than the
+          // best move by a defined threshold, missing a forced win, or
+          // playing into a proven loss without being forced.
+          if ((cur.best_q - cur.played_q >
+              deblunderQBlunderThreshold) ||
+              (cur.best_q > -1 && cur.played_q < 1 &&
+               ((cur.best_q == 1 && (cur.invariance_info & 8 != 0))
+                || cur.played_q == -1))) {
+            activeZ[0] = cur.best_q;
+            activeZ[1] = cur.best_d;
+            activeZ[2] = cur.best_m;
+            deblunderingStarted = true;
+            blunders += 1;
+            /* std::cout << "Blunder detected. Best move q=" << cur.best_q <<
+             " played move q=" << cur.played_q; */
           }
           if (deblunderingStarted) {
             /*
@@ -1022,16 +961,15 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             "
                       << (int)activeZ << std::endl;
                       */
-            if (activeZ == 0) {
-              fileContents[history.GetLength() - 1].result_d = 1.0f;
-            } else {
-              fileContents[history.GetLength() - 1].result_d = 0.0f;
-            }
-            fileContents[history.GetLength() - 1].result_q =
-                static_cast<float>(activeZ);
+            fileContents[history.GetLength() - 1].result_q = activeZ[0];
+            fileContents[history.GetLength() - 1].result_d = activeZ[1];
+            fileContents[history.GetLength() - 1].plies_left = activeZ[2];
           }
           if (history.GetLength() == 1) break;
-          activeZ = -activeZ;
+          // Q values are always from the player to move.
+          activeZ[0] = -activeZ[0];
+          // Estimated remaining plies left has to be increased.
+          activeZ[2] += 1.0f;
           history.Pop();
         }
       }
@@ -1164,28 +1102,15 @@ void RescoreLoop::RunLoop() {
   options_.Add<FloatOption>(kDistributionOffsetId, -0.999, 0) = 0;
   options_.Add<FloatOption>(kMinDTZBoostId, 0, 1) = 0;
   options_.Add<IntOption>(kNewInputFormatId, -1, 256) = -1;
-  options_.Add<BoolOption>(kDeblunderZ) = false;
-  options_.Add<FloatOption>(kDeblunderZPolicyStrictCutoff, 0.0f, 1.0f) = 0.0f;
-  options_.Add<FloatOption>(kDeblunderZPolicyWeakCutoff, 0.0f, 1.0f) = 0.0f;
-  options_.Add<FloatOption>(kDeblunderZQBlunderThreshod, 0.0f, 2.0f) = 2.0f;
-  options_.Add<FloatOption>(kDeblunderZQLastMoveBlunderThreshod, 0.0f, 2.0f) =
-      2.0f;
-  options_.Add<FloatOption>(kDeblunderZQSoftmaxTemp, 0.0f, 2.0f) = 1.0f;
+  options_.Add<BoolOption>(kDeblunder) = false;
+  options_.Add<FloatOption>(kDeblunderQBlunderThreshold, 0.0f, 2.0f) = 2.0f;
 
   SelfPlayTournament::PopulateOptions(&options_);
 
   if (!options_.ProcessAllFlags()) return;
-  deblunderEnabled = options_.GetOptionsDict().Get<bool>(kDeblunderZ);
-  deblunderPolicyStrictCutoff =
-      options_.GetOptionsDict().Get<float>(kDeblunderZPolicyStrictCutoff);
-  deblunderPolicyWeakCutoff =
-      options_.GetOptionsDict().Get<float>(kDeblunderZPolicyWeakCutoff);
+  deblunderEnabled = options_.GetOptionsDict().Get<bool>(kDeblunder);
   deblunderQBlunderThreshold =
-      options_.GetOptionsDict().Get<float>(kDeblunderZQBlunderThreshod);
-  deblunderQLastMoveBlunderThreshold =
-      options_.GetOptionsDict().Get<float>(kDeblunderZQLastMoveBlunderThreshod);
-  deblunderQSoftmaxTemp =
-      options_.GetOptionsDict().Get<float>(kDeblunderZQSoftmaxTemp);
+      options_.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold);
 
   SyzygyTablebase tablebase;
   if (!tablebase.init(
@@ -1273,6 +1198,8 @@ void RescoreLoop::RunLoop() {
   std::cout << "Cumulative outcome change: " << delta << std::endl;
   std::cout << "Secondary rescores performed: " << rescored2 << std::endl;
   std::cout << "Secondary rescores performed used dtz: " << rescored3
+            << std::endl;
+  std::cout << "Blunders picked up by deblunder threshold: " << blunders
             << std::endl;
   std::cout << "Number of policy values boosted by dtz or dtm " << policy_bump
             << std::endl;
