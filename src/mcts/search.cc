@@ -795,6 +795,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 void Search::StartThreads(size_t how_many) {
+  thread_count_.store(how_many, std::memory_order_release);
   Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
@@ -1077,6 +1078,7 @@ void SearchWorker::ExecuteOneIteration() {
   } else {
     GatherMinibatch();
   }
+  search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
   // 2b. Collect collisions.
   CollectCollisions();
@@ -1090,6 +1092,7 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 4. Run NN computation.
   RunNNComputation();
+  search_->backend_waiting_counter_.fetch_add(-1, std::memory_order_relaxed);
 
   // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
@@ -1214,6 +1217,8 @@ void SearchWorker::GatherMinibatch2() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
+  int thread_count = search_->thread_count_.load(std::memory_order_acquire);
+
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
@@ -1221,6 +1226,20 @@ void SearchWorker::GatherMinibatch2() {
          number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
+
+    // If there is backend work to be done, and the backend is idle - exit
+    // immediately.
+    // Only do this fancy work if there are multiple threads as otherwise we
+    // early exit from every batch since there is never another search thread to
+    // be keeping the backend busy. Which would mean that threads=1 has a
+    // massive nps drop.
+    if (thread_count > 1 && minibatch_size > 0 &&
+        computation_->GetCacheMisses() > params_.GetIdlingMinimumWork() &&
+        thread_count - search_->backend_waiting_counter_.load(
+                           std::memory_order_relaxed) >
+            params_.GetThreadIdlingThreshold()) {
+      return;
+    }
 
     int new_start = static_cast<int>(minibatch_.size());
 
@@ -1349,13 +1368,10 @@ void SearchWorker::GatherMinibatch2() {
 }
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
-                                     TaskWorkspace*) {
-  // This code runs multiple passes of work across the same input in order to
-  // reduce taking/dropping mutexes in quick succession.
-  PositionHistory history = search_->played_history_;
-  history.Reserve(search_->played_history_.GetLength() + 30);
+                                     TaskWorkspace* workspace) {
+  auto& history = workspace->history;
+  history = search_->played_history_;
 
-  // First pass - Extend nodes.
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
@@ -1495,15 +1511,15 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
-  std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
   auto& vtp_buffer = workspace->vtp_buffer;
-  visits_to_perform.reserve(30);
-  std::vector<int> vtp_last_filled;
-  vtp_last_filled.reserve(30);
-  std::vector<int> current_path;
-  current_path.reserve(30);
-  std::vector<Move> moves_to_path = moves_to_base;
-  moves_to_path.reserve(30);
+  auto& visits_to_perform = workspace->visits_to_perform;
+  visits_to_perform.clear();
+  auto& vtp_last_filled = workspace->vtp_last_filled;
+  vtp_last_filled.clear();
+  auto& current_path = workspace->current_path;
+  current_path.clear();
+  auto& moves_to_path = workspace->moves_to_path;
+  moves_to_path = moves_to_base;
   // Sometimes receiver is reused, othertimes not, so only jump start if small.
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
@@ -1579,35 +1595,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // Root node is again special - needs its n in flight updated separately
         // as its not handled on the path to it, since there isn't one.
         node->IncrementNInFlight(cur_limit);
-      }
-      // !is_root_node only for clarity, it can never pass the second condition.
-      if (params_.GetTaskWorkersPerSearchWorker() > 0 && !is_root_node &&
-          cur_limit > params_.GetMinimumWorkSizeForPicking() &&
-          cur_limit <
-              ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
-          cur_limit + passed_off + completed_visits <
-              collision_limit -
-                  params_.GetMinimumRemainingWorkSizeForPicking()) {
-        bool passed = false;
-        {
-          // Multiple writers, so need mutex here.
-          Mutex::Lock lock(picking_tasks_mutex_);
-          // Ensure not to exceed size of reservation.
-          if (picking_tasks_.size() < MAX_TASKS) {
-            picking_tasks_.emplace_back(node,
-                                        current_path.size() - 1 + base_depth,
-                                        moves_to_path, cur_limit);
-            task_count_.fetch_add(1, std::memory_order_acq_rel);
-            task_added_.notify_all();
-            passed = true;
-            passed_off += cur_limit;
-          }
-        }
-        if (passed) {
-          node = node->GetParent();
-          current_path.pop_back();
-          continue;
-        }
       }
 
       // Create visits_to_perform new back entry for this level.
@@ -1789,6 +1776,43 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
       }
       is_root_node = false;
+      // Actively do any splits now rather than waiting for potentially long
+      // tree walk to get there.
+      for (int i = 0; i <= vtp_last_filled.back(); i++) {
+        int child_limit = (*visits_to_perform.back())[i];
+        if (params_.GetTaskWorkersPerSearchWorker() > 0 &&
+            child_limit > params_.GetMinimumWorkSizeForPicking() &&
+            child_limit <
+                ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
+            child_limit + passed_off + completed_visits <
+                collision_limit -
+                    params_.GetMinimumRemainingWorkSizeForPicking()) {
+          Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
+          // Don't split if not expanded or terminal.
+          if (child_node->GetN() == 0 || child_node->IsTerminal()) continue;
+
+          bool passed = false;
+          {
+            // Multiple writers, so need mutex here.
+            Mutex::Lock lock(picking_tasks_mutex_);
+            // Ensure not to exceed size of reservation.
+            if (picking_tasks_.size() < MAX_TASKS) {
+              moves_to_path.push_back(cur_iters[i].GetMove());
+              picking_tasks_.emplace_back(
+                  child_node, current_path.size() - 1 + base_depth + 1,
+                  moves_to_path, child_limit);
+              moves_to_path.pop_back();
+              task_count_.fetch_add(1, std::memory_order_acq_rel);
+              task_added_.notify_all();
+              passed = true;
+              passed_off += child_limit;
+            }
+          }
+          if (passed) {
+            (*visits_to_perform.back())[i] = 0;
+          }
+        }
+      }
       // Fall through to select the first child.
     }
     int min_idx = current_path.back();

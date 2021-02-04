@@ -193,6 +193,8 @@ class Search {
       GUARDED_BY(counters_mutex_);
 
   std::atomic<int> pending_searchers_{0};
+  std::atomic<int> backend_waiting_counter_{0};
+  std::atomic<int> thread_count_{0};
 
   std::vector<std::pair<Node*, int>> shared_collisions_
       GUARDED_BY(nodes_mutex_);
@@ -379,6 +381,19 @@ class SearchWorker {
   struct TaskWorkspace {
     std::array<Node::Iterator, 256> cur_iters;
     std::vector<std::unique_ptr<std::array<int, 256>>> vtp_buffer;
+    std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
+    std::vector<int> vtp_last_filled;
+    std::vector<int> current_path;
+    std::vector<Move> moves_to_path;
+    PositionHistory history;
+    TaskWorkspace() {
+      vtp_buffer.reserve(30);
+      visits_to_perform.reserve(30);
+      vtp_last_filled.reserve(30);
+      current_path.reserve(30);
+      moves_to_path.reserve(30);
+      history.Reserve(30);
+    }
   };
 
   struct PickTask {
