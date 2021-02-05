@@ -622,6 +622,7 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
+  if (new_head == nullptr) throw Exception("Invalid move!");
   move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->child_.get();
