@@ -224,7 +224,10 @@ if get_option('build_backends')
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
       add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
-      includes += include_directories(get_option('mkl_include'))
+      mkl_inc = get_option('mkl_include')
+      if run_command('scripts/checkdir.py', mkl_inc).returncode() == 0
+        includes += include_directories(mkl_inc)
+      endif
       deps += [ mkl_lib ]
 
     elif get_option('dnnl') and dnnl_lib.found()
