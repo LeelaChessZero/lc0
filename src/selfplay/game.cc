@@ -211,7 +211,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
 
-      for (auto edge : node->Edges()) {
+      for (auto& edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }
@@ -277,6 +277,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
           played_eval, orig_eval, best_is_proof, best_move, move));
     }
+    // Must reset the search before mutating the tree.
+    search_.reset();
 
     // Add best move to the tree.
     tree_[0]->MakeMove(move);

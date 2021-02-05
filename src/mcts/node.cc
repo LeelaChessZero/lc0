@@ -39,6 +39,7 @@
 #include "neural/network.h"
 #include "utils/exception.h"
 #include "utils/hashcat.h"
+#include "utils/numa.h"
 
 namespace lczero {
 
@@ -98,6 +99,9 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
+    // Keep garbage collection on same core as where search workers are most
+    // likely to be to make any lock conention on gc mutex cheaper.
+    Numa::BindThread(0);
     while (!stop_.load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
       GarbageCollect();
@@ -618,6 +622,7 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
+  if (new_head == nullptr) throw Exception("Invalid move!");
   move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->child_.get();

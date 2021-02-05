@@ -46,8 +46,9 @@ int main(int argc, const char** argv) {
        << " built " << __DATE__;
 
   try {
-    InitializeMagicBitboards();
     Numa::Init();
+    Numa::BindThread(0);
+    InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
     CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
