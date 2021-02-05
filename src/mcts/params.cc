@@ -275,6 +275,37 @@ const OptionId SearchParams::kSolidTreeThresholdId{
     "solid-tree-threshold", "SolidTreeThreshold",
     "Only nodes with at least this number of visits will be considered for "
     "solidification for improved cache locality."};
+const OptionId SearchParams::kMultiGatherEnabledId{
+    "multi-gather", "MultiGather",
+    "If enabled, search will be replaced by the multigather approach."};
+const OptionId SearchParams::kTaskWorkersPerSearchWorkerId{
+    "task-workers", "TaskWorkers",
+    "The number of task workers to use to help the search worker."};
+const OptionId SearchParams::kMinimumWorkSizeForProcessingId{
+    "minimum-processing-work", "MinimumProcessingWork",
+    "This many visits need to be gathered before tasks will be used to "
+    "accelerate processing."};
+const OptionId SearchParams::kMinimumWorkSizeForPickingId{
+    "minimum-picking-work", "MinimumPickingWork",
+    "Search branches with more than this many collisions/visits may be split "
+    "off to task workers."};
+const OptionId SearchParams::kMinimumRemainingWorkSizeForPickingId{
+    "minimum-remaining-picking-work", "MinimumRemainingPickingWork",
+    "Search branches won't be split off to task workers unless there is at "
+    "least this much work left to do afterwards."};
+const OptionId SearchParams::kMinimumWorkPerTaskForProcessingId{
+    "minimum-per-task-processing", "MinimumPerTaskProcessing",
+    "Processing work won't be split into chunks smaller than this (unless its "
+    "more than half of MinimumProcessingWork)."};
+const OptionId SearchParams::kIdlingMinimumWorkId{
+    "idling-minimum-work", "IdlingMinimumWork",
+    "Only early exit gathering due to 'idle' backend if more than this many "
+    "nodes will be sent to the backend."};
+const OptionId SearchParams::kThreadIdlingThresholdId{
+    "thread-idling-threshold", "ThreadIdlingThreshold",
+    "If there are more than this number of search threads that are not "
+    "actively in the process of either sending data to the backend or waiting "
+    "for data from the backend, assume that the backend is idle."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -314,7 +345,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
-  options->Add<BoolOption>(kSyzygyFastPlayId) = true;
+  options->Add<BoolOption>(kSyzygyFastPlayId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
   options->Add<BoolOption>(kPerPvCountersId) = false;
   std::vector<std::string> score_type = {"centipawn",
@@ -341,6 +372,15 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
+  options->Add<BoolOption>(kMultiGatherEnabledId) = false;
+  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = 4;
+  options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
+  options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
+  options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =
+      20;
+  options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
+  options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
+  options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -408,7 +448,22 @@ SearchParams::SearchParams(const OptionsDict& options)
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
-      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)) {
+      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
+      kMultiGatherEnabled(options.Get<bool>(kMultiGatherEnabledId)),
+      kTaskWorkersPerSearchWorker(
+          options.Get<bool>(kMultiGatherEnabledId)
+              ? options.Get<int>(kTaskWorkersPerSearchWorkerId)
+              : 0),
+      kMinimumWorkSizeForProcessing(
+          options.Get<int>(kMinimumWorkSizeForProcessingId)),
+      kMinimumWorkSizeForPicking(
+          options.Get<int>(kMinimumWorkSizeForPickingId)),
+      kMinimumRemainingWorkSizeForPicking(
+          options.Get<int>(kMinimumRemainingWorkSizeForPickingId)),
+      kMinimumWorkPerTaskForProcessing(
+          options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
+      kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
+      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
