@@ -150,6 +150,26 @@ class ChessBoard {
       return result;
     }
 
+    // Note: this is not a strict xfen compatible output. Without access to the
+    // board its not possible to know whether there is ambiguity so all cases
+    // with any non-standard rook positions are encoded in the x-fen format
+    std::string as_string() const {
+      std::string result;
+      if (data_ == 0) result = "-";
+      if (queenside_rook() == 0 && kingside_rook() == 7) {
+        if (we_can_00()) result += 'K';
+        if (we_can_000()) result += 'Q';
+        if (they_can_00()) result += 'k';
+        if (they_can_000()) result += 'q';
+      } else {
+        if (we_can_00()) result += 'A' + kingside_rook();
+        if (we_can_000()) result += 'A' + queenside_rook();
+        if (they_can_00()) result += 'a' + kingside_rook();
+        if (they_can_000()) result += 'a' + queenside_rook();        
+      }
+      return result;
+    }
+
     uint8_t as_int() const { return data_; }
 
     bool operator==(const Castlings& other) const {
