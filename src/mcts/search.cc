@@ -258,12 +258,14 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       uci_info.score = wl * 10000;
     }
 
-    auto w = std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
-    auto l = std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
+    auto w =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
+    auto l =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
     // Using 1000-w-l so that W+D+L add up to 1000.0.
     auto d = 1000 - w - l;
     if (d < 0) {
-      w = std::max(0, w + d/2);
+      w = std::min(1000, std::max(0, w + d / 2));
       l = 1000 - w;
       d = 0;
     }
