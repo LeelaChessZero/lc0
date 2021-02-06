@@ -1,4 +1,9 @@
-﻿v0.27.0-rc0 (2021-02-06)
+﻿v0.27.0-rc1 (2021-02-06)
+~~~~~~~
+* Fix a bug which meant `position ... moves ...` didn't work if the moves 
+  went off the end of the existing tree. 
+
+v0.27.0-rc0 (2021-02-06)
 ~~~~~~~
 * Multigather search inspired by Ceres.
 * V6 training format with additional info for training experiments.
