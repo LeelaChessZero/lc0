@@ -1,4 +1,58 @@
-﻿v0.26.0-rc1 (2020-06-29)
+﻿v0.27.0-rc0 (2021-02-06)
+~~~~~~~
+* Multigather search inspired by Ceres.
+* V6 training format with additional info for training experiments.
+* Updated default search parameters.
+* A better algorithm for the backendbench assistant.
+* Terminate search early if only 1 move isn't a proven loss.
+* Various build system changes.
+
+v0.26.3 (2020-10-10)
+~~~~~~~
+* Increased maximum value of TempDecayMoves.
+
+v0.26.3-rc2 (2020-10-03)
+~~~~~~~
+* Fix for uninitialized variable that led to crashes with the cudnn backend.
+* Correct windows support for systems with more than 64 threads.
+* A new package is built for the `cuda` backend with cuda 11.1. The old cuda
+  package is renamed to `cudnn`.
+
+v0.26.3-rc1 (2020-09-28)
+~~~~~~~
+* Residual block fusion optimization for cudnn backend, that depends on
+  `custom_winograd=true`. Enabled by default only for networks with up to 384
+  filters in fp16 mode and never in fp32 mode. Default can be overridden with
+  `--backend-opts=res_block_fusing=false` to disable (or `=true` to enable).
+* New experimental cuda backend without cudnn dependency (`cuda-auto`, `cuda`
+  and `cuda-fp16` are available).
+
+v0.26.2 (2020-08-31)
+~~~~~~~
+* No changes from rc1.
+
+v0.26.2-rc1 (2020-08-28)
+~~~~~~~~~~~
+* Repetitions in the search tree are marked as draws, to explore more promising
+  lines. Enabled by default (except in selfplay mode) use
+  `--two-fold-draws=false` to disable.
+* Syzygy tablebase files can now be used in selfplay. Still need to add
+  adjudication support before we can consider using this for training.
+* Default net updated to 703810.
+* Fix for book with CR/LF line endings.
+* Updated Eigen wrap to use new download link.
+
+v0.26.1 (2020-07-15)
+~~~~~~~
+* Fix a bug where invalid openings-pgn settings would result in the book
+  being ignored rather than used.
+* Add support for compressed book files.
+
+v0.26.0 (2020-07-03)
+~~~~~~~
+* No changes from rc1.
+
+v0.26.0-rc1 (2020-06-29)
 ~~~~~~~~~~~
 
 * Verbose move stats now includes a line for the root node itself.
