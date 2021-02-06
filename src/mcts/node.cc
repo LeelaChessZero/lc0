@@ -441,10 +441,13 @@ void Node::ReleaseChildren() {
 
 void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   if (solid_children_) {
-    auto new_child = std::make_unique<Node>(this, node_to_save->index_);
-    *new_child = std::move(*node_to_save);
+    std::unique_ptr<Node> saved_node;
+    if (node_to_save != nullptr) {
+      saved_node = std::make_unique<Node>(this, node_to_save->index_);
+      *saved_node = std::move(*node_to_save);
+    }
     gNodeGc.AddToGcQueue(std::move(child_), num_edges_);
-    child_ = std::move(new_child);
+    child_ = std::move(saved_node);
     if (child_) {
       child_->UpdateChildrenParents();
     }
@@ -621,12 +624,6 @@ void NodeTree::MakeMove(Move move) {
       if (new_head->IsTerminal()) new_head->MakeNotTerminal();
       break;
     }
-  }
-  // If the node has edges populated and new_head is null then an illegal move
-  // was attempted.  This is not compatible with solid children implementation
-  // of ReleaseChildren, so abort here.
-  if (current_head_->HasChildren() && new_head == nullptr) {
-    throw Exception("Invalid move!");
   }
   move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
