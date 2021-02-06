@@ -161,6 +161,11 @@ class CudnnNetwork : public Network {
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    // Batches smaller than 4 have different results for same input for
+    // cudnn-fp16 mode. Deterministic flag allows this to be disabled by forcing
+    // all batches to pretend to be at least 4 in size.
+    min_batch_size_ =
+        options.GetOrDefault<bool>("deterministic", false) ? 4 : 1;
 
     showInfo();
 
@@ -598,6 +603,9 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
+    // Batches smaller than min_batch_size_ will have garbage passed to the gpu,
+    // but the garbage results will also not be read.
+    batchSize = std::max(batchSize, min_batch_size_);
     std::lock_guard<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
@@ -863,6 +871,7 @@ class CudnnNetwork : public Network {
   cublasHandle_t cublas_;
   int gpu_id_;
   int max_batch_size_;
+  int min_batch_size_;
   bool wdl_;
   bool moves_left_;
 
