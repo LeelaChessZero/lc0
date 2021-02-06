@@ -622,7 +622,12 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
-  if (new_head == nullptr) throw Exception("Invalid move!");
+  // If the node has edges populated and new_head is null then an illegal move
+  // was attempted.  This is not compatible with solid children implementation
+  // of ReleaseChildren, so abort here.
+  if (current_head_->HasChildren() && new_head == nullptr) {
+    throw Exception("Invalid move!");
+  }
   move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->child_.get();
