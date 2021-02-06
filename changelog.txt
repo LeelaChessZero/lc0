@@ -1,4 +1,13 @@
-﻿v0.26.3 (2020-10-10)
+﻿v0.27.0-rc0 (2021-02-06)
+~~~~~~~
+* Multigather search inspired by Ceres.
+* V6 training format with additional info for training experiments.
+* Updated default search parameters.
+* A better algorithm for the backendbench assistant.
+* Terminate search early if only 1 move isn't a proven loss.
+* Various build system changes.
+
+v0.26.3 (2020-10-10)
 ~~~~~~~
 * Increased maximum value of TempDecayMoves.
 
