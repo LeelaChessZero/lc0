@@ -236,8 +236,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     const auto wl = edge.GetWL(default_wl);
-    const auto d = edge.GetD(default_d);
-    const int w = static_cast<int>(std::round(500.0 * (1.0 + wl - d)));
+    const auto floatD = edge.GetD(default_d);
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
@@ -258,10 +257,19 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
     }
-    const int l = static_cast<int>(std::round(500.0 * (1.0 - wl - d)));
-    // Using 1000-w-l instead of 1000*d for D score so that W+D+L add up to
-    // 1000.0.
-    uci_info.wdl = ThinkingInfo::WDL{w, 1000 - w - l, l};
+
+    auto w =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
+    auto l =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
+    // Using 1000-w-l so that W+D+L add up to 1000.0.
+    auto d = 1000 - w - l;
+    if (d < 0) {
+      w = std::min(1000, std::max(0, w + d / 2));
+      l = 1000 - w;
+      d = 0;
+    }
+    uci_info.wdl = ThinkingInfo::WDL{w, d, l};
     if (network_->GetCapabilities().has_mlh()) {
       uci_info.moves_left = static_cast<int>(
           (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
