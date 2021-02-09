@@ -93,6 +93,10 @@ class PositionHistory {
  public:
   PositionHistory() = default;
   PositionHistory(const PositionHistory& other) = default;
+  PositionHistory(PositionHistory&& other) = default;
+
+  PositionHistory& operator=(const PositionHistory& other) = default;
+  PositionHistory& operator=(PositionHistory&& other) = default;  
 
   // Returns first position of the game (or fen from which it was initialized).
   const Position& Starting() const { return positions_.front(); }
@@ -107,6 +111,10 @@ class PositionHistory {
   void Trim(int size) {
     positions_.erase(positions_.begin() + size, positions_.end());
   }
+
+  // Can be used to reduce allocation cost while performing a sequence of moves
+  // in succession.
+  void Reserve(int size) { positions_.reserve(size); }
 
   // Number of positions in history.
   int GetLength() const { return positions_.size(); }

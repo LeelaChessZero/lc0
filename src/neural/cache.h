@@ -42,8 +42,8 @@ struct CachedNNRequest {
   SmallArray<IdxAndProb> p;
 };
 
-typedef LruCache<uint64_t, CachedNNRequest> NNCache;
-typedef LruCacheLock<uint64_t, CachedNNRequest> NNCacheLock;
+typedef HashKeyedCache<CachedNNRequest> NNCache;
+typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
 
 // Wraps around NetworkComputation and caches result.
 // While it mostly repeats NetworkComputation interface, it's not derived
@@ -61,6 +61,9 @@ class CachingComputation {
   // Adds input by hash only. If that hash is not in cache, returns false
   // and does nothing. Otherwise adds.
   bool AddInputByHash(uint64_t hash);
+  // Adds input by hash with existing lock. Assumes the given lock holds a real
+  // reference.
+  void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
   // Adds a sample to the batch.
   // @hash is a hash to store/lookup it in the cache.
   // @probabilities_to_cache is which indices of policy head to store.
@@ -82,6 +85,9 @@ class CachingComputation {
   // Pops last input from the computation. Only allowed for inputs which were
   // cached.
   void PopCacheHit();
+
+  // Can be used to avoid repeated reallocations internally while adding itemms.
+  void Reserve(int batch_size) { batch_.reserve(batch_size); }
 
  private:
   struct WorkItem {
