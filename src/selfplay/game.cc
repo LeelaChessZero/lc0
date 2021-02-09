@@ -128,8 +128,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           } else {  // Cursed wins and blessed losses count as draws.
             game_result_ = GameResult::DRAW;
           }
-          // adjudicated_ = true;
-          // uncomment this to write consistent v6 training data.
+          adjudicated_ = true;
           break;
         }
       }
