@@ -207,6 +207,9 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         }
         data->version = 6;
         // Type of dummy was changed from signed to unsigned - which means -1 on disk is read in as 255.
+        if (data->dummy > 1 && data->dummy < 255) {
+          throw Exception("Invalid result read in v5 data before upgrade.");
+        }
         data->result_q =
             data->dummy == 255 ? -1.0f : (data->dummy == 0 ? 0.0f : 1.0f);
         data->result_d = data->dummy == 0 ? 1.0f : 0.0f;
