@@ -942,7 +942,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           if ((cur.best_q - cur.played_q >
               deblunderQBlunderThreshold) ||
               (cur.best_q > -1 && cur.played_q < 1 &&
-               ((cur.best_q == 1 && (cur.invariance_info & 8 != 0))
+               ((cur.best_q == 1 && ((cur.invariance_info & 8) != 0))
                 || cur.played_q == -1))) {
             activeZ[0] = cur.best_q;
             activeZ[1] = cur.best_d;
