@@ -923,7 +923,6 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           history.Append(moves[i]);
           const auto& board = history.Last().GetBoard();
           if (board.castlings().no_legal_castle() &&
-              history.Last().GetRule50Ply() != 0 &&
               (board.ours() | board.theirs()).count() <=
                   tablebase->max_cardinality()) {
             history.Pop();
