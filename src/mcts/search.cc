@@ -2343,6 +2343,50 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->v = -computation.GetQVal(idx_in_computation);
   node_to_process->d = computation.GetDVal(idx_in_computation);
   node_to_process->m = computation.GetMVal(idx_in_computation);
+  const auto& transform = params_.GetWLDTransformMatrix();
+
+  float d = node_to_process->d;
+  float w = (node_to_process->v + 1.0f - d) / 2.0f;
+  float l = w - node_to_process->v;
+  if (node_to_process->depth % 2 == 1) {
+    std::swap(w, l);
+  }
+  float w_p[9];
+  float d_p[9];
+  float l_p[9];
+  w_p[0] = d_p[0] = l_p[0] = 1.0;
+  for (int i = 1; i < 9; i++) {
+    w_p[i] = w_p[i - 1] * w;
+    d_p[i] = d_p[i - 1] * d;
+    l_p[i] = l_p[i - 1] * l;
+  }
+  float new_d = 0.0f;
+  float new_w = 0.0f;
+  float new_l = 0.0f;
+  for (int i=0; i < 25; i++) {
+    int row = i % 25;
+    float other =
+        row < 9 ? w_p[row] : (row < 17 ? d_p[row - 9+1] : l_p[row - 17+1]);
+    new_w += transform[i] * other;
+    new_d += transform[i + 25] * other;
+    new_l += transform[i + 50] * other;
+  }
+
+  new_d = std::max(0.0f, new_d);
+  new_w = std::max(0.0f, new_w);
+  new_l = std::max(0.0f, new_l);
+  float sum = new_d + new_w + new_l;
+  d = new_d / sum;
+  w = new_w / sum;
+  l = new_l / sum;
+
+  if (node_to_process->depth % 2 == 1) {
+    std::swap(w, l);
+  }
+
+  node_to_process->v = w - l;
+  node_to_process->d = d;
+
   // ...and secondly, the policy data.
   // Calculate maximum first.
   float max_p = -std::numeric_limits<float>::infinity();
