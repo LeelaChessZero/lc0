@@ -307,6 +307,9 @@ const OptionId SearchParams::kThreadIdlingThresholdId{
     "actively in the process of either sending data to the backend or waiting "
     "for data from the backend, assume that the backend is idle."};
 
+const OptionId SearchParams::kContemptId{
+"contempt", "Contempt", "Fraction of an approximately 75 elo delta WLD corrective transform to apply to WLD."};
+
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
@@ -381,6 +384,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
+  options->Add<FloatOption>(kContemptId, 0.0f, 3.0f) = 0.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -475,6 +479,42 @@ SearchParams::SearchParams(const OptionsDict& options)
     throw Exception(
         "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
         "be <= 100");
+  }
+  std::vector<float> baseline(75, 0);
+  baseline[1] = 1.0f;
+  baseline[34] = 1.0f;
+  baseline[67] = 1.0f;
+  std::vector<float> contempt_transposed = {
+      0.165262878,    0.206120372,     0.0548242964,   0.479956776,
+      -0.0211857297,  -0.147709787,    0.203584135,    -0.10525205,
+      0.0521565676,   0.0987881571,    -0.0649942532,  0.0503067039,
+      0.051735606,    -0.0295467954,   0.025662804,    0.0291283913,
+      -0.00882343762, 0.00439234963,   0.017940877,    0.00200575963,
+      -0.0107956789,  0.0121835833,    0.00725597562,  -0.0208444688,
+      0.00902685896,  0.00945941266,   -0.027113704,   -0.143867269,
+      0.129777595,    -0.0104855141,   -0.0759218782,  0.0976644,
+      -0.009476359,   -0.00631472189,  0.0608875193,   -0.0105318418,
+      0.0242895242,   0.0367694348,    -0.0113186268,  0.0274795163,
+      0.023482658,    -0.00993831549,  0.01643705,     0.0165011659,
+      -0.00723530585, -0.000601851149, 0.0127926245,   -0.0042767711,
+      -0.0192259327,  0.0107246106,    -0.00168276217, -0.170826748,
+      0.0975287408,   0.213019788,     -0.00421461836, -0.0796143,
+      0.0534332506,   0.0139341149,    -0.102801494,   0.0593273193,
+      0.00304917106,  -0.0794305354,   0.0721284449,   -0.00552199176,
+      -0.0493498519,  0.0725246,       -0.00879611727, -0.0232474692,
+      0.0654568151,   -0.00877109449,  -0.00301278965, 0.0558411703,
+      -0.00730823725, 0.0118932715,    0.0462655
+  };
+  std::vector<float> contempt(75, 0);
+  for (int i = 0; i < 25; i++) {
+    for (int j = 0; j < 3; j++) {
+      contempt[j * 25 + i] = contempt_transposed[i * 3 + j];
+    }
+  }
+  float contempt_ratio = options.Get<float>(kContemptId);
+  for (int i = 0; i < 75; i++) {
+    kWLDTransformMatrix.push_back(contempt_ratio * contempt[i] +
+                                  (1.0f - contempt_ratio) * baseline[i]);
   }
 }
 
