@@ -204,7 +204,7 @@ class SmoothTimeManager : public TimeManager {
     // Update time_use estimation.
     const float this_move_time_use =
         move_allocated_time_ms_ <= 0.0f
-            ? 1
+            ? 1.0f
             : total_move_time / move_allocated_time_ms_;
     // Recompute expected move time for logging.
     const float expected_move_time = move_allocated_time_ms_ * timeuse_;
