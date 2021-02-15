@@ -2,6 +2,7 @@
 *.swp
 .clang_complete
 .DS_Store
+.cache/
 .clangd/
 build/
 __pycache__/
