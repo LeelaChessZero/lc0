@@ -121,30 +121,29 @@ NodeGarbageCollector gNodeGc;
 
 void DriftCorrect(float* q, float* d) {
   // Training data doesn't have a high number of nodes, so there shouldn't be
-  // too much drift. 0.0002 selected based off the largest d drift seen in a few
-  // hundred games of 0.00017.
-  const float allowed_eps = 0.0002f;
+  // too much drift. Highest known value not caused by backend bug was 1.5e-7.
+  const float allowed_eps = 0.000001f;
   if (*q > 1.0f) {
     if (*q > 1.0f + allowed_eps) {
-      CERR << "Unexpectedly large drift in q";
+      CERR << "Unexpectedly large drift in q " << *q;
     }
     *q = 1.0f;
   }
   if (*q < -1.0f) {
     if (*q < -1.0f - allowed_eps) {
-      CERR << "Unexpectedly large drift in q";
+      CERR << "Unexpectedly large drift in q " << *q;
     }
     *q = -1.0f;
   }
   if (*d > 1.0f) {
     if (*d > 1.0f + allowed_eps) {
-      CERR << "Unexpectedly large drift in d";
+      CERR << "Unexpectedly large drift in d " << *d;
     }
     *d = 1.0f;
   }
   if (*d < 0.0f) {
     if (*d < 0.0f - allowed_eps) {
-      CERR << "Unexpectedly large drift in d";
+      CERR << "Unexpectedly large drift in d " << *d;
     }
     *d = 0.0f;
   }
@@ -152,10 +151,11 @@ void DriftCorrect(float* q, float* d) {
   float l = w - *q;
   // Assume q drift is rarer than d drift and apply all correction to d.
   if (w < 0.0f || l < 0.0f) {
-    if (2.0f * std::min(w, l) < -allowed_eps) {
-      CERR << "Unexpectedly large drift correction for d based on q.";
+    float drift = 2.0f * std::min(w, l);
+    if (drift < -allowed_eps) {
+      CERR << "Unexpectedly large drift correction for d based on q. " << drift;
     }
-    *d += 2.0f * std::min(w, l);
+    *d += drift;
     // Since q is in range -1 to 1 - this correction should never push d outside
     // of range, but precision could be lost in calculations so just in case.
     if (*d < 0.0f) {
