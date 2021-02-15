@@ -126,25 +126,25 @@ void DriftCorrect(float* q, float* d) {
   const float allowed_eps = 0.0002f;
   if (*q > 1.0f) {
     if (*q > 1.0f + allowed_eps) {
-      std::cerr << "Unexpectedly large drift in q" << std::endl;
+      CERR << "Unexpectedly large drift in q";
     }
     *q = 1.0f;
   }
   if (*q < -1.0f) {
     if (*q < -1.0f - allowed_eps) {
-      std::cerr << "Unexpectedly large drift in q" << std::endl;
+      CERR << "Unexpectedly large drift in q";
     }
     *q = -1.0f;
   }
   if (*d > 1.0f) {
     if (*d > 1.0f + allowed_eps) {
-      std::cerr << "Unexpectedly large drift in d" << std::endl;
+      CERR << "Unexpectedly large drift in d";
     }
     *d = 1.0f;
   }
   if (*d < 0.0f) {
     if (*d < 0.0f - allowed_eps) {
-      std::cerr << "Unexpectedly large drift in d" << std::endl;
+      CERR << "Unexpectedly large drift in d";
     }
     *d = 0.0f;
   }
@@ -153,8 +153,7 @@ void DriftCorrect(float* q, float* d) {
   // Assume q drift is rarer than d drift and apply all correction to d.
   if (w < 0.0f || l < 0.0f) {
     if (2.0f * std::min(w, l) < -allowed_eps) {
-      std::cerr << "Unexpectedly large drift correction for d based on q."
-                << std::endl;
+      CERR << "Unexpectedly large drift correction for d based on q.";
     }
     *d += 2.0f * std::min(w, l);
     // Since q is in range -1 to 1 - this correction should never push d outside
