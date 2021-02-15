@@ -120,8 +120,10 @@ class NodeGarbageCollector {
 NodeGarbageCollector gNodeGc;
 
 void DriftCorrect(float* q, float* d) {
-  // Training data doesn't have a high number of nodes, so there shouldn't be too much drift.
-  const float allowed_eps = 0.0001f;
+  // Training data doesn't have a high number of nodes, so there shouldn't be
+  // too much drift. 0.0002 selected based off the largest d drift seen in a few
+  // hundred games of 0.00017.
+  const float allowed_eps = 0.0002f;
   if (*q > 1.0f) {
     if (*q > 1.0f + allowed_eps) {
       std::cerr << "Unexpectedly large drift in q" << std::endl;
