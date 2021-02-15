@@ -325,6 +325,9 @@ class SmoothTimeManager : public TimeManager {
         *time * params_.max_single_move_time_fraction()) {
       move_allocated_time_ms_ = *time * params_.max_single_move_time_fraction();
     }
+    if (move_allocated_time_ms_ > *time - params_.move_overhead_ms()) {
+      move_allocated_time_ms_ = std::max(0LL, *time - params_.move_overhead_ms());
+    }
     piggybank_time_ += time_to_piggybank_ms;
 
     LOGFILE << std::fixed << std::setprecision(1)
