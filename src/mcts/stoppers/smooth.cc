@@ -315,7 +315,7 @@ class SmoothTimeManager : public TimeManager {
     const float expected_movetime_ms =
         expected_movetime_ms_brutto - time_to_piggybank_ms;
     // When we need to use piggybank, we can use it.
-    const int64_t allowed_piggybank_time_ms =
+    int64_t allowed_piggybank_time_ms =
         piggybank_time_ * params_.max_piggybank_use();
     // This is what is the actual budget as we hope that the search will be
     // shorter due to smart pruning.
@@ -328,6 +328,11 @@ class SmoothTimeManager : public TimeManager {
     if (move_allocated_time_ms_ > *time - params_.move_overhead_ms()) {
       move_allocated_time_ms_ = std::max(static_cast<int64_t>(0LL),
                                          *time - params_.move_overhead_ms());
+    }
+    if (allowed_piggybank_time_ms >
+        *time - params_.move_overhead_ms() - move_allocated_time_ms_) {
+      allowed_piggybank_time_ms =
+          *time - params_.move_overhead_ms() - move_allocated_time_ms_;
     }
     piggybank_time_ += time_to_piggybank_ms;
 
