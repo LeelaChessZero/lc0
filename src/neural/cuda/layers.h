@@ -113,23 +113,6 @@ class ConvLayer : public BaseLayer<DataType> {
   void init();
 };
 
-template <typename DataType>
-class SoftMaxLayer : public BaseLayer<DataType> {
-  using BaseLayer<DataType>::GetC;
-  using BaseLayer<DataType>::GetH;
-  using BaseLayer<DataType>::GetW;
-  using BaseLayer<DataType>::nhwc_;
-
- public:
-  SoftMaxLayer(BaseLayer<DataType>* ip);
-  ~SoftMaxLayer();
-  void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
-
- private:
-  cudnnTensorDescriptor_t out_tensor_desc_;
-};
 #endif
 
 template <typename DataType>
