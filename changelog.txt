@@ -1,4 +1,16 @@
-﻿v0.27.0-rc1 (2021-02-06)
+﻿v0.27.0-rc2 (2021-02-18)
+~~~~~~~
+* Fix additional cases where 'invalid move' could be incorrectly reported.
+* Replace WDL softmax in cudnn backend with same implementation as cuda
+  backend. This fixes some inaccuracy issues that were causing training
+  data to be rejected at a fairly low frequency.
+* Ensure that training data Q/D pairs form valid WDL targets even if there
+  is accumulated drift in calculation.
+* Fix for the calculation of the 'best q is proven' bit in training data.
+* Multiple fixes for timelosses and infinite instamoving in smooth time
+  manager. Smooth time manager now made default after these fixes.
+
+v0.27.0-rc1 (2021-02-06)
 ~~~~~~~
 * Fix a bug which meant `position ... moves ...` didn't work if the moves 
   went off the end of the existing tree. 
