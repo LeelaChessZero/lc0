@@ -530,12 +530,6 @@ class CudnnNetwork : public Network {
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
-
-      if (wdl_) {
-        auto softmaxVal =
-            std::make_unique<SoftMaxLayer<DataType>>(getLastLayer());
-        network_.emplace_back(std::move(softmaxVal));
-      }
     }
     value_out_ = getLastLayer();
 
@@ -598,7 +592,7 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
-    std::lock_guard<std::mutex> lock(lock_);
+    std::unique_lock<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -730,36 +724,18 @@ class CudnnNetwork : public Network {
                         scratch_mem_, scratch_size_, cudnn_,
                         cublas_);  // value FC1
 
-    if (wdl_) {
+
+    if (fp16) {
+      // TODO: consider fusing the bias-add of FC2 with format conversion.
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // value FC2    // VALUE
-
-      // Value softmax
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2
-        copyTypeConverted(opVal, (half*)(tensor_mem_[1]),
-                          3 * batchSize);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[0],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2    // VALUE
-      }
+                          cublas_);  // value FC2
+      copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
+                        wdl_ ? 3 * batchSize : batchSize);  // VALUE
     } else {
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2
-        copyTypeConverted(opVal, (half*)(tensor_mem_[0]), batchSize);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // value FC2    // VALUE
-      }
+      network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
+                          nullptr, scratch_mem_, scratch_size_, cudnn_,
+                          cublas_);  // value FC2    // VALUE
     }
 
     if (moves_left_) {
@@ -786,6 +762,24 @@ class CudnnNetwork : public Network {
     }
 
     ReportCUDAErrors(cudaDeviceSynchronize());
+    // The next thread can start using the GPU now.
+    lock.unlock();
+
+    if (wdl_) {
+      // Value softmax done cpu side.
+      for (int i = 0; i < batchSize; i++) {
+        float w = std::exp(io->op_value_mem_[3 * i + 0]);
+        float d = std::exp(io->op_value_mem_[3 * i + 1]);
+        float l = std::exp(io->op_value_mem_[3 * i + 2]);
+        float sum = w + d + l;
+        w /= sum;
+        l /= sum;
+        d = 1.0f - w - l;
+        io->op_value_mem_[3 * i + 0] = w;
+        io->op_value_mem_[3 * i + 1] = d;
+        io->op_value_mem_[3 * i + 2] = l;
+      }
+    }
 
 #ifdef DEBUG_RAW_NPS
     const int reportingCalls = 100;
