@@ -75,7 +75,7 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
-  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.2f;
+  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.15f;
 
   if (!options.ProcessAllFlags()) return;
 
