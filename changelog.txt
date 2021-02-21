@@ -1,4 +1,8 @@
-﻿v0.27.0-rc2 (2021-02-18)
+﻿v0.27.0 (2021-02-21)
+~~~~~~~
+* A better value for the backendbench Clippy threshold.
+
+v0.27.0-rc2 (2021-02-18)
 ~~~~~~~
 * Fix additional cases where 'invalid move' could be incorrectly reported.
 * Replace WDL softmax in cudnn backend with same implementation as cuda
