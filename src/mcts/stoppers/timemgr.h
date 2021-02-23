@@ -52,6 +52,7 @@ struct IterationStats {
   // TODO: remove this in favor of time_usage_hint_=kImmediateMove when
   // smooth time manager is the default.
   bool win_found = false;
+  int num_losing_edges = 0;
 
   enum class TimeUsageHint { kNormal, kNeedMoreTime, kImmediateMove };
   TimeUsageHint time_usage_hint_ = TimeUsageHint::kNormal;
@@ -68,7 +69,7 @@ class StoppersHints {
   void Reset();
   void UpdateEstimatedRemainingTimeMs(int64_t v);
   int64_t GetEstimatedRemainingTimeMs() const;
-  void UpdateEstimatedRemainingRemainingPlayouts(int64_t v);
+  void UpdateEstimatedRemainingPlayouts(int64_t v);
   int64_t GetEstimatedRemainingPlayouts() const;
   void UpdateEstimatedNps(float v);
   std::optional<float> GetEstimatedNps() const;
