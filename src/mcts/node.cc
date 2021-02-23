@@ -556,7 +556,8 @@ V6TrainingData Node::GetV6TrainingData(
             -1);
   // Set moves probabilities according to their relative amount of visits.
   // Compute Kullback-Leibler divergence in nats (between policy and visits)
-  float kld_sum = 0.0;
+  // 1.0 epsilon is for backward compatibility with earlier value of 0
+  float kld_sum = 1.0;
   for (const auto& child : Edges()) {
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (fracv > 0) {
