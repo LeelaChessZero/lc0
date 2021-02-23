@@ -559,7 +559,7 @@ V6TrainingData Node::GetV6TrainingData(
   float kld_sum = 0.0;
   for (const auto& child : Edges()) {
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-    if (fracv > 0 and child.GetP() > 0) {
+    if (fracv > 0) {
       kld_sum += fracv * log(fracv/child.GetP());
     }
     result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
