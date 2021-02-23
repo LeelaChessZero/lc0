@@ -555,11 +555,17 @@ V6TrainingData Node::GetV6TrainingData(
   std::fill(std::begin(result.probabilities), std::end(result.probabilities),
             -1);
   // Set moves probabilities according to their relative amount of visits.
+  // Compute Kullback-Leibler divergence in nats (between policy and visits)
+  float kld_sum = 0.0;
   for (const auto& child : Edges()) {
+    fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+    if (fracv > 0 and child.GetP() > 0) {
+      kld_sum += fracv * log(fracv/child.GetP());
+    }
     result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
-        total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+        fracv;
   }
-
+  // kld_sum needs to be assigned to a result field TODO
   const auto& position = history.Last();
   const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
