@@ -40,11 +40,6 @@ class SelfPlayLoop : public UciLoop {
   ~SelfPlayLoop();
 
   void RunLoop() override;
-  void CmdStart() override;
-  void CmdStop() override;
-  void CmdUci() override;
-  void CmdSetOption(const std::string& name, const std::string& value,
-                    const std::string& context) override;
 
  private:
   void SendGameInfo(const GameInfo& move);
