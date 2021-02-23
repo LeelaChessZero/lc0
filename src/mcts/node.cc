@@ -558,7 +558,7 @@ V6TrainingData Node::GetV6TrainingData(
   // Compute Kullback-Leibler divergence in nats (between policy and visits)
   float kld_sum = 0.0;
   for (const auto& child : Edges()) {
-    fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+    float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (fracv > 0 and child.GetP() > 0) {
       kld_sum += fracv * log(fracv/child.GetP());
     }
