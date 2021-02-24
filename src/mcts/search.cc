@@ -531,7 +531,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ + initial_visits_ == 0) return;
 
-  if (!stop_.load(std::memory_order_acquire) || !ok_to_respond_bestmove_) {
+  if (!stop_.load(std::memory_order_acquire)) {
     if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
   }
 
