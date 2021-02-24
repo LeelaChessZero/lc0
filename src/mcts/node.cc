@@ -566,6 +566,7 @@ V6TrainingData Node::GetV6TrainingData(
     result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
         fracv;
   }
+  result.policy_kld = kld_sum
   // kld_sum needs to be assigned to a result field TODO
   const auto& position = history.Last();
   const auto& castlings = position.GetBoard().castlings();
