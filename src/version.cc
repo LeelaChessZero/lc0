@@ -35,6 +35,7 @@ std::string GetVersionStr(int major, int minor, int patch,
                           const std::string& build_id) {
   auto v = std::to_string(major) + "." + std::to_string(minor) + "." +
            std::to_string(patch);
-  if (postfix.empty()) return v + "+" + build_id;
-  return v + "-" + postfix + "+" + build_id;
+  if (!postfix.empty()) v += "-" + postfix;
+  if (!build_id.empty()) v += "+" + build_id;
+  return v;
 }

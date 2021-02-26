@@ -440,8 +440,14 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 }
 
 template <bool CPU>
-std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
+std::unique_ptr<Network> MakeTFNetwork(const std::optional<WeightsFile>& w,
                                        const OptionsDict& options) {
+  if (!w) {
+    throw Exception("The " +
+                    std::string(CPU ? "tensorflow-cc-cpu" : "tensorflow-cc") +
+                    " backend requires a network file.");
+  }
+  const WeightsFile& weights = *w;
   if (weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
@@ -468,9 +474,8 @@ std::unique_ptr<Network> MakeTFNetwork(const WeightsFile& weights,
                     " is not supported by Tensorflow C++ backend.");
   }
   return std::make_unique<TFNetwork<CPU>>(
-      weights, options,
-      weights.format().network_format().value() ==
-          pblczero::NetworkFormat::VALUE_WDL);
+      weights, options, weights.format().network_format().value() ==
+                            pblczero::NetworkFormat::VALUE_WDL);
 }
 
 REGISTER_NETWORK("tensorflow-cc-cpu", MakeTFNetwork<true>, 90)

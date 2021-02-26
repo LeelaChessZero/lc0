@@ -39,7 +39,7 @@ class ConfigFile {
   ConfigFile() = delete;
 
   // This function must be called after PopulateOptions.
-  static bool Init(OptionsParser* options);
+  static bool Init();
 
   // Returns the command line arguments from the config file.
   static const std::vector<std::string>& Arguments() { return arguments_; }
@@ -49,8 +49,9 @@ class ConfigFile {
 
  private:
   // Parses the config file into the arguments_ vector.
-  static bool ParseFile(const std::string& filename, OptionsParser* options);
+  static bool ParseFile(std::string& filename);
 
+  // Returns the absolute path to the config file argument given.
   static std::string ProcessConfigFlag(const std::vector<std::string>& args);
 
   static std::vector<std::string> arguments_;

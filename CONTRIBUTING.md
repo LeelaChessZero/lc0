@@ -2,7 +2,7 @@
 
 These are the guidelines and standards followed by this codebase.
 
-The language is C++, specifically C++14. As such, manual `new` and `delete` memory mangement is strongly discouraged; use the standard library tools for managing memory (such as `unique_ptr`, `shared_ptr` etc.). When compiler support is more widespread, the project may upgrade to the C++17 standard in the future.
+The language is C++, specifically C++17. As such, manual `new` and `delete` memory mangement is strongly discouraged; use the standard library tools for managing memory (such as `unique_ptr`, `shared_ptr` etc.).
 
 This codebase uses semantic versioning. A release is the final commit for that version number, and all subsequent commits are development for the next version. `master` is the default branch, and the active development branch (as such, all Pull Requests go here); it always targets a minor (or major) version which succeeds the current relase. `release` is always equivalent to the latest tag.
 
@@ -56,19 +56,9 @@ The internal code dependency structure looks like this:
 
 ### Git history
 
-Pull Requests are squahsed when merged. This means all commits in the branch will be squashed into one commit applied onto master, so branches and their PRs should stick to *one* topic only. If you think changes deserve separate commits, make separate PRs for each commit.
+Pull Requests are squashed when merged. This means all commits in the branch will be squashed into one commit applied onto master, so branches and their PRs should stick to *one* topic only. If you think changes deserve separate commits, make separate PRs for each commit.
 
 This also means it's not possible to reuse one branch for multiple PRs; new PRs must either use entirely new branches, or else you could use `git reset --hard` on the current branch.
-
-
-### Command line/UCI options
-
-The options code handles both UCI options and command line options at the same time; in fact they are one and the same. Each option has a "flag name" and a "description". The flag name is used as the command line `--flag-name`. The description serves a dual purpose: it is the text printed by `./lc0 --help`, but it also serves as the *name* of the UCI option as well. Therefore the description should:
-
- * Not end with a period (per the UCI specification)
- * Be clear and succinct, to serve as both a help message and standalone UCI option name
- * Be short (to fit as a UCI option in chess GUIs)
- * Be different from the flag name (since it's a help message)
 
 
 ### Allowed features

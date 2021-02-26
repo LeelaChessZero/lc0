@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
 #include "mcts/stoppers/stoppers.h"
 #include "neural/writer.h"
@@ -56,6 +57,11 @@ const OptionId kMinimumAllowedVistsId{
 const OptionId kUciChess960{
     "chess960", "UCI_Chess960",
     "Castling moves are encoded as \"king takes rook\"."};
+const OptionId kSyzygyTablebaseId{
+    "syzygy-paths", "SyzygyPath",
+    "List of Syzygy tablebase directories, list entries separated by system "
+    "separator (\";\" for Windows, \":\" for Linux).",
+    's'};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -66,45 +72,60 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
+  options->Add<StringOption>(kSyzygyTablebaseId);
 }
 
-SelfPlayGame::SelfPlayGame(PlayerOptions player1, PlayerOptions player2,
-                           bool shared_tree, const MoveList& opening)
-    : options_{player1, player2},
-      chess960_{player1.uci_options->Get<bool>(kUciChess960.GetId()) ||
-                player2.uci_options->Get<bool>(kUciChess960.GetId())} {
+SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
+                           bool shared_tree, const Opening& opening)
+    : options_{white, black},
+      chess960_{white.uci_options->Get<bool>(kUciChess960) ||
+                black.uci_options->Get<bool>(kUciChess960)} {
+  orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
-  tree_[0]->ResetToPosition(ChessBoard::kStartposFen, {});
+  tree_[0]->ResetToPosition(orig_fen_, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
     tree_[1] = std::make_shared<NodeTree>();
-    tree_[1]->ResetToPosition(ChessBoard::kStartposFen, {});
+    tree_[1]->ResetToPosition(orig_fen_, {});
   }
-  for (Move m : opening) {
+  for (Move m : opening.moves) {
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
   }
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        bool enable_resign) {
+                        SyzygyTablebase* syzygy_tb, bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
+  // Take syzygy tablebases from player1 options.
+  std::string tb_paths =
+      options_[0].uci_options->Get<std::string>(kSyzygyTablebaseId);
+  if (!tb_paths.empty()) {  // && tb_paths != tb_paths_) {
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
+    if (!syzygy_tb_->init(tb_paths)) {
+      CERR << "Failed to load Syzygy tablebases!";
+      syzygy_tb_ = nullptr;
+    }
+  }
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 
     // If endgame, stop.
     if (game_result_ != GameResult::UNDECIDED) break;
-
+    if (tree_[0]->GetPositionHistory().Last().GetGamePly() >= 450) {
+      adjudicated_ = true;
+      break;
+    }
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
-    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId.GetId())) {
+    if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
       tree_[idx]->TrimTreeAtHead();
     }
-
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
@@ -126,8 +147,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers),
           /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
-          nullptr);
-      // TODO: add Syzygy option for selfplay.
+          syzygy_tb);
     }
 
     // Do search.
@@ -136,20 +156,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     nodes_total_ += search_->GetTotalPlayouts();
     if (abort_) break;
 
-    const auto best_eval = search_->GetBestEval();
-    if (training) {
-      // Append training data. The GameResult is later overwritten.
-      const auto best_wl = best_eval.wl;
-      const auto best_d = best_eval.d;
-      const auto best_m = best_eval.ml;
-      const auto input_format =
-          options_[idx].network->GetCapabilities().input_format;
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV5TrainingData(
-          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), input_format, best_wl, best_d,
-          best_m));
-    }
-
+    Move best_move;
+    bool best_is_terminal;
+    const auto best_eval = search_->GetBestEval(&best_move, &best_is_terminal);
     float eval = best_eval.wl;
     eval = (eval + 1) / 2;
     if (eval < min_eval_[idx]) min_eval_[idx] = eval;
@@ -160,54 +169,64 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
-                                            kResignEarliestMoveId.GetId())) {
+    if (enable_resign &&
+        move_number >=
+            options_[idx].uci_options->Get<int>(kResignEarliestMoveId)) {
       const float resignpct =
-          options_[idx].uci_options->Get<float>(kResignPercentageId.GetId()) /
-          100;
-      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+          options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
+      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
         auto threshold = 1.0f - resignpct;
         if (best_w > threshold) {
           game_result_ =
               blacks_move ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+          adjudicated_ = true;
           break;
         }
         if (best_l > threshold) {
           game_result_ =
               blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
           break;
         }
         if (best_d > threshold) {
           game_result_ = GameResult::DRAW;
+          adjudicated_ = true;
           break;
         }
       } else {
         if (eval < resignpct) {  // always false when resignpct == 0
           game_result_ =
               blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
           break;
         }
       }
     }
 
+    auto node = tree_[idx]->GetCurrentHead();
+    Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
-      for (auto edge : tree_[idx]->GetCurrentHead()->Edges()) {
+
+      for (auto& edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }
         if (edge.GetMove(tree_[idx]->IsBlackToMove()) == move) {
           cur_n = edge.GetN();
+          played_eval.wl = edge.GetWL(-node->GetWL());
+          played_eval.d = edge.GetD(node->GetD());
+          played_eval.ml = edge.GetM(node->GetM() - 1) + 1;
         }
       }
       // If 'best move' is less than allowed visits and not max visits,
       // discard it and try again.
       if (cur_n == max_n ||
-          static_cast<int>(cur_n) >= options_[idx].uci_options->Get<int>(
-                                         kMinimumAllowedVistsId.GetId())) {
+          static_cast<int>(cur_n) >=
+              options_[idx].uci_options->Get<int>(kMinimumAllowedVistsId)) {
         break;
       }
       PositionHistory history_copy = tree_[idx]->GetPositionHistory();
@@ -220,10 +239,47 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
         auto move_list_to_discard = GetMoves();
         move_list_to_discard.push_back(move);
-        options_[idx].discarded_callback(move_list_to_discard);
+        options_[idx].discarded_callback({orig_fen_, move_list_to_discard});
       }
       search_->ResetBestMove();
     }
+
+    if (training) {
+      bool best_is_proof = best_is_terminal;  // But check for better moves.
+      if (best_is_proof && best_eval.wl < 1) {
+        auto best =
+            (best_eval.wl == 0) ? GameResult::DRAW : GameResult::BLACK_WON;
+        auto upper = best;
+        for (const auto& edge : node->Edges()) {
+          upper = std::max(edge.GetBounds().second, upper);
+        }
+        if (best < upper) {
+          best_is_proof = false;
+        }
+      }
+      // Append training data. The GameResult is later overwritten.
+      const auto input_format =
+          options_[idx].network->GetCapabilities().input_format;
+      Eval orig_eval;
+      NNCacheLock nneval =
+          search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
+      if (nneval) {
+        orig_eval.wl = nneval->q;
+        orig_eval.d = nneval->d;
+        orig_eval.ml = nneval->m;
+      } else {
+        orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
+        orig_eval.d = std::numeric_limits<float>::quiet_NaN();
+        orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
+      }
+      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
+          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
+          search_->GetParams().GetHistoryFill(), input_format, best_eval,
+          played_eval, orig_eval, best_is_proof, best_move, move));
+    }
+    // Must reset the search before mutating the tree.
+    search_.reset();
+
     // Add best move to the tree.
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
@@ -254,7 +310,7 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
 float SelfPlayGame::GetWorstEvalForWinnerOrDraw() const {
   // TODO: This assumes both players have the same resign style.
   // Supporting otherwise involves mixing the meaning of worst.
-  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId.GetId())) {
+  if (options_[0].uci_options->Get<bool>(kResignWDLStyleId)) {
     if (game_result_ == GameResult::WHITE_WON) {
       return std::max(max_eval_[1], max_eval_[2]);
     } else if (game_result_ == GameResult::BLACK_WON) {
@@ -280,13 +336,26 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   // different approach.
   float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
-    const bool black_to_move = chunk.side_to_move;
+    bool black_to_move = chunk.side_to_move_or_enpassant;
+    if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
+            chunk.input_format))) {
+      black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
+    }
     if (game_result_ == GameResult::WHITE_WON) {
-      chunk.result = black_to_move ? -1 : 1;
+      chunk.result_q = black_to_move ? -1 : 1;
+      chunk.result_d = 0;
     } else if (game_result_ == GameResult::BLACK_WON) {
-      chunk.result = black_to_move ? 1 : -1;
+      chunk.result_q = black_to_move ? 1 : -1;
+      chunk.result_d = 0;
     } else {
-      chunk.result = 0;
+      chunk.result_q = 0;
+      chunk.result_d = 1;
+    }
+    if (adjudicated_) {
+      chunk.invariance_info |= 1u << 5; // Game adjudicated.
+    }
+    if (adjudicated_ && game_result_ == GameResult::UNDECIDED) {
+      chunk.invariance_info |= 1u << 4; // Max game length exceeded.
     }
     chunk.plies_left = m_estimate;
     m_estimate -= 1.0f;
@@ -298,9 +367,10 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
     const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  if (visits >= 0) result->AddStopper(std::make_unique<VisitsStopper>(visits));
+  // always set VisitsStopper to avoid exceeding the limit 4000000000, the default value when visits = 0
+  result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
   if (playouts >= 0) {
-    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts));
+    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
   }
   if (movetime >= 0) {
     result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));

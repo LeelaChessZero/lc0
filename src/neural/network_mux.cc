@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 
 #include "neural/factory.h"
 #include "utils/exception.h"
+#include "utils/numa.h"
 
 namespace lczero {
 namespace {
@@ -88,7 +89,8 @@ class MuxingComputation : public NetworkComputation {
 
 class MuxingNetwork : public Network {
  public:
-  MuxingNetwork(const WeightsFile& weights, const OptionsDict& options) {
+  MuxingNetwork(const std::optional<WeightsFile>& weights,
+                const OptionsDict& options) {
     // int threads, int max_batch)
     //: network_(std::move(network)), max_batch_(max_batch) {
 
@@ -105,7 +107,8 @@ class MuxingNetwork : public Network {
     }
   }
 
-  void AddBackend(const std::string& name, const WeightsFile& weights,
+  void AddBackend(const std::string& name,
+                  const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
     const int nn_threads = opts.GetOrDefault<int>("threads", 1);
     const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
@@ -123,7 +126,7 @@ class MuxingNetwork : public Network {
 
     for (int i = 0; i < nn_threads; ++i) {
       threads_.emplace_back(
-          [this, net, max_batch]() { Worker(net, max_batch); });
+          [this, net, max_batch, i]() { Worker(net, max_batch, i); });
     }
   }
 
@@ -151,7 +154,9 @@ class MuxingNetwork : public Network {
     }
   }
 
-  void Worker(Network* network, const int max_batch) {
+  void Worker(Network* network, const int max_batch, int id) {
+    // Add one to the id in order to leave space for an active search thread.
+    Numa::BindThread(id + 1);
     // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       std::vector<MuxingComputation*> children;
@@ -222,8 +227,8 @@ void MuxingComputation::ComputeBlocking() {
   dataready_cv_.wait(lock, [this]() { return dataready_; });
 }
 
-std::unique_ptr<Network> MakeMuxingNetwork(const WeightsFile& weights,
-                                           const OptionsDict& options) {
+std::unique_ptr<Network> MakeMuxingNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   return std::make_unique<MuxingNetwork>(weights, options);
 }
 

@@ -29,6 +29,8 @@
 
 #include <list>
 
+#include "chess/pgn.h"
+#include "neural/factory.h"
 #include "selfplay/game.h"
 #include "utils/mutex.h"
 #include "utils/optionsdict.h"
@@ -73,11 +75,11 @@ class SelfPlayTournament {
   Mutex mutex_;
   // Whether first game will be black for player1.
   bool first_game_black_ GUARDED_BY(mutex_) = false;
-  std::vector<MoveList> discard_pile_ GUARDED_BY(mutex_);
+  std::vector<Opening> discard_pile_ GUARDED_BY(mutex_);
   // Number of games which already started.
   int games_count_ GUARDED_BY(mutex_) = 0;
   bool abort_ GUARDED_BY(mutex_) = false;
-  std::vector<MoveList> openings_ GUARDED_BY(mutex_);
+  std::vector<Opening> openings_ GUARDED_BY(mutex_);
   // Games in progress. Exposed here to be able to abort them in case if
   // Abort(). Stored as list and not vector so that threads can keep iterators
   // to them and not worry that it becomes invalid.
@@ -88,24 +90,27 @@ class SelfPlayTournament {
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
-  // All those are [0] for player1 and [1] for player2
-  // Shared pointers for both players may point to the same object.
-  std::shared_ptr<Network> networks_[2];
+  // Map from the backend configuration to a network.
+  std::map<NetworkFactory::BackendConfiguration, std::unique_ptr<Network>>
+      networks_;
   std::shared_ptr<NNCache> cache_[2];
-  const OptionsDict player_options_[2];
-  SelfPlayLimits search_limits_[2];
+  // [player1 or player2][white or black].
+  const OptionsDict player_options_[2][2];
+  SelfPlayLimits search_limits_[2][2];
 
   CallbackUciResponder::BestMoveCallback best_move_callback_;
   CallbackUciResponder::ThinkingCallback info_callback_;
   GameInfo::Callback game_callback_;
   TournamentInfo::Callback tournament_callback_;
-  const int kThreads[2];
   const int kTotalGames;
   const bool kShareTree;
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
   const float kDiscardedStartChance;
+
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
+
 };
 
 }  // namespace lczero

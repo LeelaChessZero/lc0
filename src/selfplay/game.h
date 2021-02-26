@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "chess/pgn.h"
 #include "chess/position.h"
 #include "chess/uciloop.h"
 #include "mcts/search.h"
@@ -46,7 +47,7 @@ struct SelfPlayLimits {
 };
 
 struct PlayerOptions {
-  using MoveListCallback = std::function<void(const MoveList&)>;
+  using OpeningCallback = std::function<void(const Opening&)>;
   // Network to use by the player.
   Network* network;
   // Callback when player moves.
@@ -54,7 +55,7 @@ struct PlayerOptions {
   // Callback when player outputs info.
   CallbackUciResponder::ThinkingCallback info_callback;
   // Callback when player discards a selected move due to low visits.
-  MoveListCallback discarded_callback;
+  OpeningCallback discarded_callback;
   // NNcache to use.
   NNCache* cache;
   // User options dictionary.
@@ -70,15 +71,15 @@ class SelfPlayGame {
   // If shared_tree is true, search tree is reused between players.
   // (useful for training games). Otherwise the tree is separate for black
   // and white (useful i.e. when they use different networks).
-  SelfPlayGame(PlayerOptions player1, PlayerOptions player2, bool shared_tree,
-               const MoveList& opening);
+  SelfPlayGame(PlayerOptions white, PlayerOptions black, bool shared_tree,
+               const Opening& opening);
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
-
+  
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
-            bool enable_resign = true);
+	  SyzygyTablebase* syzygy_tb, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
@@ -100,12 +101,14 @@ class SelfPlayGame {
   // Node tree for player1 and player2. If the tree is shared between players,
   // tree_[0] == tree_[1].
   std::shared_ptr<NodeTree> tree_[2];
+  std::string orig_fen_;
 
   // Search that is currently in progress. Stored in members so that Abort()
   // can stop it.
   std::unique_ptr<Search> search_;
   bool abort_ = false;
   GameResult game_result_ = GameResult::UNDECIDED;
+  bool adjudicated_ = false;
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
   float min_eval_[2] = {1.0f, 1.0f};
@@ -116,7 +119,10 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V5TrainingData> training_data_;
+  std::vector<V6TrainingData> training_data_;
+
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
+
 };
 
 }  // namespace lczero
