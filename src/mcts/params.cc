@@ -306,6 +306,15 @@ const OptionId SearchParams::kThreadIdlingThresholdId{
     "If there are more than this number of search threads that are not "
     "actively in the process of either sending data to the backend or waiting "
     "for data from the backend, assume that the backend is idle."};
+const OptionId SearchParams::kBatchLimitStartId{
+    "batch-limit-start", "BatchLimitStart",
+    "Tree size where max n_in_flight allowed limit starts scaling up from 0."};
+const OptionId SearchParams::kBatchLimitEndId{
+    "batch-limit-end", "BatchLimitEnd",
+    "Tree size where n_in_flight allowed limit reaches max."};
+const OptionId SearchParams::kBatchLimitMaxId{
+    "batch-limit-max", "BatchLimitMax",
+    "Maximum allowed n_in_flight limit regardless of tree size."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -340,10 +349,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.359f;
-  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
-  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
+  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 917;
+  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 1000;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
-  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
@@ -381,6 +390,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
+  options->Add<IntOption>(kBatchLimitStartId, 1, 10000) = 50;
+  options->Add<IntOption>(kBatchLimitEndId, 1, 10000) = 1893;
+  options->Add<IntOption>(kBatchLimitMaxId, 1, 10000) = 2622;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -468,7 +480,10 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMinimumWorkPerTaskForProcessing(
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
-      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)) {
+      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
+      kBatchLimitStart(options.Get<int>(kBatchLimitStartId)),
+      kBatchLimitEnd(options.Get<int>(kBatchLimitEndId)),
+      kBatchLimitMax(options.Get<int>(kBatchLimitMaxId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

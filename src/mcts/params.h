@@ -130,6 +130,9 @@ class SearchParams {
   }
   int GetIdlingMinimumWork() const { return kIdlingMinimumWork; }
   int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
+  int GetBatchLimitStart() const { return kBatchLimitStart; }
+  int GetBatchLimitEnd() const { return kBatchLimitEnd; }
+  int GetBatchLimitMax() const { return kBatchLimitMax; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -191,6 +194,9 @@ class SearchParams {
   static const OptionId kMinimumWorkPerTaskForProcessingId;
   static const OptionId kIdlingMinimumWorkId;
   static const OptionId kThreadIdlingThresholdId;
+  static const OptionId kBatchLimitStartId;
+  static const OptionId kBatchLimitEndId;
+  static const OptionId kBatchLimitMaxId;
 
  private:
   const OptionsDict& options_;
@@ -245,6 +251,9 @@ class SearchParams {
   const int kMinimumWorkPerTaskForProcessing;
   const int kIdlingMinimumWork;
   const int kThreadIdlingThreshold;
+  const int kBatchLimitStart;
+  const int kBatchLimitEnd;
+  const int kBatchLimitMax;
 };
 
 }  // namespace lczero
