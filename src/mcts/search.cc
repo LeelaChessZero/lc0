@@ -1252,8 +1252,8 @@ void SearchWorker::GatherMinibatch2() {
     if (cur_n > params_.GetBatchLimitStart() && cur_n < params_.GetBatchLimitEnd()) {
       in_flight_threshold =
           mix(params_.GetBatchLimitMax(), 0,
-              (static_cast<float>(cur_n) - params_.GetBatchLimitStart()) /
-                  (params_.GetBatchLimitEnd() - params_.GetBatchLimitStart()));
+              std::powf((static_cast<float>(cur_n) - params_.GetBatchLimitStart()) /
+                  (params_.GetBatchLimitEnd() - params_.GetBatchLimitStart()), params_.GetBatchLimitPower()));
     } else if (cur_n >= params_.GetBatchLimitEnd()) {
       in_flight_threshold = params_.GetBatchLimitMax();
     }

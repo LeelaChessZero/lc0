@@ -133,6 +133,7 @@ class SearchParams {
   int GetBatchLimitStart() const { return kBatchLimitStart; }
   int GetBatchLimitEnd() const { return kBatchLimitEnd; }
   int GetBatchLimitMax() const { return kBatchLimitMax; }
+  float GetBatchLimitPower() const { return kBatchLimitPower; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -197,6 +198,7 @@ class SearchParams {
   static const OptionId kBatchLimitStartId;
   static const OptionId kBatchLimitEndId;
   static const OptionId kBatchLimitMaxId;
+  static const OptionId kBatchLimitPowerId;
 
  private:
   const OptionsDict& options_;
@@ -254,6 +256,7 @@ class SearchParams {
   const int kBatchLimitStart;
   const int kBatchLimitEnd;
   const int kBatchLimitMax;
+  const float kBatchLimitPower;
 };
 
 }  // namespace lczero
