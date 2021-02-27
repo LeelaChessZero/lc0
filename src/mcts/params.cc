@@ -396,7 +396,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kBatchLimitStartId, 1, 10000) = 50;
   options->Add<IntOption>(kBatchLimitEndId, 1, 10000) = 1893;
   options->Add<IntOption>(kBatchLimitMaxId, 1, 10000) = 2622;
-  options->Add<FloatOption>(kBatchLimitPowerId, 0.01, 100) = 1.0;
+  options->Add<FloatOption>(kBatchLimitPowerId, 0.01, 100) = 2.5;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
