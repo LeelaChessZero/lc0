@@ -103,6 +103,13 @@ class OptionsDict : TypeDict<bool>,
   template <typename T>
   T Get(const OptionId& option_id) const;
 
+  // Returns value only once after being set. Throws exception if not found.
+  // Intended for use with button options, so only implemented for bool.
+  template <typename T>
+  T GetOnce(const std::string& key) const;
+  template <typename T>
+  T GetOnce(const OptionId& option_id) const;
+
   // Returns the own value of given type (doesn't fall back to querying parent).
   // Returns nullopt if doesn't exist.
   template <typename T>
