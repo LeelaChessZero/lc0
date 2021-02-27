@@ -343,7 +343,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
-  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
