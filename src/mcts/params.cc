@@ -393,10 +393,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
-  options->Add<IntOption>(kBatchLimitStartId, 1, 10000) = 50;
-  options->Add<IntOption>(kBatchLimitEndId, 1, 10000) = 1893;
-  options->Add<IntOption>(kBatchLimitMaxId, 1, 10000) = 2622;
-  options->Add<FloatOption>(kBatchLimitPowerId, 0.01, 100) = 2.5;
+  options->Add<IntOption>(kBatchLimitStartId, 1, 10000) = 28;
+  options->Add<IntOption>(kBatchLimitEndId, 1, 10000) = 9207;
+  options->Add<IntOption>(kBatchLimitMaxId, 1, 10000) = 2650;
+  options->Add<FloatOption>(kBatchLimitPowerId, 0.01, 100) = 1.3;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);

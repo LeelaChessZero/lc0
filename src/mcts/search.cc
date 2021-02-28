@@ -1226,8 +1226,24 @@ int mix(int high, int low, float ratio) {
 void SearchWorker::GatherMinibatch2() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collision_events_left = params_.GetMaxCollisionEvents();
-  int collisions_left = params_.GetMaxCollisionVisitsId();
+  int collision_events_left = 100000;
+  int collisions_left = 1;
+  int cur_n = 0;
+  {
+    SharedMutex::Lock lock(search_->nodes_mutex_);
+    cur_n = search_->root_node_->GetN();
+  }
+  if (cur_n > params_.GetBatchLimitStart() &&
+      cur_n < params_.GetBatchLimitEnd()) {
+    collisions_left =
+        mix(params_.GetBatchLimitMax(), 1,
+            std::pow(
+                (static_cast<float>(cur_n) - params_.GetBatchLimitStart()) /
+                    (params_.GetBatchLimitEnd() - params_.GetBatchLimitStart()),
+                params_.GetBatchLimitPower()));
+  } else if (cur_n >= params_.GetBatchLimitEnd()) {
+    collisions_left = params_.GetBatchLimitMax();
+  }
 
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
@@ -1241,24 +1257,7 @@ void SearchWorker::GatherMinibatch2() {
          number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
-    int cur_in_flight = 0;
-    int cur_n = 0;
-    {
-      SharedMutex::Lock lock(search_->nodes_mutex_);
-      cur_in_flight = search_->root_node_->GetNInFlight();
-      cur_n = search_->root_node_->GetN();
-    }
-    int in_flight_threshold = 0;
-    if (cur_n > params_.GetBatchLimitStart() && cur_n < params_.GetBatchLimitEnd()) {
-      in_flight_threshold =
-          mix(params_.GetBatchLimitMax(), 0,
-              std::pow((static_cast<float>(cur_n) - params_.GetBatchLimitStart()) /
-                  (params_.GetBatchLimitEnd() - params_.GetBatchLimitStart()), params_.GetBatchLimitPower()));
-    } else if (cur_n >= params_.GetBatchLimitEnd()) {
-      in_flight_threshold = params_.GetBatchLimitMax();
-    }
-    if (cur_in_flight > in_flight_threshold) return;
-
+ 
     // If there is backend work to be done, and the backend is idle - exit
     // immediately.
     // Only do this fancy work if there are multiple threads as otherwise we
@@ -1278,8 +1277,7 @@ void SearchWorker::GatherMinibatch2() {
     PickNodesToExtend(
         std::min({collision_events_left, collisions_left,
                   params_.GetMiniBatchSize() - minibatch_size,
-                  params_.GetMaxOutOfOrderEvals() - number_out_of_order_,
-                  in_flight_threshold - cur_in_flight + 1}));
+                  params_.GetMaxOutOfOrderEvals() - number_out_of_order_}));
 
     // Count the non-collisions.
     int non_collisions = 0;
