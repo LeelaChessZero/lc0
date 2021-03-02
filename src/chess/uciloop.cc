@@ -60,6 +60,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"ponderhit"}, {}},
         {{"quit"}, {}},
         {{"xyzzy"}, {}},
+        {{"fen"}, {}},
 };
 
 std::pair<std::string, std::unordered_map<std::string, std::string>>
@@ -76,8 +77,7 @@ ParseCommand(const std::string& line) {
 
   const auto command = kKnownCommands.find(token);
   if (command == kKnownCommands.end()) {
-    // There could be a non-uci command entered.
-    return {};
+    throw Exception("Unknown command: " + line);
   }
 
   std::string whitespace;
@@ -136,13 +136,8 @@ void UciLoop::RunLoop() {
     LOGFILE << ">> " << line;
     try {
       auto command = ParseCommand(line);
-      // Unknown UCI command, check non standard.
-      if (command.first.empty()) {
-        if (!CmdNonStandardUciCommand(line)) {
-          throw Exception("Unknown command, or incomplete command: " + line);
-        }
-        continue;
-      }
+      // Ignore empty line.
+      if (command.first.empty()) continue;
       if (!DispatchCommand(command.first, command.second)) break;
     } catch (Exception& ex) {
       SendResponse(std::string("error ") + ex.what());
@@ -207,12 +202,15 @@ bool UciLoop::DispatchCommand(
     CmdPonderHit();
   } else if (command == "start") {
     CmdStart();
+  } else if (command == "fen") {
+    CmdFen();
   } else if (command == "xyzzy") {
     SendResponse("Nothing happens.");
   } else if (command == "quit") {
     return false;
+  } else {
+    throw Exception("Unknown command: " + command);
   }
-
   return true;
 }
 

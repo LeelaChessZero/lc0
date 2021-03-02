@@ -84,7 +84,6 @@ class EngineController {
   void ResetMoveTimer();
   void CreateFreshTimeManager();
 
-  
   const OptionsDict& options_;
 
   std::unique_ptr<UciResponder> uci_responder_;
@@ -129,12 +128,11 @@ class EngineLoop : public UciLoop {
   void CmdUciNewGame() override;
   void CmdPosition(const std::string& position,
                    const std::vector<std::string>& moves) override;
-  void CmdGetFen();
+  void CmdFen() override;
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
-  bool CmdNonStandardUciCommand(const std::string& command) override;
-	  
+
  private:
   OptionsParser options_;
   EngineController engine_;

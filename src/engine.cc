@@ -366,7 +366,7 @@ void EngineLoop::CmdPosition(const std::string& position,
   engine_.SetPosition(fen, moves);
 }
 
-void EngineLoop::CmdGetFen() {
+void EngineLoop::CmdFen() {
   std::string fen = engine_.GetCurrentPositionFen();
   return SendResponse(fen);
 }
@@ -375,13 +375,5 @@ void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
-
-bool EngineLoop::CmdNonStandardUciCommand(const std::string& command) {
-  if (command == "get fen") {
-    CmdGetFen();
-    return true;
-  }
-  return false;
-}
 
 }  // namespace lczero
