@@ -36,7 +36,7 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
 
 // Add bias to convolution's output.
 template <typename T>
-void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W);
+void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu);
 
 // Conversion from: fp32 -> fp16 datatype, and NCHW -> NHWC layout.
 // Cudnn kernels work best with NCHW layout for fp32, and with NHWC for fp16.
@@ -95,6 +95,10 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2);
 
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
+                     const T* skip, const T* bias, const T* w1, const T* b1,
+                     const T* w2, const T* b2);
 
 }  // namespace cudnn_backend
 }  // namespace lczero

@@ -46,7 +46,6 @@ class SearchParams {
   int GetMaxPrefetchBatch() const {
     return options_.Get<int>(kMaxPrefetchBatchId);
   }
-  bool GetLogitQ() const { return kLogitQ; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -54,6 +53,7 @@ class SearchParams {
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
+  bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
     return options_.Get<float>(kTemperatureVisitOffsetId);
@@ -71,7 +71,6 @@ class SearchParams {
   float GetTemperatureWinpctCutoff() const {
     return options_.Get<float>(kTemperatureWinpctCutoffId);
   }
-
   float GetNoiseEpsilon() const { return kNoiseEpsilon; }
   float GetNoiseAlpha() const { return kNoiseAlpha; }
   bool GetVerboseStats() const { return options_.Get<bool>(kVerboseStatsId); }
@@ -109,14 +108,32 @@ class SearchParams {
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
-
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
+  int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
+
+  bool GetMultiGatherEnabled() const { return kMultiGatherEnabled; }
+  int GetTaskWorkersPerSearchWorker() const {
+    return kTaskWorkersPerSearchWorker;
+  }
+  int GetMinimumWorkSizeForProcessing() const {
+    return kMinimumWorkSizeForProcessing;
+  }
+  int GetMinimumWorkSizeForPicking() const {
+    return kMinimumWorkSizeForPicking;
+  }
+  int GetMinimumRemainingWorkSizeForPicking() const {
+    return kMinimumRemainingWorkSizeForPicking;
+  }
+  int GetMinimumWorkPerTaskForProcessing() const {
+    return kMinimumWorkPerTaskForProcessing;
+  }
+  int GetIdlingMinimumWork() const { return kIdlingMinimumWork; }
+  int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
-  static const OptionId kLogitQId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -124,6 +141,7 @@ class SearchParams {
   static const OptionId kCpuctFactorId;
   static const OptionId kCpuctFactorAtRootId;
   static const OptionId kRootHasOwnCpuctParamsId;
+  static const OptionId kTwoFoldDrawsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTempDecayDelayMovesId;
@@ -164,6 +182,15 @@ class SearchParams {
   static const OptionId kDrawScoreBlackId;
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
+  static const OptionId kSolidTreeThresholdId;
+  static const OptionId kMultiGatherEnabledId;
+  static const OptionId kTaskWorkersPerSearchWorkerId;
+  static const OptionId kMinimumWorkSizeForProcessingId;
+  static const OptionId kMinimumWorkSizeForPickingId;
+  static const OptionId kMinimumRemainingWorkSizeForPickingId;
+  static const OptionId kMinimumWorkPerTaskForProcessingId;
+  static const OptionId kIdlingMinimumWorkId;
+  static const OptionId kThreadIdlingThresholdId;
 
  private:
   const OptionsDict& options_;
@@ -173,13 +200,13 @@ class SearchParams {
   // 2. Parameter has to stay the say during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimizations.
-  const bool kLogitQ;
   const float kCpuct;
   const float kCpuctAtRoot;
   const float kCpuctBase;
   const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
   const float kCpuctFactorAtRoot;
+  const bool kTwoFoldDraws;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
   const bool kFpuAbsolute;
@@ -209,6 +236,15 @@ class SearchParams {
   const float kDrawScoreBlack;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
+  const int kSolidTreeThreshold;
+  const bool kMultiGatherEnabled;
+  const int kTaskWorkersPerSearchWorker;
+  const int kMinimumWorkSizeForProcessing;
+  const int kMinimumWorkSizeForPicking;
+  const int kMinimumRemainingWorkSizeForPicking;
+  const int kMinimumWorkPerTaskForProcessing;
+  const int kIdlingMinimumWork;
+  const int kThreadIdlingThreshold;
 };
 
 }  // namespace lczero

@@ -46,8 +46,8 @@ template <bool use_eigen>
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
-                  const bool wdl, const bool moves_left, const bool conv_policy,
-                  const int blas_cores);
+                  const bool wdl, const bool moves_left,
+                  const bool conv_policy);
 
   virtual ~BlasComputation() {}
 
@@ -123,8 +123,7 @@ class BlasNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
-        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
-        blas_cores_);
+        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -141,13 +140,12 @@ class BlasNetwork : public Network {
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
-  int blas_cores_;
 };
 
 template <bool use_eigen>
 BlasComputation<use_eigen>::BlasComputation(
     const LegacyWeights& weights, const size_t max_batch_size, const bool wdl,
-    const bool moves_left, const bool conv_policy, const int blas_cores)
+    const bool moves_left, const bool conv_policy)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
@@ -156,10 +154,7 @@ BlasComputation<use_eigen>::BlasComputation(
       moves_left_(moves_left),
       conv_policy_(conv_policy) {
 #ifdef USE_DNNL
-  omp_set_num_threads(blas_cores);
-#else
-  // Silence unused parameter warning.
-  (void)blas_cores;
+  omp_set_num_threads(1);
 #endif
 }
 
@@ -417,18 +412,15 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
       weights_(file.weights()) {
-  if (!use_eigen) {
-    blas_cores_ = options.GetOrDefault<int>("blas_cores", 1);
-  }
-
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
   wdl_ = file.format().network_format().value() ==
          pblczero::NetworkFormat::VALUE_WDL;
 
-  moves_left_ = file.format().network_format().moves_left() ==
-                pblczero::NetworkFormat::MOVES_LEFT_V1;
+  moves_left_ = (file.format().network_format().moves_left() ==
+                 pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+                options.GetOrDefault<bool>("mlh", true);
 
   conv_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_CONVOLUTION;
@@ -469,20 +461,16 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   } else {
 #ifdef USE_OPENBLAS
     int num_procs = openblas_get_num_procs();
-    blas_cores_ = std::min(num_procs, blas_cores_);
-    openblas_set_num_threads(blas_cores_);
+    openblas_set_num_threads(1);
     const char* core_name = openblas_get_corename();
     const char* config = openblas_get_config();
     CERR << "BLAS vendor: OpenBLAS.";
     CERR << "OpenBLAS [" << config << "].";
     CERR << "OpenBLAS found " << num_procs << " " << core_name << " core(s).";
-    CERR << "OpenBLAS using " << blas_cores_ << " core(s) for this backend.";
 #endif
 
 #ifdef USE_MKL
-    int max_procs = mkl_get_max_threads();
-    blas_cores_ = std::min(max_procs, blas_cores_);
-    mkl_set_num_threads(blas_cores_);
+    mkl_set_num_threads(1);
     CERR << "BLAS vendor: MKL.";
     constexpr int len = 256;
     char versionbuf[len];
@@ -492,23 +480,16 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
     mkl_get_version(&version);
     CERR << "MKL platform: " << version.Platform
          << ", processor: " << version.Processor << ".";
-    CERR << "MKL can use up to " << max_procs << " thread(s).";
-    CERR << "MKL using " << blas_cores_ << " thread(s) for this backend.";
 #endif
 
 #ifdef USE_DNNL
-    int max_procs = omp_get_max_threads();
-    blas_cores_ = std::min(max_procs, blas_cores_);
     const dnnl_version_t* ver = dnnl_version();
     CERR << "BLAS functions from DNNL version " << ver->major << "."
          << ver->minor << "." << ver->patch;
-    CERR << "DNNL using up to " << blas_cores_ << " core(s) per search thread";
 #endif
 
 #ifdef USE_ACCELERATE
     CERR << "BLAS vendor: Apple vecLib.";
-    CERR << "Apple vecLib ignores blas_cores (" << blas_cores_
-         << ") parameter.";
 #endif
     CERR << "BLAS max batch size is " << max_batch_size_ << ".";
   }

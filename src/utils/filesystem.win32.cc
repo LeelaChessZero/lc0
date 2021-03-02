@@ -83,4 +83,13 @@ std::string GetUserDataDirectory() {
   return std::string();
 }
 
+std::vector<std::string> GetSystemConfigDirectoryList() {
+  return {};
+}
+
+std::vector<std::string> GetSystemDataDirectoryList() {
+  return {};
+}
+
+
 }  // namespace lczero
