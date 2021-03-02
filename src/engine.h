@@ -74,7 +74,7 @@ class EngineController {
   // Must not block.
   void Stop();
 
-  std::string GetCurrentPositionFen();
+  Position ApplyPositionMoves();
 
  private:
   void UpdateFromUciOptions();
@@ -107,7 +107,7 @@ class EngineController {
   // The current position as given with SetPosition. For normal (ie. non-ponder)
   // search, the tree is set up with this position, however, during ponder we
   // actually search the position one move earlier.
-  std::optional<CurrentPosition> current_position_;
+  CurrentPosition current_position_;
   GoParams go_params_;
 
   std::optional<std::chrono::steady_clock::time_point> move_start_time_;
