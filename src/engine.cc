@@ -178,7 +178,7 @@ void EngineController::SetPosition(const std::string& fen,
 
 std::string EngineController::GetCurrentPositionFen() {
   if (tree_ != nullptr) {
-    return tree_->HeadPosition().GetFen();
+    return GetFen(tree_->HeadPosition());
   } else if (current_position_) {
     ChessBoard board;
     int no_capture_ply;
@@ -191,10 +191,9 @@ std::string EngineController::GetCurrentPositionFen() {
       if (pos.IsBlackToMove()) move.Mirror();
       pos = Position(pos, move);
     }
-    return pos.GetFen();
+    return GetFen(pos);
   }
   return ChessBoard::kStartposFen;
-
 }
 
 void EngineController::SetupPosition(

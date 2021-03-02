@@ -161,12 +161,9 @@ uint64_t PositionHistory::HashLast(int positions) const {
   return HashCat(hash, Last().GetRule50Ply());
 }
 
-// PrintFen outputs a FEN notation of the board.
-// based on
-// https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation#Examples
-std::string Position::GetFen() const {
+std::string GetFen(const Position& pos) {
   std::string result;
-  const ChessBoard& board = GetWhiteBoard();
+  const ChessBoard& board = pos.GetWhiteBoard();
   for (int row = 7; row >= 0; --row) {
     int emptycounter = 0;
     for (int col = 0; col < 8; ++col) {
@@ -187,13 +184,14 @@ std::string Position::GetFen() const {
   std::string enpassant = "-";
   if (!board.en_passant().empty()) {
     auto sq = *board.en_passant().begin();
-    enpassant = BoardSquare(IsBlackToMove() ? 2 : 5, sq.col()).as_string();
+    enpassant = BoardSquare(pos.IsBlackToMove() ? 2 : 5, sq.col()).as_string();
   }
-  result += IsBlackToMove() ? " b" : " w";
+  result += pos.IsBlackToMove() ? " b" : " w";
   result += " " + board.castlings().as_string();
   result += " " + enpassant;
-  result += " " + std::to_string(GetRule50Ply());
-  result += " " + std::to_string((ply_count_ + (IsBlackToMove() ? 1 : 2)) / 2);
+  result += " " + std::to_string(pos.GetRule50Ply());
+  result += " " + std::to_string(
+                      (pos.GetGamePly() + (pos.IsBlackToMove() ? 1 : 2)) / 2);
   return result;
 }
 }  // namespace lczero
