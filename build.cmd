@@ -2,9 +2,9 @@
 setlocal
 
 rem 1. Set the following for the options you want to build.
-set CUDNN=true
-set CUDA=true
-set DX12=false
+set CUDNN=false
+set CUDA=false
+set DX12=true
 set OPENCL=false
 set MKL=false
 set DNNL=false

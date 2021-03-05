@@ -64,6 +64,21 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
+const OptionId kAnalyseMode{"analyse-mode", "UCI_AnalyseMode",
+                             "If Analyse Mode is activated, tree is reused "
+                             "whenever start fen is identical. This allows "
+                             "for forwards/backwards analysis but fills "
+                             "the RAM faster. When used with standard PUCT, "
+                             "reported WDL values will be inconsistent."};
+const OptionId kFreeMemory{"free-memory", "FreeMemory",
+                             "If Free Memory is activated, setting up a "
+                             "position will release all siblings of moves "
+                             "prior to new root. Default behavior outside of "
+                             "Analyse Mode, needed temporarily in AnalyseMode "
+                             "to free RAM. Make sure that it is turned off "
+                             "before exploring variations."};
+
+
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -108,6 +123,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
+
+  options->Add<BoolOption>(kAnalyseMode) = false;
+  options->Add<BoolOption>(kFreeMemory) = false;
 }
 
 void EngineController::ResetMoveTimer() {
@@ -187,7 +205,9 @@ void EngineController::SetupPosition(
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  const bool is_same_game = tree_->ResetToPosition(fen, moves);
+  const bool is_same_game = tree_->ResetToPosition(fen, moves,
+                                    options_.Get<bool>(kAnalyseMode),
+                                    options_.Get<bool>(kFreeMemory));
   if (!is_same_game) CreateFreshTimeManager();
 }
 

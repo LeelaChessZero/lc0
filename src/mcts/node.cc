@@ -252,8 +252,10 @@ Node* Node::CreateSingleChildNode(Move move) {
 void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
-  edges_ = Edge::FromMovelist(moves);
-  num_edges_ = moves.size();
+  if (!edges_) {
+    edges_ = Edge::FromMovelist(moves);
+    num_edges_ = moves.size();
+  }
 }
 
 Node::ConstIterator Node::Edges() const {
@@ -337,8 +339,13 @@ void Node::SortEdges() {
   assert(!child_);
   // Sorting on raw p_ is the same as sorting on GetP() as a side effect of
   // the encoding, and its noticeably faster.
-  std::sort(edges_.get(), (edges_.get() + num_edges_),
-            [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
+  // In analyse mode it is possible to expand a node without sending it
+  // to the NN first. In that case child_ already exists, and sorting edges_
+  // would lead to indices being wrong.
+  if (!child_) {
+    std::sort(edges_.get(), (edges_.get() + num_edges_),
+              [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
+  }
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
@@ -660,9 +667,18 @@ std::string EdgeAndNode::DebugString() const {
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
-void NodeTree::MakeMove(Move move) {
+void NodeTree::MakeMove(Move move, bool keep_siblings) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
+  // In analyse mode we want to generate all edges from a node in the position
+  // history instead of only the played move to allow forward/backward analysis
+  // to positions before the position where search is started first.
+  // The edges_ list can't be sorted by policy because we didn't call the NN,
+  // so we skip the sorting in engine.cc
+  if (keep_siblings && !current_head_->Edges()) {
+    auto legal_moves = board.GenerateLegalMoves();
+    current_head_->CreateEdges(legal_moves);
+  }
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
@@ -675,8 +691,10 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
-  current_head_->ReleaseChildrenExceptOne(new_head);
-  new_head = current_head_->child_.get();
+  if (!keep_siblings) {
+    current_head_->ReleaseChildrenExceptOne(new_head);
+    new_head = current_head_->child_.get();
+  }
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
   history_.Append(move);
@@ -693,7 +711,9 @@ void NodeTree::TrimTreeAtHead() {
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<Move>& moves) {
+                               const std::vector<Move>& moves,
+                               const bool analyse_mode,
+                               const bool free_memory) {
   ChessBoard starting_board;
   int no_capture_ply;
   int full_moves;
@@ -715,17 +735,19 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
+  bool keep_siblings = (analyse_mode && !free_memory);
   for (const auto& move : moves) {
-    MakeMove(move);
+    MakeMove(move, keep_siblings);
     if (old_head == current_head_) seen_old_head = true;
   }
-
+  // Unless we are explicitly in analyse mode, we want to be conservative
+  // with keeping the old tree around because of possible inconsistencies.
   // MakeMove guarantees that no siblings exist; but, if we didn't see the old
   // head, it means we might have a position that was an ancestor to a
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  if (!seen_old_head) TrimTreeAtHead();
+  if (!seen_old_head && !analyse_mode) TrimTreeAtHead();
   return seen_old_head;
 }
 
