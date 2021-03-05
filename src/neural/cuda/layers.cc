@@ -50,40 +50,6 @@ BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
 
 #ifdef USE_CUDNN
 template <typename DataType>
-SoftMaxLayer<DataType>::SoftMaxLayer(BaseLayer<DataType>* ip)
-    : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip) {
-  cudnnCreateTensorDescriptor(&out_tensor_desc_);
-}
-
-template <typename DataType>
-SoftMaxLayer<DataType>::~SoftMaxLayer() {
-  cudnnDestroyTensorDescriptor(out_tensor_desc_);
-}
-
-template <typename DataType>
-void SoftMaxLayer<DataType>::Eval(int N, DataType* output,
-                                  const DataType* input,
-                                  const DataType* /*input2*/, void* /*scratch*/,
-                                  size_t /*scratch_size*/, cudnnHandle_t cudnn,
-                                  cublasHandle_t /*cublas*/) {
-  float alpha = 1.0f, beta = 0.0f;
-
-  const cudnnDataType_t dataType =
-      std::is_same<half, DataType>::value ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
-
-  const cudnnTensorFormat_t layout =
-      nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
-
-  // Need to call this at Eval as 'N' changes :-/
-  cudnnSetTensor4dDescriptor(out_tensor_desc_, layout, dataType, N, GetC(),
-                             GetH(), GetW());
-
-  cudnnSoftmaxForward(cudnn, CUDNN_SOFTMAX_ACCURATE,
-                      CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, out_tensor_desc_,
-                      input, &beta, out_tensor_desc_, output);
-}
-
-template <typename DataType>
 void ConvLayer<DataType>::init() {
   // Allocate memory for weights (filter tensor) and biases.
   const size_t weight_size =
@@ -1263,11 +1229,6 @@ template class ConvLayer<float>;
 
 template class FCLayer<half>;
 template class FCLayer<float>;
-
-#ifdef USE_CUDNN
-template class SoftMaxLayer<half>;
-template class SoftMaxLayer<float>;
-#endif
 
 template class SELayer<half>;
 template class SELayer<float>;
