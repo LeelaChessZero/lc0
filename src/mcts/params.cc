@@ -351,9 +351,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.359f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 917;
-  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 100000000) = 2631;
+  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 100000000) = 80000;
   options->Add<IntOption>(kMaxCollisionVisitsScalingStartId, 1, 100000) = 28;
-  options->Add<IntOption>(kMaxCollisionVisitsScalingEndId, 0, 100000000) = 9520;
+  options->Add<IntOption>(kMaxCollisionVisitsScalingEndId, 0, 100000000) = 145000;
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
