@@ -2432,7 +2432,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
     if (params_.GetUpdateInterval() > 0 &&
-        n->GetN() % params_.GetUpdateInterval() == 0 && n->edges()) {
+        (n->GetNStarted() + 1) % params_.GetUpdateInterval() == 0) {
       // Recalculate node values every x visits.
       n->RecalculateScore(params_.GetRecalculateTemperature());
     }
