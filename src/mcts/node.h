@@ -426,7 +426,7 @@ class EdgeAndNode {
   float GetM(float default_m) const {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
   }
-  float GetLCB(float draw_score, float percentile) {
+  float GetLCB(float draw_score, float percentile) const {
     return (node_ && node_->GetN() > 0) ?
             node_->GetLCB(draw_score, percentile) : -1.0f;
   }
