@@ -2022,7 +2022,7 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     EnsureNodeTwoFoldCorrectForDepth(node, depth - 1);
 
     // If terminal, we reached the end of this playout.
-    if (node->IsTerminal()) {
+    if (!is_root_node && node->IsTerminal()) {
       return NodeToProcess::Visit(node, depth);
     }
     // If unexamined leaf node -- the end of this playout.
