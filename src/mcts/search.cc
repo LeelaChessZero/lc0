@@ -389,10 +389,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                                            EdgeAndNode b) {
               return std::forward_as_tuple(
                          lcb_percentile ? a.GetLCB(draw_score, lcb_percentile) : a.GetN(),
-                         a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
+                         a.GetQ(fpu, draw_score), -a.GetQ(fpu, draw_score) * a.GetM(0.0f)) <
                      std::forward_as_tuple(
                          lcb_percentile ? b.GetLCB(draw_score, lcb_percentile) : b.GetN(),
-                         b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
+                         b.GetQ(fpu, draw_score), -b.GetQ(fpu, draw_score) * b.GetM(0.0f));
             });
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {

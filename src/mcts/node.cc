@@ -508,7 +508,9 @@ float Node::GetLCB(float draw_score, float percentile) {
   auto alpha = 1.0f + winrate * visits;
   auto beta = 1.0f + (1.0f - winrate) * visits;
   auto logit_var = 1.0f / alpha + 1.0f / beta;
-
+  const auto [edge_lower, edge_upper] = GetBounds();
+  if (edge_lower == GameResult::WHITE_WON) return 1.0f;
+  if (edge_upper == GameResult::BLACK_WON) return -1.0f;
   return percentile < 1.0 ?
           (percentile > 0.0
             ? -1.0f + 2.0f * winrate / (winrate + (1.0 - winrate) *
