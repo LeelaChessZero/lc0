@@ -712,10 +712,10 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
           // Prefer largest LCB then playouts then eval then prior.
-          if (lcb_percentile) {
-             auto a_lcb = a.GetLCB(draw_score, lcb_percentile);
-             auto b_lcb = b.GetLCB(draw_score, lcb_percentile);
-             if (a_lcb != b_lcb) return a_lcb > b_lcb;
+          if (lcb_percentile && a.GetLCB(draw_score, lcb_percentile) !=
+             b.GetLCB(draw_score, lcb_percentile)) {
+             return a.GetLCB(draw_score, lcb_percentile) >
+                    b.GetLCB(draw_score, lcb_percentile);
           }
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
           // Default doesn't matter here so long as they are the same as either
