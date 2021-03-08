@@ -209,7 +209,7 @@ class Node {
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
   // Recalculates node values as weighted average of child node values.
-  void Node::RecalculateScore(float temperature = 0.0f);
+  void RecalculateScore(float temperature = 0.0f);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
   // Revert visits to a node which ended in a now reverted terminal.
