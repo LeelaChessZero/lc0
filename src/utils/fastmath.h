@@ -87,7 +87,7 @@ inline float FastExp(const float a) { return FastExp2(1.442695040f * a); }
 
 // Fast approximate for a^x.
 inline float FastPow(const float a, const float exp) {
-  return FastPow2(FastLog2(a) * exp);
+  return FastExp2(FastLog2(a) * exp);
 }
 
 inline float FastSign(const float a) {
