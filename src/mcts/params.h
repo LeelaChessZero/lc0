@@ -130,6 +130,8 @@ class SearchParams {
   }
   int GetIdlingMinimumWork() const { return kIdlingMinimumWork; }
   int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
+  int GetUpdateInterval() const { return kUpdateInterval; }
+  float GetRecalculateTemperature() const { return kRecalculateTemperature; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -191,6 +193,8 @@ class SearchParams {
   static const OptionId kMinimumWorkPerTaskForProcessingId;
   static const OptionId kIdlingMinimumWorkId;
   static const OptionId kThreadIdlingThresholdId;
+  static const OptionId kUpdateIntervalId;
+  static const OptionId kRecalculateTemperatureId;
 
  private:
   const OptionsDict& options_;
@@ -245,6 +249,8 @@ class SearchParams {
   const int kMinimumWorkPerTaskForProcessing;
   const int kIdlingMinimumWork;
   const int kThreadIdlingThreshold;
+  const int kUpdateInterval;
+  const float kRecalculateTemperature;
 };
 
 }  // namespace lczero

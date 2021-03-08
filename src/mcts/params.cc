@@ -306,6 +306,16 @@ const OptionId SearchParams::kThreadIdlingThresholdId{
     "If there are more than this number of search threads that are not "
     "actively in the process of either sending data to the backend or waiting "
     "for data from the backend, assume that the backend is idle."};
+const OptionId SearchParams::kUpdateIntervalId{
+    "update-interval", "UpdateInterval",
+    "Update interval for recalculation of node values. Value 0 turns off "
+    "the recalculation loop completely."};
+const OptionId SearchParams::kRecalculateTemperatureId{
+    "recalc-temp", "RecalculateTemperature",
+    "Softmax temperature used in the replacement for a more intricate "
+    "node value recalculation like betaMCTS."};
+
+
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -381,6 +391,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
+  options->Add<IntOption>(kUpdateIntervalId, 0, 100000) = 100;
+  options->Add<FloatOption>(kRecalculateTemperatureId, 0.0f, 1000.0f) = 30.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -468,7 +480,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMinimumWorkPerTaskForProcessing(
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
-      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)) {
+      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
+      kUpdateInterval(options.Get<int>(kUpdateIntervalId)),
+      kRecalculateTemperature(options.Get<float>(kRecalculateTemperatureId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

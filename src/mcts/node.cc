@@ -388,6 +388,8 @@ void Node::MakeNotTerminal() {
     // Recompute with current eval (instead of network's) and children's eval.
     wl_ /= n_;
     d_ /= n_;
+    // If we make a node not terminal, recalculate it.
+    RecalculateScore();
   }
 }
 
@@ -423,6 +425,80 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   n_in_flight_ -= multivisit;
   // Best child is potentially no longer valid.
   best_child_cached_ = nullptr;
+}
+
+void Node::RecalculateScore(float temperature) {
+  // Recalculates node values as weighted average of child node values.
+  double wl_temp = 0.0f;
+  double d_temp = 0.0f;
+  double n_temp = 0.0f;
+  double m_temp = 0.0f;
+  uint32_t n_vanilla = 1;
+  auto losing_m = 0.0f;
+  auto winning_m = 1000.0f;
+  auto prefer_tb = false;
+  auto lower = GameResult::BLACK_WON;
+  auto upper = GameResult::BLACK_WON;
+  for (const auto& child : Edges()) {
+    // Copy + paste code from SearchWorker::MaybeSetBounds().
+    // TODO: Ideally this would be done in one function.
+    const auto [edge_lower, edge_upper] = child.GetBounds();
+    lower = std::max(edge_lower, lower);
+    upper = std::max(edge_upper, upper);
+    // Checkmate is the best, so short-circuit.
+    const auto is_tb = child.IsTbTerminal();
+    if (edge_lower == GameResult::WHITE_WON && !is_tb) {
+      // Track the shortest win.
+      winning_m = std::min(winning_m, child.GetM(0.0f));
+    } else if (edge_upper == GameResult::BLACK_WON) {
+      // Track the longest loss.
+      losing_m = std::max(losing_m, child.GetM(0.0f));
+    }
+    prefer_tb = prefer_tb || is_tb;
+
+    // Now recalculate visits.
+    n_vanilla += child.GetN();
+    double r = (temperature > 0.0) ? FastExp((GetWL(0.0f) + child.GetWL(0.0f))
+                                              / temperature) : 1.0f;
+    double n = r * (double)child.GetN();
+    if (n > 0) {
+      const auto visits_eff = r * n;
+      n_temp += visits_eff;
+      // Flip Q for opponent.
+      wl_temp += -child.GetWL(0.0f) * visits_eff;
+      d_temp += child.GetD(0.0f) * visits_eff;
+      m_temp += child.GetM(0.0f) * visits_eff;
+    }
+  }
+  m_temp = (n_temp > 0 ? m_temp / n_temp : 0.0f);
+  // If we found a directly winning move, we don't need tablebases.
+  if (winning_m < 1000.0) { prefer_tb = false; }
+  // If we found a node which is supposed to be terminal, we make it terminal.
+  if (lower == upper && n_vanilla > 1) {
+    if (upper == GameResult::BLACK_WON) {
+      auto m = losing_m + 1.0f;
+      MakeTerminal(-upper, m,
+        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+    } else if (upper == GameResult::WHITE_WON) {
+      auto m = winning_m + 1.0f;
+      MakeTerminal(-upper, m,
+        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+    }
+  } else if (n_temp > 0) {
+    wl_ = wl_temp / n_temp;
+    d_ = d_temp / n_temp;
+    m_ = m_temp + 1.0f;
+  }
+  // In AnalyseMode it's possible that we have to recalculate n_ as well.
+  if (n_vanilla != n_ && n_ > 0 && !IsTerminal()) {
+    n_ = n_vanilla;
+    // If we have to correct n_, visited policy might also be off.
+    float visited_policy = 0.0f;
+    for (const auto& child : Edges()) {
+      if (child.GetN() > 0) visited_policy += child.GetP();
+    }
+    visited_policy_ = visited_policy;
+  }
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
