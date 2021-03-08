@@ -394,7 +394,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
   options->Add<IntOption>(kUpdateIntervalId, 0, 100000) = 100;
-  options->Add<FloatOption>(kRecalculateTemperatureId, 0.0f, 10.0f) = 0.03f;
+  options->Add<FloatOption>(kRecalculateTemperatureId, 0.0f, 10.0f) = 0.07f;
   options->Add<FloatOption>(kLCBPercentileId, 0.0f, 1.0f) = 0.2f;
 
   options->HideOption(kNoiseEpsilonId);
