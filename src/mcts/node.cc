@@ -501,6 +501,22 @@ void Node::RecalculateScore(float temperature, float draw_score) {
   }
 }
 
+float Node::GetLCB(float draw_score, float percentile) {
+  const auto winrate = (1.0f + GetQ(draw_score))/2.0f;
+  const auto visits = (float)GetN();
+
+  auto alpha = 1.0f + winrate * visits;
+  auto beta = 1.0f + (1.0f - winrate) * visits;
+  auto logit_var = 1.0f / alpha + 1.0f / beta;
+
+  return percentile < 1.0 ?
+          (percentile > 0.0
+            ? -1.0f + 2.0f * winrate / (winrate + (1.0 - winrate) *
+                    FastPow((1.0 - percentile) / percentile,
+                            std::sqrt(2.0 * logit_var)))
+            : -1.0f) : 1.0f;
+}
+
 void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   // Recompute Q.
   wl_ += multivisit * v / n_;

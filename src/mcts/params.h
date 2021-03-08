@@ -132,6 +132,7 @@ class SearchParams {
   int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
   int GetUpdateInterval() const { return kUpdateInterval; }
   float GetRecalculateTemperature() const { return kRecalculateTemperature; }
+  float GetLCBPercentile() const { return kLCBPercentile; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -195,6 +196,7 @@ class SearchParams {
   static const OptionId kThreadIdlingThresholdId;
   static const OptionId kUpdateIntervalId;
   static const OptionId kRecalculateTemperatureId;
+  static const OptionId kLCBPercentileId;
 
  private:
   const OptionsDict& options_;
@@ -251,6 +253,7 @@ class SearchParams {
   const int kThreadIdlingThreshold;
   const int kUpdateInterval;
   const float kRecalculateTemperature;
+  const float kLCBPercentile;
 };
 
 }  // namespace lczero

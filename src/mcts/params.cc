@@ -314,8 +314,10 @@ const OptionId SearchParams::kRecalculateTemperatureId{
     "recalc-temp", "RecalculateTemperature",
     "Softmax temperature used in the replacement for a more intricate "
     "node value recalculation like betaMCTS."};
-
-
+const OptionId SearchParams::kLCBPercentileId{
+    "lcb-percentile", "LCBPercentile",
+    "Percentile used for LCB move selection. Values > 0.5 will use UCB move "
+    "selection strategy; use at own risk."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -392,7 +394,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
   options->Add<IntOption>(kUpdateIntervalId, 0, 100000) = 100;
-  options->Add<FloatOption>(kRecalculateTemperatureId, 0.0f, 1000.0f) = 30.0f;
+  options->Add<FloatOption>(kRecalculateTemperatureId, 0.0f, 10.0f) = 0.03f;
+  options->Add<FloatOption>(kLCBPercentileId, 0.0f, 1.0f) = 0.2f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -482,7 +485,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
       kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
       kUpdateInterval(options.Get<int>(kUpdateIntervalId)),
-      kRecalculateTemperature(options.Get<float>(kRecalculateTemperatureId)) {
+      kRecalculateTemperature(options.Get<float>(kRecalculateTemperatureId)),
+      kLCBPercentile(options.Get<float>(kLCBPercentileId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

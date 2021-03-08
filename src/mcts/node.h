@@ -210,6 +210,8 @@ class Node {
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
   // Recalculates node values as weighted average of child node values.
   void RecalculateScore(float temperature, float draw_score);
+  // Calculates a LCB score for move ordering.
+  float GetLCB(float draw_score, float percentile);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
   // Revert visits to a node which ended in a now reverted terminal.
@@ -423,6 +425,10 @@ class EdgeAndNode {
   }
   float GetM(float default_m) const {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
+  }
+  float GetLCB(float draw_score, float percentile) {
+    return (node_ && node_->GetN() > 0) ?
+            node_->GetLCB(draw_score, percentile) : -1.0f;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
