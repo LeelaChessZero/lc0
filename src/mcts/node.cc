@@ -38,6 +38,7 @@
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
+#include "utils/fastmath.h"
 #include "utils/hashcat.h"
 #include "utils/numa.h"
 
@@ -458,7 +459,7 @@ void Node::RecalculateScore(float temperature) {
 
     // Now recalculate visits.
     n_vanilla += child.GetN();
-    double r = (temperature > 0.0) ? FastExp((GetWL(0.0f) + child.GetWL(0.0f))
+    double r = (temperature > 0.0) ? FastExp((GetWL() + child.GetWL(0.0f))
                                               / temperature) : 1.0f;
     double n = r * (double)child.GetN();
     if (n > 0) {
