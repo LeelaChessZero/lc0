@@ -2434,7 +2434,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     if (params_.GetUpdateInterval() > 0 &&
         (n->GetNStarted() + 1) % params_.GetUpdateInterval() == 0) {
       // Recalculate node values every x visits.
-      n->RecalculateScore(params_.GetRecalculateTemperature());
+      n->RecalculateScore(params_.GetRecalculateTemperature(),
+                          GetDrawScore(false));
     }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);

@@ -389,8 +389,6 @@ void Node::MakeNotTerminal() {
     // Recompute with current eval (instead of network's) and children's eval.
     wl_ /= n_;
     d_ /= n_;
-    // If we make a node not terminal, recalculate it.
-    RecalculateScore();
   }
 }
 
@@ -428,7 +426,7 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   best_child_cached_ = nullptr;
 }
 
-void Node::RecalculateScore(float temperature) {
+void Node::RecalculateScore(float temperature, float draw_score) {
   // Recalculates node values as weighted average of child node values.
   double wl_temp = 0.0f;
   double d_temp = 0.0f;
@@ -459,8 +457,9 @@ void Node::RecalculateScore(float temperature) {
 
     // Now recalculate visits.
     n_vanilla += child.GetN();
-    double r = (temperature > 0.0) ? FastExp((GetWL() + child.GetWL(0.0f))
-                                              / temperature) : 1.0f;
+    double r = (temperature > 0.0) ?
+                FastExp((GetWL() + child.GetQ(0.0f, draw_score)) / temperature)
+                : 1.0f;
     double n = r * (double)child.GetN();
     if (n > 0) {
       const auto visits_eff = r * n;
