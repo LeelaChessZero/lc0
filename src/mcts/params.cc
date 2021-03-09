@@ -316,8 +316,9 @@ const OptionId SearchParams::kRecalculateTemperatureId{
     "node value recalculation like betaMCTS."};
 const OptionId SearchParams::kLCBPercentileId{
     "lcb-percentile", "LCBPercentile",
-    "Percentile used for LCB move selection. Values > 0.5 will use UCB move "
-    "selection strategy; use at own risk."};
+    "Percentile used for LCB move ordering and selection. Value 0.5 means "
+    "ordering by Q, value 0.0 by N. Values above 0.5 correspond to "
+    "UCB move ordering; usage only for fun and at own risk."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -395,7 +396,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
   options->Add<IntOption>(kUpdateIntervalId, 0, 100000) = 100;
   options->Add<FloatOption>(kRecalculateTemperatureId, 0.0f, 10.0f) = 0.07f;
-  options->Add<FloatOption>(kLCBPercentileId, 0.0f, 1.0f) = 0.2f;
+  options->Add<FloatOption>(kLCBPercentileId, 0.0f, 0.99f) = 0.2f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
