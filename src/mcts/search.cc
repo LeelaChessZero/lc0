@@ -210,7 +210,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   common_info.seldepth = max_depth_;
   common_info.time = GetTimeSinceStart();
   if (!per_pv_counters) {
-    common_info.nodes = total_playouts_ + initial_visits_;
+    // Send root_node_->GetN() instead of playouts to uci info.
+    common_info.nodes = root_node_->GetN();
   }
   if (display_cache_usage) {
     common_info.hashfull =
