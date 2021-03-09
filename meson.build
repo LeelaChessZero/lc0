@@ -424,6 +424,7 @@ if get_option('build_backends')
     endif
     if get_option('plain_cuda')
       cuda_files += 'src/neural/cuda/network_cuda.cc'
+      add_project_arguments('-DPLAIN_CUDA', language : 'cpp')
     endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d).returncode() == 0

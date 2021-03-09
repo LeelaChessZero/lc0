@@ -1027,6 +1027,17 @@ std::unique_ptr<Network> MakeCudnnNetworkAuto(
   // No error checking here, this will be repeated later.
   cudaGetDeviceProperties(&deviceProp, gpu_id);
 
+#ifdef PLAIN_CUDA
+  // Maybe plain cuda is preferred.
+  int cuda_version;
+  cudaRuntimeGetVersion(&cuda_version);
+  if (cuda_version >= 11000 && deviceProp.major >= 7 &&
+      !strstr(deviceProp.name, "GTX")) {
+    CERR << "Seems like [cuda-auto] is a better option.";
+    return NetworkFactory::Get()->Create("cuda-auto", weights, options);
+  }
+#endif
+
   // Check if the GPU supports FP16.
   if (deviceProp.major >= 7 ||
       (deviceProp.major == 6 && deviceProp.minor != 1) ||
