@@ -511,12 +511,11 @@ float Node::GetLCB(float draw_score, float percentile) {
   const auto [edge_lower, edge_upper] = GetBounds();
   if (edge_lower == GameResult::WHITE_WON) return 1.0f;
   if (edge_upper == GameResult::BLACK_WON) return -1.0f;
-  return percentile < 1.0 ?
-          (percentile > 0.0
-            ? -1.0f + 2.0f * winrate / (winrate + (1.0 - winrate) *
+  return percentile > 0.0
+          ? -1.0f + 2.0f * winrate / (winrate + (1.0 - winrate) *
                     FastPow((1.0 - percentile) / percentile,
                             std::sqrt(2.0 * logit_var)))
-            : -1.0f) : 1.0f;
+          : -1.0f;
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
