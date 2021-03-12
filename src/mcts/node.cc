@@ -458,7 +458,8 @@ void Node::RecalculateScore(float temperature, float draw_score) {
     // Now recalculate visits.
     n_vanilla += child.GetN();
     double r = (temperature > 0.0) ?
-                FastExp((GetWL() + child.GetQ(0.0f, draw_score)) / temperature)
+                std::min(2.0f, FastExp((GetWL() + child.GetQ(0.0f, draw_score))
+                                / temperature))
                 : 1.0f;
     double n = r * (double)child.GetN();
     if (n > 0) {
