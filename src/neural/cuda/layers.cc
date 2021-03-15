@@ -346,7 +346,7 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   copyTypeConverted((half*)w1_, (float*)scratch, (int)num_weights1);
   if (kUseFusedSELayer && nhwc_) {
     // transposed copy for fused SE kernel
-    transpose(temp.data(), w1, numFc1Out_, C);
+    cpuTranspose(temp.data(), w1, numFc1Out_, C);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size1, cudaMemcpyHostToDevice));
     copyTypeConverted((half*)w1_t_, (float*)scratch, (int)num_weights1);
@@ -357,7 +357,7 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
       cudaMemcpy(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
   copyTypeConverted((half*)w2_, (float*)scratch, (int)num_weights2);
   if (kUseFusedSELayer && nhwc_) {
-    transpose(temp.data(), w2, 2 * C, numFc1Out_);
+    cpuTranspose(temp.data(), w2, 2 * C, numFc1Out_);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size2, cudaMemcpyHostToDevice));
     copyTypeConverted((half*)w2_t_, (float*)scratch, (int)num_weights2);
@@ -760,12 +760,12 @@ void FusedWinogradConvSELayer<DataType>::LoadSEWeights(float* w1, float* b1,
   // The shader uses transposed weight matrices.
   std::vector<float> temp_transposed(num_weights2);
 
-  transpose(temp_transposed.data(), w1, se_k_, C);
+  CpuTranspose(temp_transposed.data(), w1, se_k_, C);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(), num_weights1*sizeof(float),
                               cudaMemcpyHostToDevice));
   copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1);
 
-  transpose(temp_transposed.data(), w2, 2 * C, se_k_);
+  CpuTranspose(temp_transposed.data(), w2, 2 * C, se_k_);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
                               num_weights2 * sizeof(float),
                               cudaMemcpyHostToDevice));
@@ -1082,13 +1082,13 @@ void ResidualBlock<DataType>::LoadSEWeights(float* w1, float* b1,
   // The shader uses transposed weight matrices.
   std::vector<float> temp_transposed(num_weights2);
 
-  transpose(temp_transposed.data(), w1, se_k_, C);
+  CpuTranspose(temp_transposed.data(), w1, se_k_, C);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
                               num_weights1 * sizeof(float),
                               cudaMemcpyHostToDevice));
   copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1);
 
-  transpose(temp_transposed.data(), w2, 2 * C, se_k_);
+  CpuTranspose(temp_transposed.data(), w2, 2 * C, se_k_);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
                               num_weights2 * sizeof(float),
                               cudaMemcpyHostToDevice));
