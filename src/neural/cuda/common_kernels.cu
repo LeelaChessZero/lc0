@@ -1,22 +1,17 @@
 /*
   This file is part of Leela Chess Zero.
   Copyright (C) 2018-2019 The LCZero Authors
-
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
-
   Leela Chess is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
-
   Additional permission under GNU GPL version 3 section 7
-
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
   Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
@@ -39,6 +34,46 @@ constexpr int kInputPlanes = 112;
 /////////////////////////////////////////////////////////////////////////////
 //          Simple CUDA kernels used by certain layers                     //
 /////////////////////////////////////////////////////////////////////////////
+
+__global__ void transpose_kernel(float* op, float* ip, int rows, int cols) {
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  int width = gridDim.x * cols;
+  int height = gridDim.y * rows;
+
+  op[x*height + y] = ip[y*width + x];
+}
+
+void transpose(float* op, float* ip, int rows, int cols) {
+  // const block sizes for threads
+  const int ROWS_BLOCK_SIZE = 16;
+  const int COLS_BLOCK_SIZE = 16;
+  
+  const int COLS_GRID_SIZE = (int)ceil(cols/COLS_BLOCK_SIZE);
+  const int ROWS_GRID_SIZE = (int)ceil(rows/ROWS_BLOCK_SIZE);
+
+  float *a, *b;
+  float *ca, *cb;
+
+  size_t bytes = sizeof(float) * ((int)(rows+cols)/2+1);
+
+  a = (float*)malloc(bytes);
+  b = (float*)malloc(bytes);
+
+  cudaMalloc(&ca, bytes);
+  cudaMalloc(&cb, bytes);
+
+  cudaMemcpy(ca, a, bytes, cudaMemcpyHostToDevice);  
+  cudaMemcpy(cb, b, bytes, cudaMemcpyHostToDevice); 
+
+  dim3 threads(ROWS_BLOCK_SIZE, COLS_BLOCK_SIZE);
+  dim3 grid(ROWS_GRID_SIZE, COLS_GRID_SIZE);
+
+  transpose_kernel<<<grid, threads>>>(ca, cb, rows, cols);
+  cudaMemcpy(b, cb, bytes, cudaMemcpyDeviceToHost);
+  //cudaDeviceSynchronize();
+  ReportCUDAErrors(cudaGetLastError());
+}
 
 template <typename T>
 __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
