@@ -350,15 +350,13 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           wdl.data());
 
       for (size_t j = 0; j < batch_size; j++) {
-        float w = std::exp(wdl[3 * j + 0]);
-        float d = std::exp(wdl[3 * j + 1]);
-        float l = std::exp(wdl[3 * j + 2]);
-        float sum = w + d + l;
-        w /= sum;
-        l /= sum;
-        d = 1.0f - w - l;
-        q_values_.insert(q_values_.end(), {w, d, l});
-      } 
+        std::vector<float> wdl_softmax(3);
+        SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
+
+        q_values_.emplace_back(wdl_softmax[0]);
+        q_values_.emplace_back(wdl_softmax[1]);
+        q_values_.emplace_back(wdl_softmax[2]);
+      }
     } else {
       for (size_t j = 0; j < batch_size; j++) {
         double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
