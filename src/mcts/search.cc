@@ -1911,7 +1911,8 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
-    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+    if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
+        board.castlings().no_legal_castle() &&
         history->Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
