@@ -78,8 +78,10 @@ class RoundRobinNetwork : public Network {
 
   ~RoundRobinNetwork() {}
 
- private:
+ protected:
   std::vector<std::unique_ptr<Network>> networks_;
+
+ private:
   std::atomic<long long> counter_;
   NetworkCapabilities capabilities_;
 };
@@ -89,7 +91,46 @@ std::unique_ptr<Network> MakeRoundRobinNetwork(
   return std::make_unique<RoundRobinNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -999)
+class FCFSNetwork : public RoundRobinNetwork {
+ public:
+  FCFSNetwork(const std::optional<WeightsFile>& weights,
+              const OptionsDict& options)
+      : RoundRobinNetwork(weights, options) {
+    for (size_t i = 0; i < networks_.size(); i++) {
+      queue_.push(i);
+    }
+  }
+
+  std::unique_ptr<NetworkComputation> NewComputation() override {
+    std::unique_lock<std::mutex> lock(mutex_);
+    while (queue_.empty()) {
+      cv_.wait(lock);
+    }
+    auto index = queue_.front();
+    queue_.pop();
+    lock.unlock();
+
+    std::unique_ptr<NetworkComputation> r = networks_[index]->NewComputation();
+
+    lock.lock();
+    queue_.push(index);
+    cv_.notify_one();
+    return r;
+  }
+
+ private:
+  std::queue<size_t> queue_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+};
+
+std::unique_ptr<Network> MakeFCFSNetwork(
+    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+  return std::make_unique<FCFSNetwork>(weights, options);
+}
+
+REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -998)
+REGISTER_NETWORK("fcfs", MakeFCFSNetwork, -999)
 
 }  // namespace
 }  // namespace lczero
