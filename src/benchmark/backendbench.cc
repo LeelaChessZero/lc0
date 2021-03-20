@@ -121,9 +121,9 @@ void BackendBenchmark::Run() {
                 << " nps." << std::endl;
 
       if (option_dict.Get<bool>(kClippyId)) {
-        float threshold  = 0.34291 * std::pow((nps + best_nps)  / 2, -0.16395);
-        float threshold2 = 0.50153 * std::pow((nps + best_nps2) / 2, -0.16395);
-        float threshold3 = 0.75900 * std::pow((nps + best_nps3) / 2, -0.16395);
+        float threshold  = 0.76848 * std::pow((nps + best_nps)  / 2, -0.369702);
+        float threshold2 = 1.81113 * std::pow((nps + best_nps2) / 2, -0.369702);
+        float threshold3 = 4.61000 * std::pow((nps + best_nps3) / 2, -0.369702);
 
         if (nps > best_nps &&
             threshold * (i - best) * best_nps < (nps - best_nps) * best) {
