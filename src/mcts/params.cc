@@ -341,7 +341,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.359f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
-  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
+  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 32;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
@@ -372,7 +372,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
-  options->Add<BoolOption>(kMultiGatherEnabledId) = false;
+  options->Add<BoolOption>(kMultiGatherEnabledId) = true;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = 4;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
   options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
