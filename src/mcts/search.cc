@@ -531,7 +531,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ + initial_visits_ == 0) return;
 
-  if (!stop_.load(std::memory_order_acquire) || !ok_to_respond_bestmove_) {
+  if (!stop_.load(std::memory_order_acquire)) {
     if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
   }
 
@@ -1939,7 +1939,8 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
-    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+    if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
+        board.castlings().no_legal_castle() &&
         history->Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
