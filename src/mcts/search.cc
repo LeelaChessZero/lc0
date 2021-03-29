@@ -539,7 +539,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
       !bestmove_is_sent_) {
     SendUciInfo();
-    EnsureBestMoveKnown();
+    EnsureBestMoveKnown(false);
     SendMovesStats();
     BestMoveInfo info(final_bestmove_, final_pondermove_);
     uci_responder_->OutputBestMove(&info);
@@ -571,10 +571,10 @@ Eval Search::GetBestEval(Move* move, bool* is_terminal) const {
           best_edge.GetM(parent_m - 1) + 1};
 }
 
-std::pair<Move, Move> Search::GetBestMove() {
+std::pair<Move, Move> Search::GetBestMove(const bool force_temp_to_zero) {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  EnsureBestMoveKnown();
+  EnsureBestMoveKnown(force_temp_to_zero);
   return {final_bestmove_, final_pondermove_};
 }
 
@@ -588,12 +588,12 @@ void Search::ResetBestMove() {
   Mutex::Lock lock(counters_mutex_);
   bool old_sent = bestmove_is_sent_;
   bestmove_is_sent_ = false;
-  EnsureBestMoveKnown();
+  EnsureBestMoveKnown(false);
   bestmove_is_sent_ = old_sent;
 }
 
 // Computes the best move, maybe with temperature (according to the settings).
-void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
+void Search::EnsureBestMoveKnown(const bool force_temp_to_zero) REQUIRES(nodes_mutex_)
     REQUIRES(counters_mutex_) {
   if (bestmove_is_sent_) return;
   if (root_node_->GetN() == 0) return;
@@ -619,6 +619,9 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     if (temperature < params_.GetTemperatureEndgame()) {
       temperature = params_.GetTemperatureEndgame();
     }
+  }
+  if (force_temp_to_zero) {
+    temperature = 0.0;
   }
 
   auto bestmove_edge = temperature
