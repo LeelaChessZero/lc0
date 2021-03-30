@@ -571,10 +571,10 @@ Eval Search::GetBestEval(Move* move, bool* is_terminal) const {
           best_edge.GetM(parent_m - 1) + 1};
 }
 
-std::pair<Move, Move> Search::GetBestMove(const bool force_temp_to_zero) {
+std::pair<Move, Move> Search::GetBestMove(const bool ignore_temp) {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  EnsureBestMoveKnown(force_temp_to_zero);
+  EnsureBestMoveKnown(ignore_temp);
   return {final_bestmove_, final_pondermove_};
 }
 
@@ -593,7 +593,7 @@ void Search::ResetBestMove() {
 }
 
 // Computes the best move, maybe with temperature (according to the settings).
-void Search::EnsureBestMoveKnown(const bool force_temp_to_zero) REQUIRES(nodes_mutex_)
+void Search::EnsureBestMoveKnown(const bool ignore_temp) REQUIRES(nodes_mutex_)
     REQUIRES(counters_mutex_) {
   if (bestmove_is_sent_) return;
   if (root_node_->GetN() == 0) return;
@@ -620,7 +620,7 @@ void Search::EnsureBestMoveKnown(const bool force_temp_to_zero) REQUIRES(nodes_m
       temperature = params_.GetTemperatureEndgame();
     }
   }
-  if (force_temp_to_zero) {
+  if (ignore_temp) {
     temperature = 0.0;
   }
 

@@ -78,7 +78,7 @@ class Search {
 
   // Returns best move, from the point of view of white player. And also ponder.
   // May or may not use temperature, according to the settings.
-  std::pair<Move, Move> GetBestMove(const bool force_temp_to_zero);
+  std::pair<Move, Move> GetBestMove(const bool ignore_temp);
 
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
@@ -100,7 +100,7 @@ class Search {
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
-  void EnsureBestMoveKnown(const bool force_temp_to_zero);
+  void EnsureBestMoveKnown(const bool ignore_temp);
 
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes, while WithTemperature

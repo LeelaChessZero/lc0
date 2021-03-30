@@ -118,7 +118,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
   }
 
   // Value repair. This is supposed local per game.
-  bool ignore_temp_because_of_value_repair=false;
+  bool ignore_temp=false;
 
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
@@ -216,7 +216,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     Eval played_eval = best_eval;
     Move move;
     while (true) {
-      move = search_->GetBestMove(ignore_temp_because_of_value_repair).first;
+      move = search_->GetBestMove(ignore_temp).first;
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
 
@@ -297,10 +297,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // come before move selection, But I didn't know the code well
       // enough to judge if that would backfire.
 
-      if (!ignore_temp_because_of_value_repair) {
-	float surprise=abs(best_eval.wl - orig_eval.wl);
+      if (!ignore_temp) {
+	float surprise=std::fabs(best_eval.wl - orig_eval.wl);
 	if (surprise > threshold_for_value_repair) {
-	  ignore_temp_because_of_value_repair=true;
+	  ignore_temp=true;
 	}
       }
     }
