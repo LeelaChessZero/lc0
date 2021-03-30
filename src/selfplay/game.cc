@@ -63,9 +63,11 @@ const OptionId kSyzygyTablebaseId{
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
 
-  // Value repair
-  // TODO make this a run time parameter
-  float threshold_for_value_repair = 0.7f;
+const OptionId kValueRepairThresholdId{
+    "value-repair-threshold", "ValueRepairThreshold",
+    "Reduce temperature to zero when the absolute difference between Q of best "
+    "eval and Q of root is above this threshold. Since Q ranges from -1 to +1 "
+    "this threshold is a no-op at the default value 2.0."};
 
 }  // namespace
 
@@ -78,6 +80,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<FloatOption>(kValueRepairThresholdId, 0.0f, 2.0f) = 2.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -117,7 +120,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     }
   }
 
-  // Value repair. This is supposed local per game.
+  // Value repair. This is supposed to be local per game.
   bool ignore_temp=false;
 
   // Do moves while not end of the game. (And while not abort_)
@@ -299,7 +302,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
       if (!ignore_temp) {
 	float surprise=std::fabs(best_eval.wl - orig_eval.wl);
-	if (surprise > threshold_for_value_repair) {
+	if (surprise > options_[0].uci_options->Get<float>(
+					  kValueRepairThresholdId)) {
 	  ignore_temp=true;
 	}
       }
