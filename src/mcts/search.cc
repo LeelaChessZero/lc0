@@ -1149,7 +1149,7 @@ void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
   int collision_events_left = params_.GetMaxCollisionEvents();
-  int collisions_left = params_.GetMaxCollisionVisitsId();
+  int collisions_left = params_.GetMaxCollisionVisits();
 
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
@@ -1219,17 +1219,19 @@ void SearchWorker::GatherMinibatch() {
 
 namespace {
 int Mix(int high, int low, float ratio) {
-  return static_cast<int>(std::round(high * ratio + low * (1.0f - ratio)));
+  return static_cast<int>(std::round(static_cast<float>(low) +
+                                     static_cast<float>(high - low) * ratio));
 }
+
 int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
   // End checked first
   if (nodes >= params.GetMaxCollisionVisitsScalingEnd()) {
-    return params.GetMaxCollisionVisitsId();
+    return params.GetMaxCollisionVisits();
   }
   if (nodes <= params.GetMaxCollisionVisitsScalingStart()) {
     return 1;
   }
-  return Mix(params.GetMaxCollisionVisitsId(), 1,
+  return Mix(params.GetMaxCollisionVisits(), 1,
              std::pow((static_cast<float>(nodes) -
                        params.GetMaxCollisionVisitsScalingStart()) /
                           (params.GetMaxCollisionVisitsScalingEnd() -
@@ -1248,7 +1250,8 @@ void SearchWorker::GatherMinibatch2() {
   }
   // TODO: GetEstimatedRemainingPlayouts has already had smart pruning factor
   // applied, which doesn't clearly make sense to include here...
-  int64_t remaining_n = latest_time_manager_hints_.GetEstimatedRemainingPlayouts();
+  int64_t remaining_n =
+      latest_time_manager_hints_.GetEstimatedRemainingPlayouts();
   int collisions_left = CalculateCollisionsLeft(
       std::min(static_cast<int64_t>(cur_n), remaining_n), params_);
 
