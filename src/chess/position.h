@@ -66,6 +66,10 @@ class Position {
   const ChessBoard& GetBoard() const { return us_board_; }
   // Gets board from the point of view of opponent.
   const ChessBoard& GetThemBoard() const { return them_board_; }
+  // Gets board from the point of view of the white player.
+  const ChessBoard& GetWhiteBoard() const {
+    return us_board_.flipped() ? them_board_ : us_board_;
+  };
 
   std::string DebugString() const;
 
@@ -84,6 +88,9 @@ class Position {
   // number of half-moves since beginning of the game.
   int ply_count_ = 0;
 };
+
+// GetFen returns a FEN notation for the position.
+std::string GetFen(const Position& pos);
 
 // These are ordered so max() prefers the best result.
 enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
