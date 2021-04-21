@@ -84,7 +84,7 @@ class SearchParams {
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
-  int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
+  int GetMaxCollisionVisits() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   bool GetStickyEndgames() const { return kStickyEndgames; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
@@ -133,6 +133,15 @@ class SearchParams {
   int GetUpdateInterval() const { return kUpdateInterval; }
   float GetRecalculateTemperature() const { return kRecalculateTemperature; }
   float GetLCBPercentile() const { return kLCBPercentile; }
+  int GetMaxCollisionVisitsScalingStart() const {
+    return kMaxCollisionVisitsScalingStart;
+  }
+  int GetMaxCollisionVisitsScalingEnd() const {
+    return kMaxCollisionVisitsScalingEnd;
+  }
+  float GetMaxCollisionVisitsScalingPower() const {
+    return kMaxCollisionVisitsScalingPower;
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -197,6 +206,9 @@ class SearchParams {
   static const OptionId kUpdateIntervalId;
   static const OptionId kRecalculateTemperatureId;
   static const OptionId kLCBPercentileId;
+  static const OptionId kMaxCollisionVisitsScalingStartId;
+  static const OptionId kMaxCollisionVisitsScalingEndId;
+  static const OptionId kMaxCollisionVisitsScalingPowerId;
 
  private:
   const OptionsDict& options_;
@@ -254,6 +266,9 @@ class SearchParams {
   const int kUpdateInterval;
   const float kRecalculateTemperature;
   const float kLCBPercentile;
+  const int kMaxCollisionVisitsScalingStart;
+  const int kMaxCollisionVisitsScalingEnd;
+  const float kMaxCollisionVisitsScalingPower;
 };
 
 }  // namespace lczero
