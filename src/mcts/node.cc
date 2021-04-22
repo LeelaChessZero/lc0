@@ -118,6 +118,51 @@ class NodeGarbageCollector {
 };  // namespace
 
 NodeGarbageCollector gNodeGc;
+
+void DriftCorrect(float* q, float* d) {
+  // Training data doesn't have a high number of nodes, so there shouldn't be
+  // too much drift. Highest known value not caused by backend bug was 1.5e-7.
+  const float allowed_eps = 0.000001f;
+  if (*q > 1.0f) {
+    if (*q > 1.0f + allowed_eps) {
+      CERR << "Unexpectedly large drift in q " << *q;
+    }
+    *q = 1.0f;
+  }
+  if (*q < -1.0f) {
+    if (*q < -1.0f - allowed_eps) {
+      CERR << "Unexpectedly large drift in q " << *q;
+    }
+    *q = -1.0f;
+  }
+  if (*d > 1.0f) {
+    if (*d > 1.0f + allowed_eps) {
+      CERR << "Unexpectedly large drift in d " << *d;
+    }
+    *d = 1.0f;
+  }
+  if (*d < 0.0f) {
+    if (*d < 0.0f - allowed_eps) {
+      CERR << "Unexpectedly large drift in d " << *d;
+    }
+    *d = 0.0f;
+  }
+  float w = (1.0f - *d + *q) / 2.0f;
+  float l = w - *q;
+  // Assume q drift is rarer than d drift and apply all correction to d.
+  if (w < 0.0f || l < 0.0f) {
+    float drift = 2.0f * std::min(w, l);
+    if (drift < -allowed_eps) {
+      CERR << "Unexpectedly large drift correction for d based on q. " << drift;
+    }
+    *d += drift;
+    // Since q is in range -1 to 1 - this correction should never push d outside
+    // of range, but precision could be lost in calculations so just in case.
+    if (*d < 0.0f) {
+      *d = 0.0f;
+    }
+  }
+}
 }  // namespace
 
 /////////////////////////////////////////////////////////////////////////
@@ -441,10 +486,13 @@ void Node::ReleaseChildren() {
 
 void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   if (solid_children_) {
-    auto new_child = std::make_unique<Node>(this, node_to_save->index_);
-    *new_child = std::move(*node_to_save);
+    std::unique_ptr<Node> saved_node;
+    if (node_to_save != nullptr) {
+      saved_node = std::make_unique<Node>(this, node_to_save->index_);
+      *saved_node = std::move(*node_to_save);
+    }
     gNodeGc.AddToGcQueue(std::move(child_), num_edges_);
-    child_ = std::move(new_child);
+    child_ = std::move(saved_node);
     if (child_) {
       child_->UpdateChildrenParents();
     }
@@ -574,6 +622,10 @@ V6TrainingData Node::GetV6TrainingData(
   result.best_d = best_eval.d;
   result.played_d = played_eval.d;
   result.orig_d = orig_eval.d;
+
+  DriftCorrect(&result.best_q, &result.best_d);
+  DriftCorrect(&result.root_q, &result.root_d);
+  DriftCorrect(&result.played_q, &result.played_d);
 
   result.root_m = GetM();
   result.best_m = best_eval.ml;
