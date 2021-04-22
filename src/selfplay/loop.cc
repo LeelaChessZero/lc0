@@ -73,7 +73,11 @@ const OptionId kDeblunder{
     "if the the selected move appears to be a blunder."};
 const OptionId kDeblunderQBlunderThreshold{
     "deblunder-q-blunder-threshold", "",
-    "The amount Q of played move needs to be worse than best move in order to assume the played move is a blunder."};
+    "The amount Q of played move needs to be worse than best move in order to "
+    "assume the played move is a blunder."};
+const OptionId kDeblunderQBlunderWidth{
+    "deblunder-q-blunder-width", "",
+    "Width of the transition between accepted temp moves and blunders."};
 
 const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
@@ -107,7 +111,7 @@ std::map<uint64_t, PolicySubNode> policy_subs;
 bool gaviotaEnabled = false;
 bool deblunderEnabled = false;
 float deblunderQBlunderThreshold = 2.0f;
-
+float deblunderQBlunderWidth = 0.0f;
 
 void DataAssert(bool check_result) {
   if (!check_result) throw Exception("Range Violation");
@@ -929,23 +933,37 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             break;
           }
         }
-        float activeZ[3] = { fileContents.back().result_q,
+        float activeZ[3] = {fileContents.back().result_q,
                             fileContents.back().result_d,
-                            fileContents.back().plies_left };
+                            fileContents.back().plies_left};
         bool deblunderingStarted = false;
         while (true) {
           auto& cur = fileContents[history.GetLength() - 1];
           // A blunder is defined by the played move being worse than the
           // best move by a defined threshold, missing a forced win, or
           // playing into a proven loss without being forced.
-          if ((cur.best_q - cur.played_q >
-              deblunderQBlunderThreshold) ||
+          bool deblunderTriggerThreshold =
+              (cur.best_q - cur.played_q >
+               deblunderQBlunderThreshold - deblunderQBlunderWidth / 2.0);
+          bool deblunderTriggerTerminal =
               (cur.best_q > -1 && cur.played_q < 1 &&
-               ((cur.best_q == 1 && ((cur.invariance_info & 8) != 0))
-                || cur.played_q == -1))) {
-            activeZ[0] = cur.best_q;
-            activeZ[1] = cur.best_d;
-            activeZ[2] = cur.best_m;
+               ((cur.best_q == 1 && ((cur.invariance_info & 8) != 0)) ||
+                cur.played_q == -1));
+          if (deblunderTriggerThreshold || deblunderTriggerTerminal) {
+            float newZRatio = 1.0f;
+            // If width > 0 and the deblunder didn't involve a terminal
+            // position, we apply a soft threshold by averaging old and new Z.
+            if (deblunderQBlunderWidth > 0 && !deblunderTriggerTerminal) {
+              newZRatio = std::min(1.0f, (cur.best_q - cur.played_q -
+                                          deblunderQBlunderThreshold) /
+                                                 deblunderQBlunderWidth +
+                                             0.5f);
+            }
+            // Instead of averaging, a randomization can be applied here with
+            // newZRatio = newZRatio > rand( [0, 1) ) ? 1.0f : 0.0f;
+            activeZ[0] = (1 - newZRatio) * activeZ[0] + newZRatio * cur.best_q;
+            activeZ[1] = (1 - newZRatio) * activeZ[1] + newZRatio * cur.best_d;
+            activeZ[2] = (1 - newZRatio) * activeZ[2] + newZRatio * cur.best_m;
             deblunderingStarted = true;
             blunders += 1;
             /* std::cout << "Blunder detected. Best move q=" << cur.best_q <<
@@ -1103,6 +1121,7 @@ void RescoreLoop::RunLoop() {
   options_.Add<IntOption>(kNewInputFormatId, -1, 256) = -1;
   options_.Add<BoolOption>(kDeblunder) = false;
   options_.Add<FloatOption>(kDeblunderQBlunderThreshold, 0.0f, 2.0f) = 2.0f;
+  options_.Add<FloatOption>(kDeblunderQBlunderWidth, 0.0f, 2.0f) = 0.0f;
 
   SelfPlayTournament::PopulateOptions(&options_);
 
@@ -1110,6 +1129,8 @@ void RescoreLoop::RunLoop() {
   deblunderEnabled = options_.GetOptionsDict().Get<bool>(kDeblunder);
   deblunderQBlunderThreshold =
       options_.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold);
+  deblunderQBlunderWidth =
+      options_.GetOptionsDict().Get<float>(kDeblunderQBlunderWidth);
 
   SyzygyTablebase tablebase;
   if (!tablebase.init(
