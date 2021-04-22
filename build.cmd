@@ -4,6 +4,11 @@ setlocal
 echo Deleting build directory:
 rd /s build
 
+set CC=cl
+set CXX=cl
+set CC_LD=link
+set CXX_LD=link
+
 if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019" (
   where /q cl
   if errorlevel 1 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64

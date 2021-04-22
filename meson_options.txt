@@ -123,6 +123,11 @@ option('pext',
        value: false,
        description: 'Use the pext instruction')
 
+option('neon',
+       type: 'boolean',
+       value: true,
+       description: 'Use neon instructions on arm processors')
+
 option('gtest',
        type: 'boolean',
        value: true,
