@@ -64,9 +64,12 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
-const OptionId kUCIOpponentId{"", "UCI_Opponent",
-                              "Option used by the GUI to pass the name and "
-                              "other information about the current opponent."};
+const OptionId kUCIOpponent{"", "UCI_Opponent",
+                            "Option used by the GUI to pass the name and other "
+                            "information about the current opponent."};
+const OptionId kOverrideIf{"override-if", "",
+                           "Use the override options if the current opponent "
+                           "contains this string."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -95,6 +98,7 @@ EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
+  options->AddContext("override");
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
@@ -107,7 +111,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   options->Add<BoolOption>(kShowWDL) = false;
   options->Add<BoolOption>(kShowMovesleft) = false;
-  options->Add<StringOption>(kUCIOpponentId);
+  options->Add<StringOption>(kUCIOpponent);
+  options->Add<StringOption>(kOverrideIf);
 
   ConfigFile::PopulateOptions(options);
   PopulateTimeManagementOptions(RunType::kUci, options);
@@ -292,12 +297,18 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
   }
 
+  auto ovr_pat = options_.Get<std::string>(kOverrideIf);
+  bool ovr = !ovr_pat.empty() &&
+             options_.Get<std::string>(kUCIOpponent).find(ovr_pat) !=
+                 std::string::npos;
+
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite || params.ponder,
-      options_, &cache_, syzygy_tb_.get());
+      ovr ? options_.GetSubdict("override") : options_, &cache_,
+      syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
