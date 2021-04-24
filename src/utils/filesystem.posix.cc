@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 
 #include "utils/exception.h"
 #include "utils/filesystem.h"
+#include "utils/string.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -67,7 +68,7 @@ std::vector<std::string> GetFileList(const std::string& directory) {
 uint64_t GetFileSize(const std::string& filename) {
   struct stat s;
   if (stat(filename.c_str(), &s) < 0) {
-    throw Exception("Cannot stat file: " + filename);
+    return 0;
   }
   return s.st_size;
 }
@@ -75,12 +76,99 @@ uint64_t GetFileSize(const std::string& filename) {
 time_t GetFileTime(const std::string& filename) {
   struct stat s;
   if (stat(filename.c_str(), &s) < 0) {
-    throw Exception("Cannot stat file: " + filename);
+    return 0;
   }
 #ifdef __APPLE__
   return s.st_mtimespec.tv_sec;
 #else
   return s.st_mtim.tv_sec;
+#endif
+}
+
+namespace {
+bool CheckDir(const std::string& dirname) {
+  struct stat s;
+  return stat(dirname.c_str(), &s) == 0 && S_ISDIR(s.st_mode);
+}
+
+}  // namespace
+
+std::string GetUserCacheDirectory() {
+#ifdef __APPLE__
+  constexpr auto kLocalDir = "Library/Caches/";
+#else
+  constexpr auto kLocalDir = ".cache/";
+  const char *xdg_cache_home = std::getenv("XDG_CACHE_HOME");
+  if (xdg_cache_home != NULL && CheckDir(xdg_cache_home)) {
+    return std::string(xdg_cache_home) + "/";
+  }
+#endif
+  const char *home = std::getenv("HOME");
+  if (home == NULL) return std::string();
+  const std::string path = std::string(home) + "/" + kLocalDir;
+  if (!CheckDir(path)) return std::string();
+  return path;
+}
+
+std::string GetUserConfigDirectory() {
+#ifdef __APPLE__
+  constexpr auto kLocalDir = "Library/Preferences/";
+#else
+  constexpr auto kLocalDir = ".config/";
+  const char *xdg_config_home = std::getenv("XDG_CONFIG_HOME");
+  if (xdg_config_home != NULL && CheckDir(xdg_config_home)) {
+    return std::string(xdg_config_home) + "/";
+  }
+#endif
+  const char *home = std::getenv("HOME");
+  if (home == NULL) return std::string();
+  const std::string path = std::string(home) + "/" + kLocalDir;
+  if (!CheckDir(path)) return std::string();
+  return path;
+}
+
+std::string GetUserDataDirectory() {
+#ifdef __APPLE__
+  constexpr auto kLocalDir = "Library/";
+#else
+  constexpr auto kLocalDir = ".local/share/";
+  const char *xdg_data_home = std::getenv("XDG_DATA_HOME");
+  if (xdg_data_home != NULL && CheckDir(xdg_data_home)) {
+    return std::string(xdg_data_home) + "/";
+  }
+#endif
+  const char *home = std::getenv("HOME");
+  if (home == NULL) return std::string();
+  const std::string path = std::string(home) + "/" + kLocalDir;
+  if (!CheckDir(path)) return std::string();
+  return path;
+}
+
+std::vector<std::string> GetSystemConfigDirectoryList() {
+#ifdef __APPLE__
+  return {};
+#else
+  std::vector<std::string> result;
+  const char *xdg_config_dirs = std::getenv("XDG_CONFIG_DIRS");
+  if (xdg_config_dirs == NULL) {
+    return {"/etc/xdg/"};
+  }
+  result = StrSplit(xdg_config_dirs, ":");
+  return result;
+#endif
+}
+
+std::vector<std::string> GetSystemDataDirectoryList() {
+#ifdef __APPLE__
+  return {};
+#else
+  std::vector<std::string> result;
+  const char *xdg_data_dirs = std::getenv("XDG_DATA_DIRS");
+  if (xdg_data_dirs == NULL) {
+    return {"/usr/local/share/", "/usr/share/"};
+  }
+  result = StrSplit(xdg_data_dirs, ":");
+  return result;
 #endif
 }
 

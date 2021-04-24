@@ -35,7 +35,18 @@ std::vector<std::string> CommandLine::arguments_;
 std::vector<std::pair<std::string, std::string>> CommandLine::modes_;
 
 void CommandLine::Init(int argc, const char** argv) {
+#ifdef _WIN32
+  // Under windows argv[0] may not have the extension. Also _get_pgmptr() had
+  // issues in some windows 10 versions, so check returned values carefully.
+  char* pgmptr = nullptr;
+  if (!_get_pgmptr(&pgmptr) && pgmptr != nullptr && *pgmptr) {
+    binary_ = pgmptr;
+  } else {
+    binary_ = argv[0];
+  }
+#else
   binary_ = argv[0];
+#endif
   arguments_.clear();
   std::ostringstream params;
   for (int i = 1; i < argc; ++i) {

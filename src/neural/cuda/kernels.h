@@ -36,7 +36,7 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
 
 // Add bias to convolution's output.
 template <typename T>
-void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W);
+void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu);
 
 // Conversion from: fp32 -> fp16 datatype, and NCHW -> NHWC layout.
 // Cudnn kernels work best with NCHW layout for fp32, and with NHWC for fp16.
@@ -81,6 +81,24 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
                int inputSize, int usedSize, int outputSize);
+
+
+// Custom winograd helper functions
+template <typename T>
+void FilterTransform(int N, int C, T* transformedFilter, const T* filter);
+
+template <typename T>
+void InputTransform(int N, int C, T* transformedInput, const T* input);
+
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+void OutputTransform(int N, int C, int se_K, T* output, const T* input,
+                     const T* skip, const T* bias, const T* w1, const T* b1,
+                     const T* w2, const T* b2);
+
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
+                     const T* skip, const T* bias, const T* w1, const T* b1,
+                     const T* w2, const T* b2);
 
 }  // namespace cudnn_backend
 }  // namespace lczero

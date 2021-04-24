@@ -46,13 +46,23 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
   constexpr auto width = 8;
   constexpr auto height = 8;
 
-  auto finalSize_pol = layers[layers.size() - 2].ip_out_size * sizeof(net_t);
-  auto finalSize_val = layers.back().ip_out_size * sizeof(net_t);
+  m_finalSize_pol = 0;
+  m_finalSize_val = 0;
+  m_finalSize_mov = 0;
 
   auto max_channels = unsigned{0};
   for (const auto& layer : layers) {
     max_channels =
         std::max(max_channels, std::max(layer.channels, layer.outputs));
+    if (layer.is_policy || layer.is_conv_policy) {
+      m_finalSize_pol = layer.ip_out_size * sizeof(net_t);
+    }
+    if (layer.is_value) {
+      m_finalSize_val = layer.ip_out_size * sizeof(net_t);
+    }
+    if (layer.is_moves_left) {
+      m_finalSize_mov = layer.ip_out_size * sizeof(net_t);
+    }
   }
 
   const auto mwg = m_opencl.m_sgemm_tuners.mwg;
@@ -86,16 +96,35 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
   try {
     m_pinnedOutBuffer_pol = cl::Buffer(
         m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
-        max_batch_size * finalSize_pol);
+        max_batch_size * m_finalSize_pol);
   } catch (const cl::Error& e) {
     CERR << "Error in m_pinnedOutBuffer_pol: " << e.what() << ": " << e.err()
          << std::endl;
     throw;
   }
 
-  m_pinnedOutBuffer_val =
-      cl::Buffer(m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
-                 max_batch_size * finalSize_val);
+  try {
+    m_pinnedOutBuffer_val = cl::Buffer(
+        m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
+        max_batch_size * m_finalSize_val);
+  } catch (const cl::Error& e) {
+    CERR << "Error in m_pinnedOutBuffer_val: " << e.what() << ": " << e.err()
+         << std::endl;
+    throw;
+  }
+
+  if (m_finalSize_mov > 0) {
+    try {
+      m_pinnedOutBuffer_mov = cl::Buffer(
+          m_opencl.m_context, CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
+          max_batch_size * m_finalSize_mov);
+    } catch (const cl::Error& e) {
+      CERR << "Error in m_pinnedOutBuffer_mov: " << e.what() << ": " << e.err()
+           << std::endl;
+      throw;
+    }
+  }
+
   m_pool_buffer =
       cl::Buffer(m_opencl.m_context, CL_MEM_READ_WRITE | CL_MEM_HOST_NO_ACCESS,
                  alloc_pool_size);
@@ -104,11 +133,9 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
 void OpenCLBuffers::forward(const std::vector<net_t>& input,
                             std::vector<net_t>& output_pol,
                             std::vector<net_t>& output_val,
+                            std::vector<net_t>& output_mov,
                             const int batch_size) {
   auto& layers = m_opencl_net.m_layers;
-
-  auto finalSize_pol = layers[layers.size() - 2].ip_out_size * sizeof(net_t);
-  auto finalSize_val = layers.back().ip_out_size * sizeof(net_t);
 
   const auto inSize = sizeof(net_t) * input.size();
   m_commandqueue.enqueueWriteBuffer(m_inBuffer, CL_FALSE, 0, inSize,
@@ -241,13 +268,15 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
                 layer.outputs * 8 * 8, layer.ip_in_size, layer.ip_out_size);
 
     } else {
-      assert(layer.is_value || layer.is_policy);
+      assert(layer.is_value || layer.is_policy || layer.is_moves_left);
 
       cl::Buffer out_buffer;
       if (layer.is_policy) {
         out_buffer = m_pinnedOutBuffer_pol;
-      } else {
+      } else if (layer.is_value) {
         out_buffer = m_pinnedOutBuffer_val;
+      } else {
+        out_buffer = m_pinnedOutBuffer_mov;
       }
 
       auto conv_weights = begin(layer.weights);
@@ -265,22 +294,36 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
 
   auto pinnedOutBufferHost_pol = m_commandqueue.enqueueMapBuffer(
       m_pinnedOutBuffer_pol, CL_FALSE, CL_MAP_READ, 0,
-      batch_size * finalSize_pol);
+      batch_size * m_finalSize_pol);
   auto pinnedOutBufferHost_val = m_commandqueue.enqueueMapBuffer(
       m_pinnedOutBuffer_val, CL_FALSE, CL_MAP_READ, 0,
-      batch_size * finalSize_val);
+      batch_size * m_finalSize_val);
+  void* pinnedOutBufferHost_mov;
+  if (m_finalSize_mov > 0) {
+    pinnedOutBufferHost_mov = m_commandqueue.enqueueMapBuffer(
+        m_pinnedOutBuffer_mov, CL_FALSE, CL_MAP_READ, 0,
+        batch_size * m_finalSize_mov);
+  }
 
   m_commandqueue.finish();
 
   std::memcpy(output_pol.data(), pinnedOutBufferHost_pol,
-              batch_size * finalSize_pol);
+              batch_size * m_finalSize_pol);
   std::memcpy(output_val.data(), pinnedOutBufferHost_val,
-              batch_size * finalSize_val);
+              batch_size * m_finalSize_val);
+  if (m_finalSize_mov > 0) {
+    std::memcpy(output_mov.data(), pinnedOutBufferHost_mov,
+                batch_size * m_finalSize_mov);
+  }
 
   m_commandqueue.enqueueUnmapMemObject(m_pinnedOutBuffer_pol,
                                        pinnedOutBufferHost_pol);
   m_commandqueue.enqueueUnmapMemObject(m_pinnedOutBuffer_val,
                                        pinnedOutBufferHost_val);
+  if (m_finalSize_mov > 0) {
+    m_commandqueue.enqueueUnmapMemObject(m_pinnedOutBuffer_mov,
+                                         pinnedOutBufferHost_mov);
+  }
 }
 
 void OpenCLBuffers::convolve3(int channels, int outputs, cl::Buffer& bufferIn,

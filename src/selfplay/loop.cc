@@ -26,15 +26,24 @@
 */
 
 #include "selfplay/loop.h"
+
+#include <optional>
+
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
 namespace {
 const OptionId kInteractiveId{
     "interactive", "", "Run in interactive mode with UCI-like interface."};
+
+const OptionId kLogFileId{"logfile", "LogFile",
+  "Write log to that file. Special value <stderr> to "
+  "output the log to the console."};
 }  // namespace
+
 
 SelfPlayLoop::SelfPlayLoop() {}
 
@@ -47,9 +56,13 @@ void SelfPlayLoop::RunLoop() {
   SelfPlayTournament::PopulateOptions(&options_);
 
   options_.Add<BoolOption>(kInteractiveId) = false;
+  options_.Add<StringOption>(kLogFileId);
 
   if (!options_.ProcessAllFlags()) return;
-  if (options_.GetOptionsDict().Get<bool>(kInteractiveId.GetId())) {
+  
+  Logging::Get().SetFilename(options_.GetOptionsDict().Get<std::string>(kLogFileId));
+
+  if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
     UciLoop::RunLoop();
   } else {
     // Send id before starting tournament to allow wrapping client to know
@@ -105,6 +118,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   if (!info.training_filename.empty())
     res += " trainingfile " + info.training_filename;
   if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
+  res += " play_start_ply " + std::to_string(info.play_start_ply);
   if (info.is_black)
     res += " player1 " + std::string(*info.is_black ? "black" : "white");
   if (info.game_result != GameResult::UNDECIDED) {
@@ -117,6 +131,10 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
   if (!info.moves.empty()) {
     res += " moves";
     for (const auto& move : info.moves) res += " " + move.as_string();
+  }
+  if (!info.initial_fen.empty() &&
+      info.initial_fen != ChessBoard::kStartposFen) {
+    res += " from_fen " + info.initial_fen;
   }
   responses.push_back(res);
   SendResponses(responses);
@@ -135,8 +153,8 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
 
   // Initialize variables.
   float percentage = -1;
-  optional<float> elo;
-  optional<float> los;
+  std::optional<float> elo;
+  std::optional<float> los;
 
   // Only caculate percentage if any games at all (avoid divide by 0).
   if ((winp1 + losep1 + draws) > 0) {
@@ -162,18 +180,19 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
   }
   if (elo) {
     oss << " Elo: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (elo.value_or(0.0f));
+        << (*elo);
   }
   if (los) {
     oss << " LOS: " << std::fixed << std::setw(5) << std::setprecision(2)
-        << (los.value_or(0.0f) * 100.0f) << "%";
+        << (*los * 100.0f) << "%";
   }
 
   oss << " P1-W: +" << info.results[0][0] << " -" << info.results[2][0] << " ="
       << info.results[1][0];
   oss << " P1-B: +" << info.results[0][1] << " -" << info.results[2][1] << " ="
       << info.results[1][1];
-  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) / info.move_count_);
+  oss << " npm " + std::to_string(static_cast<double>(info.nodes_total_) /
+                                  info.move_count_);
   oss << " nodes " + std::to_string(info.nodes_total_);
   oss << " moves " + std::to_string(info.move_count_);
   SendResponse(oss.str());

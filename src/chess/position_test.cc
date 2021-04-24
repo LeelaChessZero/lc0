@@ -16,12 +16,45 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "chess/position.h"
+
 #include <gtest/gtest.h>
 
 #include <iostream>
-#include "src/chess/position.h"
+
+#include "utils/string.h"
 
 namespace lczero {
+
+TEST(Position, SetFenGetFen) {
+  std::vector<Position> positions;
+  ChessBoard board;
+  std::vector<std::string> source_fens = {
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 1 1",
+      // has en_passant space e3 - black to move
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq e3 1 1",
+      // has en_passant space c6 - white to move
+      "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
+      "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 1 1",
+      "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1",
+      "3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30",
+      "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+      "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 "
+      "10",
+      "8/8/8/4k3/8/8/2K5/8 w - - 0 1", "8/8/8/4k3/1N6/8/2K5/8 w - - 0 1"};
+  for (size_t i = 0; i < source_fens.size(); i++) {
+    board.Clear();
+    PositionHistory history;
+    int no_capture_ply;
+    int game_move;
+    board.SetFromFen(source_fens[i], &no_capture_ply, &game_move);
+    history.Reset(board, no_capture_ply,
+                  2 * game_move - (board.flipped() ? 1 : 2));
+    Position pos = history.Last();
+    std::string target_fen = GetFen(pos);
+    EXPECT_EQ(source_fens[i], target_fen);
+  }
+}
 
 // https://github.com/LeelaChessZero/lc0/issues/209
 TEST(PositionHistory, ComputeLastMoveRepetitionsWithoutLegalEnPassant) {

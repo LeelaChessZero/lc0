@@ -42,10 +42,15 @@ int CachingComputation::GetBatchSize() const { return batch_.size(); }
 bool CachingComputation::AddInputByHash(uint64_t hash) {
   NNCacheLock lock(cache_, hash);
   if (!lock) return false;
+  AddInputByHash(hash, std::move(lock));
+  return true;
+}
+
+void CachingComputation::AddInputByHash(uint64_t hash, NNCacheLock&& lock) {
+  assert(lock);
   batch_.emplace_back();
   batch_.back().lock = std::move(lock);
   batch_.back().hash = hash;
-  return true;
 }
 
 void CachingComputation::PopCacheHit() {
@@ -83,6 +88,7 @@ void CachingComputation::ComputeBlocking() {
         std::make_unique<CachedNNRequest>(item.probabilities_to_cache.size());
     req->q = parent_->GetQVal(item.idx_in_parent);
     req->d = parent_->GetDVal(item.idx_in_parent);
+    req->m = parent_->GetMVal(item.idx_in_parent);
     int idx = 0;
     for (auto x : item.probabilities_to_cache) {
       req->p[idx++] =
@@ -102,6 +108,12 @@ float CachingComputation::GetDVal(int sample) const {
   const auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) return parent_->GetDVal(item.idx_in_parent);
   return item.lock->d;
+}
+
+float CachingComputation::GetMVal(int sample) const {
+  const auto& item = batch_[sample];
+  if (item.idx_in_parent >= 0) return parent_->GetMVal(item.idx_in_parent);
+  return item.lock->m;
 }
 
 float CachingComputation::GetPVal(int sample, int move_id) const {

@@ -35,21 +35,56 @@ namespace lczero {
 
 inline unsigned long GetLowestBit(std::uint64_t value) {
 #if defined(_MSC_VER) && defined(_WIN64)
-    unsigned long result;
-    _BitScanForward64(&result, value);
-    return result;
+  unsigned long result;
+  _BitScanForward64(&result, value);
+  return result;
 #elif defined(_MSC_VER)
-    unsigned long result;
-    if (value & 0xFFFFFFFF) {
-      _BitScanForward(&result, value);
-    } else {
-      _BitScanForward(&result, value >> 32);
-      result += 32;
-    }
-    return result;
+  unsigned long result;
+  if (value & 0xFFFFFFFF) {
+    _BitScanForward(&result, value);
+  } else {
+    _BitScanForward(&result, value >> 32);
+    result += 32;
+  }
+  return result;
 #else
-    return __builtin_ctzll(value);
+  return __builtin_ctzll(value);
 #endif
+}
+
+enum BoardTransform {
+  NoTransform = 0,
+  // Horizontal mirror, ReverseBitsInBytes
+  FlipTransform = 1,
+  // Vertical mirror, ReverseBytesInBytes
+  MirrorTransform = 2,
+  // Diagonal transpose A1 to H8, TransposeBitsInBytes.
+  TransposeTransform = 4,
+};
+
+inline uint64_t ReverseBitsInBytes(uint64_t v) {
+  v = ((v >> 1) & 0x5555555555555555ull) | ((v & 0x5555555555555555ull) << 1);
+  v = ((v >> 2) & 0x3333333333333333ull) | ((v & 0x3333333333333333ull) << 2);
+  v = ((v >> 4) & 0x0F0F0F0F0F0F0F0Full) | ((v & 0x0F0F0F0F0F0F0F0Full) << 4);
+  return v;
+}
+
+inline uint64_t ReverseBytesInBytes(uint64_t v) {
+  v = (v & 0x00000000FFFFFFFF) << 32 | (v & 0xFFFFFFFF00000000) >> 32;
+  v = (v & 0x0000FFFF0000FFFF) << 16 | (v & 0xFFFF0000FFFF0000) >> 16;
+  v = (v & 0x00FF00FF00FF00FF) << 8 | (v & 0xFF00FF00FF00FF00) >> 8;
+  return v;
+}
+
+// Transpose across the diagonal connecting bit 7 to bit 56.
+inline uint64_t TransposeBitsInBytes(uint64_t v) {
+  v = (v & 0xAA00AA00AA00AA00ULL) >> 9 | (v & 0x0055005500550055ULL) << 9 |
+      (v & 0x55AA55AA55AA55AAULL);
+  v = (v & 0xCCCC0000CCCC0000ULL) >> 18 | (v & 0x0000333300003333ULL) << 18 |
+      (v & 0x3333CCCC3333CCCCULL);
+  v = (v & 0xF0F0F0F000000000ULL) >> 36 | (v & 0x000000000F0F0F0FULL) << 36 |
+      (v & 0x0F0F0F0FF0F0F0F0ULL);
+  return v;
 }
 
 // Iterates over all set bits of the value, lower to upper. The value of

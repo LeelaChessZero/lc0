@@ -33,7 +33,7 @@ float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
   return *ptr / static_cast<float>(0xffff) * adapter->range_ + adapter->min_;
 }
 
-LayerAdapter::LayerAdapter(const pblczero::Weights_Layer& layer)
+LayerAdapter::LayerAdapter(const pblczero::Weights::Layer& layer)
     : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
       size_(layer.params().size() / sizeof(uint16_t)),
       min_(layer.min_val()),

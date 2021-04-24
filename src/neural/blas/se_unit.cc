@@ -47,7 +47,7 @@ static void apply_se(const size_t channels, const size_t batch_size,
   };
 
   const auto lambda_sigmoid = [](const auto val) {
-    return 1.0f / (1.0f + exp(-val));
+    return 1.0f / (1.0f + std::exp(-val));
   };
 
   for (auto c = size_t{0}; c < channels * batch_size; c++) {
@@ -61,6 +61,7 @@ static void apply_se(const size_t channels, const size_t batch_size,
   }
 }
 
+template <bool use_eigen>
 void ApplySEUnit(const size_t batch_size, const size_t channels,
                  const size_t se_fc_outputs, const float* input,
                  const float* residual, const float* weights_w1,
@@ -71,18 +72,33 @@ void ApplySEUnit(const size_t batch_size, const size_t channels,
 
   global_avg_pooling(channels * batch_size, input, pool.data());
 
-  FullyConnectedLayer::Forward1D(batch_size, channels, se_fc_outputs,
-                                 pool.data(), weights_w1, weights_b1,
-                                 true,  // Relu On
-                                 fc_out1.data());
+  FullyConnectedLayer<use_eigen>::Forward1D(batch_size, channels, se_fc_outputs,
+                                            pool.data(), weights_w1, weights_b1,
+                                            true,  // Relu On
+                                            fc_out1.data());
 
-  FullyConnectedLayer::Forward1D(batch_size, se_fc_outputs, 2 * channels,
-                                 fc_out1.data(), weights_w2, weights_b2,
-                                 false,  // Relu Off
-                                 pool.data());
+  FullyConnectedLayer<use_eigen>::Forward1D(batch_size, se_fc_outputs,
+                                            2 * channels, fc_out1.data(),
+                                            weights_w2, weights_b2,
+                                            false,  // Relu Off
+                                            pool.data());
 
   // Sigmoid, scale and add residual
   apply_se(channels, batch_size, input, residual, pool.data(), output);
 }
 
+template void ApplySEUnit<true>(const size_t batch_size, const size_t channels,
+                                const size_t se_fc_outputs, const float* input,
+                                const float* residual, const float* weights_w1,
+                                const float* weights_b1,
+                                const float* weights_w2,
+                                const float* weights_b2, float* output);
+#ifdef USE_BLAS
+template void ApplySEUnit<false>(const size_t batch_size, const size_t channels,
+                                 const size_t se_fc_outputs, const float* input,
+                                 const float* residual, const float* weights_w1,
+                                 const float* weights_b1,
+                                 const float* weights_w2,
+                                 const float* weights_b2, float* output);
+#endif
 }  // namespace lczero

@@ -29,14 +29,26 @@
 
 #include "chess/position.h"
 #include "neural/network.h"
+#include "proto/net.pb.h"
 
 namespace lczero {
 
-enum class FillEmptyHistory {NO, FEN_ONLY, ALWAYS};
+enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
+
+// Returns the transform that would be used in EncodePositionForNN.
+int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
+                         const PositionHistory& history);
 
 // Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(const PositionHistory& history,
-                                int history_planes,
-                                FillEmptyHistory fill_empty_history);
+InputPlanes EncodePositionForNN(
+    pblczero::NetworkFormat::InputFormat input_format,
+    const PositionHistory& history, int history_planes,
+    FillEmptyHistory fill_empty_history, int* transform_out);
+
+bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format);
+bool IsCanonicalArmageddonFormat(
+    pblczero::NetworkFormat::InputFormat input_format);
+bool IsHectopliesFormat(pblczero::NetworkFormat::InputFormat input_format);
+bool Is960CastlingFormat(pblczero::NetworkFormat::InputFormat input_format);
 
 }  // namespace lczero

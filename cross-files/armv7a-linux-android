@@ -1,0 +1,31 @@
+
+# Tested with Android NDK r19c, default toolchain
+# Targeting API level 21
+
+# When targeting API levels < 24 the build fails unless _FILE_OFFSET_BITS is unset.
+# Meson passes _FILE_OFFSET_BITS=64 but recent NDK toolchains have issues building
+# for 32-bit ABIs when such macro it set. Relevant links:
+#  https://android.googlesource.com/platform/bionic/+/master/docs/32-bit-abi.md
+#  https://github.com/mesonbuild/meson/pull/2996#issuecomment-384045808
+
+# Set the toolchain path on your environment
+# export PATH="$HOME/.local/share/android-sdk/ndk-bundle/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+
+[host_machine]
+system = 'android'
+cpu_family = 'arm'
+cpu = 'armv7a'
+endian = 'little'
+
+[properties]
+cpp_args = ['-U_FILE_OFFSET_BITS']
+cpp_link_args = ['-llog', '-static-libstdc++']
+
+[binaries]
+c = 'armv7a-linux-androideabi21-clang'
+cpp = 'armv7a-linux-androideabi21-clang++'
+ar = 'arm-linux-androideabi-ar'
+strip = 'arm-linux-androideabi-strip'
+ld = 'arm-linux-androideabi-ld'
+ranlib = 'arm-linux-androideabi-ranlib'
+as = 'arm-linux-androideabi-as'

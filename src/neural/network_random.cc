@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -29,7 +29,9 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <thread>
+
 #include "neural/factory.h"
 #include "utils/hashcat.h"
 
@@ -76,6 +78,8 @@ class RandomNetworkComputation : public NetworkComputation {
     return d;
   }
 
+  float GetMVal(int /* sample */) const override { return 0.0f; }
+
   float GetPVal(int sample, int move_id) const override {
     if (uniform_mode_) return 1.0f;
 
@@ -102,24 +106,36 @@ class RandomNetwork : public Network {
   RandomNetwork(const OptionsDict& options)
       : delay_ms_(options.GetOrDefault<int>("delay", 0)),
         seed_(options.GetOrDefault<int>("seed", 0)),
-        uniform_mode_(options.GetOrDefault<bool>("uniform", false)) {}
+        uniform_mode_(options.GetOrDefault<bool>("uniform", false)),
+        capabilities_{
+            static_cast<pblczero::NetworkFormat::InputFormat>(
+                options.GetOrDefault<int>(
+                    "input_mode",
+                    pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)),
+            pblczero::NetworkFormat::MOVES_LEFT_NONE} {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_,
                                                       uniform_mode_);
+  }
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
   }
 
  private:
   int delay_ms_ = 0;
   int seed_ = 0;
   bool uniform_mode_ = false;
+  NetworkCapabilities capabilities_{
+      pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+      pblczero::NetworkFormat::MOVES_LEFT_NONE};
 };
 }  // namespace
 
-std::unique_ptr<Network> MakeRandomNetwork(const WeightsFile& /*weights*/,
-                                           const OptionsDict& options) {
+std::unique_ptr<Network> MakeRandomNetwork(
+    const std::optional<WeightsFile>& /*weights*/, const OptionsDict& options) {
   return std::make_unique<RandomNetwork>(options);
 }
 
-REGISTER_NETWORK("random", MakeRandomNetwork, -900)
+REGISTER_NETWORK("random", MakeRandomNetwork, 0)
 
 }  // namespace lczero

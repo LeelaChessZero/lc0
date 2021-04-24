@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+
 #include "utils/weights_adapter.h"
 
 namespace lczero {
@@ -37,7 +38,12 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip1_val_w(LayerAdapter(weights.ip1_val_w()).as_vector()),
       ip1_val_b(LayerAdapter(weights.ip1_val_b()).as_vector()),
       ip2_val_w(LayerAdapter(weights.ip2_val_w()).as_vector()),
-      ip2_val_b(LayerAdapter(weights.ip2_val_b()).as_vector()) {
+      ip2_val_b(LayerAdapter(weights.ip2_val_b()).as_vector()),
+      moves_left(weights.moves_left()),
+      ip1_mov_w(LayerAdapter(weights.ip1_mov_w()).as_vector()),
+      ip1_mov_b(LayerAdapter(weights.ip1_mov_b()).as_vector()),
+      ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
+      ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
