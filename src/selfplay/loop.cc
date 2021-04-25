@@ -1285,7 +1285,7 @@ void RescoreLoop::RunLoop() {
   ProcessFileFlags flags;
   flags.delete_files = options_.GetOptionsDict().Get<bool>(kDeleteFilesId);
   flags.nnue_best_score = options_.GetOptionsDict().Get<bool>(kNnueBestScoreId);
-  flags.nnue_best_move = options_.GetOptionsDict().Get<bool>(kNnueBestScoreId);
+  flags.nnue_best_move = options_.GetOptionsDict().Get<bool>(kNnueBestMoveId);
   if (threads > 1) {
     std::vector<std::thread> threads_;
     int offset = 0;
