@@ -55,7 +55,7 @@ const OptionId kPolicySubsDirId{"policy-substitutions", "",
                                 "replace policy for some of the data."};
 const OptionId kOutputDirId{"output", "", "Directory to write rescored files."};
 const OptionId kThreadsId{"threads", "",
-                          "Number of concurrent threads to rescore with."};
+                          "Number of concurrent threads to rescore with.", 't'};
 const OptionId kTempId{"temperature", "",
                        "Additional temperature to apply to policy target."};
 const OptionId kDistributionOffsetId{
