@@ -211,7 +211,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
 
-      for (auto edge : node->Edges()) {
+      for (auto& edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }
@@ -251,7 +251,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             (best_eval.wl == 0) ? GameResult::DRAW : GameResult::BLACK_WON;
         auto upper = best;
         for (const auto& edge : node->Edges()) {
-          upper = std::max(-edge.GetBounds().first, upper);
+          upper = std::max(edge.GetBounds().second, upper);
         }
         if (best < upper) {
           best_is_proof = false;

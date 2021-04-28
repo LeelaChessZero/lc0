@@ -652,7 +652,7 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Promotion.
-  if (move.promotion() != Move::Promotion::None) {
+  if (to_row == RANK_8 && pawns_.get(from)) {
     switch (move.promotion()) {
       case Move::Promotion::Rook:
         rooks_.set(to);
