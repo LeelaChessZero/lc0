@@ -66,6 +66,10 @@ class Position {
   const ChessBoard& GetBoard() const { return us_board_; }
   // Gets board from the point of view of opponent.
   const ChessBoard& GetThemBoard() const { return them_board_; }
+  // Gets board from the point of view of the white player.
+  const ChessBoard& GetWhiteBoard() const {
+    return us_board_.flipped() ? them_board_ : us_board_;
+  };
 
   std::string DebugString() const;
 
@@ -85,6 +89,9 @@ class Position {
   int ply_count_ = 0;
 };
 
+// GetFen returns a FEN notation for the position.
+std::string GetFen(const Position& pos);
+
 // These are ordered so max() prefers the best result.
 enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
 GameResult operator-(const GameResult& res);
@@ -93,6 +100,10 @@ class PositionHistory {
  public:
   PositionHistory() = default;
   PositionHistory(const PositionHistory& other) = default;
+  PositionHistory(PositionHistory&& other) = default;
+
+  PositionHistory& operator=(const PositionHistory& other) = default;
+  PositionHistory& operator=(PositionHistory&& other) = default;  
 
   // Returns first position of the game (or fen from which it was initialized).
   const Position& Starting() const { return positions_.front(); }
@@ -107,6 +118,10 @@ class PositionHistory {
   void Trim(int size) {
     positions_.erase(positions_.begin() + size, positions_.end());
   }
+
+  // Can be used to reduce allocation cost while performing a sequence of moves
+  // in succession.
+  void Reserve(int size) { positions_.reserve(size); }
 
   // Number of positions in history.
   int GetLength() const { return positions_.size(); }
