@@ -42,7 +42,7 @@
 #include <omp.h>
 
 namespace lczero {
-using namespace dnnl_backend;
+using namespace onednn_backend;
 
 static constexpr int kNumOutputPolicy = 1858;
 
@@ -81,12 +81,12 @@ struct InputsOutputs {
   float* op_moves_left_mem_;
 };
 
-class DnnlNetwork;
+class OnednnNetwork;
 
-class DnnlNetworkComputation : public NetworkComputation {
+class OnednnNetworkComputation : public NetworkComputation {
  public:
-  DnnlNetworkComputation(DnnlNetwork* network, bool wdl, bool moves_left);
-  ~DnnlNetworkComputation();
+  OnednnNetworkComputation(OnednnNetwork* network, bool wdl, bool moves_left);
+  ~OnednnNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
     const auto iter_mask =
@@ -145,12 +145,12 @@ class DnnlNetworkComputation : public NetworkComputation {
   bool wdl_;
   bool moves_left_;
 
-  DnnlNetwork* network_;
+  OnednnNetwork* network_;
 };
 
-class DnnlNetwork : public Network {
+class OnednnNetwork : public Network {
  public:
-  DnnlNetwork(const WeightsFile& file, const OptionsDict& options)
+  OnednnNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().moves_left()} {
     LegacyWeights weights(file.weights());
@@ -659,7 +659,7 @@ class DnnlNetwork : public Network {
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<DnnlNetworkComputation>(this, wdl_, moves_left_);
+    return std::make_unique<OnednnNetworkComputation>(this, wdl_, moves_left_);
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
@@ -716,25 +716,25 @@ class DnnlNetwork : public Network {
   dnnl::reorder mov_reorder_;
 };
 
-DnnlNetworkComputation::DnnlNetworkComputation(DnnlNetwork* network, bool wdl,
-                                               bool moves_left)
+OnednnNetworkComputation::OnednnNetworkComputation(OnednnNetwork* network,
+                                                   bool wdl, bool moves_left)
     : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
   inputs_outputs_ = network_->GetInputsOutputs();
 }
 
-DnnlNetworkComputation::~DnnlNetworkComputation() {
+OnednnNetworkComputation::~OnednnNetworkComputation() {
   network_->ReleaseInputsOutputs(std::move(inputs_outputs_));
 }
 
-void DnnlNetworkComputation::ComputeBlocking() {
+void OnednnNetworkComputation::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
-std::unique_ptr<Network> MakeDnnlNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
+                                           const OptionsDict& options) {
   if (!w) {
-    throw Exception("The dnnl backend requires a network file.");
+    throw Exception("The oneDNN backend requires a network file.");
   }
   const WeightsFile& weights = *w;
   if (weights.format().network_format().network() !=
@@ -744,7 +744,7 @@ std::unique_ptr<Network> MakeDnnlNetwork(const std::optional<WeightsFile>& w,
     throw Exception(
         "Network format " +
         std::to_string(weights.format().network_format().network()) +
-        " is not supported by DNNL backend.");
+        " is not supported by the oneDNN backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
@@ -752,7 +752,7 @@ std::unique_ptr<Network> MakeDnnlNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::POLICY_CONVOLUTION) {
     throw Exception("Policy format " +
                     std::to_string(weights.format().network_format().policy()) +
-                    " is not supported by DNNL backend.");
+                    " is not supported by the oneDNN backend.");
   }
   if (weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_CLASSICAL &&
@@ -760,7 +760,7 @@ std::unique_ptr<Network> MakeDnnlNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
                     std::to_string(weights.format().network_format().value()) +
-                    " is not supported by DNNL backend.");
+                    " is not supported by the oneDNN backend.");
   }
   if (weights.format().network_format().moves_left() !=
           pblczero::NetworkFormat::MOVES_LEFT_NONE &&
@@ -769,11 +769,11 @@ std::unique_ptr<Network> MakeDnnlNetwork(const std::optional<WeightsFile>& w,
     throw Exception(
         "Movest left head format " +
         std::to_string(weights.format().network_format().moves_left()) +
-        " is not supported by DNNL backend.");
+        " is not supported by the oneDNN backend.");
   }
-  return std::make_unique<DnnlNetwork>(weights, options);
+  return std::make_unique<OnednnNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("dnnl", MakeDnnlNetwork, 110)
+REGISTER_NETWORK("onednn", MakeOnednnNetwork, 110)
 
 }  // namespace lczero

@@ -489,12 +489,12 @@ if get_option('build_backends')
     has_backends = true
   endif
 
-  if get_option('dnnl') and dnnl_lib.found()
+  if get_option('onednn') and dnnl_lib.found()
     includes += include_directories(get_option('dnnl_dir') + '/include')
     deps += [ dnnl_lib, dependency('openmp', required:true) ]
     files += [
-      'src/neural/dnnl/network_dnnl.cc',
-      'src/neural/dnnl/layers.cc',
+      'src/neural/onednn/network_onednn.cc',
+      'src/neural/onednn/layers.cc',
     ]
     has_backends = true
   endif

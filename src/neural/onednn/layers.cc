@@ -32,7 +32,7 @@
 
 namespace lczero {
 
-namespace dnnl_backend {
+namespace onednn_backend {
 
 BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip)
     : input_(ip), C(c), H(h), W(w) {
@@ -437,5 +437,5 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                        {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 }
 
-}  // namespace dnnl_backend
+}  // namespace onednn_backend
 }  // namespace lczero
