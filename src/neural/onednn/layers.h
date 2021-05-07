@@ -46,6 +46,7 @@ class BaseLayer {
   virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const { return sizeof(float) * N * C * H * W; }
   void SetDataType(dnnl::memory::data_type type) { data_type_ = type; }
+  void SetConvolutionType(dnnl::algorithm type) { convolution_type_ = type; }
   virtual void Eval(int N, dnnl::memory& output, dnnl::memory& input,
                     dnnl::engine& eng, dnnl::stream& stream) = 0;
 
@@ -56,6 +57,7 @@ class BaseLayer {
   int H;
   int W;
   dnnl::memory::data_type data_type_;
+  dnnl::algorithm convolution_type_;
 };
 
 class ConvLayer : public BaseLayer {

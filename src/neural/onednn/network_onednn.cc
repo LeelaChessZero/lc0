@@ -188,6 +188,14 @@ class OnednnNetwork : public Network {
         data_type = dnnl::memory::data_type::f16;
       }
     }
+    auto convolution_type = dnnl::algorithm::convolution_auto;
+    if (!options.IsDefault<bool>("winograd")) {
+      if (options.Get<bool>("winograd")) {
+        convolution_type = dnnl::algorithm::convolution_winograd;
+      } else {
+        convolution_type = dnnl::algorithm::convolution_direct;
+      }
+    }
 
     // Default layout is nchw.
     const int kNumInputPlanes = kInputPlanes;
@@ -210,6 +218,7 @@ class OnednnNetwork : public Network {
                                                    3, kNumInputPlanes, true);
       // Set the data type first, the following layers will pick it up.
       inputConv->SetDataType(data_type);
+      inputConv->SetConvolutionType(convolution_type);
       auto w_md = dnnl::memory::desc({numFilters_, kNumInputPlanes, 3, 3},
                                      dnnl::memory::data_type::f32,
                                      dnnl::memory::format_tag::oihw);

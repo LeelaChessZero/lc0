@@ -38,8 +38,10 @@ BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip)
     : input_(ip), C(c), H(h), W(w) {
   if (ip) {
     data_type_ = ip->data_type_;
+    convolution_type_ = ip->convolution_type_;
   } else {
     data_type_ = dnnl::memory::data_type::undef;
+    convolution_type_ = dnnl::algorithm::convolution_auto;
   }
 }
 
@@ -80,7 +82,9 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 
     const int padding = filter_size_ / 2;
     auto conv_d = dnnl::convolution_forward::desc(
-        dnnl::prop_kind::forward_inference, dnnl::algorithm::convolution_auto,
+        dnnl::prop_kind::forward_inference,
+        filter_size_ == 3 ? convolution_type_
+                          : dnnl::algorithm::convolution_auto,
         t_in_md, t_filter_md, bias_mem.get_desc(), t_out_md, {1, 1},
         {padding, padding}, {padding, padding});
     dnnl::post_ops conv_ops;
