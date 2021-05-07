@@ -260,7 +260,8 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         pool_out_md, 0.f, 0.f);
     dnnl::primitive_attr sigmoid_attr;
     sigmoid_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    auto sigmoid_pd = dnnl::eltwise_forward::primitive_desc(sigmoid_d, eng);
+    auto sigmoid_pd =
+        dnnl::eltwise_forward::primitive_desc(sigmoid_d, sigmoid_attr, eng);
     sigmoid_scratchpad_mem = dnnl::memory(sigmoid_pd.scratchpad_desc(), eng);
     sigmoid_ = dnnl::eltwise_forward(sigmoid_pd);
 
