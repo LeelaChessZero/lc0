@@ -270,6 +270,10 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                            pool_out_md, output.get_desc());
     dnnl::post_ops mul_ops;
     mul_ops.append_sum();
+    if (eng.get_kind() == dnnl::engine::kind::gpu) {
+      mul_ops.append_binary(dnnl::algorithm::binary_add, pool_out_md);
+      mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+    }
     dnnl::primitive_attr mul_attr;
     mul_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     mul_attr.set_post_ops(mul_ops);
@@ -277,18 +281,19 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     mul_scratchpad_mem = dnnl::memory(mul_pd.scratchpad_desc(), eng);
     mul_ = dnnl::binary(mul_pd);
 
-    auto add_d =
-        dnnl::binary::desc(dnnl::algorithm::binary_add, output.get_desc(),
-                           pool_out_md, output.get_desc());
-    dnnl::post_ops add_ops;
-    add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    dnnl::primitive_attr add_attr;
-    add_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    add_attr.set_post_ops(add_ops);
-    auto add_pd = dnnl::binary::primitive_desc(add_d, add_attr, eng);
-    add_scratchpad_mem = dnnl::memory(add_pd.scratchpad_desc(), eng);
-    add_ = dnnl::binary(add_pd);
-
+    if (eng.get_kind() != dnnl::engine::kind::gpu) {
+      auto add_d =
+          dnnl::binary::desc(dnnl::algorithm::binary_add, output.get_desc(),
+                             pool_out_md, output.get_desc());
+      dnnl::post_ops add_ops;
+      add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+      dnnl::primitive_attr add_attr;
+      add_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+      add_attr.set_post_ops(add_ops);
+      auto add_pd = dnnl::binary::primitive_desc(add_d, add_attr, eng);
+      add_scratchpad_mem = dnnl::memory(add_pd.scratchpad_desc(), eng);
+      add_ = dnnl::binary(add_pd);
+    }
     auto fc1_reorder_pd =
         dnnl::reorder::primitive_desc(eng, pool_out_md, eng, fc1_in_md);
     fc1_reorder_ = dnnl::reorder(fc1_reorder_pd);
@@ -342,19 +347,27 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                             {DNNL_ARG_DST, mul_in_mem},
                             {DNNL_ARG_SCRATCHPAD, sigmoid_scratchpad_mem}});
 
-  mul_.execute(stream, {{DNNL_ARG_SRC_0, input},
-                        {DNNL_ARG_SRC_1, mul_in_mem},
-                        {DNNL_ARG_DST, output},
-                        {DNNL_ARG_SCRATCHPAD, mul_scratchpad_mem}});
-
   dnnl::memory add_in_mem;
   add_in_mem = dnnl::memory(pool_out_md, eng);
   add_reorder_.execute(stream, fc2_out_mem, add_in_mem);
 
-  add_.execute(stream, {{DNNL_ARG_SRC_0, output},
-                        {DNNL_ARG_SRC_1, add_in_mem},
-                        {DNNL_ARG_DST, output},
-                        {DNNL_ARG_SCRATCHPAD, add_scratchpad_mem}});
+  if (eng.get_kind() == dnnl::engine::kind::gpu) {
+    mul_.execute(stream, {{DNNL_ARG_SRC_0, input},
+                          {DNNL_ARG_SRC_1, mul_in_mem},
+                          {DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1,
+                           add_in_mem},
+                          {DNNL_ARG_DST, output},
+                          {DNNL_ARG_SCRATCHPAD, mul_scratchpad_mem}});
+  } else {
+    mul_.execute(stream, {{DNNL_ARG_SRC_0, input},
+                          {DNNL_ARG_SRC_1, mul_in_mem},
+                          {DNNL_ARG_DST, output},
+                          {DNNL_ARG_SCRATCHPAD, mul_scratchpad_mem}});
+    add_.execute(stream, {{DNNL_ARG_SRC_0, output},
+                          {DNNL_ARG_SRC_1, add_in_mem},
+                          {DNNL_ARG_DST, output},
+                          {DNNL_ARG_SCRATCHPAD, add_scratchpad_mem}});
+  }
 }
 
 FCLayer::FCLayer(BaseLayer* ip, int C, int H, int W, bool relu, bool tanh)
