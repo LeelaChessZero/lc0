@@ -271,6 +271,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     dnnl::post_ops mul_ops;
     mul_ops.append_sum();
     if (eng.get_kind() == dnnl::engine::kind::gpu) {
+      // Using binary post-ops is a gain on gpu but a huge loss on cpu.
       mul_ops.append_binary(dnnl::algorithm::binary_add, pool_out_md);
       mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
     }
@@ -363,6 +364,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                           {DNNL_ARG_SRC_1, mul_in_mem},
                           {DNNL_ARG_DST, output},
                           {DNNL_ARG_SCRATCHPAD, mul_scratchpad_mem}});
+
     add_.execute(stream, {{DNNL_ARG_SRC_0, output},
                           {DNNL_ARG_SRC_1, add_in_mem},
                           {DNNL_ARG_DST, output},
