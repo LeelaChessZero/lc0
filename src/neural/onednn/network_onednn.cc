@@ -158,16 +158,6 @@ class OnednnNetwork : public Network {
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
-    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
-
-    batch_size_ = options.GetOrDefault<int>("batch", 32);
-    steps_ = options.GetOrDefault<int>("steps", 2);
-    if (batch_size_ <= 0) {
-      steps_ = 1;
-    } else if (steps_ > max_batch_size_ / batch_size_) {
-      steps_ = max_batch_size_ / batch_size_;
-    }
-
 #if DNNL_VERSION_MAJOR * 100 + DNNL_VERSION_MINOR >= 105
     dnnl::set_primitive_cache_capacity(
         options.GetOrDefault<int>("jit_cache", 1024));
@@ -187,13 +177,15 @@ class OnednnNetwork : public Network {
     eng_stream_ = dnnl::stream(eng_);
 
     auto data_type = dnnl::memory::data_type::f32;
-    if (options.GetOrDefault<bool>("fp16", false)) {
+    if (options.GetOrDefault<bool>(
+            "fp16", eng_.get_kind() == dnnl::engine::kind::gpu)) {
       if (eng_.get_kind() == dnnl::engine::kind::cpu) {
         data_type = dnnl::memory::data_type::bf16;
       } else {
         data_type = dnnl::memory::data_type::f16;
       }
     }
+
     auto convolution_type = dnnl::algorithm::convolution_auto;
     if (!options.IsDefault<bool>("winograd")) {
       if (options.Get<bool>("winograd")) {
@@ -201,6 +193,18 @@ class OnednnNetwork : public Network {
       } else {
         convolution_type = dnnl::algorithm::convolution_direct;
       }
+    }
+
+    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+
+    batch_size_ = options.GetOrDefault<int>(
+        "batch", data_type == dnnl::memory::data_type::f32 ? 32 : 64);
+
+    steps_ = options.GetOrDefault<int>("steps", 2);
+    if (batch_size_ <= 0) {
+      steps_ = 1;
+    } else if (steps_ > max_batch_size_ / batch_size_) {
+      steps_ = max_batch_size_ / batch_size_;
     }
 
     // Default layout is nchw.
