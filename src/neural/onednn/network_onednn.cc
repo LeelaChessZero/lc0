@@ -189,7 +189,11 @@ class OnednnNetwork : public Network {
     auto convolution_type = dnnl::algorithm::convolution_auto;
     if (!options.IsDefault<bool>("winograd")) {
       if (options.Get<bool>("winograd")) {
-        convolution_type = dnnl::algorithm::convolution_winograd;
+        if (eng_.get_kind() == dnnl::engine::kind::cpu) {
+          convolution_type = dnnl::algorithm::convolution_winograd;
+        } else {
+          CERR << "Winograd convolution not supported on GPU.";
+        }
       } else {
         convolution_type = dnnl::algorithm::convolution_direct;
       }
