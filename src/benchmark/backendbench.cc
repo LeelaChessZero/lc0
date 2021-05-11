@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2020-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -44,6 +44,8 @@ const OptionId kStartBatchSizeId{"start-batch-size", "",
                                  "Start benchmark from this batch size."};
 const OptionId kMaxBatchSizeId{"max-batch-size", "",
                                "Maximum batch size to benchmark."};
+const OptionId kBatchStepId{"batch-step", "",
+                            "Step of batch size in benchmark."};
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
@@ -77,6 +79,7 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kBatchesId, 1, 999999999) = 100;
   options.Add<IntOption>(kStartBatchSizeId, 1, 1024) = 1;
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
+  options.Add<IntOption>(kBatchStepId, 1, 256) = 1;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
   options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.15f;
@@ -97,7 +100,8 @@ void BackendBenchmark::Run() {
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
     for (int i = option_dict.Get<int>(kStartBatchSizeId);
-         i <= option_dict.Get<int>(kMaxBatchSizeId); i++) {
+         i <= option_dict.Get<int>(kMaxBatchSizeId);
+         i += option_dict.Get<int>(kBatchStepId)) {
       const auto start = std::chrono::steady_clock::now();
       // TODO: support threads not equal to 1 to be able to more sensibly test
       // multiplexing backend.
