@@ -93,6 +93,14 @@ void BackendBenchmark::Run() {
 
     NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
+
+    // Do any backend initialization outside the loop.
+    auto warmup = network->NewComputation();
+    warmup->AddInput(EncodePositionForNN(
+        network->GetCapabilities().input_format, tree.GetPositionHistory(), 8,
+        FillEmptyHistory::ALWAYS, nullptr));
+    warmup->ComputeBlocking();
+
     const int batches = option_dict.Get<int>(kBatchesId);
 
     int best = 1;
