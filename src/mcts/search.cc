@@ -1125,8 +1125,8 @@ void SearchWorker::ExecuteOneIteration() {
       }
       auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
       if (nps > params_.GetNpsLimit()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
         search_->MaybeOutputInfo();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
       } else {
         break;
       }
