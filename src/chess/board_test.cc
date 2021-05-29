@@ -1,17 +1,15 @@
+  
 /*
   This file is part of Leela Chess Zero.
   Copyright (C) 2018-2019 The LCZero Authors
-
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
-
   Leela Chess is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
@@ -62,7 +60,7 @@ TEST(ChessBoard, IllegalFirstRankPawns) {
     EXPECT_EQ(err.what(), std::string("pawns at the first/eighth rank are forbidden."));
   }
 }
-  
+
 TEST(ChessBoard, PseudolegalMovesStartingPos) {
   ChessBoard board;
   board.SetFromFen(ChessBoard::kStartposFen);
@@ -143,7 +141,6 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
 /* TEST(ChessBoard, MoveGenStartingPos) {
   ChessBoard board;
   board.SetFromFen(ChessBoard::kStartposFen);
-
   EXPECT_EQ(Perft(board, 0), 1);
   EXPECT_EQ(Perft(board, 1), 20);
   EXPECT_EQ(Perft(board, 2), 400);
@@ -2267,15 +2264,8 @@ void TestInvalid(std::string fen) {
     SUCCEED();
   }
 }
-
-// Default promotion to knight was leaving an en-passant flag set.
-TEST(ChessBoard, InvalidEnPassantFromKnightPromotion) {
-  ChessBoard board;
-  board.SetFromFen("Q3b3/2P2pnk/3R3p/p7/1pp1p3/PnP1P2P/2B2PP1/5RK1 w - - 1 31");
-  board.ApplyMove(Move("c7c8"));
-  EXPECT_TRUE(board.en_passant().empty());
-}
 }  // namespace
+
 
 TEST(ChessBoard, InvalidFEN) {
   TestInvalid("rnbqkbnr/ppppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -2283,6 +2273,14 @@ TEST(ChessBoard, InvalidFEN) {
   TestInvalid("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR g KQkq - 0 1");
   TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq i6 0 3");
   TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq A6 0 3");
+}
+
+// Default promotion to knight was leaving an en-passant flag set.
+TEST(ChessBoard, InvalidEnPassantFromKnightPromotion) {
+  ChessBoard board;
+  board.SetFromFen("Q3b3/2P2pnk/3R3p/p7/1pp1p3/PnP1P2P/2B2PP1/5RK1 w - - 1 31");
+  board.ApplyMove(Move("c7c8"));
+  EXPECT_TRUE(board.en_passant().empty());
 }
 
 }  // namespace lczero
