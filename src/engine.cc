@@ -85,7 +85,9 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
-    : options_(options), uci_responder_(std::move(uci_responder)) {}
+    : options_(options),
+      uci_responder_(std::move(uci_responder)),
+      current_position_{ChessBoard::kStartposFen, {}} {}
 
 void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -162,7 +164,7 @@ void EngineController::NewGame() {
   search_.reset();
   tree_.reset();
   CreateFreshTimeManager();
-  current_position_.reset();
+  current_position_ = {ChessBoard::kStartposFen, {}};
   UpdateFromUciOptions();
 }
 
@@ -174,6 +176,21 @@ void EngineController::SetPosition(const std::string& fen,
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
+}
+
+Position EngineController::ApplyPositionMoves() {
+  ChessBoard board;
+  int no_capture_ply;
+  int game_move;
+  board.SetFromFen(current_position_.fen, &no_capture_ply, &game_move);
+  int game_ply = 2 * game_move - (board.flipped() ? 1 : 2);
+  Position pos(board, no_capture_ply, game_ply);
+  for (std::string move_str: current_position_.moves) {
+    Move move(move_str);
+    if (pos.IsBlackToMove()) move.Mirror();
+    pos = Position(pos, move);
+  }
+  return pos;
 }
 
 void EngineController::SetupPosition(
@@ -244,19 +261,15 @@ void EngineController::Go(const GoParams& params) {
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.
-  if (current_position_) {
-    if (params.ponder && !current_position_->moves.empty()) {
-      std::vector<std::string> moves(current_position_->moves);
-      std::string ponder_move = moves.back();
-      moves.pop_back();
-      SetupPosition(current_position_->fen, moves);
-      responder = std::make_unique<PonderResponseTransformer>(
-          std::move(responder), ponder_move);
-    } else {
-      SetupPosition(current_position_->fen, current_position_->moves);
-    }
-  } else if (!tree_) {
-    SetupPosition(ChessBoard::kStartposFen, {});
+  if (params.ponder && !current_position_.moves.empty()) {
+    std::vector<std::string> moves(current_position_.moves);
+    std::string ponder_move = moves.back();
+    moves.pop_back();
+    SetupPosition(current_position_.fen, moves);
+    responder = std::make_unique<PonderResponseTransformer>(
+        std::move(responder), ponder_move);
+  } else {
+    SetupPosition(current_position_.fen, current_position_.moves);
   }
 
   if (!options_.Get<bool>(kUciChess960)) {
@@ -340,10 +353,16 @@ void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
   std::string fen = position;
-  if (fen.empty()) fen = ChessBoard::kStartposFen;
+  if (fen.empty()) {
+    fen = ChessBoard::kStartposFen;
+  }
   engine_.SetPosition(fen, moves);
 }
 
+void EngineLoop::CmdFen() {
+  std::string fen = GetFen(engine_.ApplyPositionMoves());
+  return SendResponse(fen);
+}
 void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
