@@ -597,25 +597,45 @@ template void PolicyMap<half>(int N, half* output, const half* input,
 template void FilterTransform<float>(int N, int C, float* transformedFilter,
                                      const float* filter);
 
-template void InputTransform<float>(int N, int C, float* transformed_input,
-                                    const float* input);
+template void InputTransform<float, true>(int N, int C,
+                                          float* transformed_input,
+                                          const float* input);
 
-template void OutputTransform<float, true, true, true, true>(
+template void InputTransform<float, false>(int N, int C,
+                                           float* transformed_input,
+                                           const float* input);
+
+template void OutputTransform<float, true, true, true, true, false, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2);
 
-template void OutputTransform<float, false, true, true, false>(
+template void OutputTransform<float, false, true, true, true, false, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2);
 
-template void OutputTransform<float, false, true, true, true>(
+template void OutputTransform<float, true, true, true, true, true, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2);
 
-template void OutputTransform<float, false, false, true, false>(
+template void OutputTransform<float, false, true, true, true, true, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputTransform<float, false, true, true, false, false, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputTransform<float, false, true, true, false, false, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2);
+
+template void OutputTransform<float, false, false, true, false, false, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2);

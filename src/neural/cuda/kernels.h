@@ -87,10 +87,11 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
 template <typename T>
 void FilterTransform(int N, int C, T* transformedFilter, const T* filter);
 
-template <typename T>
+template <typename T, bool nhcw>
 void InputTransform(int N, int C, T* transformedInput, const T* input);
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
+          bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2);

@@ -126,11 +126,13 @@ __global__ void filterTransform_kernel(int K, int C, int elements,
 }
 
 
+#define INDEX_NCHW(n, c, h, w) ((n)*C * 8 * 8 + (c)*8 * 8 + (h)*8 + w)
+#define INDEX_NHCW(n, c, h, w) ((n)*C * 8 * 8 + (h)*C * 8 + (c)*8 + w)
+
 // index in intermediate/temp tensor
 // W, H == 6 here! (6x6 transformed blocks)
 // N also includes part of dimension (2x2)
 #define GemmN (N * 4)
-#define INDEX_NCHW(n, c, h, w) ((n)*C * 8 * 8 + (c)*8 * 8 + (h)*8 + w)
 #define TEMP_INDEX_HWNC(h, w, n, c) \
   ((h)*6 * GemmN * C + (w)*GemmN * C + (n)*C + c)
 
@@ -138,7 +140,7 @@ __global__ void filterTransform_kernel(int K, int C, int elements,
 // 'N' blocks
 // every thread transforms an entire board/plane (8x8 elements)
 // - producing 4 x 6x6 elements
-template <typename T>
+template <typename T, bool nhcw>
 __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
   int c = threadIdx.x;
   int n = blockIdx.x;
@@ -150,9 +152,15 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
 // read the board (a row at a time for fp16)
 #pragma unroll
   for (int y = 0; y < 8; y++) {
-    *((uint4*)(&board[y][0])) = *((uint4*)(&input[INDEX_NCHW(n, c, y, 0)]));
-    if (!fp16)
-      *((uint4*)(&board[y][4])) = *((uint4*)(&input[INDEX_NCHW(n, c, y, 4)]));
+    if (nhcw) {
+      *((uint4*)(&board[y][0])) = *((uint4*)(&input[INDEX_NHCW(n, c, y, 0)]));
+      if (!fp16)
+        *((uint4*)(&board[y][4])) = *((uint4*)(&input[INDEX_NHCW(n, c, y, 4)]));
+    } else {
+      *((uint4*)(&board[y][0])) = *((uint4*)(&input[INDEX_NCHW(n, c, y, 0)]));
+      if (!fp16)
+        *((uint4*)(&board[y][4])) = *((uint4*)(&input[INDEX_NCHW(n, c, y, 4)]));
+    }
   }
 
   // top-left
@@ -240,7 +248,8 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip, 
+          bool skipInput_nhcw, bool output_nhcw>
 __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
                                        const T* bias, const T* w1, const T* b1,
@@ -329,9 +338,15 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     // residual add
     if (use_skip) {
       T skipInp[8];
-      *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 0)]));
-      if (!fp16)
-        *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 4)]));
+      if (skipInput_nhcw) {
+        *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 0)]));
+        if (!fp16)
+          *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 4)]));
+      } else {
+        *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 0)]));
+        if (!fp16)
+          *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 4)]));
+      }
 #pragma unroll
       for (int w = 0; w < 8; w++) board[h][w] += skipInp[w];
     }
@@ -344,9 +359,15 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     }
 
     // Write to output (use 128 bit writes to store one row a time)
-    *((uint4*)(&output[INDEX_NCHW(n, k, h, 0)])) = *((uint4*)&board[h][0]);
-    if (!fp16)
-      *((uint4*)(&output[INDEX_NCHW(n, k, h, 4)])) = *((uint4*)&board[h][4]);
+    if (output_nhcw) {
+      *((uint4*)(&output[INDEX_NHCW(n, k, h, 0)])) = *((uint4*)&board[h][0]);
+      if (!fp16)
+        *((uint4*)(&output[INDEX_NHCW(n, k, h, 4)])) = *((uint4*)&board[h][4]);
+    } else {
+      *((uint4*)(&output[INDEX_NCHW(n, k, h, 0)])) = *((uint4*)&board[h][0]);
+      if (!fp16)
+        *((uint4*)(&output[INDEX_NCHW(n, k, h, 4)])) = *((uint4*)&board[h][4]);
+    }
   }
 }
 
@@ -357,7 +378,7 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
 template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
-__global__ 
+__global__ __launch_bounds__(384, 1)
 void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* output,
                                                               const T* input, const T* skip,
                                                               const T* bias, const T* w1, const T* b1,
@@ -446,9 +467,9 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
     // residual add
     if (use_skip) {
       T skipInp[8];
-      *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 0)]));
+      *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 0)]));
       if (!fp16)
-        *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NCHW(n, k, h, 4)]));
+        *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 4)]));
 #pragma unroll
       for (int w = 0; w < 8; w++) board[h][w] += skipInp[w];
     }
@@ -464,9 +485,9 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
     if (use_skip)
     {
       // Write to skip (use 128 bit writes to store one row a time)
-      *((uint4*)(&skip[INDEX_NCHW(n, k, h, 0)])) = *((uint4*)&board[h][0]);
+      *((uint4*)(&skip[INDEX_NHCW(n, k, h, 0)])) = *((uint4*)&board[h][0]);
       if (!fp16)
-        *((uint4*)(&skip[INDEX_NCHW(n, k, h, 4)])) = *((uint4*)&board[h][4]);
+        *((uint4*)(&skip[INDEX_NHCW(n, k, h, 4)])) = *((uint4*)&board[h][4]);
     }
   }
 
@@ -563,20 +584,21 @@ void FilterTransform(int N, int C, T* transformedFilter, const T* filter) {
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T>
+template <typename T, bool nhcw>
 void InputTransform(int N, int C, T* transformed_input, const T* input) {
   // Each thread processes entire chess board (input 8x8 elements -> outputs
   // 2x2, 6x6 elements)
-  InputTransform_kernel<<<N, C>>>(N, C, input, transformed_input);
+  InputTransform_kernel<T, nhcw><<<N, C>>>(N, C, input, transformed_input);
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip, 
+          bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2) {
   // Each thread processes entire chess board
-  OutputTransform_kernel<T, use_se, relu, use_bias, use_skip>
+  OutputTransform_kernel<T, use_se, relu, use_bias, use_skip, skipInput_nhcw, output_nhcw>
       <<<N, C>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
   ReportCUDAErrors(cudaGetLastError());
 }
