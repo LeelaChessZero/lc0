@@ -381,13 +381,18 @@ __device__ __forceinline__ float warpReduce(float x)
     return x;
 }
 
+// max supported filter count for this fast path
+// TODO: extend it to cover bigger networks!
+// (We are limited by no of registers per thread)
+#define MAX_SUPPORTED_C 384
+
 // input is in transformed space (HWNC layout) --- output of GEMM
 // output is also in transformed space (HWNC layout) --- input to GEMM (for next layer)
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
 template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
-__global__ __launch_bounds__(384, 1)
+__global__ __launch_bounds__(MAX_SUPPORTED_C, 1)
 void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* output,
                                                               const T* input, const T* skip,
                                                               const T* bias, const T* w1, const T* b1,
@@ -444,7 +449,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
     }
 
   if (use_se) {
-    __shared__ float shared_data[384];
+    __shared__ float shared_data[MAX_SUPPORTED_C];
     float avg = S / 64;
     shared_data[k] = avg;
 
@@ -457,7 +462,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
     // As se_K << C, we want to loop over se_K instead of C
     // even if it means taking the sum across threads
 
-    __shared__ float shared_sums[384/32][384];  // per-warp sums
+    __shared__ float shared_sums[MAX_SUPPORTED_C/32][MAX_SUPPORTED_C];  // per-warp sums
 
     for (int i = 0; i < se_K; i++) {
       float val = shared_data[k] * float(readw1(k, i));
@@ -501,12 +506,6 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
 
     // residual add
     if (use_skip) {
-#if 0
-      T skipInp[8];
-      *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 0)]));
-      if (!fp16)
-        *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 4)]));
-#endif
 #pragma unroll
       for (int w = 0; w < 8; w++) board[h][w] += skipInp[h][w];
     }
