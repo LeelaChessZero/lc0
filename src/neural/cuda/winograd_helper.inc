@@ -371,6 +371,15 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
   }
 }
 
+// fast reduction for the warp
+__device__ __forceinline__ float warpReduce(float x)
+{
+    #pragma unroll
+    for(int mask = 16; mask > 0 ; mask >>= 1)
+        x += __shfl_xor_sync(0xFFFFFFFF, x, mask);
+
+    return x;
+}
 
 // input is in transformed space (HWNC layout) --- output of GEMM
 // output is also in transformed space (HWNC layout) --- input to GEMM (for next layer)
@@ -390,6 +399,14 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
 
   T board[8][8];
   T b = bias[k];
+
+  T skipInp[8][8];
+  #pragma unroll
+  for (int h = 0; h < 8; h++) {
+      *((uint4*)(&skipInp[h][0])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 0)]));
+      if (!fp16)
+        *((uint4*)(&skipInp[h][4])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 4)]));
+  }
 
 #pragma unroll
   for (int hStart = 0; hStart < 8; hStart += 4)
@@ -427,21 +444,39 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
     }
 
   if (use_se) {
-    __shared__ float shared_data[1024];
+    __shared__ float shared_data[384];
     float avg = S / 64;
     shared_data[k] = avg;
+
+    int lane = k & 0x1F;
+    int warp = k >> 5;
     __syncthreads();
 
     // First fully-connected layer for SE
-    if (k < se_K) {
+
+    // As se_K << C, we want to loop over se_K instead of C
+    // even if it means taking the sum across threads
+
+    __shared__ float shared_sums[384/32][384];  // per-warp sums
+
+    for (int i = 0; i < se_K; i++) {
+      float val = shared_data[k] * float(readw1(k, i));
+      val = warpReduce(val);
+      if (lane == 0)
+        shared_sums[warp][i] = val;
+    }
+    __syncthreads();
+    if (k < se_K) 
+    {
       S = 0;
-      for (int i = 0; i < C; i++) {
-        S += shared_data[i] * float(readw1(i, k));
-      }
+      for (int i=0;i<C/32;i++)
+        S += shared_sums[i][k];
+
       S += (float)b1[k];
       if (S < 0) S = 0;  // relu
       shared_data[k] = S;
     }
+
     __syncthreads();
 
     // Second fully-connected layer for SE
@@ -466,12 +501,14 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
 
     // residual add
     if (use_skip) {
+#if 0
       T skipInp[8];
       *((uint4*)(&skipInp[0])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 0)]));
       if (!fp16)
         *((uint4*)(&skipInp[4])) = *((uint4*)(&skip[INDEX_NHCW(n, k, h, 4)]));
+#endif
 #pragma unroll
-      for (int w = 0; w < 8; w++) board[h][w] += skipInp[w];
+      for (int w = 0; w < 8; w++) board[h][w] += skipInp[h][w];
     }
 
     // relu
