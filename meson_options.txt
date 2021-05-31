@@ -113,6 +113,11 @@ option('malloc',
        value: '',
        description: 'Use alternative memory allocator, e.g. tcmalloc/jemalloc')
 
+option('mimalloc_libdir',
+       type : 'string',
+       value: '',
+       description: 'Library directory for malloc=mimalloc')
+
 option('popcnt',
        type: 'boolean',
        value: true,
