@@ -116,7 +116,7 @@ option('malloc',
 option('mimalloc_libdir',
        type : 'string',
        value: '',
-       description: 'Library directory for malloc=mimallloc')
+       description: 'Library directory for malloc=mimalloc')
 
 option('popcnt',
        type: 'boolean',
