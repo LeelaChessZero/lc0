@@ -53,12 +53,8 @@ TEST(BoardSquare, BoardSquare) {
 
 TEST(ChessBoard, IllegalFirstRankPawns) {
   ChessBoard board;
-  try {
-    board.SetFromFen("nqrbkrnr/bnnbnbnn/8/8/8/8/NNNBPNBN/QNRPKPQQ w - - 0 1");
-    FAIL() << "expected pawns at the first/eighth rank are forbidden.";
-  } catch (std::out_of_range const &err) {
-    EXPECT_EQ(err.what(), std::string("pawns at the first/eighth rank are forbidden."));
-  }
+  EXPECT_THROW(board.SetFromFen("nqrbkrnr/bnnbnbnn/8/8/8/8/NNNBPNBN/QNRPKPQQ w - - 0 1");,
+               Exception);
 }
 
 TEST(ChessBoard, PseudolegalMovesStartingPos) {
