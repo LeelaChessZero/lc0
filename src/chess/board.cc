@@ -11,7 +11,7 @@
   GNU General Public License for more details.
   You should have received a copy of the GNU General Public License
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
-  Additional permission under GNU GPL version 3 section 7
+  Additional permission under GNU GPL version 3 section 7f
   If you modify this Program, or any covered work, by linking or
   combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
   Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
@@ -1026,7 +1026,7 @@ void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
       bishops_.set(row, col);
     } else if (c == 'P' || c == 'p') {
       if (row == 8 || row == 0)
-        throw std::out_of_range("pawns at the first/eighth rank are forbidden.");
+        throw Exception("pawns at the first/eighth rank are forbidden.");
       pawns_.set(row, col);
     } else if (c == 'N' || c == 'n') {
       // Do nothing
