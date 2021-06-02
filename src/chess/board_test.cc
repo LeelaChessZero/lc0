@@ -22,6 +22,8 @@
 
 #include "chess/bitboard.h"
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 TEST(BoardSquare, BoardSquare) {
