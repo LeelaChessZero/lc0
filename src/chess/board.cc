@@ -1030,8 +1030,9 @@ void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
       rooks_.set(row, col);
       bishops_.set(row, col);
     } else if (c == 'P' || c == 'p') {
-      if (row == 8 || row == 0)
-        throw Exception("pawns at the first/eighth rank are forbidden.");
+      if (row == 8 || row == 0) {
+        throw Exception("Bad fen string (pawn in first/last row): " + fen);
+      }
       pawns_.set(row, col);
     } else if (c == 'N' || c == 'n') {
       // Do nothing
