@@ -350,7 +350,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           wdl.data());
 
       for (size_t j = 0; j < batch_size; j++) {
-         std::vector<float> wdl_softmax(3);
+        std::vector<float> wdl_softmax(3);
         SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
 
         q_values_.emplace_back(wdl_softmax[0]);
