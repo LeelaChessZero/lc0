@@ -352,7 +352,7 @@ class SearchWorker {
 
     float GetMVal(int) const { return lock->m; }
 
-    float GetPVal(int, int move_id) const {
+    uint16_t GetPVal(int, int move_id) const {
       const auto& moves = lock->p;
 
       int total_count = 0;

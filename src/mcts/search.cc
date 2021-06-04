@@ -2208,11 +2208,11 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
       moves.emplace_back(edge.GetMove().as_nn_index(transform));
     }
   } else {
-    // Cache pseudolegal moves. A bit of a waste, but faster.
-    const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
-    moves.reserve(pseudolegal_moves.size());
-    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
+    // Cache legal moves.
+    const auto& legal_moves =
+        history_.Last().GetBoard().GenerateLegalMoves();
+    moves.reserve(legal_moves.size());
+    for (auto iter = legal_moves.begin(), end = legal_moves.end();
          iter != end; ++iter) {
       moves.emplace_back(iter->as_nn_index(transform));
     }
@@ -2343,7 +2343,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+  computation_->ComputeBlocking(params_.GetPolicySoftmaxTemp());
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2375,34 +2377,12 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->v = -computation.GetQVal(idx_in_computation);
   node_to_process->d = computation.GetDVal(idx_in_computation);
   node_to_process->m = computation.GetMVal(idx_in_computation);
-  // ...and secondly, the policy data.
-  // Calculate maximum first.
-  float max_p = -std::numeric_limits<float>::infinity();
-  // Intermediate array to store values when processing policy.
-  // There are never more than 256 valid legal moves in any legal position.
-  std::array<float, 256> intermediate;
-  int counter = 0;
+  // ...and secondly, the policy data. The cache returns compressed values after
+  // softmax.
   for (auto& edge : node->Edges()) {
-    float p = computation.GetPVal(
+    edge.edge()->SetPCompressed(computation.GetPVal(
         idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform));
-    intermediate[counter++] = p;
-    max_p = std::max(max_p, p);
-  }
-  float total = 0.0;
-  for (int i = 0; i < counter; i++) {
-    // Perform softmax and take into account policy softmax temperature T.
-    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    float p =
-        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
-    intermediate[i] = p;
-    total += p;
-  }
-  counter = 0;
-  // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  for (auto& edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
+        edge.GetMove().as_nn_index(node_to_process->probability_transform)));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {

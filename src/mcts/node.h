@@ -94,6 +94,7 @@ class Edge {
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
   float GetP() const;
   void SetP(float val);
+  void SetPCompressed(uint16_t p) { p_ = p; }
 
   // Debug information about the edge.
   std::string DebugString() const;

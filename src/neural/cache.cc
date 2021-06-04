@@ -25,8 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "neural/cache.h"
+
+#include <array>
 #include <cassert>
 #include <iostream>
+
+#include "utils/fastmath.h"
 
 namespace lczero {
 CachingComputation::CachingComputation(
@@ -77,22 +81,59 @@ void CachingComputation::PopLastInputHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::ComputeBlocking() {
+namespace {
+uint16_t CompressP(float p) {
+  assert(0.0f <= p && p <= 1.0f);
+  constexpr int32_t roundings = (1 << 11) - (3 << 28);
+  int32_t tmp;
+  std::memcpy(&tmp, &p, sizeof(float));
+  tmp += roundings;
+  return (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
+}
+
+}  // namespace
+
+void CachingComputation::ComputeBlocking(float softmax_temp) {
   if (parent_->GetBatchSize() == 0) return;
   parent_->ComputeBlocking();
 
   // Fill cache with data from NN.
-  for (const auto& item : batch_) {
+  for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
     auto req =
         std::make_unique<CachedNNRequest>(item.probabilities_to_cache.size());
     req->q = parent_->GetQVal(item.idx_in_parent);
     req->d = parent_->GetDVal(item.idx_in_parent);
     req->m = parent_->GetMVal(item.idx_in_parent);
-    int idx = 0;
+
+    // Calculate maximum first.
+    float max_p = -std::numeric_limits<float>::infinity();
+    // Intermediate array to store values when processing policy.
+    // There are never more than 256 valid legal moves in any legal position.
+    std::array<float, 256> intermediate;
+    item.values_to_cache.reserve(item.probabilities_to_cache.size());
+    int counter = 0;
     for (auto x : item.probabilities_to_cache) {
-      req->p[idx++] =
-          std::make_pair(x, parent_->GetPVal(item.idx_in_parent, x));
+      float p = parent_->GetPVal(item.idx_in_parent, x);
+      intermediate[counter++] = p;
+      max_p = std::max(max_p, p);
+    }
+    float total = 0.0;
+    for (int i = 0; i < counter; i++) {
+      // Perform softmax and take into account policy softmax temperature T.
+      // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
+      float p = FastExp((intermediate[i] - max_p) / softmax_temp);
+      intermediate[i] = p;
+      total += p;
+    }
+    counter = 0;
+    // Normalize P values to add up to 1.0.
+    const float scale = total > 0.0f ? 1.0f / total : 1.0f;
+    for (auto x : item.probabilities_to_cache) {
+      uint16_t p = CompressP(intermediate[counter] * scale);
+      req->p[counter] = std::make_pair(x, p);
+      item.values_to_cache[counter] = p;
+      counter++;
     }
     cache_->Insert(item.hash, std::move(req));
   }
@@ -116,13 +157,22 @@ float CachingComputation::GetMVal(int sample) const {
   return item.lock->m;
 }
 
-float CachingComputation::GetPVal(int sample, int move_id) const {
+uint16_t CachingComputation::GetPVal(int sample, int move_id) const {
   auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0)
-    return parent_->GetPVal(item.idx_in_parent, move_id);
-  const auto& moves = item.lock->p;
-
   int total_count = 0;
+  if (item.idx_in_parent >= 0) {
+    while (total_count < item.probabilities_to_cache.size()) {
+      if (item.last_idx == item.probabilities_to_cache.size())
+        item.last_idx = 0;
+      // Optimization: usually moves are stored in the same order as queried.
+      const auto& move = item.probabilities_to_cache[item.last_idx++];
+      if (move == move_id) return item.values_to_cache[item.last_idx - 1];
+      ++total_count;
+    }
+    assert(false);  // Move not found.
+    return 0;
+  }
+  const auto& moves = item.lock->p;
   while (total_count < moves.size()) {
     // Optimization: usually moves are stored in the same order as queried.
     const auto& move = moves[item.last_idx++];

@@ -34,7 +34,7 @@ namespace lczero {
 
 struct CachedNNRequest {
   CachedNNRequest(size_t size) : p(size) {}
-  typedef std::pair<uint16_t, float> IdxAndProb;
+  typedef std::pair<uint16_t, uint16_t> IdxAndProb;
   float q;
   float d;
   float m;
@@ -73,15 +73,15 @@ class CachingComputation {
   // from parent's batch.
   void PopLastInputHit();
   // Do the computation.
-  void ComputeBlocking();
+  void ComputeBlocking(float softmax_temp);
   // Returns Q value of @sample.
   float GetQVal(int sample) const;
   // Returns probability of draw if NN has WDL value head.
   float GetDVal(int sample) const;
   // Returns estimated remaining moves.
   float GetMVal(int sample) const;
-  // Returns P value @move_id of @sample.
-  float GetPVal(int sample, int move_id) const;
+  // Returns compressed P value @move_id of @sample.
+  uint16_t GetPVal(int sample, int move_id) const;
   // Pops last input from the computation. Only allowed for inputs which were
   // cached.
   void PopCacheHit();
@@ -95,6 +95,7 @@ class CachingComputation {
     NNCacheLock lock;
     int idx_in_parent = -1;
     std::vector<uint16_t> probabilities_to_cache;
+    std::vector<uint16_t> values_to_cache;
     mutable int last_idx = 0;
   };
 
