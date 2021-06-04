@@ -62,6 +62,13 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+
+const OptionId kValueRepairThresholdId{
+    "value-repair-threshold", "ValueRepairThreshold",
+    "Reduce temperature to zero when the absolute difference between Q of best "
+    "eval and Q of root is above this threshold. Since Q ranges from -1 to +1 "
+    "this threshold is a no-op at the default value 2.0."};
+
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -73,6 +80,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<FloatOption>(kValueRepairThresholdId, 0.0f, 2.0f) = 2.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -111,6 +119,10 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       syzygy_tb_ = nullptr;
     }
   }
+
+  // Value repair. This is supposed to be local per game.
+  bool ignore_temp=false;
+
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
@@ -207,7 +219,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     Eval played_eval = best_eval;
     Move move;
     while (true) {
-      move = search_->GetBestMove().first;
+      move = search_->GetBestMove(ignore_temp).first;
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
 
@@ -276,6 +288,25 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
           played_eval, orig_eval, best_is_proof, best_move, move));
+
+      // Value repair
+
+      // Unless we are not already in a game where this has triggered,
+      // check if position should trigger temp=0.
+
+      // This check depends on orig_eval.wl which is not available earlier,
+      // but it this means that the move selection (which is earlier)
+      // can have temperature. To fix that, move the whole block to
+      // come before move selection, But I didn't know the code well
+      // enough to judge if that would backfire.
+
+      if (!ignore_temp) {
+	float surprise=std::fabs(best_eval.wl - orig_eval.wl);
+	if (surprise > options_[0].uci_options->Get<float>(
+					  kValueRepairThresholdId)) {
+	  ignore_temp=true;
+	}
+      }
     }
     // Must reset the search before mutating the tree.
     search_.reset();
