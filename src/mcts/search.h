@@ -326,8 +326,7 @@ class SearchWorker {
     // Details that are filled in as we go.
     uint64_t hash;
     NNCacheLock lock;
-    std::vector<uint16_t> probabilities_to_cache;
-    InputPlanes input_planes;
+    PositionHistory history;
     mutable int last_idx = 0;
     bool ooo_completed = false;
 

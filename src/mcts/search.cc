@@ -1374,9 +1374,13 @@ void SearchWorker::GatherMinibatch2() {
         computation_->AddInputByHash(minibatch_[i].hash,
                                      std::move(minibatch_[i].lock));
       } else {
-        computation_->AddInput(minibatch_[i].hash,
-                               std::move(minibatch_[i].input_planes),
-                               std::move(minibatch_[i].probabilities_to_cache));
+        int transform;
+        computation_->AddInput(
+            minibatch_[i].hash,
+            search_->network_->GetCapabilities().input_format,
+            minibatch_[i].history, params_.GetHistoryFill(), minibatch_[i].node,
+            &transform);
+        minibatch_[i].probability_transform = transform;
       }
     }
 
@@ -1428,18 +1432,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.lock = NNCacheLock(search_->cache_, hash);
         picked_node.is_cache_hit = picked_node.lock;
         if (!picked_node.is_cache_hit) {
-          int transform;
-          picked_node.input_planes = EncodePositionForNN(
-              search_->network_->GetCapabilities().input_format, history, 8,
-              params_.GetHistoryFill(), &transform);
-          picked_node.probability_transform = transform;
-
-          std::vector<uint16_t>& moves = picked_node.probabilities_to_cache;
-          // Legal moves are known, use them.
-          moves.reserve(node->GetNumEdges());
-          for (const auto& edge : node->Edges()) {
-            moves.emplace_back(edge.GetMove().as_nn_index(transform));
-          }
+          picked_node.history = history;
         } else {
           picked_node.probability_transform = TransformForPosition(
               search_->network_->GetCapabilities().input_format, history);
