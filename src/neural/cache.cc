@@ -31,8 +31,13 @@
 
 namespace lczero {
 CachingComputation::CachingComputation(
-    std::unique_ptr<NetworkComputation> parent, NNCache* cache)
-    : parent_(std::move(parent)), cache_(cache) {}
+    std::unique_ptr<NetworkComputation> parent,
+    pblczero::NetworkFormat::InputFormat input_format,
+    lczero::FillEmptyHistory history_fill, NNCache* cache)
+    : parent_(std::move(parent)),
+      input_format_(input_format),
+      history_fill_(history_fill),
+      cache_(cache) {}
 
 int CachingComputation::GetCacheMisses() const {
   return parent_->GetBatchSize();
@@ -61,19 +66,17 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::AddInput(
-    uint64_t hash, pblczero::NetworkFormat::InputFormat input_format,
-    const PositionHistory& history, lczero::FillEmptyHistory history_fill,
-    const Node* node, int* transform_out) {
+void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
+                                  const Node* node, int* transform_out) {
   if (AddInputByHash(hash)) {
     if (transform_out) {
-      *transform_out = TransformForPosition(input_format, history);
+      *transform_out = TransformForPosition(input_format_, history);
     }
     return;
   }
   int transform;
   auto input =
-      EncodePositionForNN(input_format, history, 8, history_fill, &transform);
+      EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
   if (transform_out) *transform_out = transform;
   std::vector<uint16_t> moves;
   if (node && node->HasChildren()) {

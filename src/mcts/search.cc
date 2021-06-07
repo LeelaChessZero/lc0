@@ -1136,8 +1136,9 @@ void SearchWorker::ExecuteOneIteration() {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
-  computation_ = std::make_unique<CachingComputation>(std::move(computation),
-                                                      search_->cache_);
+  computation_ = std::make_unique<CachingComputation>(
+      std::move(computation), search_->network_->GetCapabilities().input_format,
+      params_.GetHistoryFill(), search_->cache_);
   computation_->Reserve(params_.GetMiniBatchSize());
   minibatch_.clear();
   minibatch_.reserve(2 * params_.GetMiniBatchSize());
@@ -1375,11 +1376,8 @@ void SearchWorker::GatherMinibatch2() {
                                      std::move(minibatch_[i].lock));
       } else {
         int transform;
-        computation_->AddInput(
-            minibatch_[i].hash,
-            search_->network_->GetCapabilities().input_format,
-            minibatch_[i].history, params_.GetHistoryFill(), minibatch_[i].node,
-            &transform);
+        computation_->AddInput(minibatch_[i].hash, minibatch_[i].history,
+                               minibatch_[i].node, &transform);
         minibatch_[i].probability_transform = transform;
       }
     }
@@ -2187,9 +2185,7 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
       return true;
     }
   }
-  computation_->AddInput(
-      hash, search_->network_->GetCapabilities().input_format, history_,
-      params_.GetHistoryFill(), node, transform_out);
+  computation_->AddInput(hash, history_, node, transform_out);
   return false;
 }
 
