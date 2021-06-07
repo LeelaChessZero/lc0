@@ -2379,10 +2379,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->m = computation.GetMVal(idx_in_computation);
   // ...and secondly, the policy data. The cache returns compressed values after
   // softmax.
+  int idx = 0;
   for (auto& edge : node->Edges()) {
-    edge.edge()->SetPCompressed(computation.GetPVal(
-        idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform)));
+    edge.edge()->SetPCompressed(computation.GetPVal(idx_in_computation, idx++));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {

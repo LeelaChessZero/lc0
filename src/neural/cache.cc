@@ -111,7 +111,6 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     // Intermediate array to store values when processing policy.
     // There are never more than 256 valid legal moves in any legal position.
     std::array<float, 256> intermediate;
-    item.values_to_cache.reserve(item.probabilities_to_cache.size());
     int counter = 0;
     for (auto x : item.probabilities_to_cache) {
       float p = parent_->GetPVal(item.idx_in_parent, x);
@@ -126,14 +125,12 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
       intermediate[i] = p;
       total += p;
     }
-    counter = 0;
     // Normalize P values to add up to 1.0.
     const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-    for (auto x : item.probabilities_to_cache) {
-      uint16_t p = CompressP(intermediate[counter] * scale);
-      req->p[counter] = std::make_pair(x, p);
-      item.values_to_cache[counter] = p;
-      counter++;
+    for (int ct = 0; ct < item.probabilities_to_cache.size(); ct++) {
+      uint16_t p = CompressP(intermediate[ct] * scale);
+      req->p[ct] = p;
+      item.probabilities_to_cache[ct] = p;
     }
     cache_->Insert(item.hash, std::move(req));
   }
@@ -157,31 +154,12 @@ float CachingComputation::GetMVal(int sample) const {
   return item.lock->m;
 }
 
-uint16_t CachingComputation::GetPVal(int sample, int move_id) const {
+uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
-  int total_count = 0;
   if (item.idx_in_parent >= 0) {
-    while (total_count < item.probabilities_to_cache.size()) {
-      if (item.last_idx == item.probabilities_to_cache.size())
-        item.last_idx = 0;
-      // Optimization: usually moves are stored in the same order as queried.
-      const auto& move = item.probabilities_to_cache[item.last_idx++];
-      if (move == move_id) return item.values_to_cache[item.last_idx - 1];
-      ++total_count;
-    }
-    assert(false);  // Move not found.
-    return 0;
+    return item.probabilities_to_cache[move_ct];
   }
-  const auto& moves = item.lock->p;
-  while (total_count < moves.size()) {
-    // Optimization: usually moves are stored in the same order as queried.
-    const auto& move = moves[item.last_idx++];
-    if (item.last_idx == moves.size()) item.last_idx = 0;
-    if (move.first == move_id) return move.second;
-    ++total_count;
-  }
-  assert(false);  // Move not found.
-  return 0;
+  return item.lock->p[move_ct];
 }
 
 }  // namespace lczero
