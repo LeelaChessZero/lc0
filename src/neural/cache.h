@@ -67,9 +67,8 @@ class CachingComputation {
   void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
   // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
-  // Returns the transform used in EncodePositionForNN.
-  void AddInput(uint64_t hash, const PositionHistory& history, const Node* node,
-                int* transform_out);
+  void AddInput(uint64_t hash, const PositionHistory& history,
+                const Node* node);
   // Undos last AddInput. If it was a cache miss, then it's actually not removed
   // from parent's batch.
   void PopLastInputHit();

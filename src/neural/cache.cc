@@ -71,17 +71,13 @@ void CachingComputation::PopCacheHit() {
 }
 
 void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
-                                  const Node* node, int* transform_out) {
+                                  const Node* node) {
   if (AddInputByHash(hash)) {
-    if (transform_out) {
-      *transform_out = TransformForPosition(input_format_, history);
-    }
     return;
   }
   int transform;
   auto input =
       EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
-  if (transform_out) *transform_out = transform;
   std::vector<uint16_t> moves;
   if (node && node->HasChildren()) {
     // Legal moves are known, use them.

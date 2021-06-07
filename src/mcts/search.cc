@@ -39,7 +39,6 @@
 
 #include "mcts/node.h"
 #include "neural/cache.h"
-#include "neural/encoder.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 
@@ -1186,9 +1185,7 @@ void SearchWorker::GatherMinibatch() {
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        int transform;
-        picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform);
-        picked_node.probability_transform = transform;
+        picked_node.is_cache_hit = AddNodeToComputation(node, true);
       }
     }
 
@@ -1375,10 +1372,8 @@ void SearchWorker::GatherMinibatch2() {
         computation_->AddInputByHash(minibatch_[i].hash,
                                      std::move(minibatch_[i].lock));
       } else {
-        int transform;
         computation_->AddInput(minibatch_[i].hash, minibatch_[i].history,
-                               minibatch_[i].node, &transform);
-        minibatch_[i].probability_transform = transform;
+                               minibatch_[i].node);
       }
     }
 
@@ -1431,9 +1426,6 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.is_cache_hit = picked_node.lock;
         if (!picked_node.is_cache_hit) {
           picked_node.history = history;
-        } else {
-          picked_node.probability_transform = TransformForPosition(
-              search_->network_->GetCapabilities().input_format, history);
         }
       }
     }
@@ -2164,28 +2156,19 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
-                                        int* transform_out) {
+bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
       return true;
     }
   } else {
     if (search_->cache_->ContainsKey(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
       return true;
     }
   }
-  computation_->AddInput(hash, history_, node, transform_out);
+  computation_->AddInput(hash, history_, node);
   return false;
 }
 
@@ -2226,7 +2209,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false, nullptr)) {
+    if (AddNodeToComputation(node, false)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
