@@ -586,8 +586,8 @@ V6TrainingData Node::GetV6TrainingData(
       float P = std::exp((*it - max_p) / temp);
       kld_sum += fracv * std::log(fracv / P);
       total += P;
-      it++;
     }
+    it++;
     result.probabilities[nn_idx] = fracv;
   }
   if (nneval) {
