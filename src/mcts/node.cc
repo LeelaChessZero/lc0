@@ -582,12 +582,14 @@ V6TrainingData Node::GetV6TrainingData(
   for (const auto& child : Edges()) {
     auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-    if (fracv > 0 && nneval) {
+    if (nneval) {
       float P = std::exp((*it - max_p) / temp);
-      kld_sum += fracv * std::log(fracv / P);
+      if (fracv > 0) {
+        kld_sum += fracv * std::log(fracv / P);
+      }
       total += P;
+      it++;
     }
-    it++;
     result.probabilities[nn_idx] = fracv;
   }
   if (nneval) {
