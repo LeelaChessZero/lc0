@@ -58,6 +58,7 @@ class BaseLayer {
   int W;
   dnnl::memory::data_type data_type_;
   dnnl::algorithm convolution_type_;
+  std::mutex lock_;
 };
 
 class ConvLayer : public BaseLayer {
