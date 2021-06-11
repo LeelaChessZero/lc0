@@ -677,7 +677,7 @@ PolicyMapLayer<DataType>::~PolicyMapLayer() {
 template <typename DataType>
 FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
     BaseLayer<DataType>* ip, int C, int H, int W, int Cin, bool relu, bool bias,
-    bool skip_add, bool se, int se_k, bool use_gemm_ex)
+    bool skip_add, bool se, int se_k, bool use_gemm_ex, bool op_nhcw)
     : BaseLayer<DataType>(C, H, W, ip, false),
       c_input_(Cin),
       use_relu_(relu),
@@ -685,7 +685,8 @@ FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
       skip_add_(skip_add),
       has_se_(se),
       se_k_(se_k),
-      use_gemm_ex_(use_gemm_ex) {
+      use_gemm_ex_(use_gemm_ex),
+      op_nhcw_(op_nhcw) {
   // Allocate memory for weights (filter tensor) and biases.
   const size_t weight_size = sizeof(DataType) * c_input_ * C * 3 * 3;
 
@@ -836,24 +837,29 @@ void FusedWinogradConvSELayer<DataType>::Eval(
   DataType* transformed_output =
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
-  InputTransform<DataType>(N, c_input_, transformed_input, input);
+  InputTransform<DataType, false>(N, c_input_, transformed_input, input);
 
   cublasRowMajorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
 
   if (has_se_ && use_relu_ && use_bias_ && skip_add_)
-    OutputTransform<DataType, true, true, true, true>(
+    OutputTransform<DataType, true, true, true, true, false, false>(
         N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_, w2_,
         b2_);
-  else if (!has_se_ && use_relu_ && use_bias_ && !skip_add_)
-    OutputTransform<DataType, false, true, true, false>(
-        N, C, 0, output, transformed_output, nullptr, biases_, nullptr, nullptr,
-        nullptr, nullptr);
-  else if (!has_se_ && use_relu_ && use_bias_ && skip_add_)
-    OutputTransform<DataType, false, true, true, true>(
+  else if (!has_se_ && use_relu_ && use_bias_ && !skip_add_) {
+    if (op_nhcw_)
+      OutputTransform<DataType, false, true, true, false, false, true>(
+          N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
+          nullptr, nullptr, nullptr);
+    else
+      OutputTransform<DataType, false, true, true, false, false, false>(
+          N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
+          nullptr, nullptr, nullptr);
+  } else if (!has_se_ && use_relu_ && use_bias_ && skip_add_)
+    OutputTransform<DataType, false, true, true, true, false, false>(
         N, C, 0, output, transformed_output, input2, biases_, nullptr, nullptr,
         nullptr, nullptr);
   else if (!has_se_ && !use_relu_ && use_bias_ && !skip_add_)
-    OutputTransform<DataType, false, false, true, false>(
+    OutputTransform<DataType, false, false, true, false, false, false>(
         N, C, 0, output, transformed_output, nullptr, biases_, nullptr, nullptr,
         nullptr, nullptr);
   else
@@ -1164,7 +1170,7 @@ void ResidualBlock<DataType>::Eval(
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
   if (first_block_) {
-    InputTransform<DataType>(N, c_input_, transformed_input, input);
+    InputTransform<DataType, true>(N, c_input_, transformed_input, input);
 
     cublasRowMajorMatrixMul(transformed_input, transformed_weights0_,
                             transformed_output, N * 4, C, c_input_, 36, cublas);
@@ -1185,22 +1191,22 @@ void ResidualBlock<DataType>::Eval(
 
   if (last_block_) {
     if (has_se_)
-      OutputTransform<DataType, true, true, true, true>(
+      OutputTransform<DataType, true, true, true, true, true, false>(
           N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
           w2_, b2_);
     else
-      OutputTransform<DataType, false, true, true, true>(
+      OutputTransform<DataType, false, true, true, true, true, false>(
           N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
           w2_, b2_);
   } else {
     if (has_se_)
       OutputInputTransform<DataType, true, true, true, true>(
-          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-          w2_, b2_);
+        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+        w2_, b2_);
     else
       OutputInputTransform<DataType, false, true, true, true>(
-          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-          w2_, b2_);
+        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+        w2_, b2_);
     // "output" tensor now contains transformed input for the next
     // convolution
   }

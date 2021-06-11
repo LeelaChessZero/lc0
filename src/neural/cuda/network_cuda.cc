@@ -239,8 +239,8 @@ class CudaNetwork : public Network {
     // Input.
     {
       auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          nullptr, kNumFilters, 8, 8, kNumInputPlanes, true, true, false,
-          false, 0, use_gemm_ex);
+          nullptr, kNumFilters, 8, 8, kNumInputPlanes, true, true, false, false,
+          0, use_gemm_ex, use_res_block_winograd_fuse_opt_);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));

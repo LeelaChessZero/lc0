@@ -204,8 +204,8 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                         int Cin, bool relu, bool bias, bool skipAdd, bool se,
-                           int se_k, bool use_gemm_ex);
+                           int Cin, bool relu, bool bias, bool skipAdd, bool se,
+                           int se_k, bool use_gemm_ex, bool op_nhcw = false);
 
   ~FusedWinogradConvSELayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -223,6 +223,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   const bool has_se_;
   const int se_k_;
   const bool use_gemm_ex_;
+  const bool op_nhcw_;
 
   DataType* biases_ = nullptr;
   DataType* transformed_weights_ = nullptr;  // After winograd transform.

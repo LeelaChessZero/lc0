@@ -199,32 +199,49 @@ template void FilterTransform<half>(int N, int C, half* transformedFilter,
                                     const half* filter);
 
 
-template void InputTransform<half>(int N, int C, half* transformed_input,
-                                    const half* input);
+template void InputTransform<half, true>(int N, int C, half* transformed_input,
+                                         const half* input);
+template void InputTransform<half, false>(int N, int C, half* transformed_input,
+                                          const half* input);
 
-template void OutputTransform<half, true, true, true, true>(
+template void OutputTransform<half, true, true, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2);
 
-template void OutputTransform<half, false, true, true, false>(
+template void OutputTransform<half, false, true, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2);
 
-template void OutputTransform<half, false, true, true, true>(
+template void OutputTransform<half, true, true, true, true, true, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2);
 
-template void OutputTransform<half, false, false, true, false>(
+template void OutputTransform<half, false, true, true, true, true, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2);
+
+template void OutputTransform<half, false, true, true, false, false, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2);
+
+template void OutputTransform<half, false, true, true, false, false, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2);
+
+template void OutputTransform<half, false, false, true, false, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2);
 
 template void OutputInputTransform<half, true, true, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* bias, const half* w1, const half* b1, const half* w2, 
     const half* b2);
 
 template void OutputInputTransform<half, false, true, true, true>(
