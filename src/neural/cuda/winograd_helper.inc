@@ -621,10 +621,11 @@ void FilterTransform(int N, int C, T* transformedFilter, const T* filter) {
 }
 
 template <typename T, bool nhcw>
-void InputTransform(int N, int C, T* transformed_input, const T* input) {
+void InputTransform(int N, int C, T* transformed_input, const T* input, cudaStream_t stream) {
   // Each thread processes entire chess board (input 8x8 elements -> outputs
   // 2x2, 6x6 elements)
-  InputTransform_kernel<T, nhcw><<<N, C>>>(N, C, input, transformed_input);
+  InputTransform_kernel<T, nhcw><<<N, C, 0, stream>>>(N, C, input, transformed_input);
+
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -632,20 +633,20 @@ template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
           bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
-                     const T* w2, const T* b2) {
+                     const T* w2, const T* b2, cudaStream_t stream) {
   // Each thread processes entire chess board
   OutputTransform_kernel<T, use_se, relu, use_bias, use_skip, skipInput_nhcw, output_nhcw>
-      <<<N, C>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
+      <<<N, C, 0, stream>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
   ReportCUDAErrors(cudaGetLastError());
 }
 
 template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                          const T* skip, const T* bias, const T* w1, const T* b1,
-                         const T* w2, const T* b2) {
+                         const T* w2, const T* b2, cudaStream_t stream) {
   // Each thread processes entire chess board
   OutputTransform_SE_relu_InputTransform_kernel<T, use_se, relu, use_bias, use_skip>
-                    <<<N, C>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
+                    <<<N, C, 0, stream>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
   ReportCUDAErrors(cudaGetLastError());
 }
 
