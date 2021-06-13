@@ -625,6 +625,7 @@ void InputTransform(int N, int C, T* transformed_input, const T* input, cudaStre
   // Each thread processes entire chess board (input 8x8 elements -> outputs
   // 2x2, 6x6 elements)
   InputTransform_kernel<T, nhcw><<<N, C, 0, stream>>>(N, C, input, transformed_input);
+
   ReportCUDAErrors(cudaGetLastError());
 }
 

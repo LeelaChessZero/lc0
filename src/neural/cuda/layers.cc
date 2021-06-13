@@ -839,7 +839,6 @@ void FusedWinogradConvSELayer<DataType>::Eval(
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
   InputTransform<DataType, false>(N, c_input_, transformed_input, input, stream);
-  
   cublasRowMajorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
 
   if (has_se_ && use_relu_ && use_bias_ && skip_add_)
