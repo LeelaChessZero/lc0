@@ -68,7 +68,7 @@ RESERVED_WORDS = [
     'enum',
 ] + list(TYPES.keys())
 
-GRAMMAR = ([(x, x)
+GRAMMAR = ([(r'%s\b' % x, x)
             for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.'] + [
                 (r'/\*.*?\*/', None),  # /* Comment */
                 (r'//.*?$', None),  # // Comment
@@ -153,13 +153,11 @@ def LookupType(name, stack):
     '''Looks up the (possibly qualified) from the innermost scope first.'''
     for y in stack:
         for x in y:
-            if not x.IsType():
-                continue
             if x.GetName() == name[0]:
                 if len(name) == 1:
                     return x.GetType()
                 else:
-                    return LookupType(name[1:], [x.GetObjects()])
+                    return LookupType(name[1:], [x.GetTypes()])
     raise ValueError("Cannot find type: %s." % '.'.join(name))
 
 
@@ -423,7 +421,7 @@ class ProtoMessageParser:
         return True
 
     def GetTypes(self):
-        return self.objects
+        return self.types
 
     def GetFieldsGruppedByWireType(self):
         type_to_fields = {}
