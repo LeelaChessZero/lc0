@@ -247,7 +247,7 @@ class Node {
       FillEmptyHistory fill_empty_history,
       pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
       Eval played_eval, bool best_is_proven, Move best_move, Move played_move,
-      const NNCacheLock& nneval, float temp) const;
+      const NNCacheLock& nneval) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;

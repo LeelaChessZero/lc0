@@ -62,10 +62,6 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
-const OptionId kPolicyFocusSoftmaxTempId{
-    "policy-focus-softmax-temp", "PolicyFocusTemperature",
-    "Softmax temperature used in calculating the Kullback–Leibler divergence "
-    "for policy focus."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -77,7 +73,6 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
-  options->Add<FloatOption>(kPolicyFocusSoftmaxTempId, 0.1f, 10.0f) = 1.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -270,8 +265,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
-          played_eval, best_is_proof, best_move, move, nneval,
-          options_[0].uci_options->Get<float>(kPolicyFocusSoftmaxTempId)));
+          played_eval, best_is_proof, best_move, move, nneval));
     }
     // Must reset the search before mutating the tree.
     search_.reset();

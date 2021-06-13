@@ -527,7 +527,7 @@ V6TrainingData Node::GetV6TrainingData(
     FillEmptyHistory fill_empty_history,
     pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
     Eval played_eval, bool best_is_proven, Move best_move, Move played_move,
-    const NNCacheLock& nneval, float temp) const {
+    const NNCacheLock& nneval) const {
   V6TrainingData result;
 
   // Set version.
@@ -583,7 +583,7 @@ V6TrainingData Node::GetV6TrainingData(
     auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (nneval) {
-      float P = std::exp((*it - max_p) / temp);
+      float P = std::exp(*it - max_p);
       if (fracv > 0) {
         kld_sum += fracv * std::log(fracv / P);
       }
