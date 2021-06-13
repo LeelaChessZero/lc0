@@ -157,3 +157,13 @@ option('cc_cuda',
        type: 'string',
        value: '',
        description: 'Build for a specific cuda CC, e.g. -Dcc_cuda=35 for CC 3.5')
+
+option('onnx_libdir',
+       type: 'string',
+       value: '',
+       description: 'Paths to ONNX runtime libraries')
+
+option('onnx_include',
+       type: 'string',
+       value: '',
+       description: 'Paths to ONNX runtime includes')

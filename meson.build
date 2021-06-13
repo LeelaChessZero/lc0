@@ -533,6 +533,35 @@ if get_option('build_backends')
     has_backends = true
   endif
 
+
+  ## ~~~~~~~~~~
+  ## ONNX
+  ## ~~~~~~~~~~
+  if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
+    onnx_lib = cc.find_library('libonnxruntime',
+                               dirs: get_option('onnx_libdir'),
+                               required: true)
+    includes += include_directories(get_option('onnx_include'))
+    cc.has_header('onnxruntime_cxx_api.h',
+                  required: true,
+                  args: '-I' + get_option('onnx_include'))
+    deps += [onnx_lib]
+
+
+    gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
+      arguments : [
+        '--proto_path=@CURRENT_SOURCE_DIR@/src',
+        '--cpp_out=@BUILD_DIR@',
+        '@INPUT@'])    
+
+    files += 'src/neural/onnx/network_onnx.cc'
+
+    files +=   gen_proto_src.process('src/neural/onnx/onnx.proto',
+      preserve_path_from : meson.current_source_dir() + '/src/')
+
+    has_backends = true
+  endif
+
 endif # if get_option('build_backends')
 
 if not has_backends and get_option('build_backends')
