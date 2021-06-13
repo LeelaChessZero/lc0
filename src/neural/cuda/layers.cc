@@ -149,14 +149,14 @@ void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
                        c_input_, filter_size_, filter_size_);
   } else {
     copyTypeConverted((half*)weights, (float*)scratch,
-                      C * c_input_ * filter_size_ * filter_size_);
+                      C * c_input_ * filter_size_ * filter_size_, 0);
   }
 
   if (pBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
 
-    copyTypeConverted((half*)biases, (float*)scratch, C);
+    copyTypeConverted((half*)biases, (float*)scratch, C, 0);
   }
 }
 
@@ -343,41 +343,41 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   // Weight for the first FC layer.
   ReportCUDAErrors(
       cudaMemcpy(scratch, w1, weight_size1, cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)w1_, (float*)scratch, (int)num_weights1);
+  copyTypeConverted((half*)w1_, (float*)scratch, (int)num_weights1, 0);
   if (kUseFusedSELayer && nhwc_) {
     // transposed copy for fused SE kernel
     cpuTranspose(temp.data(), w1, numFc1Out_, C);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size1, cudaMemcpyHostToDevice));
-    copyTypeConverted((half*)w1_t_, (float*)scratch, (int)num_weights1);
+    copyTypeConverted((half*)w1_t_, (float*)scratch, (int)num_weights1, 0);
   }
 
   // Weight for the second FC layer.
   ReportCUDAErrors(
       cudaMemcpy(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)w2_, (float*)scratch, (int)num_weights2);
+  copyTypeConverted((half*)w2_, (float*)scratch, (int)num_weights2, 0);
   if (kUseFusedSELayer && nhwc_) {
     cpuTranspose(temp.data(), w2, 2 * C, numFc1Out_);
     ReportCUDAErrors(
         cudaMemcpy(scratch, temp.data(), weight_size2, cudaMemcpyHostToDevice));
-    copyTypeConverted((half*)w2_t_, (float*)scratch, (int)num_weights2);
+    copyTypeConverted((half*)w2_t_, (float*)scratch, (int)num_weights2, 0);
   }
 
   // Bias for the first FC layer.
   ReportCUDAErrors(cudaMemcpy(scratch, b1, numFc1Out_ * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)b1_, (float*)scratch, numFc1Out_);
+  copyTypeConverted((half*)b1_, (float*)scratch, numFc1Out_, 0);
 
   // Bias for the second FC layer.
   ReportCUDAErrors(
       cudaMemcpy(scratch, b2, 2 * C * sizeof(float), cudaMemcpyHostToDevice));
-  copyTypeConverted((half*)b2_, (float*)scratch, 2 * C);
+  copyTypeConverted((half*)b2_, (float*)scratch, 2 * C, 0);
 
   // Bias for previous layer (Convolution).
   if (prevLayerBias) {
     ReportCUDAErrors(cudaMemcpy(scratch, prevLayerBias, C * sizeof(float),
                                 cudaMemcpyHostToDevice));
-    copyTypeConverted((half*)bPrev_, (float*)scratch, C);
+    copyTypeConverted((half*)bPrev_, (float*)scratch, C, 0);
   }
 }
 
@@ -400,13 +400,13 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
                                  N, C, &alpha, w1_, C, op2, C, &beta, op1,
                                  numFc1Out_));
   addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, true,
-             false, false);
+             false, false, stream);
 
   // 3. Second fully connected layer.
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                  numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                  numFc1Out_, &beta, op2, 2 * C));
-  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false);
+  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, stream);
 
   // 4. (Optional prev layer bias add), Global scale, residual add, relu and
   // bias.
@@ -442,13 +442,13 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
                                    N, C, &alpha, w1_, C, op2, C, &beta, op1,
                                    numFc1Out_));
     addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, true,
-               false, false);
+               false, false, stream);
 
     // 3. Second fully connected layer.
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                    numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                    numFc1Out_, &beta, op2, 2 * C));
-    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false);
+    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, stream);
 
     // 4. (Optional prev layer bias add), Global scale, residual add, relu and
     // bias.
@@ -494,13 +494,13 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
                        input_->GetC(), (int)num_biases, input_->GetC(),
                        input_->GetH(), input_->GetW());
   } else {
-    copyTypeConverted((half*)weights_, (float*)scratch, (int)num_weights);
+    copyTypeConverted((half*)weights_, (float*)scratch, (int)num_weights, 0);
   }
 
   if (cpuBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, cpuBias, bias_size, cudaMemcpyHostToDevice));
-    copyTypeConverted((half*)biases_, (float*)scratch, (int)num_biases);
+    copyTypeConverted((half*)biases_, (float*)scratch, (int)num_biases, 0);
   }
 }
 
@@ -732,12 +732,12 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3);
+  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3, 0);
 
   if (pBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
-    copyTypeConverted((DataType*)biases_, (float*)scratch, C);
+    copyTypeConverted((DataType*)biases_, (float*)scratch, C, 0);
   }
 
   // run winograd transform kernel for the filter
@@ -765,23 +765,23 @@ void FusedWinogradConvSELayer<DataType>::LoadSEWeights(float* w1, float* b1,
   CpuTranspose(temp_transposed.data(), w1, se_k_, C);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(), num_weights1*sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1);
+  copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1, 0);
 
   CpuTranspose(temp_transposed.data(), w2, 2 * C, se_k_);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
                               num_weights2 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)w2_, (float*)scratch, (int)num_weights2);
+  copyTypeConverted((DataType*)w2_, (float*)scratch, (int)num_weights2, 0);
 
 
 
   ReportCUDAErrors(cudaMemcpy(scratch, b1, num_biases1 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)b1_, (float*)scratch, (int)num_biases1);
+  copyTypeConverted((DataType*)b1_, (float*)scratch, (int)num_biases1, 0);
 
   ReportCUDAErrors(cudaMemcpy(scratch, b2, num_biases2 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)b2_, (float*)scratch, (int)num_biases2);
+  copyTypeConverted((DataType*)b2_, (float*)scratch, (int)num_biases2, 0);
 }
 
 template <>
@@ -909,12 +909,12 @@ void Conv1Layer<DataType>::LoadWeights(float* pfilter, float* pBias,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights_, (float*)scratch, C * c_input_ * 1 * 1);
+  copyTypeConverted((DataType*)weights_, (float*)scratch, C * c_input_ * 1 * 1, 0);
 
   if (pBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
-    copyTypeConverted((DataType*)biases_, (float*)scratch, C);
+    copyTypeConverted((DataType*)biases_, (float*)scratch, C, 0);
   }
 }
 
@@ -1038,12 +1038,12 @@ void ResidualBlock<DataType>::LoadWeights0(float* pfilter,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3);
+  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3, 0);
 
   if (pBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
-    copyTypeConverted((DataType*)biases0_, (float*)scratch, C);
+    copyTypeConverted((DataType*)biases0_, (float*)scratch, C, 0);
   }
 
   // run winograd transform kernel for the filter
@@ -1064,12 +1064,12 @@ void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights, (float*)scratch, C * C * 3 * 3);
+  copyTypeConverted((DataType*)weights, (float*)scratch, C * C * 3 * 3, 0);
 
   if (pBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
-    copyTypeConverted((DataType*)biases1_, (float*)scratch, C);
+    copyTypeConverted((DataType*)biases1_, (float*)scratch, C, 0);
   }
 
   // run winograd transform kernel for the filter
@@ -1092,21 +1092,21 @@ void ResidualBlock<DataType>::LoadSEWeights(float* w1, float* b1,
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
                               num_weights1 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1);
+  copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1, 0);
 
   CpuTranspose(temp_transposed.data(), w2, 2 * C, se_k_);
   ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
                               num_weights2 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)w2_, (float*)scratch, (int)num_weights2);
+  copyTypeConverted((DataType*)w2_, (float*)scratch, (int)num_weights2, 0);
 
   ReportCUDAErrors(cudaMemcpy(scratch, b1, num_biases1 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)b1_, (float*)scratch, (int)num_biases1);
+  copyTypeConverted((DataType*)b1_, (float*)scratch, (int)num_biases1, 0);
 
   ReportCUDAErrors(cudaMemcpy(scratch, b2, num_biases2 * sizeof(float),
                               cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)b2_, (float*)scratch, (int)num_biases2);
+  copyTypeConverted((DataType*)b2_, (float*)scratch, (int)num_biases2, 0);
 }
 
 template <>

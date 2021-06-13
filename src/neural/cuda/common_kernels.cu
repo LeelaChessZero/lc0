@@ -324,7 +324,7 @@ __global__ void expandPlanes_kernel_Fp16_NCHW(half* output,
 }
 
 void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream = 0) {
+                            const float* values, int n, cudaStream_t stream) {
   int threads = n * 8 * 8;  // each thread writes a single element
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);

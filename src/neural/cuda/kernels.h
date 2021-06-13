@@ -32,7 +32,7 @@ namespace cudnn_backend {
 // activation (relu, tanh or sigmoid).
 template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
-                bool use_tanh, bool use_sigmoid, cudaStream_t stream = 0);
+                bool use_tanh, bool use_sigmoid, cudaStream_t stream);
 
 // Add bias to convolution's output.
 template <typename T>
@@ -45,7 +45,7 @@ void fp32NCHWtofp16NHWC(half* output_tensor, float* input_tensor, int Nin,
 
 // Plain data-type conversion (no layout conversion).
 template <typename DstType, typename SrcType>
-void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream = 0);
+void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream);
 
 // Perform batch normilization.
 template <typename T>
