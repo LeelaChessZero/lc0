@@ -288,7 +288,7 @@ class ProtoFieldParser:
             val = 'val'
 
         if self.category == 'repeated':
-            return '%s_.push_back(%s)' % (name, val)
+            return '%s_.emplace_back(%s)' % (name, val)
         else:
             return 'set_%s(%s)' % (name, val)
 
@@ -306,17 +306,18 @@ class ProtoFieldParser:
     def GenerateFunctions(self, w):
         name = self.name.group(0)
         cpp_type = self.type.GetCppType()
+        var_cpp_type = self.type.GetVariableCppType()
         if self.category == 'repeated':
             if self.type.IsMessage():
                 w.Write("%s* add_%s() { return &%s_.emplace_back(); }" %
                         (cpp_type, name, name))
             w.Write("const std::vector<%s>& %s() const { return %s_; }" %
-                    (cpp_type, name, name))
+                    (var_cpp_type, name, name))
             if self.type.IsMessage():
                 w.Write("const %s& %s(size_t idx) const { return %s_[idx]; }" %
                         (cpp_type, name, name))
             else:
-                w.Write("%s %s(size_t) const { return %s_[idx]; }" %
+                w.Write("%s %s(size_t idx) const { return %s_[idx]; }" %
                         (cpp_type, name, name))
             w.Write("size_t %s_size() const { return %s_.size(); }" %
                     (name, name))
