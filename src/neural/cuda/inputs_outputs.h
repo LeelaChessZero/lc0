@@ -79,6 +79,8 @@ struct InputsOutputs {
       ReportCUBLASErrors(cublasCreate(&cublas_));
       ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
       ReportCUBLASErrors(cublasSetStream(cublas_, stream_));
+    } else {
+      multi_stream_ = false;
     }
   }
   ~InputsOutputs() {
