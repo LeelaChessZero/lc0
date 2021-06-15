@@ -408,7 +408,7 @@ class CudaNetwork : public Network {
       }
     }
 
-    tensor_mem_size_ = maxSize;
+    tensor_mem_size_ = multi_stream_ ? maxSize : 0;
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
