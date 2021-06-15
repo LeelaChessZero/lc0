@@ -408,7 +408,12 @@ class CudaNetwork : public Network {
       }
     }
 
-    tensor_mem_size_ = maxSize;
+    tensor_mem_size_ = multi_stream_ ? maxSize : 0;
+
+    // pre-allocate one InputsOutputs object
+    // The first call to allocate memory, create cublas, 
+    // strem, etc takes really long (600 ms)
+    std::unique_ptr<InputsOutputs> io = GetInputsOutputs();
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
@@ -436,7 +441,7 @@ class CudaNetwork : public Network {
       cublas = io->cublas_;
     } else {
       for (int i = 0; i < 3; i++) tensor_mem[i] = tensor_mem_[i];
-      scratch_mem = io->scratch_mem_;
+      scratch_mem = scratch_mem_;
       stream = 0;           // default stream
       cublas = cublas_;
     }
