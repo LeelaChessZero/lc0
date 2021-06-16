@@ -8,6 +8,8 @@ cd build
 IF %NAME%==cpu-openblas copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 IF %NAME%==cpu-dnnl copy C:\cache\dnnl_win_1.5.0_cpu_vcomp\bin\dnnl.dll
 IF %NAME%==onednn copy C:\cache\dnnl_win_1.8.0_cpu_vcomp\bin\dnnl.dll
+copy "%MIMALLOC_PATH%"\out\msvc-x64\Release\mimalloc-override.dll
+copy "%MIMALLOC_PATH%"\out\msvc-x64\Release\mimalloc-redirect.dll
 IF %PGO%==true (
   IF %OPENCL%==true copy C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
   IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
