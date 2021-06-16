@@ -118,11 +118,15 @@ if git.found()
 endif
 
 # Construct build identifier.
+build_identifier = ''
 if short_rev != ''
   build_identifier = 'git.' + short_rev
-  add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
   message('Using build identifier "' + build_identifier + '".')
 endif
+
+conf_data = configuration_data()
+conf_data.set_quoted('BUILD_IDENTIFIER', build_identifier)
+configure_file(output: 'build_id.h', configuration: conf_data)
 
 # Some malloc libraries require to be linked first.
 if get_option('malloc') == 'mimalloc' and cc.get_id() == 'msvc'
@@ -526,6 +530,16 @@ if get_option('build_backends')
 
     subdir('src/neural/dx/shaders')
 
+    has_backends = true
+  endif
+
+  if get_option('onednn') and dnnl_lib.found()
+    includes += include_directories(get_option('dnnl_dir') + '/include')
+    deps += [ dnnl_lib, dependency('openmp', required:true) ]
+    files += [
+      'src/neural/onednn/network_onednn.cc',
+      'src/neural/onednn/layers.cc',
+    ]
     has_backends = true
   endif
 
