@@ -303,6 +303,25 @@ class ProtoFieldParser:
             w.Write('has_%s_ = false;' % name)
             w.Write('%s_ = {};' % name)
 
+    def GenerateOutput(self, w):
+        fname = {
+            0: 'AppendVarInt',
+            1: 'AppendInt64',
+            2: 'AppendString',
+            5: 'AppendInt32'
+        }
+        wire_id = self.type.GetWireType()
+        if self.category == 'repeated':
+            prefix = 'for (const auto& x : %s)' % (self.name.group(0) + '_')
+            name = 'x'
+        else:
+            name = self.name.group(0) + '_'
+            prefix = 'if (has_%s)' % (name)
+        if self.type.IsMessage():
+            name += '.OutputAsString()'
+        w.Write('%s %s(%d, %s, &out);' %
+                (prefix, fname[wire_id], self.number, name))
+
     def GenerateFunctions(self, w):
         name = self.name.group(0)
         cpp_type = self.type.GetCppType()
@@ -461,6 +480,15 @@ class ProtoMessageParser:
         for x in self.fields:
             w.Write('')
             x.GenerateFunctions(w)
+        w.Write('')
+        w.Write('std::string OutputAsString() const override {')
+        w.Indent()
+        w.Write('std::string out;')
+        for x in sorted(self.fields, key=lambda x: x.number):
+            x.GenerateOutput(w)
+        w.Write('return out;')
+        w.Unindent()
+        w.Write('}')
         w.Write('')
         w.Write('void Clear() override {')
         w.Indent()
