@@ -118,10 +118,25 @@ if git.found()
 endif
 
 # Construct build identifier.
+build_identifier = ''
 if short_rev != ''
   build_identifier = 'git.' + short_rev
-  add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
   message('Using build identifier "' + build_identifier + '".')
+endif
+
+conf_data = configuration_data()
+conf_data.set_quoted('BUILD_IDENTIFIER', build_identifier)
+configure_file(output: 'build_id.h', configuration: conf_data)
+
+# Some malloc libraries require to be linked first.
+if get_option('malloc') == 'mimalloc' and cc.get_id() == 'msvc'
+  if get_option('b_vscrt') != 'md' and get_option('b_vscrt') != 'mdd'
+    error('You need -Db_vscrt=md (or mdd)')
+  endif
+  add_project_link_arguments('/INCLUDE:mi_version', language : 'cpp')
+  deps += cc.find_library('mimalloc-override', dirs: get_option('mimalloc_libdir'), required: true)
+elif get_option('malloc') != ''
+  deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
 #############################################################################
@@ -564,10 +579,6 @@ endif
   endif
 
   deps += cc.find_library('libatomic', required: false)
-
-  if get_option('malloc') != ''
-    deps += cc.find_library(get_option('malloc'), required: true)
-  endif
 
 #############################################################################
 ## Main Executable

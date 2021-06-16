@@ -13,7 +13,7 @@ IF %PGO%==true (
   IF %CUDA%==true copy "%CUDA_PATH%"\bin\*.dll
   IF %CUDNN%==true copy "%CUDA_PATH%"\cuda\bin\cudnn64_7.dll
   lc0 benchmark --num-positions=1 --weights=c:\cache\%NET%.pb.gz --backend=random --movetime=10000
-  lc0 benchmark --num-positions=1 --weights=c:\cache\%NET%.pb.gz --backend=random --movetime=10000 --multi-gather=true
+  lc0 benchmark --num-positions=1 --weights=c:\cache\%NET%.pb.gz --backend=random --movetime=10000 --multi-gather=false
 )
 cd ..
 IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimization=PGOptimize /p:DebugInformationFormat=ProgramDatabase /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
