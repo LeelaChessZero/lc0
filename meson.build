@@ -554,7 +554,10 @@ if get_option('build_backends')
         '--cpp_out=@BUILD_DIR@',
         '@INPUT@'])    
 
-    files += 'src/neural/onnx/network_onnx.cc'
+    files += [
+      'src/neural/onnx/converter.cc',
+      'src/neural/onnx/network_onnx.cc',
+    ]
 
     files +=   gen_proto_src.process('src/neural/onnx/onnx.proto',
       preserve_path_from : meson.current_source_dir() + '/src/')

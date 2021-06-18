@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+
 syntax = "proto2";
 
 package pblczero;
@@ -101,6 +102,7 @@ message NodeProto {
 message TensorShapeProto {
   message Dimension {
     optional int64 dim_value = 1;
+    optional string dim_param = 2;
   }
   repeated Dimension dim = 1;
 }
