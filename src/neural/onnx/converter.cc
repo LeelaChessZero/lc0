@@ -70,6 +70,11 @@ class Converter {
                                 const std::string& input,
                                 const std::string& name);
 
+  std::string MakeSqueezeAndExcite(OnnxBuilder* builder,
+                                   const pblczero::Weights::SEunit& se_unit,
+                                   const std::string& input,
+                                   const std::string& name);
+
   pblczero::TensorProto::DataType GetDataType() const;
   std::unique_ptr<OnnxWeights> GetWeghtsConverter(
       const pblczero::Weights::Layer&, std::initializer_list<int> dims,
@@ -114,18 +119,35 @@ std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
   return block1;
 }
 
-std::string Converter::MakeConvBlock(OnnxBuilder* builder,
-                                     const pblczero::Weights::ConvBlock&,
-                                     int input_channels, int output_channels,
-                                     const std::string& input,
-                                     const std::string& name,
-                                     const pblczero::Weights::SEunit* se_unit,
-                                     const std::string& mixin, bool relu) {
+std::string Converter::MakeSqueezeAndExcite(
+    OnnxBuilder* builder, const pblczero::Weights::SEunit& se_unit,
+    const std::string& input, const std::string& name) {
+  auto flow = builder->AddGlobalAveragePoolLayer(input, name + "/pooled");
+  flow = builder->AddSqueezeLayer(flow, name + "/squeeze");
+  // Тут пишу
+
+  return flow;
+}
+
+std::string Converter::MakeConvBlock(
+    OnnxBuilder* builder, const pblczero::Weights::ConvBlock& weights,
+    int input_channels, int output_channels, const std::string& input,
+    const std::string& name, const pblczero::Weights::SEunit* se_unit,
+    const std::string& mixin, bool relu) {
   auto flow = builder->AddConvLayer(
-      options_.input_planes_name, "inputconv",
-      *GetWeghtsConverter(src_.weights().input().weights(),
-                          {3, 3, kInputPlanes, NumFilters()}, {3, 2, 0, 1}),
-      *GetWeghtsConverter(src_.weights().input().weights(), {NumFilters()}));
+      input, name,
+      *GetWeghtsConverter(weights.weights(),
+                          {3, 3, input_channels, output_channels},
+                          {3, 2, 0, 1}),
+      *GetWeghtsConverter(weights.biases(), {NumFilters()}));
+
+  if (se_unit) {
+    flow = MakeSqueezeAndExcite(builder, *se_unit, flow, name + "/se");
+  }
+
+  if (!mixin.empty()) {
+    flow = builder->AddAddLayer(flow, mixin, name + "/mixin");
+  }
 
   return flow;
 }

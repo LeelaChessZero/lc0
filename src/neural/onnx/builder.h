@@ -28,6 +28,7 @@
 #pragma once
 
 #include <initializer_list>
+#include <string>
 
 #include "neural/onnx/onnx.pb.h"
 
@@ -51,6 +52,14 @@ class OnnxBuilder {
                            const std::string& name,
                            const OnnxWeights& kernel_weights,
                            const OnnxWeights& bias_weights);
+  std::string AddAddLayer(const std::string& input1, const std::string& input2,
+                          const std::string& name);
+
+  std::string AddGlobalAveragePoolLayer(const std::string& input,
+                                        const std::string& name);
+
+  std::string AddSqueezeLayer(const std::string& input,
+                              const std::string& name);
 
   const pblczero::ModelProto& as_proto() const { return model_; }
   std::string OutputAsString() const { return model_.OutputAsString(); }

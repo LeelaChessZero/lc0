@@ -29,6 +29,7 @@
 
 #include <initializer_list>
 
+#include "neural/onnx/onnx.pb.h"
 #include "version.h"
 
 namespace lczero {
@@ -74,21 +75,6 @@ void OnnxBuilder::AddInput(const std::string& name,
   FillValueInfo(model_.mutable_graph()->add_input(), name, dims, datatype);
 }
 
-std::string OnnxBuilder::AddConvLayer(const std::string& input_name,
-                                      const std::string& name,
-                                      const OnnxWeights& kernel_weights,
-                                      const OnnxWeights& bias_weights) {
-  auto* node = model_.mutable_graph()->add_node();
-  node->add_input(input_name);
-  node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
-  node->add_input(AddInitializer(name + "/w/bias", bias_weights));
-  AddIntAttribute(node, "pads", {1, 1, 1, 1});
-  AddIntAttribute(node, "kernel_shape", {3, 3});
-  const auto out_name = name + "/out";
-  node->add_output(out_name);
-  return out_name;
-}
-
 std::string OnnxBuilder::AddInitializer(const std::string& name,
                                         const OnnxWeights& weights) {
   auto* init = model_.mutable_graph()->add_initializer();
@@ -98,6 +84,58 @@ std::string OnnxBuilder::AddInitializer(const std::string& name,
   init->set_raw_data(weights.GetRawData());
 
   return name;
+}
+
+namespace {
+
+std::string PopulateStdNodeFields(pblczero::NodeProto* node,
+                                  const std::string& input,
+                                  const std::string& name,
+                                  const std::string& type) {
+  node->set_name(name);
+  node->set_op_type(type);
+  node->add_input(input);
+  const auto out_name = name + "/out";
+  node->add_output(out_name);
+  return out_name;
+}
+
+}  // namespace
+
+std::string OnnxBuilder::AddConvLayer(const std::string& input_name,
+                                      const std::string& name,
+                                      const OnnxWeights& kernel_weights,
+                                      const OnnxWeights& bias_weights) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, input_name, name, "Conv");
+  node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
+  node->add_input(AddInitializer(name + "/w/bias", bias_weights));
+  AddIntAttribute(node, "pads", {1, 1, 1, 1});
+  AddIntAttribute(node, "kernel_shape", {3, 3});
+  return out;
+}
+
+std::string OnnxBuilder::AddAddLayer(const std::string& input1,
+                                     const std::string& input2,
+                                     const std::string& name) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, input1, name, "Add");
+  node->add_input(input2);
+  return out;
+}
+
+std::string OnnxBuilder::AddGlobalAveragePoolLayer(const std::string& input,
+                                                   const std::string& name) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, input, name, "GlobalAveragePool");
+}
+
+std::string OnnxBuilder::AddSqueezeLayer(const std::string& input,
+                                         const std::string& name) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, input, name, "Squeeze");
+  AddIntAttribute(node, "axes", {2, 3});
+  return out;
 }
 
 }  // namespace lczero
