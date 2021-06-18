@@ -1030,7 +1030,7 @@ void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
       rooks_.set(row, col);
       bishops_.set(row, col);
     } else if (c == 'P' || c == 'p') {
-      if (row == 8 || row == 0) {
+      if (row == 7 || row == 0) {
         throw Exception("Bad fen string (pawn in first/last row): " + fen);
       }
       pawns_.set(row, col);
