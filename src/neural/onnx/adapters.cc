@@ -32,8 +32,9 @@ Program grant you additional permission to convey the resulting work.
 namespace lczero {
 
 FloatOnnxWeightsAdapter::FloatOnnxWeightsAdapter(
-    const pblczero::Weights::Layer& layer, std::initializer_list<int> dims)
-    : layer_(layer), dims_(dims) {}
+    const pblczero::Weights::Layer& layer, std::initializer_list<int> dims,
+    std::initializer_list<int> order)
+    : layer_(layer), dims_(dims), order_(order) {}
 
 pblczero::TensorProto::DataType FloatOnnxWeightsAdapter::GetDataType() const {
   return pblczero::TensorProto::FLOAT;
@@ -47,7 +48,7 @@ std::vector<int> FloatOnnxWeightsAdapter::GetDimensions() const {
 std::string FloatOnnxWeightsAdapter::GetRawData() const {
   const auto& src = layer_.as_vector();
   std::string dst(src.size() * sizeof(src[0]), '\0');
-  TransposeTensor(dims_, {}, src, reinterpret_cast<float*>(&dst));
+  TransposeTensor(dims_, order_, src, reinterpret_cast<float*>(&dst));
   return dst;
 }
 

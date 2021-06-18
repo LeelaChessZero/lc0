@@ -27,6 +27,7 @@
 
 #include "neural/onnx/converter.h"
 
+#include <cstddef>
 #include <initializer_list>
 #include <memory>
 
@@ -51,14 +52,28 @@ class Converter {
   int NumFilters() const {
     return src_.weights().input().biases().params().size() / 2 / kInputPlanes;
   }
+  size_t NumBlocks() const { return src_.weights().residual_size(); }
   void CopyGenericFields(pblczero::Net* dst);
   void GenerateOnnx(pblczero::OnnxModel* onnx);
   void FillValueInfo(pblczero::ValueInfoProto* vip, const std::string& name,
                      std::initializer_list<int> dims);
 
+  std::string MakeConvBlock(OnnxBuilder* builder,
+                            const pblczero::Weights::ConvBlock&,
+                            int input_channels, int output_channels,
+                            const std::string& input, const std::string& name,
+                            const pblczero::Weights::SEunit* se_unit = nullptr,
+                            const std::string& mixin = "", bool relu = true);
+
+  std::string MakeResidualBlock(OnnxBuilder* builder,
+                                const pblczero::Weights::Residual&,
+                                const std::string& input,
+                                const std::string& name);
+
   pblczero::TensorProto::DataType GetDataType() const;
   std::unique_ptr<OnnxWeights> GetWeghtsConverter(
-      const pblczero::Weights::Layer&, std::initializer_list<int> dims);
+      const pblczero::Weights::Layer&, std::initializer_list<int> dims,
+      std::initializer_list<int> order);
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
@@ -74,15 +89,45 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
 }
 
 std::unique_ptr<OnnxWeights> Converter::GetWeghtsConverter(
-    const pblczero::Weights::Layer& layer, std::initializer_list<int> dims) {
+    const pblczero::Weights::Layer& layer, std::initializer_list<int> dims,
+    std::initializer_list<int> order = {}) {
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
-      std::make_unique<FloatOnnxWeightsAdapter>(layer, dims);
+      std::make_unique<FloatOnnxWeightsAdapter>(layer, dims, order);
       break;
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
                   " is not supported in weights converter");
+}
+
+std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
+                                         const pblczero::Weights::Residual& res,
+                                         const std::string& input,
+                                         const std::string& name) {
+  auto block1 = builder->AddConvLayer(
+      input, name + "/conv1",
+      *GetWeghtsConverter(res.conv1().weights(),
+                          {NumFilters(), NumFilters(), 3, 3}),
+      *GetWeghtsConverter(res.conv1().biases(), {NumFilters()}));
+
+  return block1;
+}
+
+std::string Converter::MakeConvBlock(OnnxBuilder* builder,
+                                     const pblczero::Weights::ConvBlock&,
+                                     int input_channels, int output_channels,
+                                     const std::string& input,
+                                     const std::string& name,
+                                     const pblczero::Weights::SEunit* se_unit,
+                                     const std::string& mixin, bool relu) {
+  auto flow = builder->AddConvLayer(
+      options_.input_planes_name, "inputconv",
+      *GetWeghtsConverter(src_.weights().input().weights(),
+                          {3, 3, kInputPlanes, NumFilters()}, {3, 2, 0, 1}),
+      *GetWeghtsConverter(src_.weights().input().weights(), {NumFilters()}));
+
+  return flow;
 }
 
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
@@ -91,11 +136,15 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   onnx->set_input_planes(options_.input_planes_name);
   builder.AddInput(options_.input_planes_name, {-1, 112, 8, 8}, GetDataType());
 
-  auto name = builder.AddConvLayer(
-      options_.input_planes_name, "inputconv",
-      *GetWeghtsConverter(src_.weights().input().weights(),
-                          {NumFilters(), kInputPlanes, 3, 3}),
-      *GetWeghtsConverter(src_.weights().input().weights(), {NumFilters()}));
+  auto flow =
+      MakeConvBlock(&builder, src_.weights().input(), kInputPlanes,
+                    NumFilters(), options_.input_planes_name, "inputconv");
+
+  // Residual tower
+  for (size_t i = 0; i < NumBlocks(); ++i) {
+    flow = MakeResidualBlock(&builder, src_.weights().residual(i), flow,
+                             "block" + std::to_string(i));
+  }
 
   onnx->set_model(builder.OutputAsString());
 }

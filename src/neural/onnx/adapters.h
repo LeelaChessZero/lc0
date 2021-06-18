@@ -36,7 +36,8 @@ namespace lczero {
 class FloatOnnxWeightsAdapter : public OnnxWeights {
  public:
   FloatOnnxWeightsAdapter(const pblczero::Weights::Layer&,
-                          std::initializer_list<int> dims);
+                          std::initializer_list<int> dims,
+                          std::initializer_list<int> order);
 
  private:
   pblczero::TensorProto::DataType GetDataType() const override;
@@ -45,6 +46,7 @@ class FloatOnnxWeightsAdapter : public OnnxWeights {
 
   LayerAdapter layer_;
   std::vector<int> dims_;
+  std::vector<int> order_;
 };
 
 }  // namespace lczero
