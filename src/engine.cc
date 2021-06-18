@@ -64,6 +64,8 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
+const OptionId kPreload{"preload", "",
+                        "Initialize backend and load net on engine startup."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -110,6 +112,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
+
+  options->Add<BoolOption>(kPreload) = false;
 }
 
 void EngineController::ResetMoveTimer() {
@@ -322,8 +326,9 @@ EngineLoop::EngineLoop()
 
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init() || !options_.ProcessAllFlags()) return;
-  Logging::Get().SetFilename(
-      options_.GetOptionsDict().Get<std::string>(kLogFileId));
+  const auto options = options_.GetOptionsDict();
+  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
+  if (options.Get<bool>(kPreload)) engine_.NewGame();
   UciLoop::RunLoop();
 }
 
