@@ -87,6 +87,8 @@ message AttributeProto {
   repeated bytes strings = 9;         // list of UTF-8 strings
   repeated TensorProto tensors = 10;  // list of tensors
   // repeated GraphProto graphs = 11;    // list of graph
+
+  optional AttributeType type = 20;
 }
 
 message NodeProto {

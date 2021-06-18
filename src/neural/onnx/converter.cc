@@ -28,11 +28,13 @@
 #include "neural/onnx/converter.h"
 
 #include <initializer_list>
+#include <memory>
 
-#include "neural/onnx/onnx.pb.h"
+#include "neural/network.h"
+#include "neural/onnx/adapters.h"
+#include "neural/onnx/builder.h"
 #include "proto/net.pb.h"
 #include "utils/exception.h"
-#include "version.h"
 
 namespace lczero {
 namespace {
@@ -46,12 +48,17 @@ class Converter {
   void Convert(pblczero::Net* dst);
 
  private:
+  int NumFilters() const {
+    return src_.weights().input().biases().params().size() / 2 / kInputPlanes;
+  }
   void CopyGenericFields(pblczero::Net* dst);
   void GenerateOnnx(pblczero::OnnxModel* onnx);
   void FillValueInfo(pblczero::ValueInfoProto* vip, const std::string& name,
                      std::initializer_list<int> dims);
 
   pblczero::TensorProto::DataType GetDataType() const;
+  std::unique_ptr<OnnxWeights> GetWeghtsConverter(
+      const pblczero::Weights::Layer&, std::initializer_list<int> dims);
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
@@ -66,37 +73,31 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
   }
 }
 
-void Converter::FillValueInfo(pblczero::ValueInfoProto* vip,
-                              const std::string& name,
-                              std::initializer_list<int> dims) {
-  vip->set_name(name);
-  auto* type = vip->mutable_type()->mutable_tensor_type();
-  type->set_elem_type(GetDataType());
-  auto* shape = type->mutable_shape();
-  for (const auto d : dims) {
-    auto* dim = shape->add_dim();
-    if (d < 0) {
-      dim->set_dim_param("batch");
-    } else {
-      dim->set_dim_value(d);
-    }
+std::unique_ptr<OnnxWeights> Converter::GetWeghtsConverter(
+    const pblczero::Weights::Layer& layer, std::initializer_list<int> dims) {
+  switch (options_.data_type_) {
+    case WeightsToOnnxConverterOptions::DataType::kFloat32:
+      std::make_unique<FloatOnnxWeightsAdapter>(layer, dims);
+      break;
   }
+  throw Exception("Data type " +
+                  std::to_string(static_cast<int>(options_.data_type_)) +
+                  " is not supported in weights converter");
 }
 
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
-  pblczero::ModelProto model;
-
-  model.set_ir_version(4);
-  model.set_producer_name("Lc0");
-  model.set_producer_version(GetVersionStr());
-  model.add_opset_import()->set_version(9);
+  OnnxBuilder builder;
 
   onnx->set_input_planes(options_.input_planes_name);
-  auto* graph = model.mutable_graph();
-  FillValueInfo(graph->add_input(), options_.input_planes_name,
-                {-1, 112, 8, 8});
+  builder.AddInput(options_.input_planes_name, {-1, 112, 8, 8}, GetDataType());
 
-  onnx->set_model(model.OutputAsString());
+  auto name = builder.AddConvLayer(
+      options_.input_planes_name, "inputconv",
+      *GetWeghtsConverter(src_.weights().input().weights(),
+                          {NumFilters(), kInputPlanes, 3, 3}),
+      *GetWeghtsConverter(src_.weights().input().weights(), {NumFilters()}));
+
+  onnx->set_model(builder.OutputAsString());
 }
 
 void Converter::CopyGenericFields(pblczero::Net* dst) {

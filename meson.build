@@ -555,6 +555,8 @@ if get_option('build_backends')
         '@INPUT@'])    
 
     files += [
+      'src/neural/onnx/adapters.cc',
+      'src/neural/onnx/builder.cc',
       'src/neural/onnx/converter.cc',
       'src/neural/onnx/network_onnx.cc',
     ]

@@ -1,0 +1,103 @@
+/*
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2021 The LCZero Authors
+
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
+*/
+
+#include "neural/onnx/builder.h"
+
+#include <initializer_list>
+
+#include "version.h"
+
+namespace lczero {
+
+OnnxBuilder::OnnxBuilder() {
+  model_.set_ir_version(4);
+  model_.set_producer_name("Lc0");
+  model_.set_producer_version(GetVersionStr());
+  model_.add_opset_import()->set_version(9);
+}
+
+namespace {
+void FillValueInfo(pblczero::ValueInfoProto* vip, const std::string& name,
+                   std::initializer_list<int> dims,
+                   pblczero::TensorProto::DataType datatype) {
+  vip->set_name(name);
+  auto* type = vip->mutable_type()->mutable_tensor_type();
+  type->set_elem_type(datatype);
+  auto* shape = type->mutable_shape();
+  for (const auto d : dims) {
+    auto* dim = shape->add_dim();
+    if (d < 0) {
+      dim->set_dim_param("batch");
+    } else {
+      dim->set_dim_value(d);
+    }
+  }
+}
+
+void AddIntAttribute(pblczero::NodeProto* node, const std::string& name,
+                     std::initializer_list<int> vals) {
+  auto* attr = node->add_attribute();
+  attr->set_name(name);
+  attr->set_type(pblczero::AttributeProto::INTS);
+  for (const int x : vals) attr->add_ints(x);
+}
+
+}  // namespace
+
+void OnnxBuilder::AddInput(const std::string& name,
+                           std::initializer_list<int> dims,
+                           pblczero::TensorProto::DataType datatype) {
+  FillValueInfo(model_.mutable_graph()->add_input(), name, dims, datatype);
+}
+
+std::string OnnxBuilder::AddConvLayer(const std::string& input_name,
+                                      const std::string& name,
+                                      const OnnxWeights& kernel_weights,
+                                      const OnnxWeights& bias_weights) {
+  auto* node = model_.mutable_graph()->add_node();
+  node->add_input(input_name);
+  node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
+  node->add_input(AddInitializer(name + "/w/bias", bias_weights));
+  AddIntAttribute(node, "pads", {1, 1, 1, 1});
+  AddIntAttribute(node, "kernel_shape", {3, 3});
+  const auto out_name = name + "/out";
+  node->add_output(out_name);
+  return out_name;
+}
+
+std::string OnnxBuilder::AddInitializer(const std::string& name,
+                                        const OnnxWeights& weights) {
+  auto* init = model_.mutable_graph()->add_initializer();
+  init->set_name(name);
+  init->set_data_type(weights.GetDataType());
+  for (const int dim : weights.GetDimensions()) init->add_dims(dim);
+  init->set_raw_data(weights.GetRawData());
+
+  return name;
+}
+
+}  // namespace lczero
