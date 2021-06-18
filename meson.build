@@ -233,7 +233,7 @@ if get_option('build_backends')
     mkl_lib = cc.find_library('mklml', dirs: mkl_libdirs, required: false)
   endif
 
-  dnnl_libdirs = get_option('dnnl_dir') + '/lib'
+  dnnl_libdirs = [get_option('dnnl_dir') + '/lib64', get_option('dnnl_dir') + '/lib']
   dnnl_lib = cc.find_library('dnnl', dirs: dnnl_libdirs, required: false)
 
   openblas_libdirs = get_option('openblas_libdirs')
