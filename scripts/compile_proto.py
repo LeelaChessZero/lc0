@@ -330,6 +330,9 @@ class ProtoFieldParser:
             if self.type.IsMessage():
                 w.Write("%s* add_%s() { return &%s_.emplace_back(); }" %
                         (cpp_type, name, name))
+            else:
+                w.Write("void add_%s(%s val) { %s_.emplace_back(val); }" %
+                        (name, cpp_type, name))
             w.Write("const std::vector<%s>& %s() const { return %s_; }" %
                     (var_cpp_type, name, name))
             if self.type.IsMessage():
