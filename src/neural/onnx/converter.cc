@@ -32,6 +32,7 @@
 #include <memory>
 
 #include "neural/network.h"
+#include "neural/network_legacy.h"
 #include "neural/onnx/adapters.h"
 #include "neural/onnx/builder.h"
 #include "proto/net.pb.h"
@@ -60,19 +61,19 @@ class Converter {
                      std::initializer_list<int> dims);
 
   std::string MakeConvBlock(OnnxBuilder* builder,
-                            const pblczero::Weights::ConvBlock&,
-                            int input_channels, int output_channels,
-                            const std::string& input, const std::string& name,
-                            const pblczero::Weights::SEunit* se_unit = nullptr,
+                            const LegacyWeights::ConvBlock&, int input_channels,
+                            int output_channels, const std::string& input,
+                            const std::string& name,
+                            const LegacyWeights::SEunit* se_unit = nullptr,
                             const std::string& mixin = "", bool relu = true);
 
   std::string MakeResidualBlock(OnnxBuilder* builder,
-                                const pblczero::Weights::Residual&,
+                                const LegacyWeights::Residual&,
                                 const std::string& input,
                                 const std::string& name);
 
   std::string MakeSqueezeAndExcite(OnnxBuilder* builder,
-                                   const pblczero::Weights::SEunit& se_unit,
+                                   const LegacyWeights::SEunit& se_unit,
                                    const std::string& input,
                                    const std::string& name);
 
@@ -80,7 +81,7 @@ class Converter {
 
   pblczero::TensorProto::DataType GetDataType() const;
   std::unique_ptr<OnnxConst> GetWeghtsConverter(
-      const pblczero::Weights::Layer&, std::initializer_list<int> dims,
+      const std::vector<float>&, std::initializer_list<int> dims,
       std::initializer_list<int> order);
 
   const pblczero::Net& src_;
@@ -97,11 +98,11 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
 }
 
 std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
-    const pblczero::Weights::Layer& layer, std::initializer_list<int> dims,
+    const std::vector<float>& weights, std::initializer_list<int> dims,
     std::initializer_list<int> order = {}) {
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
-      return std::make_unique<FloatOnnxWeightsAdapter>(layer, dims, order);
+      return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
@@ -109,23 +110,23 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
 }
 
 std::string Converter::MakeSqueezeAndExcite(
-    OnnxBuilder* builder, const pblczero::Weights::SEunit& se_unit,
+    OnnxBuilder* builder, const LegacyWeights::SEunit& se_unit,
     const std::string& input, const std::string& name) {
-  const int se_filters = LayerAdapter(se_unit.b1()).size();
+  const int se_filters = se_unit.b1.size();
 
   auto flow = builder->GlobalAveragePool(name + "/pooled", input);
   flow = builder->Squeeze(name + "/squeeze", flow);
   flow = builder->MatMul(
       name + "/matmul1", flow,
-      *GetWeghtsConverter(se_unit.w1(), {se_filters, NumFilters()}));
+      *GetWeghtsConverter(se_unit.w1, {se_filters, NumFilters()}));
   flow = builder->Add(name + "/add1", flow,
-                      *GetWeghtsConverter(se_unit.b1(), {se_filters}));
+                      *GetWeghtsConverter(se_unit.b1, {se_filters}));
   flow = builder->Relu(name + "/relu", flow);
   flow = builder->MatMul(
       name + "/matmul2", flow,
-      *GetWeghtsConverter(se_unit.w2(), {se_filters, NumFilters()}));
+      *GetWeghtsConverter(se_unit.w2, {se_filters, NumFilters()}));
   flow = builder->Add(name + "/add2", flow,
-                      *GetWeghtsConverter(se_unit.b2(), {se_filters}));
+                      *GetWeghtsConverter(se_unit.b2, {se_filters}));
   flow = builder->Reshape(name + "/reshape", flow, "/const/se_reshape");
 
   auto splits = builder->Split(name + "/split", flow, 1);
@@ -135,17 +136,19 @@ std::string Converter::MakeSqueezeAndExcite(
   return builder->Add(name + "/add3", flow, splits.second);
 }
 
-std::string Converter::MakeConvBlock(
-    OnnxBuilder* builder, const pblczero::Weights::ConvBlock& weights,
-    int input_channels, int output_channels, const std::string& input,
-    const std::string& name, const pblczero::Weights::SEunit* seunit,
-    const std::string& mixin, bool relu) {
+std::string Converter::MakeConvBlock(OnnxBuilder* builder,
+                                     const LegacyWeights::ConvBlock& weights,
+                                     int input_channels, int output_channels,
+                                     const std::string& input,
+                                     const std::string& name,
+                                     const LegacyWeights::SEunit* seunit,
+                                     const std::string& mixin, bool relu) {
   auto flow =
       builder->Conv(name, input,
-                    *GetWeghtsConverter(weights.weights(),
+                    *GetWeghtsConverter(weights.weights,
                                         {3, 3, input_channels, output_channels},
                                         {3, 2, 0, 1}),
-                    *GetWeghtsConverter(weights.biases(), {NumFilters()}));
+                    *GetWeghtsConverter(weights.biases, {NumFilters()}));
 
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
@@ -154,14 +157,13 @@ std::string Converter::MakeConvBlock(
 }
 
 std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
-                                         const pblczero::Weights::Residual& res,
+                                         const LegacyWeights::Residual& res,
                                          const std::string& input,
                                          const std::string& name) {
-  auto block1 = MakeConvBlock(builder, res.conv1(), NumFilters(), NumFilters(),
+  auto block1 = MakeConvBlock(builder, res.conv1, NumFilters(), NumFilters(),
                               input, name + "/conv1");
-  return MakeConvBlock(builder, res.conv1(), NumFilters(), NumFilters(), block1,
-                       name + "/conv2", res.has_se() ? &res.se() : nullptr,
-                       input);
+  return MakeConvBlock(builder, res.conv2, NumFilters(), NumFilters(), block1,
+                       name + "/conv2", res.has_se ? &res.se : nullptr, input);
 }
 
 void Converter::AddStdInitializers(OnnxBuilder* builder) {
@@ -170,6 +172,7 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
 }
 
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
+  LegacyWeights weights(src_.weights());
   OnnxBuilder builder;
 
   AddStdInitializers(&builder);
@@ -177,13 +180,13 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   onnx->set_input_planes(options_.input_planes_name);
   builder.AddInput(options_.input_planes_name, {-1, 112, 8, 8}, GetDataType());
 
-  auto flow =
-      MakeConvBlock(&builder, src_.weights().input(), kInputPlanes,
-                    NumFilters(), options_.input_planes_name, "inputconv");
+  // Input convolution.
+  auto flow = MakeConvBlock(&builder, weights.input, kInputPlanes, NumFilters(),
+                            options_.input_planes_name, "inputconv");
 
-  // Residual tower
+  // Residual tower.
   for (size_t i = 0; i < NumBlocks(); ++i) {
-    flow = MakeResidualBlock(&builder, src_.weights().residual(i), flow,
+    flow = MakeResidualBlock(&builder, weights.residual[i], flow,
                              "block" + std::to_string(i));
   }
 

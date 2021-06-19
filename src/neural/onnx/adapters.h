@@ -38,7 +38,7 @@ namespace lczero {
 
 class FloatOnnxWeightsAdapter : public OnnxConst {
  public:
-  FloatOnnxWeightsAdapter(const pblczero::Weights::Layer&,
+  FloatOnnxWeightsAdapter(const std::vector<float>& weights,
                           std::initializer_list<int> dims,
                           std::initializer_list<int> order);
 
@@ -47,7 +47,7 @@ class FloatOnnxWeightsAdapter : public OnnxConst {
   std::vector<int> GetDimensions() const override;
   std::string GetRawData() const override;
 
-  LayerAdapter layer_;
+  const std::vector<float>& weights_;
   std::vector<int> dims_;
   std::vector<int> order_;
 };
