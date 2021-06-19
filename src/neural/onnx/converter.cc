@@ -100,25 +100,11 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
     std::initializer_list<int> order = {}) {
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
-      std::make_unique<FloatOnnxWeightsAdapter>(layer, dims, order);
-      break;
+      return std::make_unique<FloatOnnxWeightsAdapter>(layer, dims, order);
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
                   " is not supported in weights converter");
-}
-
-std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
-                                         const pblczero::Weights::Residual& res,
-                                         const std::string& input,
-                                         const std::string& name) {
-  auto block1 =
-      builder->Conv(name + "/conv1", input,
-                    *GetWeghtsConverter(res.conv1().weights(),
-                                        {NumFilters(), NumFilters(), 3, 3}),
-                    *GetWeghtsConverter(res.conv1().biases(), {NumFilters()}));
-
-  return block1;
 }
 
 std::string Converter::MakeSqueezeAndExcite(
@@ -163,8 +149,18 @@ std::string Converter::MakeConvBlock(
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
   if (relu) flow = builder->Relu(name + "/relu", flow);
-
   return flow;
+}
+
+std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
+                                         const pblczero::Weights::Residual& res,
+                                         const std::string& input,
+                                         const std::string& name) {
+  auto block1 = MakeConvBlock(builder, res.conv1(), NumFilters(), NumFilters(),
+                              input, name + "/conv1");
+  return MakeConvBlock(builder, res.conv1(), NumFilters(), NumFilters(), block1,
+                       name + "/conv2", res.has_se() ? &res.se() : nullptr,
+                       input);
 }
 
 void Converter::AddStdInitializers(OnnxBuilder* builder) {
@@ -230,7 +226,7 @@ void Converter::Convert(pblczero::Net* dst) {
 }  // namespace
 
 const pblczero::Net ConvertWeightsToOnnx(
-    pblczero::Net& net, const WeightsToOnnxConverterOptions& options) {
+    const pblczero::Net& net, const WeightsToOnnxConverterOptions& options) {
   Converter converter(net, options);
   pblczero::Net dst;
   converter.Convert(&dst);

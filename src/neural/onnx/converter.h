@@ -38,7 +38,7 @@ struct WeightsToOnnxConverterOptions {
   std::string input_planes_name = "input/planes";
 };
 
-const pblczero::Weights ConvertWeightsToOnnx(
-    const pblczero::Net&, const WeightsToOnnxConverterOptions&);
+const pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
+                                         const WeightsToOnnxConverterOptions&);
 
 }  // namespace lczero

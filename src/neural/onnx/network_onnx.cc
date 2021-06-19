@@ -25,16 +25,28 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <fstream>
 #include <memory>
 
 #include "neural/factory.h"
+#include "neural/onnx/converter.h"
 #include "onnxruntime_cxx_api.h"
 
 namespace lczero {
 namespace {
 
 std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const OptionsDict&) {
+  if (!w) throw Exception("The ONNX backend requires a network file.");
+
+  // DO NOT SUBMIT  begin
+  auto x = ConvertWeightsToOnnx(*w, {});
+  std::ofstream fo1("/tmp/weights");
+  fo1 << x.OutputAsString();
+  std::ofstream fo2("/tmp/onnx");
+  fo2 << x.onnx_model().model();
+  // DO NOT SUBMIT  end
+
   Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "lc0");
 
   Ort::SessionOptions session_options;
