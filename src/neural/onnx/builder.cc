@@ -102,10 +102,10 @@ std::string PopulateStdNodeFields(pblczero::NodeProto* node,
 
 }  // namespace
 
-std::string OnnxBuilder::AddConvLayer(const std::string& name,
-                                      const std::string& input_name,
-                                      const OnnxConst& kernel_weights,
-                                      const OnnxConst& bias_weights) {
+std::string OnnxBuilder::Conv(const std::string& name,
+                              const std::string& input_name,
+                              const OnnxConst& kernel_weights,
+                              const OnnxConst& bias_weights) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input_name, "Conv");
   node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
@@ -115,49 +115,47 @@ std::string OnnxBuilder::AddConvLayer(const std::string& name,
   return out;
 }
 
-std::string OnnxBuilder::AddAddLayer(const std::string& name,
-                                     const std::string& input1,
-                                     const std::string& input2) {
+std::string OnnxBuilder::Add(const std::string& name, const std::string& input1,
+                             const std::string& input2) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "Add");
   node->add_input(input2);
   return out;
 }
 
-std::string OnnxBuilder::AddAddLayer(const std::string& name,
-                                     const std::string& input1,
-                                     const OnnxConst& input2) {
+std::string OnnxBuilder::Add(const std::string& name, const std::string& input1,
+                             const OnnxConst& input2) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "Add");
   node->add_input(AddInitializer(name + "/w", input2));
   return out;
 }
 
-std::string OnnxBuilder::AddGlobalAveragePoolLayer(const std::string& name,
-                                                   const std::string& input) {
+std::string OnnxBuilder::GlobalAveragePool(const std::string& name,
+                                           const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   return PopulateStdNodeFields(node, name, input, "GlobalAveragePool");
 }
 
-std::string OnnxBuilder::AddSqueezeLayer(const std::string& name,
-                                         const std::string& input) {
+std::string OnnxBuilder::Squeeze(const std::string& name,
+                                 const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Squeeze");
   AddIntAttribute(node, "axes", {2, 3});
   return out;
 }
 
-std::string OnnxBuilder::AddMatMulLayer(const std::string& name,
-                                        const std::string& input1,
-                                        const OnnxConst& input2) {
+std::string OnnxBuilder::MatMul(const std::string& name,
+                                const std::string& input1,
+                                const OnnxConst& input2) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "MatMul");
   node->add_input(AddInitializer(name + "/w", input2));
   return out;
 }
 
-std::string OnnxBuilder::AddReluLayer(const std::string& name,
-                                      const std::string& input) {
+std::string OnnxBuilder::Relu(const std::string& name,
+                              const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   return PopulateStdNodeFields(node, name, input, "Relu");
 }

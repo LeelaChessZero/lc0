@@ -112,11 +112,11 @@ std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
                                          const pblczero::Weights::Residual& res,
                                          const std::string& input,
                                          const std::string& name) {
-  auto block1 = builder->AddConvLayer(
-      name + "/conv1", input,
-      *GetWeghtsConverter(res.conv1().weights(),
-                          {NumFilters(), NumFilters(), 3, 3}),
-      *GetWeghtsConverter(res.conv1().biases(), {NumFilters()}));
+  auto block1 =
+      builder->Conv(name + "/conv1", input,
+                    *GetWeghtsConverter(res.conv1().weights(),
+                                        {NumFilters(), NumFilters(), 3, 3}),
+                    *GetWeghtsConverter(res.conv1().biases(), {NumFilters()}));
 
   return block1;
 }
@@ -126,21 +126,22 @@ std::string Converter::MakeSqueezeAndExcite(
     const std::string& input, const std::string& name) {
   const int se_filters = LayerAdapter(se_unit.b1()).size();
 
-  auto flow = builder->AddGlobalAveragePoolLayer(name + "/pooled", input);
-  flow = builder->AddSqueezeLayer(name + "/squeeze", flow);
-  flow = builder->AddMatMulLayer(
+  auto flow = builder->GlobalAveragePool(name + "/pooled", input);
+  flow = builder->Squeeze(name + "/squeeze", flow);
+  flow = builder->MatMul(
       name + "/matmul1", flow,
       *GetWeghtsConverter(se_unit.w1(), {se_filters, NumFilters()}));
-  flow = builder->AddAddLayer(name + "/add1", flow,
-                              *GetWeghtsConverter(se_unit.b1(), {se_filters}));
-  flow = builder->AddReluLayer(name + "/relu", flow);
-  flow = builder->AddMatMulLayer(
+  flow = builder->Add(name + "/add1", flow,
+                      *GetWeghtsConverter(se_unit.b1(), {se_filters}));
+  flow = builder->Relu(name + "/relu", flow);
+  flow = builder->MatMul(
       name + "/matmul2", flow,
       *GetWeghtsConverter(se_unit.w2(), {se_filters, NumFilters()}));
-  flow = builder->AddAddLayer(name + "/add2", flow,
-                              *GetWeghtsConverter(se_unit.b2(), {se_filters}));
+  flow = builder->Add(name + "/add2", flow,
+                      *GetWeghtsConverter(se_unit.b2(), {se_filters}));
 
   // Пишу тут.
+  // flow = builder->Add
 
   return flow;
 }
@@ -150,19 +151,19 @@ std::string Converter::MakeConvBlock(
     int input_channels, int output_channels, const std::string& input,
     const std::string& name, const pblczero::Weights::SEunit* se_unit,
     const std::string& mixin, bool relu) {
-  auto flow = builder->AddConvLayer(
-      name, input,
-      *GetWeghtsConverter(weights.weights(),
-                          {3, 3, input_channels, output_channels},
-                          {3, 2, 0, 1}),
-      *GetWeghtsConverter(weights.biases(), {NumFilters()}));
+  auto flow =
+      builder->Conv(name, input,
+                    *GetWeghtsConverter(weights.weights(),
+                                        {3, 3, input_channels, output_channels},
+                                        {3, 2, 0, 1}),
+                    *GetWeghtsConverter(weights.biases(), {NumFilters()}));
 
   if (se_unit) {
     flow = MakeSqueezeAndExcite(builder, *se_unit, flow, name + "/se");
   }
 
   if (!mixin.empty()) {
-    flow = builder->AddAddLayer(name + "/mixin", flow, mixin);
+    flow = builder->Add(name + "/mixin", flow, mixin);
   }
 
   return flow;

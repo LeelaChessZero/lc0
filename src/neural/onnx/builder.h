@@ -48,26 +48,19 @@ class OnnxBuilder {
   void AddInput(const std::string& name, std::initializer_list<int> dims,
                 pblczero::TensorProto::DataType datatype);
 
-  std::string AddConvLayer(const std::string& name,
-                           const std::string& input_name,
-                           const OnnxConst& kernel_weights,
-                           const OnnxConst& bias_weights);
-  std::string AddAddLayer(const std::string& name, const std::string& input1,
-                          const std::string& input2);
-  std::string AddAddLayer(const std::string& name, const std::string& input1,
-                          const OnnxConst&);
-
-  std::string AddGlobalAveragePoolLayer(const std::string& name,
-                                        const std::string& input);
-
-  std::string AddSqueezeLayer(const std::string& name,
-                              const std::string& input);
-
-  std::string AddMatMulLayer(const std::string& name, const std::string& input1,
-                             const OnnxConst& input2);
-
-  std::string AddReluLayer(const std::string& name, const std::string& input);
-
+  std::string Conv(const std::string& name, const std::string& input_name,
+                   const OnnxConst& kernel_weights,
+                   const OnnxConst& bias_weights);
+  std::string Add(const std::string& name, const std::string& input1,
+                  const std::string& input2);
+  std::string Add(const std::string& name, const std::string& input1,
+                  const OnnxConst&);
+  std::string GlobalAveragePool(const std::string& name,
+                                const std::string& input);
+  std::string Squeeze(const std::string& name, const std::string& input);
+  std::string MatMul(const std::string& name, const std::string& input1,
+                     const OnnxConst& input2);
+  std::string Relu(const std::string& name, const std::string& input);
   std::string AddInitializer(const std::string& name, const OnnxConst& weights);
 
   const pblczero::ModelProto& as_proto() const { return model_; }
