@@ -147,6 +147,15 @@ std::string OnnxBuilder::Squeeze(const std::string& name,
 
 std::string OnnxBuilder::MatMul(const std::string& name,
                                 const std::string& input1,
+                                const std::string& input2) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "MatMul");
+  node->add_input(input2);
+  return out;
+}
+
+std::string OnnxBuilder::MatMul(const std::string& name,
+                                const std::string& input1,
                                 const OnnxConst& input2) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "MatMul");
@@ -158,6 +167,34 @@ std::string OnnxBuilder::Relu(const std::string& name,
                               const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   return PopulateStdNodeFields(node, name, input, "Relu");
+}
+
+std::string OnnxBuilder::Reshape(const std::string& name,
+                                 const std::string& input,
+                                 const std::string& shape) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Reshape");
+  node->add_input(shape);
+  return out;
+}
+
+std::pair<std::string, std::string> OnnxBuilder::Split(const std::string& name,
+                                                       const std::string& input,
+                                                       int axis) {
+  auto* node = model_.mutable_graph()->add_node();
+  node->set_name(name);
+  node->set_op_type("Split");
+  node->add_input(input);
+  node->add_output(name + "/out1");
+  node->add_output(name + "/out2");
+  AddIntAttribute(node, "axis", {axis});
+  return {name + "/out1", name + "/out2"};
+}
+
+std::string OnnxBuilder::Sigmoid(const std::string& name,
+                                 const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Sigmoid");
 }
 
 }  // namespace lczero

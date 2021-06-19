@@ -139,11 +139,13 @@ std::string Converter::MakeSqueezeAndExcite(
       *GetWeghtsConverter(se_unit.w2(), {se_filters, NumFilters()}));
   flow = builder->Add(name + "/add2", flow,
                       *GetWeghtsConverter(se_unit.b2(), {se_filters}));
+  flow = builder->Reshape(name + "/reshape", flow, "/const/se_reshape");
 
-  // Пишу тут.
-  // flow = builder->Add
+  auto splits = builder->Split(name + "/split", flow, 1);
 
-  return flow;
+  flow = builder->Sigmoid(name + "/sigmoid", splits.first);
+  flow = builder->MatMul(name + "/matmul3", flow, input);
+  return builder->Add(name + "/add3", flow, splits.second);
 }
 
 std::string Converter::MakeConvBlock(
@@ -170,7 +172,7 @@ std::string Converter::MakeConvBlock(
 }
 
 void Converter::AddStdInitializers(OnnxBuilder* builder) {
-  builder->AddInitializer("/const/se_shape",
+  builder->AddInitializer("/const/se_reshape",
                           Int32OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
 }
 

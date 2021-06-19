@@ -60,8 +60,15 @@ class OnnxBuilder {
   std::string Squeeze(const std::string& name, const std::string& input);
   std::string MatMul(const std::string& name, const std::string& input1,
                      const OnnxConst& input2);
+  std::string MatMul(const std::string& name, const std::string& input1,
+                     const std::string& input2);
   std::string Relu(const std::string& name, const std::string& input);
   std::string AddInitializer(const std::string& name, const OnnxConst& weights);
+  std::string Reshape(const std::string& name, const std::string& input,
+                      const std::string& shape);
+  std::pair<std::string, std::string> Split(const std::string& name,
+                                            const std::string& input, int axis);
+  std::string Sigmoid(const std::string& name, const std::string& input);
 
   const pblczero::ModelProto& as_proto() const { return model_; }
   std::string OutputAsString() const { return model_.OutputAsString(); }
