@@ -50,7 +50,8 @@ class Converter {
 
  private:
   int NumFilters() const {
-    return LayerAdapter(src_.weights().input().biases()).size() / kInputPlanes;
+    return LayerAdapter(src_.weights().input().weights()).size() /
+           kInputPlanes / 9;
   }
   size_t NumBlocks() const { return src_.weights().residual_size(); }
   void CopyGenericFields(pblczero::Net* dst);

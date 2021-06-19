@@ -48,7 +48,7 @@ std::vector<int> FloatOnnxWeightsAdapter::GetDimensions() const {
 std::string FloatOnnxWeightsAdapter::GetRawData() const {
   const auto& src = layer_.as_vector();
   std::string dst(src.size() * sizeof(src[0]), '\0');
-  TransposeTensor(dims_, order_, src, reinterpret_cast<float*>(&dst));
+  TransposeTensor(dims_, order_, src, reinterpret_cast<float*>(dst.data()));
   return dst;
 }
 
