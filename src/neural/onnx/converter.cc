@@ -151,7 +151,7 @@ std::string Converter::MakeSqueezeAndExcite(
 std::string Converter::MakeConvBlock(
     OnnxBuilder* builder, const pblczero::Weights::ConvBlock& weights,
     int input_channels, int output_channels, const std::string& input,
-    const std::string& name, const pblczero::Weights::SEunit* se_unit,
+    const std::string& name, const pblczero::Weights::SEunit* seunit,
     const std::string& mixin, bool relu) {
   auto flow =
       builder->Conv(name, input,
@@ -160,13 +160,9 @@ std::string Converter::MakeConvBlock(
                                         {3, 2, 0, 1}),
                     *GetWeghtsConverter(weights.biases(), {NumFilters()}));
 
-  if (se_unit) {
-    flow = MakeSqueezeAndExcite(builder, *se_unit, flow, name + "/se");
-  }
-
-  if (!mixin.empty()) {
-    flow = builder->Add(name + "/mixin", flow, mixin);
-  }
+  if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
+  if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
+  if (relu) flow = builder->Relu(name + "/relu", flow);
 
   return flow;
 }
