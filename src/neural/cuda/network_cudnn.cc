@@ -235,7 +235,7 @@ class CudnnNetwork : public Network {
       int cuda_version;
       cudaRuntimeGetVersion(&cuda_version);
       if (!hasTensorCores)
-        use_custom_winograd_ = true;
+        use_custom_winograd_ = false;
       else if (kNumFilters >= 256 &&
                !(deviceProp.major == 7 && deviceProp.minor == 5 &&
                  cuda_version < 11000))
