@@ -27,13 +27,16 @@
 
 #pragma once
 
+#include <initializer_list>
+
 #include "neural/onnx/builder.h"
+#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
 #include "utils/weights_adapter.h"
 
 namespace lczero {
 
-class FloatOnnxWeightsAdapter : public OnnxWeights {
+class FloatOnnxWeightsAdapter : public OnnxConst {
  public:
   FloatOnnxWeightsAdapter(const pblczero::Weights::Layer&,
                           std::initializer_list<int> dims,
@@ -47,6 +50,33 @@ class FloatOnnxWeightsAdapter : public OnnxWeights {
   LayerAdapter layer_;
   std::vector<int> dims_;
   std::vector<int> order_;
+};
+
+template <typename T>
+class GenericOnnxConst : public OnnxConst {
+ public:
+  GenericOnnxConst(const std::vector<T> data, std::initializer_list<int> dims)
+      : data_(data), dims_(dims) {}
+
+ private:
+  std::vector<int> GetDimensions() const override { return dims_; }
+  std::string GetRawData() const override {
+    return {reinterpret_cast<const char*>(data_.data()),
+            reinterpret_cast<const char*>(data_.data() + data_.size())};
+  }
+
+  std::vector<T> data_;
+  std::vector<int> dims_;
+};
+
+class Int32OnnxConst : public GenericOnnxConst<int32_t> {
+ public:
+  using GenericOnnxConst<int32_t>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::INT32;
+  }
 };
 
 }  // namespace lczero

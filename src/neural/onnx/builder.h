@@ -34,9 +34,9 @@
 
 namespace lczero {
 
-class OnnxWeights {
+class OnnxConst {
  public:
-  virtual ~OnnxWeights() = default;
+  virtual ~OnnxConst() = default;
   virtual pblczero::TensorProto::DataType GetDataType() const = 0;
   virtual std::vector<int> GetDimensions() const = 0;
   virtual std::string GetRawData() const = 0;
@@ -48,25 +48,32 @@ class OnnxBuilder {
   void AddInput(const std::string& name, std::initializer_list<int> dims,
                 pblczero::TensorProto::DataType datatype);
 
-  std::string AddConvLayer(const std::string& input_name,
-                           const std::string& name,
-                           const OnnxWeights& kernel_weights,
-                           const OnnxWeights& bias_weights);
-  std::string AddAddLayer(const std::string& input1, const std::string& input2,
-                          const std::string& name);
+  std::string AddConvLayer(const std::string& name,
+                           const std::string& input_name,
+                           const OnnxConst& kernel_weights,
+                           const OnnxConst& bias_weights);
+  std::string AddAddLayer(const std::string& name, const std::string& input1,
+                          const std::string& input2);
+  std::string AddAddLayer(const std::string& name, const std::string& input1,
+                          const OnnxConst&);
 
-  std::string AddGlobalAveragePoolLayer(const std::string& input,
-                                        const std::string& name);
+  std::string AddGlobalAveragePoolLayer(const std::string& name,
+                                        const std::string& input);
 
-  std::string AddSqueezeLayer(const std::string& input,
-                              const std::string& name);
+  std::string AddSqueezeLayer(const std::string& name,
+                              const std::string& input);
+
+  std::string AddMatMulLayer(const std::string& name, const std::string& input1,
+                             const OnnxConst& input2);
+
+  std::string AddReluLayer(const std::string& name, const std::string& input);
+
+  std::string AddInitializer(const std::string& name, const OnnxConst& weights);
 
   const pblczero::ModelProto& as_proto() const { return model_; }
   std::string OutputAsString() const { return model_.OutputAsString(); }
 
  private:
-  std::string AddInitializer(const std::string& name,
-                             const OnnxWeights& weights);
   pblczero::ModelProto model_;
 };
 
