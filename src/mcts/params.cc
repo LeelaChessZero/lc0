@@ -41,6 +41,9 @@
 #ifndef DEFAULT_MAX_PREFETCH
 #define DEFAULT_MAX_PREFETCH 32
 #endif
+#ifndef DEFAULT_TASK_WORKERS
+#define DEFAULT_TASK_WORKERS 4
+#endif
 
 namespace lczero {
 
@@ -306,6 +309,16 @@ const OptionId SearchParams::kThreadIdlingThresholdId{
     "If there are more than this number of search threads that are not "
     "actively in the process of either sending data to the backend or waiting "
     "for data from the backend, assume that the backend is idle."};
+const OptionId SearchParams::kMaxCollisionVisitsScalingStartId{
+    "max-collision-visits-scaling-start", "MaxCollisionVisitsScalingStart",
+    "Tree size where max collision visits starts scaling up from 1."};
+const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
+    "max-collision-visits-scaling-end", "MaxCollisionVisitsScalingEnd",
+    "Tree size where max collision visits reaches max. Set to 0 to disable "
+    "scaling entirely."};
+const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
+    "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
+    "Power to apply to the interpolation between 1 and max to make it curved."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -340,10 +353,14 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.359f;
-  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
-  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
+  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 917;
+  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 100000000) = 80000;
+  options->Add<IntOption>(kMaxCollisionVisitsScalingStartId, 1, 100000) = 28;
+  options->Add<IntOption>(kMaxCollisionVisitsScalingEndId, 0, 100000000) = 145000;
+  options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
+      1.25;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
-  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 1.0f;
+  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
@@ -372,8 +389,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
-  options->Add<BoolOption>(kMultiGatherEnabledId) = false;
-  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = 4;
+  options->Add<BoolOption>(kMultiGatherEnabledId) = true;
+  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
+      DEFAULT_TASK_WORKERS;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
   options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
   options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =
@@ -468,7 +486,13 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMinimumWorkPerTaskForProcessing(
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
-      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)) {
+      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
+      kMaxCollisionVisitsScalingStart(
+          options.Get<int>(kMaxCollisionVisitsScalingStartId)),
+      kMaxCollisionVisitsScalingEnd(
+          options.Get<int>(kMaxCollisionVisitsScalingEndId)),
+      kMaxCollisionVisitsScalingPower(
+          options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

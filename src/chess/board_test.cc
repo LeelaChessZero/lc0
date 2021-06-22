@@ -24,6 +24,8 @@
 
 #include "chess/bitboard.h"
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 TEST(BoardSquare, BoardSquare) {
@@ -51,6 +53,12 @@ TEST(BoardSquare, BoardSquare) {
     EXPECT_EQ(x.row(), 6);
     EXPECT_EQ(x.col(), 2);
   }
+}
+
+TEST(ChessBoard, IllegalFirstRankPawns) {
+  ChessBoard board;
+  EXPECT_THROW(board.SetFromFen("nqrbkrnr/bnnbnbnn/8/8/8/8/NNNBPNBN/QNRPKPQQ w - - 0 1");,
+               Exception);
 }
 
 TEST(ChessBoard, PseudolegalMovesStartingPos) {
@@ -2266,6 +2274,14 @@ TEST(ChessBoard, InvalidFEN) {
   TestInvalid("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR g KQkq - 0 1");
   TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq i6 0 3");
   TestInvalid("rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq A6 0 3");
+}
+
+// Default promotion to knight was leaving an en-passant flag set.
+TEST(ChessBoard, InvalidEnPassantFromKnightPromotion) {
+  ChessBoard board;
+  board.SetFromFen("Q3b3/2P2pnk/3R3p/p7/1pp1p3/PnP1P2P/2B2PP1/5RK1 w - - 1 31");
+  board.ApplyMove(Move("c7c8"));
+  EXPECT_TRUE(board.en_passant().empty());
 }
 
 }  // namespace lczero

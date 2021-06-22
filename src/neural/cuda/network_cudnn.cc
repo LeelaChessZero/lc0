@@ -43,7 +43,6 @@
 
 //#define DEBUG_RAW_NPS
 
-
 namespace lczero {
 using namespace cudnn_backend;
 
@@ -236,7 +235,7 @@ class CudnnNetwork : public Network {
       int cuda_version;
       cudaRuntimeGetVersion(&cuda_version);
       if (!hasTensorCores)
-        use_custom_winograd_ = true;
+        use_custom_winograd_ = false;
       else if (kNumFilters >= 256 &&
                !(deviceProp.major == 7 && deviceProp.minor == 5 &&
                  cuda_version < 11000))
@@ -261,7 +260,8 @@ class CudnnNetwork : public Network {
               "consider using a smaller network.";
     }
 
-    const bool custom_winograd_override = !options.IsDefault<bool>("custom_winograd");
+    const bool custom_winograd_override =
+        !options.IsDefault<bool>("custom_winograd");
 
     if (!custom_winograd_override && use_custom_winograd_ &&
         transformed_residual_weight_size > 0.5 * deviceProp.totalGlobalMem) {
@@ -270,11 +270,11 @@ class CudnnNetwork : public Network {
               "Please consider using a smaller network.";
       use_custom_winograd_ = false;
     }
-    
+
     // Override if set in backend-opts.
     if (custom_winograd_override)
       use_custom_winograd_ = options.Get<bool>("custom_winograd");
-    
+
     if (use_custom_winograd_ &&
         transformed_residual_weight_size > 0.4 * deviceProp.totalGlobalMem) {
       CERR << "WARNING: Low GPU video memory. You may still run into OOM "
@@ -362,8 +362,8 @@ class CudnnNetwork : public Network {
     if (use_custom_winograd_) {
       // Need additional space for transformed input/outputs which are 36/16
       // times size (4x4 block transformed into 6x6).
-      transformed_tensor_size =
-          (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) * sizeof(DataType));
+      transformed_tensor_size = (size_t)(max_batch_size_ * kNumFilters * 64 *
+                                         (36.0 / 16.0) * sizeof(DataType));
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
@@ -375,7 +375,14 @@ class CudnnNetwork : public Network {
     // 2. Build the network, and copy the weights to GPU memory.
 
     // Input.
-    {
+    if (use_custom_winograd_) {
+      auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+          nullptr, kNumFilters, 8, 8, kNumInputPlanes, true, true, false, false,
+          0, use_gemm_ex, use_res_block_winograd_fuse_opt_);
+      inputConv->LoadWeights(&weights.input.weights[0],
+                             &weights.input.biases[0], scratch_mem_);
+      network_.emplace_back(std::move(inputConv));
+    } else {
       auto inputConv = std::make_unique<ConvLayer<DataType>>(
           nhwc_, kNumFilters, 8, 8, 3, kNumInputPlanes, true, true);
       inputConv->LoadWeights(&weights.input.weights[0],
@@ -386,7 +393,6 @@ class CudnnNetwork : public Network {
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
       if (use_custom_winograd_) {
-
         bool has_se = weights.residual[block].has_se;
         int se_k = (int)weights.residual[block].se.b1.size();
 
@@ -404,7 +410,8 @@ class CudnnNetwork : public Network {
             layer->LoadSEWeights(&weights.residual[block].se.w1[0],
                                  &weights.residual[block].se.b1[0],
                                  &weights.residual[block].se.w2[0],
-                                 &weights.residual[block].se.b2[0], scratch_mem_);
+                                 &weights.residual[block].se.b2[0],
+                                 scratch_mem_);
           network_.emplace_back(std::move(layer));
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
@@ -598,6 +605,9 @@ class CudnnNetwork : public Network {
     auto t_start = std::chrono::high_resolution_clock::now();
 #endif
 
+    // TODO: consider supporting multi-stream path for cudnn backend too.
+    cudaStream_t stream = 0;    // default stream
+
     // Expand packed planes to full planes.
     uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
     float* ipDataValues = io->input_val_mem_gpu_;
@@ -606,13 +616,13 @@ class CudnnNetwork : public Network {
     if (fp16) {
       if (nhwc_)
         expandPlanes_Fp16_NHWC((half*)(tensor_mem_[0]), ipDataMasks,
-                               ipDataValues, batchSize * kInputPlanes);
+                               ipDataValues, batchSize * kInputPlanes, stream);
       else
         expandPlanes_Fp16_NCHW((half*)(tensor_mem_[0]), ipDataMasks,
-                               ipDataValues, batchSize * kInputPlanes);
+                               ipDataValues, batchSize * kInputPlanes, stream);
     } else {
       expandPlanes_Fp32_NCHW((float*)(tensor_mem_[0]), ipDataMasks,
-                             ipDataValues, batchSize * kInputPlanes);
+                             ipDataValues, batchSize * kInputPlanes, stream);
     }
 
     // debug code example
@@ -628,43 +638,43 @@ class CudnnNetwork : public Network {
         batchSize,
         use_res_block_winograd_fuse_opt_ ? tensor_mem_[1] : tensor_mem_[2],
         tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_,
-        cublas_);  // input conv
+        cublas_, stream);  // input conv
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
       if (use_res_block_winograd_fuse_opt_) {
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // block
+                            cublas_, stream);  // block
       } else {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                             scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // conv1
+                            cublas_, stream);  // conv1
 
         if (use_custom_winograd_) {
           network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                               tensor_mem_[2], scratch_mem_, scratch_size_,
                               cudnn_,
-                              cublas_);  // conv2
+                              cublas_, stream);  // conv2
         } else {
           // For SE Resnet, skip connection is added after SE (and bias is added
           // as part of SE).
           if (has_se_) {
             network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0],
                                 nullptr, scratch_mem_, scratch_size_, cudnn_,
-                                cublas_);  // conv2
+                                cublas_, stream);  // conv2
           } else {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
                                 cudnn_,
-                                cublas_);  // conv2
+                                cublas_, stream);  // conv2
           }
 
           if (has_se_) {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
                                 cudnn_,
-                                cublas_);  // SE layer
+                                cublas_, stream);  // SE layer
           }
         }
       }
@@ -673,40 +683,42 @@ class CudnnNetwork : public Network {
     // Policy head.
     if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // policy conv1
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // policy conv1
 
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // policy conv2
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // policy conv2
 
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // policy map layer
+                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            stream);  // policy map layer
         copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
-                          batchSize * kNumOutputPolicy);  // POLICY output
+                          batchSize * kNumOutputPolicy,
+                          stream);  // POLICY output
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // policy map layer  // POLICY output
+                            cublas_,
+                            stream);  // policy map layer  // POLICY output
       }
     } else {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // pol conv
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // pol conv
 
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol FC
+                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            stream);  // pol FC
 
         copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
-                          batchSize * kNumOutputPolicy);  // POLICY
+                          batchSize * kNumOutputPolicy, stream);  // POLICY
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);  // pol FC  // POLICY
+                            cublas_, stream);  // pol FC  // POLICY
       }
     }
 
@@ -717,47 +729,47 @@ class CudnnNetwork : public Network {
 
     // value head
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                        scratch_mem_, scratch_size_, cudnn_,
-                        cublas_);  // value conv
+                        scratch_mem_, scratch_size_, cudnn_, cublas_,
+                        stream);  // value conv
 
     network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                        scratch_mem_, scratch_size_, cudnn_,
-                        cublas_);  // value FC1
-
+                        scratch_mem_, scratch_size_, cudnn_, cublas_,
+                        stream);  // value FC1
 
     if (fp16) {
       // TODO: consider fusing the bias-add of FC2 with format conversion.
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // value FC2
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // value FC2
       copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
-                        wdl_ ? 3 * batchSize : batchSize);  // VALUE
+                        wdl_ ? 3 * batchSize : batchSize, stream);  // VALUE
     } else {
-      network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1],
-                          nullptr, scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // value FC2    // VALUE
+      network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_,
+                          cublas_, stream);  // value FC2    // VALUE
     }
 
     if (moves_left_) {
       // Moves left head
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // moves conv
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // moves conv
 
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_);  // moves FC1
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // moves FC1
 
       // Moves left FC2
       if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_, cublas_);
-        copyTypeConverted(opMov, (half*)(tensor_mem_[0]), batchSize);
+                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            stream);
+        copyTypeConverted(opMov, (half*)(tensor_mem_[0]), batchSize, stream);
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem_[1],
                             nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_);
+                            cublas_, stream);
       }
     }
 
