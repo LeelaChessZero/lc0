@@ -113,8 +113,8 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   }
 
   // Total time, including increments, until time control.
-  auto total_moves_time =
-      std::max(0.0f, *time + increment * (movestogo - 1) - move_overhead_);
+  auto total_moves_time = std::max(0.0f, *time + increment * (movestogo - 1) -
+                                             move_overhead_ - time_spared_ms_);
 
   // If there is time spared from previous searches, the `time_to_squander` part
   // of it will be used immediately, remove that from planning.
@@ -122,7 +122,6 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   if (time_spared_ms_ > 0) {
     time_to_squander = time_spared_ms_ * spend_saved_time_;
     time_spared_ms_ -= time_to_squander;
-    total_moves_time -= time_to_squander;
   }
 
   // Evenly split total time between all moves.
@@ -143,10 +142,10 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   constexpr int kSmartPruningToleranceMs = 200;
   if (slowmover_ < 1.0 ||
       this_move_time * slowmover_ > kSmartPruningToleranceMs) {
-    this_move_time *= slowmover_;
     // If time is planned to be overused because of slowmover, remove excess
     // of that time from spared time.
     time_spared_ms_ -= this_move_time * (slowmover_ - 1);
+    this_move_time *= slowmover_;
   }
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
