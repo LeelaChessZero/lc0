@@ -118,15 +118,15 @@ std::string Converter::MakeSqueezeAndExcite(
   flow = builder->Squeeze(name + "/squeeze", flow);
   flow = builder->MatMul(
       name + "/matmul1", flow,
-      *GetWeghtsConverter(se_unit.w1, {se_filters, NumFilters()}));
+      *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}));
   flow = builder->Add(name + "/add1", flow,
                       *GetWeghtsConverter(se_unit.b1, {se_filters}));
   flow = builder->Relu(name + "/relu", flow);
   flow = builder->MatMul(
       name + "/matmul2", flow,
-      *GetWeghtsConverter(se_unit.w2, {2 * se_filters, NumFilters()}));
+      *GetWeghtsConverter(se_unit.w2, {se_filters, 2 * NumFilters()}));
   flow = builder->Add(name + "/add2", flow,
-                      *GetWeghtsConverter(se_unit.b2, {2 * se_filters}));
+                      *GetWeghtsConverter(se_unit.b2, {2 * NumFilters()}));
   flow = builder->Reshape(name + "/reshape", flow, "/const/se_reshape");
 
   auto splits = builder->Split(name + "/split", flow, 1);
