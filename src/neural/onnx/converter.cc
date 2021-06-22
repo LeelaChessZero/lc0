@@ -35,6 +35,7 @@
 #include "neural/network_legacy.h"
 #include "neural/onnx/adapters.h"
 #include "neural/onnx/builder.h"
+#include "neural/shared/policy_map.h"
 #include "proto/net.pb.h"
 #include "utils/exception.h"
 
@@ -76,6 +77,9 @@ class Converter {
                                    const LegacyWeights::SEunit& se_unit,
                                    const std::string& input,
                                    const std::string& name);
+
+  void MakePolicyHead(OnnxBuilder* builder, const std::string& input,
+                      const LegacyWeights& weights);
 
   void AddStdInitializers(OnnxBuilder* builder);
 
@@ -168,6 +172,39 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
                           Int32OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
 }
 
+namespace {
+std::vector<int> MakePolicyMap() {
+  std::vector<int> policy_map(1858);
+  for (const auto& mapping : kConvPolicyMap) {
+    if (mapping == -1) continue;
+    const auto index = &mapping - kConvPolicyMap;
+    const auto displacement = index / 64;
+    const auto square = index % 64;
+    const auto row = square / 8;
+    const auto col = square % 8;
+    policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
+  }
+  return policy_map;
+}
+}  // namespace
+
+void Converter::MakePolicyHead(OnnxBuilder* builder, const std::string& input,
+                               const LegacyWeights& weights) {
+  if (!weights.policy1.weights.empty()) {
+    // Conv policy head.
+    auto flow = MakeConvBlock(builder, weights.policy1, NumFilters(),
+                              NumFilters(), input, "/policy/conv1");
+    flow = MakeConvBlock(builder, weights.policy, NumFilters(), 80, flow,
+                         "/policy/conv2");
+    builder->AddInitializer("/const/mapping_table",
+                            Int32OnnxConst(MakePolicyMap(), {1858}));
+    builder->AddInitializer("/const/policy_shape",
+                            Int32OnnxConst({-1, 1858}, {2}));
+    flow = builder->Reshape("/policy/flatten", flow, "/const/policy_shape");
+    // ПИШУ ТУТ
+  }
+}
+
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   LegacyWeights weights(src_.weights());
   OnnxBuilder builder;
@@ -179,13 +216,16 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
 
   // Input convolution.
   auto flow = MakeConvBlock(&builder, weights.input, kInputPlanes, NumFilters(),
-                            options_.input_planes_name, "inputconv");
+                            options_.input_planes_name, "/inputconv");
 
   // Residual tower.
   for (size_t i = 0; i < NumBlocks(); ++i) {
     flow = MakeResidualBlock(&builder, weights.residual[i], flow,
-                             "block" + std::to_string(i));
+                             "/block" + std::to_string(i));
   }
+
+  // Policy head.
+  MakePolicyHead(&builder, flow, weights);
 
   onnx->set_model(builder.OutputAsString());
 }

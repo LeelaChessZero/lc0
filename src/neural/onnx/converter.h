@@ -35,7 +35,7 @@ namespace lczero {
 struct WeightsToOnnxConverterOptions {
   enum class DataType { kFloat32 };
   DataType data_type_ = DataType::kFloat32;
-  std::string input_planes_name = "input/planes";
+  std::string input_planes_name = "/input/planes";
 };
 
 const pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,

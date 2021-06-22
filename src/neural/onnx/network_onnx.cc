@@ -41,9 +41,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   // DO NOT SUBMIT  begin
   auto x = ConvertWeightsToOnnx(*w, {});
-  std::ofstream fo1("/tmp/weights");
+  std::ofstream fo1("/tmp/weights.weights");
   fo1 << x.OutputAsString();
-  std::ofstream fo2("/tmp/onnx");
+  std::ofstream fo2("/tmp/onnx.onnx");
   fo2 << x.onnx_model().model();
   // DO NOT SUBMIT  end
 
