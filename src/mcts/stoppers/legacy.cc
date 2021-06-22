@@ -113,13 +113,14 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   }
 
   // Total time, including increments, until time control.
-  auto total_moves_time = std::max(0.0f, *time + increment * (movestogo - 1) -
-                                             move_overhead_ - time_spared_ms_);
+  auto total_moves_time =
+      std::max(0.0f, *time + increment * (movestogo - 1) - move_overhead_);
 
   // If there is time spared from previous searches, the `time_to_squander` part
   // of it will be used immediately, remove that from planning.
   int time_to_squander = 0;
   if (time_spared_ms_ > 0) {
+    total_moves_time = std::max(0.0f, total_moves_time - time_spared_ms_);
     time_to_squander = time_spared_ms_ * spend_saved_time_;
     time_spared_ms_ -= time_to_squander;
   }
