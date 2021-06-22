@@ -39,8 +39,7 @@ namespace lczero {
 class FloatOnnxWeightsAdapter : public OnnxConst {
  public:
   FloatOnnxWeightsAdapter(const std::vector<float>& weights,
-                          std::initializer_list<int> dims,
-                          std::initializer_list<int> order);
+                          std::initializer_list<int> dims);
 
  private:
   pblczero::TensorProto::DataType GetDataType() const override;
@@ -49,7 +48,6 @@ class FloatOnnxWeightsAdapter : public OnnxConst {
 
   const std::vector<float>& weights_;
   std::vector<int> dims_;
-  std::vector<int> order_;
 };
 
 template <typename T>

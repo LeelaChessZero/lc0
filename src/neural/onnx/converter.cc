@@ -81,8 +81,7 @@ class Converter {
 
   pblczero::TensorProto::DataType GetDataType() const;
   std::unique_ptr<OnnxConst> GetWeghtsConverter(
-      const std::vector<float>&, std::initializer_list<int> dims,
-      std::initializer_list<int> order);
+      const std::vector<float>&, std::initializer_list<int> dims);
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
@@ -98,11 +97,10 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
 }
 
 std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
-    const std::vector<float>& weights, std::initializer_list<int> dims,
-    std::initializer_list<int> order = {}) {
+    const std::vector<float>& weights, std::initializer_list<int> dims) {
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
-      return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
+      return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims);
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
@@ -143,12 +141,11 @@ std::string Converter::MakeConvBlock(OnnxBuilder* builder,
                                      const std::string& name,
                                      const LegacyWeights::SEunit* seunit,
                                      const std::string& mixin, bool relu) {
-  auto flow =
-      builder->Conv(name, input,
-                    *GetWeghtsConverter(weights.weights,
-                                        {3, 3, input_channels, output_channels},
-                                        {3, 2, 0, 1}),
-                    *GetWeghtsConverter(weights.biases, {NumFilters()}));
+  auto flow = builder->Conv(
+      name, input,
+      *GetWeghtsConverter(weights.weights,
+                          {output_channels, input_channels, 3, 3}),
+      *GetWeghtsConverter(weights.biases, {NumFilters()}));
 
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
