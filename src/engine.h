@@ -74,6 +74,8 @@ class EngineController {
   // Must not block.
   void Stop();
 
+  Position ApplyPositionMoves();
+
  private:
   void UpdateFromUciOptions();
 
@@ -105,7 +107,7 @@ class EngineController {
   // The current position as given with SetPosition. For normal (ie. non-ponder)
   // search, the tree is set up with this position, however, during ponder we
   // actually search the position one move earlier.
-  std::optional<CurrentPosition> current_position_;
+  CurrentPosition current_position_;
   GoParams go_params_;
 
   std::optional<std::chrono::steady_clock::time_point> move_start_time_;
@@ -126,6 +128,7 @@ class EngineLoop : public UciLoop {
   void CmdUciNewGame() override;
   void CmdPosition(const std::string& position,
                    const std::vector<std::string>& moves) override;
+  void CmdFen() override;
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;

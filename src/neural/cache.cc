@@ -42,10 +42,15 @@ int CachingComputation::GetBatchSize() const { return batch_.size(); }
 bool CachingComputation::AddInputByHash(uint64_t hash) {
   NNCacheLock lock(cache_, hash);
   if (!lock) return false;
+  AddInputByHash(hash, std::move(lock));
+  return true;
+}
+
+void CachingComputation::AddInputByHash(uint64_t hash, NNCacheLock&& lock) {
+  assert(lock);
   batch_.emplace_back();
   batch_.back().lock = std::move(lock);
   batch_.back().hash = hash;
-  return true;
 }
 
 void CachingComputation::PopCacheHit() {

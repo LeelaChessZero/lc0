@@ -39,6 +39,7 @@
 #include "neural/network.h"
 #include "utils/exception.h"
 #include "utils/hashcat.h"
+#include "utils/numa.h"
 
 namespace lczero {
 
@@ -98,6 +99,9 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
+    // Keep garbage collection on same core as where search workers are most
+    // likely to be to make any lock conention on gc mutex cheaper.
+    Numa::BindThread(0);
     while (!stop_.load()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
       GarbageCollect();
@@ -114,6 +118,51 @@ class NodeGarbageCollector {
 };  // namespace
 
 NodeGarbageCollector gNodeGc;
+
+void DriftCorrect(float* q, float* d) {
+  // Training data doesn't have a high number of nodes, so there shouldn't be
+  // too much drift. Highest known value not caused by backend bug was 1.5e-7.
+  const float allowed_eps = 0.000001f;
+  if (*q > 1.0f) {
+    if (*q > 1.0f + allowed_eps) {
+      CERR << "Unexpectedly large drift in q " << *q;
+    }
+    *q = 1.0f;
+  }
+  if (*q < -1.0f) {
+    if (*q < -1.0f - allowed_eps) {
+      CERR << "Unexpectedly large drift in q " << *q;
+    }
+    *q = -1.0f;
+  }
+  if (*d > 1.0f) {
+    if (*d > 1.0f + allowed_eps) {
+      CERR << "Unexpectedly large drift in d " << *d;
+    }
+    *d = 1.0f;
+  }
+  if (*d < 0.0f) {
+    if (*d < 0.0f - allowed_eps) {
+      CERR << "Unexpectedly large drift in d " << *d;
+    }
+    *d = 0.0f;
+  }
+  float w = (1.0f - *d + *q) / 2.0f;
+  float l = w - *q;
+  // Assume q drift is rarer than d drift and apply all correction to d.
+  if (w < 0.0f || l < 0.0f) {
+    float drift = 2.0f * std::min(w, l);
+    if (drift < -allowed_eps) {
+      CERR << "Unexpectedly large drift correction for d based on q. " << drift;
+    }
+    *d += drift;
+    // Since q is in range -1 to 1 - this correction should never push d outside
+    // of range, but precision could be lost in calculations so just in case.
+    if (*d < 0.0f) {
+      *d = 0.0f;
+    }
+  }
+}
 }  // namespace
 
 /////////////////////////////////////////////////////////////////////////
@@ -437,10 +486,13 @@ void Node::ReleaseChildren() {
 
 void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
   if (solid_children_) {
-    auto new_child = std::make_unique<Node>(this, node_to_save->index_);
-    *new_child = std::move(*node_to_save);
+    std::unique_ptr<Node> saved_node;
+    if (node_to_save != nullptr) {
+      saved_node = std::make_unique<Node>(this, node_to_save->index_);
+      *saved_node = std::move(*node_to_save);
+    }
     gNodeGc.AddToGcQueue(std::move(child_), num_edges_);
-    child_ = std::move(new_child);
+    child_ = std::move(saved_node);
     if (child_) {
       child_->UpdateChildrenParents();
     }
@@ -474,8 +526,8 @@ V6TrainingData Node::GetV6TrainingData(
     GameResult game_result, const PositionHistory& history,
     FillEmptyHistory fill_empty_history,
     pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
-    Eval played_eval, Eval orig_eval, bool best_is_proven, Move best_move,
-    Move played_move) const {
+    Eval played_eval, bool best_is_proven, Move best_move, Move played_move,
+    const NNCacheLock& nneval) const {
   V6TrainingData result;
 
   // Set version.
@@ -503,11 +555,50 @@ V6TrainingData Node::GetV6TrainingData(
   std::fill(std::begin(result.probabilities), std::end(result.probabilities),
             -1);
   // Set moves probabilities according to their relative amount of visits.
-  for (const auto& child : Edges()) {
-    result.probabilities[child.edge()->GetMove().as_nn_index(transform)] =
-        total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+  // Compute Kullback-Leibler divergence in nats (between policy and visits).
+  float kld_sum = 0;
+  float max_p = -std::numeric_limits<float>::infinity();
+  std::vector<float> intermediate;
+  if (nneval) {
+    int last_idx = 0;
+    for (const auto& child : Edges()) {
+      auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+      float p = 0;
+      for (int i = 0; i < nneval->p.size(); i++) {
+        // Optimization: usually moves are stored in the same order as queried.
+        const auto& move = nneval->p[last_idx++];
+        if (last_idx == nneval->p.size()) last_idx = 0;
+        if (move.first == nn_idx) {
+          p = move.second;
+          break;
+        }
+      }
+      intermediate.emplace_back(p);
+      max_p = std::max(max_p, p);
+    }
   }
-
+  float total = 0.0;
+  auto it = intermediate.begin();
+  for (const auto& child : Edges()) {
+    auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+    float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+    if (nneval) {
+      float P = std::exp(*it - max_p);
+      if (fracv > 0) {
+        kld_sum += fracv * std::log(fracv / P);
+      }
+      total += P;
+      it++;
+    }
+    result.probabilities[nn_idx] = fracv;
+  }
+  if (nneval) {
+    // Add small epsilon for backward compatibility with earlier value of 0.
+    auto epsilon = std::numeric_limits<float>::min();
+    kld_sum = std::max(kld_sum + std::log(total), 0.0f) + epsilon;
+  }
+  result.policy_kld = kld_sum;
+  // kld_sum needs to be assigned to a result field TODO
   const auto& position = history.Last();
   const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
@@ -559,6 +650,17 @@ V6TrainingData Node::GetV6TrainingData(
     result.result_d = 1;
   }
 
+  Eval orig_eval;
+  if (nneval) {
+    orig_eval.wl = nneval->q;
+    orig_eval.d = nneval->d;
+    orig_eval.ml = nneval->m;
+  } else {
+    orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
+    orig_eval.d = std::numeric_limits<float>::quiet_NaN();
+    orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
+  }
+
   // Aggregate evaluation WL.
   result.root_q = -GetWL();
   result.best_q = best_eval.wl;
@@ -570,6 +672,10 @@ V6TrainingData Node::GetV6TrainingData(
   result.best_d = best_eval.d;
   result.played_d = played_eval.d;
   result.orig_d = orig_eval.d;
+
+  DriftCorrect(&result.best_q, &result.best_d);
+  DriftCorrect(&result.root_q, &result.root_d);
+  DriftCorrect(&result.played_q, &result.played_d);
 
   result.root_m = GetM();
   result.best_m = best_eval.ml;

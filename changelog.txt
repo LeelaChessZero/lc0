@@ -1,4 +1,101 @@
-﻿v0.26.0-rc1 (2020-06-29)
+﻿v0.28.0-rc1 (2021-06-16)
+~~~~~~~
+* Multigather is now made the default (and also improved). Some search settings
+  have changed meaning, so if you have modified values please discard them.
+  Specifically, `max-collision-events`, `max-collision-visits` and
+ `max-out-of-order-evals-factor` have changed default values, but other options
+  also affect the search. Similarly, check that your gui is not caching the old
+  values.
+* Performance improvements for the cuda/cudnn backends.
+* Support for policy focus during training.
+* Larger/stronger 15b default net for all packages except android, blas and dnnl
+  that get a new 10b network.
+* The distributed binaries come with the mimalloc memory allocator for better
+  performance when a large tree has to be destroyed (e.g. after an unexpected
+  move).
+* The `legacy` time manager will use more time for the first move after a long
+  book line.
+* The `--preload` command line flag will initialize the backend and load the
+  network during startup.
+* A 'fen' command was added as a UCI extension to print the current position.
+* Experimental onednn backend for recent intel cpus and gpus.
+
+v0.27.0 (2021-02-21)
+~~~~~~~
+* A better value for the backendbench Clippy threshold.
+
+v0.27.0-rc2 (2021-02-18)
+~~~~~~~
+* Fix additional cases where 'invalid move' could be incorrectly reported.
+* Replace WDL softmax in cudnn backend with same implementation as cuda
+  backend. This fixes some inaccuracy issues that were causing training
+  data to be rejected at a fairly low frequency.
+* Ensure that training data Q/D pairs form valid WDL targets even if there
+  is accumulated drift in calculation.
+* Fix for the calculation of the 'best q is proven' bit in training data.
+* Multiple fixes for timelosses and infinite instamoving in smooth time
+  manager. Smooth time manager now made default after these fixes.
+
+v0.27.0-rc1 (2021-02-06)
+~~~~~~~
+* Fix a bug which meant `position ... moves ...` didn't work if the moves 
+  went off the end of the existing tree. 
+
+v0.27.0-rc0 (2021-02-06)
+~~~~~~~
+* Multigather search inspired by Ceres.
+* V6 training format with additional info for training experiments.
+* Updated default search parameters.
+* A better algorithm for the backendbench assistant.
+* Terminate search early if only 1 move isn't a proven loss.
+* Various build system changes.
+
+v0.26.3 (2020-10-10)
+~~~~~~~
+* Increased maximum value of TempDecayMoves.
+
+v0.26.3-rc2 (2020-10-03)
+~~~~~~~
+* Fix for uninitialized variable that led to crashes with the cudnn backend.
+* Correct windows support for systems with more than 64 threads.
+* A new package is built for the `cuda` backend with cuda 11.1. The old cuda
+  package is renamed to `cudnn`.
+
+v0.26.3-rc1 (2020-09-28)
+~~~~~~~
+* Residual block fusion optimization for cudnn backend, that depends on
+  `custom_winograd=true`. Enabled by default only for networks with up to 384
+  filters in fp16 mode and never in fp32 mode. Default can be overridden with
+  `--backend-opts=res_block_fusing=false` to disable (or `=true` to enable).
+* New experimental cuda backend without cudnn dependency (`cuda-auto`, `cuda`
+  and `cuda-fp16` are available).
+
+v0.26.2 (2020-08-31)
+~~~~~~~
+* No changes from rc1.
+
+v0.26.2-rc1 (2020-08-28)
+~~~~~~~~~~~
+* Repetitions in the search tree are marked as draws, to explore more promising
+  lines. Enabled by default (except in selfplay mode) use
+  `--two-fold-draws=false` to disable.
+* Syzygy tablebase files can now be used in selfplay. Still need to add
+  adjudication support before we can consider using this for training.
+* Default net updated to 703810.
+* Fix for book with CR/LF line endings.
+* Updated Eigen wrap to use new download link.
+
+v0.26.1 (2020-07-15)
+~~~~~~~
+* Fix a bug where invalid openings-pgn settings would result in the book
+  being ignored rather than used.
+* Add support for compressed book files.
+
+v0.26.0 (2020-07-03)
+~~~~~~~
+* No changes from rc1.
+
+v0.26.0-rc1 (2020-06-29)
 ~~~~~~~~~~~
 
 * Verbose move stats now includes a line for the root node itself.

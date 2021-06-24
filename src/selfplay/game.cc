@@ -211,7 +211,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
 
-      for (auto edge : node->Edges()) {
+      for (auto& edge : node->Edges()) {
         if (edge.GetN() > max_n) {
           max_n = edge.GetN();
         }
@@ -251,7 +251,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             (best_eval.wl == 0) ? GameResult::DRAW : GameResult::BLACK_WON;
         auto upper = best;
         for (const auto& edge : node->Edges()) {
-          upper = std::max(-edge.GetBounds().first, upper);
+          upper = std::max(edge.GetBounds().second, upper);
         }
         if (best < upper) {
           best_is_proof = false;
@@ -260,22 +260,12 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // Append training data. The GameResult is later overwritten.
       const auto input_format =
           options_[idx].network->GetCapabilities().input_format;
-      Eval orig_eval;
       NNCacheLock nneval =
           search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
-      if (nneval) {
-        orig_eval.wl = nneval->q;
-        orig_eval.d = nneval->d;
-        orig_eval.ml = nneval->m;
-      } else {
-        orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
-        orig_eval.d = std::numeric_limits<float>::quiet_NaN();
-        orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
-      }
       training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
           GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
           search_->GetParams().GetHistoryFill(), input_format, best_eval,
-          played_eval, orig_eval, best_is_proof, best_move, move));
+          played_eval, best_is_proof, best_move, move, nneval));
     }
     // Must reset the search before mutating the tree.
     search_.reset();
