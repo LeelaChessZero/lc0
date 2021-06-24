@@ -56,7 +56,7 @@ class BaseLayer {
   // Input2 is optional (skip connection).
   virtual void Eval(int N, DataType* output, const DataType* input,
                     const DataType* input2, void* scratch, size_t scratch_size,
-                    cudnnHandle_t cudnn, cublasHandle_t cublas) = 0;
+                    cudnnHandle_t cudnn, cublasHandle_t cublas, cudaStream_t stream) = 0;
 
  protected:
   BaseLayer* input_;
@@ -90,7 +90,8 @@ class ConvLayer : public BaseLayer<DataType> {
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+            cudnnHandle_t cudnn, cublasHandle_t cublas,
+            cudaStream_t stream) override;
 
  private:
   const int c_input_;
@@ -127,7 +128,8 @@ class FCLayer : public BaseLayer<DataType> {
   void LoadWeights(float* cpuWeight, float* cpuBias, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+            cudnnHandle_t cudnn, cublasHandle_t cublas,
+            cudaStream_t stream) override;
 
  private:
   const bool use_bias_;
@@ -149,7 +151,8 @@ class PolicyMapLayer: public BaseLayer<DataType> {
   void LoadWeights(const short* cpuWeight, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+            cudnnHandle_t cudnn, cublasHandle_t cublas,
+            cudaStream_t stream) override;
 
  private:
   int used_size_; // Size of the input without padding (typically 73x64).
@@ -176,7 +179,8 @@ class SELayer : public BaseLayer<DataType> {
 
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+            cudnnHandle_t cudnn, cublasHandle_t cublas,
+            cudaStream_t stream) override;
 
  private:
   DataType* w1_ = nullptr;
@@ -204,8 +208,8 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                         int Cin, bool relu, bool bias, bool skipAdd, bool se,
-                           int se_k, bool use_gemm_ex);
+                           int Cin, bool relu, bool bias, bool skipAdd, bool se,
+                           int se_k, bool use_gemm_ex, bool op_nhcw = false);
 
   ~FusedWinogradConvSELayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -213,7 +217,8 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2,
             void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+            cudnnHandle_t cudnn, cublasHandle_t cublas,
+            cudaStream_t stream) override;
 
  private:
   const int c_input_;
@@ -223,6 +228,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   const bool has_se_;
   const int se_k_;
   const bool use_gemm_ex_;
+  const bool op_nhcw_;
 
   DataType* biases_ = nullptr;
   DataType* transformed_weights_ = nullptr;  // After winograd transform.
@@ -257,7 +263,8 @@ class Conv1Layer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2,
             void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+            cudnnHandle_t cudnn, cublasHandle_t cublas,
+            cudaStream_t stream) override;
 
  private:
   const int c_input_;
@@ -293,7 +300,8 @@ class ResidualBlock : public BaseLayer<DataType> {
 
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
-            cudnnHandle_t cudnn, cublasHandle_t cublas) override;
+            cudnnHandle_t cudnn, cublasHandle_t cublas,
+            cudaStream_t stream) override;
 
  private:
   const bool has_se_;
