@@ -26,10 +26,10 @@
 */
 #pragma once
 
+#include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/cache.h"
 #include "utils/smallarray.h"
-#include "mcts/node.h"
 
 namespace lczero {
 
@@ -44,6 +44,8 @@ struct CachedNNRequest {
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
 typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
+
+class Node;
 
 // Wraps around NetworkComputation and caches result.
 // While it mostly repeats NetworkComputation interface, it's not derived

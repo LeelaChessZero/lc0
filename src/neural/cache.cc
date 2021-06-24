@@ -30,7 +30,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "neural/encoder.h"
+#include "mcts/node.h"
 #include "utils/fastmath.h"
 
 namespace lczero {

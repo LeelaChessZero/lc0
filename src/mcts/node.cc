@@ -527,7 +527,7 @@ V6TrainingData Node::GetV6TrainingData(
     FillEmptyHistory fill_empty_history,
     pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
     Eval played_eval, bool best_is_proven, Move best_move, Move played_move,
-    const NNCacheLock& nneval) const {
+    const NNCacheLock& nneval, float temp) const {
   V6TrainingData result;
 
   // Set version.
@@ -557,24 +557,22 @@ V6TrainingData Node::GetV6TrainingData(
   // Set moves probabilities according to their relative amount of visits.
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
-  float max_p = -std::numeric_limits<float>::infinity();
   std::vector<float> intermediate;
   if (nneval) {
-    int last_idx = 0;
+    // The cache stores policies in GenerateLegalMoves() order.
+    auto legal_moves = history.Last().GetBoard().GenerateLegalMoves();
     for (const auto& child : Edges()) {
-      auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+      auto move = child.edge()->GetMove();
       float p = 0;
-      for (int i = 0; i < nneval->p.size(); i++) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = nneval->p[last_idx++];
-        if (last_idx == nneval->p.size()) last_idx = 0;
-        if (move.first == nn_idx) {
-          p = move.second;
-          break;
+      for (size_t i = 0; i < legal_moves.size(); i++) {
+        if (move == legal_moves[i]) {
+          // Decompress policy to float.
+          uint32_t tmp =
+              (static_cast<uint32_t>(nneval->p[i]) << 12) | (3 << 28);
+          std::memcpy(&p, &tmp, sizeof(uint32_t));
         }
       }
       intermediate.emplace_back(p);
-      max_p = std::max(max_p, p);
     }
   }
   float total = 0.0;
@@ -583,7 +581,8 @@ V6TrainingData Node::GetV6TrainingData(
     auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (nneval) {
-      float P = std::exp(*it - max_p);
+      // Undo any softmax temperature in the cached data.
+      float P = std::pow(*it, temp);
       if (fracv > 0) {
         kld_sum += fracv * std::log(fracv / P);
       }
@@ -598,7 +597,7 @@ V6TrainingData Node::GetV6TrainingData(
     kld_sum = std::max(kld_sum + std::log(total), 0.0f) + epsilon;
   }
   result.policy_kld = kld_sum;
-  // kld_sum needs to be assigned to a result field TODO
+
   const auto& position = history.Last();
   const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
