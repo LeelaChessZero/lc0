@@ -32,9 +32,6 @@
 namespace lczero {
 
 namespace {
-const int kMoveHistory = 8;
-const int kPlanesPerBoard = 13;
-const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 
 int CompareTransposing(BitBoard board, int initial_transform) {
   uint64_t value = board.as_int();

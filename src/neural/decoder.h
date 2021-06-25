@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -33,26 +33,19 @@
 
 namespace lczero {
 
-constexpr int kMoveHistory = 8;
-constexpr int kPlanesPerBoard = 13;
-constexpr int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
+// Decodes the move that led to current position using the current and previous
+// input planes. Move is from the perspective of the current position to move
+// player, so will need flipping if it is to be applied to the prior position.
+//
+// NOTE: Assumes InputPlanes are not transformed. Any canonical transforms must
+// have already been reverted.
+Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prev);
 
-enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
-
-// Returns the transform that would be used in EncodePositionForNN.
-int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
-                         const PositionHistory& history);
-
-// Encodes the last position in history for the neural network request.
-InputPlanes EncodePositionForNN(
-    pblczero::NetworkFormat::InputFormat input_format,
-    const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out);
-
-bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format);
-bool IsCanonicalArmageddonFormat(
-    pblczero::NetworkFormat::InputFormat input_format);
-bool IsHectopliesFormat(pblczero::NetworkFormat::InputFormat input_format);
-bool Is960CastlingFormat(pblczero::NetworkFormat::InputFormat input_format);
+// Decodes the current position into a board, rule50 and gameply.
+//
+// NOTE: Assumes InputPlanes are not transformed, regardless of input_format.
+void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
+                   InputPlanes planes, ChessBoard* board, int* rule50,
+                   int* gameply);
 
 }  // namespace lczero
