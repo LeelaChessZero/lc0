@@ -38,7 +38,6 @@
 #include <thread>
 
 #include "mcts/node.h"
-#include "neural/cache.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 

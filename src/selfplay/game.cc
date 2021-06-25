@@ -32,7 +32,6 @@
 #include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
 #include "mcts/stoppers/stoppers.h"
-#include "neural/writer.h"
 
 namespace lczero {
 
@@ -62,6 +61,51 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+
+void DriftCorrect(float* q, float* d) {
+  // Training data doesn't have a high number of nodes, so there shouldn't be
+  // too much drift. Highest known value not caused by backend bug was 1.5e-7.
+  const float allowed_eps = 0.000001f;
+  if (*q > 1.0f) {
+    if (*q > 1.0f + allowed_eps) {
+      CERR << "Unexpectedly large drift in q " << *q;
+    }
+    *q = 1.0f;
+  }
+  if (*q < -1.0f) {
+    if (*q < -1.0f - allowed_eps) {
+      CERR << "Unexpectedly large drift in q " << *q;
+    }
+    *q = -1.0f;
+  }
+  if (*d > 1.0f) {
+    if (*d > 1.0f + allowed_eps) {
+      CERR << "Unexpectedly large drift in d " << *d;
+    }
+    *d = 1.0f;
+  }
+  if (*d < 0.0f) {
+    if (*d < 0.0f - allowed_eps) {
+      CERR << "Unexpectedly large drift in d " << *d;
+    }
+    *d = 0.0f;
+  }
+  float w = (1.0f - *d + *q) / 2.0f;
+  float l = w - *q;
+  // Assume q drift is rarer than d drift and apply all correction to d.
+  if (w < 0.0f || l < 0.0f) {
+    float drift = 2.0f * std::min(w, l);
+    if (drift < -allowed_eps) {
+      CERR << "Unexpectedly large drift correction for d based on q. " << drift;
+    }
+    *d += drift;
+    // Since q is in range -1 to 1 - this correction should never push d outside
+    // of range, but precision could be lost in calculations so just in case.
+    if (*d < 0.0f) {
+      *d = 0.0f;
+    }
+  }
+}
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -260,13 +304,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       // Append training data. The GameResult is later overwritten.
       const auto input_format =
           options_[idx].network->GetCapabilities().input_format;
-      NNCacheLock nneval =
-          search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
-          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), input_format, best_eval,
-          played_eval, best_is_proof, best_move, move, nneval,
-          search_->GetParams().GetPolicySoftmaxTemp()));
+      training_data_.push_back(
+          GetV6TrainingData(*tree_[idx], input_format, best_eval, played_eval,
+                            best_is_proof, best_move, move));
     }
     // Must reset the search before mutating the tree.
     search_.reset();
@@ -366,6 +406,173 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
   if (movetime >= 0) {
     result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
   }
+  return result;
+}
+
+V6TrainingData SelfPlayGame::GetV6TrainingData(
+    const NodeTree& tree, pblczero::NetworkFormat::InputFormat input_format,
+    Eval best_eval, Eval played_eval, bool best_is_proven, Move best_move,
+    Move played_move) const {
+  const Node* node = tree.GetCurrentHead();
+  const PositionHistory& history = tree.GetPositionHistory();
+  V6TrainingData result;
+
+  // Set version.
+  result.version = 6;
+  result.input_format = input_format;
+
+  // Populate planes.
+  int transform;
+  InputPlanes planes =
+      EncodePositionForNN(input_format, history, 8,
+                          search_->GetParams().GetHistoryFill(), &transform);
+  int plane_idx = 0;
+  for (auto& plane : result.planes) {
+    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
+  }
+
+  // Populate probabilities.
+  auto total_n = node->GetChildrenVisits();
+  // Prevent garbage/invalid training data from being uploaded to server.
+  // It's possible to have N=0 when there is only one legal move in position
+  // (due to smart pruning).
+  if (total_n == 0 && node->GetNumEdges() != 1) {
+    throw Exception("Search generated invalid data!");
+  }
+  // Set illegal moves to have -1 probability.
+  std::fill(std::begin(result.probabilities), std::end(result.probabilities),
+            -1);
+  // Set moves probabilities according to their relative amount of visits.
+  // Compute Kullback-Leibler divergence in nats (between policy and visits).
+  float kld_sum = 0;
+  std::vector<float> intermediate;
+  NNCacheLock nneval = search_->GetCachedNNEval(tree.GetCurrentHead());
+  if (nneval) {
+    // The cache stores policies in GenerateLegalMoves() order.
+    auto legal_moves = history.Last().GetBoard().GenerateLegalMoves();
+    for (const auto& child : node->Edges()) {
+      auto move = child.edge()->GetMove();
+      float p = 0;
+      for (size_t i = 0; i < legal_moves.size(); i++) {
+        if (move == legal_moves[i]) {
+          // Decompress policy to float.
+          uint32_t tmp =
+              (static_cast<uint32_t>(nneval->p[i]) << 12) | (3 << 28);
+          std::memcpy(&p, &tmp, sizeof(uint32_t));
+        }
+      }
+      intermediate.emplace_back(p);
+    }
+  }
+  float total = 0.0;
+  auto it = intermediate.begin();
+  for (const auto& child : node->Edges()) {
+    auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+    float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+    if (nneval) {
+      // Undo any softmax temperature in the cached data.
+      float P = std::pow(*it, search_->GetParams().GetPolicySoftmaxTemp());
+      if (fracv > 0) {
+        kld_sum += fracv * std::log(fracv / P);
+      }
+      total += P;
+      it++;
+    }
+    result.probabilities[nn_idx] = fracv;
+  }
+  if (nneval) {
+    // Add small epsilon for backward compatibility with earlier value of 0.
+    auto epsilon = std::numeric_limits<float>::min();
+    kld_sum = std::max(kld_sum + std::log(total), 0.0f) + epsilon;
+  }
+  result.policy_kld = kld_sum;
+
+  const auto& position = history.Last();
+  const auto& castlings = position.GetBoard().castlings();
+  // Populate castlings.
+  // For non-frc trained nets, just send 1 like we used to.
+  uint8_t queen_side = 1;
+  uint8_t king_side = 1;
+  // If frc trained, send the bit mask representing rook position.
+  if (Is960CastlingFormat(input_format)) {
+    queen_side <<= castlings.queenside_rook();
+    king_side <<= castlings.kingside_rook();
+  }
+
+  result.castling_us_ooo = castlings.we_can_000() ? queen_side : 0;
+  result.castling_us_oo = castlings.we_can_00() ? king_side : 0;
+  result.castling_them_ooo = castlings.they_can_000() ? queen_side : 0;
+  result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
+
+  // Other params.
+  if (IsCanonicalFormat(input_format)) {
+    result.side_to_move_or_enpassant =
+        position.GetBoard().en_passant().as_int() >> 56;
+    if ((transform & FlipTransform) != 0) {
+      result.side_to_move_or_enpassant =
+          ReverseBitsInBytes(result.side_to_move_or_enpassant);
+    }
+    // Send transform in deprecated move count so rescorer can reverse it to
+    // calculate the actual move list from the input data.
+    result.invariance_info =
+        transform | (position.IsBlackToMove() ? (1u << 7) : 0u);
+  } else {
+    result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
+    result.invariance_info = 0;
+  }
+  if (best_is_proven) {
+    result.invariance_info |= 1u << 3;  // Best node is proven best;
+  }
+  result.dummy = 0;
+  result.rule50_count = position.GetRule50Ply();
+
+  // Game result is undecided.
+  result.result_q = 0;
+  result.result_d = 1;
+
+  Eval orig_eval;
+  if (nneval) {
+    orig_eval.wl = nneval->q;
+    orig_eval.d = nneval->d;
+    orig_eval.ml = nneval->m;
+  } else {
+    orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
+    orig_eval.d = std::numeric_limits<float>::quiet_NaN();
+    orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
+  }
+
+  // Aggregate evaluation WL.
+  result.root_q = -node->GetWL();
+  result.best_q = best_eval.wl;
+  result.played_q = played_eval.wl;
+  result.orig_q = orig_eval.wl;
+
+  // Draw probability of WDL head.
+  result.root_d = node->GetD();
+  result.best_d = best_eval.d;
+  result.played_d = played_eval.d;
+  result.orig_d = orig_eval.d;
+
+  DriftCorrect(&result.best_q, &result.best_d);
+  DriftCorrect(&result.root_q, &result.root_d);
+  DriftCorrect(&result.played_q, &result.played_d);
+
+  result.root_m = node->GetM();
+  result.best_m = best_eval.ml;
+  result.played_m = played_eval.ml;
+  result.orig_m = orig_eval.ml;
+
+  result.visits = node->GetN();;
+  if (position.IsBlackToMove()) {
+    best_move.Mirror();
+    played_move.Mirror();
+  }
+  result.best_idx = best_move.as_nn_index(transform);
+  result.played_idx = played_move.as_nn_index(transform);
+  result.reserved = 0;
+
+  // Unknown here - will be filled in once the full data has been collected.
+  result.plies_left = 0;
   return result;
 }
 

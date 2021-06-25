@@ -40,7 +40,6 @@
 #include "mcts/params.h"
 #include "mcts/stoppers/timemgr.h"
 #include "neural/cache.h"
-#include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"

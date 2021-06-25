@@ -155,7 +155,7 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     }
     // Normalize P values to add up to 1.0.
     const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-    for (int ct = 0; ct < item.probabilities_to_cache.size(); ct++) {
+    for (size_t ct = 0; ct < item.probabilities_to_cache.size(); ct++) {
       uint16_t p = CompressP(intermediate[ct] * scale);
       req->p[ct] = p;
       item.probabilities_to_cache[ct] = p;
