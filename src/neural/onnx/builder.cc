@@ -60,7 +60,15 @@ void FillValueInfo(pblczero::ValueInfoProto* vip, const std::string& name,
 }
 
 void AddIntAttribute(pblczero::NodeProto* node, const std::string& name,
-                     std::initializer_list<int> vals) {
+                     int val) {
+  auto* attr = node->add_attribute();
+  attr->set_name(name);
+  attr->set_type(pblczero::AttributeProto::INT);
+  attr->set_i(val);
+}
+
+void AddIntsAttribute(pblczero::NodeProto* node, const std::string& name,
+                      std::initializer_list<int> vals) {
   auto* attr = node->add_attribute();
   attr->set_name(name);
   attr->set_type(pblczero::AttributeProto::INTS);
@@ -115,7 +123,7 @@ std::string OnnxBuilder::Conv(const std::string& name,
   auto out = PopulateStdNodeFields(node, name, input_name, "Conv");
   node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
   node->add_input(AddInitializer(name + "/w/bias", bias_weights));
-  AddIntAttribute(node, "pads", {1, 1, 1, 1});
+  AddIntsAttribute(node, "pads", {1, 1, 1, 1});
   return out;
 }
 
@@ -145,7 +153,7 @@ std::string OnnxBuilder::Squeeze(const std::string& name,
                                  const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Squeeze");
-  AddIntAttribute(node, "axes", {2, 3});
+  AddIntsAttribute(node, "axes", {2, 3});
   return out;
 }
 
@@ -200,7 +208,7 @@ std::string OnnxBuilder::Gather(const std::string& name,
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "Gather");
   node->add_input(input2);
-  AddIntAttribute(node, "axis", {axis});
+  AddIntsAttribute(node, "axis", {axis});
   return out;
 }
 
@@ -213,7 +221,7 @@ std::pair<std::string, std::string> OnnxBuilder::Split(const std::string& name,
   node->add_input(input);
   node->add_output(name + "/out1");
   node->add_output(name + "/out2");
-  AddIntAttribute(node, "axis", {axis});
+  AddIntAttribute(node, "axis", axis);
   return {name + "/out1", name + "/out2"};
 }
 
