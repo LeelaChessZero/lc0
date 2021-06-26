@@ -213,11 +213,13 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
   } else {
     auto converted = ConvertWeightsToOnnx(*w, {});
+    std::ofstream fo("/tmp/onnx.onnx");
+    fo << converted.onnx_model().model();
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
   }
 }
 
-REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 63)
+REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
 }  // namespace

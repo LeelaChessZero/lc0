@@ -30,6 +30,7 @@
 #include <initializer_list>
 
 #include "neural/onnx/onnx.pb.h"
+#include "utils/random.h"
 #include "version.h"
 
 namespace lczero {
@@ -39,6 +40,8 @@ OnnxBuilder::OnnxBuilder() {
   model_.set_producer_name("Lc0");
   model_.set_producer_version(GetVersionStr());
   model_.add_opset_import()->set_version(9);
+  model_.mutable_graph()->set_name("org.lczero/converted/" +
+                                   Random::Get().GetString(16));
 }
 
 namespace {
