@@ -75,6 +75,12 @@ void OnnxBuilder::AddInput(const std::string& name,
   FillValueInfo(model_.mutable_graph()->add_input(), name, dims, datatype);
 }
 
+void OnnxBuilder::AddOutput(const std::string& name,
+                            std::initializer_list<int> dims,
+                            pblczero::TensorProto::DataType datatype) {
+  FillValueInfo(model_.mutable_graph()->add_output(), name, dims, datatype);
+}
+
 std::string OnnxBuilder::AddInitializer(const std::string& name,
                                         const OnnxConst& weights) {
   auto* init = model_.mutable_graph()->add_initializer();
@@ -95,9 +101,8 @@ std::string PopulateStdNodeFields(pblczero::NodeProto* node,
   node->set_name(name);
   node->set_op_type(type);
   node->add_input(input);
-  const auto out_name = name + "/out";
-  node->add_output(out_name);
-  return out_name;
+  node->add_output(name);
+  return name;
 }
 
 }  // namespace
@@ -175,6 +180,16 @@ std::string OnnxBuilder::Reshape(const std::string& name,
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Reshape");
   node->add_input(shape);
+  return out;
+}
+
+std::string OnnxBuilder::Gather(const std::string& name,
+                                const std::string& input1,
+                                const std::string& input2, int axis) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "Gather");
+  node->add_input(input2);
+  AddIntAttribute(node, "axis", {axis});
   return out;
 }
 

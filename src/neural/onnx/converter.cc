@@ -78,8 +78,8 @@ class Converter {
                                    const std::string& input,
                                    const std::string& name);
 
-  void MakePolicyHead(OnnxBuilder* builder, const std::string& input,
-                      const LegacyWeights& weights);
+  void MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
+                      const std::string& input, const LegacyWeights& weights);
 
   void AddStdInitializers(OnnxBuilder* builder);
 
@@ -188,7 +188,8 @@ std::vector<int> MakePolicyMap() {
 }
 }  // namespace
 
-void Converter::MakePolicyHead(OnnxBuilder* builder, const std::string& input,
+void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
+                               const std::string& input,
                                const LegacyWeights& weights) {
   if (!weights.policy1.weights.empty()) {
     // Conv policy head.
@@ -198,10 +199,18 @@ void Converter::MakePolicyHead(OnnxBuilder* builder, const std::string& input,
                          "/policy/conv2");
     builder->AddInitializer("/const/mapping_table",
                             Int32OnnxConst(MakePolicyMap(), {1858}));
+    flow = builder->Reshape("/policy/flatten", flow, "/const/policy_shape");
     builder->AddInitializer("/const/policy_shape",
                             Int32OnnxConst({-1, 1858}, {2}));
-    flow = builder->Reshape("/policy/flatten", flow, "/const/policy_shape");
-    // ПИШУ ТУТ
+    auto output = builder->Gather(options_.output_policy_head, flow,
+                                  "/const/policy_shape", {1});
+    builder->AddOutput(output, {-1, 1858}, GetDataType());
+    onnx->set_output_policy(output);
+  } else {
+    // Dense policy head.
+    throw Exception(
+        "The old fully connected policy head is not implemented due to "
+        "laziness.");
   }
 }
 
@@ -225,7 +234,7 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   }
 
   // Policy head.
-  MakePolicyHead(&builder, flow, weights);
+  MakePolicyHead(onnx, &builder, flow, weights);
 
   onnx->set_model(builder.OutputAsString());
 }

@@ -47,6 +47,8 @@ class OnnxBuilder {
   OnnxBuilder();
   void AddInput(const std::string& name, std::initializer_list<int> dims,
                 pblczero::TensorProto::DataType datatype);
+  void AddOutput(const std::string& name, std::initializer_list<int> dims,
+                 pblczero::TensorProto::DataType datatype);
 
   std::string Conv(const std::string& name, const std::string& input_name,
                    const OnnxConst& kernel_weights,
@@ -69,6 +71,8 @@ class OnnxBuilder {
   std::pair<std::string, std::string> Split(const std::string& name,
                                             const std::string& input, int axis);
   std::string Sigmoid(const std::string& name, const std::string& input);
+  std::string Gather(const std::string& name, const std::string& input1,
+                     const std::string& input2, int axis);
 
   const pblczero::ModelProto& as_proto() const { return model_; }
   std::string OutputAsString() const { return model_.OutputAsString(); }
