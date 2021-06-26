@@ -42,7 +42,7 @@ struct WeightsToOnnxConverterOptions {
   std::string output_mlh = "/output/mlh";
 };
 
-const pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
-                                         const WeightsToOnnxConverterOptions&);
+pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
+                                   const WeightsToOnnxConverterOptions&);
 
 }  // namespace lczero

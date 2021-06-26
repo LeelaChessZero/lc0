@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "neural/factory.h"
+#include "neural/loader.h"
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
 #include "onnxruntime_cxx_api.h"
@@ -207,7 +208,13 @@ template <OnnxProvider kProvider>
 std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& opts) {
   if (!w) throw Exception("The ONNX backend requires a network file.");
-  return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
+
+  if (w->has_onnx_model()) {
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
+  } else {
+    auto converted = ConvertWeightsToOnnx(*w, {});
+    return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
+  }
 }
 
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 63)

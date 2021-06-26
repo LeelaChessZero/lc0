@@ -363,7 +363,7 @@ void Converter::Convert(pblczero::Net* dst) {
 
 }  // namespace
 
-const pblczero::Net ConvertWeightsToOnnx(
+pblczero::Net ConvertWeightsToOnnx(
     const pblczero::Net& net, const WeightsToOnnxConverterOptions& options) {
   Converter converter(net, options);
   pblczero::Net dst;
