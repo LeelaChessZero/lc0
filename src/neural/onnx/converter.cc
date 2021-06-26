@@ -278,7 +278,7 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
                     input, "/mlh/conv", nullptr, "", true, 1);
   flow = builder->Reshape(
       "/mlh/reshape", flow,
-      builder->AddInitializer("/const/value_shape",
+      builder->AddInitializer("/const/mlh_shape",
                               Int32OnnxConst({-1, mlh_channels * 8 * 8}, {2})));
   flow = builder->MatMul(
       "/mlh/dense1/matmul", flow,
