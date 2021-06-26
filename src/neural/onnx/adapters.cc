@@ -32,8 +32,9 @@ Program grant you additional permission to convey the resulting work.
 namespace lczero {
 
 FloatOnnxWeightsAdapter::FloatOnnxWeightsAdapter(
-    const std::vector<float>& weights, std::initializer_list<int> dims)
-    : weights_(weights), dims_(dims) {}
+    const std::vector<float>& weights, std::initializer_list<int> dims,
+    std::initializer_list<int> order)
+    : weights_(weights), dims_(dims), order_(order) {}
 
 pblczero::TensorProto::DataType FloatOnnxWeightsAdapter::GetDataType() const {
   return pblczero::TensorProto::FLOAT;
@@ -45,8 +46,15 @@ std::vector<int> FloatOnnxWeightsAdapter::GetDimensions() const {
   return dims_;
 }
 std::string FloatOnnxWeightsAdapter::GetRawData() const {
-  return {reinterpret_cast<const char*>(weights_.data()),
-          reinterpret_cast<const char*>(weights_.data() + weights_.size())};
+  if (order_.empty()) {
+    return {reinterpret_cast<const char*>(weights_.data()),
+            reinterpret_cast<const char*>(weights_.data() + weights_.size())};
+  } else {
+    std::vector<float> dst(weights_.size());
+    TransposeTensor(dims_, order_, weights_, &dst[0]);
+    return {reinterpret_cast<const char*>(dst.data()),
+            reinterpret_cast<const char*>(dst.data() + dst.size())};
+  }
 }
 
 }  // namespace lczero

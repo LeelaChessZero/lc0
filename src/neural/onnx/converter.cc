@@ -66,7 +66,8 @@ class Converter {
                             int output_channels, const std::string& input,
                             const std::string& name,
                             const LegacyWeights::SEunit* se_unit = nullptr,
-                            const std::string& mixin = "", bool relu = true);
+                            const std::string& mixin = "", bool relu = true,
+                            int filters = 3);
 
   std::string MakeResidualBlock(OnnxBuilder* builder,
                                 const LegacyWeights::Residual&,
@@ -92,7 +93,8 @@ class Converter {
 
   pblczero::TensorProto::DataType GetDataType() const;
   std::unique_ptr<OnnxConst> GetWeghtsConverter(
-      const std::vector<float>&, std::initializer_list<int> dims);
+      const std::vector<float>&, std::initializer_list<int> dims,
+      std::initializer_list<int> order = {});
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
@@ -108,10 +110,11 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
 }
 
 std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
-    const std::vector<float>& weights, std::initializer_list<int> dims) {
+    const std::vector<float>& weights, std::initializer_list<int> dims,
+    std::initializer_list<int> order) {
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
-      return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims);
+      return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
@@ -127,13 +130,13 @@ std::string Converter::MakeSqueezeAndExcite(
   flow = builder->Squeeze(name + "/squeeze", flow);
   flow = builder->MatMul(
       name + "/matmul1", flow,
-      *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}));
+      *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
   flow = builder->Add(name + "/add1", flow,
                       *GetWeghtsConverter(se_unit.b1, {se_filters}));
   flow = builder->Relu(name + "/relu", flow);
   flow = builder->MatMul(
       name + "/matmul2", flow,
-      *GetWeghtsConverter(se_unit.w2, {se_filters, 2 * NumFilters()}));
+      *GetWeghtsConverter(se_unit.w2, {se_filters, 2 * NumFilters()}, {1, 0}));
   flow = builder->Add(name + "/add2", flow,
                       *GetWeghtsConverter(se_unit.b2, {2 * NumFilters()}));
   flow = builder->Reshape(name + "/reshape", flow, "/const/se_reshape");
@@ -145,18 +148,16 @@ std::string Converter::MakeSqueezeAndExcite(
   return builder->Add(name + "/add3", flow, splits.second);
 }
 
-std::string Converter::MakeConvBlock(OnnxBuilder* builder,
-                                     const LegacyWeights::ConvBlock& weights,
-                                     int input_channels, int output_channels,
-                                     const std::string& input,
-                                     const std::string& name,
-                                     const LegacyWeights::SEunit* seunit,
-                                     const std::string& mixin, bool relu) {
+std::string Converter::MakeConvBlock(
+    OnnxBuilder* builder, const LegacyWeights::ConvBlock& weights,
+    int input_channels, int output_channels, const std::string& input,
+    const std::string& name, const LegacyWeights::SEunit* seunit,
+    const std::string& mixin, bool relu, int filters) {
   auto flow = builder->Conv(
       name, input,
       *GetWeghtsConverter(weights.weights,
-                          {output_channels, input_channels, 3, 3}),
-      *GetWeghtsConverter(weights.biases, {NumFilters()}));
+                          {output_channels, input_channels, filters, filters}),
+      *GetWeghtsConverter(weights.biases, {output_channels}));
 
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
@@ -189,7 +190,7 @@ std::vector<int> MakePolicyMap() {
     const auto square = index % 64;
     const auto row = square / 8;
     const auto col = square % 8;
-    policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
+    policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
   }
   return policy_map;
 }
@@ -227,14 +228,14 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                               const std::string& input,
                               const LegacyWeights& weights) {
   auto flow = MakeConvBlock(builder, weights.value, NumFilters(), 32, input,
-                            "/value/conv");
+                            "/value/conv", nullptr, "", true, 1);
   flow = builder->Reshape(
       "/value/reshape", flow,
       builder->AddInitializer("/const/value_shape",
                               Int32OnnxConst({-1, 32 * 8 * 8}, {2})));
   flow = builder->MatMul(
       "/value/dense1/matmul", flow,
-      *GetWeghtsConverter(weights.ip1_val_w, {32 * 8 * 8, 128}));
+      *GetWeghtsConverter(weights.ip1_val_w, {32 * 8 * 8, 128}, {1, 0}));
   flow = builder->Add("/value/dense1/add", flow,
                       *GetWeghtsConverter(weights.ip1_val_b, {128}));
   flow = builder->Relu("/value/dense1/relu", flow);
@@ -242,16 +243,18 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
   const bool wdl = src_.format().network_format().value() ==
                    pblczero::NetworkFormat::VALUE_WDL;
   if (wdl) {
-    flow = builder->MatMul("/value/dense2/matmul", flow,
-                           *GetWeghtsConverter(weights.ip2_val_w, {128, 3}));
+    flow = builder->MatMul(
+        "/value/dense2/matmul", flow,
+        *GetWeghtsConverter(weights.ip2_val_w, {128, 3}, {1, 0}));
     flow = builder->Add("/value/dense2/add", flow,
                         *GetWeghtsConverter(weights.ip2_val_b, {3}));
     auto output = builder->Softmax(options_.output_wdl, flow);
     builder->AddOutput(output, {3}, GetDataType());
     onnx->set_output_wdl(output);
   } else {
-    flow = builder->MatMul("/value/dense2/matmul", flow,
-                           *GetWeghtsConverter(weights.ip2_val_w, {128, 1}));
+    flow = builder->MatMul(
+        "/value/dense2/matmul", flow,
+        *GetWeghtsConverter(weights.ip2_val_w, {128, 1}, {1, 0}));
     flow = builder->Add("/value/dense2/add", flow,
                         *GetWeghtsConverter(weights.ip2_val_b, {1}));
     auto output = builder->Tanh(options_.output_value, flow);
@@ -270,8 +273,9 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
   }
   const int mlh_channels = weights.moves_left.biases.size();
   const int mlh_fc1_outputs = weights.ip1_mov_b.size();
-  auto flow = MakeConvBlock(builder, weights.value, NumFilters(), mlh_channels,
-                            input, "/mlh/conv");
+  auto flow =
+      MakeConvBlock(builder, weights.moves_left, NumFilters(), mlh_channels,
+                    input, "/mlh/conv", nullptr, "", true, 1);
   flow = builder->Reshape(
       "/mlh/reshape", flow,
       builder->AddInitializer("/const/value_shape",
@@ -279,14 +283,14 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
   flow = builder->MatMul(
       "/mlh/dense1/matmul", flow,
       *GetWeghtsConverter(weights.ip1_mov_w,
-                          {mlh_channels * 8 * 8, mlh_fc1_outputs}));
+                          {mlh_channels * 8 * 8, mlh_fc1_outputs}, {1, 0}));
   flow =
       builder->Add("/mlh/dense1/add", flow,
                    *GetWeghtsConverter(weights.ip1_mov_b, {mlh_fc1_outputs}));
   flow = builder->Relu("/mlh/dense1/relu", flow);
   flow = builder->MatMul(
       "/mlh/dense2/matmul", flow,
-      *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}));
+      *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}, {1, 0}));
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
   auto output = builder->Relu(options_.output_mlh, flow);

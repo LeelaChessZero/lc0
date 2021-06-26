@@ -116,7 +116,6 @@ std::string OnnxBuilder::Conv(const std::string& name,
   node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
   node->add_input(AddInitializer(name + "/w/bias", bias_weights));
   AddIntAttribute(node, "pads", {1, 1, 1, 1});
-  AddIntAttribute(node, "kernel_shape", {3, 3});
   return out;
 }
 
