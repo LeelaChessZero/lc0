@@ -25,41 +25,193 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <algorithm>
+#include <cassert>
 #include <fstream>
+#include <iterator>
 #include <memory>
+#include <vector>
 
 #include "neural/factory.h"
+#include "neural/network.h"
 #include "neural/onnx/converter.h"
 #include "onnxruntime_cxx_api.h"
+#include "utils/bititer.h"
+#include "utils/exception.h"
+#include "utils/logging.h"
 
 namespace lczero {
 namespace {
 
-std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict&) {
-  if (!w) throw Exception("The ONNX backend requires a network file.");
+enum class OnnxProvider { CPU, CUDA };
 
-  // DO NOT SUBMIT  begin
-  auto x = ConvertWeightsToOnnx(*w, {});
-  std::ofstream fo1("/tmp/weights.weights");
-  fo1 << x.OutputAsString();
-  std::ofstream fo2("/tmp/onnx.onnx");
-  fo2 << x.onnx_model().model();
-  // DO NOT SUBMIT  end
+class OnnxNetwork;
 
-  Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "lc0");
+class OnnxComputation : public NetworkComputation {
+ public:
+  OnnxComputation(OnnxNetwork* network) : network_(network) {}
+  void AddInput(InputPlanes&& input) override {
+    raw_input_.emplace_back(input);
+  }
+  int GetBatchSize() const override { return raw_input_.size(); }
+  void ComputeBlocking() override;
+  float GetQVal(int sample) const override;
+  float GetDVal(int sample) const override;
+  float GetPVal(int sample, int move_id) const override;
+  float GetMVal(int sample) const override;
 
-  Ort::SessionOptions session_options;
-  // session_options.SetIntraOpNumThreads(1);
-  session_options.SetGraphOptimizationLevel(
-      GraphOptimizationLevel::ORT_ENABLE_ALL);
+ private:
+  Ort::Value PrepareInput();
 
-  Ort::Session session(env, nullptr, 0, session_options);
+  OnnxNetwork* network_;
+  std::vector<InputPlanes> raw_input_;
+  std::vector<float> input_tensor_data_;
+  std::vector<Ort::Value> output_tensors_;
+};
 
-  return nullptr;
+class OnnxNetwork : public Network {
+ public:
+  OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
+              OnnxProvider provider);
+  std::unique_ptr<NetworkComputation> NewComputation() override {
+    return std::make_unique<OnnxComputation>(this);
+  }
+  const NetworkCapabilities& GetCapabilities() const override {
+    return capabilities_;
+  }
+
+  Ort::Env onnx_env_;
+  Ort::SessionOptions session_options_;
+  Ort::Session session_;
+  std::vector<std::string> inputs_;
+  std::vector<const char*> inputs_cstr_;
+  std::vector<std::string> outputs_;
+  std::vector<const char*> outputs_cstr_;
+  int policy_head_ = -1;
+  int wdl_head_ = -1;
+  int value_head_ = -1;
+  int mlh_head_ = -1;
+  NetworkCapabilities capabilities_;
+};
+
+float OnnxComputation::GetQVal(int sample) const {
+  if (network_->wdl_head_ != -1) {
+    const auto& data =
+        output_tensors_[network_->wdl_head_].GetTensorData<float>();
+    return data[sample * 3 + 0] - data[sample * 3 + 2];
+  } else {
+    const auto& data =
+        output_tensors_[network_->value_head_].GetTensorData<float>();
+    return data[sample];
+  }
+}
+float OnnxComputation::GetDVal(int sample) const {
+  if (network_->wdl_head_ == -1) return 0.0f;
+  const auto& data =
+      output_tensors_[network_->wdl_head_].GetTensorData<float>();
+  return data[sample * 3 + 1];
+}
+float OnnxComputation::GetPVal(int sample, int move_id) const {
+  const auto& data =
+      output_tensors_[network_->policy_head_].GetTensorData<float>();
+  return data[sample * 1858 + move_id];
+}
+float OnnxComputation::GetMVal(int sample) const {
+  if (network_->mlh_head_ == -1) return 0.0f;
+  const auto& data =
+      output_tensors_[network_->mlh_head_].GetTensorData<float>();
+  return data[sample];
 }
 
-REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork, 62)
+Ort::Value OnnxComputation::PrepareInput() {
+  input_tensor_data_.clear();
+  input_tensor_data_.resize(raw_input_.size() * kInputPlanes * 8 * 8);
+  auto iter = input_tensor_data_.data();
+  for (const auto& sample : raw_input_) {
+    assert(sample.size() == kInputPlanes);
+    for (const auto& plane : sample) {
+      for (auto bit : IterateBits(plane.mask)) {
+        *(iter + bit) = plane.value;
+      }
+      iter += 64;
+    }
+  }
+  int64_t dims[] = {static_cast<int64_t>(raw_input_.size()), kInputPlanes, 8,
+                    8};
+  auto memory_info =
+      Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  // Hopefully having dims in a temporary variable is fine.
+  return Ort::Value::CreateTensor<float>(memory_info, input_tensor_data_.data(),
+                                         input_tensor_data_.size(), dims, 4);
+}
+
+void OnnxComputation::ComputeBlocking() {
+  auto input_tensor = PrepareInput();
+  output_tensors_ = network_->session_.Run(
+      {}, network_->inputs_cstr_.data(), &input_tensor, 1,
+      network_->outputs_cstr_.data(), network_->outputs_cstr_.size());
+}
+
+Ort::SessionOptions GetOptions(OnnxProvider provider) {
+  Ort::SessionOptions options;
+  // options.SetIntraOpNumThreads(1);
+  options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+  switch (provider) {
+    case OnnxProvider::CUDA:
+      options.AppendExecutionProvider_CUDA({});
+      break;
+    case OnnxProvider::CPU:;
+  }
+  return options;
+}
+
+OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
+                         OnnxProvider provider)
+    : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
+      session_(onnx_env_, file.onnx_model().model().data(),
+               file.onnx_model().model().size(), GetOptions(provider)),
+      capabilities_{file.format().network_format().input(),
+                    file.format().network_format().moves_left()} {
+  const auto& md = file.onnx_model();
+  if (!md.has_input_planes()) {
+    throw Exception("NN doesn't have input planes defined.");
+  }
+  inputs_.emplace_back(md.input_planes());
+  if (!md.has_output_policy()) {
+    throw Exception("NN doesn't have policy head defined.");
+  }
+  policy_head_ = outputs_.size();
+  outputs_.emplace_back(md.output_policy());
+  if (md.has_output_wdl()) {
+    wdl_head_ = outputs_.size();
+    outputs_.emplace_back(md.output_wdl());
+  } else if (md.has_output_value()) {
+    value_head_ = outputs_.size();
+    outputs_.emplace_back(md.output_value());
+  } else {
+    throw Exception("NN doesn't have value head.");
+  }
+  if (md.has_output_mlh()) {
+    mlh_head_ = outputs_.size();
+    outputs_.emplace_back(md.output_mlh());
+  }
+  std::transform(inputs_.begin(), inputs_.end(),
+                 std::back_inserter(inputs_cstr_),
+                 [](const auto& x) { return x.c_str(); });
+  std::transform(outputs_.begin(), outputs_.end(),
+                 std::back_inserter(outputs_cstr_),
+                 [](const auto& x) { return x.c_str(); });
+}
+
+template <OnnxProvider kProvider>
+std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
+                                         const OptionsDict& opts) {
+  if (!w) throw Exception("The ONNX backend requires a network file.");
+  return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
+}
+
+REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 63)
+REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
 }  // namespace
 }  // namespace lczero
