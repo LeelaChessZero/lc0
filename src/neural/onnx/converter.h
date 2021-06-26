@@ -37,6 +37,8 @@ struct WeightsToOnnxConverterOptions {
   DataType data_type_ = DataType::kFloat32;
   std::string input_planes_name = "/input/planes";
   std::string output_policy_head = "/output/policy";
+  std::string output_wdl = "/output/wdl";
+  std::string output_value = "/output/value";
 };
 
 const pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,

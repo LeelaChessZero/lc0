@@ -81,6 +81,9 @@ class Converter {
   void MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                       const std::string& input, const LegacyWeights& weights);
 
+  void MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
+                     const std::string& input, const LegacyWeights& weights);
+
   void AddStdInitializers(OnnxBuilder* builder);
 
   pblczero::TensorProto::DataType GetDataType() const;
@@ -197,13 +200,15 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                               NumFilters(), input, "/policy/conv1");
     flow = MakeConvBlock(builder, weights.policy, NumFilters(), 80, flow,
                          "/policy/conv2");
-    builder->AddInitializer("/const/mapping_table",
-                            Int32OnnxConst(MakePolicyMap(), {1858}));
-    flow = builder->Reshape("/policy/flatten", flow, "/const/policy_shape");
-    builder->AddInitializer("/const/policy_shape",
-                            Int32OnnxConst({-1, 1858}, {2}));
-    auto output = builder->Gather(options_.output_policy_head, flow,
-                                  "/const/policy_shape", {1});
+    flow = builder->Reshape(
+        "/policy/flatten", flow,
+        builder->AddInitializer("/const/policy_shape",
+                                Int32OnnxConst({-1, 1858}, {2})));
+    auto output = builder->Gather(
+        options_.output_policy_head, flow,
+        builder->AddInitializer("/const/mapping_table",
+                                Int32OnnxConst(MakePolicyMap(), {1858})),
+        {1});
     builder->AddOutput(output, {-1, 1858}, GetDataType());
     onnx->set_output_policy(output);
   } else {
@@ -211,6 +216,43 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     throw Exception(
         "The old fully connected policy head is not implemented due to "
         "laziness.");
+  }
+}
+
+void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
+                              const std::string& input,
+                              const LegacyWeights& weights) {
+  auto flow = MakeConvBlock(builder, weights.value, NumFilters(), 32, input,
+                            "/value/conv");
+  flow = builder->Reshape(
+      "/value/reshape", flow,
+      builder->AddInitializer("/const/value_shape",
+                              Int32OnnxConst({-1, 32 * 8 * 8}, {2})));
+  flow = builder->MatMul(
+      "/value/dense1/matmul", flow,
+      *GetWeghtsConverter(weights.ip1_val_w, {32 * 8 * 8, 128}));
+  flow = builder->Add("/value/dense1/add", flow,
+                      *GetWeghtsConverter(weights.ip1_val_b, {128}));
+  flow = builder->Relu("/value/dense1/relu", flow);
+
+  const bool wdl = src_.format().network_format().value() ==
+                   pblczero::NetworkFormat::VALUE_WDL;
+  if (wdl) {
+    flow = builder->MatMul("/value/dense2/matmul", flow,
+                           *GetWeghtsConverter(weights.ip2_val_w, {128, 3}));
+    flow = builder->Add("/value/dense2/add", flow,
+                        *GetWeghtsConverter(weights.ip2_val_b, {3}));
+    auto output = builder->Softmax(options_.output_wdl, flow);
+    builder->AddOutput(output, {3}, GetDataType());
+    onnx->set_output_wdl(output);
+  } else {
+    flow = builder->MatMul("/value/dense2/matmul", flow,
+                           *GetWeghtsConverter(weights.ip2_val_w, {128, 1}));
+    flow = builder->Add("/value/dense2/add", flow,
+                        *GetWeghtsConverter(weights.ip2_val_b, {1}));
+    auto output = builder->Tanh(options_.output_value, flow);
+    builder->AddOutput(output, {1}, GetDataType());
+    onnx->set_output_value(output);
   }
 }
 
@@ -235,6 +277,8 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
 
   // Policy head.
   MakePolicyHead(onnx, &builder, flow, weights);
+  // Value head.
+  MakeValueHead(onnx, &builder, flow, weights);
 
   onnx->set_model(builder.OutputAsString());
 }

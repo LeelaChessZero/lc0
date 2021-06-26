@@ -174,6 +174,18 @@ std::string OnnxBuilder::Relu(const std::string& name,
   return PopulateStdNodeFields(node, name, input, "Relu");
 }
 
+std::string OnnxBuilder::Tanh(const std::string& name,
+                              const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Tanh");
+}
+
+std::string OnnxBuilder::Softmax(const std::string& name,
+                                 const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Softmax");
+}
+
 std::string OnnxBuilder::Reshape(const std::string& name,
                                  const std::string& input,
                                  const std::string& shape) {

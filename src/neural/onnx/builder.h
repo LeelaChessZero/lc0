@@ -65,6 +65,8 @@ class OnnxBuilder {
   std::string MatMul(const std::string& name, const std::string& input1,
                      const std::string& input2);
   std::string Relu(const std::string& name, const std::string& input);
+  std::string Tanh(const std::string& name, const std::string& input);
+  std::string Softmax(const std::string& name, const std::string& input);
   std::string AddInitializer(const std::string& name, const OnnxConst& weights);
   std::string Reshape(const std::string& name, const std::string& input,
                       const std::string& shape);
