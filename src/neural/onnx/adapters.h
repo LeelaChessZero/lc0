@@ -79,4 +79,14 @@ class Int32OnnxConst : public GenericOnnxConst<int32_t> {
   }
 };
 
+class Int64OnnxConst : public GenericOnnxConst<int64_t> {
+ public:
+  using GenericOnnxConst<int64_t>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::INT64;
+  }
+};
+
 }  // namespace lczero

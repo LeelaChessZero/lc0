@@ -177,7 +177,7 @@ std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
 
 void Converter::AddStdInitializers(OnnxBuilder* builder) {
   builder->AddInitializer("/const/se_reshape",
-                          Int32OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
+                          Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
 }
 
 namespace {
@@ -208,7 +208,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     flow = builder->Reshape(
         "/policy/flatten", flow,
         builder->AddInitializer("/const/policy_shape",
-                                Int32OnnxConst({-1, 1858}, {2})));
+                                Int64OnnxConst({-1, 1858}, {2})));
     auto output = builder->Gather(
         options_.output_policy_head, flow,
         builder->AddInitializer("/const/mapping_table",
@@ -232,7 +232,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
   flow = builder->Reshape(
       "/value/reshape", flow,
       builder->AddInitializer("/const/value_shape",
-                              Int32OnnxConst({-1, 32 * 8 * 8}, {2})));
+                              Int64OnnxConst({-1, 32 * 8 * 8}, {2})));
   flow = builder->MatMul(
       "/value/dense1/matmul", flow,
       *GetWeghtsConverter(weights.ip1_val_w, {32 * 8 * 8, 128}, {1, 0}));
@@ -279,7 +279,7 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
   flow = builder->Reshape(
       "/mlh/reshape", flow,
       builder->AddInitializer("/const/mlh_shape",
-                              Int32OnnxConst({-1, mlh_channels * 8 * 8}, {2})));
+                              Int64OnnxConst({-1, mlh_channels * 8 * 8}, {2})));
   flow = builder->MatMul(
       "/mlh/dense1/matmul", flow,
       *GetWeghtsConverter(weights.ip1_mov_w,
