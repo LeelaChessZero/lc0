@@ -84,6 +84,10 @@ class Converter {
   void MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                      const std::string& input, const LegacyWeights& weights);
 
+  void MakeMovesLeftHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
+                         const std::string& input,
+                         const LegacyWeights& weights);
+
   void AddStdInitializers(OnnxBuilder* builder);
 
   pblczero::TensorProto::DataType GetDataType() const;
@@ -256,6 +260,40 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
   }
 }
 
+void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
+                                  OnnxBuilder* builder,
+                                  const std::string& input,
+                                  const LegacyWeights& weights) {
+  if (src_.format().network_format().moves_left() !=
+      pblczero::NetworkFormat::MOVES_LEFT_V1) {
+    return;
+  }
+  const int mlh_channels = weights.moves_left.biases.size();
+  const int mlh_fc1_outputs = weights.ip1_mov_b.size();
+  auto flow = MakeConvBlock(builder, weights.value, NumFilters(), mlh_channels,
+                            input, "/mlh/conv");
+  flow = builder->Reshape(
+      "/mlh/reshape", flow,
+      builder->AddInitializer("/const/value_shape",
+                              Int32OnnxConst({-1, mlh_channels * 8 * 8}, {2})));
+  flow = builder->MatMul(
+      "/mlh/dense1/matmul", flow,
+      *GetWeghtsConverter(weights.ip1_mov_w,
+                          {mlh_channels * 8 * 8, mlh_fc1_outputs}));
+  flow =
+      builder->Add("/mlh/dense1/add", flow,
+                   *GetWeghtsConverter(weights.ip1_mov_b, {mlh_fc1_outputs}));
+  flow = builder->Relu("/mlh/dense1/relu", flow);
+  flow = builder->MatMul(
+      "/mlh/dense2/matmul", flow,
+      *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}));
+  flow = builder->Add("/mlh/dense2/add", flow,
+                      *GetWeghtsConverter(weights.ip2_mov_b, {1}));
+  auto output = builder->Relu(options_.output_mlh, flow);
+  builder->AddOutput(output, {1}, GetDataType());
+  onnx->set_output_mlh(output);
+}
+
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   LegacyWeights weights(src_.weights());
   OnnxBuilder builder;
@@ -279,6 +317,8 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   MakePolicyHead(onnx, &builder, flow, weights);
   // Value head.
   MakeValueHead(onnx, &builder, flow, weights);
+  // Moves left head.
+  MakeMovesLeftHead(onnx, &builder, flow, weights);
 
   onnx->set_model(builder.OutputAsString());
 }

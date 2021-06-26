@@ -39,6 +39,7 @@ struct WeightsToOnnxConverterOptions {
   std::string output_policy_head = "/output/policy";
   std::string output_wdl = "/output/wdl";
   std::string output_value = "/output/value";
+  std::string output_mlh = "/output/mlh";
 };
 
 const pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
