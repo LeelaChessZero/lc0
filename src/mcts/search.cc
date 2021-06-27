@@ -351,8 +351,9 @@ inline float GetFpu(const SearchParams&, Node* node, const EdgeAndNode& edge,
   if (p <= 0.0f) return -1.0f;
   if (max_p <= 0.0f) return 1.0f;
   const float delta_p = FastLog(p) - FastLog(max_p);
-  const float x1 = (delta_p + 2.5) * 5;
-  const float x2 = std::clamp(x1 / (1.0f + abs(x1)) * 0.55f + 0.5f, 0.0f, 1.0f);
+  const float x1 = (delta_p + 4) * 5;
+  const float x2 =
+      std::clamp(x1 / (1.0f + abs(x1)) * 0.525f + 0.5f, 0.0f, 1.0f);
   // CERR << "P:" << p << " max P:" << max_p << " Q:" << q << " -> "
   //      << ((q + 1.0f) * x2 - 1.0f) << " x2:" << x2;
   return (q + 1.0f) * x2 - 1.0f;
