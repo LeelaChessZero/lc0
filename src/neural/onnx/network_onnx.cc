@@ -30,8 +30,10 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <string>
 #include <vector>
 
+#include "cpu_provider_factory.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
 #include "neural/network.h"
@@ -161,7 +163,18 @@ Ort::SessionOptions GetOptions(OnnxProvider provider) {
     case OnnxProvider::CUDA:
       options.AppendExecutionProvider_CUDA({});
       break;
-    case OnnxProvider::CPU:;
+    case OnnxProvider::CPU:
+      // Doesn't really work. :-( There are two execution providers (CUDA and
+      // CPU) already added, don't know how to force it to use CPU.
+      auto status = OrtSessionOptionsAppendExecutionProvider_CPU(options, 0);
+      if (status) {
+        std::string error_message = Ort::GetApi().GetErrorMessage(status);
+        OrtErrorCode error_code = Ort::GetApi().GetErrorCode(status);
+        Ort::GetApi().ReleaseStatus(status);
+        throw Exception("ONNX CPU error " + std::to_string(error_code) + ": " +
+                        error_message);
+      }
+      break;
   }
   return options;
 }
