@@ -42,6 +42,7 @@ class OnnxConst {
   virtual std::string GetRawData() const = 0;
 };
 
+// Builds Onnx::ModelProto.
 class OnnxBuilder {
  public:
   OnnxBuilder();
@@ -50,6 +51,14 @@ class OnnxBuilder {
   void AddOutput(const std::string& name, std::initializer_list<int> dims,
                  pblczero::TensorProto::DataType datatype);
 
+  // Functions to add operators.
+  // Every function appends one node to the graph.
+  // @name parameter is used to name both the added node, and the output edge.
+  // @input{,1,2} input tensor.
+  //     - if std::string, contains the name of input tensor.
+  //     - if OnnxConst, adds it as initializer, and then uses.
+  // Return the name of the output edge, which is in most cases the same as the
+  // node name.
   std::string Conv(const std::string& name, const std::string& input_name,
                    const OnnxConst& kernel_weights,
                    const OnnxConst& bias_weights, int pads = 1);
@@ -76,7 +85,9 @@ class OnnxBuilder {
   std::string Gather(const std::string& name, const std::string& input1,
                      const std::string& input2, int axis);
 
+  // Returns ONNX model as protobuf.
   const pblczero::ModelProto& as_proto() const { return model_; }
+  // Returns serialized model.
   std::string OutputAsString() const { return model_.OutputAsString(); }
 
  private:

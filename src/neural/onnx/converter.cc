@@ -31,6 +31,7 @@
 #include <initializer_list>
 #include <memory>
 
+#include "neural/loader.h"
 #include "neural/network.h"
 #include "neural/network_legacy.h"
 #include "neural/onnx/adapters.h"

@@ -36,6 +36,8 @@
 
 namespace lczero {
 
+// FloatOnnxWeightsAdapter takes weights as a vector of floats and converts them
+// as FLOAT initializer for OnnxBuilder. Optionally can transpose the tensor.
 class FloatOnnxWeightsAdapter : public OnnxConst {
  public:
   FloatOnnxWeightsAdapter(const std::vector<float>& weights,
@@ -52,6 +54,8 @@ class FloatOnnxWeightsAdapter : public OnnxConst {
   std::vector<int> order_;
 };
 
+// GenericOnnxConst takes inline constant (usually short and known at compile
+// time) and converts to initializer for OnnxBuilder.
 template <typename T>
 class GenericOnnxConst : public OnnxConst {
  public:
@@ -69,6 +73,7 @@ class GenericOnnxConst : public OnnxConst {
   std::vector<int> dims_;
 };
 
+// GenericOnnxConst for int32 values.
 class Int32OnnxConst : public GenericOnnxConst<int32_t> {
  public:
   using GenericOnnxConst<int32_t>::GenericOnnxConst;
@@ -79,6 +84,7 @@ class Int32OnnxConst : public GenericOnnxConst<int32_t> {
   }
 };
 
+// GenericOnnxConst for int64 values.
 class Int64OnnxConst : public GenericOnnxConst<int64_t> {
  public:
   using GenericOnnxConst<int64_t>::GenericOnnxConst;

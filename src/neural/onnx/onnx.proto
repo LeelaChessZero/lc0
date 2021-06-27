@@ -130,7 +130,6 @@ message GraphProto {
   optional string doc_string = 10;
   repeated ValueInfoProto input = 11;
   repeated ValueInfoProto output = 12;
-
 }
 
 message OperatorSetIdProto {

@@ -87,9 +87,12 @@ class OnnxNetwork : public Network {
   Ort::SessionOptions session_options_;
   Ort::Session session_;
   std::vector<std::string> inputs_;
+  // Points to strings in inputs_.
   std::vector<const char*> inputs_cstr_;
   std::vector<std::string> outputs_;
+  // Points to strings in outputs_.
   std::vector<const char*> outputs_cstr_;
+  // Indices in output_cstr_ vector.
   int policy_head_ = -1;
   int wdl_head_ = -1;
   int value_head_ = -1;
@@ -217,14 +220,6 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
                  [](const auto& x) { return x.c_str(); });
 }
 
-/*
-std::string slurp(std::string const& filename) {
-  using BufIt = std::istreambuf_iterator<char>;
-  std::ifstream in(filename);
-  return std::string(BufIt(in.rdbuf()), BufIt());
-}
-*/
-
 template <OnnxProvider kProvider>
 std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& opts) {
@@ -234,11 +229,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
   } else {
     auto converted = ConvertWeightsToOnnx(*w, {});
-    std::ofstream fo("/tmp/onnx.onnx");
-    fo << converted.onnx_model().model();
-    // converted.mutable_onnx_model()->set_model(
-    //     slurp("/home/crem/my/Jupyter/lczero/vis/nobackup/id743927.onnx"));
-
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
   }
 }

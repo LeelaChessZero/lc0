@@ -32,6 +32,7 @@
 
 namespace lczero {
 
+// Options to use when converting "old" weights to ONNX weights format.
 struct WeightsToOnnxConverterOptions {
   enum class DataType { kFloat32 };
   DataType data_type_ = DataType::kFloat32;
@@ -42,6 +43,7 @@ struct WeightsToOnnxConverterOptions {
   std::string output_mlh = "/output/mlh";
 };
 
+// Converts "classical" weights file to weights file with embedded ONNX model.
 pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
                                    const WeightsToOnnxConverterOptions&);
 
