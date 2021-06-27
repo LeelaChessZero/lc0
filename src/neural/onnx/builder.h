@@ -52,7 +52,7 @@ class OnnxBuilder {
 
   std::string Conv(const std::string& name, const std::string& input_name,
                    const OnnxConst& kernel_weights,
-                   const OnnxConst& bias_weights);
+                   const OnnxConst& bias_weights, int pads = 1);
   std::string Add(const std::string& name, const std::string& input1,
                   const std::string& input2);
   std::string Add(const std::string& name, const std::string& input1,

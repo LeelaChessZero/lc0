@@ -157,7 +157,8 @@ std::string Converter::MakeConvBlock(
       name, input,
       *GetWeghtsConverter(weights.weights,
                           {output_channels, input_channels, filters, filters}),
-      *GetWeghtsConverter(weights.biases, {output_channels}));
+      *GetWeghtsConverter(weights.biases, {output_channels}),
+      (filters - 1) / 2);
 
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
