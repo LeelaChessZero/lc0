@@ -104,6 +104,7 @@ class SelfPlayTournament {
   TournamentInfo::Callback tournament_callback_;
   const int kTotalGames;
   const bool kShareTree;
+  const bool kAdjudicate;
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
