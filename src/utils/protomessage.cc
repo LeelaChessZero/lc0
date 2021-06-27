@@ -1,5 +1,7 @@
 #include "utils/protomessage.h"
 
+#include <cstdint>
+
 #include "utils/exception.h"
 
 namespace lczero {
@@ -36,17 +38,25 @@ uint64_t ReadFixed(const std::uint8_t** iter, size_t size,
   return result;
 }
 
+void WriteFixed(uint64_t value, size_t size, std::string* out) {
+  out->reserve(out->size() + size);
+  for (size_t i = 0; i < size; ++i) {
+    out->push_back(static_cast<char>(static_cast<uint8_t>(value)));
+    value /= 256;
+  }
+}
+
 // // Kept for serialization part.
-// std::string EncodeVarInt(std::uint64_t val) {
-//   std::string res;
-//   while (true) {
-//     char c = (val & 0x7f);
-//     val >>= 7;
-//     if (val) c |= 0x80;
-//     res += c;
-//     if (!val) return res;
-//   }
-// }
+std::string EncodeVarInt(std::uint64_t val) {
+  std::string res;
+  while (true) {
+    char c = (val & 0x7f);
+    val >>= 7;
+    if (val) c |= 0x80;
+    res += c;
+    if (!val) return res;
+  }
+}
 
 }  // namespace
 
@@ -87,6 +97,28 @@ void ProtoMessage::MergeFromString(std::string_view str) {
         throw Exception("The file seems to be unparseable.");
     }
   }
+}
+
+void ProtoMessage::AppendVarInt(int field_id, std::uint64_t value,
+                                std::string* out) const {
+  *out += EncodeVarInt(field_id << 3);
+  *out += EncodeVarInt(value);
+}
+void ProtoMessage::AppendInt64(int field_id, std::uint64_t value,
+                               std::string* out) const {
+  *out += EncodeVarInt(1 + (field_id << 3));
+  WriteFixed(value, 8, out);
+}
+void ProtoMessage::AppendInt32(int field_id, std::uint32_t value,
+                               std::string* out) const {
+  *out += EncodeVarInt(5 + (field_id << 3));
+  WriteFixed(value, 4, out);
+}
+void ProtoMessage::AppendString(int field_id, std::string_view value,
+                                std::string* out) const {
+  *out += EncodeVarInt(2 + (field_id << 3));
+  *out += EncodeVarInt(value.size());
+  *out += value;
 }
 
 }  // namespace lczero

@@ -19,14 +19,10 @@
 #pragma once
 
 #include <vector>
+
 #include "proto/net.pb.h"
 
 namespace lczero {
-
-// DEPRECATED! DEPRECATED! DEPRECATED! DEPRECATED! DEPRECATED! DEPRECATED!!!
-// Legacy structure describing network weights.
-// Please try to migrate away from this struture do not add anything new
-// to it.
 
 struct LegacyWeights {
   explicit LegacyWeights(const pblczero::Weights& weights);
