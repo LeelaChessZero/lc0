@@ -369,6 +369,7 @@ void SearchParams::Populate(OptionsParser* options) {
                                          "centipawn_with_drawscore",
                                          "centipawn_2019",
                                          "centipawn_2018",
+                                         "centipawn_SF",
                                          "win_percentage",
                                          "Q",
                                          "W-L"};
