@@ -211,7 +211,7 @@ std::string OnnxBuilder::Gather(const std::string& name,
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "Gather");
   node->add_input(input2);
-  AddIntsAttribute(node, "axis", {axis});
+  AddIntAttribute(node, "axis", axis);
   return out;
 }
 
