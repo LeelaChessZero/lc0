@@ -209,7 +209,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     flow = builder->Reshape(
         "/policy/flatten", flow,
         builder->AddInitializer("/const/policy_shape",
-                                Int64OnnxConst({-1, 1858}, {2})));
+                                Int64OnnxConst({-1, 80 * 8 * 8}, {2})));
     auto output = builder->Gather(
         options_.output_policy_head, flow,
         builder->AddInitializer("/const/mapping_table",
