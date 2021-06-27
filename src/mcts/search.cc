@@ -343,23 +343,35 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
-                    float draw_score) {
-  const auto value = params.GetFpuValue(is_root_node);
-  return params.GetFpuAbsolute(is_root_node)
-             ? value
-             : -node->GetQ(-draw_score) -
-                   value * std::sqrt(node->GetVisitedPolicy());
+inline float GetFpu(const SearchParams&, Node* node, const EdgeAndNode& edge,
+                    bool, float draw_score, bool = false) {
+  const float max_p = node->Edges().begin().GetP();
+  const float p = edge.GetP();
+  const float q = -node->GetQ(-draw_score);
+  if (p <= 0.0f) return -1.0f;
+  if (max_p <= 0.0f) return 1.0f;
+  const float delta_p = FastLog(p) - FastLog(max_p);
+  const float x1 = (delta_p + 2.5) * 5;
+  const float x2 = std::clamp(x1 / (1.0f + abs(x1)) * 0.55f + 0.5f, 0.0f, 1.0f);
+  // CERR << "P:" << p << " max P:" << max_p << " Q:" << q << " -> "
+  //      << ((q + 1.0f) * x2 - 1.0f) << " x2:" << x2;
+  return (q + 1.0f) * x2 - 1.0f;
+}
+
+/* inline float GetFpu(const SearchParams& params, Node* node, const
+EdgeAndNode&, bool is_root_node, float draw_score) { const auto value =
+params.GetFpuValue(is_root_node); return params.GetFpuAbsolute(is_root_node) ?
+value : -node->GetQ(-draw_score) - value * std::sqrt(node->GetVisitedPolicy());
 }
 
 // Faster version for if visited_policy is readily available already.
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
-                    float draw_score, float visited_pol) {
+inline float GetFpu(const SearchParams& params, Node* node, const EdgeAndNode&,
+                    bool is_root_node, float draw_score, float visited_pol) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
              : -node->GetQ(-draw_score) - value * std::sqrt(visited_pol);
-}
+} */
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
                           bool is_root_node) {
@@ -376,20 +388,20 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
-  const float fpu = GetFpu(params_, node, is_root, draw_score);
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   std::vector<EdgeAndNode> edges;
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
-  std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score](EdgeAndNode a, EdgeAndNode b) {
-              return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
-                     std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
-            });
+  std::sort(edges.begin(), edges.end(), [&](EdgeAndNode a, EdgeAndNode b) {
+    const float fpu_a = GetFpu(params_, node, a, is_root, draw_score);
+    const float fpu_b = GetFpu(params_, node, b, is_root, draw_score);
+    return std::forward_as_tuple(a.GetN(),
+                                 a.GetQ(fpu_a, draw_score) + a.GetU(U_coeff)) <
+           std::forward_as_tuple(b.GetN(),
+                                 b.GetQ(fpu_b, draw_score) + b.GetU(U_coeff));
+  });
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
@@ -412,7 +424,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
     }
-    print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
+    float q = n ? sign * n->GetQ(sign * draw_score) : 42;
+    print(oss, "(Q: ", q, ") ", 8, 5);
   };
   auto print_tail = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
@@ -448,7 +461,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                ? MEvaluator(params_, node)
                                : MEvaluator();
   for (const auto& edge : edges) {
-    float Q = edge.GetQ(fpu, draw_score);
+    float Q = edge.GetQ(4.2, draw_score);
     float M = m_evaluator.GetM(edge, Q);
     std::ostringstream oss;
     oss << std::left;
@@ -746,10 +759,10 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   float max_n = 0.0;
   const float offset = params_.GetTemperatureVisitOffset();
   float max_eval = -1.0f;
-  const float fpu =
-      GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
 
   for (auto& edge : root_node_->Edges()) {
+    const float fpu =
+        GetFpu(params_, root_node_, edge, /* is_root= */ true, draw_score);
     if (!root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
@@ -768,6 +781,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   const float min_eval =
       max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
   for (auto& edge : root_node_->Edges()) {
+    const float fpu =
+        GetFpu(params_, root_node_, edge, /* is_root= */ true, draw_score);
     if (!root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
@@ -787,6 +802,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
       cumulative_sums.begin();
 
   for (auto& edge : root_node_->Edges()) {
+    const float fpu =
+        GetFpu(params_, root_node_, edge, /* is_root= */ true, draw_score);
     if (!root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
@@ -852,8 +869,6 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   // If root node hasn't finished first visit, none of this code is safe.
   if (root_node_->GetN() > 0) {
     const auto draw_score = GetDrawScore(true);
-    const float fpu =
-        GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
     float max_q_plus_m = -1000;
     uint64_t max_n = 0;
     bool max_n_has_max_q_plus_m = true;
@@ -861,6 +876,8 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
                                  ? MEvaluator(params_, root_node_)
                                  : MEvaluator();
     for (const auto& edge : root_node_->Edges()) {
+      const float fpu = GetFpu(params_, root_node_, edge,
+                               /* is_root_node */ true, draw_score);
       const auto n = edge.GetN();
       const auto q = edge.GetQ(fpu, draw_score);
       const auto m = m_evaluator.GetM(edge, q);
@@ -1672,11 +1689,11 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetM(child, q);
       }
-      const float fpu =
-          GetFpu(params_, node, is_root_node, draw_score, visited_pol);
+      // const float fpu =
+      //     GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < max_needed; i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
-          current_util[i] = fpu + m_evaluator.GetDefaultM();
+          current_util[i] = -1.0f + m_evaluator.GetDefaultM();
         }
       }
 
@@ -2083,11 +2100,11 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
     // the weirdness.
     const float draw_score =
         (depth % 2 == 0) ? odd_draw_score : even_draw_score;
-    const float fpu = GetFpu(params_, node, is_root_node, draw_score);
 
     m_evaluator.SetParent(node);
     bool can_exit = false;
     for (auto& child : node->Edges()) {
+      const float fpu = GetFpu(params_, node, child, is_root_node, draw_score);
       if (is_root_node) {
         // If there's no chance to catch up to the current best node with
         // remaining playouts, don't consider it.
@@ -2280,9 +2297,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  const float fpu =
-      GetFpu(params_, node, node == search_->root_node_, draw_score);
   for (auto& edge : node->Edges()) {
+    const float fpu =
+        GetFpu(params_, node, edge, node == search_->root_node_, draw_score);
     if (edge.GetP() == 0.0f) continue;
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
@@ -2317,6 +2334,8 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
     if (i != scores.size() - 1) {
       // Sign of the score was flipped for sorting, so flip it back.
       const float next_score = -scores[i + 1].first;
+      const float fpu =
+          GetFpu(params_, node, edge, node == search_->root_node_, draw_score);
       // TODO: As above - should this use logit_q if set?
       const float q = edge.GetQ(-fpu, draw_score);
       if (next_score > q) {
