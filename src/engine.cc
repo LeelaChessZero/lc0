@@ -116,6 +116,24 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPreload) = false;
 }
 
+void EngineController::Display() const {
+  auto fen = current_position_->fen.empty() ? ChessBoard::kStartposFen : current_position_->fen;
+  ChessBoard board(fen);
+  if (!current_position_->moves.empty()) {
+    for (const auto& moveString : current_position_->moves) {
+      if (moveString.empty()) break;
+      Move move(moveString, board.flipped());
+      KingAttackInfo king_attack_info;
+      if (!board.IsLegalMove(move, king_attack_info)) break;
+      board.ApplyMove(move);
+      board.Mirror();
+    }
+  }
+  auto black = board.flipped();
+  if (black) board.Mirror();
+  std::cout << board.DebugString() << "side: " << (black ? "black" : "white") << std::endl;
+}
+
 void EngineController::ResetMoveTimer() {
   move_start_time_ = std::chrono::steady_clock::now();
 }
@@ -373,5 +391,7 @@ void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
 void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_.Stop(); }
+
+void EngineLoop::CmdDisplay() const { engine_.Display(); }
 
 }  // namespace lczero
