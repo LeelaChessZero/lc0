@@ -62,8 +62,8 @@ class OnnxBuilder {
   std::string Squeeze(const std::string& name, const std::string& input);
   std::string MatMul(const std::string& name, const std::string& input1,
                      const OnnxConst& input2);
-  std::string MatMul(const std::string& name, const std::string& input1,
-                     const std::string& input2);
+  std::string Mul(const std::string& name, const std::string& input1,
+                  const std::string& input2);
   std::string Relu(const std::string& name, const std::string& input);
   std::string Tanh(const std::string& name, const std::string& input);
   std::string Softmax(const std::string& name, const std::string& input);

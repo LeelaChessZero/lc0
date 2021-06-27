@@ -144,7 +144,7 @@ std::string Converter::MakeSqueezeAndExcite(
   auto splits = builder->Split(name + "/split", flow, 1);
 
   flow = builder->Sigmoid(name + "/sigmoid", splits.first);
-  flow = builder->MatMul(name + "/matmul3", flow, input);
+  flow = builder->Mul(name + "/matmul3", flow, input);
   return builder->Add(name + "/add3", flow, splits.second);
 }
 
@@ -249,7 +249,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     flow = builder->Add("/value/dense2/add", flow,
                         *GetWeghtsConverter(weights.ip2_val_b, {3}));
     auto output = builder->Softmax(options_.output_wdl, flow);
-    builder->AddOutput(output, {3}, GetDataType());
+    builder->AddOutput(output, {-1, 3}, GetDataType());
     onnx->set_output_wdl(output);
   } else {
     flow = builder->MatMul(
@@ -258,7 +258,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     flow = builder->Add("/value/dense2/add", flow,
                         *GetWeghtsConverter(weights.ip2_val_b, {1}));
     auto output = builder->Tanh(options_.output_value, flow);
-    builder->AddOutput(output, {1}, GetDataType());
+    builder->AddOutput(output, {-1, 1}, GetDataType());
     onnx->set_output_value(output);
   }
 }
@@ -294,7 +294,7 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
   auto output = builder->Relu(options_.output_mlh, flow);
-  builder->AddOutput(output, {1}, GetDataType());
+  builder->AddOutput(output, {-1, 1}, GetDataType());
   onnx->set_output_mlh(output);
 }
 

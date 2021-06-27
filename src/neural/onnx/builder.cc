@@ -160,11 +160,10 @@ std::string OnnxBuilder::Squeeze(const std::string& name,
   return out;
 }
 
-std::string OnnxBuilder::MatMul(const std::string& name,
-                                const std::string& input1,
-                                const std::string& input2) {
+std::string OnnxBuilder::Mul(const std::string& name, const std::string& input1,
+                             const std::string& input2) {
   auto* node = model_.mutable_graph()->add_node();
-  auto out = PopulateStdNodeFields(node, name, input1, "MatMul");
+  auto out = PopulateStdNodeFields(node, name, input1, "Mul");
   node->add_input(input2);
   return out;
 }
