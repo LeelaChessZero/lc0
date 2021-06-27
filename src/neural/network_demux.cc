@@ -54,14 +54,14 @@ class DemuxingComputation : public NetworkComputation {
   }
 
   float GetDVal(int sample) const override {
-    int idx = sample / partial_size_;
-    int offset = sample % partial_size_;
+    const int idx = sample / partial_size_;
+    const int offset = sample % partial_size_;
     return parents_[idx]->GetDVal(offset);
   }
 
   float GetMVal(int sample) const override {
-    int idx = sample / partial_size_;
-    int offset = sample % partial_size_;
+    const int idx = sample / partial_size_;
+    const int offset = sample % partial_size_;
     return parents_[idx]->GetMVal(offset);
   }
 
