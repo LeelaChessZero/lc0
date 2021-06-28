@@ -90,6 +90,7 @@ class Edge {
   // Returns or sets value of Move policy prior returned from the neural net
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
   float GetP() const;
+  uint16_t GetPCompressed() const { return p_; }
   void SetP(float val);
   void SetPCompressed(uint16_t p) { p_ = p; }
 

@@ -456,8 +456,7 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
       for (size_t i = 0; i < legal_moves.size(); i++) {
         if (move == legal_moves[i]) {
           // Decompress policy to float.
-          uint32_t tmp =
-              (static_cast<uint32_t>(nneval->p[i]) << 12) | (3 << 28);
+          uint32_t tmp = nneval->edges[i].GetPCompressed();
           std::memcpy(&p, &tmp, sizeof(uint32_t));
         }
       }

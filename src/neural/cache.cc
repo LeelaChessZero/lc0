@@ -30,7 +30,6 @@
 #include <cassert>
 #include <iostream>
 
-#include "mcts/node.h"
 #include "utils/fastmath.h"
 
 namespace lczero {
@@ -78,27 +77,23 @@ void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
   int transform;
   auto input =
       EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
-  std::vector<uint16_t> moves;
+  std::vector<Move> moves;
   if (node && node->HasChildren()) {
     // Legal moves are known, use them.
     moves.reserve(node->GetNumEdges());
     for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
+      moves.emplace_back(edge.GetMove());
     }
   } else {
     // Cache legal moves.
-    const auto& legal_moves =
-        history.Last().GetBoard().GenerateLegalMoves();
-    moves.reserve(legal_moves.size());
-    for (auto iter = legal_moves.begin(), end = legal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
+    moves = history.Last().GetBoard().GenerateLegalMoves();
   }
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().probabilities_to_cache = moves;
+  batch_.back().edges = Edge::FromMovelist(moves);
+  batch_.back().transform = transform;
+  batch_.back().num_edges = moves.size();
   parent_->AddInput(std::move(input));
   return;
 }
@@ -109,18 +104,6 @@ void CachingComputation::PopLastInputHit() {
   batch_.pop_back();
 }
 
-namespace {
-uint16_t CompressP(float p) {
-  assert(0.0f <= p && p <= 1.0f);
-  constexpr int32_t roundings = (1 << 11) - (3 << 28);
-  int32_t tmp;
-  std::memcpy(&tmp, &p, sizeof(float));
-  tmp += roundings;
-  return (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
-}
-
-}  // namespace
-
 void CachingComputation::ComputeBlocking(float softmax_temp) {
   if (parent_->GetBatchSize() == 0) return;
   parent_->ComputeBlocking();
@@ -129,7 +112,7 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
     auto req =
-        std::make_unique<CachedNNRequest>(item.probabilities_to_cache.size());
+        std::make_unique<CachedNNRequest>();
     req->q = parent_->GetQVal(item.idx_in_parent);
     req->d = parent_->GetDVal(item.idx_in_parent);
     req->m = parent_->GetMVal(item.idx_in_parent);
@@ -139,27 +122,38 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     // Intermediate array to store values when processing policy.
     // There are never more than 256 valid legal moves in any legal position.
     std::array<float, 256> intermediate;
-    int counter = 0;
-    for (auto x : item.probabilities_to_cache) {
-      float p = parent_->GetPVal(item.idx_in_parent, x);
-      intermediate[counter++] = p;
+    int transform = item.transform;
+    for (int ct = 0; ct < item.num_edges; ct++) {
+      auto move = item.edges[ct].GetMove();
+      float p =
+          parent_->GetPVal(item.idx_in_parent, move.as_nn_index(transform));
+      intermediate[ct] = p;
       max_p = std::max(max_p, p);
     }
     float total = 0.0;
-    for (int i = 0; i < counter; i++) {
+    for (int ct = 0; ct < item.num_edges; ct++) {
       // Perform softmax and take into account policy softmax temperature T.
       // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-      float p = FastExp((intermediate[i] - max_p) / softmax_temp);
-      intermediate[i] = p;
+      float p = FastExp((intermediate[ct] - max_p) / softmax_temp);
+      intermediate[ct] = p;
       total += p;
     }
     // Normalize P values to add up to 1.0.
     const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-    for (size_t ct = 0; ct < item.probabilities_to_cache.size(); ct++) {
-      uint16_t p = CompressP(intermediate[ct] * scale);
-      req->p[ct] = p;
-      item.probabilities_to_cache[ct] = p;
+    for (int ct = 0; ct < item.num_edges; ct++) {
+      item.edges[ct].SetP(intermediate[ct] * scale);
     }
+
+    std::vector<Move> moves;
+    moves.resize(item.num_edges);
+    for (int ct = 0; ct < item.num_edges; ct++) {
+      moves[ct] = item.edges[ct].GetMove();
+    }
+    req->edges = Edge::FromMovelist(moves);
+    for (int ct = 0; ct < item.num_edges; ct++) {
+      req->edges[ct].SetPCompressed(item.edges[ct].GetPCompressed());
+    }
+    req->num_edges = item.num_edges;
     cache_->Insert(item.hash, std::move(req));
   }
 }
@@ -185,9 +179,9 @@ float CachingComputation::GetMVal(int sample) const {
 uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) {
-    return item.probabilities_to_cache[move_ct];
+    return item.edges[move_ct].GetPCompressed();
   }
-  return item.lock->p[move_ct];
+  return item.lock->edges[move_ct].GetPCompressed();
 }
 
 }  // namespace lczero

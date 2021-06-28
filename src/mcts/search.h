@@ -349,7 +349,9 @@ class SearchWorker {
 
     float GetMVal(int) const { return lock->m; }
 
-    uint16_t GetPVal(int, int move_ct) const { return lock->p[move_ct]; }
+    uint16_t GetPVal(int, int move_ct) const {
+      return lock->edges[move_ct].GetPCompressed();
+    }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,

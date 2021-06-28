@@ -26,26 +26,24 @@
 */
 #pragma once
 
+#include "mcts/node.h"
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/cache.h"
-#include "utils/smallarray.h"
 
 namespace lczero {
 
 struct CachedNNRequest {
-  CachedNNRequest(size_t size) : p(size) {}
   float q;
   float d;
   float m;
   // Store p only for valid moves.
-  SmallArray<uint16_t> p;
+  std::unique_ptr<Edge[]> edges;
+  uint8_t num_edges = 0;
 };
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
 typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
-
-class Node;
 
 // Wraps around NetworkComputation and caches result.
 // While it mostly repeats NetworkComputation interface, it's not derived
@@ -96,8 +94,9 @@ class CachingComputation {
     uint64_t hash;
     NNCacheLock lock;
     int idx_in_parent = -1;
-    // Initially the move indices, after computation the policy values.
-    std::vector<uint16_t> probabilities_to_cache;
+    std::unique_ptr<Edge[]> edges;
+    uint8_t num_edges = 0;
+    int transform;
   };
 
   std::unique_ptr<NetworkComputation> parent_;
