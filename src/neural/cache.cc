@@ -25,13 +25,23 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "neural/cache.h"
+
+#include <array>
 #include <cassert>
 #include <iostream>
 
+#include "mcts/node.h"
+#include "utils/fastmath.h"
+
 namespace lczero {
 CachingComputation::CachingComputation(
-    std::unique_ptr<NetworkComputation> parent, NNCache* cache)
-    : parent_(std::move(parent)), cache_(cache) {}
+    std::unique_ptr<NetworkComputation> parent,
+    pblczero::NetworkFormat::InputFormat input_format,
+    lczero::FillEmptyHistory history_fill, NNCache* cache)
+    : parent_(std::move(parent)),
+      input_format_(input_format),
+      history_fill_(history_fill),
+      cache_(cache) {}
 
 int CachingComputation::GetCacheMisses() const {
   return parent_->GetBatchSize();
@@ -60,15 +70,37 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::AddInput(
-    uint64_t hash, InputPlanes&& input,
-    std::vector<uint16_t>&& probabilities_to_cache) {
-  if (AddInputByHash(hash)) return;
+void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
+                                  const Node* node) {
+  if (AddInputByHash(hash)) {
+    return;
+  }
+  int transform;
+  auto input =
+      EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
+  std::vector<uint16_t> moves;
+  if (node && node->HasChildren()) {
+    // Legal moves are known, use them.
+    moves.reserve(node->GetNumEdges());
+    for (const auto& edge : node->Edges()) {
+      moves.emplace_back(edge.GetMove().as_nn_index(transform));
+    }
+  } else {
+    // Cache legal moves.
+    const auto& legal_moves =
+        history.Last().GetBoard().GenerateLegalMoves();
+    moves.reserve(legal_moves.size());
+    for (auto iter = legal_moves.begin(), end = legal_moves.end();
+         iter != end; ++iter) {
+      moves.emplace_back(iter->as_nn_index(transform));
+    }
+  }
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().probabilities_to_cache = probabilities_to_cache;
+  batch_.back().probabilities_to_cache = moves;
   parent_->AddInput(std::move(input));
+  return;
 }
 
 void CachingComputation::PopLastInputHit() {
@@ -77,22 +109,56 @@ void CachingComputation::PopLastInputHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::ComputeBlocking() {
+namespace {
+uint16_t CompressP(float p) {
+  assert(0.0f <= p && p <= 1.0f);
+  constexpr int32_t roundings = (1 << 11) - (3 << 28);
+  int32_t tmp;
+  std::memcpy(&tmp, &p, sizeof(float));
+  tmp += roundings;
+  return (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
+}
+
+}  // namespace
+
+void CachingComputation::ComputeBlocking(float softmax_temp) {
   if (parent_->GetBatchSize() == 0) return;
   parent_->ComputeBlocking();
 
   // Fill cache with data from NN.
-  for (const auto& item : batch_) {
+  for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
     auto req =
         std::make_unique<CachedNNRequest>(item.probabilities_to_cache.size());
     req->q = parent_->GetQVal(item.idx_in_parent);
     req->d = parent_->GetDVal(item.idx_in_parent);
     req->m = parent_->GetMVal(item.idx_in_parent);
-    int idx = 0;
+
+    // Calculate maximum first.
+    float max_p = -std::numeric_limits<float>::infinity();
+    // Intermediate array to store values when processing policy.
+    // There are never more than 256 valid legal moves in any legal position.
+    std::array<float, 256> intermediate;
+    int counter = 0;
     for (auto x : item.probabilities_to_cache) {
-      req->p[idx++] =
-          std::make_pair(x, parent_->GetPVal(item.idx_in_parent, x));
+      float p = parent_->GetPVal(item.idx_in_parent, x);
+      intermediate[counter++] = p;
+      max_p = std::max(max_p, p);
+    }
+    float total = 0.0;
+    for (int i = 0; i < counter; i++) {
+      // Perform softmax and take into account policy softmax temperature T.
+      // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
+      float p = FastExp((intermediate[i] - max_p) / softmax_temp);
+      intermediate[i] = p;
+      total += p;
+    }
+    // Normalize P values to add up to 1.0.
+    const float scale = total > 0.0f ? 1.0f / total : 1.0f;
+    for (size_t ct = 0; ct < item.probabilities_to_cache.size(); ct++) {
+      uint16_t p = CompressP(intermediate[ct] * scale);
+      req->p[ct] = p;
+      item.probabilities_to_cache[ct] = p;
     }
     cache_->Insert(item.hash, std::move(req));
   }
@@ -116,22 +182,12 @@ float CachingComputation::GetMVal(int sample) const {
   return item.lock->m;
 }
 
-float CachingComputation::GetPVal(int sample, int move_id) const {
+uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0)
-    return parent_->GetPVal(item.idx_in_parent, move_id);
-  const auto& moves = item.lock->p;
-
-  int total_count = 0;
-  while (total_count < moves.size()) {
-    // Optimization: usually moves are stored in the same order as queried.
-    const auto& move = moves[item.last_idx++];
-    if (item.last_idx == moves.size()) item.last_idx = 0;
-    if (move.first == move_id) return move.second;
-    ++total_count;
+  if (item.idx_in_parent >= 0) {
+    return item.probabilities_to_cache[move_ct];
   }
-  assert(false);  // Move not found.
-  return 0;
+  return item.lock->p[move_ct];
 }
 
 }  // namespace lczero

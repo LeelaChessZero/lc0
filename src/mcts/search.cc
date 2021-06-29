@@ -38,8 +38,6 @@
 #include <thread>
 
 #include "mcts/node.h"
-#include "neural/cache.h"
-#include "neural/encoder.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 
@@ -1133,8 +1131,9 @@ void SearchWorker::ExecuteOneIteration() {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
-  computation_ = std::make_unique<CachingComputation>(std::move(computation),
-                                                      search_->cache_);
+  computation_ = std::make_unique<CachingComputation>(
+      std::move(computation), search_->network_->GetCapabilities().input_format,
+      params_.GetHistoryFill(), search_->cache_);
   computation_->Reserve(params_.GetMiniBatchSize());
   minibatch_.clear();
   minibatch_.reserve(2 * params_.GetMiniBatchSize());
@@ -1182,9 +1181,7 @@ void SearchWorker::GatherMinibatch() {
       // Only send non-terminal nodes to a neural network.
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        int transform;
-        picked_node.is_cache_hit = AddNodeToComputation(node, true, &transform);
-        picked_node.probability_transform = transform;
+        picked_node.is_cache_hit = AddNodeToComputation(node, true);
       }
     }
 
@@ -1371,9 +1368,8 @@ void SearchWorker::GatherMinibatch2() {
         computation_->AddInputByHash(minibatch_[i].hash,
                                      std::move(minibatch_[i].lock));
       } else {
-        computation_->AddInput(minibatch_[i].hash,
-                               std::move(minibatch_[i].input_planes),
-                               std::move(minibatch_[i].probabilities_to_cache));
+        computation_->AddInput(minibatch_[i].hash, minibatch_[i].history,
+                               minibatch_[i].node);
       }
     }
 
@@ -1425,21 +1421,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.lock = NNCacheLock(search_->cache_, hash);
         picked_node.is_cache_hit = picked_node.lock;
         if (!picked_node.is_cache_hit) {
-          int transform;
-          picked_node.input_planes = EncodePositionForNN(
-              search_->network_->GetCapabilities().input_format, history, 8,
-              params_.GetHistoryFill(), &transform);
-          picked_node.probability_transform = transform;
-
-          std::vector<uint16_t>& moves = picked_node.probabilities_to_cache;
-          // Legal moves are known, use them.
-          moves.reserve(node->GetNumEdges());
-          for (const auto& edge : node->Edges()) {
-            moves.emplace_back(edge.GetMove().as_nn_index(transform));
-          }
-        } else {
-          picked_node.probability_transform = TransformForPosition(
-              search_->network_->GetCapabilities().input_format, history);
+          picked_node.history = history;
         }
       }
     }
@@ -2170,53 +2152,19 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
-                                        int* transform_out) {
+bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
       return true;
     }
   } else {
     if (search_->cache_->ContainsKey(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
       return true;
     }
   }
-  int transform;
-  auto planes =
-      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
-
-  std::vector<uint16_t> moves;
-
-  if (node && node->HasChildren()) {
-    // Legal moves are known, use them.
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
-    }
-  } else {
-    // Cache pseudolegal moves. A bit of a waste, but faster.
-    const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
-    moves.reserve(pseudolegal_moves.size());
-    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
-  }
-
-  computation_->AddInput(hash, std::move(planes), std::move(moves));
-  if (transform_out) *transform_out = transform;
+  computation_->AddInput(hash, history_, node);
   return false;
 }
 
@@ -2257,7 +2205,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false, nullptr)) {
+    if (AddNodeToComputation(node, false)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
@@ -2340,7 +2288,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+  computation_->ComputeBlocking(params_.GetPolicySoftmaxTemp());
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2372,34 +2322,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->v = -computation.GetQVal(idx_in_computation);
   node_to_process->d = computation.GetDVal(idx_in_computation);
   node_to_process->m = computation.GetMVal(idx_in_computation);
-  // ...and secondly, the policy data.
-  // Calculate maximum first.
-  float max_p = -std::numeric_limits<float>::infinity();
-  // Intermediate array to store values when processing policy.
-  // There are never more than 256 valid legal moves in any legal position.
-  std::array<float, 256> intermediate;
-  int counter = 0;
+  // ...and secondly, the policy data. The cache returns compressed values after
+  // softmax.
+  int idx = 0;
   for (auto& edge : node->Edges()) {
-    float p = computation.GetPVal(
-        idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform));
-    intermediate[counter++] = p;
-    max_p = std::max(max_p, p);
-  }
-  float total = 0.0;
-  for (int i = 0; i < counter; i++) {
-    // Perform softmax and take into account policy softmax temperature T.
-    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    float p =
-        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
-    intermediate[i] = p;
-    total += p;
-  }
-  counter = 0;
-  // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  for (auto& edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
+    edge.edge()->SetPCompressed(computation.GetPVal(idx_in_computation, idx++));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {

@@ -40,7 +40,6 @@
 #include "mcts/params.h"
 #include "mcts/stoppers/timemgr.h"
 #include "neural/cache.h"
-#include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
@@ -317,7 +316,6 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
-    int probability_transform = 0;
 
     // Details only populated in the multigather path.
 
@@ -327,9 +325,7 @@ class SearchWorker {
     // Details that are filled in as we go.
     uint64_t hash;
     NNCacheLock lock;
-    std::vector<uint16_t> probabilities_to_cache;
-    InputPlanes input_planes;
-    mutable int last_idx = 0;
+    PositionHistory history;
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
@@ -353,20 +349,7 @@ class SearchWorker {
 
     float GetMVal(int) const { return lock->m; }
 
-    float GetPVal(int, int move_id) const {
-      const auto& moves = lock->p;
-
-      int total_count = 0;
-      while (total_count < moves.size()) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = moves[last_idx++];
-        if (last_idx == moves.size()) last_idx = 0;
-        if (move.first == move_id) return move.second;
-        ++total_count;
-      }
-      assert(false);  // Move not found.
-      return 0;
-    }
+    uint16_t GetPVal(int, int move_ct) const { return lock->p[move_ct]; }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
@@ -427,7 +410,7 @@ class SearchWorker {
 
   NodeToProcess PickNodeToExtend(int collision_limit);
   void ExtendNode(Node* node, int depth);
-  bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
+  bool AddNodeToComputation(Node* node, bool add_if_cached);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.

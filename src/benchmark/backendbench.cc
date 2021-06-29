@@ -29,6 +29,7 @@
 
 #include "chess/board.h"
 #include "mcts/node.h"
+#include "neural/encoder.h"
 #include "neural/factory.h"
 #include "utils/optionsparser.h"
 

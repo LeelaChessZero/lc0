@@ -26,6 +26,7 @@
 */
 #pragma once
 
+#include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/cache.h"
 #include "utils/smallarray.h"
@@ -34,16 +35,17 @@ namespace lczero {
 
 struct CachedNNRequest {
   CachedNNRequest(size_t size) : p(size) {}
-  typedef std::pair<uint16_t, float> IdxAndProb;
   float q;
   float d;
   float m;
-  // TODO(mooskagh) Don't really need index if using perfect hash.
-  SmallArray<IdxAndProb> p;
+  // Store p only for valid moves.
+  SmallArray<uint16_t> p;
 };
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
 typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
+
+class Node;
 
 // Wraps around NetworkComputation and caches result.
 // While it mostly repeats NetworkComputation interface, it's not derived
@@ -51,7 +53,8 @@ typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
 class CachingComputation {
  public:
   CachingComputation(std::unique_ptr<NetworkComputation> parent,
-                     NNCache* cache);
+                     pblczero::NetworkFormat::InputFormat input_format,
+                     FillEmptyHistory history_fill, NNCache* cache);
 
   // How many inputs are not found in cache and will be forwarded to a wrapped
   // computation.
@@ -64,24 +67,23 @@ class CachingComputation {
   // Adds input by hash with existing lock. Assumes the given lock holds a real
   // reference.
   void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
-  // Adds a sample to the batch.
+  // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
-  // @probabilities_to_cache is which indices of policy head to store.
-  void AddInput(uint64_t hash, InputPlanes&& input,
-                std::vector<uint16_t>&& probabilities_to_cache);
-  // Undos last AddInput. If it was a cache miss, the it's actually not removed
+  void AddInput(uint64_t hash, const PositionHistory& history,
+                const Node* node);
+  // Undos last AddInput. If it was a cache miss, then it's actually not removed
   // from parent's batch.
   void PopLastInputHit();
   // Do the computation.
-  void ComputeBlocking();
+  void ComputeBlocking(float softmax_temp);
   // Returns Q value of @sample.
   float GetQVal(int sample) const;
   // Returns probability of draw if NN has WDL value head.
   float GetDVal(int sample) const;
   // Returns estimated remaining moves.
   float GetMVal(int sample) const;
-  // Returns P value @move_id of @sample.
-  float GetPVal(int sample, int move_id) const;
+  // Returns compressed P value @move_id of @sample.
+  uint16_t GetPVal(int sample, int move_ct) const;
   // Pops last input from the computation. Only allowed for inputs which were
   // cached.
   void PopCacheHit();
@@ -94,11 +96,13 @@ class CachingComputation {
     uint64_t hash;
     NNCacheLock lock;
     int idx_in_parent = -1;
+    // Initially the move indices, after computation the policy values.
     std::vector<uint16_t> probabilities_to_cache;
-    mutable int last_idx = 0;
   };
 
   std::unique_ptr<NetworkComputation> parent_;
+  pblczero::NetworkFormat::InputFormat input_format_;
+  FillEmptyHistory history_fill_;
   NNCache* cache_;
   std::vector<WorkItem> batch_;
 };
