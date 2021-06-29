@@ -1413,12 +1413,13 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
+      uint64_t hash;
+      auto lock = ExtendNode(node, picked_node.depth,
+                             picked_node.moves_to_visit, &history, &hash);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
         picked_node.hash = hash;
-        picked_node.lock = NNCacheLock(search_->cache_, hash);
+        picked_node.lock = std::move(lock);
         picked_node.is_cache_hit = picked_node.lock;
         if (!picked_node.is_cache_hit) {
           picked_node.history = history;
@@ -1865,9 +1866,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   }
 }
 
-void SearchWorker::ExtendNode(Node* node, int depth,
-                              const std::vector<Move>& moves_to_node,
-                              PositionHistory* history) {
+NNCacheLock SearchWorker::ExtendNode(Node* node, int depth,
+                                     const std::vector<Move>& moves_to_node,
+                                     PositionHistory* history, uint64_t* hash) {
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
   for (size_t i = 0; i < moves_to_node.size(); i++) {
@@ -1877,8 +1878,30 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
   const auto& board = history->Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
 
+  NNCacheLock lock;
+  if (hash != nullptr) {
+    *hash = history->HashLast(params_.GetCacheHistoryLength() + 1);
+    lock = NNCacheLock(search_->cache_, *hash);
+  }
+
+  std::vector<Move> legal_moves;
+  if (lock) {
+    legal_moves.reserve(lock->num_edges);
+    const KingAttackInfo king_attack_info = board.GenerateKingAttackInfo();
+    for (int ct = 0; ct < lock->num_edges; ct++) {
+      auto move = lock->edges[ct].GetMove();
+      if (!board.IsLegalMove(move, king_attack_info)) {
+        lock = NNCacheLock();
+        break;
+      }
+      legal_moves.emplace_back(move);
+    }
+  }
+
+  if (!lock) {
+    legal_moves = board.GenerateLegalMoves();
+  }
   // Check whether it's a draw/lose by position. Importantly, we must check
   // these before doing the by-rule checks below.
   if (legal_moves.empty()) {
@@ -1888,7 +1911,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     } else {
       node->MakeTerminal(GameResult::DRAW);
     }
-    return;
+    return NNCacheLock();
   }
 
   // We can shortcircuit these draws-by-rule only if they aren't root;
@@ -1896,12 +1919,12 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   if (node != search_->root_node_) {
     if (!board.HasMatingMaterial()) {
       node->MakeTerminal(GameResult::DRAW);
-      return;
+      return NNCacheLock();
     }
 
     if (history->Last().GetRule50Ply() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
-      return;
+      return NNCacheLock();
     }
 
     const auto repetitions = history->Last().GetRepetitions();
@@ -1909,7 +1932,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     if (repetitions >= 2) {
       node->MakeTerminal(GameResult::DRAW);
-      return;
+      return NNCacheLock();
     } else if (repetitions == 1 && depth - 1 >= 4 &&
                params_.GetTwoFoldDraws() &&
                depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
@@ -1917,7 +1940,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       // use plies since first repetition as moves left; exact if forced draw.
       node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
                          Node::Terminal::TwoFold);
-      return;
+      return NNCacheLock();
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
@@ -1953,13 +1976,14 @@ void SearchWorker::ExtendNode(Node* node, int depth,
           node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
         }
         search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
+        return NNCacheLock();
       }
     }
   }
 
   // Add legal moves as edges of this node.
   node->CreateEdges(legal_moves);
+  return lock;
 }
 
 namespace {
@@ -2148,7 +2172,7 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
   }
   std::reverse(to_add.begin(), to_add.end());
 
-  ExtendNode(node, depth, to_add, &history_);
+  ExtendNode(node, depth, to_add, &history_, nullptr);
 }
 
 // Returns whether node was already in cache.

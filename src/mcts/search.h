@@ -427,8 +427,9 @@ class SearchWorker {
   void EnsureNodeTwoFoldCorrectForDepth(Node* node, int depth);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
-  void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
-                  PositionHistory* history);
+  NNCacheLock ExtendNode(Node* node, int depth,
+                         const std::vector<Move>& moves_to_add,
+                         PositionHistory* history, uint64_t* hash);
   template <typename Computation>
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              const Computation& computation,
