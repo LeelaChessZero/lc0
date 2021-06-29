@@ -448,19 +448,14 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
   std::vector<float> intermediate;
   NNCacheLock nneval = search_->GetCachedNNEval(tree.GetCurrentHead());
   if (nneval) {
-    // The cache stores policies in GenerateLegalMoves() order.
-    auto legal_moves = history.Last().GetBoard().GenerateLegalMoves();
     for (const auto& child : node->Edges()) {
       auto move = child.edge()->GetMove();
-      float p = 0;
-      for (size_t i = 0; i < legal_moves.size(); i++) {
-        if (move == legal_moves[i]) {
-          // Decompress policy to float.
-          uint32_t tmp = nneval->edges[i].GetPCompressed();
-          std::memcpy(&p, &tmp, sizeof(uint32_t));
+      for (size_t i = 0; i < node->GetNumEdges(); i++) {
+        if (move == nneval->edges[i].GetMove()) {
+          intermediate.emplace_back(nneval->edges[i].GetP());
+          break;
         }
       }
-      intermediate.emplace_back(p);
     }
   }
   float total = 0.0;
