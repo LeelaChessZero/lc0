@@ -178,13 +178,14 @@ float LinearDecay(float cur_value, float target_value,
   if (time_since_last_update_ms <= 0) return cur_value;
   // If window is large enough, we consider
   if (time_since_reliable_ms >= window_size_ms) return target_value;
-  // How long there was a reliable nps in the window, in ms.
-  const float time_reliable = time_since_reliable_ms - window_size_ms;
+  // time_since_reliable_ms during the previous call of this function.
+  const float prev_time_since_reliable_ms =
+      time_since_reliable_ms - time_since_last_update_ms;
   // The same, but as fraction of window size.
-  const float reliable_frac = time_reliable / window_size_ms;
+  const float prev_reliable_frac = prev_time_since_reliable_ms / window_size_ms;
   // What was the value when it was reliable.
-  const float reliable_value =
-      (reliable_frac * target_value - cur_value) / (reliable_frac - 1);
+  const float reliable_value = (prev_reliable_frac * target_value - cur_value) /
+                               (prev_reliable_frac - 1);
   // Now we know window width, nps when it was reliable, and time since that,
   // and time to converge, interpolate.
   return LinearInterpolate(reliable_value, target_value,
