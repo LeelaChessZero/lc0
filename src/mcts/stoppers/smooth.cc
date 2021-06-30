@@ -178,6 +178,10 @@ float LinearDecay(float cur_value, float target_value,
   if (time_since_last_update_ms <= 0) return cur_value;
   // If window is large enough, we consider
   if (time_since_reliable_ms >= window_size_ms) return target_value;
+  if (time_since_last_update_ms > time_since_reliable_ms) {
+    // Should never happen, but just for the case.
+    time_since_last_update_ms = time_since_reliable_ms;
+  }
   // time_since_reliable_ms during the previous call of this function.
   const float prev_time_since_reliable_ms =
       time_since_reliable_ms - time_since_last_update_ms;
