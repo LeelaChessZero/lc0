@@ -118,10 +118,25 @@ if git.found()
 endif
 
 # Construct build identifier.
+build_identifier = ''
 if short_rev != ''
   build_identifier = 'git.' + short_rev
-  add_project_arguments('-DBUILD_IDENTIFIER="' + build_identifier + '"', language : 'cpp')
   message('Using build identifier "' + build_identifier + '".')
+endif
+
+conf_data = configuration_data()
+conf_data.set_quoted('BUILD_IDENTIFIER', build_identifier)
+configure_file(output: 'build_id.h', configuration: conf_data)
+
+# Some malloc libraries require to be linked first.
+if get_option('malloc') == 'mimalloc' and cc.get_id() == 'msvc'
+  if get_option('b_vscrt') != 'md' and get_option('b_vscrt') != 'mdd'
+    error('You need -Db_vscrt=md (or mdd)')
+  endif
+  add_project_link_arguments('/INCLUDE:mi_version', language : 'cpp')
+  deps += cc.find_library('mimalloc-override', dirs: get_option('mimalloc_libdir'), required: true)
+elif get_option('malloc') != ''
+  deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
 #############################################################################
@@ -218,7 +233,7 @@ if get_option('build_backends')
     mkl_lib = cc.find_library('mklml', dirs: mkl_libdirs, required: false)
   endif
 
-  dnnl_libdirs = get_option('dnnl_dir') + '/lib'
+  dnnl_libdirs = [get_option('dnnl_dir') + '/lib64', get_option('dnnl_dir') + '/lib']
   dnnl_lib = cc.find_library('dnnl', dirs: dnnl_libdirs, required: false)
 
   openblas_libdirs = get_option('openblas_libdirs')
@@ -518,6 +533,16 @@ if get_option('build_backends')
     has_backends = true
   endif
 
+  if get_option('onednn') and dnnl_lib.found()
+    includes += include_directories(get_option('dnnl_dir') + '/include')
+    deps += [ dnnl_lib, dependency('openmp', required:true) ]
+    files += [
+      'src/neural/onednn/network_onednn.cc',
+      'src/neural/onednn/layers.cc',
+    ]
+    has_backends = true
+  endif
+
 endif # if get_option('build_backends')
 
 if not has_backends and get_option('build_backends')
@@ -554,10 +579,6 @@ endif
   endif
 
   deps += cc.find_library('libatomic', required: false)
-
-  if get_option('malloc') != ''
-    deps += cc.find_library(get_option('malloc'), required: true)
-  endif
 
 #############################################################################
 ## Main Executable

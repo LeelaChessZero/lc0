@@ -441,13 +441,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         up = -up;
         std::swap(lo, up);
       }
-      *oss << (lo == up
-                   ? "(T) "
-                   : lo == GameResult::DRAW && up == GameResult::WHITE_WON
-                         ? "(W) "
-                         : lo == GameResult::BLACK_WON && up == GameResult::DRAW
-                               ? "(L) "
-                               : "");
+      *oss << (lo == up                                                ? "(T) "
+               : lo == GameResult::DRAW && up == GameResult::WHITE_WON ? "(W) "
+               : lo == GameResult::BLACK_WON && up == GameResult::DRAW ? "(L) "
+                                                                       : "");
     }
   };
 
@@ -1333,7 +1330,7 @@ void SearchWorker::GatherMinibatch2() {
           task_count_.fetch_add(1, std::memory_order_acq_rel);
           ppt_start = i + 1;
           found = 0;
-          if (picking_tasks_.size() == num_tasks - 1) {
+          if (picking_tasks_.size() == static_cast<size_t>(num_tasks - 1)) {
             break;
           }
         }
@@ -1375,7 +1372,7 @@ void SearchWorker::GatherMinibatch2() {
         }
       }
     }
-    for (int i = new_start; i < minibatch_.size(); i++) {
+    for (size_t i = new_start; i < minibatch_.size(); i++) {
       // If there was no OOO, there can stil be collisions.
       // There are no OOO though.
       // Also terminals when OOO is disabled.
@@ -1392,7 +1389,7 @@ void SearchWorker::GatherMinibatch2() {
     }
 
     // Check for stop at the end so we have at least one node.
-    for (int i = new_start; i < static_cast<int>(minibatch_.size()); i++) {
+    for (size_t i = new_start; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
 
       if (picked_node.IsCollision()) {
@@ -1902,7 +1899,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
                               PositionHistory* history) {
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
-  for (int i = 0; i < moves_to_node.size(); i++) {
+  for (size_t i = 0; i < moves_to_node.size(); i++) {
     history->Append(moves_to_node[i]);
   }
 

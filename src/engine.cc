@@ -77,8 +77,8 @@ const OptionId kFreeMemory{"free-memory", "FreeMemory",
                              "Analyse Mode, needed temporarily in AnalyseMode "
                              "to free RAM. Make sure that it is turned off "
                              "before exploring variations."};
-
-
+const OptionId kPreload{"preload", "",
+                        "Initialize backend and load net on engine startup."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -128,6 +128,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kAnalyseMode) = false;
   options->Add<BoolOption>(kFreeMemory) = false;
+  options->Add<BoolOption>(kPreload) = false;
 }
 
 void EngineController::ResetMoveTimer() {
@@ -342,8 +343,9 @@ EngineLoop::EngineLoop()
 
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init() || !options_.ProcessAllFlags()) return;
-  Logging::Get().SetFilename(
-      options_.GetOptionsDict().Get<std::string>(kLogFileId));
+  const auto options = options_.GetOptionsDict();
+  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
+  if (options.Get<bool>(kPreload)) engine_.NewGame();
   UciLoop::RunLoop();
 }
 

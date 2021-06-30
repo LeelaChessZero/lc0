@@ -71,7 +71,8 @@ class LegacyTimeManager : public TimeManager {
         time_curve_midpoint_(
             params.GetOrDefault<float>("midpoint-move", 51.5f)),
         time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
-        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)) {}
+        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)),
+        book_ply_bonus_(params.GetOrDefault<float>("book-ply-bonus", 0.4f)) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
@@ -81,6 +82,9 @@ class LegacyTimeManager : public TimeManager {
   const float time_curve_midpoint_;
   const float time_curve_steepness_;
   const float spend_saved_time_;
+  // When starting a game from a book, add bonus time per ply of the book.
+  const float book_ply_bonus_;
+  bool first_move_of_game_ = true;
   // No need to be atomic as only one thread will update it.
   int64_t time_spared_ms_ = 0;
 };
@@ -116,23 +120,33 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   // of it will be used immediately, remove that from planning.
   int time_to_squander = 0;
   if (time_spared_ms_ > 0) {
+    total_moves_time = std::max(0.0f, total_moves_time - time_spared_ms_);
     time_to_squander = time_spared_ms_ * spend_saved_time_;
     time_spared_ms_ -= time_to_squander;
-    total_moves_time -= time_to_squander;
   }
 
   // Evenly split total time between all moves.
   float this_move_time = total_moves_time / movestogo;
+
+  // Add bonus time per ply of the opening book to compensate starting from an
+  // uncommon position without a tree to reuse.
+  // Limit the bonus to max. 12 plies, which also prevents spending too much
+  // time on the first move in resumed games.
+  if (first_move_of_game_) {
+    this_move_time *= (1.0f + book_ply_bonus_ *
+                       std::min(12, position.GetGamePly()));
+    first_move_of_game_ = false;
+  }
 
   // Only extend thinking time with slowmover if smart pruning can potentially
   // reduce it.
   constexpr int kSmartPruningToleranceMs = 200;
   if (slowmover_ < 1.0 ||
       this_move_time * slowmover_ > kSmartPruningToleranceMs) {
-    this_move_time *= slowmover_;
     // If time is planned to be overused because of slowmover, remove excess
     // of that time from spared time.
     time_spared_ms_ -= this_move_time * (slowmover_ - 1);
+    this_move_time *= slowmover_;
   }
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"

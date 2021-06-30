@@ -35,7 +35,7 @@ option('mkl_include',
 
 option('dnnl_dir',
        type: 'string',
-       value: '',
+       value: '/usr',
        description: 'Paths to DNNL install directory')
 
 option('cudnn_include',
@@ -88,6 +88,11 @@ option('tensorflow',
        value: false,
        description: 'Enable TensorFlow backend')
 
+option('onednn',
+       type: 'boolean',
+       value: true,
+       description: 'Enable oneDNN backend')
+
 option('openblas',
        type: 'boolean',
        value: true,
@@ -112,6 +117,11 @@ option('malloc',
        type : 'string',
        value: '',
        description: 'Use alternative memory allocator, e.g. tcmalloc/jemalloc')
+
+option('mimalloc_libdir',
+       type : 'string',
+       value: '',
+       description: 'Library directory for malloc=mimalloc')
 
 option('popcnt',
        type: 'boolean',

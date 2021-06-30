@@ -41,6 +41,9 @@
 #ifndef DEFAULT_MAX_PREFETCH
 #define DEFAULT_MAX_PREFETCH 32
 #endif
+#ifndef DEFAULT_TASK_WORKERS
+#define DEFAULT_TASK_WORKERS 4
+#endif
 
 namespace lczero {
 
@@ -400,7 +403,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<BoolOption>(kMultiGatherEnabledId) = true;
-  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = 4;
+  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
+      DEFAULT_TASK_WORKERS;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
   options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
   options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =

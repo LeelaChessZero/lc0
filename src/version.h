@@ -31,10 +31,7 @@
 
 #include <string>
 #include "version.inc"
-
-#ifndef BUILD_IDENTIFIER
-#define BUILD_IDENTIFIER ""
-#endif
+#include "build_id.h"
 
 std::uint32_t GetVersionInt(int major = LC0_VERSION_MAJOR,
                             int minor = LC0_VERSION_MINOR,

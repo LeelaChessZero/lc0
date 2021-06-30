@@ -24,6 +24,8 @@
 
 #include "chess/bitboard.h"
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 TEST(BoardSquare, BoardSquare) {
@@ -51,6 +53,12 @@ TEST(BoardSquare, BoardSquare) {
     EXPECT_EQ(x.row(), 6);
     EXPECT_EQ(x.col(), 2);
   }
+}
+
+TEST(ChessBoard, IllegalFirstRankPawns) {
+  ChessBoard board;
+  EXPECT_THROW(board.SetFromFen("nqrbkrnr/bnnbnbnn/8/8/8/8/NNNBPNBN/QNRPKPQQ w - - 0 1");,
+               Exception);
 }
 
 TEST(ChessBoard, PseudolegalMovesStartingPos) {
