@@ -25,11 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "mcts/stoppers/smooth.h"
+
 #include <functional>
 #include <iomanip>
 
 #include "mcts/stoppers/legacy.h"
-#include "mcts/stoppers/smooth.h"
 #include "mcts/stoppers/stoppers.h"
 #include "utils/mutex.h"
 
