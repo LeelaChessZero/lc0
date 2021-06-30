@@ -85,6 +85,11 @@ inline float FastLog(const float a) {
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastExp2(1.442695040f * a); }
 
+// Fast approximate for a^x.
+inline float FastPow(const float a, const float exp) {
+  return FastExp2(FastLog2(a) * exp);
+}
+
 inline float FastSign(const float a) {
   // Microsoft compiler does not have a builtin for copysign and emits a
   // library call which is too expensive for hot paths.

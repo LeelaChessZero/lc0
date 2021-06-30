@@ -130,6 +130,9 @@ class SearchParams {
   }
   int GetIdlingMinimumWork() const { return kIdlingMinimumWork; }
   int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
+  int GetUpdateInterval() const { return kUpdateInterval; }
+  float GetRecalculateTemperature() const { return kRecalculateTemperature; }
+  float GetLCBPercentile() const { return kLCBPercentile; }
   int GetMaxCollisionVisitsScalingStart() const {
     return kMaxCollisionVisitsScalingStart;
   }
@@ -200,6 +203,9 @@ class SearchParams {
   static const OptionId kMinimumWorkPerTaskForProcessingId;
   static const OptionId kIdlingMinimumWorkId;
   static const OptionId kThreadIdlingThresholdId;
+  static const OptionId kUpdateIntervalId;
+  static const OptionId kRecalculateTemperatureId;
+  static const OptionId kLCBPercentileId;
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
@@ -257,6 +263,9 @@ class SearchParams {
   const int kMinimumWorkPerTaskForProcessing;
   const int kIdlingMinimumWork;
   const int kThreadIdlingThreshold;
+  const int kUpdateInterval;
+  const float kRecalculateTemperature;
+  const float kLCBPercentile;
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
