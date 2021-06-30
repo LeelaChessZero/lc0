@@ -62,8 +62,7 @@ char GetPieceAt(const lczero::ChessBoard& board, int row, int col) {
 namespace lczero {
 
 Position::Position(const Position& parent, Move m)
-    : rule50_ply_(parent.rule50_ply_ + 1),
-      ply_count_(parent.ply_count_ + 1) {
+    : rule50_ply_(parent.rule50_ply_ + 1), ply_count_(parent.ply_count_ + 1) {
   them_board_ = parent.us_board_;
   const bool is_zeroing = them_board_.ApplyMove(m);
   us_board_ = them_board_;
@@ -85,9 +84,9 @@ uint64_t Position::Hash() const {
 std::string Position::DebugString() const { return us_board_.DebugString(); }
 
 GameResult operator-(const GameResult& res) {
-  return res == GameResult::BLACK_WON
-             ? GameResult::WHITE_WON
-             : res == GameResult::WHITE_WON ? GameResult::BLACK_WON : res;
+  return res == GameResult::BLACK_WON   ? GameResult::WHITE_WON
+         : res == GameResult::WHITE_WON ? GameResult::BLACK_WON
+                                        : res;
 }
 
 GameResult PositionHistory::ComputeGameResult() const {
