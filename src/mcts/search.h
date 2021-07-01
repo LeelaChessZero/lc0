@@ -353,6 +353,10 @@ class SearchWorker {
       return lock->edges[move_ct].GetPCompressed();
     }
 
+    Move GetMove(int, int move_ct) const {
+      return lock->edges[move_ct].GetMove();
+    }
+
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
                   int max_count)

@@ -2350,14 +2350,15 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // softmax.
   int idx = 0;
   for (auto& edge : node->Edges()) {
+    edge.edge()->SetMove(computation.GetMove(idx_in_computation, idx));
     edge.edge()->SetPCompressed(computation.GetPVal(idx_in_computation, idx++));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
+    node->SortEdges();
   }
-  node->SortEdges();
 }
 
 // 6. Propagate the new nodes' information to all their parents in the tree.

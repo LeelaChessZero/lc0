@@ -144,6 +144,8 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
       item.edges[ct].SetP(intermediate[ct] * scale);
     }
 
+    Edge::SortEdges(item.edges.get(), item.num_edges);
+
     std::vector<Move> moves;
     moves.resize(item.num_edges);
     for (int ct = 0; ct < item.num_edges; ct++) {
@@ -182,6 +184,14 @@ uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
     return item.edges[move_ct].GetPCompressed();
   }
   return item.lock->edges[move_ct].GetPCompressed();
+}
+
+Move CachingComputation::GetMove(int sample, int move_ct) const {
+  auto& item = batch_[sample];
+  if (item.idx_in_parent >= 0) {
+    return item.edges[move_ct].GetMove();
+  }
+  return item.lock->edges[move_ct].GetMove();
 }
 
 }  // namespace lczero

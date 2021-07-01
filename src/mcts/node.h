@@ -86,6 +86,7 @@ class Edge {
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
+  void SetMove(Move move) { move_ = move; };
 
   // Returns or sets value of Move policy prior returned from the neural net
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
@@ -96,6 +97,8 @@ class Edge {
 
   // Debug information about the edge.
   std::string DebugString() const;
+
+ static void SortEdges(Edge* edges, int num_edges);
 
  private:
   // Move corresponding to this node. From the point of view of a player,
