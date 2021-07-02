@@ -143,6 +143,47 @@ class MEvaluator {
   bool parent_within_threshold_ = false;
 };
 
+class Counter {
+public:
+  void Reserve(int size) { n.reserve(size);
+    s.reserve(size);
+    p.reserve(size);
+  }
+  void Record(float p_in, uint32_t n_in, float s_in) { n.push_back(n_in);
+    p.push_back(p_in);
+    s.push_back(s_in);
+  }
+  std::vector<uint32_t> n;
+  std::vector<float> s;
+  std::vector<float> p;
+  static std::vector<Counter> recordings;
+};
+
+std::vector<Counter> Counter::recordings;
+
+void SaveCounters() {
+  std::ofstream output("counters.dat", std::ios_base::app | std::ios_base::binary);
+  float f_data[256];
+  uint32_t i_data[256];
+  std::fill(std::begin(f_data), std::end(f_data), 0.0f);
+  std::fill(std::begin(i_data), std::end(i_data), 0);
+  output.write(reinterpret_cast<char*>(f_data), sizeof(float) * 256);
+  output.write(reinterpret_cast<char*>(f_data), sizeof(float) * 256);
+  output.write(reinterpret_cast<char*>(i_data), sizeof(uint32_t) * 256);
+  for (auto c : Counter::recordings) {
+    std::copy(c.p.begin(), c.p.end(), std::begin(f_data));
+    output.write(reinterpret_cast<char*>(f_data), sizeof(float) * 256);
+    std::copy(c.s.begin(), c.s.end(), std::begin(f_data));
+    output.write(reinterpret_cast<char*>(f_data), sizeof(float) * 256);
+    std::copy(c.n.begin(), c.n.end(), std::begin(i_data));
+    output.write(reinterpret_cast<char*>(i_data), sizeof(uint32_t) * 256);
+  }
+  Counter::recordings.clear();
+}
+
+void AddCounter(Counter&& in) { Counter::recordings.emplace_back(in); }
+
+
 }  // namespace
 
 Search::Search(const NodeTree& tree, Network* network,
@@ -171,6 +212,7 @@ Search::Search(const NodeTree& tree, Network* network,
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
   }
+  Counter::recordings.clear();
 }
 
 namespace {
@@ -543,6 +585,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
+    SaveCounters();
   }
 
   // Use a 0 visit cancel score update to clear out any cached best edge, as
@@ -851,6 +894,8 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
 
   // If root node hasn't finished first visit, none of this code is safe.
   if (root_node_->GetN() > 0) {
+    Counter c;
+    c.Reserve(root_node_->GetNumEdges());
     const auto draw_score = GetDrawScore(true);
     const float fpu =
         GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
@@ -880,9 +925,14 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
         max_n_has_max_q_plus_m = (max_n == n);
         max_q_plus_m = q_plus_m;
       }
+      c.Record(edge.GetP(), n, q_plus_m);
     }
     if (!max_n_has_max_q_plus_m) {
       stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNeedMoreTime;
+    }
+    {
+      Mutex::Lock counters_lock(counters_mutex_);
+      AddCounter(std::move(c));
     }
   }
 }
