@@ -37,11 +37,23 @@ if cc.get_id() == 'clang'
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
+  if cc.get_id() == 'gcc'
+    add_project_arguments('-ffast-math', language : 'cpp')
+    add_project_arguments('-ftrapping-math', language : 'cpp')
+    add_project_arguments('-fno-associative-math', language : 'cpp')
+  else
+    add_project_arguments('-ffinite-math-only', language : 'cpp')
+    add_project_arguments('-fno-math-errno', language : 'cpp')
+    add_project_arguments('-fno-signed-zeros', language : 'cpp')
+    add_project_arguments('-fassociative-math', language : 'cpp')
+    add_project_arguments('-freciprocal-math', language : 'cpp')
+  endif
   if get_option('buildtype') == 'release'
     add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
   endif
 endif
 if cc.get_id() == 'msvc'
+  add_project_arguments('/fp:fast', language : 'cpp')
   # Silence some zlib warnings.
   add_global_arguments('/wd4131', '/wd4267', '/wd4127', '/wd4244', '/wd4245', language : 'c')
 endif
