@@ -339,6 +339,7 @@ void Node::SortEdges() {
   // the encoding, and its noticeably faster.
   std::sort(edges_.get(), (edges_.get() + num_edges_),
             [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
+  num_edges_ = std::min(num_edges_, static_cast<uint8_t>(20));
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
