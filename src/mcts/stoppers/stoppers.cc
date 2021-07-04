@@ -251,7 +251,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   double score = 5.468 * static_cast<double>(largest_n) / sum -
                  6.75 * static_cast<double>(second_largest_n) / sum +
                  0.42 * static_cast<double>(third_largest_n) / sum +
-                 2.48 * static_cast<double>(sum + remaining_playouts) / sum;
+                 2.48 * static_cast<double>(sum) / (sum + remaining_playouts);
   if (score > 2.1) {
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
