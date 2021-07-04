@@ -232,15 +232,35 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
   uint32_t largest_n = 0;
   uint32_t second_largest_n = 0;
+  uint32_t third_largest_n = 0;
+  uint32_t sum = 0;
   for (auto n : stats.edge_n) {
+    sum += n;
     if (n > largest_n) {
+      third_largest_n = second_largest_n;
       second_largest_n = largest_n;
       largest_n = n;
     } else if (n > second_largest_n) {
+      third_largest_n = second_largest_n;
       second_largest_n = n;
+    } else if (n > third_largest_n) {
+      third_largest_n = n;
     }
   }
 
+  double score = 5.468 * static_cast<double>(largest_n) / sum -
+                 6.75 * static_cast<double>(second_largest_n) / sum +
+                 0.42 * static_cast<double>(third_largest_n) / sum +
+                 2.48 * static_cast<double>(sum + remaining_playouts) / sum;
+  if (score > 2.1) {
+    LOGFILE << remaining_playouts << " playouts remaining. Best move has "
+            << largest_n << " visits, second best -- " << second_largest_n
+            << ". Current 'score' " << score
+            << ", so stopping the search after "
+            << stats.batches_since_movestart << " batches.";
+    return true;
+  }
+  /*
   if (remaining_playouts < (largest_n - second_largest_n)) {
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
@@ -250,6 +270,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
     return true;
   }
+  */
 
   return false;
 }
