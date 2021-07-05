@@ -56,6 +56,8 @@ struct IterationStats {
 
   enum class TimeUsageHint { kNormal, kNeedMoreTime, kImmediateMove };
   TimeUsageHint time_usage_hint_ = TimeUsageHint::kNormal;
+
+  float delta_q = 0.0f;
 };
 
 // Hints from stoppers back to the search engine. Currently include:

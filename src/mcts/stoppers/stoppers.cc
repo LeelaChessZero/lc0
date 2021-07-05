@@ -183,8 +183,10 @@ const int kSmartPruningToleranceNodes = 300;
 }  // namespace
 
 SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor,
+                                         float smart_pruning_q_effect,
                                          int64_t minimum_batches)
     : smart_pruning_factor_(smart_pruning_factor),
+      smart_pruning_q_effect_(smart_pruning_q_effect),
       minimum_batches_(minimum_batches) {}
 
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
@@ -214,6 +216,10 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     return false;
   }
 
+  const auto smart_pruning_factor =
+      smart_pruning_factor_ +
+      (stats.delta_q >= 0 ? 1 : -1) * smart_pruning_q_effect_;
+  if (smart_pruning_factor <= 0.0) return false;
   const auto nodes = stats.nodes_since_movestart + kSmartPruningToleranceNodes;
   const auto time = stats.time_since_movestart - *first_eval_time_;
   // If nps is populated by someone who knows better, use it. Otherwise use the
@@ -222,8 +228,8 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
   const double remaining_time_s = hints->GetEstimatedRemainingTimeMs() / 1000.0;
   const auto remaining_playouts =
-      std::min(remaining_time_s * nps / smart_pruning_factor_,
-               hints->GetEstimatedRemainingPlayouts() / smart_pruning_factor_);
+      std::min(remaining_time_s * nps / smart_pruning_factor,
+               hints->GetEstimatedRemainingPlayouts() / smart_pruning_factor);
 
   // May overflow if (nps/smart_pruning_factor) > 180 000 000, but that's not
   // very realistic.
