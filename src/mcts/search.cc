@@ -845,6 +845,8 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->batches_since_movestart = total_batches_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
+  stats->edge_p.clear();
+  stats->edge_s.clear();
   stats->win_found = false;
   stats->num_losing_edges = 0;
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
@@ -866,6 +868,8 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       const auto m = m_evaluator.GetM(edge, q);
       const auto q_plus_m = q + m;
       stats->edge_n.push_back(n);
+      stats->edge_s.push_back(q_plus_m);
+      stats->edge_p.push_back(edge.GetP());
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
         stats->win_found = true;
       }

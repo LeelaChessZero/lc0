@@ -229,30 +229,69 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // very realistic.
   hints->UpdateEstimatedRemainingPlayouts(remaining_playouts);
   if (stats.batches_since_movestart < minimum_batches_) return false;
+  if (remaining_playouts <= 0) {
+    LOGFILE << remaining_playouts
+            << " playouts remaining. SPF calculation no longer meaningful, so "
+               "aborting.";
+    return true;
+  }
 
-  uint32_t largest_n = 0;
-  uint32_t second_largest_n = 0;
-  uint32_t third_largest_n = 0;
-  uint32_t sum = 0;
+  int64_t largest_n = -1;
+  int64_t largest_idx = -1;
+  int64_t second_largest_n = -1;
+  int64_t second_largest_idx = -1;
+  int64_t third_largest_n = -1;
+  int64_t third_largest_idx = -1;
+  int64_t sum = 0;
+  int64_t counter = 0;
   for (auto n : stats.edge_n) {
     sum += n;
     if (n > largest_n) {
+      third_largest_idx = second_largest_idx;
       third_largest_n = second_largest_n;
+      second_largest_idx = largest_idx;
       second_largest_n = largest_n;
+      largest_idx = counter;
       largest_n = n;
     } else if (n > second_largest_n) {
+      third_largest_idx = second_largest_idx;
       third_largest_n = second_largest_n;
+      second_largest_idx = counter;
       second_largest_n = n;
     } else if (n > third_largest_n) {
+      third_largest_idx = counter;
       third_largest_n = n;
     }
+    counter++;
   }
-
-  double score = 5.468 * static_cast<double>(largest_n) / sum -
-                 6.75 * static_cast<double>(second_largest_n) / sum +
-                 0.42 * static_cast<double>(third_largest_n) / sum +
-                 2.48 * static_cast<double>(sum) / (sum + remaining_playouts);
-  if (score > 2.1) {
+  bool has_three = stats.edge_n.size() > 2;
+  std::vector<double> inputs = {
+      static_cast<double>(largest_n) / sum,
+      static_cast<double>(second_largest_n) / sum,
+      static_cast<double>(third_largest_n) / sum,
+      stats.edge_s[largest_idx],
+      stats.edge_s[second_largest_idx],
+      has_three ? stats.edge_s[third_largest_idx] : 0.0,
+      stats.edge_p[largest_idx],
+      stats.edge_p[second_largest_idx],
+      has_three ? stats.edge_p[third_largest_idx] : 0.0,
+      static_cast<double>(sum) / (sum + remaining_playouts),
+      static_cast<double>(largest_n - second_largest_n) / remaining_playouts
+  };
+  const double weights[11] = {
+      2.43771887,  -7.1116147,  -0.664592385,
+      0.929772913, -1.79833412, 0.690726399,
+      4.65619, -0.0727774277, 0.94772023,
+      1.50536919,
+      1.41578805,
+  };
+  double score = 0.0;
+  for (int i=0; i < 11; i++) {
+    score += inputs[i] * weights[i];
+  }
+  score += 0.473311484;
+  std::cerr << "S:" << score << std::endl;
+  if (score > 2.9) {
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
             << ". Current 'score' " << score
