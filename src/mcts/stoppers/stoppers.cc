@@ -290,7 +290,6 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     score += inputs[i] * weights[i];
   }
   score += 0.473311484;
-  std::cerr << "S:" << score << std::endl;
   if (score > 2.9) {
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
