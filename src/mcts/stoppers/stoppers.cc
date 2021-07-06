@@ -268,7 +268,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   std::vector<double> inputs = {
       static_cast<double>(largest_n) / sum,
       static_cast<double>(second_largest_n) / sum,
-      static_cast<double>(third_largest_n) / sum,
+      has_three ? static_cast<double>(third_largest_n) / sum : 0.0,
       stats.edge_s[largest_idx],
       stats.edge_s[second_largest_idx],
       has_three ? stats.edge_s[third_largest_idx] : 0.0,
