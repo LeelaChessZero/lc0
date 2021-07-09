@@ -183,9 +183,11 @@ const int kSmartPruningToleranceNodes = 300;
 }  // namespace
 
 SmartPruningStopper::SmartPruningStopper(float smart_pruning_factor,
-                                         int64_t minimum_batches)
+                                         int64_t minimum_batches,
+                                         float hyperpruning_threshold)
     : smart_pruning_factor_(smart_pruning_factor),
-      minimum_batches_(minimum_batches) {}
+      minimum_batches_(minimum_batches),
+      hyperpruning_threshold_(hyperpruning_threshold) {}
 
 bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
                                      StoppersHints* hints) {
@@ -403,7 +405,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // Final bias.
   score += 0.0978407413;
   // Threshold at sigmoid(x)~=0.95
-  if (score > 2.9) {
+  if (score > hyperpruning_threshold_) {
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n
             << ". Current 'score' " << score
