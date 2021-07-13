@@ -27,6 +27,11 @@
 
 #include "engine.h"
 
+#include <chess/pgn.h>
+#include <utils/random.h>
+
+
+
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -303,6 +308,7 @@ void EngineController::Go(const GoParams& params) {
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
   search_->StartThreads(options_.Get<int>(kThreadsOptionId));
+  search_->Wait();
 }
 
 void EngineController::PonderHit() {
@@ -330,6 +336,21 @@ void EngineLoop::RunLoop() {
   const auto options = options_.GetOptionsDict();
   Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
   if (options.Get<bool>(kPreload)) engine_.NewGame();
+  PgnReader book_reader;
+  book_reader.AddPgnFile("book.pgn");
+  auto openings =  book_reader.ReleaseGames();
+  Random::Get().Shuffle(openings.begin(), openings.end());
+  for (auto opening : openings) {
+    std::vector<std::string> moves;
+    for (auto raw_move : opening.moves) {
+      moves.push_back(raw_move.as_string());
+    }
+    engine_.SetPosition(opening.start_fen, moves);
+    GoParams params;
+    params.nodes = 10000000;
+    engine_.Go(params);
+  }
+  // 
   UciLoop::RunLoop();
 }
 
