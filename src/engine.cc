@@ -174,6 +174,7 @@ void EngineController::NewGame() {
 
 void EngineController::SetPosition(const std::string& fen,
                                    const std::vector<std::string>& moves_str) {
+  NewGame();
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
   ResetMoveTimer();
