@@ -156,6 +156,8 @@ public:
   std::vector<uint32_t> n;
   std::vector<float> s;
   std::vector<float> p;
+  int64_t time;
+  int64_t offset_time;
   static std::vector<Counter> recordings;
 };
 
@@ -167,10 +169,15 @@ void SaveCounters() {
   uint32_t i_data[256];
   std::fill(std::begin(f_data), std::end(f_data), 0.0f);
   std::fill(std::begin(i_data), std::end(i_data), 0);
+  int64_t time = 0;
+  output.write(reinterpret_cast<char*>(&time), sizeof(int64_t) * 1);
+  output.write(reinterpret_cast<char*>(&time), sizeof(int64_t) * 1);
   output.write(reinterpret_cast<char*>(f_data), sizeof(float) * 256);
   output.write(reinterpret_cast<char*>(f_data), sizeof(float) * 256);
   output.write(reinterpret_cast<char*>(i_data), sizeof(uint32_t) * 256);
   for (auto c : Counter::recordings) {
+    output.write(reinterpret_cast<char*>(&c.time), sizeof(int64_t) * 1);
+    output.write(reinterpret_cast<char*>(&c.offset_time), sizeof(int64_t) * 1);
     std::copy(c.p.begin(), c.p.end(), std::begin(f_data));
     output.write(reinterpret_cast<char*>(f_data), sizeof(float) * 256);
     std::copy(c.s.begin(), c.s.end(), std::begin(f_data));
@@ -895,6 +902,8 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   // If root node hasn't finished first visit, none of this code is safe.
   if (root_node_->GetN() > 0) {
     Counter c;
+    c.time = stats->time_since_movestart;
+    c.offset_time = stats->time_since_first_batch;
     c.Reserve(root_node_->GetNumEdges());
     const auto draw_score = GetDrawScore(true);
     const float fpu =
