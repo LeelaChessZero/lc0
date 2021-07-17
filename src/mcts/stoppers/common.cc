@@ -78,7 +78,7 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
   options->Add<IntOption>(kKLDGainAverageIntervalId, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNodeId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) =
-      (for_what == RunType::kUci ? 1.33f : 0.00f);
+      (for_what == RunType::kUci ? 1.0f : 0.00f);
   options->Add<IntOption>(kMinimumSmartPruningBatchesId, 0, 10000) = 0;
   options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
   options->Add<FloatOption>(kHyperpruningThresholdId, -50.0f, 50.0f) = 2.9f;
