@@ -278,7 +278,8 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
       stats.edge_p[second_largest_idx],
       has_three ? stats.edge_p[third_largest_idx] : 0.0,
       static_cast<double>(sum) / (sum + remaining_playouts),
-      static_cast<double>(largest_n - second_largest_n) / remaining_playouts
+      static_cast<double>(largest_n - second_largest_n) / remaining_playouts /
+          50.0  // scale down by 50.0 to match training.
   };
   /*
   const double weights[11] = {
