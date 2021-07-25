@@ -80,6 +80,22 @@ struct InputsOutputs {
   float* op_policy_mem_;
   float* op_value_mem_;
   float* op_moves_left_mem_;
+
+  // Input memory
+  dnnl::memory input_mem;
+
+  // Output memory.
+  dnnl::memory opPol_mem;
+  dnnl::memory opVal_mem;
+  dnnl::memory opMov_mem;
+
+  // Intermediate tensors.
+  dnnl::memory tensor_mem[3];
+  dnnl::memory policy_mem;
+  dnnl::memory val_tmp1_mem;
+  dnnl::memory val_tmp2_mem;
+  dnnl::memory mov_tmp1_mem;
+  dnnl::memory mov_tmp2_mem;
 };
 
 class OnednnNetwork;
@@ -542,6 +558,19 @@ class OnednnNetwork : public Network {
     uint64_t* ipDataMasks = io->input_masks_mem_;
     float* ipDataValues = io->input_val_mem_;
 
+    // Output memory.
+    dnnl::memory& opPol_mem = io->opPol_mem;
+    dnnl::memory& opVal_mem = io->opVal_mem;
+    dnnl::memory& opMov_mem = io->opMov_mem;
+
+    // Intermediate tensors.
+    dnnl::memory(&tensor_mem)[3] = io->tensor_mem;
+    dnnl::memory& policy_mem = io->policy_mem;
+    dnnl::memory& val_tmp1_mem = io->val_tmp1_mem;
+    dnnl::memory& val_tmp2_mem = io->val_tmp2_mem;
+    dnnl::memory& mov_tmp1_mem = io->mov_tmp1_mem;
+    dnnl::memory& mov_tmp2_mem = io->mov_tmp2_mem;
+
     int batchSize = steps_ * batch_size_;
     if (batchSize <= 0) {
       // Use just one batch of variable size.
@@ -578,7 +607,10 @@ class OnednnNetwork : public Network {
 
       // Move input to the gpu.
       if (eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(input_desc, eng_);
+        dnnl::memory& tmp = io->input_mem;
+        if (!tmp || tmp.get_desc() != input_desc) {
+          tmp = dnnl::memory(input_desc, eng_);
+        }
         dnnl::reorder in_reorder = dnnl::reorder(input_mem, tmp);
         in_reorder.execute(eng_stream_, input_mem, tmp);
         input_mem = tmp;
@@ -605,13 +637,6 @@ class OnednnNetwork : public Network {
       auto opMov_desc =
           dnnl::memory::desc({batchSize, 1, 1, 1}, dnnl::memory::data_type::f32,
                              dnnl::memory::format_tag::nchw);
-      // Output memory.
-      dnnl::memory opPol_mem;
-      dnnl::memory opVal_mem;
-      dnnl::memory opMov_mem;
-
-      // Intermediate tensors.
-      dnnl::memory tensor_mem[3];
 
       int l = 0;
 
@@ -650,7 +675,6 @@ class OnednnNetwork : public Network {
         layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0], eng_,
                                 eng_stream_);  // policy conv2
       } else {
-        dnnl::memory policy_mem;
         layers_[idx][l++]->Eval(batchSize, policy_mem, tensor_mem[2], eng_,
                                 eng_stream_);  // pol conv
 
@@ -660,30 +684,27 @@ class OnednnNetwork : public Network {
 
       // value head
       {
-        dnnl::memory tmp1_mem;
-        dnnl::memory tmp2_mem;
-        layers_[idx][l++]->Eval(batchSize, tmp1_mem, tensor_mem[2], eng_,
+        layers_[idx][l++]->Eval(batchSize, val_tmp1_mem, tensor_mem[2], eng_,
                                 eng_stream_);  // value conv
 
-        layers_[idx][l++]->Eval(batchSize, tmp2_mem, tmp1_mem, eng_,
+        layers_[idx][l++]->Eval(batchSize, val_tmp2_mem, val_tmp1_mem, eng_,
                                 eng_stream_);  // value FC1
 
-        layers_[idx][l++]->Eval(batchSize, opVal_mem, tmp2_mem, eng_,
+        layers_[idx][l++]->Eval(batchSize, opVal_mem, val_tmp2_mem, eng_,
                                 eng_stream_);  // value FC2    // VALUE
       }
 
       if (moves_left_) {
         // Moves left head
-        dnnl::memory tmp1_mem;
-        dnnl::memory tmp2_mem;
-        layers_[idx][l++]->Eval(batchSize, tmp1_mem, tensor_mem[2], eng_,
+
+        layers_[idx][l++]->Eval(batchSize, mov_tmp1_mem, tensor_mem[2], eng_,
                                 eng_stream_);  // moves conv
 
-        layers_[idx][l++]->Eval(batchSize, tmp2_mem, tmp1_mem, eng_,
+        layers_[idx][l++]->Eval(batchSize, mov_tmp2_mem, mov_tmp1_mem, eng_,
                                 eng_stream_);  // moves FC1
 
         // Moves left FC2
-        layers_[idx][l++]->Eval(batchSize, opMov_mem, tmp2_mem, eng_,
+        layers_[idx][l++]->Eval(batchSize, opMov_mem, mov_tmp2_mem, eng_,
                                 eng_stream_);
       }
 
