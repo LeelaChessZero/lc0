@@ -709,28 +709,35 @@ class OnednnNetwork : public Network {
       }
 
       // Convert output data to nchw and if on gpu move them to the cpu.
+      dnnl::memory opPol_mem_cpu;
+      dnnl::memory opVal_mem_cpu;
+      dnnl::memory opMov_mem_cpu;
+
       if (opPol_desc != opPol_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(opPol_desc, cpu_eng_);
-        dnnl::reorder pol_reorder = dnnl::reorder(opPol_mem, tmp);
-        pol_reorder.execute(eng_stream_, opPol_mem, tmp);
-        opPol_mem = tmp;
+        opPol_mem_cpu = dnnl::memory(opPol_desc, cpu_eng_);
+        dnnl::reorder pol_reorder = dnnl::reorder(opPol_mem, opPol_mem_cpu);
+        pol_reorder.execute(eng_stream_, opPol_mem, opPol_mem_cpu);
+      } else {
+        opPol_mem_cpu = opPol_mem;
       }
 
       if (opVal_desc != opVal_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(opVal_desc, cpu_eng_);
-        dnnl::reorder val_reorder_ = dnnl::reorder(opVal_mem, tmp);
-        val_reorder_.execute(eng_stream_, opVal_mem, tmp);
-        opVal_mem = tmp;
+        opVal_mem_cpu = dnnl::memory(opVal_desc, cpu_eng_);
+        dnnl::reorder val_reorder_ = dnnl::reorder(opVal_mem, opVal_mem_cpu);
+        val_reorder_.execute(eng_stream_, opVal_mem, opVal_mem_cpu);
+      } else {
+        opVal_mem_cpu = opVal_mem;
       }
 
       if (moves_left_ && (opMov_desc != opMov_mem.get_desc() ||
                           eng_.get_kind() != dnnl::engine::kind::cpu)) {
-        auto tmp = dnnl::memory(opMov_desc, cpu_eng_);
-        dnnl::reorder mov_reorder_ = dnnl::reorder(opMov_mem, tmp);
-        mov_reorder_.execute(eng_stream_, opMov_mem, tmp);
-        opMov_mem = tmp;
+        opMov_mem_cpu = dnnl::memory(opMov_desc, cpu_eng_);
+        dnnl::reorder mov_reorder_ = dnnl::reorder(opMov_mem, opMov_mem_cpu);
+        mov_reorder_.execute(eng_stream_, opMov_mem, opMov_mem_cpu);
+      } else if (moves_left_) {
+        opMov_mem_cpu = opMov_mem;
       }
 
       eng_stream_.wait();
@@ -738,7 +745,7 @@ class OnednnNetwork : public Network {
       // Copy memory to output buffers and do final transformations.
       if (wdl_) {
         // Value softmax done cpu side.
-        float* opVal = (float*)opVal_mem.get_data_handle();
+        float* opVal = (float*)opVal_mem_cpu.get_data_handle();
         for (int i = 0; i < currentBatchSize; i++) {
           float w = opVal[3 * i + 0];
           float d = opVal[3 * i + 1];
@@ -756,11 +763,11 @@ class OnednnNetwork : public Network {
           io->op_value_mem_[3 * (i + start) + 2] = l;
         }
       } else {
-        memcpy(io->op_value_mem_ + start, opVal_mem.get_data_handle(),
+        memcpy(io->op_value_mem_ + start, opVal_mem_cpu.get_data_handle(),
                currentBatchSize * sizeof(float));
       }
       if (attn_policy_) {
-        float* opPol = (float*)opPol_mem.get_data_handle();
+        float* opPol = (float*)opPol_mem_cpu.get_data_handle();
         // The promotion offsets are extracted from the output tensor.
         float promotion_offsets[3][8];
         for (int batch = 0; batch < currentBatchSize; batch++) {
@@ -793,7 +800,7 @@ class OnednnNetwork : public Network {
           }
         }
       } else if (conv_policy_) {
-        float* opPol = (float*)opPol_mem.get_data_handle();
+        float* opPol = (float*)opPol_mem_cpu.get_data_handle();
         for (int batch = 0; batch < currentBatchSize; batch++) {
           for (int i = 0; i < 73 * 8 * 8; i++) {
             auto j = kConvPolicyMap[i];
@@ -805,12 +812,12 @@ class OnednnNetwork : public Network {
         }
       } else {
         memcpy(io->op_policy_mem_ + start * kNumOutputPolicy,
-               opPol_mem.get_data_handle(),
+               opPol_mem_cpu.get_data_handle(),
                currentBatchSize * kNumOutputPolicy * sizeof(float));
       }
 
       if (moves_left_) {
-        memcpy(io->op_moves_left_mem_ + start, opMov_mem.get_data_handle(),
+        memcpy(io->op_moves_left_mem_ + start, opMov_mem_cpu.get_data_handle(),
                currentBatchSize * sizeof(float));
       }
     }
