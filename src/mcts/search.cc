@@ -1688,6 +1688,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // Perform UCT for current node.
         float best = std::numeric_limits<float>::lowest();
         int best_idx = -1;
+        int second_best_idx = -1;
         float best_without_u = std::numeric_limits<float>::lowest();
         float second_best = std::numeric_limits<float>::lowest();
         bool can_exit = false;
@@ -1732,6 +1733,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           if (score > best) {
             second_best = best;
             second_best_edge = best_edge;
+            second_best_idx = best_idx;
             best = score;
             best_idx = idx;
             best_without_u = util;
@@ -1739,6 +1741,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           } else if (score > second_best) {
             second_best = score;
             second_best_edge = cur_iters[idx];
+            second_best_idx = idx;
           }
           if (can_exit) break;
           if (nstarted == 0) {
@@ -1773,7 +1776,16 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
         (*visits_to_perform.back())[best_idx] += new_visits;
         cur_limit -= new_visits;
+        // Top two ucb:
+        //   Pick best move with probability p and otherwise the second best:
+        const float tt_percentage = params_.GetCpuctTopTwoPercentage();
+        if (is_root_node && Random::Get().GetFloat(1.0) <= tt_percentage) {
+          std::swap(best_edge, second_best_edge);
+          std::swap(best_idx, second_best_idx);
+        }
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
+        
+        
 
         // Probably best place to check for two-fold draws consistently.
         // Depth starts with 1 at root, so real depth is depth - 1.
