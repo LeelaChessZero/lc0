@@ -1779,7 +1779,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // Top two ucb:
         //   Pick best move with probability p and otherwise the second best:
         const float tt_percentage = params_.GetCpuctTopTwoPercentage();
-        if (is_root_node && Random::Get().GetFloat(1.0) <= tt_percentage) {
+        if (is_root_node && second_best_edge && Random::Get().GetFloat(1.0) <= tt_percentage) {
           std::swap(best_edge, second_best_edge);
           std::swap(best_idx, second_best_idx);
         }
