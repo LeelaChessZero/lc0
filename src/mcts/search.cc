@@ -1762,12 +1762,22 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                             n1 + 1,
                                         1e9f)));
           }
-          second_best_edge.Reset();
           max_limit = std::min(max_limit, estimated_visits_to_change_best);
           new_visits = std::min(cur_limit, estimated_visits_to_change_best);
         } else {
           // No second best - only one edge, so everything goes in here.
           new_visits = cur_limit;
+        }
+        // Top two ucb:
+        //   Pick best move with probability p and otherwise the second best:
+        const float tt_percentage = params_.GetCpuctTopTwoPercentage();
+        if (is_root_node && second_best_edge && Random::Get().GetFloat(1.0) <= tt_percentage) {
+          std::swap(best_edge, second_best_edge);
+          std::swap(best_idx, second_best_idx);
+        }
+        // Now that the swap is complete, we don't need the second best edge anymore:
+        if (second_best_edge) {
+          second_best_edge.Reset();
         }
         if (best_idx >= vtp_last_filled.back()) {
           auto* vtp_array = visits_to_perform.back().get()->data();
@@ -1776,13 +1786,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
         (*visits_to_perform.back())[best_idx] += new_visits;
         cur_limit -= new_visits;
-        // Top two ucb:
-        //   Pick best move with probability p and otherwise the second best:
-        const float tt_percentage = params_.GetCpuctTopTwoPercentage();
-        if (is_root_node && second_best_edge && Random::Get().GetFloat(1.0) <= tt_percentage) {
-          std::swap(best_edge, second_best_edge);
-          std::swap(best_idx, second_best_idx);
-        }
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
         
         
