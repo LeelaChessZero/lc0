@@ -602,9 +602,13 @@ class CudaNetwork : public Network {
     if (wdl_) {
       // Value softmax done cpu side.
       for (int i = 0; i < batchSize; i++) {
-        float w = std::exp(io->op_value_mem_[3 * i + 0]);
-        float d = std::exp(io->op_value_mem_[3 * i + 1]);
-        float l = std::exp(io->op_value_mem_[3 * i + 2]);
+        float w = io->op_value_mem_[3 * i + 0];
+        float d = io->op_value_mem_[3 * i + 1];
+        float l = io->op_value_mem_[3 * i + 2];
+        float m = std::max({w, d, l});
+        w = std::exp(w - m);
+        d = std::exp(d - m);
+        l = std::exp(l - m);
         float sum = w + d + l;
         w /= sum;
         l /= sum;
