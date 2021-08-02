@@ -332,14 +332,14 @@ bool Node::MakeSolid() {
   return true;
 }
 
-void Node::SortEdges() {
+void Node::SortEdges(uint8_t policy_trim) {
   assert(edges_);
   assert(!child_);
   // Sorting on raw p_ is the same as sorting on GetP() as a side effect of
   // the encoding, and its noticeably faster.
   std::sort(edges_.get(), (edges_.get() + num_edges_),
             [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
-  num_edges_ = std::min(num_edges_, static_cast<uint8_t>(20));
+  num_edges_ = std::min(num_edges_, policy_trim);
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
