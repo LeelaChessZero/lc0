@@ -90,7 +90,7 @@ option('tensorflow',
 
 option('onednn',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable oneDNN backend')
 
 option('openblas',
