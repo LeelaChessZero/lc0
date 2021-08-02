@@ -139,6 +139,13 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
+  int GetMaxInFlightVisits() const { return kMaxInFlightVisits; }
+  int GetMaxInFlightVisitsScalingStart() const {
+    return kMaxInFlightVisitsScalingStart;
+  }
+  int GetMaxInFlightVisitsScalingEnd() const {
+    return kMaxInFlightVisitsScalingEnd;
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -203,6 +210,9 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
+  static const OptionId kMaxInFlightVisitsId;
+  static const OptionId kMaxInFlightVisitsScalingStartId;
+  static const OptionId kMaxInFlightVisitsScalingEndId;
 
  private:
   const OptionsDict& options_;
@@ -260,6 +270,9 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
+  const int kMaxInFlightVisitsScalingStart;
+  const int kMaxInFlightVisitsScalingEnd;
+  const int kMaxInFlightVisits;
 };
 
 }  // namespace lczero

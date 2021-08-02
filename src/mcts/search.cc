@@ -1035,7 +1035,8 @@ void SearchWorker::RunTasks(int tid) {
         case PickTask::kGathering: {
           PickNodesToExtendTask(task->start, task->base_depth,
                                 task->collision_limit, task->moves_to_base,
-                                &(task->results), &(task_workspaces_[tid]));
+                                task->extra_collisions, &(task->results),
+                                &(task_workspaces_[tid]));
           break;
         }
         case PickTask::kProcessing: {
@@ -1485,7 +1486,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // Since the tasks perform work which assumes they have the lock, even though
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist,
+  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist, 0,
                         &minibatch_, &main_workspace_);
 
   WaitForTasks();
@@ -1538,9 +1539,29 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
   }
 }
 
+namespace {
+
+int CalculateAllowedInFlight(int64_t nodes, const SearchParams& params) {
+  // End checked first
+  if (nodes >= params.GetMaxInFlightVisitsScalingEnd()) {
+    return params.GetMaxInFlightVisits();
+  }
+  if (nodes <= params.GetMaxInFlightVisitsScalingStart()) {
+    return 1;
+  }
+  return Mix(
+      params.GetMaxInFlightVisits(), 1,
+      (static_cast<float>(nodes) - params.GetMaxInFlightVisitsScalingStart()) /
+          (params.GetMaxInFlightVisitsScalingEnd() -
+           params.GetMaxInFlightVisitsScalingStart()));
+}
+
+}
+
 void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          int collision_limit,
                                          const std::vector<Move>& moves_to_base,
+                                         int extra_collisions,
                                          std::vector<NodeToProcess>* receiver,
                                          TaskWorkspace* workspace) {
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
@@ -1612,7 +1633,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           }
         }
         // Visits are created elsewhere, just need the collisions here.
-        if (cur_limit > 0) {
+        if (cur_limit + extra_collisions > 0) {
           int max_count = 0;
           if (cur_limit == collision_limit && base_depth == 0 &&
               max_limit > cur_limit) {
@@ -1620,8 +1641,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           }
           receiver->push_back(NodeToProcess::Collision(
               node, static_cast<uint16_t>(current_path.size() + base_depth),
-              cur_limit, max_count));
-          completed_visits += cur_limit;
+              cur_limit + extra_collisions, max_count));
+          completed_visits += cur_limit + extra_collisions;
+          extra_collisions = 0;
         }
         node = node->GetParent();
         current_path.pop_back();
@@ -1631,6 +1653,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // Root node is again special - needs its n in flight updated separately
         // as its not handled on the path to it, since there isn't one.
         node->IncrementNInFlight(cur_limit);
+      }
+      if (extra_collisions != 0) {
+        node->IncrementNInFlight(extra_collisions);
       }
 
       // Create visits_to_perform new back entry for this level.
@@ -1642,6 +1667,13 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
       vtp_last_filled.push_back(-1);
 
+      int in_flight_limit = CalculateAllowedInFlight(node->GetN(), params_);
+      int existing_in_flight = node->GetNInFlight() - cur_limit - extra_collisions;
+      int new_in_flight_limit = std::max(0, in_flight_limit - existing_in_flight);
+      if (cur_limit > new_in_flight_limit) {
+        extra_collisions += cur_limit - new_in_flight_limit;
+        cur_limit = new_in_flight_limit;
+      }
       // Cache all constant UCT parameters.
       // When we're near the leaves we can copy less of the policy, since there
       // is no way iteration will ever reach it.
@@ -1836,12 +1868,13 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
               moves_to_path.push_back(cur_iters[i].GetMove());
               picking_tasks_.emplace_back(
                   child_node, current_path.size() - 1 + base_depth + 1,
-                  moves_to_path, child_limit);
+                  moves_to_path, child_limit, extra_collisions);
               moves_to_path.pop_back();
               task_count_.fetch_add(1, std::memory_order_acq_rel);
               task_added_.notify_all();
               passed = true;
               passed_off += child_limit;
+              extra_collisions = 0;
             }
           }
           if (passed) {
@@ -1870,6 +1903,29 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           break;
         }
         if (idx >= vtp_last_filled.back()) break;
+      }
+    }
+    if (!found_child) {
+      if (extra_collisions != 0 && min_idx != -1) {
+        LOGFILE << "Oops lost some collisions.";
+        assert(false);
+      } else if (extra_collisions != 0) {
+        // no children selected, presumably due to the limit. Force search down the first child.
+        // TODO: would it be better to instead select the 'last already created child?' to minimize depth on average?
+        for (auto& child : node->Edges()) {
+          // This won't have been cleared, but it is going to be read, so force it clear now.
+          (*visits_to_perform.back())[0] = 0;
+          if (moves_to_path.size() != current_path.size() + base_depth) {
+            moves_to_path.push_back(child.GetMove());
+          } else {
+            moves_to_path.back() = child.GetMove();
+          }
+          current_path.back() = 0;
+          current_path.push_back(-1);
+          node = child.GetOrSpawnNode(/* parent */ node, nullptr);
+          found_child = true;
+          break;
+        }
       }
     }
     if (!found_child) {
