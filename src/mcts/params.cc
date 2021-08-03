@@ -321,7 +321,9 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
     "Power to apply to the interpolation between 1 and max to make it curved."};
 const OptionId SearchParams::kPolicyTrimId{
     "policy-trim", "PolicyTrim",
-    "Trim the policy array to contain this many moves after sorting."};
+    "Trim the policy array to contain this many moves after sorting. Setting "
+    "this to low values is not recommended, will most likely lead to wrong "
+    "behavior. "};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
