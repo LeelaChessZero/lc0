@@ -1564,6 +1564,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          int extra_collisions,
                                          std::vector<NodeToProcess>* receiver,
                                          TaskWorkspace* workspace) {
+  int initial_extra_collisions = extra_collisions;
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
@@ -1668,8 +1669,10 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       vtp_last_filled.push_back(-1);
 
       int in_flight_limit = CalculateAllowedInFlight(node->GetN(), params_);
-      int existing_in_flight = node->GetNInFlight() - cur_limit - extra_collisions;
-      int new_in_flight_limit = std::max(0, in_flight_limit - existing_in_flight);
+      int existing_in_flight =
+          node->GetNInFlight() - cur_limit - extra_collisions;
+      int new_in_flight_limit =
+          std::max(0, in_flight_limit - existing_in_flight);
       if (cur_limit > new_in_flight_limit) {
         extra_collisions += cur_limit - new_in_flight_limit;
         cur_limit = new_in_flight_limit;
@@ -1873,7 +1876,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
               task_count_.fetch_add(1, std::memory_order_acq_rel);
               task_added_.notify_all();
               passed = true;
-              passed_off += child_limit;
+              passed_off += child_limit + extra_collisions;
               extra_collisions = 0;
             }
           }
@@ -1910,10 +1913,13 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         LOGFILE << "Oops lost some collisions.";
         assert(false);
       } else if (extra_collisions != 0) {
-        // no children selected, presumably due to the limit. Force search down the first child.
-        // TODO: would it be better to instead select the 'last already created child?' to minimize depth on average?
+        // no children selected, presumably due to the limit. Force search down
+        // the first child.
+        // TODO: would it be better to instead select the 'last already created
+        // child?' to minimize depth on average?
         for (auto& child : node->Edges()) {
-          // This won't have been cleared, but it is going to be read, so force it clear now.
+          // This won't have been cleared, but it is going to be read, so force
+          // it clear now.
           (*visits_to_perform.back())[0] = 0;
           if (moves_to_path.size() != current_path.size() + base_depth) {
             moves_to_path.push_back(child.GetMove());
@@ -1937,6 +1943,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       vtp_last_filled.pop_back();
     }
   }
+  assert(completed_visits + passed_off ==
+         collision_limit + initial_extra_collisions);
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth,
