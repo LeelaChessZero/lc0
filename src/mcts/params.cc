@@ -370,7 +370,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
   options->Add<IntOption>(kMaxInFlightVisitsId, 1, 100000000) = 170000;
-  options->Add<IntOption>(kMaxInFlightVisitsScalingStartId, 1, 100000) = 14;
+  options->Add<IntOption>(kMaxInFlightVisitsScalingStartId, 1, 100000) = 1;
   options->Add<IntOption>(kMaxInFlightVisitsScalingEndId, 0, 100000000) =
       145000;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
