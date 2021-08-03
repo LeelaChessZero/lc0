@@ -56,9 +56,17 @@ inline float FastLog2(const float a) {
 // integer and f the fractional part, f>=0. The constant k is used to tune the
 // approximation accuracy. In the final version some constants were slightly
 // modified for better accuracy with 32 bit floating point math.
-inline float FastPow2(const float a) {
-  if (a < -126) return 0.0;
-  int32_t exp = static_cast<int32_t>(floor(a));
+inline float FastExp2(const float a) {
+  int32_t exp;
+  if (a < 0) {
+    if (a < -126) return 0.0;
+    // Not all compilers optimize floor, so we use (a-1) here to round down.
+    // This is obviously off-by-one for integer a, but fortunately the error
+    // correction term gives the exact value for 1 (by design, for continuity).
+    exp = static_cast<int32_t>(a - 1);
+  } else {
+    exp = static_cast<int32_t>(a);
+  }
   float out = a - exp;
   // Minimize max relative error.
   out = 1.0f + out * (0.6602339f + 0.33976606f * out);
@@ -75,7 +83,7 @@ inline float FastLog(const float a) {
 }
 
 // Fast approximate exp(x). Does only limited range checking.
-inline float FastExp(const float a) { return FastPow2(1.442695040f * a); }
+inline float FastExp(const float a) { return FastExp2(1.442695040f * a); }
 
 inline float FastSign(const float a) {
   // Microsoft compiler does not have a builtin for copysign and emits a
