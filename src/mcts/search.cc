@@ -1913,11 +1913,18 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         LOGFILE << "Oops lost some collisions.";
         assert(false);
       } else if (extra_collisions != 0) {
-        // no children selected, presumably due to the limit. Force search down
-        // the first child.
+        // If we get here, then the limit has forced all children visits to
+        // become extra_collisions. there are two possible ways forward. 1) We
+        // give the extra collisions to the first visited or visit in flight
+        // child. 2) We give the extra collisions to ourselves. Solid tree makes
+        // this second option dangerous, so we must always try to do 1 if
+        // possible. If 1 is impossible, it should be safe, since solid tree
+        // conversion shouldn't be able to take place, as it has no children
+        // visits yet.
         // TODO: would it be better to instead select the 'last already created
         // child?' to minimize depth on average?
         for (auto& child : node->Edges()) {
+          if (child.GetN() == 0 && child.GetNInFlight() == 0) continue;
           // This won't have been cleared, but it is going to be read, so force
           // it clear now.
           (*visits_to_perform.back())[0] = 0;
@@ -1931,6 +1938,17 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           node = child.GetOrSpawnNode(/* parent */ node, nullptr);
           found_child = true;
           break;
+        }
+        if (!found_child) {
+          assert(node->GetN() == 1);
+          // InFlight was already incremented assuming the collisions would end
+          // up on a child, so that needs to be reverted.
+          node->IncrementNInFlight(-extra_collisions);
+          receiver->push_back(NodeToProcess::Collision(
+              node, static_cast<uint16_t>(current_path.size() + base_depth),
+              extra_collisions, 0));
+          completed_visits += extra_collisions;
+          extra_collisions = 0;
         }
       }
     }
@@ -2663,6 +2681,14 @@ void SearchWorker::UpdateCounters() {
   }
   if (!work_done) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // If no work was done, shared collisions weren't cancelled earlier by this
+    // thread. The sleep should have given plenty of time for the other threads
+    // to take advantage of the shared collisions if it is possible to take
+    // advantage of them, so cancel them now rather than potentially
+    // accumulating collisions forever in cases where the in flight limit has
+    // been reached.
+    SharedMutex::Lock lock(search_->nodes_mutex_);
+    search_->CancelSharedCollisions();
   }
 }
 
