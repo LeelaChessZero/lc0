@@ -1547,10 +1547,10 @@ int CalculateAllowedInFlight(int64_t nodes, const SearchParams& params) {
     return params.GetMaxInFlightVisits();
   }
   if (nodes <= params.GetMaxInFlightVisitsScalingStart()) {
-    return 1;
+    return params.GetMaxInFlightVisitsScalingBasis();
   }
   return Mix(
-      params.GetMaxInFlightVisits(), 1,
+      params.GetMaxInFlightVisits(), params.GetMaxInFlightVisitsScalingBasis(),
       (static_cast<float>(nodes) - params.GetMaxInFlightVisitsScalingStart()) /
           (params.GetMaxInFlightVisitsScalingEnd() -
            params.GetMaxInFlightVisitsScalingStart()));

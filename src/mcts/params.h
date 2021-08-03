@@ -140,6 +140,9 @@ class SearchParams {
     return kMaxCollisionVisitsScalingPower;
   }
   int GetMaxInFlightVisits() const { return kMaxInFlightVisits; }
+  int GetMaxInFlightVisitsScalingBasis() const {
+    return kMaxInFlightVisitsScalingBasis;
+  }
   int GetMaxInFlightVisitsScalingStart() const {
     return kMaxInFlightVisitsScalingStart;
   }
@@ -211,6 +214,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
   static const OptionId kMaxInFlightVisitsId;
+  static const OptionId kMaxInFlightVisitsScalingBasisId;
   static const OptionId kMaxInFlightVisitsScalingStartId;
   static const OptionId kMaxInFlightVisitsScalingEndId;
 
@@ -270,6 +274,7 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
+  const int kMaxInFlightVisitsScalingBasis;
   const int kMaxInFlightVisitsScalingStart;
   const int kMaxInFlightVisitsScalingEnd;
   const int kMaxInFlightVisits;

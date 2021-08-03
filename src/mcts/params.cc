@@ -322,6 +322,9 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
 const OptionId SearchParams::kMaxInFlightVisitsId{
     "max-in-flight-visits", "MaxInFlightVisits",
     "Maximum number of inflight for any subtree >= max in flight visits scaling end."};
+const OptionId SearchParams::kMaxInFlightVisitsScalingBasisId{
+    "max-in-flight-visits-scaling-basis", "MaxInFlightVisitsScalingBasis",
+    "The smallest value for the max in flight limit as part of the scaling."};
 const OptionId SearchParams::kMaxInFlightVisitsScalingStartId{
     "max-in-flight-visits-scaling-start", "MaxInFlightVisitsScalingStart",
     "Tree size where max in flight visits starts scaling up from 1."};
@@ -370,6 +373,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
   options->Add<IntOption>(kMaxInFlightVisitsId, 1, 100000000) = 170000;
+  options->Add<IntOption>(kMaxInFlightVisitsScalingBasisId, 1, 1000000) = 1;
   options->Add<IntOption>(kMaxInFlightVisitsScalingStartId, 1, 100000) = 1;
   options->Add<IntOption>(kMaxInFlightVisitsScalingEndId, 0, 100000000) =
       145000;
@@ -508,6 +512,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
       kMaxInFlightVisits(options.Get<int>(kMaxInFlightVisitsId)),
+      kMaxInFlightVisitsScalingBasis(
+          options.Get<int>(kMaxInFlightVisitsScalingBasisId)),
       kMaxInFlightVisitsScalingStart(
           options.Get<int>(kMaxInFlightVisitsScalingStartId)),
       kMaxInFlightVisitsScalingEnd(
