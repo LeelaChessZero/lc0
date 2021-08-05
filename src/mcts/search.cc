@@ -1780,6 +1780,11 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           visits_to_second = (int) floor(new_visits * p) + (int) (Random::Get().GetFloat(1.0) < p);
           cur_limit -= visits_to_second;
           new_visits -= visits_to_second;
+          if (second_best_idx >= vtp_last_filled.back()) {
+            auto* vtp_array = visits_to_perform.back().get()->data();
+            std::fill(vtp_array + (vtp_last_filled.back() + 1),
+                      vtp_array + second_best_idx + 1, 0);
+          }
           (*visits_to_perform.back())[second_best_idx] += visits_to_second;
         }
         (*visits_to_perform.back())[best_idx] += new_visits;
