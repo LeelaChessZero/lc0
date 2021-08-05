@@ -1636,8 +1636,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // Visits are created elsewhere, just need the collisions here.
         if (cur_limit + extra_collisions > 0) {
           int max_count = 0;
-          if (cur_limit == collision_limit && base_depth == 0 &&
-              max_limit > cur_limit) {
+          if (cur_limit + extra_collisions == collision_limit &&
+              base_depth == 0 && max_limit > cur_limit + extra_collisions) {
             max_count = max_limit;
           }
           receiver->push_back(NodeToProcess::Collision(
