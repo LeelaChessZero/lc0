@@ -1775,7 +1775,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
         const auto p = params_.GetCpuctTopTwoPercentage();
         int visits_to_second = 0;
-        if (is_root_node && second_best_edge && p > 0.0) {
+        if (second_best_edge && p > 0.0) {
           float fraction_to_second = new_visits * p;
           visits_to_second = (int) floor(new_visits * p) + (int) (Random::Get().GetFloat(1.0) < p);
           cur_limit -= visits_to_second;
