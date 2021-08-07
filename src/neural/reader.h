@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2020 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,41 +27,36 @@
 
 #pragma once
 
-#include <cassert>
-#include <numeric>
-#include <vector>
+#include "neural/network.h"
+#include "neural/writer.h"
 
 namespace lczero {
 
-// Transposes flattened tensor from @from into @to. @to must have space for
-// from.size() elements.
-// @dims -- Dimensions of @from tensor. For example, {120, 60, 3, 3}
-// @order -- New-to-old dimension index mapping. For example {3, 2, 0, 1}
-template <class T>
-void TransposeTensor(const std::vector<int>& dims, std::vector<int> order,
-                     const std::vector<T> from, T* to) {
-  assert(from.size() == std::accumulate(dims.begin(), dims.end(), 1u,
-                                        std::multiplies<size_t>()));
-  if (order.empty()) {
-    for (size_t i = 0; i < dims.size(); ++i)
-      order.push_back(dims.size() - i - 1);
-  }
-  std::vector<int> cur_idx(dims.size());
-  for (size_t _ = 0; _ < from.size(); ++_) {
-    size_t from_idx = 0;
-    for (int i : order) {
-      from_idx *= dims[i];
-      from_idx += cur_idx[i];
-    }
-    *to++ = from[from_idx];
-    for (int i = static_cast<int>(dims.size()) - 1; i >= 0; --i) {
-      if (++cur_idx[i] == dims[i]) {
-        cur_idx[i] = 0;
-      } else {
-        break;
-      }
-    }
-  }
-}
+// Constructs InputPlanes from training data.
+//
+// NOTE: If the training data is a cannonical type, the canonicalization
+// transforms are reverted before returning, since it is assumed that the data
+// will be used with DecodeMoveFromInput or PopulateBoard which assume the
+// InputPlanes are not transformed.
+InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
+
+class TrainingDataReader {
+ public:
+  // Opens the given file to read chunk data from.
+  TrainingDataReader(std::string filename);
+
+  ~TrainingDataReader();
+
+  // Reads a chunk. Returns true if a chunk was read.
+  bool ReadChunk(V6TrainingData* data);
+
+  // Gets full filename of the file being read.
+  std::string GetFileName() const { return filename_; }
+
+ private:
+  std::string filename_;
+  gzFile fin_;
+  bool format_v6 = false;
+};
 
 }  // namespace lczero

@@ -644,9 +644,13 @@ class OnednnNetwork : public Network {
         // Value softmax done cpu side.
         float* opVal = (float*)opVal_mem.get_data_handle();
         for (int i = 0; i < currentBatchSize; i++) {
-          float w = std::exp(opVal[3 * i + 0]);
-          float d = std::exp(opVal[3 * i + 1]);
-          float l = std::exp(opVal[3 * i + 2]);
+          float w = opVal[3 * i + 0];
+          float d = opVal[3 * i + 1];
+          float l = opVal[3 * i + 2];
+          float m = std::max({w, d, l});
+          w = std::exp(w - m);
+          d = std::exp(d - m);
+          l = std::exp(l - m);
           float sum = w + d + l;
           w /= sum;
           l /= sum;
