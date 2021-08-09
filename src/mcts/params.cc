@@ -372,11 +372,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMaxCollisionVisitsScalingEndId, 0, 100000000) = 145000;
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
-  options->Add<IntOption>(kMaxInFlightVisitsId, 1, 100000000) = 170000;
-  options->Add<IntOption>(kMaxInFlightVisitsScalingBasisId, 1, 1000000) = 1;
-  options->Add<IntOption>(kMaxInFlightVisitsScalingStartId, 1, 100000) = 1;
+  options->Add<IntOption>(kMaxInFlightVisitsId, 1, 100000000) = 160000;
+  options->Add<IntOption>(kMaxInFlightVisitsScalingBasisId, 1, 1000000) = 28;
+  options->Add<IntOption>(kMaxInFlightVisitsScalingStartId, 1, 100000) = 36;
   options->Add<IntOption>(kMaxInFlightVisitsScalingEndId, 0, 100000000) =
-      145000;
+      719;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
