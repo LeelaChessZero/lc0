@@ -1653,8 +1653,10 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       // Which we are putting off until after policy is copied so we can create
       // visited policy without having to cache it in the node (allowing the
       // node to stay at 64 bytes).
-      int max_needed = std::min(static_cast<int>(node->GetNumEdges()),
-                                node->GetNStarted() + cur_limit + 2);
+      int max_needed = node->GetNumEdges();
+      if (!is_root_node || root_move_filter.empty()) {
+        max_needed = std::min(max_needed, node->GetNStarted() + cur_limit + 2);
+      }
       node->CopyPolicy(max_needed, current_pol.data());
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();

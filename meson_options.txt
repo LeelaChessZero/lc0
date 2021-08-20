@@ -35,7 +35,7 @@ option('mkl_include',
 
 option('dnnl_dir',
        type: 'string',
-       value: '',
+       value: '/usr',
        description: 'Paths to DNNL install directory')
 
 option('cudnn_include',
@@ -90,7 +90,7 @@ option('tensorflow',
 
 option('onednn',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable oneDNN backend')
 
 option('openblas',
@@ -162,3 +162,13 @@ option('cc_cuda',
        type: 'string',
        value: '',
        description: 'Build for a specific cuda CC, e.g. -Dcc_cuda=35 for CC 3.5')
+
+option('onnx_libdir',
+       type: 'string',
+       value: '',
+       description: 'Paths to ONNX runtime libraries')
+
+option('onnx_include',
+       type: 'string',
+       value: '',
+       description: 'Paths to ONNX runtime includes')

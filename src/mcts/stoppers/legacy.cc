@@ -72,7 +72,7 @@ class LegacyTimeManager : public TimeManager {
             params.GetOrDefault<float>("midpoint-move", 51.5f)),
         time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
         spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)),
-        book_ply_bonus_(params.GetOrDefault<float>("book-ply-bonus", 0.4f)) {}
+        book_ply_bonus_(params.GetOrDefault<float>("book-ply-bonus", 0.25f)) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
@@ -120,9 +120,9 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   // of it will be used immediately, remove that from planning.
   int time_to_squander = 0;
   if (time_spared_ms_ > 0) {
+    total_moves_time = std::max(0.0f, total_moves_time - time_spared_ms_);
     time_to_squander = time_spared_ms_ * spend_saved_time_;
     time_spared_ms_ -= time_to_squander;
-    total_moves_time -= time_to_squander;
   }
 
   // Evenly split total time between all moves.
@@ -143,10 +143,10 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   constexpr int kSmartPruningToleranceMs = 200;
   if (slowmover_ < 1.0 ||
       this_move_time * slowmover_ > kSmartPruningToleranceMs) {
-    this_move_time *= slowmover_;
     // If time is planned to be overused because of slowmover, remove excess
     // of that time from spared time.
     time_spared_ms_ -= this_move_time * (slowmover_ - 1);
+    this_move_time *= slowmover_;
   }
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms(+"
