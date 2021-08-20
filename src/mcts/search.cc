@@ -436,13 +436,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         up = -up;
         std::swap(lo, up);
       }
-      *oss << (lo == up
-                   ? "(T) "
-                   : lo == GameResult::DRAW && up == GameResult::WHITE_WON
-                         ? "(W) "
-                         : lo == GameResult::BLACK_WON && up == GameResult::DRAW
-                               ? "(L) "
-                               : "");
+      *oss << (lo == up                                                ? "(T) "
+               : lo == GameResult::DRAW && up == GameResult::WHITE_WON ? "(W) "
+               : lo == GameResult::BLACK_WON && up == GameResult::DRAW ? "(L) "
+                                                                       : "");
     }
   };
 
@@ -531,7 +528,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ + initial_visits_ == 0) return;
 
-  if (!stop_.load(std::memory_order_acquire) || !ok_to_respond_bestmove_) {
+  if (!stop_.load(std::memory_order_acquire)) {
     if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
   }
 
@@ -1149,7 +1146,7 @@ void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
   int collision_events_left = params_.GetMaxCollisionEvents();
-  int collisions_left = params_.GetMaxCollisionVisitsId();
+  int collisions_left = params_.GetMaxCollisionVisits();
 
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
@@ -1216,11 +1213,44 @@ void SearchWorker::GatherMinibatch() {
     if (search_->stop_.load(std::memory_order_acquire)) return;
   }
 }
+
+namespace {
+int Mix(int high, int low, float ratio) {
+  return static_cast<int>(std::round(static_cast<float>(low) +
+                                     static_cast<float>(high - low) * ratio));
+}
+
+int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
+  // End checked first
+  if (nodes >= params.GetMaxCollisionVisitsScalingEnd()) {
+    return params.GetMaxCollisionVisits();
+  }
+  if (nodes <= params.GetMaxCollisionVisitsScalingStart()) {
+    return 1;
+  }
+  return Mix(params.GetMaxCollisionVisits(), 1,
+             std::pow((static_cast<float>(nodes) -
+                       params.GetMaxCollisionVisitsScalingStart()) /
+                          (params.GetMaxCollisionVisitsScalingEnd() -
+                           params.GetMaxCollisionVisitsScalingStart()),
+                      params.GetMaxCollisionVisitsScalingPower()));
+}
+}  // namespace
+
 void SearchWorker::GatherMinibatch2() {
   // Total number of nodes to process.
   int minibatch_size = 0;
-  int collision_events_left = params_.GetMaxCollisionEvents();
-  int collisions_left = params_.GetMaxCollisionVisitsId();
+  int cur_n = 0;
+  {
+    SharedMutex::Lock lock(search_->nodes_mutex_);
+    cur_n = search_->root_node_->GetN();
+  }
+  // TODO: GetEstimatedRemainingPlayouts has already had smart pruning factor
+  // applied, which doesn't clearly make sense to include here...
+  int64_t remaining_n =
+      latest_time_manager_hints_.GetEstimatedRemainingPlayouts();
+  int collisions_left = CalculateCollisionsLeft(
+      std::min(static_cast<int64_t>(cur_n), remaining_n), params_);
 
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
@@ -1252,8 +1282,7 @@ void SearchWorker::GatherMinibatch2() {
     int new_start = static_cast<int>(minibatch_.size());
 
     PickNodesToExtend(
-        std::min({collision_events_left, collisions_left,
-                  params_.GetMiniBatchSize() - minibatch_size,
+        std::min({collisions_left, params_.GetMiniBatchSize() - minibatch_size,
                   params_.GetMaxOutOfOrderEvals() - number_out_of_order_}));
 
     // Count the non-collisions.
@@ -1290,7 +1319,7 @@ void SearchWorker::GatherMinibatch2() {
           task_count_.fetch_add(1, std::memory_order_acq_rel);
           ppt_start = i + 1;
           found = 0;
-          if (picking_tasks_.size() == num_tasks - 1) {
+          if (picking_tasks_.size() == static_cast<size_t>(num_tasks - 1)) {
             break;
           }
         }
@@ -1332,7 +1361,7 @@ void SearchWorker::GatherMinibatch2() {
         }
       }
     }
-    for (int i = new_start; i < minibatch_.size(); i++) {
+    for (size_t i = new_start; i < minibatch_.size(); i++) {
       // If there was no OOO, there can stil be collisions.
       // There are no OOO though.
       // Also terminals when OOO is disabled.
@@ -1349,7 +1378,7 @@ void SearchWorker::GatherMinibatch2() {
     }
 
     // Check for stop at the end so we have at least one node.
-    for (int i = new_start; i < static_cast<int>(minibatch_.size()); i++) {
+    for (size_t i = new_start; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
 
       if (picked_node.IsCollision()) {
@@ -1367,7 +1396,6 @@ void SearchWorker::GatherMinibatch2() {
             node->IncrementNInFlight(extra);
           }
         }
-        if (--collision_events_left <= 0) return;
         if ((collisions_left -= picked_node.multivisit) <= 0) return;
         if (search_->stop_.load(std::memory_order_acquire)) return;
       }
@@ -1635,8 +1663,10 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       // Which we are putting off until after policy is copied so we can create
       // visited policy without having to cache it in the node (allowing the
       // node to stay at 64 bytes).
-      int max_needed = std::min(static_cast<int>(node->GetNumEdges()),
-                                node->GetNStarted() + cur_limit + 2);
+      int max_needed = node->GetNumEdges();
+      if (!is_root_node || root_move_filter.empty()) {
+        max_needed = std::min(max_needed, node->GetNStarted() + cur_limit + 2);
+      }
       node->CopyPolicy(max_needed, current_pol.data());
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
@@ -1871,7 +1901,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
                               PositionHistory* history) {
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
-  for (int i = 0; i < moves_to_node.size(); i++) {
+  for (size_t i = 0; i < moves_to_node.size(); i++) {
     history->Append(moves_to_node[i]);
   }
 
@@ -1922,7 +1952,8 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     }
 
     // Neither by-position or by-rule termination, but maybe it's a TB position.
-    if (search_->syzygy_tb_ && board.castlings().no_legal_castle() &&
+    if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
+        board.castlings().no_legal_castle() &&
         history->Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
