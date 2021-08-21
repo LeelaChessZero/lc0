@@ -36,9 +36,13 @@ class AlphazeroTimeManager : public TimeManager {
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
         alphazerotimepct_(
-            params.GetOrDefault<float>("alphazero-time-pct", 12.0f)) {
+            params.GetOrDefault<float>("alphazero-time-pct", 12.0f)),
+        alphazeroinctimepct_(
+            params.GetOrDefault<float>("alphazero-inctime-pct", 80.0f)) {
     if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f)
       throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
+    if (alphazeroinctimepct_ < 0.0f || alphazeroinctimepct_ > 100.0f)
+      throw Exception("alphazero-inctime-pct value to be in range [0.0, 100.0]");
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
@@ -46,6 +50,7 @@ class AlphazeroTimeManager : public TimeManager {
  private:
   const int64_t move_overhead_;
   const float alphazerotimepct_;
+  const float alphazeroinctimepct_;
 };
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
@@ -53,16 +58,18 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   const Position& position = tree.HeadPosition();
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
+  const std::optional<int64_t>& time_inc = (is_black ? params.binc : params.winc);
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
   auto total_moves_time = *time - move_overhead_;
 
-  float this_move_time = total_moves_time * (alphazerotimepct_ / 100.0f);
+  float this_move_time = total_moves_time * (alphazerotimepct_ / 100.0f)
+                         + *time_inc * (alphazeroinctimepct_ / 100.0f);
 
-  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
-          << "Remaining time " << *time << "ms(-" << move_overhead_
-          << "ms overhead)";
+  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms."
+          << " Remaining time " << *time << "ms (-" << move_overhead_
+          << "ms overhead).";
 
   return std::make_unique<TimeLimitStopper>(this_move_time);
 }
