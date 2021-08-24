@@ -1,4 +1,47 @@
-﻿v0.27.0-rc0 (2021-02-06)
+﻿v0.28.0-rc1 (2021-06-16)
+~~~~~~~
+* Multigather is now made the default (and also improved). Some search settings
+  have changed meaning, so if you have modified values please discard them.
+  Specifically, `max-collision-events`, `max-collision-visits` and
+ `max-out-of-order-evals-factor` have changed default values, but other options
+  also affect the search. Similarly, check that your gui is not caching the old
+  values.
+* Performance improvements for the cuda/cudnn backends.
+* Support for policy focus during training.
+* Larger/stronger 15b default net for all packages except android, blas and dnnl
+  that get a new 10b network.
+* The distributed binaries come with the mimalloc memory allocator for better
+  performance when a large tree has to be destroyed (e.g. after an unexpected
+  move).
+* The `legacy` time manager will use more time for the first move after a long
+  book line.
+* The `--preload` command line flag will initialize the backend and load the
+  network during startup.
+* A 'fen' command was added as a UCI extension to print the current position.
+* Experimental onednn backend for recent intel cpus and gpus.
+
+v0.27.0 (2021-02-21)
+~~~~~~~
+* A better value for the backendbench Clippy threshold.
+
+v0.27.0-rc2 (2021-02-18)
+~~~~~~~
+* Fix additional cases where 'invalid move' could be incorrectly reported.
+* Replace WDL softmax in cudnn backend with same implementation as cuda
+  backend. This fixes some inaccuracy issues that were causing training
+  data to be rejected at a fairly low frequency.
+* Ensure that training data Q/D pairs form valid WDL targets even if there
+  is accumulated drift in calculation.
+* Fix for the calculation of the 'best q is proven' bit in training data.
+* Multiple fixes for timelosses and infinite instamoving in smooth time
+  manager. Smooth time manager now made default after these fixes.
+
+v0.27.0-rc1 (2021-02-06)
+~~~~~~~
+* Fix a bug which meant `position ... moves ...` didn't work if the moves 
+  went off the end of the existing tree. 
+
+v0.27.0-rc0 (2021-02-06)
 ~~~~~~~
 * Multigather search inspired by Ceres.
 * V6 training format with additional info for training experiments.

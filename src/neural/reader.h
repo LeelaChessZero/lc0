@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,21 +24,39 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+
 #pragma once
 
-// Versioning is performed according to the standard at <https://semver.org/>
-// Creating a new version should be performed using scripts/bumpversion.py.
+#include "neural/network.h"
+#include "neural/writer.h"
 
-#include <string>
-#include "version.inc"
-#include "build_id.h"
+namespace lczero {
 
-std::uint32_t GetVersionInt(int major = LC0_VERSION_MAJOR,
-                            int minor = LC0_VERSION_MINOR,
-                            int patch = LC0_VERSION_PATCH);
+// Constructs InputPlanes from training data.
+//
+// NOTE: If the training data is a cannonical type, the canonicalization
+// transforms are reverted before returning, since it is assumed that the data
+// will be used with DecodeMoveFromInput or PopulateBoard which assume the
+// InputPlanes are not transformed.
+InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
 
-std::string GetVersionStr(int major = LC0_VERSION_MAJOR,
-                          int minor = LC0_VERSION_MINOR,
-                          int patch = LC0_VERSION_PATCH,
-                          const std::string& postfix = LC0_VERSION_POSTFIX,
-                          const std::string& build_id = BUILD_IDENTIFIER);
+class TrainingDataReader {
+ public:
+  // Opens the given file to read chunk data from.
+  TrainingDataReader(std::string filename);
+
+  ~TrainingDataReader();
+
+  // Reads a chunk. Returns true if a chunk was read.
+  bool ReadChunk(V6TrainingData* data);
+
+  // Gets full filename of the file being read.
+  std::string GetFileName() const { return filename_; }
+
+ private:
+  std::string filename_;
+  gzFile fin_;
+  bool format_v6 = false;
+};
+
+}  // namespace lczero

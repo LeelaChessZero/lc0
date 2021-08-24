@@ -31,7 +31,8 @@ namespace lczero {
 namespace cudnn_backend {
 
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left) {
+  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
+                size_t tensor_mem_size = 0, size_t scratch_size = 0) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -65,6 +66,22 @@ struct InputsOutputs {
       ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_,
                                                 op_moves_left_mem_, 0));
     }
+
+    // memory for network execution managed inside this structure
+    if (tensor_mem_size) {
+      multi_stream_ = true;
+      ReportCUDAErrors(cudaStreamCreate(&stream_));
+      ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size));
+      for (auto& mem : tensor_mem_) {
+        ReportCUDAErrors(cudaMalloc(&mem, tensor_mem_size));
+        ReportCUDAErrors(cudaMemsetAsync(mem, 0, tensor_mem_size, stream_));
+      }
+      ReportCUBLASErrors(cublasCreate(&cublas_));
+      ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+      ReportCUBLASErrors(cublasSetStream(cublas_, stream_));
+    } else {
+      multi_stream_ = false;
+    }
   }
   ~InputsOutputs() {
     ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
@@ -72,6 +89,17 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
     ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(op_value_mem_));
+
+    if (multi_stream_) {
+      for (auto mem : tensor_mem_) {
+        if (mem) ReportCUDAErrors(cudaFree(mem));
+      }
+      if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
+
+      cudaStreamDestroy(stream_);
+      cublasDestroy(cublas_);
+    }
+  
   }
   uint64_t* input_masks_mem_;
   float* input_val_mem_;
@@ -87,6 +115,19 @@ struct InputsOutputs {
 
   // This is a seperate copy.
   float* op_policy_mem_gpu_;
+
+  // memory needed to run the network owned by InputsOutputs when multi_stream
+  // is enabled
+  bool multi_stream_;
+  void* tensor_mem_[3];
+  void* scratch_mem_;
+
+  // cuda stream used to run the network
+  cudaStream_t stream_;
+  cublasHandle_t cublas_;
+
+  // cublas handle used to run the network
+
 };
 
 }  // namespace cudnn_backend
