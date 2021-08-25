@@ -1,4 +1,9 @@
-﻿v0.28.0-rc2 (2021-08-20)
+﻿v0.28.0 (2021-08-25)
+~~~~~~~
+* Fixed an issue with small third-party nets on the cuda/cudnn backends.
+* Minor tweak to the default task-workers for the cpu packages.
+
+v0.28.0-rc2 (2021-08-20)
 ~~~~~~~
 * The cuda backend option multi_stream is now off by default. You should
   consider setting it to on if you have a recent gpu with a lot of vram.
@@ -8,7 +13,7 @@
 * Added support for onnx network files and runtime with the "onnx" backend.
 * Several bug and stability fixes.
 
-﻿v0.28.0-rc1 (2021-06-16)
+v0.28.0-rc1 (2021-06-16)
 ~~~~~~~
 * Multigather is now made the default (and also improved). Some search settings
   have changed meaning, so if you have modified values please discard them.
