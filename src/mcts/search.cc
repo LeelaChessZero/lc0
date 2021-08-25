@@ -1904,17 +1904,6 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   node->CreateEdges(legal_moves);
 }
 
-namespace {
-void IncrementNInFlight(Node* node, Node* root, int amount) {
-  if (amount == 0) return;
-  while (true) {
-    node->IncrementNInFlight(amount);
-    if (node == root) break;
-    node = node->GetParent();
-  }
-}
-}  // namespace
-
 void SearchWorker::ExtendNode(Node* node, int depth) {
   std::vector<Move> to_add;
   // Could instead reserve one more than the difference between history_.size()
