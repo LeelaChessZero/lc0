@@ -1136,6 +1136,8 @@ void SearchWorker::InitializeIteration(
   minibatch_.reserve(2 * params_.GetMiniBatchSize());
 }
 
+// 2. Gather minibatch.
+// ~~~~~~~~~~~~~~~~~~~~
 namespace {
 int Mix(int high, int low, float ratio) {
   return static_cast<int>(std::round(static_cast<float>(low) +
