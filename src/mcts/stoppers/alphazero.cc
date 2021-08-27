@@ -90,7 +90,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   // Using part of the increment based on the difference between initial total time and current total time.
   alphazeroincrementpct_ = (1 - std::min<float>(1, std::max<float>(0,(total_moves_time - *increment))/initial_time_)) * 100.0f;
 
-  float this_move_time = std::max<unsigned long>(0, total_moves_time - *increment) * (new_alphazerotimepct_ / 100.0f) + *increment * (alphazeroincrementpct_ / 100.0f);
+  float this_move_time = std::max<float>(0, total_moves_time - *increment) * (new_alphazerotimepct_ / 100.0f) + (*increment - move_overhead_)  * (alphazeroincrementpct_ / 100.0f);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
           << "Remaining time " << *time << "ms(-" << move_overhead_
