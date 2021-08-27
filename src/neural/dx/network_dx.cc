@@ -900,10 +900,10 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
       float w_val = io->op_value_mem_final_[i * 3 + 0];
       float d_val = io->op_value_mem_final_[i * 3 + 1];
       float l_val = io->op_value_mem_final_[i * 3 + 2];
-
-      w_val = exp(w_val);
-      d_val = exp(d_val);
-      l_val = exp(l_val);
+      float max_val = std::max({w_val, d_val, l_val});
+      w_val = exp(w_val - max_val);
+      d_val = exp(d_val - max_val);
+      l_val = exp(l_val - max_val);
       float S = w_val + d_val + l_val;
       w_val /= S;
       d_val /= S;

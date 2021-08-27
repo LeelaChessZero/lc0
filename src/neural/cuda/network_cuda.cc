@@ -143,7 +143,7 @@ class CudaNetwork : public Network {
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
 
-    multi_stream_ = options.GetOrDefault<bool>("multi_stream", true);
+    multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
 
     // Default layout is nchw.
     bool hasTensorCores = false;
@@ -194,7 +194,9 @@ class CudaNetwork : public Network {
 
     // Disable res block fusing for > 384 filters (the fused output input
     // transform kernel runs out of register space) and for fp32 for now.
-    if (kNumFilters <= 384 && std::is_same<half, DataType>::value) {
+    // TODO: make it work for filters not a multiple of 32.
+    if (kNumFilters <= 384 && kNumFilters % 32 == 0 &&
+        std::is_same<half, DataType>::value) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
       use_res_block_winograd_fuse_opt_ = false;
@@ -602,9 +604,13 @@ class CudaNetwork : public Network {
     if (wdl_) {
       // Value softmax done cpu side.
       for (int i = 0; i < batchSize; i++) {
-        float w = std::exp(io->op_value_mem_[3 * i + 0]);
-        float d = std::exp(io->op_value_mem_[3 * i + 1]);
-        float l = std::exp(io->op_value_mem_[3 * i + 2]);
+        float w = io->op_value_mem_[3 * i + 0];
+        float d = io->op_value_mem_[3 * i + 1];
+        float l = io->op_value_mem_[3 * i + 2];
+        float m = std::max({w, d, l});
+        w = std::exp(w - m);
+        d = std::exp(d - m);
+        l = std::exp(l - m);
         float sum = w + d + l;
         w /= sum;
         l /= sum;
