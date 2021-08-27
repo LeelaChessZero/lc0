@@ -263,7 +263,11 @@ Node::Iterator Node::Edges() {
   return {*this, !solid_children_ ? &child_ : nullptr};
 }
 
-float Node::GetVisitedPolicy() const { return visited_policy_; }
+float Node::GetVisitedPolicy() const {
+  float sum = 0.0f;
+  for (auto* node : VisitedNodes()) sum += GetEdgeToNode(node)->GetP();
+  return sum;
+}
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
@@ -327,7 +331,6 @@ bool Node::MakeSolid() {
   }
   // This is a hack.
   child_ = std::unique_ptr<Node>(new_children);
-  best_child_cached_ = nullptr;
   solid_children_ = true;
   return true;
 }
@@ -397,7 +400,6 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate(int multivisit) {
   n_in_flight_ -= multivisit;
-  best_child_cached_ = nullptr;
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
@@ -406,16 +408,10 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   d_ += multivisit * (d - d_) / (n_ + multivisit);
   m_ += multivisit * (m - m_) / (n_ + multivisit);
 
-  // If first visit, update parent's sum of policies visited at least once.
-  if (n_ == 0 && parent_ != nullptr) {
-    parent_->visited_policy_ += parent_->edges_[index_].GetP();
-  }
   // Increment N.
   n_ += multivisit;
   // Decrement virtual loss.
   n_in_flight_ -= multivisit;
-  // Best child is potentially no longer valid.
-  best_child_cached_ = nullptr;
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
@@ -423,21 +419,12 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   wl_ += multivisit * v / n_;
   d_ += multivisit * d / n_;
   m_ += multivisit * m / n_;
-  // Best child is potentially no longer valid. This shouldn't be needed since
-  // AdjustForTerminal is always called immediately after FinalizeScoreUpdate,
-  // but for safety in case that changes.
-  best_child_cached_ = nullptr;
 }
 
 void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
   // Compute new n_ first, as reducing a node to 0 visits is a special case.
   const int n_new = n_ - multivisit;
   if (n_new <= 0) {
-    if (parent_ != nullptr) {
-      // To keep consistency with FinalizeScoreUpdate() expanding a node again,
-      // we need to reduce the parent's visited policy.
-      parent_->visited_policy_ -= parent_->edges_[index_].GetP();
-    }
     // If n_new == 0, reset all relevant values to 0.
     wl_ = 0.0;
     d_ = 1.0;
@@ -451,18 +438,6 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
     // Decrement N.
     n_ -= multivisit;
   }
-  // Best child is potentially no longer valid.
-  best_child_cached_ = nullptr;
-}
-
-void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
-  best_child_cached_ = best_edge.node();
-  // An edge can point to an unexpanded node with n==0. These nodes don't
-  // increment their n_in_flight_ the same way and thus are not safe to cache.
-  if (best_child_cached_ && best_child_cached_->GetN() == 0) {
-    best_child_cached_ = nullptr;
-  }
-  best_child_cache_in_flight_limit_ = visits_allowed + n_in_flight_;
 }
 
 void Node::UpdateChildrenParents() {

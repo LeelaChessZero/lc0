@@ -278,9 +278,6 @@ const OptionId SearchParams::kSolidTreeThresholdId{
     "solid-tree-threshold", "SolidTreeThreshold",
     "Only nodes with at least this number of visits will be considered for "
     "solidification for improved cache locality."};
-const OptionId SearchParams::kMultiGatherEnabledId{
-    "multi-gather", "MultiGather",
-    "If enabled, search will be replaced by the multigather approach."};
 const OptionId SearchParams::kTaskWorkersPerSearchWorkerId{
     "task-workers", "TaskWorkers",
     "The number of task workers to use to help the search worker."};
@@ -391,7 +388,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
-  options->Add<BoolOption>(kMultiGatherEnabledId) = true;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
       DEFAULT_TASK_WORKERS;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
@@ -474,11 +470,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                               options.Get<int>(kMiniBatchSizeId)))),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
-      kMultiGatherEnabled(options.Get<bool>(kMultiGatherEnabledId)),
-      kTaskWorkersPerSearchWorker(
-          options.Get<bool>(kMultiGatherEnabledId)
-              ? options.Get<int>(kTaskWorkersPerSearchWorkerId)
-              : 0),
+      kTaskWorkersPerSearchWorker(options.Get<int>(kTaskWorkersPerSearchWorkerId)),
       kMinimumWorkSizeForProcessing(
           options.Get<int>(kMinimumWorkSizeForProcessingId)),
       kMinimumWorkSizeForPicking(
