@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,21 +24,27 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+
 #pragma once
 
-// Versioning is performed according to the standard at <https://semver.org/>
-// Creating a new version should be performed using scripts/bumpversion.py.
+#include "neural/onnx/onnx.pb.h"
+#include "proto/net.pb.h"
 
-#include <string>
-#include "version.inc"
-#include "build_id.h"
+namespace lczero {
 
-std::uint32_t GetVersionInt(int major = LC0_VERSION_MAJOR,
-                            int minor = LC0_VERSION_MINOR,
-                            int patch = LC0_VERSION_PATCH);
+// Options to use when converting "old" weights to ONNX weights format.
+struct WeightsToOnnxConverterOptions {
+  enum class DataType { kFloat32 };
+  DataType data_type_ = DataType::kFloat32;
+  std::string input_planes_name = "/input/planes";
+  std::string output_policy_head = "/output/policy";
+  std::string output_wdl = "/output/wdl";
+  std::string output_value = "/output/value";
+  std::string output_mlh = "/output/mlh";
+};
 
-std::string GetVersionStr(int major = LC0_VERSION_MAJOR,
-                          int minor = LC0_VERSION_MINOR,
-                          int patch = LC0_VERSION_PATCH,
-                          const std::string& postfix = LC0_VERSION_POSTFIX,
-                          const std::string& build_id = BUILD_IDENTIFIER);
+// Converts "classical" weights file to weights file with embedded ONNX model.
+pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
+                                   const WeightsToOnnxConverterOptions&);
+
+}  // namespace lczero
