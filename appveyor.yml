@@ -40,10 +40,10 @@ install:
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set GTEST=true
 - cmd: IF %NAME%==onednn set ONEDNN=true
-- cmd: set NET=744005
-- cmd: set NET_HASH=cfc447842108ee9a830a410edb5c38a8601953ba165edc99beb9586546c7d11b
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET=751390
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET_HASH=e3592daea3b2be14c9fdfaf0d486b6154471195de9717f713263b9a0a1cbef72
+- cmd: set NET=744204
+- cmd: set NET_HASH=0f2f738e314bf618384045d4320a55333375d273d093adb805a4268ee53b519c
+- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET=752187
+- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET_HASH=65d1d197e81e221552b0803dd3623c738887dcb132e084fbab20f93deb66a0c0
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.5.0_cpu_vcomp appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.5/dnnl_win_1.5.0_cpu_vcomp.zip
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.5.0_cpu_vcomp 7z x dnnl_win_1.5.0_cpu_vcomp.zip -oC:\cache
 - cmd: set DNNL_NAME=dnnl_win_1.5.0_cpu_vcomp
@@ -103,8 +103,8 @@ cache:
   - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: IF %BLAS%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 1) > params_override.h
-- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 1) > params_override.h
+- cmd: IF %BLAS%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
+- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: SET BUILD_BLAS=%BLAS%
 - cmd: IF %OPENCL%==true SET BUILD_BLAS=true
 - cmd: IF %DX%==true SET BUILD_BLAS=true
