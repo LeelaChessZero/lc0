@@ -35,6 +35,12 @@ class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
+        expected_moves_(
+            params.GetOrDefault<int>("expected-moves", 75)),
+        tuned_initial_time_(
+            params.GetOrDefault<float>("tuned-initial-time", 216.0f)),
+        tuned_increment_(
+            params.GetOrDefault<float>("tuned-increment", 0.3f)),
         alphazerotimepct_(
             params.GetOrDefault<float>("alphazero-time-pct", 12.0f)) {
     if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f)
@@ -48,11 +54,13 @@ class AlphazeroTimeManager : public TimeManager {
   const float alphazerotimepct_;
   float new_alphazerotimepct_;
   float alphazeroincrementpct_;
-  const float expected_moves_ = 75.0f;
-  bool alphazero_modified_= false;
-  float alphazero_decay_;
   float initial_time_;
-  int64_t moves_played_= 0;
+  float alphazero_decay_;
+  bool alphazero_modified_ = false;
+  const float tuned_initial_time_;
+  const float tuned_increment_;
+  const int expected_moves_;
+  int16_t moves_played_ = 0;
 };
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
@@ -63,20 +71,18 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
   const std::optional<int64_t>& increment = (is_black ? params.binc : params.winc);
 
-  // Transforming the alphazero percentage to make it play as if it has tuner conditions. (It's only done once)
+  // Transforming the alphazero percentage to make it play as if it has tuner conditions.
   if (!alphazero_modified_) {
-    const float tuned_initial_time_ = 216.0f;
-    const float tuned_increment_ = 0.3f;
     initial_time_= *time;
     const float initial_time_sec_ = initial_time_ / 1000.0f;
     const float expected_tuned_game_time_ = tuned_initial_time_ + (tuned_increment_ * expected_moves_);
     const float expected_game_time_ = initial_time_sec_ + ((*increment/1000.f) * expected_moves_);   
     new_alphazerotimepct_ = std::min<float>(100, (alphazerotimepct_ * (tuned_initial_time_ / initial_time_sec_) * (expected_game_time_ / expected_tuned_game_time_)));
-    alphazero_decay_ = (1 / expected_moves_) * (new_alphazerotimepct_ - alphazerotimepct_);
+    alphazero_decay_ = (new_alphazerotimepct_ - alphazerotimepct_) / expected_moves_;
     alphazero_modified_ = true;
   } else {
     // Decaying new Alphazero percentage back to the input value
-    if (moves_played_ < expected_moves_) {
+    if (moves_played_ <= expected_moves_) {
       new_alphazerotimepct_ -= alphazero_decay_;
     }
   }
