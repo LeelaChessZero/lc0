@@ -174,7 +174,7 @@ Now download the lc0 source, if you haven't already done so, following the instr
 
 ### Raspberry Pi
 
-You'll need to be running the latest raspbian "buster".
+You'll need to be running the latest raspberry pi OS "buster".
 
 1. Install OpenBLAS
 
