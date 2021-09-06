@@ -1049,8 +1049,7 @@ class SyzygyTablebaseImpl {
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
     ::close(fd);
     if (base_address == MAP_FAILED) {
-      CERR << "Could not mmap() " << fname;
-      exit(1);
+      throw Exception("Could not mmap() " + fname);
     }
 #else
     const HANDLE fd =
@@ -1066,15 +1065,12 @@ class SyzygyTablebaseImpl {
                                     size_low, nullptr);
     CloseHandle(fd);
     if (!mmap) {
-      CERR << "CreateFileMapping() failed";
-      exit(1);
+      throw Exception("CreateFileMapping() failed");
     }
     *mapping = mmap;
     base_address = MapViewOfFile(mmap, FILE_MAP_READ, 0, 0, 0);
     if (!base_address) {
-      CERR << "MapViewOfFile() failed, name = " << fname
-           << ", error = " << GetLastError();
-      exit(1);
+      throw Exception("MapViewOfFile() failed, name = " + fname + ", error = " + std::to_string(GetLastError()));
     }
 #endif
     return base_address;
