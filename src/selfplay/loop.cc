@@ -31,8 +31,8 @@
 #include <sstream>
 
 #include "gtb-probe.h"
-#include "neural/encoder.h"
-#include "neural/writer.h"
+#include "neural/decoder.h"
+#include "neural/reader.h"
 #include "selfplay/tournament.h"
 #include "utils/configfile.h"
 #include "utils/filesystem.h"

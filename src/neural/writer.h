@@ -118,23 +118,4 @@ class TrainingDataWriter {
   gzFile fout_;
 };
 
-class TrainingDataReader {
- public:
-  // Opens the given file to read chunk data from.
-  TrainingDataReader(std::string filename);
-
-  ~TrainingDataReader();
-
-  // Reads a chunk. Returns true if a chunk was read.
-  bool ReadChunk(V6TrainingData* data);
-
-  // Gets full filename of the file being read.
-  std::string GetFileName() const { return filename_; }
-
- private:
-  std::string filename_;
-  gzFile fin_;
-  bool format_v6 = false;
-};
-
 }  // namespace lczero
