@@ -89,8 +89,6 @@ struct V6TrainingData {
 } PACKED_STRUCT;
 static_assert(sizeof(V6TrainingData) == 8356, "Wrong struct size");
 
-InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
-
 #pragma pack(pop)
 
 class TrainingDataWriter {
