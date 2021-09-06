@@ -189,6 +189,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         data->version = 6;
         data->result_q = static_cast<float>(data->dummy);
         data->result_d = data->dummy == 0 ? 1.0f : 0.0f;
+        data->dummy = 0;
         data->played_q = 0.0f;
         data->played_d = 0.0f;
         data->played_m = 0.0f;
@@ -200,6 +201,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         data->visits = 0;
         data->played_idx = 0;
         data->best_idx = 0;
+        data->policy_kld = 0.0f;
         data->reserved = 0;
         return true;
       }
