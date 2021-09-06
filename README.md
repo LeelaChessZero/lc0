@@ -9,7 +9,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
 
-For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.27`), which is equivalent to using the latest version tag.
+For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.28`), which is equivalent to using the latest version tag.
 
 Versioning follows the Semantic Versioning guidelines, with major, minor and patch sections. The training server enforces game quality using the versions output by the client and engine.
 
@@ -17,19 +17,19 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```
-git clone -b release/0.27 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.28 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
 
 If you have cloned already an old version, fetch, view and checkout a new branch:
 ```
 git fetch --all
 git branch --all
-git checkout -t remotes/origin/release/0.27
+git checkout -t remotes/origin/release/0.28
 ```
 
 
 If you prefer to download an archive, you need to also download and place the submodule:
- * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.27) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.27) archive is also available)
+ * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.28) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.28) archive is also available)
  * Extract
  * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
  * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
