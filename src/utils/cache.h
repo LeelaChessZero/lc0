@@ -322,7 +322,7 @@ class HashKeyedCacheLock {
 
  private:
   HashKeyedCache<V>* cache_ = nullptr;
-  uint64_t key_;
+  uint64_t key_ = 0;
   V* value_ = nullptr;
 };
 
