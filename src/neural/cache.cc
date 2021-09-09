@@ -77,23 +77,19 @@ void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
   int transform;
   auto input =
       EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
-  std::vector<Move> moves;
-  if (node && node->HasChildren()) {
-    // Legal moves are known, use them.
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove());
-    }
-  } else {
-    // Cache legal moves.
-    moves = history.Last().GetBoard().GenerateLegalMoves();
-  }
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().low_node = std::make_shared<LowNode>();
-  batch_.back().low_node->edges_ = Edge::FromMovelist(moves);
-  batch_.back().low_node->num_edges_ = moves.size();
+  if (node && node->HasChildren()) {
+    // Legal moves are known, use them.
+    batch_.back().low_node = node->GetLowNode();
+  } else {
+    // Cache legal moves.
+    std::vector<Move> moves = history.Last().GetBoard().GenerateLegalMoves();
+    batch_.back().low_node = std::make_shared<LowNode>();
+    batch_.back().low_node->edges_ = Edge::FromMovelist(moves);
+    batch_.back().low_node->num_edges_ = moves.size();
+  }
   batch_.back().transform = transform;
   parent_->AddInput(std::move(input));
   return;
@@ -184,6 +180,12 @@ Move CachingComputation::GetMove(int sample, int move_ct) const {
     return item.low_node->edges_[move_ct].GetMove();
   }
   return item.lock->low_node->edges_[move_ct].GetMove();
+}
+
+std::shared_ptr<LowNode> CachingComputation::GetLowNode(int sample) const {
+  const auto& item = batch_[sample];
+  if (item.idx_in_parent >= 0) return item.low_node;
+  return item.lock->low_node;
 }
 
 }  // namespace lczero

@@ -260,6 +260,10 @@ class Node {
   // Returns edge to the own node.
   Edge* GetOwnEdge() const;
 
+  std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
+
+  void SetLowNode(std::shared_ptr<LowNode> low_node) { low_node_ = low_node; }
+
   // Debug information about the node.
   std::string DebugString() const;
 

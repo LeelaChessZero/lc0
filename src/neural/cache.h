@@ -75,6 +75,9 @@ class CachingComputation {
   float GetDVal(int sample) const;
   // Returns estimated remaining moves.
   float GetMVal(int sample) const;
+
+  std::shared_ptr<LowNode> GetLowNode(int sample) const;
+
   // Returns compressed P value @move_id of @sample.
   uint16_t GetPVal(int sample, int move_ct) const;
   Move GetMove(int sample, int move_ct) const;

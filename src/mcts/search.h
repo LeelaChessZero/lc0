@@ -357,6 +357,8 @@ class SearchWorker {
       return lock->low_node->edges_[move_ct].GetMove();
     }
 
+    std::shared_ptr<LowNode> GetLowNode(int) const { return lock->low_node; }
+
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
                   int max_count)
