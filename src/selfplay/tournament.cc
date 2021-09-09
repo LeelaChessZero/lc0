@@ -37,6 +37,9 @@
 
 namespace lczero {
 namespace {
+const OptionId kAdjudicateId{"tb-adjudicate", "Adjudicate",
+  "When the game reaches a position covered by the endgame table database, "
+  "adjudicate the game according to the result given by the database."};
 const OptionId kShareTreesId{"share-trees", "ShareTrees",
                              "When on, game tree is shared for two players; "
                              "when off, each side has a separate tree."};
@@ -104,6 +107,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
+  options->Add<BoolOption>(kAdjudicateId) = false;
   options->Add<IntOption>(kTotalGamesId, -2, 999999) = -1;
   options->Add<IntOption>(kParallelGamesId, 1, 256) = 8;
   options->Add<IntOption>(kPlayoutsId, -1, 999999999) = -1;
@@ -157,6 +161,7 @@ SelfPlayTournament::SelfPlayTournament(
       tournament_callback_(tournament_info),
       kTotalGames(options.Get<int>(kTotalGamesId)),
       kShareTree(options.Get<bool>(kShareTreesId)),
+      kAdjudicate(options.Get<bool>(kAdjudicateId)),
       kParallelism(options.Get<int>(kParallelGamesId)),
       kTraining(options.Get<bool>(kTrainingId)),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId)),
@@ -351,7 +356,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
-            enable_resign);
+	    kAdjudicate, enable_resign);
   
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
