@@ -91,9 +91,10 @@ void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().edges = Edge::FromMovelist(moves);
+  batch_.back().low_node = std::make_shared<LowNode>();
+  batch_.back().low_node->edges_ = Edge::FromMovelist(moves);
+  batch_.back().low_node->num_edges_ = moves.size();
   batch_.back().transform = transform;
-  batch_.back().num_edges = moves.size();
   parent_->AddInput(std::move(input));
   return;
 }
@@ -111,11 +112,9 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   // Fill cache with data from NN.
   for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
-    auto req =
-        std::make_unique<CachedNNRequest>();
-    req->q = parent_->GetQVal(item.idx_in_parent);
-    req->d = parent_->GetDVal(item.idx_in_parent);
-    req->m = parent_->GetMVal(item.idx_in_parent);
+    item.low_node->orig_q_ = parent_->GetQVal(item.idx_in_parent);
+    item.low_node->orig_d_ = parent_->GetDVal(item.idx_in_parent);
+    item.low_node->orig_m_ = parent_->GetMVal(item.idx_in_parent);
 
     // Calculate maximum first.
     float max_p = -std::numeric_limits<float>::infinity();
@@ -123,15 +122,16 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     // There are never more than 256 valid legal moves in any legal position.
     std::array<float, 256> intermediate;
     int transform = item.transform;
-    for (int ct = 0; ct < item.num_edges; ct++) {
-      auto move = item.edges[ct].GetMove();
+    int num_edges = item.low_node->num_edges_;
+    for (int ct = 0; ct < num_edges; ct++) {
+      auto move = item.low_node->edges_[ct].GetMove();
       float p =
           parent_->GetPVal(item.idx_in_parent, move.as_nn_index(transform));
       intermediate[ct] = p;
       max_p = std::max(max_p, p);
     }
     float total = 0.0;
-    for (int ct = 0; ct < item.num_edges; ct++) {
+    for (int ct = 0; ct < num_edges; ct++) {
       // Perform softmax and take into account policy softmax temperature T.
       // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
       float p = FastExp((intermediate[ct] - max_p) / softmax_temp);
@@ -140,58 +140,50 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     }
     // Normalize P values to add up to 1.0.
     const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-    for (int ct = 0; ct < item.num_edges; ct++) {
-      item.edges[ct].SetP(intermediate[ct] * scale);
+    for (int ct = 0; ct < num_edges; ct++) {
+      item.low_node->edges_[ct].SetP(intermediate[ct] * scale);
     }
 
-    Edge::SortEdges(item.edges.get(), item.num_edges);
+    Edge::SortEdges(item.low_node->edges_.get(), num_edges);
 
-    std::vector<Move> moves;
-    moves.resize(item.num_edges);
-    for (int ct = 0; ct < item.num_edges; ct++) {
-      moves[ct] = item.edges[ct].GetMove();
-    }
-    req->edges = Edge::FromMovelist(moves);
-    for (int ct = 0; ct < item.num_edges; ct++) {
-      req->edges[ct].SetPCompressed(item.edges[ct].GetPCompressed());
-    }
-    req->num_edges = item.num_edges;
+    auto req = std::make_unique<CachedNNRequest>();
+    req->low_node = item.low_node;
     cache_->Insert(item.hash, std::move(req));
   }
 }
 
 float CachingComputation::GetQVal(int sample) const {
   const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return parent_->GetQVal(item.idx_in_parent);
-  return item.lock->q;
+  if (item.idx_in_parent >= 0) return item.low_node->orig_q_;
+  return item.lock->low_node->orig_q_;
 }
 
 float CachingComputation::GetDVal(int sample) const {
   const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return parent_->GetDVal(item.idx_in_parent);
-  return item.lock->d;
+  if (item.idx_in_parent >= 0) return item.low_node->orig_d_;
+  return item.lock->low_node->orig_d_;
 }
 
 float CachingComputation::GetMVal(int sample) const {
   const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return parent_->GetMVal(item.idx_in_parent);
-  return item.lock->m;
+  if (item.idx_in_parent >= 0) return item.low_node->orig_m_;
+  return item.lock->low_node->orig_m_;
 }
 
 uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) {
-    return item.edges[move_ct].GetPCompressed();
+    return item.low_node->edges_[move_ct].GetPCompressed();
   }
-  return item.lock->edges[move_ct].GetPCompressed();
+  return item.lock->low_node->edges_[move_ct].GetPCompressed();
 }
 
 Move CachingComputation::GetMove(int sample, int move_ct) const {
   auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) {
-    return item.edges[move_ct].GetMove();
+    return item.low_node->edges_[move_ct].GetMove();
   }
-  return item.lock->edges[move_ct].GetMove();
+  return item.lock->low_node->edges_[move_ct].GetMove();
 }
 
 }  // namespace lczero

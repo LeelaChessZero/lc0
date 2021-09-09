@@ -98,7 +98,7 @@ class Edge {
   // Debug information about the edge.
   std::string DebugString() const;
 
- static void SortEdges(Edge* edges, int num_edges);
+  static void SortEdges(Edge* edges, int num_edges);
 
  private:
   // Move corresponding to this node. From the point of view of a player,
@@ -124,6 +124,16 @@ class Edge_Iterator;
 
 template <bool is_const>
 class VisitedNode_Iterator;
+
+struct LowNode {
+  float orig_q_;
+  float orig_d_;
+  float orig_m_;
+  // Array of edges.
+  std::unique_ptr<Edge[]> edges_;
+  // Number of edges in @edges_.
+  uint8_t num_edges_ = 0;
+};
 
 class Node {
  public:
@@ -157,7 +167,9 @@ class Node {
   Node* GetParent() const { return parent_; }
 
   // Returns whether a node has children.
-  bool HasChildren() const { return static_cast<bool>(edges_); }
+  bool HasChildren() const {
+    return static_cast<bool>(low_node_ && low_node_->edges_);
+  }
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
@@ -179,14 +191,14 @@ class Node {
   bool IsTwoFoldTerminal() const { return terminal_type_ == Terminal::TwoFold; }
   typedef std::pair<GameResult, GameResult> Bounds;
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
-  uint8_t GetNumEdges() const { return num_edges_; }
+  uint8_t GetNumEdges() const { return low_node_ ? low_node_->num_edges_ : 0; }
 
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const {
-    if (!edges_) return;
-    int loops = std::min(static_cast<int>(num_edges_), max_needed);
+    if (!low_node_ || !low_node_->edges_) return;
+    int loops = std::min(static_cast<int>(low_node_->num_edges_), max_needed);
     for (int i = 0; i < loops; i++) {
-      output[i] = edges_[i].GetP();
+      output[i] = low_node_->edges_[i].GetP();
     }
   }
 
@@ -264,11 +276,11 @@ class Node {
     if (solid_children_ && child_) {
       // As a hack, solid_children is actually storing an array in here, release
       // so we can correctly invoke the array delete.
-      for (int i = 0; i < num_edges_; i++) {
+      for (int i = 0; i < low_node_->num_edges_; i++) {
         child_.get()[i].~Node();
       }
       std::allocator<Node> alloc;
-      alloc.deallocate(child_.release(), num_edges_);
+      alloc.deallocate(child_.release(), low_node_->num_edges_);
     }
   }
 
@@ -287,6 +299,9 @@ class Node {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
+  // 16 byte fields on 64-bit platforms, 8 byte on 32-bit.
+  std::shared_ptr<LowNode> low_node_;
+
   // 8 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
@@ -296,8 +311,6 @@ class Node {
   double wl_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
-  // Array of edges.
-  std::unique_ptr<Edge[]> edges_;
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
@@ -325,9 +338,6 @@ class Node {
   uint16_t index_;
 
   // 1 byte fields.
-  // Number of edges in @edges_.
-  uint8_t num_edges_ = 0;
-
   // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
   Terminal terminal_type_ : 2;
@@ -356,9 +366,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+static_assert(sizeof(Node) == 72, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -466,9 +476,12 @@ class Edge_Iterator : public EdgeAndNode {
   // Creates "begin()" iterator. Also happens to be a range constructor.
   // child_ptr will be nullptr if parent_node is solid children.
   Edge_Iterator(const Node& parent_node, Ptr child_ptr)
-      : EdgeAndNode(parent_node.edges_.get(), nullptr),
+      : EdgeAndNode(parent_node.low_node_ ? parent_node.low_node_->edges_.get()
+                                          : nullptr,
+                    nullptr),
         node_ptr_(child_ptr),
-        total_count_(parent_node.num_edges_) {
+        total_count_(parent_node.low_node_ ? parent_node.low_node_->num_edges_
+                                           : 0) {
     if (edge_ && child_ptr != nullptr) Actualize();
     if (edge_ && child_ptr == nullptr) {
       node_ = parent_node.child_.get();
@@ -580,7 +593,8 @@ class VisitedNode_Iterator {
   // child_ptr will be nullptr if parent_node is solid children.
   VisitedNode_Iterator(const Node& parent_node, Node* child_ptr)
       : node_ptr_(child_ptr),
-        total_count_(parent_node.num_edges_),
+        total_count_(parent_node.low_node_ ? parent_node.low_node_->num_edges_
+                                           : 0),
         solid_(parent_node.solid_children_) {
     if (node_ptr_ != nullptr && node_ptr_->GetN() == 0) {
       operator++();

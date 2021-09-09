@@ -34,12 +34,7 @@
 namespace lczero {
 
 struct CachedNNRequest {
-  float q;
-  float d;
-  float m;
-  // Store p only for valid moves.
-  std::unique_ptr<Edge[]> edges;
-  uint8_t num_edges = 0;
+  std::shared_ptr<LowNode> low_node;
 };
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
@@ -95,8 +90,7 @@ class CachingComputation {
     uint64_t hash;
     NNCacheLock lock;
     int idx_in_parent = -1;
-    std::unique_ptr<Edge[]> edges;
-    uint8_t num_edges = 0;
+    std::shared_ptr<LowNode> low_node;
     int transform;
   };
 

@@ -419,7 +419,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       v = n->GetQ(sign * draw_score);
     } else {
       NNCacheLock nneval = GetCachedNNEval(n);
-      if (nneval) v = -nneval->q;
+      if (nneval) v = -nneval->low_node->orig_q_;
     }
     if (v) {
       print(oss, "(V: ", sign * *v, ") ", 7, 4);
@@ -1815,10 +1815,10 @@ NNCacheLock SearchWorker::ExtendNode(Node* node, int depth,
 
   std::vector<Move> legal_moves;
   if (lock) {
-    legal_moves.reserve(lock->num_edges);
+    legal_moves.reserve(lock->low_node->num_edges_);
     const KingAttackInfo king_attack_info = board.GenerateKingAttackInfo();
-    for (int ct = 0; ct < lock->num_edges; ct++) {
-      auto move = lock->edges[ct].GetMove();
+    for (int ct = 0; ct < lock->low_node->num_edges_; ct++) {
+      auto move = lock->low_node->edges_[ct].GetMove();
       if (!board.IsLegalMove(move, king_attack_info)) {
         lock = NNCacheLock();
         break;

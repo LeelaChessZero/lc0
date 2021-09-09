@@ -343,18 +343,18 @@ class SearchWorker {
     // Methods to allow NodeToProcess to conform as a 'Computation'. Only safe
     // to call if is_cache_hit is true in the multigather path.
 
-    float GetQVal(int) const { return lock->q; }
+    float GetQVal(int) const { return lock->low_node->orig_q_; }
 
-    float GetDVal(int) const { return lock->d; }
+    float GetDVal(int) const { return lock->low_node->orig_d_; }
 
-    float GetMVal(int) const { return lock->m; }
+    float GetMVal(int) const { return lock->low_node->orig_m_; }
 
     uint16_t GetPVal(int, int move_ct) const {
-      return lock->edges[move_ct].GetPCompressed();
+      return lock->low_node->edges_[move_ct].GetPCompressed();
     }
 
     Move GetMove(int, int move_ct) const {
-      return lock->edges[move_ct].GetMove();
+      return lock->low_node->edges_[move_ct].GetMove();
     }
 
    private:

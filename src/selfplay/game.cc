@@ -451,8 +451,8 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
     for (const auto& child : node->Edges()) {
       auto move = child.edge()->GetMove();
       for (size_t i = 0; i < node->GetNumEdges(); i++) {
-        if (move == nneval->edges[i].GetMove()) {
-          intermediate.emplace_back(nneval->edges[i].GetP());
+        if (move == nneval->low_node->edges_[i].GetMove()) {
+          intermediate.emplace_back(nneval->low_node->edges_[i].GetP());
           break;
         }
       }
@@ -526,9 +526,9 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
 
   Eval orig_eval;
   if (nneval) {
-    orig_eval.wl = nneval->q;
-    orig_eval.d = nneval->d;
-    orig_eval.ml = nneval->m;
+    orig_eval.wl = nneval->low_node->orig_q_;
+    orig_eval.d = nneval->low_node->orig_d_;
+    orig_eval.ml = nneval->low_node->orig_m_;
   } else {
     orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
     orig_eval.d = std::numeric_limits<float>::quiet_NaN();
@@ -556,7 +556,7 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
   result.played_m = played_eval.ml;
   result.orig_m = orig_eval.ml;
 
-  result.visits = node->GetN();;
+  result.visits = node->GetN();
   if (position.IsBlackToMove()) {
     best_move.Mirror();
     played_move.Mirror();
