@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -133,6 +134,17 @@ struct LowNode {
   std::unique_ptr<Edge[]> edges_;
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
+  LowNode() = default;
+  LowNode(const LowNode &p)
+         : orig_q_(p.orig_q_),
+           orig_d_(p.orig_d_),
+           orig_m_(p.orig_m_),
+           num_edges_(p.num_edges_) {
+    if (p.edges_) {
+      edges_ = std::make_unique<Edge[]>(num_edges_);
+      std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
+    }
+  }
 };
 
 class Node {
@@ -370,7 +382,7 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
 #else
 static_assert(sizeof(Node) == 72, "Unexpected size of Node");
 #endif

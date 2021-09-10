@@ -446,13 +446,13 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
   std::vector<float> intermediate;
-  NNCacheLock nneval = search_->GetCachedNNEval(tree.GetCurrentHead());
-  if (nneval) {
+  auto low_node = node->GetLowNode();
+  if (low_node) {
     for (const auto& child : node->Edges()) {
       auto move = child.edge()->GetMove();
       for (size_t i = 0; i < node->GetNumEdges(); i++) {
-        if (move == nneval->low_node->edges_[i].GetMove()) {
-          intermediate.emplace_back(nneval->low_node->edges_[i].GetP());
+        if (move == low_node->edges_[i].GetMove()) {
+          intermediate.emplace_back(low_node->edges_[i].GetP());
           break;
         }
       }
@@ -463,7 +463,7 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
   for (const auto& child : node->Edges()) {
     auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-    if (nneval) {
+    if (low_node) {
       // Undo any softmax temperature in the cached data.
       float P = std::pow(*it, search_->GetParams().GetPolicySoftmaxTemp());
       if (fracv > 0) {
@@ -474,7 +474,7 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
     }
     result.probabilities[nn_idx] = fracv;
   }
-  if (nneval) {
+  if (low_node) {
     // Add small epsilon for backward compatibility with earlier value of 0.
     auto epsilon = std::numeric_limits<float>::min();
     kld_sum = std::max(kld_sum + std::log(total), 0.0f) + epsilon;
@@ -525,10 +525,10 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
   result.result_d = 1;
 
   Eval orig_eval;
-  if (nneval) {
-    orig_eval.wl = nneval->low_node->orig_q_;
-    orig_eval.d = nneval->low_node->orig_d_;
-    orig_eval.ml = nneval->low_node->orig_m_;
+  if (low_node) {
+    orig_eval.wl = low_node->orig_q_;
+    orig_eval.d = low_node->orig_d_;
+    orig_eval.ml = low_node->orig_m_;
   } else {
     orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
     orig_eval.d = std::numeric_limits<float>::quiet_NaN();

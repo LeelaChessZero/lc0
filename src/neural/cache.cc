@@ -148,40 +148,6 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   }
 }
 
-float CachingComputation::GetQVal(int sample) const {
-  const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return item.low_node->orig_q_;
-  return item.lock->low_node->orig_q_;
-}
-
-float CachingComputation::GetDVal(int sample) const {
-  const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return item.low_node->orig_d_;
-  return item.lock->low_node->orig_d_;
-}
-
-float CachingComputation::GetMVal(int sample) const {
-  const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return item.low_node->orig_m_;
-  return item.lock->low_node->orig_m_;
-}
-
-uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
-  auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) {
-    return item.low_node->edges_[move_ct].GetPCompressed();
-  }
-  return item.lock->low_node->edges_[move_ct].GetPCompressed();
-}
-
-Move CachingComputation::GetMove(int sample, int move_ct) const {
-  auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) {
-    return item.low_node->edges_[move_ct].GetMove();
-  }
-  return item.lock->low_node->edges_[move_ct].GetMove();
-}
-
 std::shared_ptr<LowNode> CachingComputation::GetLowNode(int sample) const {
   const auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) return item.low_node;

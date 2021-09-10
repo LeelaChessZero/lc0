@@ -418,8 +418,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
     } else {
-      NNCacheLock nneval = GetCachedNNEval(n);
-      if (nneval) v = -nneval->low_node->orig_q_;
+      v = -n->GetLowNode()->orig_q_;
     }
     if (v) {
       print(oss, "(V: ", sign * *v, ") ", 7, 4);
@@ -1910,7 +1909,11 @@ NNCacheLock SearchWorker::ExtendNode(Node* node, int depth,
   }
 
   // Add legal moves as edges of this node.
-  node->CreateEdges(legal_moves);
+  if (lock) {
+    node->SetLowNode(lock->low_node);
+  } else {
+    node->CreateEdges(legal_moves);
+  }
   return lock;
 }
 
@@ -2101,20 +2104,22 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     node_to_process->m = node->GetM();
     return;
   }
+
   // For NN results, we need to populate policy as well as value.
-  // First the value...
-  node_to_process->v = -computation.GetQVal(idx_in_computation);
-  node_to_process->d = computation.GetDVal(idx_in_computation);
-  node_to_process->m = computation.GetMVal(idx_in_computation);
-  // ...and secondly, the policy data. The cache returns compressed values after
-  // softmax.
-  node->SetLowNode(computation.GetLowNode(idx_in_computation));
+  auto low_node = computation.GetLowNode(idx_in_computation);
+  node_to_process->v = -low_node->orig_q_;
+  node_to_process->d = low_node->orig_d_;
+  node_to_process->m = low_node->orig_m_;
+
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    throw Exception("Not implemented: need a low node copy");
+    LowNode copy = *low_node;
+    node->SetLowNode(std::make_shared<LowNode>(copy));
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
     node->SortEdges();
+  } else {
+    node->SetLowNode(low_node);
   }
 }
 
