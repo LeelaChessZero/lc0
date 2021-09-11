@@ -417,8 +417,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     std::optional<float> v;
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
-    } else {
-      v = -n->GetLowNode()->orig_q_;
+    } else if (n) {
+      auto low_node = n->GetLowNode();
+      if (low_node) v = -low_node->orig_q_;
     }
     if (v) {
       print(oss, "(V: ", sign * *v, ") ", 7, 4);

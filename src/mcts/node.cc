@@ -194,7 +194,7 @@ std::unique_ptr<Edge[]> Edge::FromMovelist(const MoveList& moves) {
 /////////////////////////////////////////////////////////////////////////
 
 Node* Node::CreateSingleChildNode(Move move) {
-  assert(!low_node_ && !low_node_->edges_);
+  assert(!low_node_);
   assert(!child_);
   low_node_ = std::make_shared<LowNode>();
   low_node_->edges_ = Edge::FromMovelist({move});
@@ -204,7 +204,7 @@ Node* Node::CreateSingleChildNode(Move move) {
 }
 
 void Node::CreateEdges(const MoveList& moves) {
-  assert(!edges_);
+  assert(!low_node_);
   assert(!child_);
   low_node_ = std::make_shared<LowNode>();
   low_node_->edges_ = Edge::FromMovelist(moves);
