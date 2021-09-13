@@ -34,7 +34,7 @@
 namespace lczero {
 
 struct CachedNNRequest {
-  std::shared_ptr<LowNode> low_node;
+  SharedLowNodePtr low_node;
 };
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
@@ -70,7 +70,7 @@ class CachingComputation {
   // Do the computation.
   void ComputeBlocking(float softmax_temp);
   // Returns low node of @sample.
-  std::shared_ptr<LowNode> GetLowNode(int sample) const;
+  SharedLowNodePtr GetLowNode(int sample) const;
 
   // Returns compressed P value @move_id of @sample.
   uint16_t GetPVal(int sample, int move_ct) const;
@@ -87,7 +87,7 @@ class CachingComputation {
     uint64_t hash;
     NNCacheLock lock;
     int idx_in_parent = -1;
-    std::shared_ptr<LowNode> low_node;
+    SharedLowNodePtr low_node;
     int transform;
   };
 

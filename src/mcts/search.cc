@@ -2114,8 +2114,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    LowNode copy = *low_node;
-    node->SetLowNode(std::make_shared<LowNode>(copy));
+    node->SetLowNode(low_node.Duplicate());
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
     node->SortEdges();
