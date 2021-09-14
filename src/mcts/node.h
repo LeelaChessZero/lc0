@@ -158,10 +158,12 @@ class SharedLowNodePtr {
   LowNode* operator->() const { return p_; }
   LowNode& operator*() const { return *p_; }
   SharedLowNodePtr& operator=(SharedLowNodePtr const& p) {
-    LowNode* const old = p_;
-    p_ = p.p_;
-    if (p_ != nullptr) ++p_->count_;
-    if (old != nullptr && --old->count_ == 0) delete old;
+    if (p_ != p.p_) {
+      LowNode* const old = p_;
+      p_ = p.p_;
+      if (p_ != nullptr) ++p_->count_;
+      if (old != nullptr && --old->count_ == 0) delete old;
+    }
     return *this;
   }
   operator bool() const { return p_ != nullptr; }
