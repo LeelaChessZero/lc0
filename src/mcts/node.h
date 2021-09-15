@@ -87,14 +87,11 @@ class Edge {
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
   Move GetMove(bool as_opponent = false) const;
-  void SetMove(Move move) { move_ = move; };
 
   // Returns or sets value of Move policy prior returned from the neural net
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
   float GetP() const;
-  uint16_t GetPCompressed() const { return p_; }
   void SetP(float val);
-  void SetPCompressed(uint16_t p) { p_ = p; }
 
   // Debug information about the edge.
   std::string DebugString() const;
