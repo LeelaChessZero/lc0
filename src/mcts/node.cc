@@ -321,7 +321,10 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
     d_ = 0.0f;
     // Terminal losses have no uncertainty and no reason for their U value to be
     // comparable to another non-loss choice. Force this by clearing the policy.
+#if 0
+    // Disabled for now since we share the edges array accross nodes.
     if (GetParent() != nullptr) GetOwnEdge()->SetP(0.0f);
+#endif
   }
 }
 
