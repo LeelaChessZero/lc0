@@ -178,6 +178,11 @@ class SharedLowNodePtr {
     return r;
   }
 
+  void Reset() {
+    if (p_ != nullptr && --p_->count_ == 0) delete p_;
+    p_ = nullptr;
+  }
+
  private:
   LowNode* p_ = nullptr;
 };

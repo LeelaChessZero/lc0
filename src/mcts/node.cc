@@ -455,9 +455,8 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
     gNodeGc.AddToGcQueue(std::move(child_));
     child_ = std::move(saved_node);
   }
-  if (!child_ && low_node_) {
-    low_node_->num_edges_ = 0;
-    low_node_->edges_.reset();  // Clear edges list.
+  if (!child_) {
+    low_node_.Reset();  // Clear low node.
   }
 }
 
