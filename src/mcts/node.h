@@ -250,12 +250,12 @@ class Node {
   bool IsTwoFoldTerminal() const { return terminal_type_ == Terminal::TwoFold; }
   typedef std::pair<GameResult, GameResult> Bounds;
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
-  uint8_t GetNumEdges() const { return low_node_ ? low_node_->num_edges_ : 0; }
+  uint8_t GetNumEdges() const { return num_edges_; }
 
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const {
     if (!low_node_ || !low_node_->edges_) return;
-    int loops = std::min(static_cast<int>(low_node_->num_edges_), max_needed);
+    int loops = std::min(static_cast<int>(num_edges_), max_needed);
     for (int i = 0; i < loops; i++) {
       output[i] = low_node_->edges_[i].GetP();
     }
@@ -321,7 +321,10 @@ class Node {
 
   SharedLowNodePtr GetLowNode() const { return low_node_; }
 
-  void SetLowNode(SharedLowNodePtr low_node) { low_node_ = low_node; }
+  void SetLowNode(SharedLowNodePtr low_node) {
+    low_node_ = low_node;
+    num_edges_ = low_node ? low_node->num_edges_ : 0;
+}
 
   // Debug information about the node.
   std::string DebugString() const;
@@ -339,11 +342,11 @@ class Node {
     if (solid_children_ && child_) {
       // As a hack, solid_children is actually storing an array in here, release
       // so we can correctly invoke the array delete.
-      for (int i = 0; i < low_node_->num_edges_; i++) {
+      for (int i = 0; i < num_edges_; i++) {
         child_.get()[i].~Node();
       }
       std::allocator<Node> alloc;
-      alloc.deallocate(child_.release(), low_node_->num_edges_);
+      alloc.deallocate(child_.release(), num_edges_);
     }
   }
 
@@ -401,6 +404,9 @@ class Node {
   uint16_t index_;
 
   // 1 byte fields.
+  // Number of edges in @edges_.
+  uint8_t num_edges_ = 0;
+
   // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
   Terminal terminal_type_ : 2;
@@ -543,8 +549,7 @@ class Edge_Iterator : public EdgeAndNode {
                                           : nullptr,
                     nullptr),
         node_ptr_(child_ptr),
-        total_count_(parent_node.low_node_ ? parent_node.low_node_->num_edges_
-                                           : 0) {
+        total_count_(parent_node.num_edges_) {
     if (edge_ && child_ptr != nullptr) Actualize();
     if (edge_ && child_ptr == nullptr) {
       node_ = parent_node.child_.get();
@@ -656,8 +661,7 @@ class VisitedNode_Iterator {
   // child_ptr will be nullptr if parent_node is solid children.
   VisitedNode_Iterator(const Node& parent_node, Node* child_ptr)
       : node_ptr_(child_ptr),
-        total_count_(parent_node.low_node_ ? parent_node.low_node_->num_edges_
-                                           : 0),
+        total_count_(parent_node.num_edges_),
         solid_(parent_node.solid_children_) {
     if (node_ptr_ != nullptr && node_ptr_->GetN() == 0) {
       operator++();
