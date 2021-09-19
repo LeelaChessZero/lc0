@@ -331,8 +331,8 @@ void Node::MakeNotTerminal() {
   terminal_type_ = Terminal::NonTerminal;
   n_ = 0;
 
-  // If we have edges, we've been extended (1 visit), so include children too.
-  if (low_node_ && low_node_->edges_) {
+  // Include children too.
+  if (num_edges_ > 0) {
     n_++;
     for (const auto& child : Edges()) {
       const auto n = child.GetN();

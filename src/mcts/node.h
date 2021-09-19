@@ -226,9 +226,7 @@ class Node {
   Node* GetParent() const { return parent_; }
 
   // Returns whether a node has children.
-  bool HasChildren() const {
-    return static_cast<bool>(low_node_ && low_node_->edges_);
-  }
+  bool HasChildren() const { return num_edges_ > 0; }
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
@@ -254,7 +252,7 @@ class Node {
 
   // Output must point to at least max_needed floats.
   void CopyPolicy(int max_needed, float* output) const {
-    if (!low_node_ || !low_node_->edges_) return;
+    if (num_edges_ == 0) return;
     int loops = std::min(static_cast<int>(num_edges_), max_needed);
     for (int i = 0; i < loops; i++) {
       output[i] = low_node_->edges_[i].GetP();
@@ -365,9 +363,6 @@ class Node {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
-  // 16 byte fields on 64-bit platforms, 8 byte on 32-bit.
-  SharedLowNodePtr low_node_;
-
   // 8 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
@@ -377,6 +372,8 @@ class Node {
   double wl_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
+  // Shared pointer to the low node.
+  SharedLowNodePtr low_node_;
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
@@ -545,8 +542,8 @@ class Edge_Iterator : public EdgeAndNode {
   // Creates "begin()" iterator. Also happens to be a range constructor.
   // child_ptr will be nullptr if parent_node is solid children.
   Edge_Iterator(const Node& parent_node, Ptr child_ptr)
-      : EdgeAndNode(parent_node.low_node_ ? parent_node.low_node_->edges_.get()
-                                          : nullptr,
+      : EdgeAndNode(parent_node.num_edges_ ? parent_node.low_node_->edges_.get()
+                                           : nullptr,
                     nullptr),
         node_ptr_(child_ptr),
         total_count_(parent_node.num_edges_) {
