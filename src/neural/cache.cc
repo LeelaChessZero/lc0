@@ -25,8 +25,6 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "neural/cache.h"
-
-#include <array>
 #include <cassert>
 #include <iostream>
 
@@ -106,7 +104,7 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   parent_->ComputeBlocking();
 
   // Fill cache with data from NN.
-  for (auto& item : batch_) {
+  for (const auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
     item.low_node->orig_q_ = parent_->GetQVal(item.idx_in_parent);
     item.low_node->orig_d_ = parent_->GetDVal(item.idx_in_parent);

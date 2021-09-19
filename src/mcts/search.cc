@@ -2105,13 +2105,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     node_to_process->m = node->GetM();
     return;
   }
-
   // For NN results, we need to populate policy as well as value.
   auto low_node = computation.GetLowNode(idx_in_computation);
   node_to_process->v = -low_node->orig_q_;
   node_to_process->d = low_node->orig_d_;
   node_to_process->m = low_node->orig_m_;
-
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     node->SetLowNode(low_node.Duplicate());
