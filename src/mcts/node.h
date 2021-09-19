@@ -119,11 +119,11 @@ struct Eval {
 class SharedLowNodePtr;
 
 struct LowNode {
+  // Array of edges.
+  std::unique_ptr<Edge[]> edges_;
   float orig_q_;
   float orig_d_;
   float orig_m_;
-  // Array of edges.
-  std::unique_ptr<Edge[]> edges_;
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
 
