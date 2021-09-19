@@ -96,6 +96,11 @@ class SelfPlayGame {
   uint64_t nodes_total_ = 0;
 
  private:
+  V6TrainingData GetV6TrainingData(
+      const NodeTree& tree, pblczero::NetworkFormat::InputFormat input_format,
+      Eval best_eval, Eval played_eval, bool best_is_proven, Move best_move,
+      Move played_move) const;
+
   // options_[0] is for white player, [1] for black.
   PlayerOptions options_[2];
   // Node tree for player1 and player2. If the tree is shared between players,

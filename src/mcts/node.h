@@ -225,13 +225,6 @@ class Node {
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V6TrainingData GetV6TrainingData(
-      GameResult result, const PositionHistory& history,
-      FillEmptyHistory fill_empty_history,
-      pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
-      Eval played_eval, bool best_is_proven, Move best_move, Move played_move,
-      const NNCacheLock& nneval) const;
-
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
