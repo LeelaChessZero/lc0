@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "neural/cache.h"
+
+#include <array>
 #include <cassert>
 #include <iostream>
 
