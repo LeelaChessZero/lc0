@@ -342,7 +342,7 @@ class SearchWorker {
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
     // to call if is_cache_hit is true in the multigather path.
-    SharedLowNodePtr GetLowNode(int) const { return lock->low_node; }
+    std::shared_ptr<LowNode> GetLowNode(int) const { return lock->low_node; }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,

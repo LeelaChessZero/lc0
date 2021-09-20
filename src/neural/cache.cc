@@ -84,7 +84,7 @@ void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
   } else {
     // Cache legal moves.
     std::vector<Move> moves = history.Last().GetBoard().GenerateLegalMoves();
-    batch_.back().low_node.Make();
+    batch_.back().low_node = std::make_shared<LowNode>();
     batch_.back().low_node->edges_ = Edge::FromMovelist(moves);
     batch_.back().low_node->num_edges_ = moves.size();
   }
@@ -146,7 +146,7 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
   }
 }
 
-SharedLowNodePtr CachingComputation::GetLowNode(int sample) const {
+std::shared_ptr<LowNode> CachingComputation::GetLowNode(int sample) const {
   const auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) return item.low_node;
   return item.lock->low_node;

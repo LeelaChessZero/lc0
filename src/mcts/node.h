@@ -116,8 +116,6 @@ struct Eval {
   float ml;
 };
 
-class SharedLowNodePtr;
-
 struct LowNode {
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
@@ -126,9 +124,6 @@ struct LowNode {
   float orig_m_;
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
-
- private:
-  friend class SharedLowNodePtr;
   LowNode() = default;
   LowNode(const LowNode& p)
       : orig_q_(p.orig_q_),
@@ -140,51 +135,6 @@ struct LowNode {
       std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
     }
   }
-  std::atomic<int> count_ = 0;
-};
-
-class SharedLowNodePtr {
- public:
-  SharedLowNodePtr() = default;
-  SharedLowNodePtr(SharedLowNodePtr const& p) : p_(p.p_) {
-    if (p_ != nullptr) ++p_->count_;
-  }
-  ~SharedLowNodePtr() {
-    if (p_ != nullptr && --p_->count_ == 0) delete p_;
-  }
-  LowNode* operator->() const { return p_; }
-  LowNode& operator*() const { return *p_; }
-  SharedLowNodePtr& operator=(SharedLowNodePtr const& p) {
-    if (p_ != p.p_) {
-      LowNode* const old = p_;
-      p_ = p.p_;
-      if (p_ != nullptr) ++p_->count_;
-      if (old != nullptr && --old->count_ == 0) delete old;
-    }
-    return *this;
-  }
-  operator bool() const { return p_ != nullptr; }
-
-  void Make() {
-    if (p_ != nullptr && --p_->count_ == 0) delete p_;
-    p_ = new LowNode();
-    ++p_->count_;
-  }
-
-  SharedLowNodePtr Duplicate() const {
-    LowNode* p = new LowNode(*p_);
-    SharedLowNodePtr r;
-    r.p_ = p;
-    return r;
-  }
-
-  void Reset() {
-    if (p_ != nullptr && --p_->count_ == 0) delete p_;
-    p_ = nullptr;
-  }
-
- private:
-  LowNode* p_ = nullptr;
 };
 
 class EdgeAndNode;
@@ -317,12 +267,12 @@ class Node {
   // Returns edge to the own node.
   Edge* GetOwnEdge() const;
 
-  SharedLowNodePtr GetLowNode() const { return low_node_; }
+  std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
 
-  void SetLowNode(SharedLowNodePtr low_node) {
+  void SetLowNode(std::shared_ptr<LowNode> low_node) {
     low_node_ = low_node;
     num_edges_ = low_node ? low_node->num_edges_ : 0;
-}
+  }
 
   // Debug information about the node.
   std::string DebugString() const;
@@ -363,6 +313,10 @@ class Node {
   // padding when new fields are added, we arrange the fields by size, largest
   // to smallest.
 
+  // 16 byte fields on 64-bit platforms, 8 byte on 32-bit.
+  // Shared pointer to the low node.
+  std::shared_ptr<LowNode> low_node_;
+
   // 8 byte fields.
   // Average value (from value head of neural network) of all visited nodes in
   // subtree. For terminal nodes, eval is stored. This is from the perspective
@@ -372,8 +326,6 @@ class Node {
   double wl_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
-  // Shared pointer to the low node.
-  SharedLowNodePtr low_node_;
   // Pointer to a parent node. nullptr for the root.
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
@@ -434,7 +386,7 @@ class Node {
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
 static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 64, "Unexpected size of Node");
+static_assert(sizeof(Node) == 72, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
