@@ -124,7 +124,15 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
                            bool shared_tree, const Opening& opening)
     : options_{white, black},
       chess960_{white.uci_options->Get<bool>(kUciChess960) ||
-                black.uci_options->Get<bool>(kUciChess960)} {
+                black.uci_options->Get<bool>(kUciChess960)},
+      training_data_(SearchParams(white.uci_options).GetHistoryFill(),
+                     SearchParams(black.uci_options).GetHistoryFill(),
+                     white.network->GetCapabilities().input_format,
+                     black.network->GetCapabilities().input_format) {
+  if (white.network->GetCapabilities().input_format !=
+      black.network->GetCapabilities().input_format) {
+    throw Exception("Can't mix networks with different input format!");
+  }
   orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
@@ -303,11 +311,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         }
       }
       // Append training data. The GameResult is later overwritten.
-      const auto input_format =
-          options_[idx].network->GetCapabilities().input_format;
-      training_data_.push_back(
-          GetV6TrainingData(*tree_[idx], input_format, best_eval, played_eval,
-                            best_is_proof, best_move, move));
+      NNCacheLock nneval =
+          search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
+      training_data_.Add(tree_[idx]->GetCurrentHead(),
+                         tree_[idx]->GetPositionHistory(), best_eval,
+                         played_eval, best_is_proof, best_move, move, nneval);
     }
     // Must reset the search before mutating the tree.
     search_.reset();
@@ -363,6 +371,11 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
+  training_data_.Write(writer, game_result_, adjudicated_);
+}
+
+void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
+                                bool adjudicated) const {
   if (training_data_.empty()) return;
   // Base estimate off of best_m.  If needed external processing can use a
   // different approach.
@@ -373,21 +386,21 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
             chunk.input_format))) {
       black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
     }
-    if (game_result_ == GameResult::WHITE_WON) {
+    if (result == GameResult::WHITE_WON) {
       chunk.result_q = black_to_move ? -1 : 1;
       chunk.result_d = 0;
-    } else if (game_result_ == GameResult::BLACK_WON) {
+    } else if (result == GameResult::BLACK_WON) {
       chunk.result_q = black_to_move ? 1 : -1;
       chunk.result_d = 0;
     } else {
       chunk.result_q = 0;
       chunk.result_d = 1;
     }
-    if (adjudicated_) {
-      chunk.invariance_info |= 1u << 5; // Game adjudicated.
+    if (adjudicated) {
+      chunk.invariance_info |= 1u << 5;  // Game adjudicated.
     }
-    if (adjudicated_ && game_result_ == GameResult::UNDECIDED) {
-      chunk.invariance_info |= 1u << 4; // Max game length exceeded.
+    if (adjudicated && result == GameResult::UNDECIDED) {
+      chunk.invariance_info |= 1u << 4;  // Max game length exceeded.
     }
     chunk.plies_left = m_estimate;
     m_estimate -= 1.0f;
@@ -399,7 +412,8 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
     const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  // always set VisitsStopper to avoid exceeding the limit 4000000000, the default value when visits = 0
+  // always set VisitsStopper to avoid exceeding the limit 4000000000, the
+  // default value when visits = 0
   result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
   if (playouts >= 0) {
     result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
@@ -410,13 +424,13 @@ std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
   return result;
 }
 
-V6TrainingData SelfPlayGame::GetV6TrainingData(
-    const NodeTree& tree, pblczero::NetworkFormat::InputFormat input_format,
-    Eval best_eval, Eval played_eval, bool best_is_proven, Move best_move,
-    Move played_move) const {
-  const Node* node = tree.GetCurrentHead();
-  const PositionHistory& history = tree.GetPositionHistory();
+void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
+                              Eval best_eval, Eval played_eval,
+                              bool best_is_proven, Move best_move,
+                              Move played_move, const NNCacheLock& nneval) {
   V6TrainingData result;
+  const auto& position = history.Last();
+  auto input_format = input_format_[position.IsBlackToMove()];
 
   // Set version.
   result.version = 6;
@@ -424,9 +438,9 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
 
   // Populate planes.
   int transform;
-  InputPlanes planes =
-      EncodePositionForNN(input_format, history, 8,
-                          search_->GetParams().GetHistoryFill(), &transform);
+  InputPlanes planes = EncodePositionForNN(
+      input_format, history, 8, fill_empty_history_[position.IsBlackToMove()],
+      &transform);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
@@ -448,7 +462,6 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
   float kld_sum = 0;
   float max_p = -std::numeric_limits<float>::infinity();
   std::vector<float> intermediate;
-  NNCacheLock nneval = search_->GetCachedNNEval(node);
   if (nneval) {
     int last_idx = 0;
     for (const auto& child : node->Edges()) {
@@ -489,7 +502,6 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
   }
   result.policy_kld = kld_sum;
 
-  const auto& position = history.Last();
   const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
   // For non-frc trained nets, just send 1 like we used to.
@@ -575,7 +587,7 @@ V6TrainingData SelfPlayGame::GetV6TrainingData(
 
   // Unknown here - will be filled in once the full data has been collected.
   result.plies_left = 0;
-  return result;
+  training_data_.push_back(result);
 }
 
 }  // namespace lczero

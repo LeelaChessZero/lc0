@@ -64,6 +64,30 @@ struct PlayerOptions {
   SelfPlayLimits search_limits;
 };
 
+class V6TrainingDataArray {
+ public:
+  V6TrainingDataArray(FillEmptyHistory white_fill_empty_history,
+                      FillEmptyHistory black_fill_empty_history,
+                      pblczero::NetworkFormat::InputFormat white_input_format,
+                      pblczero::NetworkFormat::InputFormat black_input_format)
+      : fill_empty_history_{white_fill_empty_history, black_fill_empty_history},
+        input_format_{white_input_format, black_input_format} {}
+
+  // Add a chunk.
+  void Add(const Node* node, const PositionHistory& history, Eval best_eval,
+           Eval played_eval, bool best_is_proven, Move best_move,
+           Move played_move, const NNCacheLock& nneval);
+
+  // Writes training data to a file.
+  void Write(TrainingDataWriter* writer, GameResult result,
+             bool adjudicated) const;
+
+ private:
+  std::vector<V6TrainingData> training_data_;
+  FillEmptyHistory fill_empty_history_[2];
+  pblczero::NetworkFormat::InputFormat input_format_[2];
+};
+
 // Plays a single game vs itself.
 class SelfPlayGame {
  public:
@@ -76,10 +100,10 @@ class SelfPlayGame {
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
-  
+
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
-	  SyzygyTablebase* syzygy_tb, bool enable_resign = true);
+            SyzygyTablebase* syzygy_tb, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
@@ -96,11 +120,6 @@ class SelfPlayGame {
   uint64_t nodes_total_ = 0;
 
  private:
-  V6TrainingData GetV6TrainingData(
-      const NodeTree& tree, pblczero::NetworkFormat::InputFormat input_format,
-      Eval best_eval, Eval played_eval, bool best_is_proven, Move best_move,
-      Move played_move) const;
-
   // options_[0] is for white player, [1] for black.
   PlayerOptions options_[2];
   // Node tree for player1 and player2. If the tree is shared between players,
@@ -124,10 +143,9 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V6TrainingData> training_data_;
+  V6TrainingDataArray training_data_;
 
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
-
 };
 
 }  // namespace lczero
