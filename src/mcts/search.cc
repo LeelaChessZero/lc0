@@ -638,7 +638,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   if (parent->GetN() == 0) return {};
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
-  const float beta_prior = pow(parent->GetN(), 0.3);
+  const float beta_prior = pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
