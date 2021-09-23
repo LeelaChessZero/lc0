@@ -138,6 +138,9 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
+  float GetMoveSelectionVisitsScalingPower() const {
+    return kMoveSelectionVisitsScalingPower;
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -201,8 +204,9 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
+  static const OptionId kMoveSelectionVisitsScalingPowerId;  
 
- private:
+private:
   const OptionsDict& options_;
   // Cached parameter values. Values have to be cached if either:
   // 1. Parameter is accessed often and has to be cached for performance
@@ -257,6 +261,7 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
+  const float kMoveSelectionVisitsScalingPower;  
 };
 
 }  // namespace lczero

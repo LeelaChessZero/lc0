@@ -316,6 +316,10 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
 const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
     "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
     "Power to apply to the interpolation between 1 and max to make it curved."};
+const OptionId SearchParams::kMoveSelectionVisitsScalingPowerId{
+    "move-selection-visits-scaling-power", "MoveSelectionVisitsScalingPower",
+    "Power to apply to the total number of visits to get the beta prior used "
+    "in move selection."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -357,6 +361,8 @@ void SearchParams::Populate(OptionsParser* options) {
       145000;
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
+  options->Add<FloatOption>(kMoveSelectionVisitsScalingPowerId, 0.01, 100) =
+      0.3;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
@@ -485,6 +491,8 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMaxCollisionVisitsScalingStartId)),
       kMaxCollisionVisitsScalingEnd(
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
+      kMoveSelectionVisitsScalingPower(
+          options.Get<float>(kMoveSelectionVisitsScalingPowerId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
