@@ -638,6 +638,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   if (parent->GetN() == 0) return {};
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
+  const bool select_move_by_q = params_.GetQBasedMoveSelection();
   const float beta_prior = pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
@@ -659,7 +660,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                           : edges.end();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [draw_score, beta_prior](const auto& a, const auto& b) {
+      [draw_score, beta_prior, select_move_by_q](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
@@ -705,7 +706,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
 
-	  // the beta_prior is constant and equals pow(parent->GetN(), 0.3);
+	  if(select_move_by_q){
+	  // the beta_prior is constant and equals pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
 	  float alpha_prior = 1.0f;
 
 	  float winrate_a = (a.GetQ(0.0f, draw_score) + 1) * 0.5;
@@ -721,6 +723,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 	  float E_b = alpha_b / (alpha_b + beta_b);
 
 	  if (E_a != E_b) return(E_a > E_b);
+	  }
 
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();

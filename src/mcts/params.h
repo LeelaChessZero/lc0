@@ -141,6 +141,9 @@ class SearchParams {
   float GetMoveSelectionVisitsScalingPower() const {
     return kMoveSelectionVisitsScalingPower;
   }
+  bool GetQBasedMoveSelection() const {
+    return kQBasedMoveSelection;
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -204,7 +207,8 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
-  static const OptionId kMoveSelectionVisitsScalingPowerId;  
+  static const OptionId kMoveSelectionVisitsScalingPowerId;
+  static const OptionId kQBasedMoveSelectionId;
 
 private:
   const OptionsDict& options_;
@@ -261,7 +265,8 @@ private:
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
-  const float kMoveSelectionVisitsScalingPower;  
+  const float kMoveSelectionVisitsScalingPower;
+  const bool kQBasedMoveSelection;
 };
 
 }  // namespace lczero
