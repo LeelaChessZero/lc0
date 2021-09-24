@@ -707,22 +707,23 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         if (a_rank == kNonTerminal) {
 
 	  if(select_move_by_q){
-	  // the beta_prior is constant and equals pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
-	  float alpha_prior = 1.0f;
+	    // the beta_prior is constant and equals:
+	    // pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
+	    float alpha_prior = 1.0f;
 
-	  float winrate_a = (a.GetQ(0.0f, draw_score) + 1) * 0.5;
-	  int visits_a = a.GetN();
-	  float alpha_a = winrate_a * visits_a + alpha_prior;
-	  float beta_a = visits_a - alpha_a + beta_prior;
-	  float E_a = alpha_a / (alpha_a + beta_a);
+	    float winrate_a = (a.GetQ(0.0f, draw_score) + 1) * 0.5;
+	    int visits_a = a.GetN();
+	    float alpha_a = winrate_a * visits_a + alpha_prior;
+	    float beta_a = visits_a - alpha_a + beta_prior;
+	    float E_a = alpha_a / (alpha_a + beta_a);
 
-	  float winrate_b = (b.GetQ(0.0f, draw_score) + 1) * 0.5;
-	  int visits_b = b.GetN();
-	  float alpha_b = winrate_b * visits_b + alpha_prior;
-	  float beta_b = visits_b - alpha_b + beta_prior;
-	  float E_b = alpha_b / (alpha_b + beta_b);
+	    float winrate_b = (b.GetQ(0.0f, draw_score) + 1) * 0.5;
+	    int visits_b = b.GetN();
+	    float alpha_b = winrate_b * visits_b + alpha_prior;
+	    float beta_b = visits_b - alpha_b + beta_prior;
+	    float E_b = alpha_b / (alpha_b + beta_b);
 
-	  if (E_a != E_b) return(E_a > E_b);
+	    if (E_a != E_b) return(E_a > E_b);
 	  }
 
           // Prefer largest playouts then eval then prior.
