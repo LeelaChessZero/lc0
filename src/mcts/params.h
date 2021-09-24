@@ -138,6 +138,9 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
+  float GetQDiffThreshold() const {
+    return kQDiffThreshold;
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -201,6 +204,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
+  static const OptionId kQDiffThresholdId;
 
  private:
   const OptionsDict& options_;
@@ -256,6 +260,7 @@ class SearchParams {
   const int kThreadIdlingThreshold;
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
+  const float kQDiffThreshold;
   const float kMaxCollisionVisitsScalingPower;
 };
 
