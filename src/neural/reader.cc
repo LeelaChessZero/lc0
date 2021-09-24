@@ -187,8 +187,15 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
           if (read_size != v4_extra + v5_extra) return false;
         }
         data->version = 6;
-        data->result_q = static_cast<float>(data->dummy);
+        // Type of dummy was changed from signed to unsigned - which means -1 on
+        // disk is read in as 255.
+        if (data->dummy > 1 && data->dummy < 255) {
+          throw Exception("Invalid result read in v5 data before upgrade.");
+        }
+        data->result_q =
+            data->dummy == 255 ? -1.0f : (data->dummy == 0 ? 0.0f : 1.0f);
         data->result_d = data->dummy == 0 ? 1.0f : 0.0f;
+        data->dummy = 0;
         data->played_q = 0.0f;
         data->played_d = 0.0f;
         data->played_m = 0.0f;
@@ -200,6 +207,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         data->visits = 0;
         data->played_idx = 0;
         data->best_idx = 0;
+        data->policy_kld = 0.0f;
         data->reserved = 0;
         return true;
       }
