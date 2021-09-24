@@ -122,6 +122,17 @@ struct LowNode {
   float orig_q_;
   float orig_d_;
   float orig_m_;
+
+  float wl_ = 0.0f;
+  float d_ = 0.0f;
+  float ml_ = 0.0f;
+  uint32_t n_ = 0;
+
+  uint8_t num_parents_ = 0;
+
+  //value to backprop if q_threshold reached
+  float backprop_v = std::numeric_limits<float>::quiet_NaN();
+
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
   LowNode() = default;
@@ -129,6 +140,11 @@ struct LowNode {
       : orig_q_(p.orig_q_),
         orig_d_(p.orig_d_),
         orig_m_(p.orig_m_),
+        wl_(p.wl_),
+        d_(p.d_),
+        ml_(p.ml_),
+        n_(p.n_),
+        num_parents_(p.num_parents_),
         num_edges_(p.num_edges_) {
     if (p.edges_) {
       edges_ = std::make_unique<Edge[]>(num_edges_);

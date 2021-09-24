@@ -1469,7 +1469,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
   }
-
   // These 2 are 'filled pre-emptively'.
   std::array<float, 256> current_pol;
   std::array<float, 256> current_util;
@@ -1704,6 +1703,23 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
         }
+        if(child_node->GetLowNode() && child_node->GetLowNode()->num_parents_ > 1) {
+          float v_next =  -child_node->GetLowNode()->wl_;
+          float q_diff = 1 * (v_next - node->GetWL());
+          if(std::fabs(q_diff) > 0.01f) {
+            float backprop_v = std::clamp(node->GetN() * q_diff + v_next, -1.0f, 1.0f); //transposVisits * (targetQValue - transposQValue) + targetQValue
+            node->GetLowNode()->backprop_v = backprop_v;
+            (*visits_to_perform.back())[best_idx] -= 1;
+            receiver->push_back(NodeToProcess::Visit(
+                                node,
+                                static_cast<uint16_t>(current_path.size() + 0 + base_depth)));
+            completed_visits++;
+            receiver->back().moves_to_visit.reserve(moves_to_path.size() + 0);
+            receiver->back().moves_to_visit = moves_to_path;
+            break ;
+          }
+        }
+
         if ((decremented &&
              (child_node->GetN() == 0 || child_node->IsTerminal()))) {
           // Reduce 1 for the visits_to_perform to ensure the collision created
@@ -1911,6 +1927,9 @@ NNCacheLock SearchWorker::ExtendNode(Node* node, int depth,
 
   // Add legal moves as edges of this node.
   if (lock) {
+    if(!node->GetLowNode()){
+      lock->low_node->num_parents_++;
+    }
     node->SetLowNode(lock->low_node);
   } else {
     node->CreateEdges(legal_moves);
@@ -2156,15 +2175,27 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.v;
   float d = node_to_process.d;
   float m = node_to_process.m;
+
+  float backprop_v = std::numeric_limits<float>::quiet_NaN();
+  if(node->GetLowNode() && !std::isnan(node->GetLowNode()->backprop_v)) {
+    v = backprop_v = node->GetLowNode()->backprop_v;
+    node->GetLowNode()->backprop_v = std::numeric_limits<float>::quiet_NaN();
+  }
+  float q_target = std::numeric_limits<float>::quiet_NaN();
+
   int n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
   float m_delta = 0.0f;
-  uint32_t solid_threshold =
-      static_cast<uint32_t>(params_.GetSolidTreeThreshold());
+  //uint32_t solid_threshold =
+  //    static_cast<uint32_t>(params_.GetSolidTreeThreshold());
+  Node* prev_node = nullptr;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
-
+    if(!std::isnan(q_target)) {
+      float q_diff = q_target - n->GetWL();
+      v = std::clamp(n->GetN() * q_diff + prev_node->GetLowNode()->wl_,-1.0f, 1.0f);
+    }
     // Current node might have become terminal from some other descendant, so
     // backup the rest of the way with more accurate values.
     if (n->IsTerminal()) {
@@ -2173,9 +2204,18 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = n->GetM();
     }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    if(n->GetLowNode()) {
+      n->GetLowNode()->wl_ += node_to_process.multivisit * (v - n->GetLowNode()->wl_) / (n->GetLowNode()->n_ + node_to_process.multivisit); 
+      n->GetLowNode()->d_ += node_to_process.multivisit * (v - n->GetLowNode()->d_) / (n->GetLowNode()->n_ + node_to_process.multivisit);
+      n->GetLowNode()->n_ += node_to_process.multivisit;
+    }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+      n->GetLowNode()->wl_ += n_to_fix * v_delta / n->GetLowNode()->n_;
+      n->GetLowNode()->d_ += n_to_fix * d_delta / n->GetLowNode()->n_;
     }
+
+    /*
     if (n->GetN() >= solid_threshold) {
       if (n->MakeSolid() && n == search_->root_node_) {
         // If we make the root solid, the current_best_edge_ becomes invalid and
@@ -2184,7 +2224,14 @@ void SearchWorker::DoBackupUpdateSingleNode(
             search_->GetBestChildNoTemperature(search_->root_node_, 0);
       }
     }
+    */
 
+    if(!std::isnan(backprop_v) && n->GetLowNode() && (n->GetLowNode()->num_parents_ > 1)) {
+      q_target = -n->GetLowNode()->wl_;
+    } else {
+      q_target = std::numeric_limits<float>::quiet_NaN();
+    }
+    prev_node = n;
     // Nothing left to do without ancestors to update.
     if (!p) break;
 
