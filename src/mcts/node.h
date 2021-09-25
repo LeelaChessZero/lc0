@@ -128,7 +128,7 @@ struct LowNode {
   float ml_ = 0.0f;
   uint32_t n_ = 0;
 
-  uint8_t num_parents_ = 0;
+  uint8_t num_parents_ = 1;
 
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
