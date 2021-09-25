@@ -47,6 +47,7 @@ struct IterationStats {
   int64_t nodes_since_movestart = 0;
   int64_t batches_since_movestart = 0;
   int average_depth = 0;
+  float move_selection_visits_scaling_power = 0.3f;
   std::vector<uint32_t> edge_n;
   std::vector<float> q;
 

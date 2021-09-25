@@ -871,6 +871,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->q.clear();
   stats->win_found = false;
   stats->num_losing_edges = 0;
+  stats->move_selection_visits_scaling_power = params_.GetMoveSelectionVisitsScalingPower();
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
 
   // If root node hasn't finished first visit, none of this code is safe.
