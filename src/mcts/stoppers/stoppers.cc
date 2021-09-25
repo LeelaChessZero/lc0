@@ -234,8 +234,8 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
   float highest_q = -1.0f;
   uint32_t my_largest_n = 0;
-  int index_of_highest_q = 0;
-  int index_of_largest_n = 0;
+  long unsigned int index_of_highest_q = 0;
+  long unsigned int index_of_largest_n = 0;
   for (long unsigned int i = 0; i < stats.q.size(); i++) {
     if(stats.q[i] > highest_q){
       index_of_highest_q = i;
