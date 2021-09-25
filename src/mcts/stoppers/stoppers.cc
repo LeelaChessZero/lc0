@@ -262,12 +262,12 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
     // Reject early stop if Q and N disagrees
     if(index_of_largest_n != index_of_highest_q){
-      LOGFILE << "Rejected smart pruning since child with largest n: " <<
-	index_of_largest_n << ", which has " << my_largest_n << " (should be same as " << largest_n << ") has lower Q (" << stats.q[index_of_largest_n] << ") than child: " << index_of_highest_q << " which has Q=" << stats.q[index_of_highest_q] << " and has " << stats.edge_n[index_of_highest_q] << " visits.";
+      LOGFILE << "Rejected smart pruning since child (" << index_of_largest_n << ") is the child with largest n=" << stats.edge_n[index_of_largest_n]
+	 << ", but has lower Q=" << stats.q[index_of_largest_n] << " than child (" << index_of_highest_q << ") which has Q=" << stats.q[index_of_highest_q] << " and n=" << stats.edge_n[index_of_highest_q];
       return false;
     } else {
       LOGFILE << "Accepted smart pruning since child with largest n: " <<
-	index_of_largest_n << ", which has " << my_largest_n << " (should be same as " << largest_n << ") has higest Q (" << stats.q[index_of_largest_n];
+	index_of_largest_n << ", which has " << my_largest_n << " visits also has higest Q=" << stats.q[index_of_largest_n];
     }
 
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
