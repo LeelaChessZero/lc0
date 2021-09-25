@@ -130,9 +130,6 @@ struct LowNode {
 
   uint8_t num_parents_ = 0;
 
-  //value to backprop if q_threshold reached
-  float backprop_v = std::numeric_limits<float>::quiet_NaN();
-
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
   LowNode() = default;

@@ -317,6 +317,9 @@ class SearchWorker {
     bool is_cache_hit = false;
     bool is_collision = false;
 
+    // Value to backprop if q_threshold reached
+    float backprop_v;
+
     // Details only populated in the multigather path.
 
     // Only populated for visits,
@@ -339,6 +342,9 @@ class SearchWorker {
     static NodeToProcess Visit(Node* node, uint16_t depth) {
       return NodeToProcess(node, depth, false, 1, 0);
     }
+    static NodeToProcess BackProp(Node* node, uint16_t depth, float backprop_v) {
+      return NodeToProcess(node, depth, false, 1, 0, backprop_v);
+    }
 
     // Method to allow NodeToProcess to conform as a 'Computation'. Only safe
     // to call if is_cache_hit is true in the multigather path.
@@ -346,12 +352,13 @@ class SearchWorker {
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
-                  int max_count)
+                  int max_count, float backprop_v=std::numeric_limits<float>::quiet_NaN())
         : node(node),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
-          is_collision(is_collision) {}
+          is_collision(is_collision),
+          backprop_v(backprop_v) {}
   };
 
   // Holds per task worker scratch data

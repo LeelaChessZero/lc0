@@ -1703,20 +1703,20 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
         }
-        // detect transposition by num_parents
+        // Detect transposition by num_parents
         if (child_node->GetLowNode() &&
             child_node->GetLowNode()->num_parents_ > 1) {
           float v_next = -child_node->GetLowNode()->wl_;
           float q_diff = 1 * (v_next - node->GetWL());
-          // check if signal is strong enough
+          // Check if signal is strong enough
           if (std::fabs(q_diff) > params_.GetQDiffThreshold()) {
             float backprop_v =
                 std::clamp(node->GetN() * q_diff + v_next, -1.0f, 1.0f);
-            node->GetLowNode()->backprop_v = backprop_v;
             (*visits_to_perform.back())[best_idx] -= 1;
-            receiver->push_back(NodeToProcess::Visit(
+            receiver->push_back(NodeToProcess::BackProp(
                 node,
-                static_cast<uint16_t>(current_path.size() + 0 + base_depth)));
+                static_cast<uint16_t>(current_path.size() + 0 + base_depth),
+                backprop_v));
             completed_visits++;
             receiver->back().moves_to_visit.reserve(moves_to_path.size() + 0);
             receiver->back().moves_to_visit = moves_to_path;
@@ -2179,11 +2179,10 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float d = node_to_process.d;
   float m = node_to_process.m;
 
-  // TODO find the correct way to retrieve signal value from transposition
+  // Replace v with backprop signal v if exists
   float backprop_v = std::numeric_limits<float>::quiet_NaN();
-  if (node->GetLowNode() && !std::isnan(node->GetLowNode()->backprop_v)) {
-    v = backprop_v = node->GetLowNode()->backprop_v;
-    node->GetLowNode()->backprop_v = std::numeric_limits<float>::quiet_NaN();
+  if(!std::isnan(node_to_process.backprop_v)){
+    v = backprop_v = node_to_process.backprop_v;
   }
   float q_target = std::numeric_limits<float>::quiet_NaN();
 
@@ -2196,7 +2195,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   Node* prev_node = nullptr;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
-    // recalculate signal for any transposition found in route
+    // Recalculate signal for any transposition found in route
     if (!std::isnan(q_target)) {
       float q_diff = q_target - n->GetWL();
       v = std::clamp(n->GetN() * q_diff + prev_node->GetLowNode()->wl_, -1.0f,
