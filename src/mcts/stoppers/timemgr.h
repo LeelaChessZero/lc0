@@ -48,6 +48,7 @@ struct IterationStats {
   int64_t batches_since_movestart = 0;
   int average_depth = 0;
   std::vector<uint32_t> edge_n;
+  std::vector<float> q;
 
   // TODO: remove this in favor of time_usage_hint_=kImmediateMove when
   // smooth time manager is the default.

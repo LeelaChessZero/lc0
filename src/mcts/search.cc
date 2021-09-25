@@ -888,6 +888,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       const auto q = edge.GetQ(fpu, draw_score);
       const auto m = m_evaluator.GetM(edge, q);
       const auto q_plus_m = q + m;
+      stats->q.push_back(q);
       stats->edge_n.push_back(n);
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
         stats->win_found = true;

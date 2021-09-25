@@ -230,6 +230,29 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   hints->UpdateEstimatedRemainingPlayouts(remaining_playouts);
   if (stats.batches_since_movestart < minimum_batches_) return false;
 
+  // Don't stop early unless node with highest Q also has highest Expected Q AND highest visits
+
+  float highest_q = -1.0f;
+  uint32_t my_largest_n = 0;
+  int index_of_highest_q = 0;
+  int index_of_largest_n = 0;
+  for (long unsigned int i = 0; i < stats.q.size(); i++) {
+    if(stats.q[i] > highest_q){
+      index_of_highest_q = i;
+      highest_q = stats.q[i];
+    }
+    if(stats.edge_n[i] > my_largest_n){
+      index_of_largest_n = i;
+      my_largest_n = stats.edge_n[i];
+    }
+  }
+
+  if(index_of_largest_n != index_of_highest_q){
+    LOGFILE << "Rejected smart pruning since child with largest n: " <<
+      index_of_largest_n << "has lower Q than child: " << index_of_highest_q;
+    return false;
+  }
+
   uint32_t largest_n = 0;
   uint32_t second_largest_n = 0;
   for (auto n : stats.edge_n) {
