@@ -868,6 +868,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->batches_since_movestart = total_batches_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
+  stats->q.clear();
   stats->win_found = false;
   stats->num_losing_edges = 0;
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
