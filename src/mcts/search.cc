@@ -48,7 +48,7 @@ namespace lczero {
 namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
-unsigned long long int number_of_skipped_playouts = 1; // Used to calculate the beta_prior in move selection
+unsigned long long int number_of_skipped_playouts = 0; // Used to calculate the beta_prior in move selection
 
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
@@ -644,6 +644,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   const float draw_score = GetDrawScore(is_odd_depth);
   const bool select_move_by_q = params_.GetQBasedMoveSelection();
   const float beta_prior = pow(parent->GetN() + number_of_skipped_playouts, params_.GetMoveSelectionVisitsScalingPower());
+  number_of_skipped_playouts = 0; // if search runs out of time, this is the correct number, and if search is stopped early this value will be overwritten.
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
@@ -713,7 +714,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 	  if(select_move_by_q){
 	    // the beta_prior is constant and equals:
 	    // pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
-	    float alpha_prior = 1.0f;
+	    float alpha_prior = 0.0f;
 
 	    float winrate_a = (a.GetQ(0.0f, draw_score) + 1) * 0.5;
 	    int visits_a = a.GetN();
@@ -1666,12 +1667,13 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             cache_filled_idx++;
           }
           if (is_root_node) {
-            // If there's no chance to catch up to the current best node with
+	    // If params_.GetQBasedMoveSelection() is false and 
+            // there's no chance to catch up to the current best node with
             // remaining playouts, don't consider it.
             // best_move_node_ could have changed since best_node_n was
             // retrieved. To ensure we have at least one node to expand, always
             // include current best node.
-            if (cur_iters[idx] != search_->current_best_edge_ &&
+            if (!params_.GetQBasedMoveSelection() && cur_iters[idx] != search_->current_best_edge_ &&
                 latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
                     best_node_n - cur_iters[idx].GetN()) {
               continue;
