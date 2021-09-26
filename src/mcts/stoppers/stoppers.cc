@@ -233,7 +233,6 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // Don't stop early unless node with highest visits also has the
   // highest Expected Q. +remaining playouts increases the strength of
   // the pessimistic prior, so more pruning suggestions are accepted.
-  // LOGFILE << "beta_prior based on " << nodes + remaining_playouts;
   const float beta_prior = pow(nodes + remaining_playouts,
   			       stats.move_selection_visits_scaling_power);
 
@@ -287,6 +286,8 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     // Reject early stop if Expected Q and N disagrees
     if(index_of_largest_n != index_of_highest_q){
       LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Rejected smart pruning since child (" << index_of_largest_n << ") is the child with largest n=" << stats.edge_n[index_of_largest_n] << ", but has lower Expected Q=" << expected_q[index_of_largest_n] << "(raw Q=" << stats.q[index_of_largest_n] << ") than child (" << index_of_highest_q << ") which has Expected Q=" << expected_q[index_of_highest_q] << "(raw Q=" << stats.q[index_of_highest_q] << ") and n=" << stats.edge_n[index_of_highest_q];
+      // Help search to focus on this child:
+      hints->UpdateIndexOfBestEdge(index_of_highest_q);
       return false;
     } else {
       LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Accepted smart pruning since child with largest n: " <<

@@ -49,6 +49,7 @@ namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 unsigned long long int number_of_skipped_playouts = 0; // Used to calculate the beta_prior in move selection
+signed int this_edge_has_higher_expected_q_than_the_most_visited_child = -1; // explore this child of root more than PUCT would have done if a smart-pruning was rejected because this child was promising.
 
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
@@ -528,11 +529,18 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ + initial_visits_ == 0) return;
-
+  hints->UpdateIndexOfBestEdge(-1);
   if (!stop_.load(std::memory_order_acquire)) {
     if(stopper_->ShouldStop(stats, hints)){
       number_of_skipped_playouts = hints->GetEstimatedRemainingPlayouts();
       FireStopInternal();
+    } else {
+      // If ShouldStop was rejected due to the most visted move not having the best expected Q, then improve search by boosting exploration of edge of root with the highest expected Q.
+      if(hints->GetIndexOfBestEdge() > -1){
+	this_edge_has_higher_expected_q_than_the_most_visited_child = hints->GetIndexOfBestEdge();
+      } else {
+	this_edge_has_higher_expected_q_than_the_most_visited_child = -1;
+      }
     }
   }
 
@@ -1698,6 +1706,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             second_best = score;
             second_best_edge = cur_iters[idx];
           }
+
           if (can_exit) break;
           if (nstarted == 0) {
             // One more loop will get 2 unvisited nodes, which is sufficient to
@@ -1706,8 +1715,19 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
             can_exit = true;
           }
         }
+
+	// Hack the scores if the child with highest expected Q does not have most visits, ie boost exploration of that child.
+	if(is_root_node && params_.GetQBasedMoveSelection() &&
+	   this_edge_has_higher_expected_q_than_the_most_visited_child > -1){
+	  if(this_edge_has_higher_expected_q_than_the_most_visited_child != best_idx){
+	    best_idx = this_edge_has_higher_expected_q_than_the_most_visited_child;
+	    best_edge = cur_iters[best_idx];
+	  }
+	}
+
         int new_visits = 0;
-        if (second_best_edge) {
+	// easiest is to give the promising node all visits
+        if (second_best_edge && (this_edge_has_higher_expected_q_than_the_most_visited_child == -1)) {
           int estimated_visits_to_change_best = std::numeric_limits<int>::max();
           if (best_without_u < second_best) {
             const auto n1 = current_nstarted[best_idx] + 1;

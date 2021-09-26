@@ -69,6 +69,8 @@ class StoppersHints {
  public:
   StoppersHints();
   void Reset();
+  void UpdateIndexOfBestEdge(int64_t v);
+  int64_t GetIndexOfBestEdge() const;
   void UpdateEstimatedRemainingTimeMs(int64_t v);
   int64_t GetEstimatedRemainingTimeMs() const;
   void UpdateEstimatedRemainingPlayouts(int64_t v);
@@ -77,6 +79,7 @@ class StoppersHints {
   std::optional<float> GetEstimatedNps() const;
 
  private:
+  int64_t index_of_best_edge_;
   int64_t remaining_time_ms_;
   int64_t remaining_playouts_;
   std::optional<float> estimated_nps_;
