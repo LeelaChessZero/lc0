@@ -230,41 +230,44 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   hints->UpdateEstimatedRemainingPlayouts(remaining_playouts);
   if (stats.batches_since_movestart < minimum_batches_) return false;
 
-  // Don't stop early unless node with highest visits also has the highest Expected Q.
-  const float beta_prior = pow(nodes, stats.move_selection_visits_scaling_power);
+  // // Don't stop early unless node with highest visits also has the
+  // // highest Expected Q. +remaining playouts increases the strength of
+  // // the pessimistic prior, so more pruning suggestions are accepted.
+  // const float beta_prior = pow(nodes + remaining_playouts,
+  // 			       stats.move_selection_visits_scaling_power);
 
-  float highest_q = -1.0f;
-  uint32_t my_largest_n = 0;
-  long unsigned int index_of_highest_q = 0;
-  long unsigned int index_of_largest_n = 0;
+  // float highest_q = -1.0f;
+  // uint32_t my_largest_n = 0;
+  // long unsigned int index_of_highest_q = 0;
+  // long unsigned int index_of_largest_n = 0;
 
-  // Calculate expected Q
-  const float alpha_prior = 1.0f;
-  float winrate = 0.0f;
-  int visits = 0;
-  float alpha = 0.0f;
-  float beta = 0.0f;
-  std::vector<float> expected_q(stats.q.size());
-  // float expected_q = 0.0f;
+  // // Calculate expected Q
+  // const float alpha_prior = 1.0f;
+  // float winrate = 0.0f;
+  // int visits = 0;
+  // float alpha = 0.0f;
+  // float beta = 0.0f;
+  // std::vector<float> expected_q(stats.q.size());
+  // // float expected_q = 0.0f;
   
-  for (long unsigned int i = 0; i < stats.q.size(); i++) {
-    winrate = (stats.q[i] + 1) * 0.5;
-    visits = stats.edge_n[i];
-    alpha = winrate * visits + alpha_prior;
-    beta = visits - alpha + beta_prior;
-    expected_q[i] = alpha / (alpha + beta);
-    // transpose back to [-1, 1] to ease comparison with raw Q while debugging
-    expected_q[i] = expected_q[i] * 2 - 1;
+  // for (long unsigned int i = 0; i < stats.q.size(); i++) {
+  //   winrate = (stats.q[i] + 1) * 0.5;
+  //   visits = stats.edge_n[i];
+  //   alpha = winrate * visits + alpha_prior;
+  //   beta = visits - alpha + beta_prior;
+  //   expected_q[i] = alpha / (alpha + beta);
+  //   // transpose back to [-1, 1] to ease comparison with raw Q while debugging
+  //   expected_q[i] = expected_q[i] * 2 - 1;
     
-    if(expected_q[i] > highest_q){
-      index_of_highest_q = i;
-      highest_q = expected_q[i];
-    }
-    if(stats.edge_n[i] > my_largest_n){
-      index_of_largest_n = i;
-      my_largest_n = stats.edge_n[i];
-    }
-  }
+  //   if(expected_q[i] > highest_q){
+  //     index_of_highest_q = i;
+  //     highest_q = expected_q[i];
+  //   }
+  //   if(stats.edge_n[i] > my_largest_n){
+  //     index_of_largest_n = i;
+  //     my_largest_n = stats.edge_n[i];
+  //   }
+  // }
 
   uint32_t largest_n = 0;
   uint32_t second_largest_n = 0;
@@ -279,14 +282,14 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
   if (remaining_playouts < (largest_n - second_largest_n)) {
 
-    // Reject early stop if Expected Q and N disagrees
-    if(index_of_largest_n != index_of_highest_q){
-      LOGFILE << "nodes=" << nodes << " Rejected smart pruning since child (" << index_of_largest_n << ") is the child with largest n=" << stats.edge_n[index_of_largest_n] << ", but has lower Expected Q=" << expected_q[index_of_largest_n] << "(raw Q=" << stats.q[index_of_largest_n] << ") than child (" << index_of_highest_q << ") which has Expected Q=" << expected_q[index_of_highest_q] << "(raw Q=" << stats.q[index_of_highest_q] << ") and n=" << stats.edge_n[index_of_highest_q];
-      return false;
-    } else {
-      LOGFILE << "nodes=" << nodes << " Accepted smart pruning since child with largest n: " <<
-	index_of_largest_n << ", which has " << my_largest_n << " visits also has highest Expected Q=" << expected_q[index_of_largest_n] << " (raw Q=" << stats.q[index_of_largest_n] << ")";
-    }
+    // // Reject early stop if Expected Q and N disagrees
+    // if(index_of_largest_n != index_of_highest_q){
+    //   LOGFILE << "nodes=" << nodes << " Rejected smart pruning since child (" << index_of_largest_n << ") is the child with largest n=" << stats.edge_n[index_of_largest_n] << ", but has lower Expected Q=" << expected_q[index_of_largest_n] << "(raw Q=" << stats.q[index_of_largest_n] << ") than child (" << index_of_highest_q << ") which has Expected Q=" << expected_q[index_of_highest_q] << "(raw Q=" << stats.q[index_of_highest_q] << ") and n=" << stats.edge_n[index_of_highest_q];
+    //   return false;
+    // } else {
+    //   LOGFILE << "nodes=" << nodes << " Accepted smart pruning since child with largest n: " <<
+    // 	index_of_largest_n << ", which has " << my_largest_n << " visits also has highest Expected Q=" << expected_q[index_of_largest_n] << " (raw Q=" << stats.q[index_of_largest_n] << ")";
+    // }
 
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
             << largest_n << " visits, second best -- " << second_largest_n

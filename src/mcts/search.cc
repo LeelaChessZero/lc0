@@ -48,6 +48,7 @@ namespace lczero {
 namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
+unsigned long long int number_of_skipped_playouts = 1; // Used to calculate the beta_prior in move selection
 
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
@@ -529,7 +530,10 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   if (total_playouts_ + initial_visits_ == 0) return;
 
   if (!stop_.load(std::memory_order_acquire)) {
-    if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
+    if(stopper_->ShouldStop(stats, hints)){
+      number_of_skipped_playouts = hints->GetEstimatedRemainingPlayouts();
+      FireStopInternal();
+    }
   }
 
   // If we are the first to see that stop is needed.
@@ -639,7 +643,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
   const bool select_move_by_q = params_.GetQBasedMoveSelection();
-  const float beta_prior = pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
+  const float beta_prior = pow(parent->GetN() + number_of_skipped_playouts, params_.GetMoveSelectionVisitsScalingPower());
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
