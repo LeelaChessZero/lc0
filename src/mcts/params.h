@@ -262,11 +262,12 @@ private:
   const int kMinimumWorkPerTaskForProcessing;
   const int kIdlingMinimumWork;
   const int kThreadIdlingThreshold;
+  const float kMoveSelectionVisitsScalingPower;
+  const bool kQBasedMoveSelection;
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
-  const float kMoveSelectionVisitsScalingPower;
-  const bool kQBasedMoveSelection;
+
 };
 
 }  // namespace lczero

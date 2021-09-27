@@ -365,7 +365,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
   options->Add<FloatOption>(kMoveSelectionVisitsScalingPowerId, 0.01, 100) =
-      0.3;
+      0.4;
   options->Add<BoolOption>(kQBasedMoveSelectionId) = false;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
@@ -491,14 +491,14 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
       kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
-      kMaxCollisionVisitsScalingStart(
-          options.Get<int>(kMaxCollisionVisitsScalingStartId)),
-      kMaxCollisionVisitsScalingEnd(
-          options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMoveSelectionVisitsScalingPower(
           options.Get<float>(kMoveSelectionVisitsScalingPowerId)),
       kQBasedMoveSelection(
           options.Get<bool>(kQBasedMoveSelectionId)),
+      kMaxCollisionVisitsScalingStart(
+          options.Get<int>(kMaxCollisionVisitsScalingStartId)),
+      kMaxCollisionVisitsScalingEnd(
+          options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
