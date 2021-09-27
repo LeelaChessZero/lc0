@@ -25,10 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/reader.h"
-
-#include "neural/encoder.h"
-#include "utils/bititer.h"
+#include "trainingdata/reader.h"
 
 namespace lczero {
 

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@
 #include "mcts/stoppers/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "trainingdata/trainingdata.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -62,30 +63,6 @@ struct PlayerOptions {
   const OptionsDict* uci_options;
   // Limits to use for every move.
   SelfPlayLimits search_limits;
-};
-
-class V6TrainingDataArray {
- public:
-  V6TrainingDataArray(FillEmptyHistory white_fill_empty_history,
-                      FillEmptyHistory black_fill_empty_history,
-                      pblczero::NetworkFormat::InputFormat white_input_format,
-                      pblczero::NetworkFormat::InputFormat black_input_format)
-      : fill_empty_history_{white_fill_empty_history, black_fill_empty_history},
-        input_format_{white_input_format, black_input_format} {}
-
-  // Add a chunk.
-  void Add(const Node* node, const PositionHistory& history, Eval best_eval,
-           Eval played_eval, bool best_is_proven, Move best_move,
-           Move played_move, const NNCacheLock& nneval);
-
-  // Writes training data to a file.
-  void Write(TrainingDataWriter* writer, GameResult result,
-             bool adjudicated) const;
-
- private:
-  std::vector<V6TrainingData> training_data_;
-  FillEmptyHistory fill_empty_history_[2];
-  pblczero::NetworkFormat::InputFormat input_format_[2];
 };
 
 // Plays a single game vs itself.
