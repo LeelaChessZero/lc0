@@ -233,8 +233,14 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // Don't stop early unless node with highest visits also has the
   // highest Expected Q. +remaining playouts increases the strength of
   // the pessimistic prior, so more pruning suggestions are accepted.
+
+  // The idea behind * pow(nodes/(nodes + remaining_playouts), 0.5) is
+  // that early on a weaker promise is enough to motivate rejection of
+  // pruning, but as the evaluated nodes reaches the budget nodes, the
+  // promise most be stronger and stronger in order to reject pruning.
+
   const float beta_prior = pow(nodes + remaining_playouts,
-  			       stats.move_selection_visits_scaling_power);
+  			       stats.move_selection_visits_scaling_power * pow(nodes/(nodes + remaining_playouts), 0.5));
 
   float highest_q = -1.0f;
   uint32_t my_largest_n = 0;
