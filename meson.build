@@ -552,7 +552,7 @@ if get_option('build_backends')
     onnx_lib = cc.find_library('libonnxruntime',
                                dirs: get_option('onnx_libdir'),
                                required: true)
-    includes += include_directories(get_option('onnx_include'))
+    includes += include_directories(get_option('onnx_include'), is_system: true)
     cc.has_header('onnxruntime_cxx_api.h',
                   required: true,
                   args: '-I' + get_option('onnx_include'))
