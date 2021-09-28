@@ -309,6 +309,14 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     return true;
   }
 
+  if(index_of_largest_n != index_of_highest_q){
+    if(remaining_playouts < (nodes + remaining_playouts) * 4 / 10 ){
+      // Help search to focus on this child:
+      hints->UpdateIndexOfBestEdge(index_of_highest_q);
+      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Interfering with PUCT since remaining nodes is less than 4/10 of budget and best root-edge hasn't the most visits: promising node has " << stats.edge_n[index_of_highest_q] << " nodes and most visited node has " << stats.edge_n[index_of_largest_n] << " visits.";
+    }
+  }
+
   return false;
 }
 
