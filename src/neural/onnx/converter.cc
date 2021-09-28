@@ -185,14 +185,10 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
 namespace {
 std::vector<int> MakePolicyMap() {
   std::vector<int> policy_map(1858);
+  int idx = 0;
   for (const auto& mapping : kConvPolicyMap) {
-    if (mapping == -1) continue;
-    const auto index = &mapping - kConvPolicyMap;
-    const auto displacement = index / 64;
-    const auto square = index % 64;
-    const auto row = square / 8;
-    const auto col = square % 8;
-    policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
+    if (mapping > -1) policy_map[mapping] = idx;
+    idx++;
   }
   return policy_map;
 }
@@ -206,7 +202,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     auto flow = MakeConvBlock(builder, weights.policy1, NumFilters(),
                               NumFilters(), input, "/policy/conv1");
     flow = MakeConvBlock(builder, weights.policy, NumFilters(), 80, flow,
-                         "/policy/conv2");
+                         "/policy/conv2", nullptr, "", false);
     flow = builder->Reshape(
         "/policy/flatten", flow,
         builder->AddInitializer("/const/policy_shape",
