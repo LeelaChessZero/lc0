@@ -292,8 +292,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   if (remaining_playouts < (largest_n - second_largest_n)) {
 
     // Reject early stop if Expected Q and N disagrees.
-    // But only keep doing this until at least k % of the budgeted nodes is evaluated. Try k = 50.
-    if(index_of_largest_n != index_of_highest_q && proportion_left > 0.5 ){
+    if(index_of_largest_n != index_of_highest_q){
       LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Rejected smart pruning since child (" << index_of_largest_n << ") is the child with largest n=" << stats.edge_n[index_of_largest_n] << ", but has lower Expected Q=" << expected_q[index_of_largest_n] << "(raw Q=" << stats.q[index_of_largest_n] << ") than child (" << index_of_highest_q << ") which has Expected Q=" << expected_q[index_of_highest_q] << "(raw Q=" << stats.q[index_of_highest_q] << ") and n=" << stats.edge_n[index_of_highest_q];
       // Help search to focus on this child:
       hints->UpdateIndexOfBestEdge(index_of_highest_q);
@@ -312,13 +311,13 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     return true;
   }
 
-  // if(index_of_largest_n != index_of_highest_q){
-  //   if( proportion_left < 0.1f ){
-  //     // Help search to focus on this child:
-  //     hints->UpdateIndexOfBestEdge(index_of_highest_q);
-  //     LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Interfering with PUCT since remaining nodes is less than 1/10 of budget and best root-edge hasn't the most visits: promising node has " << stats.edge_n[index_of_highest_q] << " nodes and most visited node has " << stats.edge_n[index_of_largest_n] << " visits.";
-  //   }
-  // }
+  if(index_of_largest_n != index_of_highest_q){
+    if( proportion_left < 0.1f ){
+      // Help search to focus on this child:
+      hints->UpdateIndexOfBestEdge(index_of_highest_q);
+      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Interfering with PUCT since remaining nodes is less than 1/10 of budget and best root-edge hasn't the most visits: promising node has " << stats.edge_n[index_of_highest_q] << " nodes and most visited node has " << stats.edge_n[index_of_largest_n] << " visits.";
+    }
+  }
 
   return false;
 }
