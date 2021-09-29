@@ -885,6 +885,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->win_found = false;
   stats->num_losing_edges = 0;
   stats->move_selection_visits_scaling_power = params_.GetMoveSelectionVisitsScalingPower();
+  stats->override_PUCT_node_budget_threshold = params_.GetOverridePUCTNodeBudgetThreshold();
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
 
   // If root node hasn't finished first visit, none of this code is safe.

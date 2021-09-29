@@ -129,6 +129,15 @@ class SearchParams {
   }
   int GetIdlingMinimumWork() const { return kIdlingMinimumWork; }
   int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
+  float GetMoveSelectionVisitsScalingPower() const {
+    return kMoveSelectionVisitsScalingPower;
+  }
+  float GetOverridePUCTNodeBudgetThreshold() const {
+    return kOverridePUCTNodeBudgetThreshold;
+  }
+  bool GetQBasedMoveSelection() const {
+    return kQBasedMoveSelection;
+  }
   int GetMaxCollisionVisitsScalingStart() const {
     return kMaxCollisionVisitsScalingStart;
   }
@@ -137,12 +146,6 @@ class SearchParams {
   }
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
-  }
-  float GetMoveSelectionVisitsScalingPower() const {
-    return kMoveSelectionVisitsScalingPower;
-  }
-  bool GetQBasedMoveSelection() const {
-    return kQBasedMoveSelection;
   }
 
   // Search parameter IDs.
@@ -208,6 +211,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
   static const OptionId kMoveSelectionVisitsScalingPowerId;
+  static const OptionId kOverridePUCTNodeBudgetThresholdId;
   static const OptionId kQBasedMoveSelectionId;
 
 private:
@@ -262,8 +266,9 @@ private:
   const int kMinimumWorkPerTaskForProcessing;
   const int kIdlingMinimumWork;
   const int kThreadIdlingThreshold;
-  const float kMoveSelectionVisitsScalingPower;
   const bool kQBasedMoveSelection;
+  const float kOverridePUCTNodeBudgetThreshold;
+  const float kMoveSelectionVisitsScalingPower;
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
