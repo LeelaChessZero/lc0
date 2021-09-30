@@ -240,7 +240,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // promise most be stronger and stronger in order to reject pruning.
 
   const float beta_prior = pow(nodes + remaining_playouts,
-  			       stats.move_selection_visits_scaling_power * pow(nodes/(nodes + remaining_playouts), 0.5));
+  			       1.0 * pow(nodes/(nodes + remaining_playouts), 0.5));
 
   float highest_q = -1.0f;
   uint32_t my_largest_n = 0;
@@ -315,7 +315,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     if( proportion_left < 1 - stats.override_PUCT_node_budget_threshold ){
       // Help search to focus on this child:
       hints->UpdateIndexOfBestEdge(index_of_highest_q);
-      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Interfering with PUCT since remaining nodes is less than " << stats.override_PUCT_node_budget_threshold << " of budget and best root-edge hasn't the most visits: promising node has " << stats.edge_n[index_of_highest_q] << " nodes and most visited node has " << stats.edge_n[index_of_largest_n] << " visits.";
+      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Interfering with PUCT since remaining nodes is less than " << 1 - stats.override_PUCT_node_budget_threshold << " of budget and best root-edge hasn't the most visits: promising node has " << stats.edge_n[index_of_highest_q] << " nodes and most visited node has " << stats.edge_n[index_of_largest_n] << " visits.";
     }
   }
 
