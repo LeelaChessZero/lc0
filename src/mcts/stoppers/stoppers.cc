@@ -231,16 +231,33 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   if (stats.batches_since_movestart < minimum_batches_) return false;
 
   // Don't stop early unless node with highest visits also has the
-  // highest Expected Q. +remaining playouts increases the strength of
-  // the pessimistic prior, so more pruning suggestions are accepted.
+  // highest Expected Q.
 
-  // The idea behind * pow(nodes/(nodes + remaining_playouts), 0.5) is
-  // that early on a weaker promise is enough to motivate rejection of
-  // pruning, but as the evaluated nodes reaches the budget nodes, the
-  // promise most be stronger and stronger in order to reject pruning.
+  // When calculating Expected Q, what prior is suitable? If we accept
+  // pruning, then we should also play the move that made us think
+  // pruning is appropriate, ie reject pruning if another move will be
+  // played. When move selection is done,
+  // stats.move_selection_visits_scaling_power and total node budget
+  // is used. It is thus safe to reject when those priors give another
+  // move than the most visited child. But we are free to reject at
+  // lower level of certainty, e.g. at evaluted_nodes (aggressive), or
+  // (evaluted_nodes + budget_nodes) / 2, or min(evaluated_nodes *
+  // 1.2, budget_nodes).
 
-  const float beta_prior = pow(nodes + remaining_playouts,
-  			       1.0 * pow(nodes/(nodes + remaining_playouts), 0.5));
+  // If we reject we should also override
+  // PUCT, otherwise most new nodes will be wasted on the most visited
+  // child.
+
+  // Can we do better than that by override PUCT even
+  // when no pruning is suggested? The parameter
+  // stats.override_PUCT_node_budget_threshold gives a threshold for
+  // when we are allowed to try that. But what prior is suitable in that case?
+  // for now just use the same prior.
+
+  float beta_prior_base = std::min(nodes * 1.2, nodes + remaining_playouts);
+  float beta_prior_scaler = stats.move_selection_visits_scaling_power;
+  // float beta_prior_scaler = pow(nodes/(nodes + remaining_playouts), 0.5);
+  const float beta_prior = pow(beta_prior_base, beta_prior_scaler);
 
   float highest_q = -1.0f;
   uint32_t my_largest_n = 0;
@@ -293,13 +310,13 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
     // Reject early stop if Expected Q and N disagrees.
     if(index_of_largest_n != index_of_highest_q){
-      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Rejected smart pruning since child (" << index_of_largest_n << ") is the child with largest n=" << stats.edge_n[index_of_largest_n] << ", but has lower Expected Q=" << expected_q[index_of_largest_n] << "(raw Q=" << stats.q[index_of_largest_n] << ") than child (" << index_of_highest_q << ") which has Expected Q=" << expected_q[index_of_highest_q] << "(raw Q=" << stats.q[index_of_highest_q] << ") and n=" << stats.edge_n[index_of_highest_q];
+      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Rejected smart pruning since child (" << index_of_largest_n << ") is the child with largest n=" << stats.edge_n[index_of_largest_n] << ", but has lower Expected Q=" << expected_q[index_of_largest_n] << "(raw Q=" << stats.q[index_of_largest_n] << ") than child (" << index_of_highest_q << ") which has Expected Q=" << expected_q[index_of_highest_q] << "(raw Q=" << stats.q[index_of_highest_q] << ") and n=" << stats.edge_n[index_of_highest_q] << " beta_prior=" << beta_prior << " beta_prior_base=" << beta_prior_base << " beta_prior_scaler=" << beta_prior_scaler << " nodes=" << nodes << " remaining playouts=" << remaining_playouts; 
       // Help search to focus on this child:
       hints->UpdateIndexOfBestEdge(index_of_highest_q);
       return false;
     } else {
       LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Accepted smart pruning since child with largest n: " <<
-    	index_of_largest_n << ", which has " << my_largest_n << " visits also has highest Expected Q=" << expected_q[index_of_largest_n] << " (raw Q=" << stats.q[index_of_largest_n] << ")";
+    	index_of_largest_n << ", which has " << my_largest_n << " visits also has highest Expected Q=" << expected_q[index_of_largest_n] << " (raw Q=" << stats.q[index_of_largest_n] << ", beta_prior=" << beta_prior << ") beta_prior=" << beta_prior << " beta_prior_base=" << beta_prior_base << " beta_prior_scaler=" << beta_prior_scaler << " nodes=" << nodes << " remaining playouts=" << remaining_playouts; 
     }
 
     LOGFILE << remaining_playouts << " playouts remaining. Best move has "
@@ -315,7 +332,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     if( proportion_left < 1 - stats.override_PUCT_node_budget_threshold ){
       // Help search to focus on this child:
       hints->UpdateIndexOfBestEdge(index_of_highest_q);
-      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Interfering with PUCT since remaining nodes is less than " << 1 - stats.override_PUCT_node_budget_threshold << " of budget and best root-edge hasn't the most visits: promising node has " << stats.edge_n[index_of_highest_q] << " nodes and most visited node has " << stats.edge_n[index_of_largest_n] << " visits.";
+      LOGFILE << "ratio evaluated/budgeted=" << nodes/(nodes + remaining_playouts) << " Interfering with PUCT since remaining nodes is less than " << 1 - stats.override_PUCT_node_budget_threshold << " of budget and best root-edge hasn't the most visits: promising node has " << stats.edge_n[index_of_highest_q] << " nodes and most visited node has " << stats.edge_n[index_of_largest_n] << " visits." << " beta_prior=" << beta_prior << " beta_prior_base=" << beta_prior_base << " beta_prior_scaler=" << beta_prior_scaler << " nodes=" << nodes << " remaining playouts=" << remaining_playouts; 
     }
   }
 
