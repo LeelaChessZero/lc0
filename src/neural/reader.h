@@ -27,7 +27,8 @@
 
 #pragma once
 
-#include "trainingdata/trainingdata.h"
+#include "neural/network.h"
+#include "neural/writer.h"
 
 namespace lczero {
 
