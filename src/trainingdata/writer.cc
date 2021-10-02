@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/writer.h"
+#include "trainingdata/writer.h"
 
 #include <iomanip>
 #include <sstream>
