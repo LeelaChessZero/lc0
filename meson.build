@@ -173,12 +173,13 @@ files += [
   'src/neural/network_random.cc',
   'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
-  'src/neural/reader.cc',
-  'src/neural/writer.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
   'src/syzygy/syzygy.cc',
+  'src/trainingdata/reader.cc',
+  'src/trainingdata/trainingdata.cc',
+  'src/trainingdata/writer.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/esc_codes.cc',
@@ -552,7 +553,7 @@ if get_option('build_backends')
     onnx_lib = cc.find_library('libonnxruntime',
                                dirs: get_option('onnx_libdir'),
                                required: true)
-    includes += include_directories(get_option('onnx_include'))
+    includes += include_directories(get_option('onnx_include'), is_system: true)
     cc.has_header('onnxruntime_cxx_api.h',
                   required: true,
                   args: '-I' + get_option('onnx_include'))

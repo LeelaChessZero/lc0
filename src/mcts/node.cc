@@ -113,7 +113,7 @@ class NodeGarbageCollector {
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
   std::thread gc_thread_;
-};  // namespace
+};
 
 NodeGarbageCollector gNodeGc;
 }  // namespace
