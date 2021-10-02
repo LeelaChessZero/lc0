@@ -113,7 +113,7 @@ class NodeGarbageCollector {
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
   std::thread gc_thread_;
-};  // namespace
+};
 
 NodeGarbageCollector gNodeGc;
 }  // namespace
@@ -365,7 +365,6 @@ bool Node::TryStartScoreUpdate() {
 void Node::CancelScoreUpdate(int multivisit) {
   n_in_flight_ -= multivisit;
 }
-
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
