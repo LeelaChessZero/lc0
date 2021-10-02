@@ -178,6 +178,7 @@ files += [
   'src/selfplay/tournament.cc',
   'src/syzygy/syzygy.cc',
   'src/trainingdata/reader.cc',
+  'src/trainingdata/trainingdata.cc',
   'src/trainingdata/writer.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',

@@ -27,35 +27,33 @@
 
 #pragma once
 
-#include "trainingdata/trainingdata.h"
+#include "mcts/node.h"
+#include "trainingdata/writer.h"
 
 namespace lczero {
 
-// Constructs InputPlanes from training data.
-//
-// NOTE: If the training data is a cannonical type, the canonicalization
-// transforms are reverted before returning, since it is assumed that the data
-// will be used with DecodeMoveFromInput or PopulateBoard which assume the
-// InputPlanes are not transformed.
-InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
-
-class TrainingDataReader {
+class V6TrainingDataArray {
  public:
-  // Opens the given file to read chunk data from.
-  TrainingDataReader(std::string filename);
+  V6TrainingDataArray(FillEmptyHistory white_fill_empty_history,
+                      FillEmptyHistory black_fill_empty_history,
+                      pblczero::NetworkFormat::InputFormat white_input_format,
+                      pblczero::NetworkFormat::InputFormat black_input_format)
+      : fill_empty_history_{white_fill_empty_history, black_fill_empty_history},
+        input_format_{white_input_format, black_input_format} {}
 
-  ~TrainingDataReader();
+  // Add a chunk.
+  void Add(const Node* node, const PositionHistory& history, Eval best_eval,
+           Eval played_eval, bool best_is_proven, Move best_move,
+           Move played_move, const NNCacheLock& nneval);
 
-  // Reads a chunk. Returns true if a chunk was read.
-  bool ReadChunk(V6TrainingData* data);
-
-  // Gets full filename of the file being read.
-  std::string GetFileName() const { return filename_; }
+  // Writes training data to a file.
+  void Write(TrainingDataWriter* writer, GameResult result,
+             bool adjudicated) const;
 
  private:
-  std::string filename_;
-  gzFile fin_;
-  bool format_v6 = false;
+  std::vector<V6TrainingData> training_data_;
+  FillEmptyHistory fill_empty_history_[2];
+  pblczero::NetworkFormat::InputFormat input_format_[2];
 };
 
 }  // namespace lczero

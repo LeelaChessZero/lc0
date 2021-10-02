@@ -27,9 +27,6 @@
 
 #include "trainingdata/reader.h"
 
-#include "neural/encoder.h"
-#include "utils/bititer.h"
-
 namespace lczero {
 
 InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {

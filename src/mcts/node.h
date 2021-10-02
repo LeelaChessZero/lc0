@@ -38,7 +38,6 @@
 #include "chess/position.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
-#include "trainingdata/writer.h"
 #include "proto/net.pb.h"
 #include "utils/mutex.h"
 
