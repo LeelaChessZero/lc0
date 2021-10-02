@@ -91,10 +91,9 @@ class V6TrainingDataArray {
  public:
   V6TrainingDataArray(FillEmptyHistory white_fill_empty_history,
                       FillEmptyHistory black_fill_empty_history,
-                      pblczero::NetworkFormat::InputFormat white_input_format,
-                      pblczero::NetworkFormat::InputFormat black_input_format)
+                      pblczero::NetworkFormat::InputFormat input_format)
       : fill_empty_history_{white_fill_empty_history, black_fill_empty_history},
-        input_format_{white_input_format, black_input_format} {}
+        input_format_(input_format) {}
 
   // Add a chunk.
   void Add(const Node* node, const PositionHistory& history, Eval best_eval,
@@ -108,7 +107,7 @@ class V6TrainingDataArray {
  private:
   std::vector<V6TrainingData> training_data_;
   FillEmptyHistory fill_empty_history_[2];
-  pblczero::NetworkFormat::InputFormat input_format_[2];
+  pblczero::NetworkFormat::InputFormat input_format_;
 };
 
 }  // namespace lczero

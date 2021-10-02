@@ -80,12 +80,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
                 black.uci_options->Get<bool>(kUciChess960)},
       training_data_(SearchParams(white.uci_options).GetHistoryFill(),
                      SearchParams(black.uci_options).GetHistoryFill(),
-                     white.network->GetCapabilities().input_format,
-                     black.network->GetCapabilities().input_format) {
-  if (white.network->GetCapabilities().input_format !=
-      black.network->GetCapabilities().input_format) {
-    throw Exception("Can't mix networks with different input format!");
-  }
+                     white.network->GetCapabilities().input_format) {
   orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
@@ -106,6 +101,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         SyzygyTablebase* syzygy_tb, bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
+  // If we are training, verify that input formats are consistent.
+  if (training && options_[0].network->GetCapabilities().input_format !=
+      options_[1].network->GetCapabilities().input_format) {
+    throw Exception("Can't mix networks with different input format!");
+  }
   // Take syzygy tablebases from player1 options.
   std::string tb_paths =
       options_[0].uci_options->Get<std::string>(kSyzygyTablebaseId);

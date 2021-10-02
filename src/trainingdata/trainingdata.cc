@@ -117,16 +117,15 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
                               Move played_move, const NNCacheLock& nneval) {
   V6TrainingData result;
   const auto& position = history.Last();
-  auto input_format = input_format_[position.IsBlackToMove()];
 
   // Set version.
   result.version = 6;
-  result.input_format = input_format;
+  result.input_format = input_format_;
 
   // Populate planes.
   int transform;
   InputPlanes planes = EncodePositionForNN(
-      input_format, history, 8, fill_empty_history_[position.IsBlackToMove()],
+      input_format_, history, 8, fill_empty_history_[position.IsBlackToMove()],
       &transform);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
@@ -195,7 +194,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   uint8_t queen_side = 1;
   uint8_t king_side = 1;
   // If frc trained, send the bit mask representing rook position.
-  if (Is960CastlingFormat(input_format)) {
+  if (Is960CastlingFormat(input_format_)) {
     queen_side <<= castlings.queenside_rook();
     king_side <<= castlings.kingside_rook();
   }
@@ -206,7 +205,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
 
   // Other params.
-  if (IsCanonicalFormat(input_format)) {
+  if (IsCanonicalFormat(input_format_)) {
     result.side_to_move_or_enpassant =
         position.GetBoard().en_passant().as_int() >> 56;
     if ((transform & FlipTransform) != 0) {
