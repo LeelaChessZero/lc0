@@ -74,7 +74,7 @@ class CheckComputation : public NetworkComputation {
     int rule50;
     int gameply;
     PopulateBoard(params_.input_format, input, &board, &rule50, &gameply);
-    boards_.emplace_back(board);
+    moves_.emplace_back(board.GenerateLegalMoves());
   }
 
   void ComputeBlocking() override {
@@ -116,7 +116,7 @@ class CheckComputation : public NetworkComputation {
  private:
   static constexpr int kNumOutputPolicies = 1858;
   const CheckParams& params_;
-  std::vector<ChessBoard> boards_;
+  std::vector<MoveList> moves_;
 
   std::vector<float> PolicySoftMax(const NetworkComputation* comp, int sample,
                                    const std::vector<Move>& moves) const {
@@ -151,9 +151,8 @@ class CheckComputation : public NetworkComputation {
 
     bool policyAlmostEqual = true;
     for (int i = 0; i < size && policyAlmostEqual; i++) {
-      const auto moves = boards_[i].GenerateLegalMoves();
-      const auto work = PolicySoftMax(work_comp_.get(), i, moves);
-      const auto check = PolicySoftMax(check_comp_.get(), i, moves);
+      const auto work = PolicySoftMax(work_comp_.get(), i, moves_[i]);
+      const auto check = PolicySoftMax(check_comp_.get(), i, moves_[i]);
       for (size_t j = 0; j < work.size(); j++) {
         policyAlmostEqual &= IsAlmostEqual(work[j], check[j]);
       }
@@ -194,9 +193,8 @@ class CheckComputation : public NetworkComputation {
       const float qv1 = work_comp_->GetQVal(i);
       const float qv2 = check_comp_->GetQVal(i);
       histogram.Add(qv2 - qv1);
-      const auto moves = boards_[i].GenerateLegalMoves();
-      const auto work = PolicySoftMax(work_comp_.get(), i, moves);
-      const auto check = PolicySoftMax(check_comp_.get(), i, moves);
+      const auto work = PolicySoftMax(work_comp_.get(), i, moves_[i]);
+      const auto check = PolicySoftMax(check_comp_.get(), i, moves_[i]);
       for (size_t j = 0; j < work.size(); j++) {
         histogram.Add(check[j] - work[j]);
       }
@@ -248,9 +246,8 @@ class CheckComputation : public NetworkComputation {
 
     MaximumError policy_error;
     for (int i = 0; i < size; i++) {
-      const auto moves = boards_[i].GenerateLegalMoves();
-      const auto work = PolicySoftMax(work_comp_.get(), i, moves);
-      const auto check = PolicySoftMax(check_comp_.get(), i, moves);
+      const auto work = PolicySoftMax(work_comp_.get(), i, moves_[i]);
+      const auto check = PolicySoftMax(check_comp_.get(), i, moves_[i]);
       for (size_t j = 0; j < work.size(); j++) {
         policy_error.Add(work[j], check[j]);
       }
