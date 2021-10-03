@@ -50,7 +50,6 @@ namespace {
 const int kUciInfoMinimumFrequencyMs = 5000;
 unsigned long long int number_of_skipped_playouts = 0; // Used to calculate the beta_prior in move selection
 signed int this_edge_has_higher_expected_q_than_the_most_visited_child = -1; // explore this child of root more than PUCT would have done if a smart-pruning was rejected because this child was promising.
-signed int we_rejected_pruning_for_this_edge_was_promising = -1; // Check if it was actually played also
 
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
@@ -539,9 +538,6 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
       // If ShouldStop was rejected due to the most visted move not having the best expected Q, then improve search by boosting exploration of edge of root with the highest expected Q.
       if(hints->GetIndexOfBestEdge() > -1){
 	this_edge_has_higher_expected_q_than_the_most_visited_child = hints->GetIndexOfBestEdge();
-	we_rejected_pruning_for_this_edge_was_promising = this_edge_has_higher_expected_q_than_the_most_visited_child;
-      } else {
-	this_edge_has_higher_expected_q_than_the_most_visited_child = -1;
       }
     }
   }
@@ -557,6 +553,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
+    this_edge_has_higher_expected_q_than_the_most_visited_child = -1;
   }
 
   // Use a 0 visit cancel score update to clear out any cached best edge, as
@@ -586,13 +583,6 @@ std::pair<Move, Move> Search::GetBestMove() {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
   EnsureBestMoveKnown();
-  if(we_rejected_pruning_for_this_edge_was_promising > -1){
-    if(we_rejected_pruning_for_this_edge_was_promising == current_best_edge_.node()->Index()){
-      LOGFILE << "About to send move " << current_best_edge_.node()->Index() << " another move was stopped from being played, ie. successful rejection of smart pruning";
-    } else {
-      LOGFILE << "About to send move " << current_best_edge_.node()->Index() << " nodes were wasted on " << we_rejected_pruning_for_this_edge_was_promising << ", ie. bad rejection smart pruning.";
-    }
-  }
   return {final_bestmove_, final_pondermove_};
 }
 
