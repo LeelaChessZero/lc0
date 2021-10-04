@@ -108,6 +108,9 @@ class SelfPlayTournament {
   const bool kTraining;
   const float kResignPlaythrough;
   const float kDiscardedStartChance;
+
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
+
 };
 
 }  // namespace lczero

@@ -28,12 +28,41 @@
 #include "chess/position.h"
 
 #include <cassert>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
 
+namespace {
+// GetPieceAt returns the piece found at row, col on board or the null-char '\0'
+// in case no piece there.
+char GetPieceAt(const lczero::ChessBoard& board, int row, int col) {
+  char c = '\0';
+  if (board.ours().get(row, col) || board.theirs().get(row, col)) {
+    if (board.pawns().get(row, col)) {
+      c = 'P';
+    } else if (board.kings().get(row, col)) {
+      c = 'K';
+    } else if (board.bishops().get(row, col)) {
+      c = 'B';
+    } else if (board.queens().get(row, col)) {
+      c = 'Q';
+    } else if (board.rooks().get(row, col)) {
+      c = 'R';
+    } else {
+      c = 'N';
+    }
+    if (board.theirs().get(row, col)) {
+      c = std::tolower(c);  // Capitals are for white.
+    }
+  }
+  return c;
+}
+
+}  // namespace
 namespace lczero {
 
 Position::Position(const Position& parent, Move m)
-    : rule50_ply_(parent.rule50_ply_ + 1),
-      ply_count_(parent.ply_count_ + 1) {
+    : rule50_ply_(parent.rule50_ply_ + 1), ply_count_(parent.ply_count_ + 1) {
   them_board_ = parent.us_board_;
   const bool is_zeroing = them_board_.ApplyMove(m);
   us_board_ = them_board_;
@@ -55,9 +84,9 @@ uint64_t Position::Hash() const {
 std::string Position::DebugString() const { return us_board_.DebugString(); }
 
 GameResult operator-(const GameResult& res) {
-  return res == GameResult::BLACK_WON
-             ? GameResult::WHITE_WON
-             : res == GameResult::WHITE_WON ? GameResult::BLACK_WON : res;
+  return res == GameResult::BLACK_WON   ? GameResult::WHITE_WON
+         : res == GameResult::WHITE_WON ? GameResult::BLACK_WON
+                                        : res;
 }
 
 GameResult PositionHistory::ComputeGameResult() const {
@@ -74,7 +103,6 @@ GameResult PositionHistory::ComputeGameResult() const {
 
   if (!board.HasMatingMaterial()) return GameResult::DRAW;
   if (Last().GetRule50Ply() >= 100) return GameResult::DRAW;
-  if (Last().GetGamePly() >= 450) return GameResult::DRAW;
   if (Last().GetRepetitions() >= 2) return GameResult::DRAW;
 
   return GameResult::UNDECIDED;
@@ -91,10 +119,13 @@ void PositionHistory::Append(Move m) {
   //                has a bug in implementation of emplace_back, when
   //                reallocation happens. (it also reallocates Last())
   positions_.push_back(Position(Last(), m));
-  positions_.back().SetRepetitions(ComputeLastMoveRepetitions());
+  int cycle_length;
+  int repetitions = ComputeLastMoveRepetitions(&cycle_length);
+  positions_.back().SetRepetitions(repetitions, cycle_length);
 }
 
-int PositionHistory::ComputeLastMoveRepetitions() const {
+int PositionHistory::ComputeLastMoveRepetitions(int* cycle_length) const {
+  *cycle_length = 0;
   const auto& last = positions_.back();
   // TODO(crem) implement hash/cache based solution.
   if (last.GetRule50Ply() < 4) return 0;
@@ -102,6 +133,7 @@ int PositionHistory::ComputeLastMoveRepetitions() const {
   for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
+      *cycle_length = positions_.size() - 1 - idx;
       return 1 + pos.GetRepetitions();
     }
     if (pos.GetRule50Ply() < 2) return 0;
@@ -128,4 +160,37 @@ uint64_t PositionHistory::HashLast(int positions) const {
   return HashCat(hash, Last().GetRule50Ply());
 }
 
+std::string GetFen(const Position& pos) {
+  std::string result;
+  const ChessBoard& board = pos.GetWhiteBoard();
+  for (int row = 7; row >= 0; --row) {
+    int emptycounter = 0;
+    for (int col = 0; col < 8; ++col) {
+      char piece = GetPieceAt(board, row, col);
+      if (emptycounter > 0 && piece) {
+        result += std::to_string(emptycounter);
+        emptycounter = 0;
+      }
+      if (piece) {
+        result += piece;
+      } else {
+        emptycounter++;
+      }
+    }
+    if (emptycounter > 0) result += std::to_string(emptycounter);
+    if (row > 0) result += "/";
+  }
+  std::string enpassant = "-";
+  if (!board.en_passant().empty()) {
+    auto sq = *board.en_passant().begin();
+    enpassant = BoardSquare(pos.IsBlackToMove() ? 2 : 5, sq.col()).as_string();
+  }
+  result += pos.IsBlackToMove() ? " b" : " w";
+  result += " " + board.castlings().as_string();
+  result += " " + enpassant;
+  result += " " + std::to_string(pos.GetRule50Ply());
+  result += " " + std::to_string(
+                      (pos.GetGamePly() + (pos.IsBlackToMove() ? 1 : 2)) / 2);
+  return result;
+}
 }  // namespace lczero

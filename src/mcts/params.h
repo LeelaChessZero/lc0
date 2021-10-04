@@ -53,6 +53,7 @@ class SearchParams {
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
+  bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
     return options_.Get<float>(kTemperatureVisitOffsetId);
@@ -83,7 +84,7 @@ class SearchParams {
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
-  int GetMaxCollisionVisitsId() const { return kMaxCollisionVisits; }
+  int GetMaxCollisionVisits() const { return kMaxCollisionVisits; }
   bool GetOutOfOrderEval() const { return kOutOfOrderEval; }
   bool GetStickyEndgames() const { return kStickyEndgames; }
   bool GetSyzygyFastPlay() const { return kSyzygyFastPlay; }
@@ -111,6 +112,33 @@ class SearchParams {
   float GetNpsLimit() const { return kNpsLimit; }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
 
+  int GetTaskWorkersPerSearchWorker() const {
+    return kTaskWorkersPerSearchWorker;
+  }
+  int GetMinimumWorkSizeForProcessing() const {
+    return kMinimumWorkSizeForProcessing;
+  }
+  int GetMinimumWorkSizeForPicking() const {
+    return kMinimumWorkSizeForPicking;
+  }
+  int GetMinimumRemainingWorkSizeForPicking() const {
+    return kMinimumRemainingWorkSizeForPicking;
+  }
+  int GetMinimumWorkPerTaskForProcessing() const {
+    return kMinimumWorkPerTaskForProcessing;
+  }
+  int GetIdlingMinimumWork() const { return kIdlingMinimumWork; }
+  int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
+  int GetMaxCollisionVisitsScalingStart() const {
+    return kMaxCollisionVisitsScalingStart;
+  }
+  int GetMaxCollisionVisitsScalingEnd() const {
+    return kMaxCollisionVisitsScalingEnd;
+  }
+  float GetMaxCollisionVisitsScalingPower() const {
+    return kMaxCollisionVisitsScalingPower;
+  }
+
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
@@ -121,6 +149,7 @@ class SearchParams {
   static const OptionId kCpuctFactorId;
   static const OptionId kCpuctFactorAtRootId;
   static const OptionId kRootHasOwnCpuctParamsId;
+  static const OptionId kTwoFoldDrawsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTempDecayDelayMovesId;
@@ -162,6 +191,16 @@ class SearchParams {
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;
+  static const OptionId kTaskWorkersPerSearchWorkerId;
+  static const OptionId kMinimumWorkSizeForProcessingId;
+  static const OptionId kMinimumWorkSizeForPickingId;
+  static const OptionId kMinimumRemainingWorkSizeForPickingId;
+  static const OptionId kMinimumWorkPerTaskForProcessingId;
+  static const OptionId kIdlingMinimumWorkId;
+  static const OptionId kThreadIdlingThresholdId;
+  static const OptionId kMaxCollisionVisitsScalingStartId;
+  static const OptionId kMaxCollisionVisitsScalingEndId;
+  static const OptionId kMaxCollisionVisitsScalingPowerId;
 
  private:
   const OptionsDict& options_;
@@ -177,6 +216,7 @@ class SearchParams {
   const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
   const float kCpuctFactorAtRoot;
+  const bool kTwoFoldDraws;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
   const bool kFpuAbsolute;
@@ -207,6 +247,16 @@ class SearchParams {
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
+  const int kTaskWorkersPerSearchWorker;
+  const int kMinimumWorkSizeForProcessing;
+  const int kMinimumWorkSizeForPicking;
+  const int kMinimumRemainingWorkSizeForPicking;
+  const int kMinimumWorkPerTaskForProcessing;
+  const int kIdlingMinimumWork;
+  const int kThreadIdlingThreshold;
+  const int kMaxCollisionVisitsScalingStart;
+  const int kMaxCollisionVisitsScalingEnd;
+  const float kMaxCollisionVisitsScalingPower;
 };
 
 }  // namespace lczero

@@ -68,7 +68,7 @@ RESERVED_WORDS = [
     'enum',
 ] + list(TYPES.keys())
 
-GRAMMAR = ([(x, x)
+GRAMMAR = ([(r'%s\b' % x, x)
             for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.'] + [
                 (r'/\*.*?\*/', None),  # /* Comment */
                 (r'//.*?$', None),  # // Comment
@@ -153,13 +153,11 @@ def LookupType(name, stack):
     '''Looks up the (possibly qualified) from the innermost scope first.'''
     for y in stack:
         for x in y:
-            if not x.IsType():
-                continue
             if x.GetName() == name[0]:
                 if len(name) == 1:
                     return x.GetType()
                 else:
-                    return LookupType(name[1:], [x.GetObjects()])
+                    return LookupType(name[1:], [x.GetTypes()])
     raise ValueError("Cannot find type: %s." % '.'.join(name))
 
 
@@ -290,7 +288,7 @@ class ProtoFieldParser:
             val = 'val'
 
         if self.category == 'repeated':
-            return '%s_.push_back(%s)' % (name, val)
+            return '%s_.emplace_back(%s)' % (name, val)
         else:
             return 'set_%s(%s)' % (name, val)
 
@@ -305,20 +303,43 @@ class ProtoFieldParser:
             w.Write('has_%s_ = false;' % name)
             w.Write('%s_ = {};' % name)
 
+    def GenerateOutput(self, w):
+        fname = {
+            0: 'AppendVarInt',
+            1: 'AppendInt64',
+            2: 'AppendString',
+            5: 'AppendInt32'
+        }
+        wire_id = self.type.GetWireType()
+        if self.category == 'repeated':
+            prefix = 'for (const auto& x : %s)' % (self.name.group(0) + '_')
+            name = 'x'
+        else:
+            name = self.name.group(0) + '_'
+            prefix = 'if (has_%s)' % (name)
+        if self.type.IsMessage():
+            name += '.OutputAsString()'
+        w.Write('%s %s(%d, %s, &out);' %
+                (prefix, fname[wire_id], self.number, name))
+
     def GenerateFunctions(self, w):
         name = self.name.group(0)
         cpp_type = self.type.GetCppType()
+        var_cpp_type = self.type.GetVariableCppType()
         if self.category == 'repeated':
             if self.type.IsMessage():
                 w.Write("%s* add_%s() { return &%s_.emplace_back(); }" %
                         (cpp_type, name, name))
+            else:
+                w.Write("void add_%s(%s val) { %s_.emplace_back(val); }" %
+                        (name, cpp_type, name))
             w.Write("const std::vector<%s>& %s() const { return %s_; }" %
-                    (cpp_type, name, name))
+                    (var_cpp_type, name, name))
             if self.type.IsMessage():
                 w.Write("const %s& %s(size_t idx) const { return %s_[idx]; }" %
                         (cpp_type, name, name))
             else:
-                w.Write("%s %s(size_t) const { return %s_[idx]; }" %
+                w.Write("%s %s(size_t idx) const { return %s_[idx]; }" %
                         (cpp_type, name, name))
             w.Write("size_t %s_size() const { return %s_.size(); }" %
                     (name, name))
@@ -423,7 +444,7 @@ class ProtoMessageParser:
         return True
 
     def GetTypes(self):
-        return self.objects
+        return self.types
 
     def GetFieldsGruppedByWireType(self):
         type_to_fields = {}
@@ -462,6 +483,15 @@ class ProtoMessageParser:
         for x in self.fields:
             w.Write('')
             x.GenerateFunctions(w)
+        w.Write('')
+        w.Write('std::string OutputAsString() const override {')
+        w.Indent()
+        w.Write('std::string out;')
+        for x in sorted(self.fields, key=lambda x: x.number):
+            x.GenerateOutput(w)
+        w.Write('return out;')
+        w.Unindent()
+        w.Write('}')
         w.Write('')
         w.Write('void Clear() override {')
         w.Indent()

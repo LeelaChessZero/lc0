@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2020-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -40,19 +40,20 @@ const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
 const OptionId kBatchesId{"batches", "",
                           "Number of batches to run as a benchmark."};
+const OptionId kStartBatchSizeId{"start-batch-size", "",
+                                 "Start benchmark from this batch size."};
 const OptionId kMaxBatchSizeId{"max-batch-size", "",
                                "Maximum batch size to benchmark."};
+const OptionId kBatchStepId{"batch-step", "",
+                            "Step of batch size in benchmark."};
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
 
 const OptionId kClippyThresholdId{"clippy-threshold", "",
-                                  "Ratio of nps improvement necessary for the "
-                                  "next peak to be considered best."};
-
-const OptionId kClippyToleranceId{
-    "clippy-tolerance", "",
-    "After this nps drop (relative to best) wait for next peak."};
+                                  "Ratio of nps improvement necessary for each "
+                                  "doubling of batchsize to be considered "
+                                  "best."};
 
 void Clippy(std::string msg) {
   std::cout << "  __" << std::endl;
@@ -76,11 +77,12 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   options.Add<IntOption>(kBatchesId, 1, 999999999) = 100;
+  options.Add<IntOption>(kStartBatchSizeId, 1, 1024) = 1;
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
+  options.Add<IntOption>(kBatchStepId, 1, 256) = 1;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
-  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.05f;
-  options.Add<FloatOption>(kClippyToleranceId, 0.0f, 1.0f) = 0.03f;
+  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.15f;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -91,14 +93,23 @@ void BackendBenchmark::Run() {
 
     NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
+
+    // Do any backend initialization outside the loop.
+    auto warmup = network->NewComputation();
+    warmup->AddInput(EncodePositionForNN(
+        network->GetCapabilities().input_format, tree.GetPositionHistory(), 8,
+        FillEmptyHistory::ALWAYS, nullptr));
+    warmup->ComputeBlocking();
+
     const int batches = option_dict.Get<int>(kBatchesId);
 
-    int best = 0;
+    int best = 1;
     float best_nps = 0.0f;
-    bool run = true;
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
-    for (int i = 1; i <= option_dict.Get<int>(kMaxBatchSizeId); i++) {
+    for (int i = option_dict.Get<int>(kStartBatchSizeId);
+         i <= option_dict.Get<int>(kMaxBatchSizeId);
+         i += option_dict.Get<int>(kBatchStepId)) {
       const auto start = std::chrono::steady_clock::now();
       // TODO: support threads not equal to 1 to be able to more sensibly test
       // multiplexing backend.
@@ -123,13 +134,11 @@ void BackendBenchmark::Run() {
 
       if (option_dict.Get<bool>(kClippyId)) {
         const float threshold = option_dict.Get<float>(kClippyThresholdId);
-        const float tolerance = option_dict.Get<float>(kClippyToleranceId);
 
         if (nps > best_nps &&
-            (run == true || nps > best_nps * (1.0f + threshold))) {
+            threshold * (i - best) * best_nps < (nps - best_nps) * best) {
           best_nps = nps;
           best = i;
-          run = true;
           if (!pending) {
             pending = std::chrono::steady_clock::now();
           }
@@ -142,9 +151,6 @@ void BackendBenchmark::Run() {
                 " looks like the best minibatch-size for this net (so far).");
             pending.reset();
           }
-        }
-        if (nps < best_nps * (1.0f - tolerance)) {
-          run = false;
         }
       }
     }

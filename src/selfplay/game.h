@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@
 #include "mcts/stoppers/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "trainingdata/trainingdata.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -79,7 +80,7 @@ class SelfPlayGame {
 
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
-            bool enable_resign = true);
+            SyzygyTablebase* syzygy_tb, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
@@ -108,6 +109,7 @@ class SelfPlayGame {
   std::unique_ptr<Search> search_;
   bool abort_ = false;
   GameResult game_result_ = GameResult::UNDECIDED;
+  bool adjudicated_ = false;
   // Track minimum eval for each player so that GetWorstEvalForWinnerOrDraw()
   // can be calculated after end of game.
   float min_eval_[2] = {1.0f, 1.0f};
@@ -118,7 +120,9 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V5TrainingData> training_data_;
+  V6TrainingDataArray training_data_;
+
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
 };
 
 }  // namespace lczero
