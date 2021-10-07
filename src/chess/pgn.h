@@ -70,6 +70,36 @@ class PgnReader {
       throw Exception(errno == ENOENT ? "Opening book file not found."
                                       : "Error opening opening book file.");
     }
+    // Check if we have a Unicode UTF-8 BOM
+    int utf8Bom1 = gzgetc(file);
+    if (utf8Bom1 == 0xEF) {
+      int utf8Bom2 = gzgetc(file);
+      if (utf8Bom2 == 0xBB) {
+        int utf8Bom3 = gzgetc(file);
+        if (utf8Bom3 == 0xBF) {
+          // OK, we are good, just ignore the BOM
+        } else {
+          // Undo
+          if (utf8Bom3 != -1) {
+            gzungetc(utf8Bom3, file);
+          }
+          gzungetc(utf8Bom2, file);
+          gzungetc(utf8Bom1, file);
+        }
+      } else {
+        // Undo
+        if (utf8Bom2 != -1) {
+          gzungetc(utf8Bom2, file);
+        }
+        gzungetc(utf8Bom1, file);
+      }
+    } else {
+      if (utf8Bom1 != -1) {
+        // Undo
+        gzungetc(utf8Bom1, file);
+      }
+    }
+
     std::string line;
     bool in_comment = false;
     bool started = false;
