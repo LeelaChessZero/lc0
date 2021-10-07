@@ -70,40 +70,14 @@ class PgnReader {
       throw Exception(errno == ENOENT ? "Opening book file not found."
                                       : "Error opening opening book file.");
     }
-    // Check if we have a Unicode UTF-8 BOM
-    int utf8Bom1 = gzgetc(file);
-    if (utf8Bom1 == 0xEF) {
-      int utf8Bom2 = gzgetc(file);
-      if (utf8Bom2 == 0xBB) {
-        int utf8Bom3 = gzgetc(file);
-        if (utf8Bom3 == 0xBF) {
-          // OK, we are good, just ignore the BOM
-        } else {
-          // Undo
-          if (utf8Bom3 != -1) {
-            gzungetc(utf8Bom3, file);
-          }
-          gzungetc(utf8Bom2, file);
-          gzungetc(utf8Bom1, file);
-        }
-      } else {
-        // Undo
-        if (utf8Bom2 != -1) {
-          gzungetc(utf8Bom2, file);
-        }
-        gzungetc(utf8Bom1, file);
-      }
-    } else {
-      if (utf8Bom1 != -1) {
-        // Undo
-        gzungetc(utf8Bom1, file);
-      }
-    }
 
     std::string line;
     bool in_comment = false;
     bool started = false;
     while (GzGetLine(file, line)) {
+      // Check if we have a UTF-8 BOM. If so, just ignore it
+      // Only supposed to exist in the first line, but should not matter
+      if (line.find("\xEF\xBB\xBF", 0) == 0) line = line.substr(3);
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
       if (line.empty() || line[0] == '[') {
