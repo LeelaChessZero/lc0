@@ -114,7 +114,8 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
 void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
                               Eval best_eval, Eval played_eval,
                               bool best_is_proven, Move best_move,
-                              Move played_move, const NNCacheLock& nneval) {
+                              Move played_move, const NNCacheLock& nneval,
+                              float softmax_temp) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -146,24 +147,20 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   // Set moves probabilities according to their relative amount of visits.
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
-  float max_p = -std::numeric_limits<float>::infinity();
   std::vector<float> intermediate;
   if (nneval) {
-    int last_idx = 0;
+    // The cache stores policies in GenerateLegalMoves() order.
+    auto legal_moves = history.Last().GetBoard().GenerateLegalMoves();
     for (const auto& child : node->Edges()) {
-      auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+      auto move = child.edge()->GetMove();
       float p = 0;
-      for (int i = 0; i < nneval->p.size(); i++) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = nneval->p[last_idx++];
-        if (last_idx == nneval->p.size()) last_idx = 0;
-        if (move.first == nn_idx) {
-          p = move.second;
+      for (size_t i = 0; i < legal_moves.size(); i++) {
+        if (move == legal_moves[i]) {
+          p = Pfloat16ToFloat(nneval->p[i]);
           break;
         }
       }
       intermediate.emplace_back(p);
-      max_p = std::max(max_p, p);
     }
   }
   float total = 0.0;
@@ -172,7 +169,8 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
     auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (nneval) {
-      float P = std::exp(*it - max_p);
+      // Undo any softmax temperature in the cached data.
+      float P = std::pow(*it, softmax_temp);
       if (fracv > 0) {
         kld_sum += fracv * std::log(fracv / P);
       }

@@ -353,20 +353,7 @@ class SearchWorker {
 
     float GetMVal(int) const { return lock->m; }
 
-    float GetPVal(int, int move_id) const {
-      const auto& moves = lock->p;
-
-      int total_count = 0;
-      while (total_count < moves.size()) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = moves[last_idx++];
-        if (last_idx == moves.size()) last_idx = 0;
-        if (move.first == move_id) return move.second;
-        ++total_count;
-      }
-      assert(false);  // Move not found.
-      return 0;
-    }
+    uint16_t GetPVal(int, int move_ct) const { return lock->p[move_ct]; }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
