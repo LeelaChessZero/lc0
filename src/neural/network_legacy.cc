@@ -43,7 +43,9 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip1_mov_w(LayerAdapter(weights.ip1_mov_w()).as_vector()),
       ip1_mov_b(LayerAdapter(weights.ip1_mov_b()).as_vector()),
       ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
-      ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()) {
+      ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()),
+      unc1(weights.unc1()),
+      unc(weights.unc()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }

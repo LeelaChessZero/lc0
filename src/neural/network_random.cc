@@ -94,6 +94,17 @@ class RandomNetworkComputation : public NetworkComputation {
            (a / 10000.0f);
   }
 
+  float GetPUVal(int sample, int move_id) const override {
+    if (uniform_mode_) return 0.0f;
+
+    // Note that this function returns the policy value *before* sigmoid.
+    // We choose a uniform distribution over [-a, a].
+    const float a = 3.0f;
+    return (HashCat({inputs_[sample], static_cast<unsigned long>(move_id)}) %
+            10000) *
+           (2.0f * a / 10000.0f) - a;
+  }
+
  private:
   std::vector<std::uint64_t> inputs_;
   int delay_ms_ = 0;

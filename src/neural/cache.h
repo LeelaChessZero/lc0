@@ -33,13 +33,15 @@
 namespace lczero {
 
 struct CachedNNRequest {
-  CachedNNRequest(size_t size) : p(size) {}
+  CachedNNRequest(size_t size) : p(size), pu(size) {}
   typedef std::pair<uint16_t, float> IdxAndProb;
   float q;
   float d;
   float m;
   // TODO(mooskagh) Don't really need index if using perfect hash.
   SmallArray<IdxAndProb> p;
+  // TODO(mooskagh) Don't really need index if using perfect hash.
+  SmallArray<IdxAndProb> pu;
 };
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
@@ -82,6 +84,8 @@ class CachingComputation {
   float GetMVal(int sample) const;
   // Returns P value @move_id of @sample.
   float GetPVal(int sample, int move_id) const;
+  // Returns P value @move_id of @sample.
+  float GetPUVal(int sample, int move_id) const;
   // Pops last input from the computation. Only allowed for inputs which were
   // cached.
   void PopCacheHit();
@@ -96,6 +100,7 @@ class CachingComputation {
     int idx_in_parent = -1;
     std::vector<uint16_t> probabilities_to_cache;
     mutable int last_idx = 0;
+    mutable int last_pu_idx = 0;
   };
 
   std::unique_ptr<NetworkComputation> parent_;

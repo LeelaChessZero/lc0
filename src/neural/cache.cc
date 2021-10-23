@@ -94,6 +94,11 @@ void CachingComputation::ComputeBlocking() {
       req->p[idx++] =
           std::make_pair(x, parent_->GetPVal(item.idx_in_parent, x));
     }
+    idx = 0;
+    for (auto x : item.probabilities_to_cache) {
+      req->pu[idx++] =
+          std::make_pair(x, parent_->GetPUVal(item.idx_in_parent, x));
+    }
     cache_->Insert(item.hash, std::move(req));
   }
 }
@@ -134,4 +139,21 @@ float CachingComputation::GetPVal(int sample, int move_id) const {
   return 0;
 }
 
+float CachingComputation::GetPUVal(int sample, int move_id) const {
+  auto& item = batch_[sample];
+  if (item.idx_in_parent >= 0)
+    return parent_->GetPUVal(item.idx_in_parent, move_id);
+  const auto& moves = item.lock->pu;
+
+  int total_count = 0;
+  while (total_count < moves.size()) {
+    // Optimization: usually moves are stored in the same order as queried.
+    const auto& move = moves[item.last_pu_idx++];
+    if (item.last_pu_idx == moves.size()) item.last_pu_idx = 0;
+    if (move.first == move_id) return move.second;
+    ++total_count;
+  }
+  assert(false);  // Move not found.
+  return 0;
+}
 }  // namespace lczero

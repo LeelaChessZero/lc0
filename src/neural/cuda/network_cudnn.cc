@@ -130,6 +130,10 @@ class CudnnNetworkComputation : public NetworkComputation {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
 
+  float GetPUVal(int sample, int move_id) const override {
+    return inputs_outputs_->op_unc_mem_[sample * kNumOutputPolicy + move_id];
+  }
+
   float GetMVal(int sample) const override {
     if (moves_left_) {
       return inputs_outputs_->op_moves_left_mem_[sample];

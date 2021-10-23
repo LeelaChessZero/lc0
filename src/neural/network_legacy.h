@@ -81,6 +81,10 @@ struct LegacyWeights {
   Vec ip1_mov_b;
   Vec ip2_mov_w;
   Vec ip2_mov_b;
+
+  // Policy Uncertainty head
+  ConvBlock unc1;
+  ConvBlock unc;
 };
 
 }  // namespace lczero

@@ -63,6 +63,10 @@ class MuxingComputation : public NetworkComputation {
     return parent_->GetPVal(sample + idx_in_parent_, move_id);
   }
 
+  float GetPUVal(int sample, int move_id) const override {
+    return parent_->GetPUVal(sample + idx_in_parent_, move_id);
+  }
+
   void PopulateToParent(std::shared_ptr<NetworkComputation> parent) {
     // Populate our batch into batch of batches.
     parent_ = parent;

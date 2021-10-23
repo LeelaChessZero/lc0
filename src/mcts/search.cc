@@ -2141,6 +2141,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     float p = computation.GetPVal(
         idx_in_computation,
         edge.GetMove().as_nn_index(node_to_process->probability_transform));
+    std::cout << edge.GetMove().as_nn_index(node_to_process->probability_transform)  << ": " << computation.GetPUVal(
+        idx_in_computation,
+        edge.GetMove().as_nn_index(node_to_process->probability_transform)) << std::endl;
     intermediate[counter++] = p;
     max_p = std::max(max_p, p);
   }

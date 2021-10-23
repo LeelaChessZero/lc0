@@ -71,6 +71,12 @@ class DemuxingComputation : public NetworkComputation {
     return parents_[idx]->GetPVal(offset, move_id);
   }
 
+  float GetPUVal(int sample, int move_id) const override {
+    const int idx = sample / partial_size_;
+    const int offset = sample % partial_size_;
+    return parents_[idx]->GetPUVal(offset, move_id);
+  }
+
   void NotifyComplete() {
     std::unique_lock<std::mutex> lock(mutex_);
     dataready_--;

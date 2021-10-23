@@ -330,6 +330,7 @@ class SearchWorker {
     std::vector<uint16_t> probabilities_to_cache;
     InputPlanes input_planes;
     mutable int last_idx = 0;
+    mutable int last_pu_idx = 0;
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
@@ -361,6 +362,21 @@ class SearchWorker {
         // Optimization: usually moves are stored in the same order as queried.
         const auto& move = moves[last_idx++];
         if (last_idx == moves.size()) last_idx = 0;
+        if (move.first == move_id) return move.second;
+        ++total_count;
+      }
+      assert(false);  // Move not found.
+      return 0;
+    }
+
+    float GetPUVal(int, int move_id) const {
+      const auto& moves = lock->pu;
+
+      int total_count = 0;
+      while (total_count < moves.size()) {
+        // Optimization: usually moves are stored in the same order as queried.
+        const auto& move = moves[last_pu_idx++];
+        if (last_pu_idx == moves.size()) last_pu_idx = 0;
         if (move.first == move_id) return move.second;
         ++total_count;
       }
