@@ -550,7 +550,7 @@ if get_option('build_backends')
   ## ONNX
   ## ~~~~~~~~~~
   if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
-    onnx_lib = cc.find_library('libonnxruntime',
+    onnx_lib = cc.find_library('onnxruntime',
                                dirs: get_option('onnx_libdir'),
                                required: true)
     includes += include_directories(get_option('onnx_include'), is_system: true)
