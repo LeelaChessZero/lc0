@@ -564,7 +564,7 @@ if get_option('build_backends')
       arguments : [
         '--proto_path=@CURRENT_SOURCE_DIR@/src',
         '--cpp_out=@BUILD_DIR@',
-        '@INPUT@'])    
+        '@INPUT@'])
 
     files += [
       'src/neural/onnx/adapters.cc',
@@ -698,4 +698,19 @@ if get_option('python_bindings')
     [py_files + files],
     include_directories: [includes],
     dependencies: [cpython] + deps)
+endif
+
+#############################################################################
+## Lc0ctl tool
+#############################################################################
+
+if get_option('lc0ctl')
+  lc0ctl_files = [
+    'src/lc0ctl/leela2onnx.cc',
+  ]
+
+  executable('lc0ctl', 'src/lc0ctl/lc0ctl_main.cc',
+    files + lc0ctl_files,
+    include_directories: includes, dependencies: deps, install: true)
+
 endif

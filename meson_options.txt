@@ -172,3 +172,8 @@ option('onnx_include',
        type: 'string',
        value: '',
        description: 'Paths to ONNX runtime includes')
+
+option('lc0ctl',
+       type: 'boolean',
+       value: true,
+       description: 'Build lc0ctl tool.')
