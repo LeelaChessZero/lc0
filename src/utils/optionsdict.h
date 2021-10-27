@@ -246,7 +246,7 @@ bool OptionsDict::Exists(const OptionId& option_id) const {
 }
 template <typename T>
 void OptionsDict::EnsureExists(const OptionId& option_id) const {
-  if (!Exists<T>(option_id)) {
+  if (!OwnExists<T>(option_id)) {
     throw Exception(std::string("The flag --") + option_id.long_flag() +
                     " must be specified.");
   }

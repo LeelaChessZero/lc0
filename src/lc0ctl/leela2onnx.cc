@@ -25,19 +25,42 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <iostream>
+
+#include "neural/loader.h"
+#include "neural/onnx/converter.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
 namespace {
 
 const OptionId kInputFilenameId{"input", "InputFile",
-                              "Path to the input Lc0 weights file"};
+                                "Path of the input Lc0 weights file"};
 const OptionId kOutputFilenameId{"output", "OutputFile",
-                               "Path to the output ONNX file"};
+                                 "Path of the output ONNX file"};
+
+const OptionId kInputPlanesName{"input-planes-name", "InputPlanesName",
+                                "ONNX name to use for the input planes node."};
+const OptionId kOutputPolicyHead{
+    "policy-head-name", "PolicyHeadName",
+    "ONNX name to use for the policy head output node."};
+const OptionId kOutputWdl{"wdl-head-name", "WdlHeadName",
+                          "ONNX name to use for the WDL head output node."};
+const OptionId kOutputValue{
+    "value-head-name", "ValueHeadName",
+    "ONNX name to use for value policy head output node."};
+const OptionId kOutputMlh{"mlh-head-name", "MlhHeadName",
+                          "ONNX name to use for the MLH head output node."};
 
 bool ProcessConverterParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
   options->Add<StringOption>(kOutputFilenameId);
+
+  options->Add<StringOption>(kInputPlanesName) = "/input/planes";
+  options->Add<StringOption>(kOutputPolicyHead) = "/output/policy";
+  options->Add<StringOption>(kOutputWdl) = "/output/wdl";
+  options->Add<StringOption>(kOutputValue) = "/output/value";
+  options->Add<StringOption>(kOutputMlh) = "/output/mlh";
   if (!options->ProcessAllFlags()) return false;
 
   const OptionsDict& dict = options->GetOptionsDict();
@@ -50,8 +73,47 @@ bool ProcessConverterParameters(OptionsParser* options) {
 }  // namespace
 
 void ConvertLeelaToOnnx() {
-  OptionsParser options;
-  if (!ProcessConverterParameters(&options)) return;
+  OptionsParser options_parser;
+  if (!ProcessConverterParameters(&options_parser)) return;
+
+  const OptionsDict& dict = options_parser.GetOptionsDict();
+  auto weights_file =
+      LoadWeightsFromFile(dict.Get<std::string>(kInputFilenameId));
+
+  WeightsToOnnxConverterOptions onnx_options;
+  onnx_options.input_planes_name = dict.Get<std::string>(kInputPlanesName);
+  onnx_options.output_policy_head = dict.Get<std::string>(kOutputPolicyHead);
+  onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
+  onnx_options.output_value = dict.Get<std::string>(kOutputValue);
+  onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
+  auto converted_network = ConvertWeightsToOnnx(weights_file, onnx_options);
+
+  const auto& onnx = converted_network.onnx_model();
+  {
+    std::ofstream output_file(dict.Get<std::string>(kOutputFilenameId).c_str(),
+                              std::ios::binary);
+    output_file << onnx.model();
+  }
+  if (onnx.has_data_type()) {
+    std::cout << "data_type: "
+              << pblczero::OnnxModel::DataType_Name(onnx.data_type()) << "\n";
+  }
+  if (onnx.has_input_planes()) {
+    std::cout << " input_planes: " << onnx.input_planes() << "\n";
+  }
+  if (onnx.has_output_value()) {
+    std::cout << " output_value: " << onnx.output_value() << "\n";
+  }
+  if (onnx.has_output_wdl()) {
+    std::cout << "   output_wdl: " << onnx.output_wdl() << "\n";
+  }
+  if (onnx.has_output_policy()) {
+    std::cout << "output_policy: " << onnx.output_policy() << "\n";
+  }
+  if (onnx.has_output_mlh()) {
+    std::cout << "   output_mlh: " << onnx.output_mlh() << "\n";
+  }
+  std::cout << "Done.\n";
 }
 
 }  // namespace lczero

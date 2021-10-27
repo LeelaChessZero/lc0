@@ -139,6 +139,16 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
+# ONNX protobufs.
+gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
+  arguments : [
+    '--proto_path=@CURRENT_SOURCE_DIR@/src',
+    '--cpp_out=@BUILD_DIR@',
+    '@INPUT@'])
+
+files += gen_proto_src.process('src/neural/onnx/onnx.proto',
+  preserve_path_from : meson.current_source_dir() + '/src/')
+
 #############################################################################
 ## Main files
 #############################################################################
@@ -173,6 +183,9 @@ files += [
   'src/neural/network_random.cc',
   'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
+  'src/neural/onnx/adapters.cc',
+  'src/neural/onnx/builder.cc',
+  'src/neural/onnx/converter.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
@@ -559,22 +572,9 @@ if get_option('build_backends')
                   args: '-I' + get_option('onnx_include'))
     deps += [onnx_lib]
 
-
-    gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
-      arguments : [
-        '--proto_path=@CURRENT_SOURCE_DIR@/src',
-        '--cpp_out=@BUILD_DIR@',
-        '@INPUT@'])
-
     files += [
-      'src/neural/onnx/adapters.cc',
-      'src/neural/onnx/builder.cc',
-      'src/neural/onnx/converter.cc',
       'src/neural/onnx/network_onnx.cc',
     ]
-
-    files +=   gen_proto_src.process('src/neural/onnx/onnx.proto',
-      preserve_path_from : meson.current_source_dir() + '/src/')
 
     has_backends = true
   endif

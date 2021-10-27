@@ -409,6 +409,19 @@ class ProtoEnumParser:
             w.Write('%s = %d,' % (key, value))
         w.Unindent()
         w.Write('};')
+        w.Write('static std::string %s_Name(%s val) {' %
+                (self.name, self.name))
+        w.Indent()
+        w.Write('switch (val) {')
+        w.Indent()
+        for key, _ in self.values:
+            w.Write('case %s:' % key)
+            w.Write('  return "%s";' % key)
+        w.Unindent()
+        w.Write('};')
+        w.Write('return "%s(" + std::to_string(val) + ")";' % self.name)
+        w.Unindent()
+        w.Write('}')
 
 
 class ProtoMessageParser:
