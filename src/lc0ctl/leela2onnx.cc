@@ -43,6 +43,8 @@ bool ProcessConverterParameters(OptionsParser* options) {
   const OptionsDict& dict = options->GetOptionsDict();
   dict.EnsureExists<std::string>(kInputFilenameId);
   dict.EnsureExists<std::string>(kOutputFilenameId);
+
+  return true;
 }
 
 }  // namespace
