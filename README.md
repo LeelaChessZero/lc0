@@ -64,6 +64,7 @@ Given those basics, the OS and backend specific instructions are below.
 3. Go to `lc0/`
 4. Run `./build.sh`
 5. `lc0` will be in `lc0/build/release/` directory
+6. Unzip a [neural network](https://lczero.org/play/networks/bestnets/) in the same directory as the binary.
 
 If you want to build with a different compiler, pass the `CC` and `CXX` environment variables:
 
