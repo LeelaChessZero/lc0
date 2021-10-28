@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <iostream>
+#include <fstream>
 
 #include "neural/loader.h"
 #include "neural/onnx/converter.h"
@@ -99,6 +99,7 @@ void ConvertLeelaToOnnx() {
                               std::ios::binary);
     output_file << onnx.model();
   }
+  COUT << "ONNX nodes:";
   if (onnx.has_data_type()) {
     COUT << "data_type: "
          << pblczero::OnnxModel::DataType_Name(onnx.data_type());
@@ -110,6 +111,26 @@ void ConvertLeelaToOnnx() {
     COUT << "output_policy: " << onnx.output_policy();
   }
   if (onnx.has_output_mlh()) COUT << "   output_mlh: " << onnx.output_mlh();
+  auto format = weights_file.format().network_format();
+  COUT << "\nFormat:";
+  using pblczero::NetworkFormat;
+  if (format.has_input()) {
+    COUT << "     input: " << NetworkFormat::InputFormat_Name(format.input());
+  }
+  if (format.has_output()) {
+    COUT << "    output: " << NetworkFormat::OutputFormat_Name(format.output());
+  }
+  if (format.has_policy()) {
+    COUT << "    policy: " << NetworkFormat::PolicyFormat_Name(format.policy());
+  }
+  if (format.has_policy()) {
+    COUT << "     value: " << NetworkFormat::ValueFormat_Name(format.value());
+  }
+  if (format.has_moves_left()) {
+    COUT << "moves_left: "
+         << NetworkFormat::MovesLeftFormat_Name(format.moves_left());
+  }
+
   COUT << "Done.";
 }
 
