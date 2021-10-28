@@ -80,40 +80,37 @@ void ConvertLeelaToOnnx() {
   auto weights_file =
       LoadWeightsFromFile(dict.Get<std::string>(kInputFilenameId));
 
-  WeightsToOnnxConverterOptions onnx_options;
-  onnx_options.input_planes_name = dict.Get<std::string>(kInputPlanesName);
-  onnx_options.output_policy_head = dict.Get<std::string>(kOutputPolicyHead);
-  onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
-  onnx_options.output_value = dict.Get<std::string>(kOutputValue);
-  onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
-  auto converted_network = ConvertWeightsToOnnx(weights_file, onnx_options);
+  if (weights_file.has_onnx_model()) {
+    COUT << "The leela network already has ONNX network embedded, extracting.";
+  } else {
+    COUT << "Converting Leela network to the ONNX.";
+    WeightsToOnnxConverterOptions onnx_options;
+    onnx_options.input_planes_name = dict.Get<std::string>(kInputPlanesName);
+    onnx_options.output_policy_head = dict.Get<std::string>(kOutputPolicyHead);
+    onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
+    onnx_options.output_value = dict.Get<std::string>(kOutputValue);
+    onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
+    weights_file = ConvertWeightsToOnnx(weights_file, onnx_options);
+  }
 
-  const auto& onnx = converted_network.onnx_model();
+  const auto& onnx = weights_file.onnx_model();
   {
     std::ofstream output_file(dict.Get<std::string>(kOutputFilenameId).c_str(),
                               std::ios::binary);
     output_file << onnx.model();
   }
   if (onnx.has_data_type()) {
-    std::cout << "data_type: "
-              << pblczero::OnnxModel::DataType_Name(onnx.data_type()) << "\n";
+    COUT << "data_type: "
+         << pblczero::OnnxModel::DataType_Name(onnx.data_type());
   }
-  if (onnx.has_input_planes()) {
-    std::cout << " input_planes: " << onnx.input_planes() << "\n";
-  }
-  if (onnx.has_output_value()) {
-    std::cout << " output_value: " << onnx.output_value() << "\n";
-  }
-  if (onnx.has_output_wdl()) {
-    std::cout << "   output_wdl: " << onnx.output_wdl() << "\n";
-  }
+  if (onnx.has_input_planes()) COUT << " input_planes: " << onnx.input_planes();
+  if (onnx.has_output_value()) COUT << " output_value: " << onnx.output_value();
+  if (onnx.has_output_wdl()) COUT << "   output_wdl: " << onnx.output_wdl();
   if (onnx.has_output_policy()) {
-    std::cout << "output_policy: " << onnx.output_policy() << "\n";
+    COUT << "output_policy: " << onnx.output_policy();
   }
-  if (onnx.has_output_mlh()) {
-    std::cout << "   output_mlh: " << onnx.output_mlh() << "\n";
-  }
-  std::cout << "Done.\n";
+  if (onnx.has_output_mlh()) COUT << "   output_mlh: " << onnx.output_mlh();
+  COUT << "Done.";
 }
 
 }  // namespace lczero

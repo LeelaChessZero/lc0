@@ -34,7 +34,7 @@
 
 int main(int argc, const char** argv) {
   using lczero::CommandLine;
-  std::cout << "Lc0 tool v" << GetVersionStr() << " built " << __DATE__ << "\n";
+  COUT << "Lc0 tool v" << GetVersionStr() << " built " << __DATE__;
 
   try {
     CommandLine::Init(argc, argv);
