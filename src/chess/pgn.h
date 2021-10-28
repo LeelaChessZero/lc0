@@ -75,8 +75,8 @@ class PgnReader {
     bool in_comment = false;
     bool started = false;
     while (GzGetLine(file, line)) {
-      // Check if we have a UTF-8 BOM. If so, just ignore it
-      // Only supposed to exist in the first line, but should not matter
+      // Check if we have a UTF-8 BOM. If so, just ignore it.
+      // Only supposed to exist in the first line, but should not matter.
       if (line.find("\xEF\xBB\xBF", 0) == 0) line = line.substr(3);
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
