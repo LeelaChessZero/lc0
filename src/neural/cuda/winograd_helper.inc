@@ -60,36 +60,90 @@ __device__ __forceinline__ void FilterTransform4x4(T* transformed_filter,
   matrixMul_gpu_serial<T, 6, 6, 3>(transformed_filter, temp_filter, Gt);
 }
 
+// Bt = {{4,  0, -5,  0, 1, 0},
+//       {0, -4, -4,  1, 1, 0},
+//       {0,  4, -4, -1, 1, 0},
+//       {0, -2, -1,  2, 1, 0},
+//       {0,  2, -1, -2, 1, 0},
+//       {0,  4,  0, -5, 0, 1}};
+
 template <typename T>
-__device__ __forceinline__ void InputTransform4x4(T* transformedInput,
-                                                  const T* input) {
-  // transform applied to input tile (of size 4x4)
-  const T Bt[6 * 6] = {4, 0, -5, 0,  1, 0, 0, -4, -4, 1,  1, 0,
-                       0, 4, -4, -1, 1, 0, 0, -2, -1, 2,  1, 0,
-                       0, 2, -1, -2, 1, 0, 0, 4,  0,  -5, 0, 1};
+__device__ __forceinline__ void multiply_bt(T *o0, T *o1, T *o2, T *o3,
+                                            T *o4, T *o5, T i0, T i1, T i2,
+                                            T i3, T i4, T i5) {
+    // Calculates o = Bt.i
+    T T2 = 2.0f;
+    T T4 = 4.0f;
+    T T5 = 5.0f;
+    *o0 = T4 * i0 -T5 * i2 + i4;
+    T t13 = -T4 * i1 + i3;
+    T t24 = -T4 * i2 + i4;
+    *o1 = t13 + t24;
+    *o2 = -t13 + t24;
+    T t13_2 = -T2 * i1 + T2 * i3;
+    T t24_2 = -i2 + i4;
+    *o3 = t13_2 + t24_2;
+    *o4 = -t13_2 + t24_2;
+    *o5 = T4 * i1 - T5 * i3 + i5;
+}
 
-  const T B[6 * 6] = {4,  0,  0,  0,  0,  0, 0, -4, 4,  -2, 2,  4,
-                      -5, -4, -4, -1, -1, 0, 0, 1,  -1, 2,  -2, -5,
-                      1,  1,  1,  1,  1,  0, 0, 0,  0,  0,  0,  1};
+// At = {{1, 1,  1, 1,  1, 0},
+//       {0, 1, -1, 2, -2, 0},
+//       {0, 1,  1, 4,  4, 0},
+//       {0, 1, -1, 8, -8, 1}};
 
-  T tempIp1[6 * 6];
-  matrixMul_gpu_serial<T, 6, 6, 6>(tempIp1, Bt, input);
-  matrixMul_gpu_serial<T, 6, 6, 6>(transformedInput, tempIp1, B);
+template <typename T>
+__device__ __forceinline__ void multiply_at(T *o0, T *o1, T *o2, T *o3,
+                                            T i0, T i1, T i2, T i3, T i4,
+                                            T i5) {
+    // Calculates o = At.i
+    T T2 = 2.0f;
+    T T4 = 4.0f;
+    T T8 = 8.0f;
+    T t1p2 = i1 + i2;
+    T t1m2 = i1 - i2;
+    T t3p4 = i3 + i4;
+    T t3m4 = i3 - i4;
+    *o0 = i0 + t1p2 + t3p4;
+    *o1 = t1m2 + T2 * t3m4;
+    *o2 = t1p2 + T4 * t3p4;
+    *o3 = t1m2 + T8 * t3m4 + i5;
 }
 
 template <typename T>
-__device__ __forceinline__ void OutputTransform4x4(
-    T* output, const T* transformedOutput) {
-  // transform applied to result
-  const T At[4 * 6] = {1, 1, 1, 1, 1, 0, 0, 1, -1, 2, -2, 0,
-                       0, 1, 1, 4, 4, 0, 0, 1, -1, 8, -8, 1};
+__device__ __forceinline__ void InputTransform4x4(T* out,
+                                                  const T* input) {
+  // Calculate Bt.input.B as Bt.(Bt.(input)^T)^T.
+  T T1[6][6];
+  for (int i = 0; i < 6; i++) {
+    multiply_bt<T>(&(T1[0][i]), &(T1[1][i]), &(T1[2][i]), &(T1[3][i]),
+      &(T1[4][i]), &(T1[5][i]), input[i*6 + 0], input[i*6 + 1],
+      input[i*6 + 2], input[i*6 + 3], input[i*6 + 4], input[i*6 + 5]);
+  }
 
-  const T A[6 * 4] = {1, 0, 0, 0, 1, 1,  1, 1,  1, -1, 1, -1,
-                      1, 2, 4, 8, 1, -2, 4, -8, 0, 0,  0, 1};
+  for (int i = 0; i < 6; i++) {
+    multiply_bt<T>(&(out[6*0 + i]), &(out[6*1 + i]), &(out[6*2 + i]),
+      &(out[6*3 + i]), &(out[6*4 + i]), &(out[6*5 + i]),
+      T1[i][0], T1[i][1], T1[i][2], T1[i][3], T1[i][4], T1[i][5]);
+  }
+}
 
-  T tempOp[4 * 6];
-  matrixMul_gpu_serial<T, 4, 6, 6>(tempOp, At, transformedOutput);
-  matrixMul_gpu_serial<T, 4, 4, 6>(output, tempOp, A);
+template <typename T>
+__device__ __forceinline__ void OutputTransform4x4(T* out,
+                                                   const T* input) {
+  // Calculate At.input.A as At.(At.(input)^T)^T.
+  T T1[4][6];
+  for (int i = 0; i < 6; i++) {
+    multiply_at<T>(&(T1[0][i]), &(T1[1][i]), &(T1[2][i]), &(T1[3][i]),
+      input[i * 6 + 0], input[i * 6 + 1], input[i * 6 + 2],
+      input[i * 6 + 3], input[i * 6 + 4], input[i * 6 + 5]);
+  }
+
+  for (int i = 0; i < 4; i++) {
+    multiply_at<T>(&(out[4*0 + i]), &(out[4*1 + i]), &(out[4*2 + i]),
+      &(out[4*3 + i]), T1[i][0], T1[i][1], T1[i][2], T1[i][3], T1[i][4],
+      T1[i][5]);
+  }
 }
 
 #define FILTER_IDX_NCHW(k, c, h, w) ((k)*C * S * R + (c)*S * R + (h)*R + w)
