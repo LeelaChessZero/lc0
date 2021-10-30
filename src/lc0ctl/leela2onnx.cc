@@ -82,6 +82,7 @@ void ConvertLeelaToOnnx() {
   auto weights_file =
       LoadWeightsFromFile(dict.Get<std::string>(kInputFilenameId));
 
+  ShowNetworkFormatInfo(weights_file);
   if (weights_file.has_onnx_model()) {
     COUT << "The leela network already has ONNX network embedded, extracting.";
   } else {
@@ -99,7 +100,6 @@ void ConvertLeelaToOnnx() {
   const auto& onnx = weights_file.onnx_model();
   WriteStringToFile(dict.Get<std::string>(kOutputFilenameId), onnx.model());
   ShowNetworkOnnxInfo(weights_file, false);
-  ShowNetworkFormatInfo(weights_file);
   COUT << "Done.";
 }
 
