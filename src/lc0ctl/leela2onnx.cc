@@ -31,6 +31,7 @@
 #include "neural/onnx/converter.h"
 #include "utils/files.h"
 #include "utils/optionsparser.h"
+#include "lc0ctl/describenet.h"
 
 namespace lczero {
 namespace {
@@ -53,7 +54,7 @@ const OptionId kOutputValue{
 const OptionId kOutputMlh{"mlh-head-name", "MlhHeadName",
                           "ONNX name to use for the MLH head output node."};
 
-bool ProcessConverterParameters(OptionsParser* options) {
+bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
   options->Add<StringOption>(kOutputFilenameId);
 
@@ -75,7 +76,7 @@ bool ProcessConverterParameters(OptionsParser* options) {
 
 void ConvertLeelaToOnnx() {
   OptionsParser options_parser;
-  if (!ProcessConverterParameters(&options_parser)) return;
+  if (!ProcessParameters(&options_parser)) return;
 
   const OptionsDict& dict = options_parser.GetOptionsDict();
   auto weights_file =
@@ -84,6 +85,7 @@ void ConvertLeelaToOnnx() {
   if (weights_file.has_onnx_model()) {
     COUT << "The leela network already has ONNX network embedded, extracting.";
   } else {
+    ShowNetworkWeightsInfo(weights_file);
     COUT << "Converting Leela network to the ONNX.";
     WeightsToOnnxConverterOptions onnx_options;
     onnx_options.input_planes_name = dict.Get<std::string>(kInputPlanesName);
@@ -96,35 +98,8 @@ void ConvertLeelaToOnnx() {
 
   const auto& onnx = weights_file.onnx_model();
   WriteStringToFile(dict.Get<std::string>(kOutputFilenameId), onnx.model());
-  COUT << "ONNX nodes:";
-  if (onnx.has_data_type()) {
-    COUT << "data_type: "
-         << pblczero::OnnxModel::DataType_Name(onnx.data_type());
-  }
-  if (onnx.has_input_planes()) COUT << " input_planes: " << onnx.input_planes();
-  if (onnx.has_output_value()) COUT << " output_value: " << onnx.output_value();
-  if (onnx.has_output_wdl()) COUT << "   output_wdl: " << onnx.output_wdl();
-  if (onnx.has_output_policy()) {
-    COUT << "output_policy: " << onnx.output_policy();
-  }
-  if (onnx.has_output_mlh()) COUT << "   output_mlh: " << onnx.output_mlh();
-  auto format = weights_file.format().network_format();
-  COUT << "\nFormat:";
-  using pblczero::NetworkFormat;
-  if (format.has_input()) {
-    COUT << "     input: " << NetworkFormat::InputFormat_Name(format.input());
-  }
-  if (format.has_policy()) {
-    COUT << "    policy: " << NetworkFormat::PolicyFormat_Name(format.policy());
-  }
-  if (format.has_policy()) {
-    COUT << "     value: " << NetworkFormat::ValueFormat_Name(format.value());
-  }
-  if (format.has_moves_left()) {
-    COUT << "moves_left: "
-         << NetworkFormat::MovesLeftFormat_Name(format.moves_left());
-  }
-
+  ShowNetworkOnnxInfo(weights_file, false);
+  ShowNetworkFormatInfo(weights_file);
   COUT << "Done.";
 }
 

@@ -27,9 +27,11 @@
 
 #include <iostream>
 
+#include "lc0ctl/describenet.h"
 #include "lc0ctl/leela2onnx.h"
 #include "lc0ctl/onnx2leela.h"
 #include "utils/commandline.h"
+#include "utils/exception.h"
 #include "utils/optionsparser.h"
 #include "version.h"
 
@@ -42,16 +44,20 @@ int main(int argc, const char** argv) {
     CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
     CommandLine::RegisterMode("onnx2leela",
                               "Convert ONNX network to Leela net.");
+    CommandLine::RegisterMode("describenet",
+                              "Shows details about the Leela network.");
 
     if (CommandLine::ConsumeCommand("leela2onnx")) {
       lczero::ConvertLeelaToOnnx();
     } else if (CommandLine::ConsumeCommand("onnx2leela")) {
       lczero::ConvertOnnxToLeela();
+    } else if (CommandLine::ConsumeCommand("describenet")) {
+      lczero::DescribeNetworkCmd();
     } else {
       lczero::OptionsParser options;
       options.ShowHelp();
     }
-  } catch(Exception& e) {
+  } catch (lczero::Exception& e) {
     CERR << "Error: " << e.what();
     return 1;
   } catch (std::exception& e) {

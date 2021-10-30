@@ -30,6 +30,7 @@
 #include <fstream>
 #include <set>
 
+#include "lc0ctl/describenet.h"
 #include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
 #include "utils/files.h"
@@ -96,7 +97,7 @@ const OptionId kOnnxOutputMlhId{"onnx-output-mlh", "OnnxOutputMlh",
 const OptionId kValidateModelId{"validate-weights", "ValidateWeights",
                                 "Do a basic check of the provided ONNX file."};
 
-bool ProcessConverterParameters(OptionsParser* options) {
+bool ProcessParameters(OptionsParser* options) {
   using pblczero::NetworkFormat;
   using pblczero::OnnxModel;
   options->Add<StringOption>(kInputFilenameId);
@@ -161,7 +162,7 @@ bool ValidateNetwork(const pblczero::Net& weights) {
                  std::inserter(inputs, inputs.end()),
                  [](const auto& x) { return std::string(x.name()); });
 
-  const auto& onnx_outputs = onnx.graph().input();
+  const auto& onnx_outputs = onnx.graph().output();
   std::set<std::string> outputs;
   std::transform(onnx_outputs.begin(), onnx_outputs.end(),
                  std::inserter(outputs, outputs.end()),
@@ -239,7 +240,7 @@ void ConvertOnnxToLeela() {
   using pblczero::NetworkFormat;
   using pblczero::OnnxModel;
   OptionsParser options_parser;
-  if (!ProcessConverterParameters(&options_parser)) return;
+  if (!ProcessParameters(&options_parser)) return;
 
   const OptionsDict& dict = options_parser.GetOptionsDict();
 
@@ -296,8 +297,10 @@ void ConvertOnnxToLeela() {
   if (dict.Get<bool>(kValidateModelId) && !ValidateNetwork(out_weights)) {
     return;
   }
-  WriteStringToGzFile(dict.Get<std::string>(kInputFilenameId),
+  WriteStringToGzFile(dict.Get<std::string>(kOutputFilenameId),
                       out_weights.OutputAsString());
+  ShowNetworkFormatInfo(out_weights);
+  ShowNetworkOnnxInfo(out_weights, dict.Get<bool>(kValidateModelId));
   COUT << "Done.";
 }
 
