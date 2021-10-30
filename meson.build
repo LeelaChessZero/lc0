@@ -707,6 +707,7 @@ endif
 if get_option('lc0ctl')
   lc0ctl_files = [
     'src/lc0ctl/leela2onnx.cc',
+    'src/lc0ctl/onnx2leela.cc',
   ]
 
   executable('lc0ctl', 'src/lc0ctl/lc0ctl_main.cc',

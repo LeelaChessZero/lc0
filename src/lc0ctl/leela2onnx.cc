@@ -35,9 +35,9 @@ namespace lczero {
 namespace {
 
 const OptionId kInputFilenameId{"input", "InputFile",
-                                "Path of the input Lc0 weights file"};
+                                "Path of the input Lc0 weights file."};
 const OptionId kOutputFilenameId{"output", "OutputFile",
-                                 "Path of the output ONNX file"};
+                                 "Path of the output ONNX file."};
 
 const OptionId kInputPlanesName{"input-planes-name", "InputPlanesName",
                                 "ONNX name to use for the input planes node."};
@@ -116,9 +116,6 @@ void ConvertLeelaToOnnx() {
   using pblczero::NetworkFormat;
   if (format.has_input()) {
     COUT << "     input: " << NetworkFormat::InputFormat_Name(format.input());
-  }
-  if (format.has_output()) {
-    COUT << "    output: " << NetworkFormat::OutputFormat_Name(format.output());
   }
   if (format.has_policy()) {
     COUT << "    policy: " << NetworkFormat::PolicyFormat_Name(format.policy());

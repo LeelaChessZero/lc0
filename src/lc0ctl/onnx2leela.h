@@ -25,36 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <iostream>
+namespace lczero {
 
-#include "lc0ctl/leela2onnx.h"
-#include "lc0ctl/onnx2leela.h"
-#include "utils/commandline.h"
-#include "utils/optionsparser.h"
-#include "version.h"
+void ConvertOnnxToLeela();
 
-int main(int argc, const char** argv) {
-  using lczero::CommandLine;
-  COUT << "Lc0 tool v" << GetVersionStr() << " built " << __DATE__;
-
-  try {
-    CommandLine::Init(argc, argv);
-    CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
-    CommandLine::RegisterMode("onnx2leela",
-                              "Convert ONNX network to Leela net.");
-
-    if (CommandLine::ConsumeCommand("leela2onnx")) {
-      lczero::ConvertLeelaToOnnx();
-    } else if (CommandLine::ConsumeCommand("onnx2leela")) {
-      lczero::ConvertOnnxToLeela();
-    } else {
-      lczero::OptionsParser options;
-      options.ShowHelp();
-    }
-  } catch (std::exception& e) {
-    std::cerr << "Unhandled exception: " << e.what() << std::endl;
-    abort();
-  }
-
-  return 0;
-}
+}  // namespace lczero
