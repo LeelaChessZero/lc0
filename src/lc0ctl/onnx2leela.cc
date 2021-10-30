@@ -25,9 +25,14 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <fstream>
+#include <zlib.h>
 
+#include <fstream>
+#include <set>
+
+#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "utils/files.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -88,6 +93,9 @@ const OptionId kOnnxOutputPolicyId{"onnx-output-policy", "OnnxOutputPolicy",
 const OptionId kOnnxOutputMlhId{"onnx-output-mlh", "OnnxOutputMlh",
                                 "The name of the node for a moves left head."};
 
+const OptionId kValidateModelId{"validate-weights", "ValidateWeights",
+                                "Do a basic check of the provided ONNX file."};
+
 bool ProcessConverterParameters(OptionsParser* options) {
   using pblczero::NetworkFormat;
   using pblczero::OnnxModel;
@@ -122,40 +130,109 @@ bool ProcessConverterParameters(OptionsParser* options) {
   options->Add<StringOption>(kOnnxOutputWdlId);
   options->Add<StringOption>(kOnnxOutputMlhId);
 
+  options->Add<BoolOption>(kValidateModelId) = true;
+
   if (!options->ProcessAllFlags()) return false;
 
   const OptionsDict& dict = options->GetOptionsDict();
   dict.EnsureExists<std::string>(kInputFilenameId);
   dict.EnsureExists<std::string>(kOutputFilenameId);
-  if (!dict.OwnExists<std::string>(kOnnxInputId)) {
+  return true;
+}
+
+bool ValidateNetwork(const pblczero::Net& weights) {
+  const auto& onnx_model = weights.onnx_model();
+  pblczero::ModelProto onnx;
+  onnx.ParseFromString(onnx_model.model());
+
+  if (!onnx.has_ir_version()) {
+    CERR << "ONNX file doesn't appear to have version specified. Likely not an "
+            "ONNX file.";
+    return false;
+  }
+  if (!onnx.has_domain()) {
+    CERR << "ONNX file doesn't appear to have domain specified. Likely not an "
+            "ONNX file.";
+    return false;
+  }
+  const auto& onnx_inputs = onnx.graph().input();
+  std::set<std::string> inputs;
+  std::transform(onnx_inputs.begin(), onnx_inputs.end(),
+                 std::inserter(inputs, inputs.end()),
+                 [](const auto& x) { return std::string(x.name()); });
+
+  const auto& onnx_outputs = onnx.graph().input();
+  std::set<std::string> outputs;
+  std::transform(onnx_outputs.begin(), onnx_outputs.end(),
+                 std::inserter(outputs, outputs.end()),
+                 [](const auto& x) { return std::string(x.name()); });
+
+  auto check_exists = [](std::string_view n, std::set<std::string>* nodes) {
+    std::string name(n);
+    if (nodes->count(name) == 0) {
+      CERR << "Node '" << name << "' doesn't exist in ONNX.";
+      return false;
+    }
+    nodes->erase(name);
+    return true;
+  };
+
+  if (onnx_model.has_input_planes() &&
+      !check_exists(onnx_model.input_planes(), &inputs)) {
+    return false;
+  }
+  if (onnx_model.has_output_value() &&
+      !check_exists(onnx_model.output_value(), &outputs)) {
+    return false;
+  }
+  if (onnx_model.has_output_wdl() &&
+      !check_exists(onnx_model.output_wdl(), &outputs)) {
+    return false;
+  }
+  if (onnx_model.has_output_policy() &&
+      !check_exists(onnx_model.output_policy(), &outputs)) {
+    return false;
+  }
+  if (onnx_model.has_output_mlh() &&
+      !check_exists(onnx_model.output_mlh(), &outputs)) {
+    return false;
+  }
+  for (const auto& input : inputs) {
+    CERR << "Warning: ONNX input node '" << input << "' not used.";
+  }
+  for (const auto& output : outputs) {
+    CERR << "Warning: ONNX output node '" << output << "' not used.";
+  }
+
+  if (!onnx_model.has_input_planes()) {
     CERR << "The --" << kOnnxInputId.long_flag()
          << " must be defined. Typical value for the ONNX networks exported "
             "from Leela is /input/planes.";
     return false;
   }
-  if (!dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
+  if (!onnx_model.has_output_policy()) {
     CERR << "The --" << kOnnxOutputPolicyId.long_flag()
          << " must be defined. Typical value for the ONNX networks exported "
             "from Leela is /output/policy.";
     return false;
   }
-  if (!dict.OwnExists<std::string>(kOnnxOutputValueId) &&
-      !dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
+  if (!onnx_model.has_output_value() && !onnx_model.has_output_wdl()) {
     CERR << "Either --" << kOnnxOutputValueId.long_flag() << " or --"
          << kOnnxOutputWdlId.long_flag()
          << " must be defined. Typical values for the ONNX networks exported "
             "from Leela are /output/value and /output/wdl.";
     return false;
   }
-  if (dict.OwnExists<std::string>(kOnnxOutputValueId) &&
-      dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
+  if (onnx_model.has_output_value() && onnx_model.has_output_wdl()) {
     CERR << "Both --" << kOnnxOutputValueId.long_flag() << " and --"
          << kOnnxOutputWdlId.long_flag()
          << " are set. Only one of them has to be set.";
     return false;
   }
+
   return true;
 }
+
 }  // namespace
 
 void ConvertOnnxToLeela() {
@@ -183,19 +260,22 @@ void ConvertOnnxToLeela() {
   format->set_input(GetEnumValueFromString(
       dict.Get<std::string>(kInputFormatId),
       NetworkFormat::InputFormat_AllValues, NetworkFormat::InputFormat_Name));
-  onnx->set_input_planes(dict.Get<std::string>(kOnnxInputId));
+  if (dict.OwnExists<std::string>(kOnnxInputId)) {
+    onnx->set_input_planes(dict.Get<std::string>(kOnnxInputId));
+  }
 
   // Policy.
   format->set_policy(GetEnumValueFromString(
       dict.Get<std::string>(kPolicyFormatId),
       NetworkFormat::PolicyFormat_AllValues, NetworkFormat::PolicyFormat_Name));
-  onnx->set_output_policy(dict.Get<std::string>(kOnnxOutputPolicyId));
+  if (dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
+    onnx->set_output_policy(dict.Get<std::string>(kOnnxOutputPolicyId));
+  }
 
   // Value.
-    format->set_value(
-        GetEnumValueFromString(dict.Get<std::string>(kValueFormatId),
-                               NetworkFormat::ValueFormat_AllValues,
-                               NetworkFormat::ValueFormat_Name));
+  format->set_value(GetEnumValueFromString(
+      dict.Get<std::string>(kValueFormatId),
+      NetworkFormat::ValueFormat_AllValues, NetworkFormat::ValueFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
     onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
   }
@@ -211,6 +291,14 @@ void ConvertOnnxToLeela() {
                                NetworkFormat::MovesLeftFormat_Name));
     onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
   }
+
+  onnx->set_model(ReadFileToString(dict.Get<std::string>(kInputFilenameId)));
+  if (dict.Get<bool>(kValidateModelId) && !ValidateNetwork(out_weights)) {
+    return;
+  }
+  WriteStringToGzFile(dict.Get<std::string>(kInputFilenameId),
+                      out_weights.OutputAsString());
+  COUT << "Done.";
 }
 
 }  // namespace lczero

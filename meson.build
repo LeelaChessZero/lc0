@@ -196,6 +196,7 @@ files += [
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/esc_codes.cc',
+  'src/utils/files.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/numa.cc',

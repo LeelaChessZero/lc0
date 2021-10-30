@@ -29,6 +29,7 @@
 
 #include "neural/loader.h"
 #include "neural/onnx/converter.h"
+#include "utils/files.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -94,11 +95,7 @@ void ConvertLeelaToOnnx() {
   }
 
   const auto& onnx = weights_file.onnx_model();
-  {
-    std::ofstream output_file(dict.Get<std::string>(kOutputFilenameId).c_str(),
-                              std::ios::binary);
-    output_file << onnx.model();
-  }
+  WriteStringToFile(dict.Get<std::string>(kOutputFilenameId), onnx.model());
   COUT << "ONNX nodes:";
   if (onnx.has_data_type()) {
     COUT << "data_type: "
