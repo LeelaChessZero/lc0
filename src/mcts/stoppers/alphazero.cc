@@ -38,7 +38,7 @@ class AlphazeroTimeManager : public TimeManager {
         alphazerotimepct_(
             params.GetOrDefault<float>("alphazero-time-pct", 12.0f)),
         alphazeroincrementpct_(
-            params.GetOrDefault<float>("alphazero-increment-pct", 80.0f)) {
+            params.GetOrDefault<float>("alphazero-increment-pct", 95.0f)) {
     if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f)
       throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
     if (alphazeroincrementpct_ < 0.0f || alphazeroincrementpct_ > 100.0f)
@@ -64,7 +64,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
 
   auto total_moves_time = *time - move_overhead_;
 
-  float this_move_time = std::max<unsigned long>(0, total_moves_time - *increment) * (alphazerotimepct_ / 100.0f)
+  float this_move_time = std::max<int64_t>(0, total_moves_time - *increment) * (alphazerotimepct_ / 100.0f)
                          + *increment * (alphazeroincrementpct_ / 100.0f);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms."
