@@ -316,6 +316,13 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
 const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
     "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
     "Power to apply to the interpolation between 1 and max to make it curved."};
+const OptionId SearchParams::kPUScaleId{
+    "policy-uncertainty-scale", "PolicyUncertaintyScale",
+    "Scaling factor to apply to policy uncertainty pre-activation when mixing it into policy logits."};
+const OptionId SearchParams::kPUOffsetId{
+    "policy-uncertainty-offset", "PolicyUncertaintyOffset",
+    "Offset to apply to policy uncertainty pre-activation when mixing "
+    "it into policy logits."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -397,6 +404,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
+  options->Add<FloatOption>(kPUScaleId, -3.0f, 3.0f) = 0.0f;
+  options->Add<FloatOption>(kPUOffsetId, -10.0f, 10.0f) = 0.0f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -486,7 +495,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisitsScalingEnd(
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
-          options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
+          options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
+      kPUScale(options.Get<float>(kPUScaleId)),
+      kPUOffset(options.Get<float>(kPUOffsetId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
