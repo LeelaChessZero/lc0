@@ -27,6 +27,7 @@
 
 #include <zlib.h>
 
+#include <algorithm>
 #include <fstream>
 #include <set>
 
