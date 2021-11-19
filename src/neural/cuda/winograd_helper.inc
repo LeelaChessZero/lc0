@@ -384,7 +384,7 @@ __device__ __forceinline__ float warpReduce(float x)
 // max supported filter count for this fast path
 // TODO: extend it to cover bigger networks!
 // (We are limited by no of registers per thread)
-#define MAX_SUPPORTED_C 384
+#define MAX_SUPPORTED_C 512
 
 // input is in transformed space (HWNC layout) --- output of GEMM
 // output is also in transformed space (HWNC layout) --- input to GEMM (for next layer)
