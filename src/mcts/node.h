@@ -412,7 +412,8 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+    const float n = GetN() > 10000 ? 0.05 : GetP();
+    return numerator * n / (1 + GetNStarted());
   }
 
   int GetVisitsToReachU(float target_score, float numerator,
