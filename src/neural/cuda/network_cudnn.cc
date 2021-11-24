@@ -89,9 +89,9 @@ class CudnnNetworkComputation : public NetworkComputation {
 
   void AddInput(InputPlanes&& input) override {
     const auto iter_mask =
-        &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
+        &inputs_outputs_->input_masks_mem_[batch_size_ * input.size()];
     const auto iter_val =
-        &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
+        &inputs_outputs_->input_val_mem_[batch_size_ * input.size()];
 
     int i = 0;
     for (const auto& plane : input) {
@@ -153,7 +153,12 @@ class CudnnNetwork : public Network {
   CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().input_static(),
-                      file.format().network_format().moves_left()} {
+                      file.format().network_format().moves_left()},
+        num_input_planes_{(file.format().network_format().input_static() ==
+                                   pblczero::NetworkFormat::INPUT_STATIC_SQUARES
+                               ? 64
+                               : 0) +
+                          112} {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
@@ -216,7 +221,7 @@ class CudnnNetwork : public Network {
       ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
 
     constexpr bool fp16 = std::is_same<half, DataType>::value;
-    const int kNumInputPlanes = kInputPlanes;
+    const int kNumInputPlanes = num_input_planes_;    
     const int kNumFilters = (int)weights.input.biases.size();
     numBlocks_ = (int)weights.residual.size();
 
@@ -319,7 +324,7 @@ class CudnnNetwork : public Network {
     cudnnCreateTensorDescriptor(&xDesc);
     cudnnConvolutionFwdAlgo_t conv_algo;
 
-    const int maxChannels = std::max(kInputPlanes, kNumFilters);
+    const int maxChannels = std::max(kNumInputPlanes, kNumFilters);
 
     const cudnnDataType_t datatype = fp16 ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
     const cudnnTensorFormat_t layout =
@@ -618,13 +623,16 @@ class CudnnNetwork : public Network {
     if (fp16) {
       if (nhwc_)
         expandPlanes_Fp16_NHWC((half*)(tensor_mem_[0]), ipDataMasks,
-                               ipDataValues, batchSize * kInputPlanes, stream);
+                               ipDataValues, batchSize * num_input_planes_, num_input_planes_,
+                               stream);
       else
         expandPlanes_Fp16_NCHW((half*)(tensor_mem_[0]), ipDataMasks,
-                               ipDataValues, batchSize * kInputPlanes, stream);
+                               ipDataValues, batchSize * num_input_planes_,
+                               stream);
     } else {
       expandPlanes_Fp32_NCHW((float*)(tensor_mem_[0]), ipDataMasks,
-                             ipDataValues, batchSize * kInputPlanes, stream);
+                             ipDataValues, batchSize * num_input_planes_,
+                             stream);
     }
 
     // debug code example
@@ -847,7 +855,7 @@ class CudnnNetwork : public Network {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
-                                             moves_left_);
+                                             moves_left_, num_input_planes_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -868,6 +876,7 @@ class CudnnNetwork : public Network {
 
  private:
   const NetworkCapabilities capabilities_;
+  const int num_input_planes_;
   cudnnHandle_t cudnn_;
   cublasHandle_t cublas_;
   int gpu_id_;

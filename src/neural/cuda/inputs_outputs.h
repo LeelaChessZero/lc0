@@ -31,16 +31,16 @@ namespace lczero {
 namespace cudnn_backend {
 
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
+  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left, int input_planes,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0) {
     ReportCUDAErrors(cudaHostAlloc(
-        &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
+        &input_masks_mem_, maxBatchSize * input_planes * sizeof(uint64_t),
         cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
 
     ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
-                                   maxBatchSize * kInputPlanes * sizeof(float),
+                                   maxBatchSize * input_planes * sizeof(float),
                                    cudaHostAllocMapped));
     ReportCUDAErrors(
         cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));

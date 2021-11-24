@@ -35,8 +35,6 @@
 
 namespace lczero {
 
-const int kInputPlanes = 112;
-
 // All input planes are 64 value vectors, every element of which is either
 // 0 or some value, unique for the plane. Therefore, input is defined as
 // a bitmask showing where to set the value, and the value itself.

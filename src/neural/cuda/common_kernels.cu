@@ -32,9 +32,6 @@
 
 namespace lczero {
 namespace cudnn_backend {
-namespace {
-constexpr int kInputPlanes = 112;
-}  // namespace
 
 /////////////////////////////////////////////////////////////////////////////
 //          Simple CUDA kernels used by certain layers                     //
@@ -260,32 +257,32 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
 // TODO: Can optimize using shared memory if this becomes a bottleneck.
 __global__ void expandPlanes_kernel_Fp16_NHWC(half* output,
                                               const uint64_t* masks,
-                                              const float* values, int n) {
+                                              const float* values, int n, int num_input_planes) {
   const int index = threadIdx.x + blockDim.x * blockIdx.x;
   if (index >= n * 8 * 8) return;
 
-  const int planeIndex = index % kInputPlanes;
-  const int boardIndex = index / (kInputPlanes * 8 * 8);
-  const int sqIndex = (index / kInputPlanes) & 0x3F;
+  const int planeIndex = index % num_input_planes;
+  const int boardIndex = index / (num_input_planes * 8 * 8);
+  const int sqIndex = (index / num_input_planes) & 0x3F;
 
-  uint64_t mask = masks[boardIndex * kInputPlanes + planeIndex];
+  uint64_t mask = masks[boardIndex * num_input_planes + planeIndex];
 
   half op = 0;
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
-    float val = values[boardIndex * kInputPlanes + planeIndex];
+    float val = values[boardIndex * num_input_planes + planeIndex];
     op = (half)val;
   }
   output[index] = op;
 }
 
 void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream) {
+                            const float* values, int n, int num_input_planes, cudaStream_t stream) {
   int threads = n * 8 * 8;  // Each thread writes a single element.
   const int kBlockSize = 256;
   int blocks = DivUp(threads, kBlockSize);
   expandPlanes_kernel_Fp16_NHWC<<<blocks, kBlockSize, 0, stream>>>(
-      output, masks, values, n);
+      output, masks, values, n, num_input_planes);
   ReportCUDAErrors(cudaGetLastError());
 }
 
