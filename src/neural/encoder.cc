@@ -144,7 +144,7 @@ InputPlanes EncodePositionForNN(
 
   if (input_static_format == pblczero::NetworkFormat::INPUT_STATIC_SQUARES) {
     for (int i = 0; i < 64; i++) {
-      result[kAuxPlaneBase + 8 + i].mask = 1ULL << i;
+      result[kAuxPlaneBase + 8 + i].mask = 1ULL << (63 - i);
     }
   } else if (input_static_format !=
              pblczero::NetworkFormat::INPUT_STATIC_NONE) {
