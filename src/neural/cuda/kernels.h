@@ -57,7 +57,7 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
                             const float* values, int n, cudaStream_t stream);
 
 void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream);
+                            const float* values, int n, int num_planes, cudaStream_t stream);
 
 void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
                             const float* values, int n, cudaStream_t stream);
