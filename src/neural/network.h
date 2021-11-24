@@ -84,6 +84,7 @@ class NetworkComputation {
 
 struct NetworkCapabilities {
   pblczero::NetworkFormat::InputFormat input_format;
+  pblczero::NetworkFormat::InputStaticFormat input_static_format;
   pblczero::NetworkFormat::MovesLeftFormat moves_left;
   // TODO expose information of whether GetDVal() is usable or always zero.
 
@@ -94,6 +95,11 @@ struct NetworkCapabilities {
       throw Exception("Incompatible input formats, " +
                       std::to_string(input_format) + " vs " +
                       std::to_string(other.input_format));
+    }
+    if (input_static_format != other.input_static_format) {
+      throw Exception("Incompatible input static formats, " +
+                      std::to_string(input_static_format) + " vs " +
+                      std::to_string(other.input_static_format));
     }
   }
 

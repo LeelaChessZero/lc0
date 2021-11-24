@@ -1351,8 +1351,9 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         if (!picked_node.is_cache_hit) {
           int transform;
           picked_node.input_planes = EncodePositionForNN(
-              search_->network_->GetCapabilities().input_format, history, 8,
-              params_.GetHistoryFill(), &transform);
+              search_->network_->GetCapabilities().input_format,
+              search_->network_->GetCapabilities().input_static_format, history,
+              8, params_.GetHistoryFill(), &transform);
           picked_node.probability_transform = transform;
 
           std::vector<uint16_t>& moves = picked_node.probabilities_to_cache;
@@ -1950,9 +1951,10 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
     }
   }
   int transform;
-  auto planes =
-      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
+  auto planes = EncodePositionForNN(
+      search_->network_->GetCapabilities().input_format,
+      search_->network_->GetCapabilities().input_static_format, history_, 8,
+      params_.GetHistoryFill(), &transform);
 
   std::vector<uint16_t> moves;
 

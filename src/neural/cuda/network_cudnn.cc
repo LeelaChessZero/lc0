@@ -152,6 +152,7 @@ class CudnnNetwork : public Network {
  public:
   CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
+                      file.format().network_format().input_static(),
                       file.format().network_format().moves_left()} {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
@@ -607,7 +608,7 @@ class CudnnNetwork : public Network {
 #endif
 
     // TODO: consider supporting multi-stream path for cudnn backend too.
-    cudaStream_t stream = 0;    // default stream
+    cudaStream_t stream = 0;  // default stream
 
     // Expand packed planes to full planes.
     uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
@@ -638,25 +639,24 @@ class CudnnNetwork : public Network {
     network_[l++]->Eval(
         batchSize,
         use_res_block_winograd_fuse_opt_ ? tensor_mem_[1] : tensor_mem_[2],
-        tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_,
-        cublas_, stream);  // input conv
+        tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_, cublas_,
+        stream);  // input conv
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
       if (use_res_block_winograd_fuse_opt_) {
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_, stream);  // block
+                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            stream);  // block
       } else {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_, stream);  // conv1
+                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            stream);  // conv1
 
         if (use_custom_winograd_) {
           network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                               tensor_mem_[2], scratch_mem_, scratch_size_,
-                              cudnn_,
-                              cublas_, stream);  // conv2
+                              cudnn_, cublas_, stream);  // conv2
         } else {
           // For SE Resnet, skip connection is added after SE (and bias is added
           // as part of SE).
@@ -667,15 +667,13 @@ class CudnnNetwork : public Network {
           } else {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
-                                cudnn_,
-                                cublas_, stream);  // conv2
+                                cudnn_, cublas_, stream);  // conv2
           }
 
           if (has_se_) {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
-                                cudnn_,
-                                cublas_, stream);  // SE layer
+                                cudnn_, cublas_, stream);  // SE layer
           }
         }
       }
@@ -746,8 +744,8 @@ class CudnnNetwork : public Network {
                         wdl_ ? 3 * batchSize : batchSize, stream);  // VALUE
     } else {
       network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_, stream);  // value FC2    // VALUE
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // value FC2    // VALUE
     }
 
     if (moves_left_) {
