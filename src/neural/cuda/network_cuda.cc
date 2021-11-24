@@ -654,7 +654,7 @@ class CudaNetwork : public Network {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
-                                             moves_left_, tensor_mem_size_, scratch_size_);
+                                             moves_left_, num_input_planes_, tensor_mem_size_, scratch_size_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
