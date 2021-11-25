@@ -36,8 +36,8 @@ namespace lczero {
 std::string ReadFileToString(const std::string& filename) {
   std::string result;
 
-  std::FILE* f = std::fopen(filename.c_str(), "rb");
-  if (f == nullptr) throw Exception("Cannot open file " + filename);
+  gzFile f = gzopen(filename.c_str(), "rb");
+  if (f == Z_NULL) throw Exception("Cannot open file " + filename);
 
   std::size_t last_offset = 0;
   std::size_t size = 0x10000;
@@ -45,7 +45,7 @@ std::string ReadFileToString(const std::string& filename) {
   while (true) {
     const size_t len = size - last_offset;
     result.resize(size);
-    auto count = std::fread(result.data() + last_offset, 1, len, f);
+    size_t count = gzread(f, result.data() + last_offset, len);
     if (count < len) {
       result.resize(last_offset + count);
       break;
@@ -54,7 +54,7 @@ std::string ReadFileToString(const std::string& filename) {
     size *= 2;
   }
 
-  std::fclose(f);
+  gzclose(f);
   result.shrink_to_fit();
   return result;
 }

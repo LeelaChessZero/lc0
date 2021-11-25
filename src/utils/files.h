@@ -28,9 +28,15 @@
 #include <string>
 
 namespace lczero {
+
+// Reads (possibly gz-compressed) file to string. Throws on error.
 std::string ReadFileToString(const std::string& filename);
+
+// Writes string to file, without compression. Throws on error.
 void WriteStringToFile(const std::string& filename,
                          std::string_view  content);
+
+// Writes string to gz-compressed file. Throws on error.
 void WriteStringToGzFile(const std::string& filename,
                          std::string_view  content);
 }  // namespace lczero
