@@ -47,7 +47,7 @@ const OptionId kMoveOverheadId{
 const OptionId kTimeManagerId{
     "time-manager", "TimeManager",
     "Name and config of a time manager. "
-    "Possible names are 'legacy', 'smooth' (default) and 'alphazero'."
+    "Possible names are 'legacy' (default), 'smooth' and 'alphazero'."
     "See https://lc0.org/timemgr for configuration details."};
 }  // namespace
 
@@ -55,7 +55,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   PopulateCommonStopperOptions(for_what, options);
   if (for_what == RunType::kUci) {
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-    options->Add<StringOption>(kTimeManagerId) = "smooth";
+    options->Add<StringOption>(kTimeManagerId) = "legacy";
   }
 }
 

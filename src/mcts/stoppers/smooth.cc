@@ -51,8 +51,8 @@ class Params {
   float tree_reuse_halfupdate_moves() const {
     return tree_reuse_halfupdate_moves_;
   }
-  // Number of seconds to update nps estimation halfway.
-  float nps_halfupdate_seconds() const { return nps_halfupdate_seconds_; }
+  // Number of seconds to update nps estimation.
+  float nps_update_seconds() const { return nps_update_seconds_; }
   // Fraction of the allocated time the engine uses, initial estimation.
   float initial_smartpruning_timeuse() const {
     return initial_smartpruning_timeuse_;
@@ -95,7 +95,7 @@ class Params {
   const float initial_tree_reuse_;
   const float max_tree_reuse_;
   const float tree_reuse_halfupdate_moves_;
-  const float nps_halfupdate_seconds_;
+  const float nps_update_seconds_;
   const float initial_smartpruning_timeuse_;
   const float min_smartpruning_timeuse_;
   const float smartpruning_timeuse_halfupdate_moves_;
@@ -112,8 +112,8 @@ Params::MovesLeftEstimator CreateMovesLeftEstimator(const OptionsDict& params) {
   const OptionsDict& mle_dict = params.HasSubdict("mle-legacy")
                                     ? params.GetSubdict("mle-legacy")
                                     : params;
-  return [midpoint = mle_dict.GetOrDefault<float>("midpoint", 51.5f),
-          steepness = mle_dict.GetOrDefault<float>("steepness", 7.0f)](
+  return [midpoint = mle_dict.GetOrDefault<float>("midpoint", 45.2f),
+          steepness = mle_dict.GetOrDefault<float>("steepness", 5.93f)](
              const NodeTree& tree) {
     const auto ply = tree.HeadPosition().GetGamePly();
     return ComputeEstimatedMovesToGo(ply, midpoint, steepness);
@@ -122,28 +122,28 @@ Params::MovesLeftEstimator CreateMovesLeftEstimator(const OptionsDict& params) {
 
 Params::Params(const OptionsDict& params, int64_t move_overhead)
     : move_overhead_ms_(move_overhead),
-      initial_tree_reuse_(params.GetOrDefault<float>("init-tree-reuse", 0.5f)),
-      max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.8f)),
+      initial_tree_reuse_(params.GetOrDefault<float>("init-tree-reuse", 0.52f)),
+      max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.73f)),
       tree_reuse_halfupdate_moves_(
-          params.GetOrDefault<float>("tree-reuse-update-rate", 3.0f)),
-      nps_halfupdate_seconds_(
-          params.GetOrDefault<float>("nps-update-rate", 5.0f)),
+          params.GetOrDefault<float>("tree-reuse-update-rate", 3.39f)),
+      nps_update_seconds_(
+          params.GetOrDefault<float>("nps-update-period", 20.0f)),
       initial_smartpruning_timeuse_(
-          params.GetOrDefault<float>("init-timeuse", 0.5f)),
+          params.GetOrDefault<float>("init-timeuse", 0.7f)),
       min_smartpruning_timeuse_(
-          params.GetOrDefault<float>("min-timeuse", 0.2f)),
+          params.GetOrDefault<float>("min-timeuse", 0.34f)),
       smartpruning_timeuse_halfupdate_moves_(
-          params.GetOrDefault<float>("timeuse-update-rate", 3.0f)),
+          params.GetOrDefault<float>("timeuse-update-rate", 5.51f)),
       max_single_move_time_fraction_(
-          params.GetOrDefault<float>("max-move-budget", 0.3f)),
+          params.GetOrDefault<float>("max-move-budget", 0.42f)),
       initial_piggybank_fraction_(
-          params.GetOrDefault<float>("init-piggybank", 0.0f)),
+          params.GetOrDefault<float>("init-piggybank", 0.09f)),
       per_move_piggybank_fraction_(
-          params.GetOrDefault<float>("per-move-piggybank", 0.18f)),
+          params.GetOrDefault<float>("per-move-piggybank", 0.12f)),
       max_piggybank_use_(
-          params.GetOrDefault<float>("max-piggybank-use", 0.95f)),
+          params.GetOrDefault<float>("max-piggybank-use", 0.94f)),
       max_piggybank_moves_(
-          params.GetOrDefault<float>("max-piggybank-moves", 27.0f)),
+          params.GetOrDefault<float>("max-piggybank-moves", 36.5f)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
 // Returns the updated value of @from, towards @to by the number of halves
@@ -152,6 +152,48 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
 // value=3*step, return (1*from + 7*to)/7, if value=0, returns from.
 float ExponentialDecay(float from, float to, float step, float value) {
   return to - (to - from) * std::pow(0.5f, value / step);
+}
+
+float LinearInterpolate(float a, float b, float theta) {
+  if (theta <= 0) return a;
+  if (theta >= 1) return b;
+  return a + (b - a) * theta;
+}
+
+// @cur_value -- current "average", returned from the previous call of this
+//   function.
+// @target_value -- current "correct but noisy" value, that we slowly go to.
+// @time_since_reliable -- time since we had reliable nps in target_value. For
+//    the case of nps, end of the previous move is considered reliable point).
+// @time_since_last_update_ms -- how long ago was this function last called.
+// @window_size_ms -- in what time should the output converge to @target_value.
+float LinearDecay(float cur_value, float target_value,
+                  float time_since_reliable_ms, float time_since_last_update_ms,
+                  float window_size_ms) {
+  // If target is higher than cur value, just return target without any
+  // smoothing. That makes sense for nps, but for other averages we should look
+  // a bit closer.
+  if (cur_value <= target_value) return target_value;
+  // If no time passed since last update, return previous value.
+  if (time_since_last_update_ms <= 0) return cur_value;
+  // If window is large enough, we consider
+  if (time_since_reliable_ms >= window_size_ms) return target_value;
+  if (time_since_last_update_ms > time_since_reliable_ms) {
+    // Should never happen, but just for the case.
+    time_since_last_update_ms = time_since_reliable_ms;
+  }
+  // time_since_reliable_ms during the previous call of this function.
+  const float prev_time_since_reliable_ms =
+      time_since_reliable_ms - time_since_last_update_ms;
+  // The same, but as fraction of window size.
+  const float prev_reliable_frac = prev_time_since_reliable_ms / window_size_ms;
+  // What was the value when it was reliable.
+  const float reliable_value = (prev_reliable_frac * target_value - cur_value) /
+                               (prev_reliable_frac - 1);
+  // Now we know window width, nps when it was reliable, and time since that,
+  // and time to converge, interpolate.
+  return LinearInterpolate(reliable_value, target_value,
+                           time_since_reliable_ms / window_size_ms);
 }
 
 class SmoothTimeManager;
@@ -181,11 +223,12 @@ class SmoothTimeManager : public TimeManager {
                   int64_t nodes_since_movestart) {
     Mutex::Lock lock(mutex_);
     if (time_since_movestart_ms <= 0) return nps_;
-    if (nps_is_reliable_ && time_since_movestart_ms >= last_time_) {
+    if (nps_is_reliable_ && time_since_movestart_ms > last_time_) {
       const float nps =
           1000.0f * nodes_since_movestart / time_since_movestart_ms;
-      nps_ = ExponentialDecay(nps_, nps, params_.nps_halfupdate_seconds(),
-                              (time_since_movestart_ms - last_time_) / 1000.0f);
+      nps_ = LinearDecay(nps_, nps, time_since_movestart_ms,
+                         time_since_movestart_ms - last_time_,
+                         params_.nps_update_seconds() * 1000.0f);
     } else {
       nps_ = 1000.0f * nodes_since_movestart / time_since_movestart_ms;
     }

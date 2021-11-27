@@ -25,10 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/reader.h"
-
-#include "neural/encoder.h"
-#include "utils/bititer.h"
+#include "trainingdata/reader.h"
 
 namespace lczero {
 
@@ -102,7 +99,7 @@ InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {
   if (IsCanonicalFormat(typed_format) && data.invariance_info != 0) {
     // Undo transformation here as it makes the calling code simpler.
     int transform = data.invariance_info;
-    for (int i = 0; i <= result.size(); i++) {
+    for (size_t i = 0; i <= result.size(); i++) {
       auto v = result[i].mask;
       if (v == 0 || v == ~0ULL) continue;
       if ((transform & TransposeTransform) != 0) {
@@ -136,10 +133,10 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
     if (read_size < 0) throw Exception("Corrupt read.");
     return read_size == sizeof(*data);
   } else {
-    size_t v6_extra = 48;
-    size_t v5_extra = 16;
-    size_t v4_extra = 16;
-    size_t v3_size = sizeof(*data) - v4_extra - v5_extra - v6_extra;
+    int v6_extra = 48;
+    int v5_extra = 16;
+    int v4_extra = 16;
+    int v3_size = sizeof(*data) - v4_extra - v5_extra - v6_extra;
     int read_size = gzread(fin_, reinterpret_cast<void*>(data), v3_size);
     if (read_size < 0) throw Exception("Corrupt read.");
     if (read_size != v3_size) return false;
@@ -153,7 +150,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         for (int i = 0; i < v4_extra; i++) {
           v4_extra_start[i] = 0;
         }
-        // Deliberate fallthrough.
+        [[fallthrough]];
       }
       case 4: {
         // If actually 4, we need to read the additional data first.
@@ -174,7 +171,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         data->root_m = 0.0f;
         data->best_m = 0.0f;
         data->plies_left = 0.0f;
-        // Deliberate fallthrough.
+        [[fallthrough]];
       }
       case 5: {
         // If actually 5, we need to read the additional data first.
@@ -187,8 +184,15 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
           if (read_size != v4_extra + v5_extra) return false;
         }
         data->version = 6;
-        data->result_q = static_cast<float>(data->dummy);
+        // Type of dummy was changed from signed to unsigned - which means -1 on
+        // disk is read in as 255.
+        if (data->dummy > 1 && data->dummy < 255) {
+          throw Exception("Invalid result read in v5 data before upgrade.");
+        }
+        data->result_q =
+            data->dummy == 255 ? -1.0f : (data->dummy == 0 ? 0.0f : 1.0f);
         data->result_d = data->dummy == 0 ? 1.0f : 0.0f;
+        data->dummy = 0;
         data->played_q = 0.0f;
         data->played_d = 0.0f;
         data->played_m = 0.0f;
@@ -200,6 +204,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         data->visits = 0;
         data->played_idx = 0;
         data->best_idx = 0;
+        data->policy_kld = 0.0f;
         data->reserved = 0;
         return true;
       }
@@ -212,6 +217,8 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         if (read_size < 0) throw Exception("Corrupt read.");
         return read_size == v4_extra + v5_extra + v6_extra;
       }
+      default:
+        throw Exception("Unknown format.");
     }
   }
 }

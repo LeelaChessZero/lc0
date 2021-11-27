@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,11 +27,35 @@
 
 #pragma once
 
-#include "utils/optionsdict.h"
+#include <fstream>
+#include <zlib.h>
 
 namespace lczero {
 
-std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
-    int64_t move_overhead, const OptionsDict& params);
+struct V6TrainingData;
+
+class TrainingDataWriter {
+ public:
+  // Creates a new file to write in data directory. It will has @game_id
+  // somewhere in the filename.
+  TrainingDataWriter(int game_id);
+
+  ~TrainingDataWriter() {
+    if (fout_) Finalize();
+  }
+
+  // Writes a chunk.
+  void WriteChunk(const V6TrainingData& data);
+
+  // Flushes file and closes it.
+  void Finalize();
+
+  // Gets full filename of the file written.
+  std::string GetFileName() const { return filename_; }
+
+ private:
+  std::string filename_;
+  gzFile fout_;
+};
 
 }  // namespace lczero
