@@ -237,10 +237,6 @@ class CudaNetwork : public Network {
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 
-    // Ankan - test!
-    CERR << "Res Block fusing opt enabled? " << use_res_block_winograd_fuse_opt_
-         << "\n";
-
     // 2. Build the network, and copy the weights to GPU memory.
 
     // Input.
