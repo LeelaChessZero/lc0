@@ -42,6 +42,13 @@ namespace cudnn_backend {
 
 static constexpr int kNumOutputPolicy = 1858;
 
+// max supported filter count for fast path
+// TODO: extend it to cover bigger networks!
+// (We are limited by no of registers per thread)
+static constexpr int kMaxSupportedChannelsForResBlockFusing      = 384;  // limit on num_filters
+static constexpr int kMaxSupportedSeKForResBlockFusingFp16Ampere = 512;  // (use a different kernel with reduced register pressure)
+static constexpr int kMaxSupportedSeKForResBlockFusing           = 128;  // limit on (num_filters / se_ratio)
+
 #ifdef USE_CUDNN
 void CudnnError(cudnnStatus_t status, const char* file, const int& line);
 #endif

@@ -192,10 +192,13 @@ class CudaNetwork : public Network {
               "using a smaller network.";
     }
 
-    // Disable res block fusing for > 384 filters (the fused output input
+    // Disable res block fusing for > 512 filters (the fused output input
     // transform kernel runs out of register space) and for fp32 for now.
     // TODO: make it work for filters not a multiple of 32.
-    if (kNumFilters <= 384 && kNumFilters % 32 == 0 &&
+    if ((kNumFilters <= kMaxSupportedChannelsForResBlockFusing ||
+         (deviceProp.major >= 8 && 
+         kNumFilters <= kMaxSupportedSeKForResBlockFusingFp16Ampere)) &&
+        kNumFilters % 32 == 0 &&
         std::is_same<half, DataType>::value) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
@@ -233,6 +236,10 @@ class CudaNetwork : public Network {
     scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
+
+    // Ankan - test!
+    CERR << "Res Block fusing opt enabled? " << use_res_block_winograd_fuse_opt_
+         << "\n";
 
     // 2. Build the network, and copy the weights to GPU memory.
 
