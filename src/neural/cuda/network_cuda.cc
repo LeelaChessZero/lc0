@@ -196,10 +196,10 @@ class CudaNetwork : public Network {
     // transform kernel runs out of register space) and for fp32 for now.
     // TODO: make it work for filters not a multiple of 32.
     if ((kNumFilters <= kMaxSupportedChannelsForResBlockFusing ||
-         (deviceProp.major >= 8 && 
-         kNumFilters <= kMaxSupportedSeKForResBlockFusingFp16Ampere)) &&
-        kNumFilters % 32 == 0 &&
-        std::is_same<half, DataType>::value) {
+         ((deviceProp.major >= 8 ||
+           (deviceProp.major == 7 && deviceProp.minor != 5)) &&
+          kNumFilters <= kMaxSupportedSeKForResBlockFusingFp16Ampere)) &&
+        kNumFilters % 32 == 0 && std::is_same<half, DataType>::value) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
       use_res_block_winograd_fuse_opt_ = false;

@@ -547,10 +547,9 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
 }
 
 template <typename T = float, bool use_se, bool relu, bool use_bias, bool use_skip>
-void OutputInputTransform(int N, int C, int se_K, float* output,
-                          const float* input, const float* skip,
-                          const float* bias, const float* w1, const float* b1,
-                          const float* w2, const float* b2,
+void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
+                          const T* skip, const T* bias, const T* w1,
+                          const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board
   if (C > kMaxSupportedChannelsForResBlockFusing) {

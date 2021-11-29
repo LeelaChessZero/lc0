@@ -428,10 +428,9 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
 }
 
 template <typename T = half, bool use_se, bool relu, bool use_bias, bool use_skip>
-void OutputInputTransform(int N, int C, int se_K, half* output,
-                          const half* input, const half* skip, const half* bias,
-                          const half* w1, const half* b1, const half* w2,
-                          const half* b2,
+void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
+                          const T* skip, const T* bias, const T* w1,
+                          const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board
   if (C > kMaxSupportedChannelsForResBlockFusing) {
