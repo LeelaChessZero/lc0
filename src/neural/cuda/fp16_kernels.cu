@@ -195,41 +195,44 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
   return true;
 }
 
-// Get board for this thread from shared memory
-// We are just using shared memory to store local 
-// thread data in this kernel to help reduce some register pressure 
-// and spills to local memory
+// Get board for this thread from shared memory.
+// We are just using shared memory to store local thread data in this kernel to
+// help reduce some register pressure and spills to local memory.
 #define BOARD(y,x) shboard[(y) * 8 + (x)]
 
 // input is in transformed space (HWNC layout) --- output of GEMM
-// output is also in transformed space (HWNC layout) --- input to GEMM (for next layer)
+// output is also in transformed space (HWNC layout) --- input to GEMM (for
+// next layer)
 // 'C' threads per block
 // 'N' blocks
-// every thread generates an entire board/plane (8x8 elements)
+// Every thread generates an entire board/plane (8x8 elements).
 template <bool use_se, bool relu, bool use_bias, bool use_skip>
 __global__ __launch_bounds__(kMaxResBlockFusingSeKFp16Ampere, 1)
-void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* output, const half* input, 
-                                                 half* skip, const half* bias, const half* w1, const half* b1,
-                                                 const half* w2, const half* b2) {
-
+void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
+                                                 half* output,
+                                                 const half* input,
+                                                 half* skip, const half* bias,
+                                                 const half* w1, const half* b1,
+                                                 const half* w2,
+                                                 const half* b2) {
   int k = threadIdx.x;
   int n = blockIdx.x;
-  
-  extern __shared__ half _sboard[];
-  half *shboard = &_sboard[k * 72];     // 72 instead of 64 to reduce shared memory bank conflicts
 
+  extern __shared__ half _sboard[];
+  half *shboard = &_sboard[k * 72];     // 72 instead of 64 to reduce shared
+                                        // memory bank conflicts.
   half b = bias[k];
 
-  #pragma unroll
+#pragma unroll
   for (int hStart = 0; hStart < 8; hStart += 4)
-    #pragma unroll
+#pragma unroll
     for (int wStart = 0; wStart < 8; wStart += 4) {
       //  i) read to per thread registers (for doing output transform)
       int shln = n * 4 + (hStart / 4) * 2 + (wStart / 4);
       half outElTransformed[6][6];
-      #pragma unroll
+#pragma unroll
       for (int y = 0; y < 6; y++)
-        #pragma unroll
+#pragma unroll
         for (int x = 0; x < 6; x++)
           outElTransformed[y][x] = input[TEMP_INDEX_HWNC(y, x, shln, k)];
 
@@ -237,7 +240,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
       half outEl[4][4];
       OutputTransform4x4(&outEl[0][0], &outElTransformed[0][0]);
 
-      #pragma unroll
+#pragma unroll
       for (int y = 0; y < 4; y++)
         copyAs<uint2>(&BOARD(hStart + y, wStart), &outEl[y][0]);
     }
@@ -247,11 +250,11 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
   float B = 0;
 
   if (use_bias || use_se) {
-    #pragma unroll
+#pragma unroll
     for (int y = 0; y < 8; y++) {
       half boardRow[8];
       copyAs<uint4>(&boardRow, &BOARD(y, 0));
-      #pragma unroll
+#pragma unroll
       for (int x = 0; x < 8; x++) {
         if (use_bias) boardRow[x] += b;
         if (use_se) S += (float)boardRow[x];
@@ -274,7 +277,8 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     // As se_K << C, we want to loop over se_K instead of C
     // even if it means taking the sum across threads
 
-    __shared__ float shared_sums[kMaxResBlockFusingSeKFp16Ampere/32][kMaxResBlockFusingSeK];  // per-warp sums
+    __shared__ float shared_sums[kMaxResBlockFusingSeKFp16Ampere/32]
+                                [kMaxResBlockFusingSeK];  // per-warp sums
 
     for (int i = 0; i < se_K; i++) {
       float val = shared_data[k] * float(readw1(k, i));
@@ -283,7 +287,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
         shared_sums[warp][i] = val;
     }
     __syncthreads();
-    if (k < se_K) 
+    if (k < se_K)
     {
       S = 0;
       for (int i=0;i<C/32;i++)
@@ -310,7 +314,6 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     S = 1.0f / (1.0f + exp(-S));
   }
 
-
   // Scale/bias, add skip connection, perform relu, and write to output.
   if (use_se || use_skip || relu) {
     for (int h = 0; h < 8; h++) {
@@ -318,21 +321,23 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
       copyAs<uint4>(&boardRow[0], &BOARD(h, 0));
 
       if (use_se) {
-        #pragma unroll
-        for (int w = 0; w < 8; w++) boardRow[w] = (half)(float(boardRow[w]) * S + B);
+#pragma unroll
+        for (int w = 0; w < 8; w++) {
+          boardRow[w] = (half)(float(boardRow[w]) * S + B);
+        }
       }
 
       // residual add
       if (use_skip) {
         half skipInp[8];
         copyAs<uint4>(&skipInp[0], &skip[INDEX_NHCW(n, k, h, 0)]);
-        #pragma unroll
+#pragma unroll
         for (int w = 0; w < 8; w++) boardRow[w] += skipInp[w];
       }
 
       // relu
       if (relu) {
-        #pragma unroll
+#pragma unroll
         for (int w = 0; w < 8; w++)
           if (boardRow[w] < (half)0) boardRow[w] = 0;
       }
@@ -347,7 +352,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     }
   }
 
-  // perform input transform    
+  // Perform input transform.
 
   int c = k;
   // top-left
@@ -355,16 +360,16 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    #pragma unroll
+#pragma unroll
     for (int i = 0; i < 5; i++)
-      #pragma unroll
+#pragma unroll
       for (int j = 0; j < 5; j++) inEl[i + 1][j + 1] = BOARD(i,j);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
-    #pragma unroll
+#pragma unroll
     for (int y = 0; y < 6; y++)
-      #pragma unroll
+#pragma unroll
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 0, c)] = inEl[y][x];
   }
@@ -374,16 +379,16 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    #pragma unroll
+#pragma unroll
     for (int i = 0; i < 5; i++)
-      #pragma unroll
+#pragma unroll
       for (int j = 0; j < 5; j++) inEl[i + 1][j] = BOARD(i,j+3);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
-    #pragma unroll
+#pragma unroll
     for (int y = 0; y < 6; y++)
-      #pragma unroll
+#pragma unroll
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 1, c)] = inEl[y][x];
   }
@@ -393,16 +398,16 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    #pragma unroll
+#pragma unroll
     for (int i = 0; i < 5; i++)
-      #pragma unroll
+#pragma unroll
       for (int j = 0; j < 5; j++) inEl[i][j + 1] = BOARD(i+3,j);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
-    #pragma unroll
+#pragma unroll
     for (int y = 0; y < 6; y++)
-      #pragma unroll
+#pragma unroll
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 2, c)] = inEl[y][x];
   }
@@ -412,30 +417,31 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    #pragma unroll
+#pragma unroll
     for (int i = 0; i < 5; i++)
-      #pragma unroll
+#pragma unroll
       for (int j = 0; j < 5; j++) inEl[i][j] = BOARD(i+3,j+3);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
-    #pragma unroll
+#pragma unroll
     for (int y = 0; y < 6; y++)
-      #pragma unroll
+#pragma unroll
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
-  } 
+  }
 }
 
-template <typename T = half, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T = half, bool use_se, bool relu, bool use_bias,
+          bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
-  // Each thread processes entire chess board
+  // Each thread processes entire chess board.
   if (C > kMaxResBlockFusingChannels) {
-    // use special kernel with reduced register pressure - only works on Ampere,
-    // and only for fp16
+    // Use special kernel with reduced register pressure - only works on Ampere,
+    // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
           OutputInputTransformKernel_fp16_shmem_board<use_se, relu, use_bias,
@@ -454,8 +460,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   } else {
     OutputTransform_SE_relu_InputTransform_kernel<half, use_se, relu, use_bias,
                                                   use_skip>
-        <<<N, C, 0, stream>>>(N, C, se_K, output, input, (half*)skip, bias, w1, b1,
-                              w2, b2);
+        <<<N, C, 0, stream>>>(N, C, se_K, output, input, (half*)skip, bias, w1,
+                              b1, w2, b2);
   }
   ReportCUDAErrors(cudaGetLastError());
 }
