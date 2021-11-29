@@ -552,7 +552,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board
-  if (C > kMaxSupportedChannelsForResBlockFusing) {
+  if (C > kMaxResBlockFusingChannels) {
       throw Exception(
           "res block fusing opt not supported for the given data type and no "
           "of filters\n");

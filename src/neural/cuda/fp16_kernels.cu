@@ -207,7 +207,7 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
 template <bool use_se, bool relu, bool use_bias, bool use_skip>
-__global__ __launch_bounds__(kMaxSupportedSeKForResBlockFusingFp16Ampere, 1)
+__global__ __launch_bounds__(kMaxResBlockFusingSeKFp16Ampere, 1)
 void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* output, const half* input, 
                                                  half* skip, const half* bias, const half* w1, const half* b1,
                                                  const half* w2, const half* b2) {
@@ -261,7 +261,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
   }
 
   if (use_se) {
-    __shared__ float shared_data[kMaxSupportedSeKForResBlockFusingFp16Ampere];
+    __shared__ float shared_data[kMaxResBlockFusingSeKFp16Ampere];
     float avg = S / 64;
     shared_data[k] = avg;
 
@@ -274,7 +274,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K, half* o
     // As se_K << C, we want to loop over se_K instead of C
     // even if it means taking the sum across threads
 
-    __shared__ float shared_sums[kMaxSupportedSeKForResBlockFusingFp16Ampere/32][kMaxSupportedSeKForResBlockFusing];  // per-warp sums
+    __shared__ float shared_sums[kMaxResBlockFusingSeKFp16Ampere/32][kMaxResBlockFusingSeK];  // per-warp sums
 
     for (int i = 0; i < se_K; i++) {
       float val = shared_data[k] * float(readw1(k, i));
@@ -433,10 +433,10 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board
-  if (C > kMaxSupportedChannelsForResBlockFusing) {
+  if (C > kMaxResBlockFusingChannels) {
     // use special kernel with reduced register pressure - only works on Ampere,
     // and only for fp16
-    if (C <= kMaxSupportedSeKForResBlockFusingFp16Ampere) {
+    if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
           OutputInputTransformKernel_fp16_shmem_board<use_se, relu, use_bias,
                                                       use_skip>,

@@ -394,7 +394,7 @@ __device__ __forceinline__ void copyAs(void *dst, const void *src)
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
 template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
-__global__ __launch_bounds__(kMaxSupportedChannelsForResBlockFusing, 1)
+__global__ __launch_bounds__(kMaxResBlockFusingChannels, 1)
 void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* output,
                                                               const T* input, T* skip,
                                                               const T* bias, const T* w1, const T* b1,
@@ -451,7 +451,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
     }
     
   if (use_se) {
-    __shared__ float shared_data[kMaxSupportedChannelsForResBlockFusing];
+    __shared__ float shared_data[kMaxResBlockFusingChannels];
     float avg = S / 64;
     shared_data[k] = avg;
 
@@ -464,7 +464,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K, T* ou
     // As se_K << C, we want to loop over se_K instead of C
     // even if it means taking the sum across threads
 
-    __shared__ float shared_sums[kMaxSupportedChannelsForResBlockFusing/32][kMaxSupportedSeKForResBlockFusing];  // per-warp sums
+    __shared__ float shared_sums[kMaxResBlockFusingChannels/32][kMaxResBlockFusingSeK];  // per-warp sums
 
     for (int i = 0; i < se_K; i++) {
       float val = shared_data[k] * float(readw1(k, i));
