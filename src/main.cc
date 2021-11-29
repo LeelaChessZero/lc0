@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2019 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,10 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "benchmark/benchmark.h"
 #include "benchmark/backendbench.h"
+#include "benchmark/benchmark.h"
 #include "chess/board.h"
 #include "engine.h"
+#include "lc0ctl/describenet.h"
+#include "lc0ctl/leela2onnx.h"
+#include "lc0ctl/onnx2leela.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
@@ -54,7 +57,13 @@ int main(int argc, const char** argv) {
     CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
     CommandLine::RegisterMode("selfplay", "Play games with itself");
     CommandLine::RegisterMode("benchmark", "Quick benchmark");
-    CommandLine::RegisterMode("backendbench", "Quick benchmark of backend only");
+    CommandLine::RegisterMode("backendbench",
+                              "Quick benchmark of backend only");
+    CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
+    CommandLine::RegisterMode("onnx2leela",
+                              "Convert ONNX network to Leela net.");
+    CommandLine::RegisterMode("describenet",
+                              "Shows details about the Leela network.");
 
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
@@ -68,6 +77,12 @@ int main(int argc, const char** argv) {
       // Backend Benchmark mode.
       BackendBenchmark benchmark;
       benchmark.Run();
+    } else if (CommandLine::ConsumeCommand("leela2onnx")) {
+      lczero::ConvertLeelaToOnnx();
+    } else if (CommandLine::ConsumeCommand("onnx2leela")) {
+      lczero::ConvertOnnxToLeela();
+    } else if (CommandLine::ConsumeCommand("describenet")) {
+      lczero::DescribeNetworkCmd();
     } else {
       // Consuming optional "uci" mode.
       CommandLine::ConsumeCommand("uci");
