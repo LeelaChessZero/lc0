@@ -173,7 +173,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   // convolution.
   // Residual blocks are identical, but the first convolution might be bigger
   // when the network has very few filters
-  const auto input_channels = static_cast<size_t>(kInputPlanes);
+  const auto input_channels = planes_[0].size();
   const auto max_channels = std::max(output_channels, input_channels);
 
   // The policy head may increase convolution max output size.
@@ -224,12 +224,12 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   for (size_t i = 0; i < plane_count; i += largest_batch_size) {
     const auto batch_size = std::min(plane_count - i, largest_batch_size);
     for (size_t j = 0; j < batch_size; j++) {
-      EncodePlanes(planes_[i + j], &conv_in[j * kSquares * kInputPlanes]);
+      EncodePlanes(planes_[i + j], &conv_in[j * kSquares * input_channels]);
     }
 
     // Input convolution
 
-    convolve3.Forward(batch_size, kInputPlanes, output_channels, conv_in,
+    convolve3.Forward(batch_size, input_channels, output_channels, conv_in,
                       weights_.input.weights.data(), conv_out);
 
     BiasResidualRelu(batch_size, output_channels, conv_out,
@@ -430,7 +430,11 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
     max_batch_size_ = kHardMaxBatchSize;
   }
 
-  const auto inputChannels = kInputPlanes;
+  const auto inputChannels = (file.format().network_format().input_static() ==
+                                   pblczero::NetworkFormat::INPUT_STATIC_SQUARES
+                               ? 64
+                               : 0) +
+                          112;
   const auto channels = static_cast<int>(weights_.input.biases.size());
   const auto residual_blocks = weights_.residual.size();
 
