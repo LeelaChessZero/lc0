@@ -25,6 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+// This is the trivial backend, which.
+// Uses idea from
+// https://www.chessprogramming.org/Simplified_Evaluation_Function
+// for Q (but coefficients are "trained" from 1000 arbitrary test60 games).
+// Returns the same P vector always ("trained" from 1 hour of test60 games).
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -34,6 +40,7 @@
 
 #include "neural/factory.h"
 #include "utils/bititer.h"
+#include "utils/logging.h"
 
 namespace lczero {
 namespace {
@@ -420,7 +427,7 @@ class TrivialNetworkComputation : public NetworkComputation {
       q += DotProduct(input[5].mask, kKings);
       q -= DotProduct(ReverseBytesInBytes(input[11].mask), kKings);
     }
-    q_.push_back(1.0f / (1.0f + std::exp(-q)));
+    q_.push_back(2.0f / (1.0f + std::exp(-q)) - 1.0f);
   }
 
   void ComputeBlocking() override {}
