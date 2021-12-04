@@ -427,7 +427,9 @@ class TrivialNetworkComputation : public NetworkComputation {
       q += DotProduct(input[5].mask, kKings);
       q -= DotProduct(ReverseBytesInBytes(input[11].mask), kKings);
     }
-    q_.push_back(2.0f / (1.0f + std::exp(-q)) - 1.0f);
+    // Multiply by 3, because without multiplication the eval is too low for
+    // some reason.
+    q_.push_back(2.0f / (1.0f + std::exp(q * -3.0f)) - 1.0f);
   }
 
   void ComputeBlocking() override {}
