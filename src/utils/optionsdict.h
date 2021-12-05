@@ -59,7 +59,6 @@ class TypeDict {
     mutable bool is_used_ = false;
     T value_;
   };
-  std::unordered_map<std::string, V> dict_;
   void EnsureNoUnusedOptions(const std::string& type_name,
                              const std::string& prefix) const {
     for (auto const& option : dict_) {
@@ -69,23 +68,36 @@ class TypeDict {
       }
     }
   }
+
+  const std::unordered_map<std::string, V>& dict() const { return dict_; }
+  std::unordered_map<std::string, V>* mutable_dict() { return &dict_; }
+
+ private:
+  std::unordered_map<std::string, V> dict_;
 };
 
-struct OptionId {
+class OptionId {
+ public:
   OptionId(const char* long_flag, const char* uci_option, const char* help_text,
            const char short_flag = '\0')
-      : long_flag(long_flag),
-        uci_option(uci_option),
-        help_text(help_text),
-        short_flag(short_flag) {}
+      : long_flag_(long_flag),
+        uci_option_(uci_option),
+        help_text_(help_text),
+        short_flag_(short_flag) {}
 
   OptionId(const OptionId& other) = delete;
   bool operator==(const OptionId& other) const { return this == &other; }
 
-  const char* const long_flag;
-  const char* const uci_option;
-  const char* const help_text;
-  const char short_flag;
+  const char* long_flag() const { return long_flag_; }
+  const char* uci_option() const { return uci_option_; }
+  const char* help_text() const { return help_text_; }
+  char short_flag() const { return short_flag_; }
+
+ private:
+  const char* const long_flag_;
+  const char* const uci_option_;
+  const char* const help_text_;
+  const char short_flag_;
 };
 
 class OptionsDict : TypeDict<bool>,
@@ -93,7 +105,7 @@ class OptionsDict : TypeDict<bool>,
                     TypeDict<std::string>,
                     TypeDict<float> {
  public:
-  OptionsDict(const OptionsDict* parent = nullptr)
+  explicit OptionsDict(const OptionsDict* parent = nullptr)
       : parent_(parent), aliases_{this} {}
 
   // e.g. dict.Get<int>("threads")
@@ -115,6 +127,11 @@ class OptionsDict : TypeDict<bool>,
   bool Exists(const std::string& key) const;
   template <typename T>
   bool Exists(const OptionId& option_id) const;
+
+  // Checks whether the given key exists for given type, and throws an exception
+  // if not.
+  template <typename T>
+  void EnsureExists(const OptionId& option_id) const;
 
   // Checks whether the given key exists for given type. Does not fall back to
   // check parents.
@@ -204,7 +221,7 @@ T OptionsDict::Get(const OptionId& option_id) const {
 }
 template <typename T>
 std::optional<T> OptionsDict::OwnGet(const std::string& key) const {
-  const auto& dict = TypeDict<T>::dict_;
+  const auto& dict = TypeDict<T>::dict();
   auto iter = dict.find(key);
   if (iter != dict.end()) {
     return iter->second.Get();
@@ -228,8 +245,16 @@ bool OptionsDict::Exists(const OptionId& option_id) const {
   return Exists<T>(GetOptionId(option_id));
 }
 template <typename T>
+void OptionsDict::EnsureExists(const OptionId& option_id) const {
+  if (!OwnExists<T>(option_id)) {
+    throw Exception(std::string("The flag --") + option_id.long_flag() +
+                    " must be specified.");
+  }
+}
+
+template <typename T>
 bool OptionsDict::OwnExists(const std::string& key) const {
-  const auto& dict = TypeDict<T>::dict_;
+  const auto& dict = TypeDict<T>::dict();
   auto iter = dict.find(key);
   return iter != dict.end();
 }
@@ -256,7 +281,7 @@ T OptionsDict::GetOrDefault(const OptionId& option_id,
 
 template <typename T>
 void OptionsDict::Set(const std::string& key, const T& value) {
-  TypeDict<T>::dict_[key].Set(value);
+  (*TypeDict<T>::mutable_dict())[key].Set(value);
 }
 template <typename T>
 void OptionsDict::Set(const OptionId& option_id, const T& value) {
@@ -265,7 +290,7 @@ void OptionsDict::Set(const OptionId& option_id, const T& value) {
 
 template <typename T>
 T& OptionsDict::GetRef(const std::string& key) {
-  return TypeDict<T>::dict_[key].Get();
+  return (*TypeDict<T>::mutable_dict())[key].Get();
 }
 template <typename T>
 T& OptionsDict::GetRef(const OptionId& option_id) {

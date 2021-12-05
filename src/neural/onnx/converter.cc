@@ -216,9 +216,23 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     onnx->set_output_policy(output);
   } else {
     // Dense policy head.
-    throw Exception(
-        "The old fully connected policy head is not implemented due to "
-        "laziness.");
+    const int pol_channels = weights.policy.biases.size();
+    auto flow =
+        MakeConvBlock(builder, weights.policy, NumFilters(), pol_channels,
+                      input, "/policy/conv", nullptr, "", true, 1);
+    flow =
+        builder->Reshape("/policy/reshape", flow,
+                         builder->AddInitializer(
+                             "/const/policy_shape",
+                             Int64OnnxConst({-1, pol_channels * 8 * 8}, {2})));
+    flow = builder->MatMul(
+        "/policy/dense/matmul", flow,
+        *GetWeghtsConverter(weights.ip_pol_w, {pol_channels * 8 * 8, 1858},
+                            {1, 0}));
+    auto output = builder->Add(options_.output_policy_head, flow,
+                               *GetWeghtsConverter(weights.ip_pol_b, {1858}));
+    builder->AddOutput(output, {-1, 1858}, GetDataType());
+    onnx->set_output_policy(output);
   }
 }
 
