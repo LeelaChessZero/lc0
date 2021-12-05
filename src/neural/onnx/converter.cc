@@ -53,8 +53,11 @@ class Converter {
 
  private:
   int NumFilters() const {
-    return LayerAdapter(src_.weights().input().weights()).size() /
-           kInputPlanes / 9;
+    return LayerAdapter(src_.weights().input().biases()).size();
+  }
+  int NumInputs() const {
+    return LayerAdapter(src_.weights().input().weights()).size() / 9 /
+           NumFilters();
   }
   size_t NumBlocks() const { return src_.weights().residual_size(); }
   void CopyGenericFields(pblczero::Net* dst);
@@ -317,10 +320,10 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   AddStdInitializers(&builder);
 
   onnx->set_input_planes(options_.input_planes_name);
-  builder.AddInput(options_.input_planes_name, {-1, 112, 8, 8}, GetDataType());
+  builder.AddInput(options_.input_planes_name, {-1, NumInputs(), 8, 8}, GetDataType());
 
   // Input convolution.
-  auto flow = MakeConvBlock(&builder, weights.input, kInputPlanes, NumFilters(),
+  auto flow = MakeConvBlock(&builder, weights.input, NumInputs(), NumFilters(),
                             options_.input_planes_name, "/inputconv");
 
   // Residual tower.
