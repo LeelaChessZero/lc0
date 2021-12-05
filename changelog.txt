@@ -1,4 +1,12 @@
-﻿v0.28.0 (2021-08-25)
+﻿v0.28.1-rc1 (2021-12-05)
+~~~~~~~
+* Improved cuda performance for 512 filter networks on Amprere GPUs.
+* Several fixes for the onnx backend.
+* Command line options for network file conversion to/from onnx.
+* Documentation updates.
+* Correctness fixes for rescorer support functions.
+
+v0.28.0 (2021-08-25)
 ~~~~~~~
 * Fixed an issue with small third-party nets on the cuda/cudnn backends.
 * Minor tweak to the default task-workers for the cpu packages.
