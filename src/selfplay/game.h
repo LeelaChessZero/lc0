@@ -89,7 +89,9 @@ class SelfPlayGame {
   void WriteTrainingData(TrainingDataWriter* writer) const;
 
   GameResult GetGameResult() const { return game_result_; }
-  std::vector<Move> GetMoves() const;
+  std::vector<Move> GetMoves() const { return moves_; }
+  std::vector<Move> GetBestMoves() const { return best_moves_; }
+
   // Gets the eval which required the biggest swing up to get the final outcome.
   // Eval is the expected outcome in the range 0<->1.
   float GetWorstEvalForWinnerOrDraw() const;
@@ -118,6 +120,8 @@ class SelfPlayGame {
   float max_eval_[3] = {0.0f, 0.0f, 0.0f};
   const bool chess960_;
   std::mutex mutex_;
+  std::vector<Move> moves_;
+  std::vector<Move> best_moves_;
 
   // Training data to send.
   V6TrainingDataArray training_data_;
