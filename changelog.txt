@@ -1,4 +1,8 @@
-﻿v0.28.1-rc1 (2021-12-05)
+﻿v0.28.1 (2021-12-12)
+~~~~~~~
+* No changes from rc1.
+
+v0.28.1-rc1 (2021-12-05)
 ~~~~~~~
 * Improved cuda performance for 512 filter networks on Amprere GPUs.
 * Several fixes for the onnx backend.
