@@ -1,4 +1,8 @@
-﻿v0.28.1 (2021-12-12)
+﻿v0.28.2 (2021-12-13)
+~~~~~~~
+* No changes from v0.28.1-rc1 as the v0.28.1 release was botched.
+
+v0.28.1 (2021-12-12)
 ~~~~~~~
 * No changes from rc1.
 
