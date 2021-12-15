@@ -546,6 +546,26 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename T = float, bool use_se, bool relu, bool use_bias,
+          bool use_skip>
+void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
+                          const T* skip, const T* bias, const T* w1,
+                          const T* b1, const T* w2, const T* b2,
+                          cudaStream_t stream) {
+  // Each thread processes entire chess board
+  if (C > kMaxResBlockFusingChannels) {
+      throw Exception(
+          "res block fusing opt not supported for the given data type and no "
+          "of filters\n");
+  } else {
+    OutputTransform_SE_relu_InputTransform_kernel<float, use_se, relu, use_bias,
+                                                  use_skip>
+        <<<N, C, 0, stream>>>(N, C, se_K, output, input, (float*)skip, bias, w1,
+                              b1, w2, b2);
+  }
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
                                              cudaStream_t stream);
@@ -604,7 +624,8 @@ template void FilterTransform<float>(int N, int C, float* transformedFilter,
 
 template void InputTransform<float, true>(int N, int C,
                                           float* transformed_input,
-                                          const float* input, cudaStream_t stream);
+                                          const float* input,
+                                          cudaStream_t stream);
 
 template void InputTransform<float, false>(int N, int C,
                                            float* transformed_input,
