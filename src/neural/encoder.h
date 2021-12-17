@@ -39,10 +39,6 @@ constexpr int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 
 enum class FillEmptyHistory { NO, FEN_ONLY, ALWAYS };
 
-// Returns the transform that would be used in EncodePositionForNN.
-int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
-                         const PositionHistory& history);
-
 // Encodes the last position in history for the neural network request.
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,

@@ -33,8 +33,7 @@ namespace lczero {
 
 namespace {
 
-int CompareTransposing(BitBoard board, int initial_transform) {
-  uint64_t value = board.as_int();
+int CompareTransposing(uint64_t value, int initial_transform) {
   if ((initial_transform & FlipTransform) != 0) {
     value = ReverseBitsInBytes(value);
   }
@@ -47,20 +46,25 @@ int CompareTransposing(BitBoard board, int initial_transform) {
   return 0;
 }
 
-int ChooseTransform(const ChessBoard& board) {
+int ChooseTransform(const InputPlanes& planes,
+                    pblczero::NetworkFormat::InputFormat input_format) {
   // If there are any castling options no transform is valid.
   // Even using FRC rules, king and queen side castle moves are not symmetrical.
-  if (!board.castlings().no_legal_castle()) {
+  uint64_t castling = planes[104].mask | planes[105].mask;
+  if (input_format == pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE) {
+    castling |= planes[106].mask | planes[107].mask;
+  }
+  if (castling) {
     return 0;
   }
-  auto our_king = (board.kings() & board.ours()).as_int();
+  auto our_king = planes[5].mask;
   int transform = NoTransform;
   if ((our_king & 0x0F0F0F0F0F0F0F0FULL) != 0) {
     transform |= FlipTransform;
     our_king = ReverseBitsInBytes(our_king);
   }
   // If there are any pawns only horizontal flip is valid.
-  if (board.pawns().as_int() != 0) {
+  if ((planes[0].mask | planes[6].mask) != 0) {
     return transform;
   }
   if ((our_king & 0xFFFFFFFF00000000ULL) != 0) {
@@ -73,25 +77,29 @@ int ChooseTransform(const ChessBoard& board) {
   if ((our_king & 0xE0C08000ULL) != 0) {
     transform |= TransposeTransform;
   } else if ((our_king & 0x10204080ULL) != 0) {
-    auto outcome = CompareTransposing(board.ours() | board.theirs(), transform);
+    auto ours = planes[0].mask | planes[1].mask | planes[2].mask |
+                planes[3].mask | planes[4].mask | planes[5].mask;
+    auto theirs = planes[6].mask | planes[7].mask | planes[8].mask |
+                  planes[9].mask | planes[10].mask | planes[11].mask;
+    auto outcome = CompareTransposing(ours | theirs, transform);
     if (outcome == -1) return transform;
     if (outcome == 1) return transform | TransposeTransform;
-    outcome = CompareTransposing(board.ours(), transform);
+    outcome = CompareTransposing(ours, transform);
     if (outcome == -1) return transform;
     if (outcome == 1) return transform | TransposeTransform;
-    outcome = CompareTransposing(board.kings(), transform);
+    outcome = CompareTransposing(planes[5].mask | planes[11].mask, transform);
     if (outcome == -1) return transform;
     if (outcome == 1) return transform | TransposeTransform;
-    outcome = CompareTransposing(board.queens(), transform);
+    outcome = CompareTransposing(planes[4].mask | planes[10].mask, transform);
     if (outcome == -1) return transform;
     if (outcome == 1) return transform | TransposeTransform;
-    outcome = CompareTransposing(board.rooks(), transform);
+    outcome = CompareTransposing(planes[3].mask | planes[9].mask, transform);
     if (outcome == -1) return transform;
     if (outcome == 1) return transform | TransposeTransform;
-    outcome = CompareTransposing(board.knights(), transform);
+    outcome = CompareTransposing(planes[1].mask | planes[7].mask, transform);
     if (outcome == -1) return transform;
     if (outcome == 1) return transform | TransposeTransform;
-    outcome = CompareTransposing(board.bishops(), transform);
+    outcome = CompareTransposing(planes[2].mask | planes[8].mask, transform);
     if (outcome == -1) return transform;
     if (outcome == 1) return transform | TransposeTransform;
     // If all piece types are symmetrical and ours is symmetrical and
@@ -122,15 +130,6 @@ bool Is960CastlingFormat(pblczero::NetworkFormat::InputFormat input_format) {
   return input_format >= pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE;
 }
 
-int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
-                         const PositionHistory& history) {
-  if (!IsCanonicalFormat(input_format)) {
-    return 0;
-  }
-  const ChessBoard& board = history.Last().GetBoard();
-  return ChooseTransform(board);
-}
-
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
@@ -148,9 +147,6 @@ InputPlanes EncodePositionForNN(
   {
     const ChessBoard& board = history.Last().GetBoard();
     const bool we_are_black = board.flipped();
-    if (IsCanonicalFormat(input_format)) {
-      transform = ChooseTransform(board);
-    }
     switch (input_format) {
       case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE: {
         // "Legacy" input planes with:
@@ -290,6 +286,9 @@ InputPlanes EncodePositionForNN(
     // If no capture no pawn is 0, the previous was start of game, capture or
     // pawn push, so no need to go back further if stopping early.
     if (stop_early && position.GetRule50Ply() == 0) break;
+  }
+  if (IsCanonicalFormat(input_format)) {
+    transform = ChooseTransform(result, input_format);
   }
   if (transform != NoTransform) {
     // Transform all masks.
