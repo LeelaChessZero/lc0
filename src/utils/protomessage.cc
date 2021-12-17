@@ -114,6 +114,7 @@ void ProtoMessage::AppendInt32(int field_id, std::uint32_t value,
   *out += EncodeVarInt(5 + (field_id << 3));
   WriteFixed(value, 4, out);
 }
+
 void ProtoMessage::AppendString(int field_id, std::string_view value,
                                 std::string* out) const {
   *out += EncodeVarInt(2 + (field_id << 3));

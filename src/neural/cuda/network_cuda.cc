@@ -192,11 +192,14 @@ class CudaNetwork : public Network {
               "using a smaller network.";
     }
 
-    // Disable res block fusing for > 384 filters (the fused output input
+    // Disable res block fusing for > 512 filters (the fused output input
     // transform kernel runs out of register space) and for fp32 for now.
     // TODO: make it work for filters not a multiple of 32.
-    if (kNumFilters <= 384 && kNumFilters % 32 == 0 &&
-        std::is_same<half, DataType>::value) {
+    if ((kNumFilters <= kMaxResBlockFusingChannels ||
+         ((deviceProp.major >= 8 ||
+           (deviceProp.major == 7 && deviceProp.minor != 5)) &&
+          kNumFilters <= kMaxResBlockFusingSeKFp16Ampere)) &&
+        kNumFilters % 32 == 0 && std::is_same<half, DataType>::value) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
       use_res_block_winograd_fuse_opt_ = false;

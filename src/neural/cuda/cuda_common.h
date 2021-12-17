@@ -25,9 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <cuda_runtime.h>
-#include <cuda_fp16.h>
 #include <cublas_v2.h>
+#include <cuda_fp16.h>
+#include <cuda_runtime.h>
 
 #include "utils/exception.h"
 
@@ -41,6 +41,15 @@ namespace lczero {
 namespace cudnn_backend {
 
 static constexpr int kNumOutputPolicy = 1858;
+
+// max supported filter count for fast path
+// TODO: extend it to cover bigger networks!
+// (We are limited by no of registers per thread)
+static constexpr int kMaxResBlockFusingChannels = 384;  // limit on num_filters
+static constexpr int kMaxResBlockFusingSeKFp16Ampere =
+    512;  // (use a different kernel with reduced register pressure)
+static constexpr int kMaxResBlockFusingSeK =
+    128;  // limit on (num_filters / se_ratio)
 
 #ifdef USE_CUDNN
 void CudnnError(cudnnStatus_t status, const char* file, const int& line);
