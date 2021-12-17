@@ -130,13 +130,12 @@ bool Is960CastlingFormat(pblczero::NetworkFormat::InputFormat input_format) {
   return input_format >= pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE;
 }
 
-InputPlanes EncodePositionForNN(
+InputPlanes EncodePositionNoTransform(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out) {
+    FillEmptyHistory fill_empty_history) {
   InputPlanes result(kAuxPlaneBase + 8);
 
-  int transform = 0;
   // Canonicalization format needs to stop early to avoid applying transform in
   // history across incompatible transitions.  It is also more canonical since
   // history before these points is not relevant to the final result.
@@ -287,13 +286,19 @@ InputPlanes EncodePositionForNN(
     // pawn push, so no need to go back further if stopping early.
     if (stop_early && position.GetRule50Ply() == 0) break;
   }
+  return result;
+}
+
+int TransformInputPlanes(InputPlanes& planes,
+                         pblczero::NetworkFormat::InputFormat input_format) {
+  int transform = 0;
   if (IsCanonicalFormat(input_format)) {
-    transform = ChooseTransform(result, input_format);
+    transform = ChooseTransform(planes, input_format);
   }
   if (transform != NoTransform) {
     // Transform all masks.
     for (int i = 0; i <= kAuxPlaneBase + 4; i++) {
-      auto v = result[i].mask;
+      auto v = planes[i].mask;
       if (v == 0 || v == ~0ULL) continue;
       if ((transform & FlipTransform) != 0) {
         v = ReverseBitsInBytes(v);
@@ -304,9 +309,21 @@ InputPlanes EncodePositionForNN(
       if ((transform & TransposeTransform) != 0) {
         v = TransposeBitsInBytes(v);
       }
-      result[i].mask = v;
+      planes[i].mask = v;
     }
   }
+  return transform;
+}
+
+InputPlanes EncodePositionForNN(
+    pblczero::NetworkFormat::InputFormat input_format,
+    const PositionHistory& history, int history_planes,
+    FillEmptyHistory fill_empty_history, int* transform_out) {
+  auto result = EncodePositionNoTransform(input_format, history, history_planes,
+                                          fill_empty_history);
+
+  int transform = TransformInputPlanes(result, input_format);
+
   if (transform_out) *transform_out = transform;
   return result;
 }

@@ -69,8 +69,7 @@ class CachingComputation {
   void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
   // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
-  void AddInput(uint64_t hash, const PositionHistory& history,
-                const Node* node);
+  void AddInput(uint64_t hash, InputPlanes&& input, std::vector<Move>&& moves);
   // Undos last AddInput. If it was a cache miss, then it's actually not removed
   // from parent's batch.
   void PopLastInputHit();

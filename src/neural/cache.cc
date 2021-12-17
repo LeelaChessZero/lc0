@@ -70,35 +70,21 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
-                                  const Node* node) {
+void CachingComputation::AddInput(uint64_t hash, InputPlanes&& input,
+                                  std::vector<Move>&& moves) {
   if (AddInputByHash(hash)) {
     return;
   }
-  int transform;
-  auto input =
-      EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
-  std::vector<uint16_t> moves;
-  if (node && node->HasChildren()) {
-    // Legal moves are known, use them.
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
-    }
-  } else {
-    // Cache legal moves.
-    const auto& legal_moves =
-        history.Last().GetBoard().GenerateLegalMoves();
-    moves.reserve(legal_moves.size());
-    for (auto iter = legal_moves.begin(), end = legal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
+  int transform = TransformInputPlanes(input, input_format_);
+
+  std::vector<uint16_t> probabilities_to_cache;
+  for (auto iter = moves.begin(), end = moves.end(); iter != end; ++iter) {
+    probabilities_to_cache.emplace_back(iter->as_nn_index(transform));
   }
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().probabilities_to_cache = moves;
+  batch_.back().probabilities_to_cache = probabilities_to_cache;
   parent_->AddInput(std::move(input));
   return;
 }

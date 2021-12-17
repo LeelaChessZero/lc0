@@ -325,7 +325,8 @@ class SearchWorker {
     // Details that are filled in as we go.
     uint64_t hash;
     NNCacheLock lock;
-    PositionHistory history;
+    std::vector<Move> moves_to_cache;
+    InputPlanes input_planes;
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,

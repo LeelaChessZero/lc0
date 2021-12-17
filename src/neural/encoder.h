@@ -44,6 +44,13 @@ InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out);
+// Same as above but split into two parts.
+InputPlanes EncodePositionNoTransform(
+    pblczero::NetworkFormat::InputFormat input_format,
+    const PositionHistory& history, int history_planes,
+    FillEmptyHistory fill_empty_history);
+int TransformInputPlanes(InputPlanes& planes,
+                         pblczero::NetworkFormat::InputFormat input_format);
 
 bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format);
 bool IsCanonicalArmageddonFormat(
