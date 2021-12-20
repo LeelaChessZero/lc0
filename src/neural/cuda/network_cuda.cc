@@ -145,10 +145,11 @@ class CudaNetwork : public Network {
 
     multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
 
-    // Default layout is nchw.
-    bool hasTensorCores = false;
+    // layout used by cuda backend is nchw.
+    has_tensor_cores_ = false;
+    constexpr bool fp16 = std::is_same<half, DataType>::value;
 
-    if (std::is_same<half, DataType>::value) {
+    if (fp16) {
       // Check if the GPU support FP16.
 
       if ((deviceProp.major == 6 && deviceProp.minor != 1) ||
@@ -161,7 +162,7 @@ class CudaNetwork : public Network {
         // enabling TENSOR_OP_MATH for them works but is very very slow
         // (likely because the system emulates it).
         if (!strstr(deviceProp.name, "GTX 16")) {
-          hasTensorCores = true;
+          has_tensor_cores_ = true;
         }
       } else {
         throw Exception("Your GPU doesn't support FP16");
@@ -170,8 +171,17 @@ class CudaNetwork : public Network {
 
     if (!multi_stream_) {
       ReportCUBLASErrors(cublasCreate(&cublas_));
-      if (hasTensorCores)
-        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+      if (has_tensor_cores_)
+        ReportCUBLASErrors(cublasSetMathMode(
+            cublas_,
+            CUBLAS_TENSOR_OP_MATH));  // Deprecated on CUDA 11.0 and later
+      else if (fp16)
+        ReportCUBLASErrors(cublasSetMathMode(
+            cublas_,
+            CUBLAS_PEDANTIC_MATH));  // Explicitly set PEDANTIC_MATH mode to
+                                     // avoid cublas bug of making use of tensor
+                                     // core math on TU11x GPUs that don't
+                                     // support it.
     }
 
     const int kNumInputPlanes = kInputPlanes;
@@ -199,7 +209,7 @@ class CudaNetwork : public Network {
          ((deviceProp.major >= 8 ||
            (deviceProp.major == 7 && deviceProp.minor != 5)) &&
           kNumFilters <= kMaxResBlockFusingSeKFp16Ampere)) &&
-        kNumFilters % 32 == 0 && std::is_same<half, DataType>::value) {
+        kNumFilters % 32 == 0 && fp16) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
       use_res_block_winograd_fuse_opt_ = false;
@@ -650,8 +660,9 @@ class CudaNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
-                                             moves_left_, tensor_mem_size_, scratch_size_);
+      return std::make_unique<InputsOutputs>(
+          max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
+          !has_tensor_cores_ && std::is_same<half, DataType>::value);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -699,6 +710,8 @@ class CudaNetwork : public Network {
 
   // this copy is used only for initialization when multi-stream is enabled
   void* scratch_mem_;
+
+  bool has_tensor_cores_;
 
   // not used when multi-steam is enabled
   cublasHandle_t cublas_;
