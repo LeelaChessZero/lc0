@@ -535,15 +535,15 @@ class CudaNetwork : public Network {
                             cublas, stream);  // conv2
         network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // conv1
+                            stream);  // conv3
 
         network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
                             scratch_mem, scratch_size_, nullptr,
-                            cublas, stream);  // conv2
+                            cublas, stream);  // conv4
         network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1],
                             tensor_mem[2],
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // conv1
+                            stream);  // se
       } else {
         network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
