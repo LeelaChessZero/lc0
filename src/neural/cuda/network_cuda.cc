@@ -300,7 +300,7 @@ class CudaNetwork : public Network {
                              scratch_mem_);
           network_.emplace_back(std::move(conv3));
           auto conv4 = std::make_unique<Conv1Layer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters / 2, true, true,
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters / 2, false, true,
               use_gemm_ex);
           conv4->LoadWeights(&weights.residual[block].conv4.weights[0],
                              &weights.residual[block].conv4.biases[0],
