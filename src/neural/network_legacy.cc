@@ -58,6 +58,8 @@ LegacyWeights::SEunit::SEunit(const pblczero::Weights::SEunit& se)
 LegacyWeights::Residual::Residual(const pblczero::Weights::Residual& residual)
     : conv1(residual.conv1()),
       conv2(residual.conv2()),
+      conv3(residual.conv3()),
+      conv4(residual.conv4()),
       se(residual.se()),
       has_se(residual.has_se()) {}
 
