@@ -217,6 +217,7 @@ class CudnnNetwork : public Network {
     constexpr bool fp16 = std::is_same<half, DataType>::value;
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = (int)weights.input.biases.size();
+    const int kNumInnerFilters = (int)weights.residual[0].conv1.biases.size();
     numBlocks_ = (int)weights.residual.size();
 
     // Use our custom winograd for residual tower convolutions for most cases:
@@ -250,7 +251,7 @@ class CudnnNetwork : public Network {
     // going to exceed 40% of total video memory, force custom_winograd off
     // if it's going to exceed 50% of memory.
     size_t residual_single_layer_weight_size =
-        3 * 3 * kNumFilters * kNumFilters * sizeof(DataType);
+        3 * 3 * kNumFilters * kNumInnerFilters * sizeof(DataType);
     size_t residual_weight_size =
         residual_single_layer_weight_size * numBlocks_ * 2;
     size_t transformed_residual_weight_size = residual_weight_size * 4;
@@ -290,7 +291,8 @@ class CudnnNetwork : public Network {
       // Disable res block fusing for > 384 filters (the fused output input
       // transform kernel runs out of register space) and for fp32 for now.
       // TODO: make it work for filters not a multiple of 32.
-      if (kNumFilters <= 384 && kNumFilters % 32 == 0 && fp16) {
+      if (kNumFilters <= 384 && kNumFilters % 32 == 0 && kNumInnerFilters <= 384 &&
+          kNumInnerFilters % 32 == 0 && fp16) {
         use_res_block_winograd_fuse_opt_ = true;
       }
       // Override if set in backend-opts.
@@ -363,7 +365,7 @@ class CudnnNetwork : public Network {
     if (use_custom_winograd_) {
       // Need additional space for transformed input/outputs which are 36/16
       // times size (4x4 block transformed into 6x6).
-      transformed_tensor_size = (size_t)(max_batch_size_ * kNumFilters * 64 *
+      transformed_tensor_size = (size_t)(max_batch_size_ * std::max(kNumInnerFilters, kNumFilters) * 64 *
                                          (36.0 / 16.0) * sizeof(DataType));
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
@@ -399,7 +401,7 @@ class CudnnNetwork : public Network {
 
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
-              getLastLayer(), kNumFilters, kNumFilters, has_se, se_k, use_gemm_ex,
+              getLastLayer(), kNumFilters, kNumInnerFilters, has_se, se_k, use_gemm_ex,
               block == 0, block == (numBlocks_ - 1));
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                               &weights.residual[block].conv1.biases[0],
@@ -416,7 +418,7 @@ class CudnnNetwork : public Network {
           network_.emplace_back(std::move(layer));
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
+              getLastLayer(), kNumInnerFilters, 8, 8, kNumFilters, true, true, false,
               false, 0, use_gemm_ex);
           conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                              &weights.residual[block].conv1.biases[0],
@@ -424,7 +426,7 @@ class CudnnNetwork : public Network {
           network_.emplace_back(std::move(conv1));
 
           auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
+              getLastLayer(), kNumFilters, 8, 8, kNumInnerFilters, true, true, true,
               has_se, se_k, use_gemm_ex);
           conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                              &weights.residual[block].conv2.biases[0],
@@ -440,7 +442,7 @@ class CudnnNetwork : public Network {
 
       } else {
         auto conv1 = std::make_unique<ConvLayer<DataType>>(
-            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true);
+            getLastLayer(), kNumInnerFilters, 8, 8, 3, kNumFilters, true, true);
         conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                            &weights.residual[block].conv1.biases[0],
                            scratch_mem_);
@@ -450,7 +452,7 @@ class CudnnNetwork : public Network {
         bool useReluAndBias = weights.residual[block].has_se ? false : true;
 
         auto conv2 = std::make_unique<ConvLayer<DataType>>(
-            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useReluAndBias,
+            getLastLayer(), kNumFilters, 8, 8, 3, kNumInnerFilters, useReluAndBias,
             useReluAndBias);
         conv2->LoadWeights(
             &weights.residual[block].conv2.weights[0],
@@ -477,8 +479,9 @@ class CudnnNetwork : public Network {
 
     // Policy head.
     if (conv_policy_) {
+      auto pol1_channels = weights.policy1.biases.size();
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, kNumFilters, 8, 8, 3, kNumFilters, true, true);
+          resi_last_, pol1_channels, 8, 8, 3, kNumFilters, true, true);
       conv1->LoadWeights(&weights.policy1.weights[0],
                          &weights.policy1.biases[0], scratch_mem_);
       network_.emplace_back(std::move(conv1));
@@ -487,7 +490,7 @@ class CudnnNetwork : public Network {
 
       // No relu
       auto conv2 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, false, true);
+          getLastLayer(), pol_channels, 8, 8, 3, pol1_channels, false, true);
       conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                          scratch_mem_);
       network_.emplace_back(std::move(conv2));
