@@ -399,7 +399,7 @@ class CudnnNetwork : public Network {
 
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
-              getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
+              getLastLayer(), kNumFilters, kNumFilters, has_se, se_k, use_gemm_ex,
               block == 0, block == (numBlocks_ - 1));
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                               &weights.residual[block].conv1.biases[0],

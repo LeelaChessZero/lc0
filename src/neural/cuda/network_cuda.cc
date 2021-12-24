@@ -176,13 +176,14 @@ class CudaNetwork : public Network {
 
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = (int)weights.input.biases.size();
+    const int kNumInnerFilters = (int)weights.residual[0].conv1.biases.size();
     numBlocks_ = (int)weights.residual.size();
 
     // Warn if the memory required for storing transformed weights is
     // going to exceed 40% of total video memory, force custom_winograd off
     // if it's going to exceed 50% of memory.
     size_t residual_single_layer_weight_size =
-        3 * 3 * kNumFilters * kNumFilters * sizeof(DataType);
+        3 * 3 * kNumFilters * kNumInnerFilters * sizeof(DataType);
     size_t residual_weight_size =
         residual_single_layer_weight_size * numBlocks_ * 2;
     size_t transformed_residual_weight_size = residual_weight_size * 4;
@@ -199,7 +200,8 @@ class CudaNetwork : public Network {
          ((deviceProp.major >= 8 ||
            (deviceProp.major == 7 && deviceProp.minor != 5)) &&
           kNumFilters <= kMaxResBlockFusingSeKFp16Ampere)) &&
-        kNumFilters % 32 == 0 && std::is_same<half, DataType>::value) {
+        kNumFilters % 32 == 0 && kNumInnerFilters % 32 == 0 &&
+        std::is_same<half, DataType>::value) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
       use_res_block_winograd_fuse_opt_ = false;
@@ -231,8 +233,9 @@ class CudaNetwork : public Network {
 
     // Need additional space for transformed input/outputs which are 36/16
     // times size (4x4 block transformed into 6x6).
-    const size_t transformed_tensor_size = (size_t)(
-        max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) * sizeof(DataType));
+    const size_t transformed_tensor_size =
+        (size_t)(max_batch_size_ * std::max(kNumFilters, kNumInnerFilters) *
+                 64 * (36.0 / 16.0) * sizeof(DataType));
     scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
@@ -256,7 +259,8 @@ class CudaNetwork : public Network {
 
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
-              getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
+              getLastLayer(), kNumFilters, kNumInnerFilters, has_se, se_k,
+              use_gemm_ex,
               block == 0, block == (numBlocks_ - 1));
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                               &weights.residual[block].conv1.biases[0],
@@ -272,7 +276,8 @@ class CudaNetwork : public Network {
           network_.emplace_back(std::move(layer));
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
+              getLastLayer(), kNumInnerFilters, 8, 8, kNumFilters, true, true,
+              false,
               false, 0, use_gemm_ex);
           conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                              &weights.residual[block].conv1.biases[0],
@@ -280,7 +285,8 @@ class CudaNetwork : public Network {
           network_.emplace_back(std::move(conv1));
 
           auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
+              getLastLayer(), kNumFilters, 8, 8, kNumInnerFilters, true, true,
+              true,
               has_se, se_k, use_gemm_ex);
           conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                              &weights.residual[block].conv2.biases[0],

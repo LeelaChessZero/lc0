@@ -291,7 +291,7 @@ class ResidualBlock : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetW;
 
  public:
-  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last);
+  ResidualBlock(BaseLayer<DataType>* ip, int C, int C_inner, bool se, int se_k, bool use_gemm_ex, bool first, bool last);
 
   ~ResidualBlock();
   void LoadWeights0(float* pfilter, float* pBias, void* scratch);
@@ -308,6 +308,7 @@ class ResidualBlock : public BaseLayer<DataType> {
   const int se_k_;
   const bool use_gemm_ex_;
   const int c_input_;
+  const int c_inner_;
   const bool first_block_;
   const bool last_block_;
 

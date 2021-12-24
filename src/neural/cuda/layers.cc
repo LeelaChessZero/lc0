@@ -985,20 +985,20 @@ Conv1Layer<DataType>::~Conv1Layer() {
 
 template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(
-    BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last)
+    BaseLayer<DataType>* ip, int C, int C_inner, bool se, int se_k, bool use_gemm_ex, bool first, bool last)
     : BaseLayer<DataType>(C, 8, 8, ip),
       has_se_(se),
       se_k_(se_k),
       use_gemm_ex_(use_gemm_ex),
       c_input_(C),
+      c_inner_(C_inner),
       first_block_(first),
       last_block_(last) {
   // Allocate memory for weights (filter tensor) and biases.
-  const size_t weight_size = sizeof(DataType) * C * C * 3 * 3;
+  const size_t weight_size = sizeof(DataType) * C * C_inner * 3 * 3;
 
-  const size_t bias_size = sizeof(DataType) * C;
-  ReportCUDAErrors(cudaMalloc(&biases0_, bias_size));
-  ReportCUDAErrors(cudaMalloc(&biases1_, bias_size));
+  ReportCUDAErrors(cudaMalloc(&biases0_, sizeof(DataType) * C_inner));
+  ReportCUDAErrors(cudaMalloc(&biases1_, sizeof(DataType) * C));
 
   // 6x6 transformed filter size, for 3x3 convolution
   ReportCUDAErrors(cudaMalloc(&transformed_weights0_, weight_size * 4));
@@ -1027,8 +1027,8 @@ void ResidualBlock<DataType>::LoadWeights0(float* pfilter,
                                            float* pBias,
                                            void* scratch) {
 
-  const size_t weight_size = sizeof(float) * c_input_ * C * 3 * 3;
-  const size_t bias_size = sizeof(float) * C;
+  const size_t weight_size = sizeof(float) * c_input_ * c_inner_ * 3 * 3;
+  const size_t bias_size = sizeof(float) * c_inner_;
 
   // Store untransformed weights in scratch.
   const DataType* weights = (DataType*)scratch + weight_size;
@@ -1038,22 +1038,22 @@ void ResidualBlock<DataType>::LoadWeights0(float* pfilter,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3, 0);
+  copyTypeConverted((DataType*)weights, (float*)scratch, c_inner_ * c_input_ * 3 * 3, 0);
 
   if (pBias) {
     ReportCUDAErrors(
         cudaMemcpy(scratch, pBias, bias_size, cudaMemcpyHostToDevice));
-    copyTypeConverted((DataType*)biases0_, (float*)scratch, C, 0);
+    copyTypeConverted((DataType*)biases0_, (float*)scratch, c_inner_, 0);
   }
 
   // run winograd transform kernel for the filter
-  FilterTransform(C, c_input_, transformed_weights0_, weights);
+  FilterTransform(c_inner_, c_input_, transformed_weights0_, weights);
 }
 
 template <typename DataType>
 void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
                                            void* scratch) {
-  const size_t weight_size = sizeof(float) * C * C * 3 * 3;
+  const size_t weight_size = sizeof(float) * c_inner_ * C * 3 * 3;
   const size_t bias_size = sizeof(float) * C;
 
   // Store untransformed weights in scratch.
@@ -1064,7 +1064,7 @@ void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights, (float*)scratch, C * C * 3 * 3, 0);
+  copyTypeConverted((DataType*)weights, (float*)scratch, c_inner_ * C * 3 * 3, 0);
 
   if (pBias) {
     ReportCUDAErrors(
@@ -1073,7 +1073,7 @@ void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
   }
 
   // run winograd transform kernel for the filter
-  FilterTransform(C, C, transformed_weights1_, weights);
+  FilterTransform(C, c_inner_, transformed_weights1_, weights);
 }
 
 template <typename DataType>
@@ -1172,21 +1172,21 @@ void ResidualBlock<DataType>::Eval(
     InputTransform<DataType, true>(N, c_input_, transformed_input, input, stream);
 
     cublasRowMajorMatrixMul(transformed_input, transformed_weights0_,
-                            transformed_output, N * 4, C, c_input_, 36, cublas);
+                            transformed_output, N * 4, c_inner_, c_input_, 36, cublas);
   } else {
     cublasRowMajorMatrixMul(output, transformed_weights0_,
-                            transformed_output, N * 4, C, c_input_, 36, cublas);
+                            transformed_output, N * 4, c_inner_, c_input_, 36, cublas);
  
   }
 
   OutputInputTransform<DataType, false, true, true, false>(
-      N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
+      N, c_inner_, 0, transformed_input, transformed_output, nullptr, biases0_,
       nullptr, nullptr, nullptr, nullptr, stream);
   // "transformed_input" tensor now contains transformed input for the next
   // convolution
 
   cublasRowMajorMatrixMul(transformed_input, transformed_weights1_,
-                          transformed_output, N * 4, C, C, 36, cublas);
+                          transformed_output, N * 4, C, c_inner_, 36, cublas);
 
   if (last_block_) {
     if (has_se_)
