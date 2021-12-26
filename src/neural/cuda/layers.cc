@@ -1212,10 +1212,10 @@ void ResidualBlock<DataType>::Eval(
             w2_, b2_, stream);
       } else {
         OutputTransform<DataType, true, true, true, true, true, false>(
-            N, C, se_k_, (DataType*) scratch, transformed_output, input,
+            N, C, se_k_, (DataType*)input, transformed_output, input,
             biases1_, w1_, b1_,
             w2_, b2_, stream);
-        InputTransform<DataType, true>(N, C, output, (DataType*)scratch,
+        InputTransform<DataType, true>(N, C, output, input,
                                        stream);
       }
     }
