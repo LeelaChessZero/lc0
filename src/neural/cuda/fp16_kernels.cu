@@ -484,6 +484,11 @@ template void InputTransform<half, true>(int N, int C, half* transformed_input,
 template void InputTransform<half, false>(int N, int C, half* transformed_input,
                                           const half* input, cudaStream_t stream);
 
+template void OutputTransform<half, true, true, true, true, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
 template void OutputTransform<half, true, true, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,

@@ -638,6 +638,11 @@ template void InputTransform<float, false>(int N, int C,
                                            const float* input,
                                            cudaStream_t stream);
 
+template void OutputTransform<float, true, true, true, true, true, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+
 template void OutputTransform<float, true, true, true, true, false, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,

@@ -1203,7 +1203,7 @@ void ResidualBlock<DataType>::Eval(
     if (has_se_) { 
       const bool fp16 = std::is_same<half, DataType>::value;
       bool allowFusing =
-          (C < kMaxResBlockFusingChannels) ||
+          (C <= kMaxResBlockFusingChannels) ||
           (fp16 && (shared_mem_size_ >= kMaxResBlockFusingSeFp16AmpereSmem) &&
            (C <= kMaxResBlockFusingSeKFp16Ampere));
       if (allowFusing) {
@@ -1211,11 +1211,11 @@ void ResidualBlock<DataType>::Eval(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
       } else {
-        OutputTransform<DataType, true, true, true, true, true, false>(
+        OutputTransform<DataType, true, true, true, true, true, true>(
             N, C, se_k_, (DataType*)input, transformed_output, input,
             biases1_, w1_, b1_,
             w2_, b2_, stream);
-        InputTransform<DataType, true>(N, C, output, input,
+        InputTransform<DataType, true>(N, C, output, (DataType*)input,
                                        stream);
       }
     }
