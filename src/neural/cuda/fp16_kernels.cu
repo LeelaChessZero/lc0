@@ -439,7 +439,15 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board.
-  if (C > kMaxResBlockFusingChannels) {
+
+  if (use_se == false) {
+    dim3 grid_dim(DivUp(C, kOpInpTransformBlockSize), N, 1);
+    OutputTransform_relu_InputTransform_kernel<half, relu, use_bias,
+                                                  use_skip>
+        <<<grid_dim, kOpInpTransformBlockSize, 0, stream>>>(N, C, output, input,
+                                                        (half*)skip, bias);
+  }
+  else if (C > kMaxResBlockFusingChannels) {
     // Use special kernel with reduced register pressure - only works on Ampere,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
