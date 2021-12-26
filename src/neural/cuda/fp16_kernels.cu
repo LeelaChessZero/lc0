@@ -446,18 +446,18 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                                                   use_skip>
         <<<grid_dim, kOpInpTransformBlockSize, 0, stream>>>(N, C, output, input,
                                                         (half*)skip, bias);
-  }
-  else if (C > kMaxResBlockFusingChannels) {
+  } else if (C > kMaxResBlockFusingChannels) {
     // Use special kernel with reduced register pressure - only works on Ampere,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
           OutputInputTransformKernel_fp16_shmem_board<use_se, relu, use_bias,
                                                       use_skip>,
-          cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * 1024);
+          cudaFuncAttributeMaxDynamicSharedMemorySize,
+          kMaxResBlockFusingSeFp16AmpereSmem);
       OutputInputTransformKernel_fp16_shmem_board<use_se, relu, use_bias,
                                                   use_skip>
-          <<<N, C, 72 * 1024, stream>>>(
+          <<<N, C, kMaxResBlockFusingSeFp16AmpereSmem, stream>>>(
               N, C, se_K, (half*)output, (const half*)input, (half*)skip,
               (half*)bias, (half*)w1, (half*)b1, (half*)w2, (half*)b2);
     } else {
@@ -471,6 +471,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (half*)skip, bias, w1,
                               b1, w2, b2);
   }
+
   ReportCUDAErrors(cudaGetLastError());
 }
 

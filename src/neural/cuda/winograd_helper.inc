@@ -606,7 +606,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
 
 constexpr int kOpInpTransformBlockSize = 64;
 template <typename T, bool relu, bool use_bias, bool use_skip>
-__global__ __launch_bounds__(kOpInpTransformBlockSize, 2)
+__global__ __launch_bounds__(kOpInpTransformBlockSize, 6)
 void OutputTransform_relu_InputTransform_kernel(int N, int C,
                                                 T* output, const T* input,
                                                 T* skip, const T* bias) {

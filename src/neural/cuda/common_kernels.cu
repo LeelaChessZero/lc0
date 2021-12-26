@@ -553,16 +553,22 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board
-  if (C > kMaxResBlockFusingChannels) {
-      throw Exception(
-          "res block fusing opt not supported for the given data type and no "
-          "of filters\n");
+  if (use_se == false) {
+    dim3 grid_dim(DivUp(C, kOpInpTransformBlockSize), N, 1);
+    OutputTransform_relu_InputTransform_kernel<float, relu, use_bias, use_skip>
+        <<<grid_dim, kOpInpTransformBlockSize, 0, stream>>>(N, C, output, input,
+                                                            (float*)skip, bias);
+  } else if (C > kMaxResBlockFusingChannels) {
+    throw Exception(
+        "res block fusing opt not supported for the given data type and no "
+        "of filters\n");
   } else {
     OutputTransform_SE_relu_InputTransform_kernel<float, use_se, relu, use_bias,
                                                   use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (float*)skip, bias, w1,
                               b1, w2, b2);
   }
+
   ReportCUDAErrors(cudaGetLastError());
 }
 

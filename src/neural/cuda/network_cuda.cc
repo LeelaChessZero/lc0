@@ -192,14 +192,12 @@ class CudaNetwork : public Network {
               "using a smaller network.";
     }
 
-    // Disable res block fusing for > 512 filters (the fused output input
-    // transform kernel runs out of register space) and for fp32 for now.
+    // Disable res block fusing for fp32 for now (not worth it)
     // TODO: make it work for filters not a multiple of 32.
-    if ((kNumFilters <= kMaxResBlockFusingChannels ||
-         ((deviceProp.major >= 8 ||
-           (deviceProp.major == 7 && deviceProp.minor != 5)) &&
-          kNumFilters <= kMaxResBlockFusingSeKFp16Ampere)) &&
-        kNumFilters % 32 == 0 && std::is_same<half, DataType>::value) {
+    // Note that when used with SE, the optimization
+    // works only when filter count is <= 384 (pre-Ampere), or less than 512 (Ampere)
+    // It turns dynamically off based on filter count (see ResidualBlock<DataType>::Eval)
+    if (kNumFilters % 32 == 0 && std::is_same<half, DataType>::value) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
       use_res_block_winograd_fuse_opt_ = false;
@@ -257,7 +255,7 @@ class CudaNetwork : public Network {
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
               getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
-              block == 0, block == (numBlocks_ - 1));
+              block == 0, block == (numBlocks_ - 1), deviceProp.sharedMemPerBlockOptin);
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                               &weights.residual[block].conv1.biases[0],
                               scratch_mem_);

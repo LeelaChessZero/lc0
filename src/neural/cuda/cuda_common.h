@@ -50,6 +50,8 @@ static constexpr int kMaxResBlockFusingSeKFp16Ampere =
     512;  // (use a different kernel with reduced register pressure)
 static constexpr int kMaxResBlockFusingSeK =
     128;  // limit on (num_filters / se_ratio)
+static constexpr int kMaxResBlockFusingSeFp16AmpereSmem =
+    72 * 1024;  // shared memory used by the special kernel
 
 #ifdef USE_CUDNN
 void CudnnError(cudnnStatus_t status, const char* file, const int& line);
