@@ -71,6 +71,8 @@ struct InputsOutputs {
     if (tensor_mem_size) {
       multi_stream_ = true;
       ReportCUDAErrors(cudaStreamCreate(&stream_));
+      ReportCUDAErrors(cudaStreamCreate(&stream_copy_));
+      ReportCUDAErrors(cudaEventCreate(&policy_ready_event_));
       ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size));
       for (auto& mem : tensor_mem_) {
         ReportCUDAErrors(cudaMalloc(&mem, tensor_mem_size));
@@ -97,6 +99,8 @@ struct InputsOutputs {
       if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
 
       cudaStreamDestroy(stream_);
+      cudaStreamDestroy(stream_copy_);
+      cudaEventDestroy(policy_ready_event_);
       cublasDestroy(cublas_);
     }
   
@@ -123,9 +127,9 @@ struct InputsOutputs {
   void* scratch_mem_;
 
   // cuda stream used to run the network
-  cudaStream_t stream_;
+  cudaStream_t stream_, stream_copy_;
   cublasHandle_t cublas_;
-
+  cudaEvent_t policy_ready_event_;
   // cublas handle used to run the network
 
 };

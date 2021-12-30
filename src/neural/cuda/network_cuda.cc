@@ -435,7 +435,7 @@ class CudaNetwork : public Network {
 
     DataType* tensor_mem[3];
     void* scratch_mem;
-    cudaStream_t stream;
+    cudaStream_t stream, stream_copy;
     cublasHandle_t cublas;
     if (multi_stream_) {
       // We use tensor and scratch memory from InputOutputs (so that multiple
@@ -443,11 +443,13 @@ class CudaNetwork : public Network {
       for (int i = 0; i < 3; i++) tensor_mem[i] = (DataType*)io->tensor_mem_[i];
       scratch_mem = io->scratch_mem_;
       stream = io->stream_;
+      stream_copy = io->stream_copy_;
       cublas = io->cublas_;
     } else {
       for (int i = 0; i < 3; i++) tensor_mem[i] = tensor_mem_[i];
       scratch_mem = scratch_mem_;
       stream = 0;           // default stream
+      stream_copy = 0;
       cublas = cublas_;
     }
 
@@ -530,11 +532,21 @@ class CudaNetwork : public Network {
       }
     }
 
+    if (stream_copy != stream) {
+      // signal policy_ready_event_ to indicate that the copy stream can start
+      // copying policy output
+      ReportCUDAErrors(cudaEventRecord(io->policy_ready_event_, stream));
+
+      // make the copy stream wait for the above event
+      ReportCUDAErrors(
+          cudaStreamWaitEvent(stream_copy, io->policy_ready_event_, 0));
+    }
+
     // Copy policy output from device memory to host memory.
     ReportCUDAErrors(cudaMemcpyAsync(
         io->op_policy_mem_, io->op_policy_mem_gpu_,
                         sizeof(float) * kNumOutputPolicy * batchSize,
-                        cudaMemcpyDeviceToHost, stream));
+                        cudaMemcpyDeviceToHost, stream_copy));
 
     // value head
     network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
@@ -597,6 +609,7 @@ class CudaNetwork : public Network {
     }
 
     if (multi_stream_) {
+      ReportCUDAErrors(cudaStreamSynchronize(stream_copy));
       ReportCUDAErrors(cudaStreamSynchronize(stream));
     } else {
       ReportCUDAErrors(cudaDeviceSynchronize());
