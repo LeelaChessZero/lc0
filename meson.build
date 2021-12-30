@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('lc0', 'cpp',
+project('lc0', ['cpp', 'objc', 'objcpp'],
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.52')
 
@@ -579,6 +579,31 @@ if get_option('build_backends')
 
     files += [
       'src/neural/onnx/network_onnx.cc',
+    ]
+
+    has_backends = true
+  endif
+
+  ## ~~~~~~~~
+  ## Metal
+  ## ~~~~~~~~
+  # Metal backend only available on MacOs.
+  if host_machine.system() == 'darwin' and get_option('metal')
+
+    if cc.get_id() == 'clang'
+      # Add Foundation, Metal and MPS frameworks to clang command line.
+      add_project_link_arguments(
+        '-framework', 'Foundation',
+        '-framework', 'Metal',
+        '-framework', 'MetalPerformanceShaders',
+        language : ['objc', 'objcpp']
+      )
+    endif
+
+    files += [
+      'src/neural/metal/network_metal.cc',
+      'src/neural/metal/mps/ConvWeights.mm',
+      'src/neural/metal/mps/NetworkExecutor.mm',
     ]
 
     has_backends = true

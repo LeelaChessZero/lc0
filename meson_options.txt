@@ -50,7 +50,7 @@ option('build_backends',
 
 option('blas',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable BLAS backend')
 
 option('ispc',
@@ -65,22 +65,22 @@ option('ispc_native_only',
 
 option('cudnn',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable cuDNN backend')
 
 option('plain_cuda',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable CUDA backend')
 
 option('opencl',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable OpenCL backend')
 
 option('dx',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable DirectX12 backend')
 
 option('tensorflow',
@@ -95,12 +95,12 @@ option('onednn',
 
 option('openblas',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable OpenBLAS support')
 
 option('mkl',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable MKL BLAS support')
 
 option('dnnl',
@@ -112,6 +112,11 @@ option('accelerate',
        type: 'boolean',
        value: true,
        description: 'Enable Accelerate BLAS support')
+
+option('metal',
+       type: 'boolean',
+       value: true,
+       description: 'Enable Metal backend')
 
 option('malloc',
        type : 'string',
