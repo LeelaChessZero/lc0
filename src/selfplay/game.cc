@@ -31,6 +31,7 @@
 
 #include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -60,6 +61,9 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kOpeningStopProbId{"opening-stop-prob", "OpeningStopProb",
+                                  "For each move, check whether to terminate "
+                                  "early the opening with this probability."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -71,6 +75,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -91,10 +96,19 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
     tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(orig_fen_, {});
   }
+  int ply = 0;
+  auto white_prob = white.uci_options->Get<float>(kOpeningStopProbId);
+  auto black_prob = black.uci_options->Get<float>(kOpeningStopProbId);
   for (Move m : opening.moves) {
+    if (Random::Get().GetFloat(1.0f) < tree_[0]->IsBlackToMove() ? black_prob
+                                                                 : white_prob) {
+      break;
+    }
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
+    ply++;
   }
+  start_ply_ = ply;
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
@@ -102,8 +116,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
   bool blacks_move = tree_[0]->IsBlackToMove();
 
   // If we are training, verify that input formats are consistent.
-  if (training && options_[0].network->GetCapabilities().input_format !=
-      options_[1].network->GetCapabilities().input_format) {
+  if (training &&
+      options_[0].network->GetCapabilities().input_format !=
+          options_[1].network->GetCapabilities().input_format) {
     throw Exception("Can't mix networks with different input format!");
   }
   // Take syzygy tablebases from player1 options.
