@@ -461,16 +461,9 @@ class CudaNetwork : public Network {
     }
 
     if (!graph_created) {
-      cudaStreamCaptureMode captureMode = (cudaStreamCaptureMode)0;
-#if CUDART_VERSION >= 11000
-      // We need to use cudaStreamCaptureModeThreadLocal to make sure only the
-      // calls made by the current thread are captured. The cuda-build uses cudnn
-      // 11+, so it should work. This compile time check is only for fixing the
-      // cudnn build that uses old cuda runtime version.
-      captureMode = cudaStreamCaptureModeThreadLocal;
-#endif
       if (use_cuda_graphs)
-        ReportCUDAErrors(cudaStreamBeginCapture(stream, captureMode));
+        ReportCUDAErrors(
+            cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal));
 
       bool fp16 = std::is_same<half, DataType>::value;
       if (fp16) {
