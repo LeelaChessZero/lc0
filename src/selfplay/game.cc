@@ -98,12 +98,14 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        SyzygyTablebase* syzygy_tb, bool enable_resign) {
+                        SyzygyTablebase* syzygy_tb, const Opening& to_replay,
+                        bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
   // If we are training, verify that input formats are consistent.
-  if (training && options_[0].network->GetCapabilities().input_format !=
-      options_[1].network->GetCapabilities().input_format) {
+  if (training &&
+      options_[0].network->GetCapabilities().input_format !=
+          options_[1].network->GetCapabilities().input_format) {
     throw Exception("Can't mix networks with different input format!");
   }
   // Take syzygy tablebases from player1 options.
@@ -127,6 +129,14 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       adjudicated_ = true;
       break;
     }
+    if (!to_replay.moves.empty() &&
+        to_replay.moves.size() <= tree_[0]->GetPlyCount()) {
+      // TODO: Get the result from the pgn reader.
+      game_result_ = GameResult::DRAW;
+      adjudicated_ = true;
+      break;
+    }
+
     // Initialize search.
     const int idx = blacks_move ? 1 : 0;
     if (!options_[idx].uci_options->Get<bool>(kReuseTreeId)) {
@@ -213,7 +223,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     Eval played_eval = best_eval;
     Move move;
     while (true) {
-      move = search_->GetBestMove().first;
+      if (to_replay.moves.empty()) {
+        move = search_->GetBestMove().first;
+      } else {
+        move = to_replay.moves[tree_[idx]->GetPlyCount()];
+      }
       uint32_t max_n = 0;
       uint32_t cur_n = 0;
 
@@ -230,7 +244,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       // If 'best move' is less than allowed visits and not max visits,
       // discard it and try again.
-      if (cur_n == max_n ||
+      if (!to_replay.moves.empty() || cur_n == max_n ||
           static_cast<int>(cur_n) >=
               options_[idx].uci_options->Get<int>(kMinimumAllowedVistsId)) {
         break;

@@ -80,11 +80,13 @@ const OptionId kOpeningsMirroredId{
 const OptionId kOpeningsModeId{"openings-mode", "OpeningsMode",
                                "A choice of sequential, shuffled, or random."};
 const OptionId kSyzygyTablebaseId{
-	"syzygy-paths", "SyzygyPath",
-	"List of Syzygy tablebase directories, list entries separated by system "
-	"separator (\";\" for Windows, \":\" for Linux).",
-	's' };
-
+    "syzygy-paths", "SyzygyPath",
+    "List of Syzygy tablebase directories, list entries separated by system "
+    "separator (\";\" for Windows, \":\" for Linux).",
+    's'};
+const OptionId kReplayFileId{
+    "replay-pgn", "ReplayPgnFile",
+    "A path name to a pgn file containing games to replay."};
 }  // namespace
 
 void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
@@ -121,6 +123,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kOpeningsModeId, openings_modes) = "sequential";
 
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<StringOption>(kReplayFileId) = "";
   SelfPlayGame::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
@@ -161,15 +164,29 @@ SelfPlayTournament::SelfPlayTournament(
       kTraining(options.Get<bool>(kTrainingId)),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId)),
       kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)) {
-  std::string book = options.Get<std::string>(kOpeningsFileId);
-  if (!book.empty()) {
+  std::string opening_book = options.Get<std::string>(kOpeningsFileId);
+  if (!opening_book.empty()) {
     PgnReader book_reader;
-    book_reader.AddPgnFile(book);
+    book_reader.AddPgnFile(opening_book);
     openings_ = book_reader.ReleaseGames();
     if (options.Get<std::string>(kOpeningsModeId) == "shuffled") {
       Random::Get().Shuffle(openings_.begin(), openings_.end());
     }
   }
+  std::string replay_book = options.Get<std::string>(kReplayFileId);
+  if (!replay_book.empty()) {
+    if (!opening_book.empty()) {
+      throw Exception(
+          "You cannot specify an opening book when replaying games.");
+    }
+    if (!options.IsDefault<int>(kTotalGamesId)) {
+      throw Exception("You cannot specify a number of games when replaying.");
+    }
+    PgnReader book_reader;
+    book_reader.AddPgnFile(replay_book);
+    games_to_replay_ = book_reader.ReleaseGames();
+  }
+
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     first_game_black_ = Random::Get().GetBool();
@@ -218,17 +235,15 @@ SelfPlayTournament::SelfPlayTournament(
   }
 
   // Take syzygy tablebases from options.
-  std::string tb_paths =
-	  options.Get<std::string>(kSyzygyTablebaseId);
+  std::string tb_paths = options.Get<std::string>(kSyzygyTablebaseId);
   if (!tb_paths.empty()) {
-	  syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-	  CERR << "Loading Syzygy tablebases from " << tb_paths;
-	  if (!syzygy_tb_->init(tb_paths)) {
-		  CERR << "Failed to load Syzygy tablebases!";
-		  syzygy_tb_ = nullptr;
-	  }
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
+    if (!syzygy_tb_->init(tb_paths)) {
+      CERR << "Failed to load Syzygy tablebases!";
+      syzygy_tb_ = nullptr;
+    }
   }
-
 }
 
 void SelfPlayTournament::PlayOneGame(int game_number) {
@@ -257,6 +272,11 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       discard_pile_.pop_back();
     }
   }
+  if (!games_to_replay_.empty()) {
+    opening.start_fen = games_to_replay_[game_number].start_fen;
+    if (games_to_replay_[game_number].moves.empty()) return;
+  }
+
   const int color_idx[2] = {player1_black ? 1 : 0, player1_black ? 0 : 1};
 
   PlayerOptions options[2];
@@ -351,8 +371,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
-            enable_resign);
-  
+            games_to_replay_[game_number], enable_resign);
+
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
     // Game callback.
@@ -406,7 +426,9 @@ void SelfPlayTournament::Worker() {
       if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
           (kTotalGames == -2 && !openings_.empty() &&
            games_count_ >=
-               static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
+               static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)) ||
+          (!games_to_replay_.empty() &&
+           games_count_ >= static_cast<int>(games_to_replay_.size())))
         break;
       game_id = games_count_++;
     }

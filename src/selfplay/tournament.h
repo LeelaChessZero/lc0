@@ -80,6 +80,7 @@ class SelfPlayTournament {
   int games_count_ GUARDED_BY(mutex_) = 0;
   bool abort_ GUARDED_BY(mutex_) = false;
   std::vector<Opening> openings_ GUARDED_BY(mutex_);
+  std::vector<Opening> games_to_replay_;
   // Games in progress. Exposed here to be able to abort them in case if
   // Abort(). Stored as list and not vector so that threads can keep iterators
   // to them and not worry that it becomes invalid.
@@ -110,7 +111,6 @@ class SelfPlayTournament {
   const float kDiscardedStartChance;
 
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
-
 };
 
 }  // namespace lczero
