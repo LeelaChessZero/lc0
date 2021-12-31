@@ -54,9 +54,6 @@ static MPSNNDefaultPadding * _Nonnull validPoolingPadding = [MPSNNDefaultPadding
     size_t _sizeBiases, _sizeWeights;
     unsigned _seed;
 
-
-    float _t;
-
     MPSVector *_weightVector, *_biasVector;
     MPSVectorDescriptor *_weightDescriptor;
     MPSVectorDescriptor *_biasDescriptor;
@@ -65,19 +62,22 @@ static MPSNNDefaultPadding * _Nonnull validPoolingPadding = [MPSNNDefaultPadding
     
 }
 
--(nonnull instancetype) initWithDevice:(nonnull id <MTLDevice>)device
+-(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)device
                          inputChannels:(NSUInteger)inputChannels
                         outputChannels:(NSUInteger)outputChannels
                            kernelWidth:(NSUInteger)kernelWidth
                           kernelHeight:(NSUInteger)kernelHeight
                                 stride:(NSUInteger)stride
+                               weights:(float * __nonnull)weights
+                                biases:(float * __nonnull)biases
                                  label:(NSString * __nonnull)label;
 
--(MPSDataType)  dataType;
+-(MPSDataType) dataType;
 -(MPSCNNConvolutionDescriptor * __nonnull) descriptor;
--(void * __nonnull) weights;
--(float * __nullable) biasTerms;
+-(nonnull float *) weights;
+-(nonnull float *) biasTerms;
 -(BOOL) load;
 -(void) purge;
+-(void) describeWeights;
 
 @end    /* ConvWeights */

@@ -26,16 +26,17 @@
 */
 
 #import "ConvWeights.h"
-#import <random>
 
 @implementation ConvWeights
 
--(nonnull instancetype) initWithDevice:(nonnull id <MTLDevice>)device
+-(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)device
                          inputChannels:(NSUInteger)inputChannels
                         outputChannels:(NSUInteger)outputChannels
                            kernelWidth:(NSUInteger)kernelWidth
                           kernelHeight:(NSUInteger)kernelHeight
                                 stride:(NSUInteger)stride
+                               weights:(float * __nonnull)weights
+                                biases:(float * __nonnull)biases
                                  label:(NSString * __nonnull)label
 {
     self = [super init];
@@ -63,68 +64,62 @@
     _sizeWeights = lenWeights * sizeof(float);
 
 
-
     _weightDescriptor = [MPSVectorDescriptor vectorDescriptorWithLength:lenWeights dataType:(MPSDataTypeFloat32)];
     _weightVector = [[MPSVector alloc] initWithDevice:device descriptor:_weightDescriptor];
 
     _biasDescriptor = [MPSVectorDescriptor vectorDescriptorWithLength:_outputChannels dataType:(MPSDataTypeFloat32)];
     _biasVector = [[MPSVector alloc] initWithDevice:device descriptor:_biasDescriptor];
 
-    //_convWtsAndBias = [[MPSCNNConvolutionWeightsAndBiasesState alloc] initWithWeights:_weightVector.data biases:_biasVector.data];
 
-    // Initializing weights, biases and their corresponding values.
+    //_convWtsAndBias = [[MPSCNNConvolutionWeightsAndBiasesState alloc] initWithWeights:_weightVector.data biases:_biasVector.data];
+    
+    // Set weights and biases to the specified values.
     _weightPointer = (float *)_weightVector.data.contents;
-    float zero = 0.f;
-    memset_pattern4( (void *)_weightPointer, (char *)&zero, _sizeWeights);
+    memcpy((void *)_weightPointer, (void *)weights, _sizeWeights);
     
     _biasPointer = (float *)_biasVector.data.contents;
-    float biasInit = 0.1f;
-    memset_pattern4( (void *)_biasPointer, (char *)&biasInit, _sizeBiases);
-
-
-    // Setting weights to random values.
-    /*MPSMatrixRandomDistributionDescriptor *randomDesc = [MPSMatrixRandomDistributionDescriptor uniformDistributionDescriptorWithMinimum:-0.2f maximum:0.2f];
-    MPSMatrixRandomMTGP32 *randomKernel = [[MPSMatrixRandomMTGP32 alloc] initWithDevice:device
-                                                                    destinationDataType:MPSDataTypeFloat32
-                                                                                   seed:_seed
-                                                                 distributionDescriptor:randomDesc];
-
-    MPSCommandBuffer *commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:gCommandQueue];
-    [randomKernel encodeToCommandBuffer:commandBuffer
-                      destinationVector:_weightVector];
-    [commandBuffer commit];
-    [commandBuffer waitUntilCompleted];
-
-
-    [_weightMomentumVector.data didModifyRange:NSMakeRange(0, _sizeWeights)];
-    [_weightVelocityVector.data didModifyRange:NSMakeRange(0, _sizeWeights)];
+    memcpy((void *)_biasPointer, (void *)biases, _sizeBiases);
+    
+    
+    // Notify event listeners.
+    [_weightVector.data didModifyRange:NSMakeRange(0, _sizeWeights)];
     [_biasVector.data didModifyRange:NSMakeRange(0, _sizeBiases)];
-    [_biasMomentumVector.data didModifyRange:NSMakeRange(0, _sizeBiases)];
-    [_biasVelocityVector.data didModifyRange:NSMakeRange(0, _sizeBiases)];*/
-
+    
     return self;
 }
 
--(MPSDataType)  dataType{return  MPSDataTypeFloat32;}
--(MPSCNNConvolutionDescriptor * __nonnull) descriptor{return _descriptor;}
--(void * __nonnull) weights{return _weightPointer;}
--(float * __nullable) biasTerms{return _biasPointer;};
+-(MPSDataType) dataType {return  MPSDataTypeFloat32;}
+-(nonnull MPSCNNConvolutionDescriptor *) descriptor {return _descriptor;}
+-(nonnull float *) weights {return _weightPointer;}
+-(nonnull float *) biasTerms {return _biasPointer;}
 
--(BOOL) load{
+-(BOOL) load {
     //[self checkpointWithCommandQueue:gCommandQueue];
     return YES;
 }
 
--(void) purge{};
-
+-(void) purge {}
 
 - (NSString * _Nullable)label {
     return _label;
 }
 
-- (nonnull id)copyWithZone:(nullable NSZone *)zone {
+-(nonnull id)copyWithZone:(nullable NSZone *)zone {
     /* unimplemented */
     return self;
+}
+
+-(void) describeWeights {
+    float * p = _weightPointer;
+    int lenWeights = _inputChannels * _kernelHeight * _kernelWidth * _outputChannels;
+    for (int i=2000; i<3000; i++) {
+        NSLog(@"Final Weight[%i]: %f", i, *(p + i));
+    }
+    
+    float * q = _biasPointer;
+    for (int i=0; i<_outputChannels; i++) {
+        NSLog(@"Final Bias[%i]: %f", i, *(q + i));
+    }
 }
 
 @end    /* ConvWeights */

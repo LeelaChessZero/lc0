@@ -30,46 +30,33 @@
 
 @interface Lc0NetworkExecutor()
 
--(nonnull MPSNNFilterNode *) convolutionBlockWithSource:(MPSNNImageNode *)input
-                                          inputChannels:(NSUInteger)inputChannels
-                                         outputChannels:(NSUInteger)outputChannels
-                                            kernelWidth:(NSUInteger)kernelWidth
-                                           kernelHeight:(NSUInteger)kernelHeight
-                                                weights:(ConvWeights *)weights
-                                                hasRelu:(BOOL)hasRelu
-                                                  label:(NSString * __nonnull)label;
 
--(nonnull MPSNNFilterNode *) residualBlockWithSource:(MPSNNImageNode *)input
-                                       inputChannels:(NSUInteger)inputChannels
-                                      outputChannels:(NSUInteger)outputChannels
-                                         kernelWidth:(NSUInteger)kernelWidth
-                                        kernelHeight:(NSUInteger)kernelHeight
-                                            weights1:(ConvWeights *)weights1
-                                            weights2:(ConvWeights *)weights2
-                                           seWeights:(ConvWeights *)seWeights
-                                               label:(NSString * __nonnull)label;
 
 @end
 
 
 @implementation Lc0NetworkExecutor
 
--(nonnull instancetype) initWithDevice:(nonnull id<MTLDevice>)inputDevice
-                          commandQueue:(nonnull id<MTLCommandQueue>)commandQueue {
+-(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)inputDevice
+                          commandQueue:(id<MTLCommandQueue> __nonnull)commandQueue {
     
     self = [super init];
     device = inputDevice;
     queue = commandQueue;
     
-    MPSNNFilterNode *finalNode = [self buildInferenceGraph];
+    //MPSNNFilterNode *finalNode = [self buildInferenceGraph];
     
-    inferenceGraph = [[MPSNNGraph alloc] initWithDevice:inputDevice resultImage:finalNode.resultImage resultImageIsNeeded:YES];
-    inferenceGraph.format = fcFormat;
+    //inferenceGraph = [[MPSNNGraph alloc] initWithDevice:inputDevice resultImage:finalNode.resultImage resultImageIsNeeded:YES];
+    //inferenceGraph.format = fcFormat;
     
     return self;
 }
 
--(nonnull MPSImageBatch *) runInferenceWithInputs:(void *)inputs batchSize:(int)batchSize {
+-(nonnull id<MTLDevice>) getDevice {
+    return device;
+}
+
+-(nonnull MPSImageBatch *) runInferenceWithInputs:(void * __nonnull)inputs batchSize:(int)batchSize {
     MPSImageDescriptor *inputDesc = [MPSImageDescriptor imageDescriptorWithChannelFormat:MPSImageFeatureChannelFormatUnorm8
                                    width:8
                                   height:8
@@ -185,8 +172,6 @@
         policy = [MPSCNNFullyConnectedNode nodeWithSource:policy.resultImage weights:allWeights[22]];
     }
 
-    // Softmax for policy.
-    MPSCNNSoftMaxNode *softmax = [MPSCNNSoftMaxNode nodeWithSource:policy.resultImage];
     
     // 4. Value head.
     if (isWdl) {
@@ -226,7 +211,7 @@
     return policy;
 }
 
--(MPSImageBatch * __nullable) encodeInferenceBatchToCommandBuffer:(nonnull id <MTLCommandBuffer>) commandBuffer
+-(MPSImageBatch * __nullable) encodeInferenceBatchToCommandBuffer:(id <MTLCommandBuffer> __nonnull) commandBuffer
                                                      sourceImages:(MPSImageBatch * __nonnull) sourceImage{
     
     MPSImageBatch *returnImage = [inferenceGraph encodeBatchToCommandBuffer:commandBuffer
@@ -238,38 +223,45 @@
     return returnImage;
 }
 
--(nonnull MPSNNFilterNode *) residualBlockWithSource:(MPSNNImageNode *)input
+-(nonnull MPSNNFilterNode *) convolutionBlockWithSource:(MPSNNImageNode * __nonnull)input
+                                          inputChannels:(NSUInteger)inputChannels
+                                         outputChannels:(NSUInteger)outputChannels
+                                            kernelWidth:(NSUInteger)kernelWidth
+                                           kernelHeight:(NSUInteger)kernelHeight
+                                                weights:(ConvWeights * __nonnull)weights
+                                                hasRelu:(BOOL)hasRelu
+{
+    MPSCNNConvolutionNode *convNode = [MPSCNNConvolutionNode nodeWithSource:input weights:weights];
+    convNode.paddingPolicy = sameConvPadding;
+    
+    if (hasRelu) {
+        MPSCNNNeuronReLUNode *relu = [MPSCNNNeuronReLUNode nodeWithSource:convNode.resultImage a:0.f];
+        //MPSCNNPoolingMaxNode *pool1 = [MPSCNNPoolingMaxNode nodeWithSource:relu1.resultImage filterSize:2 stride:2];
+        //pool1.paddingPolicy = samePoolingPadding;
+        
+        // @todo Batch norm.
+        
+        return relu;
+    }
+    return convNode;
+}
+
+-(nonnull MPSNNFilterNode *) residualBlockWithSource:(MPSNNImageNode * __nonnull)input
                                        inputChannels:(NSUInteger)inputChannels
                                       outputChannels:(NSUInteger)outputChannels
                                          kernelWidth:(NSUInteger)kernelWidth
                                         kernelHeight:(NSUInteger)kernelHeight
-                                            weights1:(ConvWeights *)weights1
-                                            weights2:(ConvWeights *)weights2
-                                           seWeights:(ConvWeights *)seWeights
-                                               label:(NSString * __nonnull)label
+                                            weights1:(ConvWeights * __nonnull)weights1
+                                            weights2:(ConvWeights * __nonnull)weights2
+                                           seWeights:(ConvWeights * __nullable)seWeights
 {
     // Conv1
-    [weights1 initWithDevice:device
-               inputChannels:inputChannels
-              outputChannels:outputChannels
-                 kernelWidth:kernelWidth
-                kernelHeight:kernelHeight
-                      stride:1
-                       label:[NSString stringWithFormat:@"%@/conv1", label]];
     MPSCNNConvolutionNode *conv1Node = [MPSCNNConvolutionNode nodeWithSource:input weights:weights1];
     conv1Node.paddingPolicy = sameConvPadding;
     MPSCNNNeuronReLUNode *relu1 = [MPSCNNNeuronReLUNode nodeWithSource:conv1Node.resultImage a:0.f];
     
     // Conv2
-    [weights2 initWithDevice:device
-               inputChannels:inputChannels
-              outputChannels:outputChannels
-                 kernelWidth:kernelWidth
-                kernelHeight:kernelHeight
-                      stride:1
-                       label:[NSString stringWithFormat:@"%@/conv2", label]];
-    MPSCNNConvolutionNode *conv2Node = [MPSCNNConvolutionNode nodeWithSource:relu1.resultImage
-                                                                     weights:weights2];
+    MPSCNNConvolutionNode *conv2Node = [MPSCNNConvolutionNode nodeWithSource:relu1.resultImage weights:weights2];
     conv2Node.paddingPolicy = sameConvPadding;
     
     if (seWeights) {
@@ -285,74 +277,33 @@
     
 }
 
--(nonnull MPSNNFilterNode *) convolutionBlockWithSource:(MPSNNImageNode *)input
-                                          inputChannels:(NSUInteger)inputChannels
-                                         outputChannels:(NSUInteger)outputChannels
-                                            kernelWidth:(NSUInteger)kernelWidth
-                                           kernelHeight:(NSUInteger)kernelHeight
-                                                weights:(ConvWeights *)cWeights
-                                                hasRelu:(BOOL)hasRelu
-                                                  label:(NSString * __nonnull)label
+-(nonnull MPSNNFilterNode *) fullyConnectedLayerWithSource:(MPSNNImageNode * __nonnull)input
+                                                   weights:(ConvWeights * __nonnull)weights
+                                                activation:(NSString * __nullable)activation
 {
-    [cWeights initWithDevice:device
-               inputChannels:inputChannels
-              outputChannels:outputChannels
-                 kernelWidth:kernelWidth
-                kernelHeight:kernelHeight
-                      stride:1
-                       label:label];
-    MPSCNNConvolutionNode *convNode = [MPSCNNConvolutionNode nodeWithSource:input weights:cWeights];
-    convNode.paddingPolicy = sameConvPadding;
+    MPSCNNFullyConnectedNode *fcNode = [MPSCNNFullyConnectedNode nodeWithSource:input
+                                                                         weights:weights];
+    if (activation == @"softmax") {
+        MPSCNNSoftMaxNode *softmax = [MPSCNNSoftMaxNode nodeWithSource:fcNode.resultImage];
+        return softmax;
+    }
     
-    if (hasRelu) {
-        MPSCNNNeuronReLUNode *relu = [MPSCNNNeuronReLUNode nodeWithSource:convNode.resultImage a:0.f];
-        //MPSCNNPoolingMaxNode *pool1 = [MPSCNNPoolingMaxNode nodeWithSource:relu1.resultImage filterSize:2 stride:2];
-        //pool1.paddingPolicy = samePoolingPadding;
-        
-        // @todo Batch norm.
-        
+    if (activation == @"relu") {
+        MPSCNNNeuronReLUNode *relu = [MPSCNNNeuronReLUNode nodeWithSource:fcNode.resultImage a:0.f];
         return relu;
     }
-    return convNode;
-}
-
--(void) logTestData:(char *)data {
-    NSLog(@"Test data: %@", (id)data);
-}
-
-
-namespace lczero {
-namespace metal_backend {
-        
-MetalNetworkDelegate::MetalNetworkDelegate( void ) : self(NULL) {}
-
-MetalNetworkDelegate::~MetalNetworkDelegate(void)
-{
-    [(id)self dealloc];
-}
-
-void MetalNetworkDelegate::init(void* weights, void* options)
-{
-    // Get the metal device and commandQueue to be used.
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    id<MTLCommandQueue> commandQueue = [device newCommandQueue];
     
-    // Initialize the metal MPS Graph executor with the device.
-    self = [[Lc0NetworkExecutor alloc] initWithDevice:device commandQueue:commandQueue];
-}
-
-void MetalNetworkDelegate::forwardEval(void* io, int batchSize)
-{
-    MPSImageBatch * result = [(id)self runInferenceWithInputs:io batchSize:batchSize];
-}
-
-void MetalNetworkDelegate::logTestData(char *data)
-{
-    [(id)self logTestData:data];
-}
+    if (activation == @"tanh") {
+        MPSCNNNeuronTanHNode *tanh = [MPSCNNNeuronTanHNode nodeWithSource:fcNode.resultImage];
+        return tanh;
+    }
     
-}  // namespace metal_backend
-}  // namespace lczero
+    return fcNode;
+}
+
+-(nonnull const char *) getTestData:(char * __nullable)data {
+    return [[NSString stringWithFormat:@"Test data: %s", data] UTF8String];
+}
 
 @end
 

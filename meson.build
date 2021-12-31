@@ -604,6 +604,7 @@ if get_option('build_backends')
       'src/neural/metal/network_metal.cc',
       'src/neural/metal/mps/ConvWeights.mm',
       'src/neural/metal/mps/NetworkExecutor.mm',
+      'src/neural/metal/mps/MetalNetworkBuilder.mm',
     ]
 
     has_backends = true

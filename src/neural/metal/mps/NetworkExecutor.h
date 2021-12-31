@@ -30,7 +30,6 @@
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 
-#import "MetalNetworkDelegate.h"
 #import "ConvWeights.h"
 
 static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
@@ -45,11 +44,37 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
   MPSNNGraph *inferenceGraph;
 }
 
--(nonnull instancetype) initWithDevice:(nonnull id <MTLDevice>)inputDevice
-                          commandQueue:(nonnull id <MTLCommandQueue>)commandQueue;
+-(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)inputDevice
+                          commandQueue:(id <MTLCommandQueue> __nonnull)commandQueue;
+
+-(nonnull MPSNNFilterNode *) convolutionBlockWithSource:(MPSNNImageNode * __nonnull)input
+                                          inputChannels:(NSUInteger)inputChannels
+                                         outputChannels:(NSUInteger)outputChannels
+                                            kernelWidth:(NSUInteger)kernelWidth
+                                           kernelHeight:(NSUInteger)kernelHeight
+                                                weights:(ConvWeights * __nonnull)weights
+                                                hasRelu:(BOOL)hasRelu;
+
+-(nonnull MPSNNFilterNode *) residualBlockWithSource:(MPSNNImageNode * __nonnull)input
+                                       inputChannels:(NSUInteger)inputChannels
+                                      outputChannels:(NSUInteger)outputChannels
+                                         kernelWidth:(NSUInteger)kernelWidth
+                                        kernelHeight:(NSUInteger)kernelHeight
+                                            weights1:(ConvWeights * __nonnull)weights1
+                                            weights2:(ConvWeights * __nonnull)weights2
+                                           seWeights:(ConvWeights * __nullable)seWeights;
+
+-(nonnull MPSNNFilterNode *) fullyConnectedLayerWithSource:(MPSNNImageNode * __nonnull)input
+                                                   weights:(ConvWeights * __nonnull)weights
+                                                activation:(NSString * __nullable)activation;
+
 -(nonnull MPSNNFilterNode *) buildInferenceGraph;
--(MPSImageBatch * __nullable) encodeInferenceBatchToCommandBuffer:(nonnull id <MTLCommandBuffer>) commandBuffer
+
+-(nullable MPSImageBatch *) encodeInferenceBatchToCommandBuffer:(id <MTLCommandBuffer> __nonnull) commandBuffer
                                                     sourceImages:(MPSImageBatch * __nonnull) sourceImage;
+-(nonnull const char *) getTestData:(char * __nullable)data;
+
+-(nonnull id<MTLDevice>) getDevice;
 
 @end
 

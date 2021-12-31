@@ -33,7 +33,7 @@ namespace lczero {
 namespace metal_backend {
 
 class MetalNetwork;
-class MetalNetworkDelegate;
+class MetalNetworkBuilder;
 
 class MetalNetworkComputation : public NetworkComputation {
  public:
@@ -63,9 +63,7 @@ class MetalNetworkComputation : public NetworkComputation {
     batch_size_++;
   }
 
-  void ComputeBlocking() override {
-    //network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
-  }
+  void ComputeBlocking() override;
 
   int GetBatchSize() const override { return batch_size_; }
 
@@ -116,11 +114,11 @@ class MetalNetwork : public Network {
  public:
   MetalNetwork(const WeightsFile& file, const OptionsDict& options);
   ~MetalNetwork() {
-    if ( delegate_ ) { /** @todo clean-up delegate first */ delete delegate_; delegate_ = NULL; }
+    if ( builder ) { /** @todo clean-up delegate first */ delete builder; builder = NULL; }
   }
 
   //void forwardEval(InputsOutputs* io, int inputBatchSize) override;
-  void forwardEval(int* io, int inputBatchSize);
+  void forwardEval(int inputBatchSize);
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<MetalNetworkComputation>(this, wdl_, moves_left_);
@@ -155,7 +153,7 @@ class MetalNetwork : public Network {
   bool moves_left_;
   std::mutex inputs_outputs_lock_;
   //std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
-  MetalNetworkDelegate* delegate_;
+  MetalNetworkBuilder* builder;
 };
 
 }  // namespace metal_backend
