@@ -145,6 +145,9 @@ class CudaNetwork : public Network {
 
     multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
 
+    use_cuda_graphs_ = options.GetOrDefault<bool>("use_cuda_graph", true);
+    use_async_policy_copy_ = options.GetOrDefault<bool>("use_async_policy_copy", true);
+
     // Default layout is nchw.
     bool hasTensorCores = false;
 
@@ -437,179 +440,215 @@ class CudaNetwork : public Network {
     void* scratch_mem;
     cudaStream_t stream, stream_copy;
     cublasHandle_t cublas;
+    bool use_cuda_graphs = use_cuda_graphs_;
+    bool graph_created = false;
     if (multi_stream_) {
       // We use tensor and scratch memory from InputOutputs (so that multiple
       // requests can run in parallel)
       for (int i = 0; i < 3; i++) tensor_mem[i] = (DataType*)io->tensor_mem_[i];
       scratch_mem = io->scratch_mem_;
       stream = io->stream_;
-      stream_copy = io->stream_copy_;
+      stream_copy = use_async_policy_copy_ ? io->stream_copy_ : stream;
       cublas = io->cublas_;
+      graph_created = io->graph_created_[batchSize];
     } else {
       for (int i = 0; i < 3; i++) tensor_mem[i] = tensor_mem_[i];
       scratch_mem = scratch_mem_;
       stream = 0;           // default stream
       stream_copy = 0;
+      use_cuda_graphs = false;
       cublas = cublas_;
     }
 
-    bool fp16 = std::is_same<half, DataType>::value;
-    if (fp16) {
-      expandPlanes_Fp16_NCHW((half*)(tensor_mem[0]), ipDataMasks,
+    if (!graph_created) {
+
+      if (use_cuda_graphs)
+        ReportCUDAErrors(cudaStreamBeginCapture(
+            stream, cudaStreamCaptureModeThreadLocal));
+
+      bool fp16 = std::is_same<half, DataType>::value;
+      if (fp16) {
+        expandPlanes_Fp16_NCHW((half*)(tensor_mem[0]), ipDataMasks,
                                ipDataValues, batchSize * kInputPlanes, stream);
-    } else {
-      expandPlanes_Fp32_NCHW((float*)(tensor_mem[0]), ipDataMasks, ipDataValues,
-                             batchSize * kInputPlanes, stream);
-    }
+      } else {
+        expandPlanes_Fp32_NCHW((float*)(tensor_mem[0]), ipDataMasks,
+                               ipDataValues, batchSize * kInputPlanes, stream);
+      }
 
-    float* opPol = io->op_policy_mem_gpu_;
-    float* opVal = io->op_value_mem_gpu_;
-    float* opMov = io->op_moves_left_mem_gpu_;
+      float* opPol = io->op_policy_mem_gpu_;
+      float* opVal = io->op_value_mem_gpu_;
+      float* opMov = io->op_moves_left_mem_gpu_;
 
-    int l = 0;
-    // Input.
-    network_[l++]->Eval(
-        batchSize,
-        use_res_block_winograd_fuse_opt_ ? tensor_mem[1] : tensor_mem[2],
-        tensor_mem[0], nullptr, scratch_mem, scratch_size_, nullptr, cublas,
-        stream);  // input conv
+      int l = 0;
+      // Input.
+      network_[l++]->Eval(
+          batchSize,
+          use_res_block_winograd_fuse_opt_ ? tensor_mem[1] : tensor_mem[2],
+          tensor_mem[0], nullptr, scratch_mem, scratch_size_, nullptr, cublas,
+          stream);  // input conv
 
-    // Residual block.
-    for (int block = 0; block < numBlocks_; block++) {
-      if (use_res_block_winograd_fuse_opt_) {
-        network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1], nullptr,
+      // Residual block.
+      for (int block = 0; block < numBlocks_; block++) {
+        if (use_res_block_winograd_fuse_opt_) {
+          network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1], nullptr,
+                              scratch_mem, scratch_size_, nullptr, cublas,
+                              stream);  // block
+        } else {
+          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+                              scratch_mem, scratch_size_, nullptr, cublas,
+                              stream);  // conv1
+
+          network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[0],
+                              tensor_mem[2], scratch_mem, scratch_size_,
+                              nullptr, cublas, stream);  // conv2
+        }
+      }
+
+      // Policy head.
+      if (conv_policy_) {
+        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // block
+                            stream);  // policy conv1
+
+        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // policy conv2
+
+        if (fp16) {
+          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
+                              scratch_mem, scratch_size_, nullptr, cublas,
+                              stream);  // policy map layer
+          copyTypeConverted(opPol, (half*)(tensor_mem[0]),
+                            batchSize * kNumOutputPolicy,
+                            stream);  // POLICY output
+        } else {
+          network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[1],
+                              nullptr, scratch_mem, scratch_size_, nullptr,
+                              cublas,
+                              stream);  // policy map layer  // POLICY output
+        }
       } else {
         network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // conv1
+                            stream);  // pol conv
 
-        network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[0],
-                            tensor_mem[2], scratch_mem, scratch_size_, nullptr,
-                            cublas, stream);  // conv2
+        if (fp16) {
+          network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+                              scratch_mem, scratch_size_, nullptr, cublas,
+                              stream);  // pol FC
+
+          copyTypeConverted(opPol, (half*)(tensor_mem[1]),
+                            batchSize * kNumOutputPolicy, stream);  // POLICY
+        } else {
+          network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0],
+                              nullptr, scratch_mem, scratch_size_, nullptr,
+                              cublas,
+                              stream);  // pol FC  // POLICY
         }
-    }
+      }
 
-    // Policy head.
-    if (conv_policy_) {
+      if (stream_copy != stream) {
+        // signal policy_ready_event_ to indicate that the copy stream can
+        // start copying policy output
+        ReportCUDAErrors(cudaEventRecord(io->policy_ready_event_, stream));
+
+        // make the copy stream wait for the above event
+        ReportCUDAErrors(
+            cudaStreamWaitEvent(stream_copy, io->policy_ready_event_, 0));
+      }
+
+      // Copy policy output from device memory to host memory.
+      ReportCUDAErrors(
+          cudaMemcpyAsync(io->op_policy_mem_, io->op_policy_mem_gpu_,
+                          sizeof(float) * kNumOutputPolicy * batchSize,
+                          cudaMemcpyDeviceToHost, stream_copy));
+
+      // value head
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                           scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // policy conv1
+                          stream);  // value conv
 
       network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
                           scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // policy conv2
+                          stream);  // value FC1
 
-      if (fp16) {
-        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // policy map layer
-        copyTypeConverted(opPol, (half*)(tensor_mem[0]),
-                          batchSize * kNumOutputPolicy,
-                          stream);  // POLICY output
+      if (wdl_) {
+        if (fp16) {
+          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
+                              scratch_mem, scratch_size_, nullptr, cublas,
+                              stream);  // value FC2    // VALUE
+          copyTypeConverted(opVal, (half*)(tensor_mem[0]), 3 * batchSize,
+                            stream);  // VALUE
+        } else {
+          network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem[1],
+                              nullptr, scratch_mem, scratch_size_, nullptr,
+                              cublas,
+                              stream);  // value FC2    // VALUE
+        }
       } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // policy map layer  // POLICY output
+        if (fp16) {
+          // TODO: consider fusing the bias-add of FC2 with format conversion.
+          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
+                              scratch_mem, scratch_size_, nullptr, cublas,
+                              stream);  // value FC2
+          copyTypeConverted(opVal, (half*)(tensor_mem[0]), batchSize,
+                            stream);  // VALUE
+        } else {
+          network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem[1],
+                              nullptr, scratch_mem, scratch_size_, nullptr,
+                              cublas,
+                              stream);  // value FC2    // VALUE
+        }
       }
-    } else {
-      network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
-                          scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // pol conv
 
-      if (fp16) {
+      if (moves_left_) {
+        // Moves left head
+        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // moves conv
+
         network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // pol FC
+                            stream);  // moves FC1
 
-        copyTypeConverted(opPol, (half*)(tensor_mem[1]),
-                          batchSize * kNumOutputPolicy, stream);  // POLICY
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // pol FC  // POLICY
+        // Moves left FC2
+        if (fp16) {
+          // TODO: consider fusing the bias-add of FC2 with format conversion.
+          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
+                              scratch_mem, scratch_size_, nullptr, cublas,
+                              stream);
+          copyTypeConverted(opMov, (half*)(tensor_mem[0]), batchSize, stream);
+        } else {
+          network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem[1],
+                              nullptr, scratch_mem, scratch_size_, nullptr,
+                              cublas, stream);
+        }
+      }
+
+      if (stream_copy != stream) {
+        // signal policy_copied_event_ to indicate that the copy has finished
+        ReportCUDAErrors(cudaEventRecord(io->policy_copied_event_, stream_copy));
+
+        // make the copy stream wait for the above event
+        ReportCUDAErrors(
+            cudaStreamWaitEvent(stream, io->policy_copied_event_, 0));
+      }
+
+      if (use_cuda_graphs) {
+        // Create the cuda graph - which is used directly in subsequent calls
+        ReportCUDAErrors(cudaStreamEndCapture(stream, &io->graph_[batchSize]));
+        ReportCUDAErrors(cudaGraphInstantiate(&io->graph_instance_[batchSize],
+                                              io->graph_[batchSize], NULL, NULL,
+                                              0));
+        io->graph_created_[batchSize] = true;
       }
     }
 
-    if (stream_copy != stream) {
-      // signal policy_ready_event_ to indicate that the copy stream can start
-      // copying policy output
-      ReportCUDAErrors(cudaEventRecord(io->policy_ready_event_, stream));
-
-      // make the copy stream wait for the above event
-      ReportCUDAErrors(
-          cudaStreamWaitEvent(stream_copy, io->policy_ready_event_, 0));
-    }
-
-    // Copy policy output from device memory to host memory.
-    ReportCUDAErrors(cudaMemcpyAsync(
-        io->op_policy_mem_, io->op_policy_mem_gpu_,
-                        sizeof(float) * kNumOutputPolicy * batchSize,
-                        cudaMemcpyDeviceToHost, stream_copy));
-
-    // value head
-    network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
-                        scratch_mem, scratch_size_, nullptr, cublas,
-                        stream);  // value conv
-
-    network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
-                        scratch_mem, scratch_size_, nullptr, cublas,
-                        stream);  // value FC1
-
-    if (wdl_) {
-      if (fp16) {
-        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value FC2    // VALUE
-        copyTypeConverted(opVal, (half*)(tensor_mem[0]), 3 * batchSize,
-                          stream);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value FC2    // VALUE
-      }
-    } else {
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value FC2
-        copyTypeConverted(opVal, (half*)(tensor_mem[0]), batchSize,
-                          stream);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value FC2    // VALUE
-      }
-    }
-
-    if (moves_left_) {
-      // Moves left head
-      network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
-                          scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // moves conv
-
-      network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
-                          scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // moves FC1
-
-      // Moves left FC2
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);
-        copyTypeConverted(opMov, (half*)(tensor_mem[0]), batchSize, stream);
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);
-      }
+    if (use_cuda_graphs) {
+      ReportCUDAErrors(cudaGraphLaunch(io->graph_instance_[batchSize], stream));
     }
 
     if (multi_stream_) {
-      ReportCUDAErrors(cudaStreamSynchronize(stream_copy));
       ReportCUDAErrors(cudaStreamSynchronize(stream));
     } else {
       ReportCUDAErrors(cudaDeviceSynchronize());
@@ -691,9 +730,12 @@ class CudaNetwork : public Network {
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;    // fuse operations inside the residual tower
   bool multi_stream_;                       // run multiple parallel network evals
+  bool use_cuda_graphs_;  // make use of cuda-graphs to reduce launch overhead
+                          // (currently only works with multi-stream)
+  bool use_async_policy_copy_;  // do the policy copy in asynchronous stream to
+                                // make it run parallel with value/mlh heads
 
-  // Currently only one NN Eval can happen a time (we can fix this if needed
-  // by allocating more memory).
+  // lock to synchronize multiple NN eval calls
   mutable std::mutex lock_;
 
   int numBlocks_;

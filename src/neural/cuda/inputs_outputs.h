@@ -67,12 +67,17 @@ struct InputsOutputs {
                                                 op_moves_left_mem_, 0));
     }
 
+    memset(graph_created_, 0, sizeof(graph_created_));
+    memset(graph_, 0, sizeof(graph_));
+    memset(graph_instance_, 0, sizeof(graph_instance_));
+
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
       multi_stream_ = true;
       ReportCUDAErrors(cudaStreamCreate(&stream_));
       ReportCUDAErrors(cudaStreamCreate(&stream_copy_));
       ReportCUDAErrors(cudaEventCreate(&policy_ready_event_));
+      ReportCUDAErrors(cudaEventCreate(&policy_copied_event_));
       ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size));
       for (auto& mem : tensor_mem_) {
         ReportCUDAErrors(cudaMalloc(&mem, tensor_mem_size));
@@ -101,9 +106,15 @@ struct InputsOutputs {
       cudaStreamDestroy(stream_);
       cudaStreamDestroy(stream_copy_);
       cudaEventDestroy(policy_ready_event_);
+      cudaEventDestroy(policy_copied_event_);
       cublasDestroy(cublas_);
     }
-  
+
+    for (int i = 0; i < 1024; i++)
+      if (graph_created_[i]) {
+        cudaGraphDestroy(graph_[i]);
+        cudaGraphExecDestroy(graph_instance_[i]);
+      }
   }
   uint64_t* input_masks_mem_;
   float* input_val_mem_;
@@ -128,10 +139,17 @@ struct InputsOutputs {
 
   // cuda stream used to run the network
   cudaStream_t stream_, stream_copy_;
+  // cublas handle used to run the network
   cublasHandle_t cublas_;
   cudaEvent_t policy_ready_event_;
-  // cublas handle used to run the network
+  cudaEvent_t policy_copied_event_;
 
+
+  // cuda-graph related stuff
+  // for each batch-size
+  bool graph_created_[1024];
+  cudaGraph_t graph_[1024];
+  cudaGraphExec_t graph_instance_[1024];
 };
 
 }  // namespace cudnn_backend
