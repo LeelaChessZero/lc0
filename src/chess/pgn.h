@@ -142,6 +142,8 @@ class PgnReader {
         }
         // Pure move numbers can be skipped.
         if (word.size() < 2) continue;
+        // Ignore "Numeric Annotation Glyph".
+        if (word[0] == '$') continue;
         // Ignore score line.
         if (word == "1/2-1/2" || word == "1-0" || word == "0-1" || word == "*")
           continue;
