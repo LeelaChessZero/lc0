@@ -119,12 +119,35 @@ class PgnReader {
       if (line.empty()) continue;
       std::istringstream iss(line);
       std::string word;
+      std::string tmp_word;
       while (!iss.eof()) {
         word.clear();
-        iss >> word;
+        if (tmp_word.empty()) {
+          iss >> word;
+        } else {
+          word.swap(tmp_word);
+        }
+        if (word[0] == '(') {
+          nesting_level_++;
+          tmp_word = word.substr(1);
+          continue;
+        } else if (word[0] == ')') {
+          nesting_level_--;
+          if (nesting_level_ < 0) {
+            CERR << "Too many closing parentheses!!";
+            throw Exception("Invalid variation nesting.");
+          }
+          tmp_word = word.substr(1);
+          continue;
+        }
+        auto idx = word.find_first_of("()");
+        if (idx != std::string::npos) {
+          tmp_word = word.substr(idx);
+          word.resize(idx);
+        }
         if (word.size() < 2) continue;
         // Trim move numbers from front.
-        auto idx = word.find('.');
+        idx = word.find('.');
         if (idx != std::string::npos) {
           bool all_nums = true;
           for (size_t i = 0; i < idx; i++) {
@@ -144,6 +167,8 @@ class PgnReader {
         if (word.size() < 2) continue;
         // Ignore "Numeric Annotation Glyph".
         if (word[0] == '$') continue;
+        // Ignore variations.
+        if (nesting_level_ > 0) continue;
         // Ignore score line.
         if (word == "1/2-1/2" || word == "1-0" || word == "0-1" || word == "*")
           continue;
@@ -167,6 +192,10 @@ class PgnReader {
 
  private:
   void Flush() {
+    if (nesting_level_ > 0) {
+      CERR << "Variation not terminated!!";
+      throw Exception("Invalid variation nesting.");
+    }
     games_.push_back({cur_startpos_, cur_game_});
     cur_game_.clear();
     cur_board_.SetFromFen(ChessBoard::kStartposFen);
@@ -318,6 +347,7 @@ class PgnReader {
   ChessBoard cur_board_{ChessBoard::kStartposFen};
   MoveList cur_game_;
   std::string cur_startpos_ = ChessBoard::kStartposFen;
+  int nesting_level_ = 0;
   std::vector<Opening> games_;
 };
 
