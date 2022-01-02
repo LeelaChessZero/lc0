@@ -132,8 +132,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (!to_replay.moves.empty() &&
         static_cast<int>(to_replay.moves.size()) <=
             tree_[0]->GetPositionHistory().GetLength() - 1) {
-      // TODO: Get the result from the pgn reader.
-      game_result_ = GameResult::DRAW;
+      game_result_ = to_replay.result;
       adjudicated_ = true;
       break;
     }
