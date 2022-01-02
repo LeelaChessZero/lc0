@@ -124,7 +124,7 @@ class PgnReader {
         iss >> word;
         if (word.size() < 2) continue;
         // Trim move numbers from front.
-        const auto idx = word.find('.');
+        auto idx = word.find('.');
         if (idx != std::string::npos) {
           bool all_nums = true;
           for (size_t i = 0; i < idx; i++) {
@@ -135,6 +135,9 @@ class PgnReader {
           }
           if (all_nums) {
             word = word.substr(idx + 1);
+            idx = word.find_first_not_of(".");
+            if (idx == std::string::npos) continue;
+            word = word.substr(idx);
           }
         }
         // Pure move numbers can be skipped.
@@ -146,8 +149,7 @@ class PgnReader {
         cur_board_.ApplyMove(cur_game_.back());
         // Board ApplyMove wants mirrored for black, but outside code wants
         // normal, so mirror it back again.
-        // Check equal to 0 since we've already added the position.
-        if ((cur_game_.size() % 2) == 0) {
+        if (cur_board_.flipped()) {
           cur_game_.back().Mirror();
         }
         cur_board_.Mirror();
