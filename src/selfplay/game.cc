@@ -130,7 +130,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       break;
     }
     if (!to_replay.moves.empty() &&
-        to_replay.moves.size() <= tree_[0]->GetPlyCount()) {
+        static_cast<int>(to_replay.moves.size()) <=
+            tree_[0]->GetPositionHistory().GetLength() - 1) {
       // TODO: Get the result from the pgn reader.
       game_result_ = GameResult::DRAW;
       adjudicated_ = true;
@@ -226,7 +227,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       if (to_replay.moves.empty()) {
         move = search_->GetBestMove().first;
       } else {
-        move = to_replay.moves[tree_[idx]->GetPlyCount()];
+        move =
+            to_replay.moves[tree_[idx]->GetPositionHistory().GetLength() - 1];
       }
       uint32_t max_n = 0;
       uint32_t cur_n = 0;

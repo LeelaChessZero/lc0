@@ -272,9 +272,11 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       discard_pile_.pop_back();
     }
   }
+  Opening game_to_replay;
   if (!games_to_replay_.empty()) {
-    opening.start_fen = games_to_replay_[game_number].start_fen;
-    if (games_to_replay_[game_number].moves.empty()) return;
+    game_to_replay = games_to_replay_[game_number];
+    if (game_to_replay.moves.empty()) return;
+    opening.start_fen = game_to_replay.start_fen;
   }
 
   const int color_idx[2] = {player1_black ? 1 : 0, player1_black ? 0 : 1};
@@ -371,7 +373,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
-            games_to_replay_[game_number], enable_resign);
+            game_to_replay, enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
