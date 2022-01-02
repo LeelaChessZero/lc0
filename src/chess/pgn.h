@@ -36,6 +36,7 @@
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
+#include "chess/position.h"
 #include "utils/exception.h"
 #include "utils/logging.h"
 
@@ -44,6 +45,7 @@ namespace lczero {
 struct Opening {
   std::string start_fen = ChessBoard::kStartposFen;
   MoveList moves;
+  GameResult result = GameResult::UNDECIDED;
 };
 
 inline bool GzGetLine(gzFile file, std::string& line) {
@@ -72,15 +74,10 @@ class PgnReader {
     }
     std::string line;
     bool in_comment = false;
-    bool started = false;
     while (GzGetLine(file, line)) {
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
-      if (line.empty() || line[0] == '[') {
-        if (started) {
-          Flush();
-          started = false;
-        }
+      if (line[0] == '[') {
         auto uc_line = line;
         std::transform(
             uc_line.begin(), uc_line.end(), uc_line.begin(),
@@ -93,9 +90,6 @@ class PgnReader {
         }
         continue;
       }
-      // Must have at least one non-tag non-empty line in order to be considered
-      // a game.
-      started = true;
       // Handle braced comments.
       int cur_offset = 0;
       while ((in_comment && line.find('}', cur_offset) != std::string::npos) ||
@@ -169,9 +163,12 @@ class PgnReader {
         if (word[0] == '$') continue;
         // Ignore variations.
         if (nesting_level_ > 0) continue;
-        // Ignore score line.
-        if (word == "1/2-1/2" || word == "1-0" || word == "0-1" || word == "*")
+        // Must have result in order to be considered a game.
+        if (word == "1/2-1/2" || word == "1-0" || word == "0-1" ||
+            word == "*") {
+          Flush(word);
           continue;
+        }
         cur_game_.push_back(SanToMove(word, cur_board_));
         cur_board_.ApplyMove(cur_game_.back());
         // Board ApplyMove wants mirrored for black, but outside code wants
@@ -182,21 +179,26 @@ class PgnReader {
         cur_board_.Mirror();
       }
     }
-    if (started) {
-      Flush();
-    }
     gzclose(file);
   }
   std::vector<Opening> GetGames() const { return games_; }
   std::vector<Opening>&& ReleaseGames() { return std::move(games_); }
 
  private:
-  void Flush() {
+  void Flush(std::string termination) {
     if (nesting_level_ > 0) {
       CERR << "Variation not terminated!!";
       throw Exception("Invalid variation nesting.");
     }
-    games_.push_back({cur_startpos_, cur_game_});
+    auto result = GameResult::UNDECIDED;
+    if (termination == "1/2-1/2") {
+      result = GameResult::DRAW;
+    } else if (termination == "1-0") {
+      result = GameResult::WHITE_WON;
+    } else if (termination == "0-1") {
+      result = GameResult::BLACK_WON;
+    }
+    games_.push_back({cur_startpos_, cur_game_, result});
     cur_game_.clear();
     cur_board_.SetFromFen(ChessBoard::kStartposFen);
     cur_startpos_ = ChessBoard::kStartposFen;
