@@ -139,7 +139,6 @@ class PgnReader {
           tmp_word = word.substr(idx);
           word.resize(idx);
         }
-        if (word.size() < 2) continue;
         // Trim move numbers from front.
         idx = word.find('.');
         if (idx != std::string::npos) {
@@ -157,8 +156,8 @@ class PgnReader {
             word = word.substr(idx);
           }
         }
-        // Pure move numbers can be skipped.
-        if (word.size() < 2) continue;
+        // Pure move numbers can be skipped (also empty).
+        if (word.find_first_not_of("0123456789") == std::string::npos) continue;
         // Ignore "Numeric Annotation Glyph".
         if (word[0] == '$') continue;
         // Ignore variations.
