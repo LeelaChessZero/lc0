@@ -53,9 +53,11 @@ public:
 
     void* makeReshapeLayer(void * previousLayer, int resultWidth, int resultHeight, int resultChannels);
     
-    void* makePolicyMapLayer(void * previousLayer, std::vector * policyMap);
+    void* makePolicyMapLayer(void * previousLayer, std::vector<short> * policyMap);
+    
+    void* buildGraph(std::vector<void *> * outputs);
 
-    void forwardEval(void* io, int batchSize);
+    std::vector<float*> forwardEval(uint64_t * masks, float * values, std::vector<float *> * outputs, int batchSize, int inputChannels);
     
     // To be removed.
     const char* getTestData(char * data);

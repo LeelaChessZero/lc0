@@ -44,8 +44,6 @@
 namespace lczero {
 namespace metal_backend {
 
-#define DUMP_VEC(vector) for (auto it: vector) CERR << it << ' '
-
 void describeWeights(LegacyWeights::ConvBlock &conv, int inputs) {
   const int channelSize = conv.weights.size() / inputs / 9;
 
@@ -64,9 +62,31 @@ void describeWeights(LegacyWeights::ConvBlock &conv, int inputs) {
   }
 }
 
+void describeInputs(uint64_t * masks, float * vals, int batchSize, int numPerBatch) {
+  CERR << "Inputs: batchsize: " << batchSize;
+  uint64_t * p = masks;
+  float * q = vals;
+  for (int i=0; i<batchSize; i++) {
+    for (int j=0; j<numPerBatch; j++) {
+      CERR << "batch[" << i << "]: layer[" << j << "]: mask) "
+           << *(p + (i * numPerBatch) + j) << "; val) "
+           << *(q + (i * numPerBatch) + j);
+    }
+  }
+}
+
+MetalNetworkComputation::MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left)
+    : wdl_(wdl), moves_left_(moves_left), network_(network) {
+  batch_size_ = 0;
+  inputs_outputs_ = network_->GetInputsOutputs();
+}
+
+MetalNetworkComputation::~MetalNetworkComputation() {
+  network_->ReleaseInputsOutputs(std::move(inputs_outputs_));
+}
+
 void MetalNetworkComputation::ComputeBlocking() {
-  //network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
-  network_->forwardEval(GetBatchSize());
+  network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
 MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
@@ -75,21 +95,34 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
   LegacyWeights weights(file.weights());
 
-  bool conv_policy_ = file.format().network_format().policy() ==
-                 pblczero::NetworkFormat::POLICY_CONVOLUTION;
-
   try {
+    // @todo better implementation with unique_ptr??
     builder = new MetalNetworkBuilder();
     builder->init();
   } catch (...) {
     throw Exception("There was an error initializing the GPU device.");
   }
 
-  bool isConvolutionPolicyHead = true;
-  bool isWdl = true;
-  bool hasMlh = true;
+  conv_policy_ = file.format().network_format().policy() ==
+                 pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
   const int channelSize = weights.input.weights.size() / kInputPlanes / 9;
-  int kernelSize = 3;
+  const int kernelSize = 3;
+
+  bool has_se_ = false;
+  if (weights.residual[0].has_se) {
+    has_se_ = true;
+  }
+
+  max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+  batch_size_ = options.GetOrDefault<int>("batch", 64);
+  steps_ = options.GetOrDefault<int>("steps", 2);
+
+  if (batch_size_ <= 0) {
+    steps_ = 1;
+  } else if (steps_ > max_batch_size_ / batch_size_) {
+    steps_ = max_batch_size_ / batch_size_;
+  }
 
   // Pointer to last layer in MPS NN graph.
   void * layer;
@@ -103,7 +136,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         true, "input/conv");
 
   // 2. Residual blocks
-  for (int i = 0; i < weights.residual.size(); i++) {
+  for (size_t i = 0; i < weights.residual.size(); i++) {
     //describeWeights(weights.residual[i].conv1, channelSize);
     //describeWeights(weights.residual[i].conv2, channelSize);
     layer = builder->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
@@ -122,21 +155,21 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
   // 3. Policy head.
   void * policy;
-  if (isConvolutionPolicyHead) {
+  if (conv_policy_) {
     policy = builder->makeConvolutionBlock(layer, channelSize, channelSize, kernelSize,
                                            &weights.policy1.weights[0],
                                            &weights.policy1.biases[0],
                                            true, "policy/conv1");
 
-
+    // No relu.
     policy = builder->makeConvolutionBlock(policy, channelSize, 80, kernelSize,
                                            &weights.policy.weights[0],
                                            &weights.policy.biases[0],
                                            false, "policy/conv2");
 
     // [1858 -> HWC or CHW]
-    const HWC = true;
-    std::vector<int> policy_map(1858);
+    const bool HWC = true;
+    std::vector<short> policy_map(1858);
     for (const auto& mapping : kConvPolicyMap) {
       if (mapping == -1) continue;
       const auto index = &mapping - kConvPolicyMap;
@@ -150,8 +183,8 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
         policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
       }
     }
-    policy = builder->makePolicyMapLayer(policy, &policy_map);
     // @todo Policy mapping in GPU.
+    policy = builder->makePolicyMapLayer(policy, &policy_map);
     /*auto mapping = MakeIntConst(scope, {1858}, policy_map);
     auto flattened_conv =
         Reshape(scope, conv_pol, Const(scope, {-1, 80 * 8 * 8}));
@@ -174,12 +207,11 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                               &weights.ip_pol_w[0],
                                               &weights.ip_pol_b[0],
                                               nullptr, "policy/fc");
-
   }
 
   // 4. Value head.
   void * value;
-  value = builder->makeConvolutionBlock(layer, channelSize, 32,
+  value = builder->makeConvolutionBlock(layer, channelSize, 32, 1,
                                         &weights.value.weights[0],
                                         &weights.value.biases[0],
                                         true, "value/conv");
@@ -188,11 +220,13 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                            &weights.ip1_val_w[0],
                                            &weights.ip1_val_b[0],
                                            "relu", "value/fc1");
-  if (isWdl) {
+  wdl_ = file.format().network_format().value() ==
+         pblczero::NetworkFormat::VALUE_WDL;
+  if (wdl_) {
     value = builder->makeFullyConnectedLayer(value, 128, 3,
                                              &weights.ip2_val_w[0],
                                              &weights.ip2_val_b[0],
-                                             "softmax", "value/fc2")
+                                             "softmax", "value/fc2");
   }
   else {
     value = builder->makeFullyConnectedLayer(value, 128, 1,
@@ -202,8 +236,11 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   }
 
   // 5. Moves left head.
+  moves_left_ = (file.format().network_format().moves_left() ==
+                 pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+                options.GetOrDefault<bool>("mlh", true);
   void * mlh;
-  if (hasMlh) {
+  if (moves_left_) {
     const int mlhChannels = weights.moves_left.biases.size();
     mlh = builder->makeConvolutionBlock(layer, channelSize, mlhChannels, 1,
                                         &weights.moves_left.weights[0],
@@ -220,20 +257,88 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                            "relu", "mlh/fc2");
   }
 
-  // MPSNNGraph requires all three to be joined into one operation.
-  //builder->buildGraph({policy, value, mlh});
-  builder->buildGraph(policy);
+  // MPSNNGraph requires all three heads to be joined into one optimized graph
+  // operation.
+  std::vector<void*> outputs;
+  if (moves_left_) {
+    outputs = {policy, value, mlh};
+  }
+  else {
+    outputs = {policy, value};
+  }
+  builder->buildGraph(&outputs);
 }
 
-//void MetalNetwork::forwardEval(InputsOutputs* io, int inputBatchSize) {
-//void MetalNetwork::forwardEval(int* io, int inputBatchSize) {
-void MetalNetwork::forwardEval(int inputBatchSize) {
-//  CERR << "io: " << io;
-  CERR << "batchsize: " << inputBatchSize;
-//  builder->forwardEval(io, inputBatchSize);
-  std::string str_obj = "lc0 invading";
-  char * char_arr = &str_obj[0];
-  CERR << "response: " << builder->getTestData(char_arr);
+void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
+  CERR << "Forwarding eval to graph adapter: batchsize: " << batchSize;
+  //describeInputs(io->input_masks_mem_, io->input_val_mem_, batchSize, kInputPlanes);
+  //std::vector<float*> * output_mems;
+  /*memset(io->op_policy_mem_, 0, max_batch_size_ * kNumOutputPolicy * sizeof(uint64_t));
+  memset(io->op_value_mem_, 0, max_batch_size_ * (wdl_ ? 3 : 1) * sizeof(float));
+  if (moves_left_) {
+    memset(io->op_moves_left_mem_, 0, max_batch_size_ * sizeof(float));
+    output_mems = {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_};
+  }
+  else {
+    output_mems = {io->op_policy_mem_, io->op_value_mem_};
+  }*/
+  std::vector<float*> output_mems = builder->forwardEval(io->input_masks_mem_, io->input_val_mem_, nullptr,
+                       batchSize, kInputPlanes);
+
+  CERR << "Completed forwarding";
+//  CERR << "Return vector: size: " << output_mems.size();
+//  CERR << "policy: N:" << *output_mems[0];
+//  CERR << "value: N:" << *output_mems[1];
+//  CERR << "mlh: N:" << *output_mems[2];
+  //CERR << "Return vector[1]: " << output_mems[1];
+
+  return;
+
+  // Copy memory to output buffers and do final transformations.
+  if (wdl_) {
+    // Value softmax done cpu side.
+    float* opVal = output_mems[1];
+    for (int i = 0; i < batchSize; i++) {
+      float w = opVal[3 * i + 0];
+      float d = opVal[3 * i + 1];
+      float l = opVal[3 * i + 2];
+      float m = std::max({w, d, l});
+      w = std::exp(w - m);
+      d = std::exp(d - m);
+      l = std::exp(l - m);
+      float sum = w + d + l;
+      w /= sum;
+      l /= sum;
+      d = 1.0f - w - l;
+      io->op_value_mem_[3 * i + 0] = w;
+      io->op_value_mem_[3 * i + 1] = d;
+      io->op_value_mem_[3 * i + 2] = l;
+    }
+  } else {
+    memcpy(io->op_value_mem_, output_mems[1], batchSize * sizeof(float));
+  }
+  CERR << "Completed value";
+
+  if (conv_policy_) {
+    float* opPol = output_mems[0];
+    for (int batch = 0; batch < batchSize; batch++) {
+      for (int i = 0; i < 73 * 8 * 8; i++) {
+        auto j = kConvPolicyMap[i];
+        if (j >= 0) {
+          io->op_policy_mem_[batch * kNumOutputPolicy + j] = opPol[batch * 80 * 64 + i];
+        }
+      }
+    }
+  } else {
+    memcpy(io->op_policy_mem_, output_mems[0], batchSize * kNumOutputPolicy * sizeof(float));
+  }
+  CERR << "Completed policy";
+
+  if (moves_left_) {
+    memcpy(io->op_moves_left_mem_, output_mems[2], batchSize * sizeof(float));
+  }
+  CERR << "Completed mlh";
+
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,

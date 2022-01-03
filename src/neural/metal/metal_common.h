@@ -24,4 +24,44 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
 
+namespace lczero {
+namespace metal_backend {
+
+static int kNumOutputPolicy = 1858;
+static int kInputPlanes = 112;
+
+struct InputsOutputs {
+  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left) {
+    input_masks_mem_ = (uint64_t*)malloc(maxBatchSize * kInputPlanes * sizeof(uint64_t));
+
+    input_val_mem_ = (float*)malloc(maxBatchSize * kInputPlanes * sizeof(float));
+
+    op_policy_mem_ = (float*)malloc(maxBatchSize * kNumOutputPolicy * sizeof(float));
+
+    op_value_mem_ = (float*)malloc(maxBatchSize * (wdl ? 3 : 1) * sizeof(float));
+
+    if (moves_left) {
+      op_moves_left_mem_ = (float*)malloc(maxBatchSize * sizeof(float));
+    } else
+      op_moves_left_mem_ = nullptr;
+  }
+  ~InputsOutputs() {
+    free(input_masks_mem_);
+    free(input_val_mem_);
+    free(op_policy_mem_);
+    free(op_value_mem_);
+    if (op_moves_left_mem_) {
+      free(op_moves_left_mem_);
+    }
+  }
+  uint64_t* input_masks_mem_;
+  float* input_val_mem_;
+  float* op_policy_mem_;
+  float* op_value_mem_;
+  float* op_moves_left_mem_;
+};
+
+}  // namespace metal_backend
+}  // namespace lczero

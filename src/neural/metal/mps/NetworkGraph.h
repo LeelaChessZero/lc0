@@ -34,14 +34,14 @@
 
 static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
 
-@interface Lc0NetworkExecutor : NSObject {
+@interface Lc0NetworkGraph : NSObject {
  @public
   // Keep the MTLDevice and MTLCommandQueue objects around for ease of use.
   id <MTLDevice> device;
   id <MTLCommandQueue> queue;
 
   NSArray <ConvWeights *> *allWeights;
-  MPSNNGraph *inferenceGraph;
+  MPSNNGraph *graph;
 }
 
 -(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)inputDevice
@@ -69,6 +69,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 activation:(NSString * __nullable)activation;
 
 -(nonnull MPSNNFilterNode *) buildInferenceGraph;
+
+-(nonnull NSMutableArray<MPSImageBatch*> *) runInferenceWithBatchSize:(NSUInteger)batchSize
+                                                           masks:(uint64_t * __nonnull)masks
+                                                          values:(float * __nonnull)values
+                                                   inputChannels:(NSUInteger)inputPlanes;
 
 -(nullable MPSImageBatch *) encodeInferenceBatchToCommandBuffer:(id <MTLCommandBuffer> __nonnull) commandBuffer
                                                     sourceImages:(MPSImageBatch * __nonnull) sourceImage;

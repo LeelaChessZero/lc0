@@ -26,8 +26,11 @@
 */
 #pragma once
 
+#include <list>
+
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+#include "metal_common.h"
 
 namespace lczero {
 namespace metal_backend {
@@ -37,18 +40,11 @@ class MetalNetworkBuilder;
 
 class MetalNetworkComputation : public NetworkComputation {
  public:
-  MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left)
-      : wdl_(wdl), moves_left_(moves_left), network_(network) {
-    batch_size_ = 0;
-    //inputs_outputs_ = network_->GetInputsOutputs();
-  }
-
-  ~MetalNetworkComputation() {
-    //network_->ReleaseInputsOutputs(std::move(inputs_outputs_));
-  }
+  MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left);
+  ~MetalNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
-    /*const auto iter_mask =
+    const auto iter_mask =
         &inputs_outputs_->input_masks_mem_[batch_size_ * kInputPlanes];
     const auto iter_val =
         &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
@@ -58,7 +54,7 @@ class MetalNetworkComputation : public NetworkComputation {
       iter_mask[i] = plane.mask;
       iter_val[i] = plane.value;
       i++;
-    }*/
+    }
 
     batch_size_++;
   }
@@ -68,41 +64,37 @@ class MetalNetworkComputation : public NetworkComputation {
   int GetBatchSize() const override { return batch_size_; }
 
   float GetQVal(int sample) const override {
-    /*if (wdl_) {
+    if (wdl_) {
       auto w = inputs_outputs_->op_value_mem_[3 * sample + 0];
       auto l = inputs_outputs_->op_value_mem_[3 * sample + 2];
       return w - l;
     } else {
       return inputs_outputs_->op_value_mem_[sample];
-    }*/
-    return 0.0f;
+    }
   }
 
   float GetDVal(int sample) const override {
-    /*if (wdl_) {
+    if (wdl_) {
       auto d = inputs_outputs_->op_value_mem_[3 * sample + 1];
       return d;
     } else {
       return 0.0f;
-    }*/
-    return 0.0f;
+    }
   }
 
   float GetPVal(int sample, int move_id) const override {
-    //return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
-    return 0.0f;
+    return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
 
   float GetMVal(int sample) const override {
-    /*if (moves_left_) {
+    if (moves_left_) {
       return inputs_outputs_->op_moves_left_mem_[sample];
-    }*/
-    return 0.0f;
+    }
   }
 
  private:
   // Memory holding inputs, outputs.
-  //std::unique_ptr<InputsOutputs> inputs_outputs_;
+  std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
   bool wdl_;
   bool moves_left_;
@@ -114,17 +106,16 @@ class MetalNetwork : public Network {
  public:
   MetalNetwork(const WeightsFile& file, const OptionsDict& options);
   ~MetalNetwork() {
-    if ( builder ) { /** @todo clean-up delegate first */ delete builder; builder = NULL; }
+    if (builder) { /** @todo clean-up delegate first */ delete builder; builder = NULL; }
   }
 
-  //void forwardEval(InputsOutputs* io, int inputBatchSize) override;
-  void forwardEval(int inputBatchSize);
+  void forwardEval(InputsOutputs* io, int inputBatchSize);
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<MetalNetworkComputation>(this, wdl_, moves_left_);
   }
 
-  /*std::unique_ptr<InputsOutputs> GetInputsOutputs() {
+  std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
@@ -135,7 +126,12 @@ class MetalNetwork : public Network {
       free_inputs_outputs_.pop_front();
       return resource;
     }
-  }*/
+  }
+
+  void ReleaseInputsOutputs(std::unique_ptr<InputsOutputs> resource) {
+    std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
+    free_inputs_outputs_.push_back(std::move(resource));
+  }
 
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
@@ -151,8 +147,10 @@ class MetalNetwork : public Network {
   int steps_;
   bool wdl_;
   bool moves_left_;
+  bool has_se_;
+  bool conv_policy_;
   std::mutex inputs_outputs_lock_;
-  //std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
+  std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
   MetalNetworkBuilder* builder;
 };
 

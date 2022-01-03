@@ -26,7 +26,7 @@
  */
 
 #import "MetalNetworkBuilder.h"
-#import "NetworkExecutor.h"
+#import "NetworkGraph.h"
 
 namespace lczero {
 namespace metal_backend {
@@ -62,12 +62,9 @@ void MetalNetworkBuilder::init()
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
     
     // Initialize the metal MPS Graph executor with the device.
-    self = [[Lc0NetworkExecutor alloc] initWithDevice:device commandQueue:commandQueue];
+    self = [[Lc0NetworkGraph alloc] initWithDevice:device commandQueue:commandQueue];
     
-    NSLog(@"devices: %@", devices);
-    NSLog(@"device: %@", device);
-    NSLog(@"queue: %@", commandQueue);
-    NSLog(@"self: %@", (id)self);
+    NSLog(@"Initialized NN graph builder on device: %@", device);
 }
 
 void describeWeights(float * weights, float * biases, int inputSize, int channelSize, int kernelSize) {
@@ -192,7 +189,7 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
     
     MPSNNFilterNode *layer = [(id)self fullyConnectedLayerWithSource:source
                                                              weights:convWeights
-                                                          activation:activation ? [NSString stringWithUTF8String:activation.c_str()] : NULL];
+                                                          activation:[NSString stringWithUTF8String:activation.c_str()]];
     
     return (void*) layer;
 }
@@ -214,9 +211,122 @@ void* MetalNetworkBuilder::makeReshapeLayer(void * previousLayer, int resultWidt
     return (void*) reshape;
 }
 
-void MetalNetworkBuilder::forwardEval(void * io, int batchSize)
+void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, std::vector<short> * policyMap) {
+    return (void*) previousLayer;
+}
+
+void* MetalNetworkBuilder::buildGraph(std::vector<void *> * outputs) {
+    NSArray<MPSNNImageNode *> * resultImages = @[];
+    BOOL resultsNeeded[outputs->size()];
+    int i = 0;
+    
+    for (const auto& output : *outputs) {
+        resultImages = [resultImages arrayByAddingObject:((MPSNNFilterNode *)output).resultImage];
+        resultsNeeded[i++] = YES;
+    }
+    MPSNNGraph * graph = [(id)self buildGraphWithResultImages:resultImages
+                                             resultsAreNeeded:resultsNeeded];
+    
+    NSLog(@"Completed building neural network graph: %@ on device: %@", graph, [(id)self getDevice]);
+    
+    return (void*) graph;
+}
+
+NSString * listOfFloats(float * floats, int count) {
+    NSMutableString * buf = [[NSMutableString alloc] init];
+    [buf appendString:@"|"];
+    for (int i=0; i<count; i++) {
+        [buf appendFormat:@"%i|", (int)floats[i]];
+        NSLog(@"%i: %f", i, floats[i]);
+        //[buf appendFormat:float[i]];
+        // [buf appendString:@"|"];
+    }
+    return buf;
+}
+
+void logImageResults(MPSImageBatch * batch, NSString * desc) {
+    NSLog(desc);
+    int i=0;
+    for (MPSImage * image in batch) {
+        NSLog(@"sub-batch %i: W:%lu, H:%lu, C:%lu, N:%lu", i++, image.width, image.height, image.featureChannels, image.numberOfImages);
+    }
+}
+
+void updateResults(MPSImageBatch * imageBatch, float * outputMem, int batchSize, int subBatchSize) {
+    int imageSize, items;
+    float *start;
+    for (int idx = 0; idx < [imageBatch count]; idx++) {
+        // Transfer images from result image to output memory.
+        imageSize = imageBatch[idx].featureChannels * imageBatch[idx].height * imageBatch[idx].width;
+        start = outputMem + idx * subBatchSize * imageSize;
+        items = MIN(subBatchSize, batchSize - idx * subBatchSize);
+        //NSLog(@"batchSize[%i]: subbatch %i with size %i", batchSize, idx, items);
+        for (int i = 0; i < items; i++) {
+            [imageBatch[idx] readBytes:start
+                            dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
+                            imageIndex:i];
+            start += imageSize;
+            //NSLog(@"batchSize[%i]: Read image %i from subbatch %i", batchSize, i, idx);
+        }
+    }
+    
+};
+
+std::vector<float*> MetalNetworkBuilder::forwardEval(uint64_t * masks, float * values, std::vector<float *> * outputs, int batchSize, int inputChannels)
 {
-    MPSImageBatch * result = [(id)self runInferenceWithInputs:io batchSize:batchSize];
+    NSUInteger subBatchSize = MIN(4, batchSize);
+    NSMutableArray<MPSImageBatch*> * results = [(id)self runInferenceWithBatchSize:batchSize
+                                                                        masks:masks
+                                                                       values:values
+                                                                inputChannels:inputChannels
+                                                                 subBatchSize:subBatchSize];
+//    NSLog(@"Result images (total of %i image batches)", [results count]);
+//    int i = 0;
+//    for (MPSImageBatch * batch: results) {
+//        NSLog(@"Batch %i: %i images", i++, [batch count]);
+//        for (MPSImage * image: batch) {
+//            NSLog(@"result - W:%lu, H:%lu, C:%lu, N:%lu, precision:%lu, usage:%lu", image.width, image.height, image.featureChannels, image.numberOfImages, image.precision, image.usage);
+//
+//        }
+//    }
+    
+    
+    
+    // Create temporary memory to pass results back to MCTS.
+    std::vector<float*> output_mems([results count]);
+//    NSLog(@"Return vector: size: %i", output_mems.size());
+
+    // Policy.
+    int rsIdx = 0;
+    int imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
+    output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
+    //NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Policy", batchSize * imgSz);
+    //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
+    updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
+    //logImageResults(results[rsIdx], @"Policy");
+    //NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+
+    // Value.
+    rsIdx = 1;
+    imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
+    output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
+    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Value", batchSize * imgSz);
+    //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
+    updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
+    logImageResults(results[rsIdx], @"Value");
+    NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+
+    // MLH.
+    rsIdx = 2;
+    imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
+    output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
+    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"MLH", batchSize * imgSz);
+    //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
+    updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
+    logImageResults(results[rsIdx], @"MLH");
+    NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+    
+    return output_mems;
 }
 
 const char * __nonnull MetalNetworkBuilder::getTestData(char * data)
