@@ -74,15 +74,21 @@ class PgnReader {
     }
     std::string line;
     bool in_comment = false;
+    bool started = false;
     while (GzGetLine(file, line)) {
+      line_no_++;
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
-      if (line[0] == '[') {
+      if (line[0] == '[' && !in_comment) {
+        if (started) {
+          Flush("*");
+          started = false;
+        }
         auto uc_line = line;
         std::transform(
             uc_line.begin(), uc_line.end(), uc_line.begin(),
             [](unsigned char c) { return std::toupper(c); }  // correct
-        );
+            );
         if (uc_line.find("[FEN \"", 0) == 0) {
           auto start_trimmed = line.substr(6);
           cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
@@ -114,7 +120,7 @@ class PgnReader {
       std::istringstream iss(line);
       std::string word;
       std::string tmp_word;
-      while (!iss.eof()) {
+      while (!iss.eof() || !tmp_word.empty()) {
         word.clear();
         if (tmp_word.empty()) {
           iss >> word;
@@ -128,7 +134,7 @@ class PgnReader {
         } else if (word[0] == ')') {
           nesting_level_--;
           if (nesting_level_ < 0) {
-            CERR << "Too many closing parentheses!!";
+            CERR << "Too many closing parentheses on line " << line_no_ << "!!";
             throw Exception("Invalid variation nesting.");
           }
           tmp_word = word.substr(1);
@@ -158,6 +164,8 @@ class PgnReader {
         }
         // Pure move numbers can be skipped (also empty).
         if (word.find_first_not_of("0123456789") == std::string::npos) continue;
+        // Also skip spurious annotations.
+        if (word.find_first_not_of("!?") == std::string::npos) continue;
         // Ignore "Numeric Annotation Glyph".
         if (word[0] == '$') continue;
         // Ignore variations.
@@ -166,6 +174,7 @@ class PgnReader {
         if (word == "1/2-1/2" || word == "1-0" || word == "0-1" ||
             word == "*") {
           Flush(word);
+          started = false;
           continue;
         }
         cur_game_.push_back(SanToMove(word, cur_board_));
@@ -176,7 +185,15 @@ class PgnReader {
           cur_game_.back().Mirror();
         }
         cur_board_.Mirror();
+        started = true;
       }
+    }
+    if (in_comment) {
+      CERR << "Comment reached the end of file!!";
+      throw Exception("Unterminated comment.");
+    }
+    if (started) {
+      Flush("*");
     }
     gzclose(file);
   }
@@ -186,7 +203,7 @@ class PgnReader {
  private:
   void Flush(std::string termination) {
     if (nesting_level_ > 0) {
-      CERR << "Variation not terminated!!";
+      CERR << "Variation not terminated on line " << line_no_ << "!!";
       throw Exception("Invalid variation nesting.");
     }
     auto result = GameResult::UNDECIDED;
@@ -218,7 +235,7 @@ class PgnReader {
       default:
         // 0 and 1 are pawn and king, which are not legal promotions, other
         // numbers don't correspond to a known piece type.
-        CERR << "Unexpected promotion!!";
+        CERR << "Unexpected promotion on line " << line_no_ << "!!";
         throw Exception("Trying to create a move with illegal promotion.");
     }
   }
@@ -236,12 +253,12 @@ class PgnReader {
       p = 4;
     } else if (san[0] == 'R') {
       p = 5;
-    } else if (san[0] == 'O' && san.size() > 2 && san[1] == '-' &&
-               san[2] == 'O') {
+    } else if ((san[0] == 'O' || san[0] == '0') && san.size() > 2 &&
+               san[1] == '-' && (san[2] == 'O' || san[2] == '0')) {
       Move m;
       auto king_board = board.kings() & board.ours();
       BoardSquare king_sq(GetLowestBit(king_board.as_int()));
-      if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
+      if (san.size() > 4 && san[3] == '-' && (san[4] == 'O' || san[4] == '0')) {
         m = Move(BoardSquare(0, king_sq.col()),
                  BoardSquare(0, board.castlings().queenside_rook()));
       } else {
@@ -324,14 +341,14 @@ class PgnReader {
           continue;
         }
         if (pc1 != -1) {
-          CERR << "Ambiguous!!";
+          CERR << "Ambiguous on line " << line_no_ << "!!";
           throw Exception("Opening book move seems ambiguous.");
         }
         pr1 = sq.row();
         pc1 = sq.col();
       }
       if (pc1 == -1) {
-        CERR << "No Match!!";
+        CERR << "No Match on line " << line_no_ << "!!";
         throw Exception("Opening book move seems illegal.");
       }
       r1 = pr1;
@@ -345,6 +362,7 @@ class PgnReader {
     return m;
   }
 
+  int line_no_ = 0;
   ChessBoard cur_board_{ChessBoard::kStartposFen};
   MoveList cur_game_;
   std::string cur_startpos_ = ChessBoard::kStartposFen;
