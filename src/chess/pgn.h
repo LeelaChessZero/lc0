@@ -209,10 +209,10 @@ class PgnReader {
       BoardSquare king_sq(GetLowestBit(king_board.as_int()));
       if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
         m = Move(BoardSquare(0, king_sq.col()),
-                 BoardSquare(0, board.castlings().queenside_rook()));
+                 BoardSquare(0, board.castlings().our_queenside_rook()));
       } else {
         m = Move(BoardSquare(0, king_sq.col()),
-                 BoardSquare(0, board.castlings().kingside_rook()));
+                 BoardSquare(0, board.castlings().our_kingside_rook()));
       }
       return m;
     }

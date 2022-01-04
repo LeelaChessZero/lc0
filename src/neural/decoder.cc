@@ -95,29 +95,34 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2:
     case pblczero::NetworkFormat::
         INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON: {
-      auto queenside = 0;
-      auto kingside = 7;
+      auto our_queenside = 0;
+      auto their_queenside = 0;
+      auto our_kingside = 7;
+      auto their_kingside = 7;
       if (planes[kAuxPlaneBase + 0].mask != 0) {
         auto mask = planes[kAuxPlaneBase + 0].mask;
-        queenside = GetLowestBit((mask >> 56) | mask);
         if ((mask & 0xFFLL) != 0) {
+          our_queenside = GetLowestBit(mask & 0xFFLL);
           castlings.set_we_can_000();
         }
         if (mask >> 56 != 0) {
+          their_queenside = GetLowestBit(mask >> 56);
           castlings.set_they_can_000();
         }
       }
       if (planes[kAuxPlaneBase + 1].mask != 0) {
         auto mask = planes[kAuxPlaneBase + 1].mask;
-        kingside = GetLowestBit((mask >> 56) | mask);
         if ((mask & 0xFFLL) != 0) {
+          our_kingside = GetLowestBit(mask & 0xFFLL);
           castlings.set_we_can_00();
         }
         if (mask >> 56 != 0) {
+          their_kingside = GetLowestBit(mask >> 56);
           castlings.set_they_can_00();
         }
       }
-      castlings.SetRookPositions(queenside, kingside);
+      castlings.SetRookPositions(our_queenside, our_kingside, their_queenside,
+                                 their_kingside);
       break;
     }
 

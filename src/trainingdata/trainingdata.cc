@@ -191,18 +191,22 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   const auto& castlings = position.GetBoard().castlings();
   // Populate castlings.
   // For non-frc trained nets, just send 1 like we used to.
-  uint8_t queen_side = 1;
-  uint8_t king_side = 1;
+  uint8_t our_queen_side = 1;
+  uint8_t our_king_side = 1;
+  uint8_t their_queen_side = 1;
+  uint8_t their_king_side = 1;
   // If frc trained, send the bit mask representing rook position.
   if (Is960CastlingFormat(input_format_)) {
-    queen_side <<= castlings.queenside_rook();
-    king_side <<= castlings.kingside_rook();
+    our_queen_side <<= castlings.our_queenside_rook();
+    our_king_side <<= castlings.our_kingside_rook();
+    their_queen_side <<= castlings.their_queenside_rook();
+    their_king_side <<= castlings.their_kingside_rook();
   }
 
-  result.castling_us_ooo = castlings.we_can_000() ? queen_side : 0;
-  result.castling_us_oo = castlings.we_can_00() ? king_side : 0;
-  result.castling_them_ooo = castlings.they_can_000() ? queen_side : 0;
-  result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
+  result.castling_us_ooo = castlings.we_can_000() ? our_queen_side : 0;
+  result.castling_us_oo = castlings.we_can_00() ? our_king_side : 0;
+  result.castling_them_ooo = castlings.they_can_000() ? their_queen_side : 0;
+  result.castling_them_oo = castlings.they_can_00() ? their_king_side : 0;
 
   // Other params.
   if (IsCanonicalFormat(input_format_)) {
