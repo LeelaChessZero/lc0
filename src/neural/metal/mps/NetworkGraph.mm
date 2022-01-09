@@ -68,6 +68,106 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
     return device;
 }
 
+-(nonnull MPSImageBatch *) evalSingleConv:(NSUInteger)batchSize
+                                                                masks:(uint64_t * __nonnull)masks
+                                                               values:(float * __nonnull)values
+                                                        inputChannels:(NSUInteger)inputPlanes
+                                                         subBatchSize:(NSUInteger)subBatchSize
+{
+    
+    int boardWidth = 8, boardHeight = 8;
+    int bytesPerRow = 8 * sizeof(float);
+    MPSImageDescriptor *inputDesc = [MPSImageDescriptor imageDescriptorWithChannelFormat:MPSImageFeatureChannelFormatFloat32
+                                                                                   width:boardWidth
+                                                                                  height:boardHeight
+                                                                         featureChannels:inputPlanes
+                                                                          numberOfImages:subBatchSize
+                                                                                   usage:MTLTextureUsageShaderRead];
+    // Buffer for expanding packed planes.
+    float buffer[inputPlanes * boardWidth * boardHeight];
+    
+    // Create an input MPSImageBatch.
+    MPSImageBatch *inputBatch = @[];
+    for (int subBatch = 0; subBatch < batchSize; subBatch += subBatchSize) {
+        
+        MPSImage *inputImage = [[MPSImage alloc] initWithDevice:device imageDescriptor:inputDesc];
+        
+        //float after[inputPlanes * boardWidth * boardHeight];
+        
+        // Expand packed planes to full planes, one batch at a time.
+        int subBatchEnd = MIN(subBatch + subBatchSize, batchSize);
+        for (int i = subBatch; i < subBatchEnd; i++) {
+            float * dptr = buffer;
+            for (int j = 0; j < inputPlanes; j++) {
+                const float value = values[j + i * inputPlanes];
+                const uint64_t mask = masks[j + i * inputPlanes];
+                //NSLog(@"mask[%d]: %lu, value[%d]: %f", j + i * inputPlanes, mask, j + i * inputPlanes, value);
+                for (auto k = 0; k < 64; k++) {
+//                    *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
+                    *(dptr++) = j == 1 && k == 9 ? 1 : 0;
+                }
+            }
+            //NSLog(@"Texture copy before assignment");
+            //logBeforeAfter(buffer, after, inputPlanes);
+            for (int k = 0; k < inputPlanes * boardWidth * boardHeight; k++) {
+                NSLog(@"Input at %i: %f", k, buffer[k]);
+            }
+            [inputImage writeBytes:buffer
+                        dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
+                        //dataLayout:MPSDataLayoutHeightxWidthxFeatureChannels
+                        imageIndex:i - subBatch];
+            
+            //[inputImage.texture getBytes:after bytesPerRow:bytesPerRow fromRegion:MTLRegionMake2D(0,0,8,8) mipmapLevel:0];
+            
+            //[inputImage readBytes:after
+            //           dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
+            //           imageIndex:i];
+            
+            //NSLog(@"Completed subbatch %i of %i of %i batches", i, subBatchEnd, batchSize);
+            //            NSLog(@"Texture copy before assignment");
+            //            NSLog(listOfFloats(buffer, 8*8*inputPlanes));
+            
+            //NSLog(@"Texture copy before >> after assignment");
+            //logBeforeAfter(buffer, after, inputPlanes);
+            
+        }
+        // Add image to input batch.
+        inputBatch = [inputBatch arrayByAddingObject:inputImage];
+    }
+    
+    /*// Write the image data from the CPU image area to the GPU image batch.
+     [inputBatch enumerateObjectsUsingBlock:^(MPSImage * __nonnull inputImage, NSUInteger idx, BOOL * __nonnull stop) {
+     // Advance image pointer in the supplied inputs and copy into the GPU.
+     uint8_t *start = (uint8_t *) ADVANCE_PTR(inputs, inputOffset + (boardWidth * boardHeight * idx));
+     [inputImage writeBytes:start
+     dataLayout:(MPSDataLayoutFeatureChannelsxHeightxWidth)
+     imageIndex:0];
+     }];*/
+    
+    // Make an MPSCommandBuffer, when passed to the encode of MPSNNGraph, commitAndContinue will be automatically used.
+    NSLog(@"Initializing command buffer");
+    MPSCommandBuffer *commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:queue];
+    
+    // Encode inference network
+    NSLog(@"Encoding command buffer");
+    NSLog(@"convkernel: %@", inputConv);
+    inputConv.destinationImageAllocator = [MPSImage defaultAllocator];
+    NSMutableArray<MPSImageBatch*> *results = [[NSMutableArray alloc] init];
+    MPSImageBatch *output = [inputConv encodeBatchToCommandBuffer:commandBuffer
+                                                     sourceImages:inputBatch];
+    
+    // Transfer data from GPU to CPU.
+    MPSImageBatchSynchronize(output, commandBuffer);
+    
+    // Commit the command buffer. Wait for the last batch to be processed.
+    NSLog(@"Committing command buffer");
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    
+    return output;
+    
+}
+
 -(nonnull NSMutableArray<MPSImageBatch*> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                            masks:(uint64_t * __nonnull)masks
                                                           values:(float * __nonnull)values
@@ -77,7 +177,7 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
     const uint8_t boardWidth = 8;
     const uint8_t boardHeight = 8;
     
-    @autoreleasepool {
+//    @autoreleasepool {
         MPSImageDescriptor *inputDesc = [MPSImageDescriptor imageDescriptorWithChannelFormat:MPSImageFeatureChannelFormatFloat32
                                                                                        width:boardWidth
                                                                                       height:boardHeight
@@ -87,8 +187,8 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
         
         //NSLog(@"Inputplanes: %i, batchSize: %i, subBatchSize: %i", inputPlanes, batchSize, subBatchSize);
         // Use double buffering to keep the GPU completely busy.
-        dispatch_semaphore_t doubleBufferingSemaphore = dispatch_semaphore_create(2);
-        dispatch_semaphore_wait(doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
+//        dispatch_semaphore_t doubleBufferingSemaphore = dispatch_semaphore_create(2);
+//        dispatch_semaphore_wait(doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
         
         // Create batches of MPSImages that each contain multiple images (i.e. multiple board positions
         // in sub-batches) in order to optimize GPU usage.
@@ -116,15 +216,19 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
                     const uint64_t mask = masks[j + i * inputPlanes];
                     //NSLog(@"mask[%d]: %lu, value[%d]: %f", j + i * inputPlanes, mask, j + i * inputPlanes, value);
                     for (auto k = 0; k < 64; k++) {
-                        *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
-                        //NSLog(@"Expanded image data: batch: %d, plane: %d, square: %d; value: %f", i, j, k, *(dptr++));
+//                        *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
+                        *(dptr++) = j == 0 && k == 9 ? 1 : 0;
+//                        NSLog(@"Expanded image data: batch: %d, plane: %d, square: %d; value: %f", i, j, k, *(dptr - 1));
                     }
                 }
                 //NSLog(@"Texture copy before assignment");
                 //logBeforeAfter(buffer, after, inputPlanes);
-
+//                for (int k = 0; k < inputPlanes * boardWidth * boardHeight; k++) {
+//                    NSLog(@"Input at %i: %f", k, buffer[k]);
+//                }
                 [inputImage writeBytes:buffer
                             dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
+                            //dataLayout:MPSDataLayoutHeightxWidthxFeatureChannels
                             imageIndex:i - subBatch];
                 
                 //[inputImage.texture getBytes:after bytesPerRow:bytesPerRow fromRegion:MTLRegionMake2D(0,0,8,8) mipmapLevel:0];
@@ -170,9 +274,9 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
         // Transfer data from GPU to CPU.
         MPSImageBatchSynchronize(output, commandBuffer);
     
-        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> __nonnull) {
-            // Release double buffering semaphore for the iteration to be encoded.
-            dispatch_semaphore_signal(doubleBufferingSemaphore);
+//        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> __nonnull) {
+//            // Release double buffering semaphore for the iteration to be encoded.
+//            dispatch_semaphore_signal(doubleBufferingSemaphore);
 
 //            // Check the output of inference network to calculate accuracy.
 //            [outputBatch enumerateObjectsUsingBlock:^(MPSImage * __nonnull outputImage, NSUInteger idx, BOOL * _Nonnull stop) {
@@ -182,7 +286,7 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
 //                            imageIndex:0];*/
 //            }];
 //
-        }];
+//        }];
         
         // Commit the command buffer. Wait for the last batch to be processed.
         //NSLog(@"Committing command buffer");
@@ -191,9 +295,9 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
         
         // Add the first result at the beginning of the list of result images.
         [results insertObject:output atIndex:0];
-        NSLog(@"Got results: batchSize: %i, count: %i", batchSize, [results count]);
+        NSLog(@"Got results: batchSize: %i, count: %i, %@", batchSize, [results count], results);
         return results;
-    }
+//    }
 }
 
 -(nonnull MPSNNGraph *) buildGraphWithResultImages:(NSArray <MPSNNImageNode *> * __nonnull)resultImages
@@ -215,7 +319,7 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
                                                 hasRelu:(BOOL)hasRelu
 {
     MPSCNNConvolutionNode *convNode = [MPSCNNConvolutionNode nodeWithSource:input weights:weights];
-    convNode.paddingPolicy = sameConvPadding;
+    //convNode.paddingPolicy = sameConvPadding;
     
     if (hasRelu) {
         MPSCNNNeuronReLUNode *relu = [MPSCNNNeuronReLUNode nodeWithSource:convNode.resultImage a:0.f];

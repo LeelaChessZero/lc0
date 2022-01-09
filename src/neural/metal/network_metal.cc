@@ -56,10 +56,23 @@ void describeWeights(LegacyWeights::ConvBlock &conv, int inputs) {
   }
 
   float * q = &conv.biases[0];
+  float * b = &conv.bn_betas[0];
+  float * g = &conv.bn_gammas[0];
+  float * m = &conv.bn_means[0];
+  float * s = &conv.bn_stddivs[0];
   for (int i=0; i<channelSize; i++) {
     CERR << "From Bias[" << i << "]: 1) " << conv.biases[i]
          << "; 2) " << *(q + i);
+    CERR << "From Betas[" << i << "]: 1) " << conv.bn_betas[i]
+         << "; 2) " << *(b + i);
+    CERR << "From Gammas[" << i << "]: 1) " << conv.bn_gammas[i]
+         << "; 2) " << *(g + i);
+    CERR << "From Means[" << i << "]: 1) " << conv.bn_means[i]
+         << "; 2) " << *(m + i);
+    CERR << "From StdDevs[" << i << "]: 1) " << conv.bn_stddivs[i]
+         << "; 2) " << *(s + i);
   }
+
 }
 
 void describeInputs(uint64_t * masks, float * vals, int batchSize, int numPerBatch) {
@@ -92,8 +105,13 @@ void MetalNetworkComputation::ComputeBlocking() {
 MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()} {
+//  CERR << "Starting...";
 
   LegacyWeights weights(file.weights());
+
+//  for (int i = 0; i < weights.input.biases.size(); ++i) {
+//    CERR << "Biases " << i << ": " << weights.input.biases[i];
+//  }
 
   try {
     // @todo better implementation with unique_ptr??
@@ -134,7 +152,19 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         &weights.input.weights[0],
                                         &weights.input.biases[0],
                                         true, "input/conv");
+  void * inputLayer = layer;
 
+  for (int j = 0; j < weights.input.weights.size(); ++j) {
+    CERR << "Weight[" << j << "]: " << weights.input.weights[j];
+  }
+  CERR << "";
+
+  for (int j = 0; j < weights.input.biases.size(); ++j) {
+    CERR << "Bias[" << j << "]: " << weights.input.biases[j];
+  }
+  CERR << "";
+
+  /*if (false) {
   // 2. Residual blocks
   for (size_t i = 0; i < weights.residual.size(); i++) {
     //describeWeights(weights.residual[i].conv1, channelSize);
@@ -185,13 +215,13 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     }
     // @todo Policy mapping in GPU.
     policy = builder->makePolicyMapLayer(policy, &policy_map);
-    /*auto mapping = MakeIntConst(scope, {1858}, policy_map);
+    *//*auto mapping = MakeIntConst(scope, {1858}, policy_map);
     auto flattened_conv =
         Reshape(scope, conv_pol, Const(scope, {-1, 80 * 8 * 8}));
     policy_head = GatherV2(scope, flattened_conv, mapping, 1);
 
     mapping.node()->set_name("policy/mapping_table");
-    flattened_conv.node()->set_name("policy/flatten");*/
+    flattened_conv.node()->set_name("policy/flatten");*//*
 
   }
   else {
@@ -261,11 +291,14 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   // operation.
   std::vector<void*> outputs;
   if (moves_left_) {
-    outputs = {policy, value, mlh};
+    outputs = {inputLayer, policy, value, mlh};
   }
   else {
-    outputs = {policy, value};
+    outputs = {inputLayer, policy, value};
   }
+  }*/
+
+  std::vector<void*> outputs = {layer};
   builder->buildGraph(&outputs);
 }
 

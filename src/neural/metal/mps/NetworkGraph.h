@@ -39,6 +39,8 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
   // Keep the MTLDevice and MTLCommandQueue objects around for ease of use.
   id <MTLDevice> device;
   id <MTLCommandQueue> queue;
+    
+  MPSCNNConvolution * inputConv;
 
   NSArray <ConvWeights *> *allWeights;
   MPSNNGraph *graph;

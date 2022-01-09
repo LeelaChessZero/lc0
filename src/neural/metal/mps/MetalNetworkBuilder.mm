@@ -41,8 +41,6 @@ MetalNetworkBuilder::~MetalNetworkBuilder(void)
 //void MetalNetworkBuilder::init(void* weights, void* options)
 void MetalNetworkBuilder::init()
 {
-    //redirectLogs();
-    
     // All metal devices.
     NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
     
@@ -95,28 +93,42 @@ void* MetalNetworkBuilder::makeConvolutionBlock(void * previousLayer, int inputS
                                                             stride:1
                                                            weights:weights
                                                             biases:biases
-                                                             label:[NSString stringWithUTF8String:label.c_str()]];
+                                                             label:[NSString stringWithUTF8String:label.c_str()]
+                                                   fusedActivation:withRelu ? @"relu" : nil];
+    
+    if (inputSize == 112)
+        ((Lc0NetworkGraph *)self)->inputConv = [[MPSCNNConvolution alloc] initWithDevice:[(id)self getDevice]
+                                                                                 weights:convWeights];
+    
     
     //[convWeights describeWeights];
-    MPSNNImageNode * source;
-    if (previousLayer == NULL) {
-        // If no previous layer is provided, assume input layer and create placeholder input image node.
-        source = [MPSNNImageNode nodeWithHandle:nil];
-        NSLog(@"no previous layer");
-    }
-    else {
-        source = ((MPSNNFilterNode *)previousLayer).resultImage;
-        NSLog(@"previous layer provided");
-    }
+//    MPSNNImageNode * source;
+//    if (previousLayer == NULL) {
+//        // If no previous layer is provided, assume input layer and create placeholder input image node.
+//        source = [MPSNNImageNode nodeWithHandle:nil];
+//    }
+//    else {
+//        source = ((MPSNNFilterNode *)previousLayer).resultImage;
+//    }
+//
+//    MPSNNFilterNode *layer = [(id)self convolutionBlockWithSource:source
+//                                                inputChannels:inputSize
+//                                               outputChannels:channelSize
+//                                                  kernelWidth:kernelSize
+//                                                 kernelHeight:kernelSize
+//                                                      weights:convWeights
+//                                                      hasRelu:NO];
+//    return (void*) layer;
     
-    MPSNNFilterNode *layer = [(id)self convolutionBlockWithSource:source
-                                                inputChannels:inputSize
-                                               outputChannels:channelSize
-                                                  kernelWidth:kernelSize
-                                                 kernelHeight:kernelSize
-                                                      weights:convWeights
-                                                      hasRelu:withRelu ? YES : NO];
-    return (void*) layer;
+    MPSCNNConvolutionNode *convNode = [MPSCNNConvolutionNode nodeWithSource:[MPSNNImageNode nodeWithHandle:nil]
+                                                                    weights:convWeights];
+//    convNode.trainingStyle = MPSNNTrainingStyleUpdateDeviceNone;
+//    convNode.accumulatorPrecision = MPSNNConvolutionAccumulatorPrecisionOptionFloat;
+    //convNode.paddingPolicy = sameConvPadding;
+    convNode.paddingPolicy = [MPSNNDefaultPadding paddingWithMethod:MPSNNPaddingMethodSizeSame];
+//    convNode.label = @"input_conv";
+    
+    return (void*) convNode;
 }
 
 void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
@@ -134,7 +146,8 @@ void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize
                                                             stride:1
                                                            weights:weights1
                                                             biases:biases1
-                                                             label:[NSString stringWithFormat:@"%s/conv1", label.c_str()]];
+                                                             label:[NSString stringWithFormat:@"%s/conv1", label.c_str()]
+                                                    fusedActivation:@"relu"];
     
     ConvWeights *convWeights2 = [[ConvWeights alloc] initWithDevice:[(id)self getDevice]
                                                       inputChannels:inputSize
@@ -144,7 +157,8 @@ void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize
                                                              stride:1
                                                             weights:weights2
                                                              biases:biases2
-                                                              label:[NSString stringWithFormat:@"%s/conv2", label.c_str()]];
+                                                              label:[NSString stringWithFormat:@"%s/conv2", label.c_str()]
+                                                    fusedActivation:withRelu ? @"relu" : nil];
     
     MPSNNImageNode * source;
     if (previousLayer == NULL) {
@@ -177,7 +191,8 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
                                                              stride:1
                                                             weights:weights
                                                              biases:biases
-                                                              label:[NSString stringWithUTF8String:label.c_str()]];
+                                                              label:[NSString stringWithUTF8String:label.c_str()]
+                                                    fusedActivation:[NSString stringWithUTF8String:activation.c_str()]];
     MPSNNImageNode * source;
     if (previousLayer == NULL) {
         // If no previous layer is provided, assume input layer and create placeholder input image node.
@@ -189,7 +204,7 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
     
     MPSNNFilterNode *layer = [(id)self fullyConnectedLayerWithSource:source
                                                              weights:convWeights
-                                                          activation:[NSString stringWithUTF8String:activation.c_str()]];
+                                                          activation:@""];
     
     return (void*) layer;
 }
@@ -260,21 +275,44 @@ void updateResults(MPSImageBatch * imageBatch, float * outputMem, int batchSize,
         imageSize = imageBatch[idx].featureChannels * imageBatch[idx].height * imageBatch[idx].width;
         start = outputMem + idx * subBatchSize * imageSize;
         items = MIN(subBatchSize, batchSize - idx * subBatchSize);
-        //NSLog(@"batchSize[%i]: subbatch %i with size %i", batchSize, idx, items);
+        NSLog(@"batchSize[%i]: subbatch %i with size %i", batchSize, idx, items);
         for (int i = 0; i < items; i++) {
             [imageBatch[idx] readBytes:start
                             dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
+                            //dataLayout:MPSDataLayoutHeightxWidthxFeatureChannels
                             imageIndex:i];
             start += imageSize;
             //NSLog(@"batchSize[%i]: Read image %i from subbatch %i", batchSize, i, idx);
         }
     }
     
-};
+}
 
 std::vector<float*> MetalNetworkBuilder::forwardEval(uint64_t * masks, float * values, std::vector<float *> * outputs, int batchSize, int inputChannels)
 {
-    NSUInteger subBatchSize = MIN(4, batchSize);
+    
+    //NSLog(@"%@", ((Lc0NetworkGraph *)self)->inputConv);
+    //[(Lc0NetworkGraph *)self)->inputConv encodeToCommandBuffer:commandBuffer sourceImage];
+
+    std::vector<float*> blah(1);
+    MPSImageBatch * result = [(id)self evalSingleConv:batchSize
+                                                masks:masks
+                                               values:values
+                                        inputChannels:inputChannels
+                                         subBatchSize:1];
+
+    // Conv layer.
+    int imgSz1 = result[0].featureChannels * result[0].height * result[0].width;
+    blah[0] = (float*)malloc(batchSize * imgSz1 * sizeof(float));
+    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Input Conv", batchSize * imgSz1);
+    updateResults(result, blah[0], batchSize, 1);
+    logImageResults(result, @"Input Conv");
+    NSLog(@"%@", listOfFloats(blah[0], batchSize * imgSz1));
+
+//    return blah;
+    
+    
+    NSUInteger subBatchSize = MIN(1, batchSize);
     NSMutableArray<MPSImageBatch*> * results = [(id)self runInferenceWithBatchSize:batchSize
                                                                         masks:masks
                                                                        values:values
@@ -295,17 +333,32 @@ std::vector<float*> MetalNetworkBuilder::forwardEval(uint64_t * masks, float * v
     // Create temporary memory to pass results back to MCTS.
     std::vector<float*> output_mems([results count]);
 //    NSLog(@"Return vector: size: %i", output_mems.size());
-
-    // Policy.
-    int rsIdx = 0;
-    int imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
+    
+    int rsIdx, imgSz;
+    
+    // Extra layer.
+    rsIdx = 0;
+    imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
     output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
-    //NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Policy", batchSize * imgSz);
+    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Extra", batchSize * imgSz);
     //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
     updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
-    //logImageResults(results[rsIdx], @"Policy");
-    //NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+    logImageResults(results[rsIdx], @"Extra");
+    NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
 
+    if ([results count] > 1) {
+    // Policy.
+    rsIdx = 0;
+    imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
+    output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
+    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Policy", batchSize * imgSz);
+    //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
+    updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
+    logImageResults(results[rsIdx], @"Policy");
+    //NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+    }
+
+    if ([results count] > 2) {
     // Value.
     rsIdx = 1;
     imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
@@ -314,17 +367,20 @@ std::vector<float*> MetalNetworkBuilder::forwardEval(uint64_t * masks, float * v
     //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
     updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
     logImageResults(results[rsIdx], @"Value");
-    NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+    //NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+    }
 
-    // MLH.
-    rsIdx = 2;
-    imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
-    output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
-    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"MLH", batchSize * imgSz);
-    //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
-    updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
-    logImageResults(results[rsIdx], @"MLH");
-    NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+    if ([results count] > 3) {
+        // MLH.
+        rsIdx = 2;
+        imgSz = results[rsIdx][0].featureChannels * results[rsIdx][0].height * results[rsIdx][0].width;
+        output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
+        NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"MLH", batchSize * imgSz);
+        //[results[rsIdx] enumerateObjectsUsingBlock:syncBlock];
+        updateResults(results[rsIdx], output_mems[rsIdx], batchSize, subBatchSize);
+        logImageResults(results[rsIdx], @"MLH");
+        //NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
+    }
     
     return output_mems;
 }

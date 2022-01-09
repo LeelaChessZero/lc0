@@ -38,10 +38,13 @@
                                weights:(float * __nonnull)weights
                                 biases:(float * __nonnull)biases
                                  label:(NSString * __nonnull)label
+                       fusedActivation:(NSString * __nullable)fusedActivation
 {
     self = [super init];
     if( nil == self )
         return nil;
+    
+    _device = device;
 
     _label = label;
     _outputChannels = outputChannels;
@@ -56,49 +59,100 @@
 
     _descriptor.strideInPixelsX = stride;
     _descriptor.strideInPixelsY = stride;
-    _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeNone)];
+    // Fuse activations into the convolution.
+    if ([fusedActivation isEqual:@"relu"]) {
+        NSLog(@"Using fused relu.");
+        _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeReLU)];
+    }
+    else if ([fusedActivation isEqual:@"tanh"]) {
+        NSLog(@"Using fused tanh.");
+        _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeTanH)];
+    }
+    else {
+        NSLog(@"Using fused none.");
+        _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeNone)];
+    }
 
-    // Calculating the size of weights and biases.
-    _sizeBiases = _outputChannels * sizeof(float);
-    NSUInteger lenWeights = _inputChannels * _kernelHeight * _kernelWidth * _outputChannels;
-    _sizeWeights = lenWeights * sizeof(float);
-
-
-    _weightDescriptor = [MPSVectorDescriptor vectorDescriptorWithLength:lenWeights dataType:(MPSDataTypeFloat32)];
-    _weightVector = [[MPSVector alloc] initWithDevice:device descriptor:_weightDescriptor];
-
-    _biasDescriptor = [MPSVectorDescriptor vectorDescriptorWithLength:_outputChannels dataType:(MPSDataTypeFloat32)];
-    _biasVector = [[MPSVector alloc] initWithDevice:device descriptor:_biasDescriptor];
-
-
-    //_convWtsAndBias = [[MPSCNNConvolutionWeightsAndBiasesState alloc] initWithWeights:_weightVector.data biases:_biasVector.data];
-    
-    // Set weights and biases to the specified values.
-    _weightPointer = (float *)_weightVector.data.contents;
-    memcpy((void *)_weightPointer, (void *)weights, _sizeWeights);
-    
-    _biasPointer = (float *)_biasVector.data.contents;
-    memcpy((void *)_biasPointer, (void *)biases, _sizeBiases);
-    
-    
-    // Notify event listeners.
-    [_weightVector.data didModifyRange:NSMakeRange(0, _sizeWeights)];
-    [_biasVector.data didModifyRange:NSMakeRange(0, _sizeBiases)];
+    // @todo took stuff from here.
+    _weights = weights;
+    _biases = biases;
     
     return self;
 }
 
 -(MPSDataType) dataType {return  MPSDataTypeFloat32;}
 -(nonnull MPSCNNConvolutionDescriptor *) descriptor {return _descriptor;}
--(nonnull float *) weights {return _weightPointer;}
--(nonnull float *) biasTerms {return _biasPointer;}
+-(void * __nonnull) weights {return _weightPointer;}
+-(float * __nullable) biasTerms {return _biasPointer;}
 
 -(BOOL) load {
+    //NSLog(@"Loading weights...");
     //[self checkpointWithCommandQueue:gCommandQueue];
+
+    // Calculating the size of weights and biases.
+    _sizeBiases = _outputChannels * sizeof(float);
+    NSUInteger lenWeights = _outputChannels * _kernelHeight * _kernelWidth * _inputChannels;
+    _sizeWeights = lenWeights * sizeof(float);
+    
+    _weightDescriptor = [MPSVectorDescriptor vectorDescriptorWithLength:lenWeights dataType:(MPSDataTypeFloat32)];
+    _weightVector = [[MPSVector alloc] initWithDevice:_device descriptor:_weightDescriptor];
+    
+    _biasDescriptor = [MPSVectorDescriptor vectorDescriptorWithLength:_outputChannels dataType:(MPSDataTypeFloat32)];
+    _biasVector = [[MPSVector alloc] initWithDevice:_device descriptor:_biasDescriptor];
+    
+    //_convWtsAndBias = [[MPSCNNConvolutionWeightsAndBiasesState alloc] initWithWeights:_weightVector.data biases:_biasVector.data];
+    
+    // Transpose weights as needed from OIHW (Leela) to OHWI (MPSNNGraph).
+    NSArray * shape = @[@(_outputChannels), @(_inputChannels), @(_kernelHeight), @(_kernelWidth)];
+    MPSNDArrayDescriptor * arrayDesc = [MPSNDArrayDescriptor descriptorWithDataType:MPSDataTypeFloat32 shape:shape];
+    MPSNDArray * initial = [[MPSNDArray alloc] initWithDevice:_device descriptor:arrayDesc];
+    [initial writeBytes:_weights strideBytes:nil];
+    
+    // Note that dimension 0 refers to the fastest changing dimension.
+    [arrayDesc transposeDimension:2 withDimension:1];
+    [arrayDesc transposeDimension:1 withDimension:0];
+    id<MTLCommandQueue> queue = [_device newCommandQueue];
+    MPSCommandBuffer *commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:queue];
+    MPSNDArray * transposed = [initial arrayViewWithCommandBuffer:commandBuffer
+                                                       descriptor:arrayDesc
+                                                         aliasing:MPSAliasingStrategyDefault];
+    float buffer[lenWeights];
+    [transposed readBytes:buffer strideBytes:nil];
+    
+    NSLog(@"Original weights:");
+    for (int j = 0; j < 64; ++j) {
+        NSLog(@"Weight[%i]: %f", j, _weights[j]);
+    }
+    
+    NSLog(@" ");
+    NSLog(@"Transposed weights:");
+    for (int j = 0; j < 64; ++j) {
+        NSLog(@"Weight[%i]: %f", j, buffer[j]);
+    }
+    
+    NSLog(@" ");
+    NSLog(@"Reordered transposed weights:");
+    for (int j = 0; j < 64; ++j) {
+        NSLog(@"Weight[%i x %i]: %f", j, _inputChannels, buffer[j * _inputChannels]);
+    }
+    
+    // Set weights and biases to the specified values.
+    _weightPointer = (float *)_weightVector.data.contents;
+    memcpy((void *)_weightPointer, (void *)buffer, _sizeWeights);
+    
+    _biasPointer = (float *)_biasVector.data.contents;
+    memcpy((void *)_biasPointer, (void *)_biases, _sizeBiases);
+    
+    // Notify event listeners.
+    [_weightVector.data didModifyRange:NSMakeRange(0, _sizeWeights)];
+    [_biasVector.data didModifyRange:NSMakeRange(0, _sizeBiases)];
+    
     return YES;
 }
 
--(void) purge {}
+-(void) purge {
+    //NSLog(@"Purging weights...");
+}
 
 - (NSString * _Nullable)label {
     return _label;
