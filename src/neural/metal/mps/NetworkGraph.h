@@ -34,43 +34,72 @@
 
 static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
 
-@interface Lc0NetworkGraph : NSObject {
- @public
-  // Keep the MTLDevice and MTLCommandQueue objects around for ease of use.
-  id <MTLDevice> device;
-  id <MTLCommandQueue> queue;
-    
-  MPSCNNConvolution * inputConv;
+@interface Lc0GraphNode : NSObject
 
-  NSArray <ConvWeights *> *allWeights;
-  MPSNNGraph *graph;
+  @property(readwrite, nonatomic, retain) NSArray<Lc0GraphNode *> * __nullable parents;
+
+  @property(readwrite, nonatomic, retain) MPSKernel * __nonnull kernel;
+
+  @property(readwrite, nonatomic, retain) MPSImageBatch * __nullable result;
+
+  @property(readwrite) NSUInteger numChildren;
+
++(nonnull instancetype) graphNodeWithCnnKernel:(MPSKernel * __nonnull)kernel
+                                       parents:(NSArray<Lc0GraphNode *> * __nullable)parents;
+
+@end
+
+@interface Lc0NetworkGraph : NSObject {
+  @public
+    // Keep the MTLDevice and MTLCommandQueue objects around for ease of use.
+    id<MTLDevice> device;
+    id<MTLCommandQueue> queue;
+    
+    NSArray<Lc0GraphNode *> *graphNodes;
+    MPSNNGraph *graph;
 }
 
 -(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)inputDevice
                           commandQueue:(id <MTLCommandQueue> __nonnull)commandQueue;
 
--(nonnull MPSNNFilterNode *) convolutionBlockWithSource:(MPSNNImageNode * __nonnull)input
+-(nonnull Lc0GraphNode *) addConvolutionBlockWithParent:(Lc0GraphNode * __nullable)parent
                                           inputChannels:(NSUInteger)inputChannels
                                          outputChannels:(NSUInteger)outputChannels
-                                            kernelWidth:(NSUInteger)kernelWidth
-                                           kernelHeight:(NSUInteger)kernelHeight
-                                                weights:(ConvWeights * __nonnull)weights
-                                                hasRelu:(BOOL)hasRelu;
+                                             kernelSize:(NSUInteger)kernelSize
+                                                weights:(float * __nonnull)weights
+                                                 biases:(float * __nonnull)biases
+                                                hasRelu:(BOOL)hasRelu
+                                                  label:(NSString * __nonnull)label;
 
--(nonnull MPSNNFilterNode *) residualBlockWithSource:(MPSNNImageNode * __nonnull)input
+-(nonnull Lc0GraphNode *) addResidualBlockWithParent:(Lc0GraphNode * __nullable)parent
                                        inputChannels:(NSUInteger)inputChannels
                                       outputChannels:(NSUInteger)outputChannels
                                          kernelWidth:(NSUInteger)kernelWidth
                                         kernelHeight:(NSUInteger)kernelHeight
-                                            weights1:(ConvWeights * __nonnull)weights1
-                                            weights2:(ConvWeights * __nonnull)weights2
-                                           seWeights:(ConvWeights * __nullable)seWeights;
+                                            weights1:(float * __nonnull)weights1
+                                             biases1:(float * __nonnull)biases1
+                                            weights2:(float * __nonnull)weights2
+                                             biases2:(float * __nonnull)biases2
+                                               label:(NSString * __nonnull)label
+                                               hasSe:(BOOL)hasSe
+                                          seWeights1:(float * __nullable)seWeights1
+                                           seBiases1:(float * __nullable)seBiases1
+                                          seWeights2:(float * __nullable)seWeights2
+                                           seBiases2:(float * __nullable)seBiases2
+                                         seFcOutputs:(NSUInteger)seFcOutputs;
 
--(nonnull MPSNNFilterNode *) fullyConnectedLayerWithSource:(MPSNNImageNode * __nonnull)input
+-(nonnull Lc0GraphNode *) addFullyConnectedLayerWithParent:(Lc0GraphNode * __nullable)parent
                                                    weights:(ConvWeights * __nonnull)weights
-                                                activation:(NSString * __nullable)activation;
+                                                activation:(NSString * __nullable)activation
+                                                     label:(NSString * __nonnull)label;
 
--(nonnull MPSNNFilterNode *) buildInferenceGraph;
+-(nonnull Lc0GraphNode *) buildInferenceGraph;
+
+-(nonnull MPSImageBatch *) createInputImageBatchWithBatchSize:(NSUInteger)batchSize
+                                                        masks:(uint64_t * __nonnull)masks
+                                                       values:(float * __nonnull)values
+                                                inputChannels:(NSUInteger)inputPlanes
+                                                 subBatchSize:(NSUInteger)subBatchSize;
 
 -(nonnull NSMutableArray<MPSImageBatch*> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                            masks:(uint64_t * __nonnull)masks

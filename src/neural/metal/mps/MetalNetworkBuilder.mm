@@ -82,61 +82,38 @@ void describeWeights(float * weights, float * biases, int inputSize, int channel
 
 void* MetalNetworkBuilder::makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
                                                 float * weights, float * biases, bool withRelu, std::string label) {
-    
-    //describeWeights(weights, biases, inputSize, channelSize, kernelSize);
-    
-    ConvWeights *convWeights = [[ConvWeights alloc] initWithDevice:[(id)self getDevice]
-                                                     inputChannels:inputSize
-                                                    outputChannels:channelSize
-                                                       kernelWidth:kernelSize
-                                                      kernelHeight:kernelSize
-                                                            stride:1
-                                                           weights:weights
-                                                            biases:biases
-                                                             label:[NSString stringWithUTF8String:label.c_str()]
-                                                   fusedActivation:withRelu ? @"relu" : nil];
-    
-    if (inputSize == 112)
-        ((Lc0NetworkGraph *)self)->inputConv = [[MPSCNNConvolution alloc] initWithDevice:[(id)self getDevice]
-                                                                                 weights:convWeights];
-    
-    
-    //[convWeights describeWeights];
-//    MPSNNImageNode * source;
-//    if (previousLayer == NULL) {
-//        // If no previous layer is provided, assume input layer and create placeholder input image node.
-//        source = [MPSNNImageNode nodeWithHandle:nil];
-//    }
-//    else {
-//        source = ((MPSNNFilterNode *)previousLayer).resultImage;
-//    }
-//
-//    MPSNNFilterNode *layer = [(id)self convolutionBlockWithSource:source
-//                                                inputChannels:inputSize
-//                                               outputChannels:channelSize
-//                                                  kernelWidth:kernelSize
-//                                                 kernelHeight:kernelSize
-//                                                      weights:convWeights
-//                                                      hasRelu:NO];
-//    return (void*) layer;
-    
-    MPSCNNConvolutionNode *convNode = [MPSCNNConvolutionNode nodeWithSource:[MPSNNImageNode nodeWithHandle:nil]
-                                                                    weights:convWeights];
-//    convNode.trainingStyle = MPSNNTrainingStyleUpdateDeviceNone;
-//    convNode.accumulatorPrecision = MPSNNConvolutionAccumulatorPrecisionOptionFloat;
-    //convNode.paddingPolicy = sameConvPadding;
-    convNode.paddingPolicy = [MPSNNDefaultPadding paddingWithMethod:MPSNNPaddingMethodSizeSame];
-//    convNode.label = @"input_conv";
-    
-    return (void*) convNode;
+    return [(id)self addConvolutionBlockWithParent:(Lc0GraphNode *)previousLayer
+                                     inputChannels:inputSize
+                                    outputChannels:channelSize
+                                        kernelSize:kernelSize
+                                           weights:weights
+                                            biases:biases
+                                           hasRelu:(BOOL)withRelu
+                                             label:[NSString stringWithUTF8String:label.c_str()]];
 }
 
 void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
                                              float * weights1, float * biases1, float * weights2, float * biases2,
-                                             float * seWeights1, float * seBiases1, float * seWeights2, float * seBiases2,
-                                             bool withSe, bool withRelu, std::string label) {
-    
-    NSString * nLabel = [NSString stringWithUTF8String:label.c_str()];
+                                             bool withRelu, std::string label, bool withSe, int seFcOutputs,
+                                             float * seWeights1, float * seBiases1, float * seWeights2, float * seBiases2) {
+
+    return [(id)self addResidualBlockWithParent:(Lc0GraphNode *)previousLayer
+                                  inputChannels:inputSize
+                                 outputChannels:channelSize
+                                     kernelSize:kernelSize
+                                       weights1:weights1
+                                        biases1:biases1
+                                       weights2:weights2
+                                        biases2:biases2
+                                          label:[NSString stringWithUTF8String:label.c_str()]
+                                          hasSe:withSe ? YES : NO
+                                     seWeights1:seWeights1
+                                      seBiases1:seBiases1
+                                     seWeights2:seWeights2
+                                      seBiases2:seBiases2
+                                    seFcOutputs:seFcOutputs];
+
+    /*NSString * nLabel = [NSString stringWithUTF8String:label.c_str()];
     
     ConvWeights *convWeights1 = [[ConvWeights alloc] initWithDevice:[(id)self getDevice]
                                                      inputChannels:inputSize
@@ -168,7 +145,7 @@ void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize
     else {
         source = ((MPSNNFilterNode *)previousLayer).resultImage;
     }
-    MPSNNFilterNode *layer = [(id)self residualBlockWithSource:source
+    MPSNNFilterNode *layer = [(id)self residualBlockWithParent:previousLayer
                                                  inputChannels:channelSize
                                                 outputChannels:channelSize
                                                    kernelWidth:kernelSize
@@ -176,14 +153,15 @@ void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize
                                                       weights1:convWeights1
                                                       weights2:convWeights2
                                                      seWeights:NULL];
-    return (void*) layer;
+    return (void*) layer;*/
+    return (void*) previousLayer;
 }
 
 void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inputSize, int outputSize,
                                                    float * weights, float * biases,
                                                    std::string activation, std::string label) {
 
-    ConvWeights *convWeights = [[ConvWeights alloc] initWithDevice:[(id)self getDevice]
+    /*ConvWeights *convWeights = [[ConvWeights alloc] initWithDevice:[(id)self getDevice]
                                                       inputChannels:inputSize
                                                      outputChannels:outputSize
                                                         kernelWidth:1
@@ -206,11 +184,12 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
                                                              weights:convWeights
                                                           activation:@""];
     
-    return (void*) layer;
+    return (void*) layer;*/
+    return (void*) previousLayer;
 }
 
 void* MetalNetworkBuilder::makeReshapeLayer(void * previousLayer, int resultWidth, int resultHeight, int resultChannels) {
-    MPSNNImageNode * source;
+    /*MPSNNImageNode * source;
     if (previousLayer == NULL) {
         // If no previous layer is provided, assume input layer and create placeholder input image node.
         source = [MPSNNImageNode nodeWithHandle:nil];
@@ -223,7 +202,8 @@ void* MetalNetworkBuilder::makeReshapeLayer(void * previousLayer, int resultWidt
                                                      resultHeight:resultHeight
                                             resultFeatureChannels:resultChannels];
     
-    return (void*) reshape;
+    return (void*) reshape;*/
+    return (void*) previousLayer;
 }
 
 void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, std::vector<short> * policyMap) {
@@ -231,20 +211,20 @@ void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, std::vector<
 }
 
 void* MetalNetworkBuilder::buildGraph(std::vector<void *> * outputs) {
-    NSArray<MPSNNImageNode *> * resultImages = @[];
-    BOOL resultsNeeded[outputs->size()];
-    int i = 0;
-    
-    for (const auto& output : *outputs) {
-        resultImages = [resultImages arrayByAddingObject:((MPSNNFilterNode *)output).resultImage];
-        resultsNeeded[i++] = YES;
-    }
-    MPSNNGraph * graph = [(id)self buildGraphWithResultImages:resultImages
-                                             resultsAreNeeded:resultsNeeded];
-    
-    NSLog(@"Completed building neural network graph: %@ on device: %@", graph, [(id)self getDevice]);
-    
-    return (void*) graph;
+//    NSArray<MPSNNImageNode *> * resultImages = @[];
+//    BOOL resultsNeeded[outputs->size()];
+//    int i = 0;
+//
+//    for (const auto& output : *outputs) {
+//        resultImages = [resultImages arrayByAddingObject:((MPSNNFilterNode *)output).resultImage];
+//        resultsNeeded[i++] = YES;
+//    }
+//    MPSNNGraph * graph = [(id)self buildGraphWithResultImages:resultImages
+//                                             resultsAreNeeded:resultsNeeded];
+//
+//    NSLog(@"Completed building neural network graph: %@ on device: %@", graph, [(id)self getDevice]);
+//
+//    return (void*) graph;
 }
 
 NSString * listOfFloats(float * floats, int count) {
@@ -294,39 +274,39 @@ std::vector<float*> MetalNetworkBuilder::forwardEval(uint64_t * masks, float * v
     //NSLog(@"%@", ((Lc0NetworkGraph *)self)->inputConv);
     //[(Lc0NetworkGraph *)self)->inputConv encodeToCommandBuffer:commandBuffer sourceImage];
 
-    std::vector<float*> blah(1);
-    MPSImageBatch * result = [(id)self evalSingleConv:batchSize
-                                                masks:masks
-                                               values:values
-                                        inputChannels:inputChannels
-                                         subBatchSize:1];
-
-    // Conv layer.
-    int imgSz1 = result[0].featureChannels * result[0].height * result[0].width;
-    blah[0] = (float*)malloc(batchSize * imgSz1 * sizeof(float));
-    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Input Conv", batchSize * imgSz1);
-    updateResults(result, blah[0], batchSize, 1);
-    logImageResults(result, @"Input Conv");
-    NSLog(@"%@", listOfFloats(blah[0], batchSize * imgSz1));
+//    std::vector<float*> blah(1);
+//    MPSImageBatch * result = [(id)self evalSingleConv:batchSize
+//                                                masks:masks
+//                                               values:values
+//                                        inputChannels:inputChannels
+//                                         subBatchSize:1];
+//
+//    // Conv layer.
+//    int imgSz1 = result[0].featureChannels * result[0].height * result[0].width;
+//    blah[0] = (float*)malloc(batchSize * imgSz1 * sizeof(float));
+//    NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, @"Input Conv", batchSize * imgSz1);
+//    updateResults(result, blah[0], batchSize, 1);
+//    logImageResults(result, @"Input Conv");
+//    NSLog(@"%@", listOfFloats(blah[0], batchSize * imgSz1));
 
 //    return blah;
     
     
     NSUInteger subBatchSize = MIN(1, batchSize);
     NSMutableArray<MPSImageBatch*> * results = [(id)self runInferenceWithBatchSize:batchSize
-                                                                        masks:masks
-                                                                       values:values
-                                                                inputChannels:inputChannels
-                                                                 subBatchSize:subBatchSize];
-//    NSLog(@"Result images (total of %i image batches)", [results count]);
-//    int i = 0;
-//    for (MPSImageBatch * batch: results) {
-//        NSLog(@"Batch %i: %i images", i++, [batch count]);
-//        for (MPSImage * image: batch) {
-//            NSLog(@"result - W:%lu, H:%lu, C:%lu, N:%lu, precision:%lu, usage:%lu", image.width, image.height, image.featureChannels, image.numberOfImages, image.precision, image.usage);
-//
-//        }
-//    }
+                                                                            masks:masks
+                                                                           values:values
+                                                                    inputChannels:inputChannels
+                                                                     subBatchSize:subBatchSize];
+    NSLog(@"Result images (total of %i image batches)", [results count]);
+    int i = 0;
+    for (MPSImageBatch * batch: results) {
+        NSLog(@"Batch %i: %i images", i++, [batch count]);
+        for (MPSImage * image: batch) {
+            NSLog(@"result - W:%lu, H:%lu, C:%lu, N:%lu, precision:%lu, usage:%lu", image.width, image.height, image.featureChannels, image.numberOfImages, image.precision, image.usage);
+
+        }
+    }
     
     
     

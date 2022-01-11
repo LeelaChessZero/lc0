@@ -154,35 +154,36 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         true, "input/conv");
   void * inputLayer = layer;
 
-  for (int j = 0; j < weights.input.weights.size(); ++j) {
-    CERR << "Weight[" << j << "]: " << weights.input.weights[j];
-  }
-  CERR << "";
+//  for (int j = 0; j < weights.input.weights.size(); ++j) {
+//    CERR << "Weight[" << j << "]: " << weights.input.weights[j];
+//  }
+//  CERR << "";
+//
+//  for (int j = 0; j < weights.input.biases.size(); ++j) {
+//    CERR << "Bias[" << j << "]: " << weights.input.biases[j];
+//  }
+//  CERR << "";
 
-  for (int j = 0; j < weights.input.biases.size(); ++j) {
-    CERR << "Bias[" << j << "]: " << weights.input.biases[j];
-  }
-  CERR << "";
-
-  /*if (false) {
   // 2. Residual blocks
-  for (size_t i = 0; i < weights.residual.size(); i++) {
+  for (size_t i = 0; i < 1; i++) {
     //describeWeights(weights.residual[i].conv1, channelSize);
     //describeWeights(weights.residual[i].conv2, channelSize);
+    CERR << "Residual SE squeeze size: " << weights.residual[i].se.b1.size();
     layer = builder->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
                                        &weights.residual[i].conv1.weights[0],
                                        &weights.residual[i].conv1.biases[0],
                                        &weights.residual[i].conv2.weights[0],
                                        &weights.residual[i].conv2.biases[0],
+                                       true, "block_" + std::to_string(i),
+                                       weights.residual[i].has_se,
+                                       weights.residual[i].se.b1.size(),
                                        &weights.residual[i].se.w1[0],
                                        &weights.residual[i].se.b1[0],
                                        &weights.residual[i].se.w2[0],
-                                       &weights.residual[i].se.b2[0],
-                                       weights.residual[i].has_se,
-                                       true, "block_" + std::to_string(i)
-                                       );
+                                       &weights.residual[i].se.b2[0]);
   }
 
+  /*if (false) {
   // 3. Policy head.
   void * policy;
   if (conv_policy_) {

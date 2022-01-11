@@ -45,8 +45,8 @@ public:
 
     void* makeResidualBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
                             float * weights1, float * biases1, float * weights2, float * biases2,
-                            float * seWeights1, float * seBiases1, float * seWeights2, float * seBiases2,
-                            bool withSe, bool withRelu, std::string label);
+                            bool withRelu, std::string label, bool withSe, int seFcOutputs,
+                            float * seWeights1, float * seBiases1, float * seWeights2, float * seBiases2);
 
     void* makeFullyConnectedLayer(void * previousLayer, int inputSize, int outputSize,
                                   float * weights, float * biases, std::string activation, std::string label);

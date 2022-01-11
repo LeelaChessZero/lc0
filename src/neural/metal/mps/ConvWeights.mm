@@ -61,18 +61,23 @@
     _descriptor.strideInPixelsY = stride;
     // Fuse activations into the convolution.
     if ([fusedActivation isEqual:@"relu"]) {
-        NSLog(@"Using fused relu.");
-        _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeReLU)];
+        _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeReLU)
+                                                                                             a:0.0];
     }
     else if ([fusedActivation isEqual:@"tanh"]) {
-        NSLog(@"Using fused tanh.");
+        // @todo Figure out a and b for TanH.
         _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeTanH)];
     }
+    else if ([fusedActivation isEqual:@"sigmoid"]) {
+        _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeSigmoid)];
+    }
+    else if ([fusedActivation isEqual:@"softmax"]) {
+        _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeSoftPlus)];
+    }
     else {
-        NSLog(@"Using fused none.");
         _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeNone)];
     }
-
+  
     // @todo took stuff from here.
     _weights = weights;
     _biases = biases;
@@ -119,7 +124,7 @@
     float buffer[lenWeights];
     [transposed readBytes:buffer strideBytes:nil];
     
-    NSLog(@"Original weights:");
+    /*NSLog(@"Original weights:");
     for (int j = 0; j < 64; ++j) {
         NSLog(@"Weight[%i]: %f", j, _weights[j]);
     }
@@ -134,7 +139,7 @@
     NSLog(@"Reordered transposed weights:");
     for (int j = 0; j < 64; ++j) {
         NSLog(@"Weight[%i x %i]: %f", j, _inputChannels, buffer[j * _inputChannels]);
-    }
+    }*/
     
     // Set weights and biases to the specified values.
     _weightPointer = (float *)_weightVector.data.contents;
