@@ -310,6 +310,9 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
       }
       S += (float)b1[k];
       if (S < 0) S = 0;  // relu
+    }
+    __syncthreads();
+    if (k < se_K) {
       shared_data[k] = S;
     }
     __syncthreads();
