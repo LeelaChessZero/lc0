@@ -35,24 +35,6 @@
 #   define ADVANCE_PTR(_a, _size) (__typeof__(_a))((uintptr_t) (_a) + (size_t)(_size))
 #endif
 
-NSString * listOfFloats(float * floats, int count) {
-    NSMutableString * buf = [[NSMutableString alloc] init];
-    [buf appendString:@"|"];
-    for (int i=0; i<count; i++) {
-        [buf appendFormat:@"%i|", (int)floats[i]];
-        //[buf appendFormat:float[i]];
-       // [buf appendString:@"|"];
-    }
-    return buf;
-}
-
-void logBeforeAfter(float * before, float * after, int inputPlanes) {
-    for (int i=0; i < inputPlanes; i++)
-        for (int j=0; j<64; j++)
-            NSLog(@"%i: plane[%i] position[%i] %i >> %i", i*64+j, i, j, (int)before[i*64+j], (int)after[i*64+j]);
-}
-
-
 @implementation Lc0GraphNode
 
 +(nonnull instancetype) graphNodeWithCnnKernel:(MPSKernel * __nonnull)kernel
@@ -157,68 +139,50 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
     for (Lc0GraphNode * node in graphNodes) {
         NSLog(@"Started node %i %@", i, node);
         NSLog(@"Node info: parents - %i, children - %i, kernel %@", [node.parents count], node.numChildren, node.kernel);
-       if (node /* is in result graph nodes list */) {
-            //((MPSCNNKernel *)node.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
-        }
         if (node.parents == nil || [node.parents count] == 0) {
             input = inputBatch;
         }
         else {
             input = node.parents[0].result;
         }
-        if ([node.kernel isKindOfClass:[MPSCNNBinaryKernel class]]) {
-            // Arithmetic kernels need result image location allocated. They also have 2 inputs.
-            MPSCNNArithmeticGradientStateBatch *destStates = @[];
-            id<MPSImageAllocator> allocator;
-            if (i == [graphNodes count] - 1) {
-                allocator = [MPSImage defaultAllocator];
-            }
-            else {
-                allocator = [MPSTemporaryImage defaultAllocator];
-            }
-            MPSImage * image = input[0];
-            MPSImageDescriptor *descriptor = [MPSImageDescriptor imageDescriptorWithChannelFormat:image.featureChannelFormat
-                                                                                            width:image.width
-                                                                                           height:image.height
-                                                                                  featureChannels:image.featureChannels
-                                                                                   numberOfImages:image.numberOfImages
-                                                                                            usage:image.usage];
-            MPSImageBatch *tempBatch = [allocator imageBatchForCommandBuffer:commandBuffer
-                                                             imageDescriptor:descriptor
-                                                                      kernel:node.kernel
-                                                                       count:[input count]];
-            for (MPSImage * image in input) {
-                destStates = [destStates arrayByAddingObject:[MPSCNNArithmeticGradientState alloc]];
-            }
-            NSLog(@"Parents: %@ %@", node.parents[0].result, node.parents[1].result);
-            NSLog(@"Temp image readcounts: %i %i", ((MPSTemporaryImage *)node.parents[0].result[0]).readCount, ((MPSTemporaryImage *)node.parents[1].result[0]).readCount);
-            [(MPSCNNBinaryKernel *)node.kernel encodeBatchToCommandBuffer:commandBuffer
-                                                             primaryImages:node.parents[0].result
-                                                           secondaryImages:node.parents[1].result
-                                                         destinationStates:destStates
-                                                         destinationImages:tempBatch];
-            output = tempBatch;
+        
+        if (node /* is in result graph nodes list */) {
+            //((MPSCNNKernel *)node.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
+        }
+        if (i >= [graphNodes count] - 2) {
+            // Last graph node shouldn't be temporary image so we can read it to CPU.
+            // @todo Later on, the list of outputs will be a graph property.
+            ((MPSCNNKernel *)node.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
+        }
+        if ([node.kernel isKindOfClass:[SEMultiply class]]) {
+            // SE nodes accept more parameters.
+            output = [(SEMultiply *)node.kernel encodeBatchToCommandBuffer:commandBuffer
+                                                            seSourceImages:node.parents[0].result
+                                                          convSourceImages:node.parents[1].result
+                                                          skipSourceImages:node.parents[2].result];
             node.result = output;
         }
         else if ([node.kernel isKindOfClass:[MPSCNNKernel class]]) {
-            if (i == [graphNodes count] - 1) {
-                // Last graph node shouldn't be temporary image so we can read it to CPU.
-                // @todo Later on, the list of outputs will be a graph property.
-                ((MPSCNNKernel *)node.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
-            }
             output = [(MPSCNNKernel *)node.kernel encodeBatchToCommandBuffer:commandBuffer sourceImages:input];
             node.result = output;
-            if ([output[0] isKindOfClass:[MPSTemporaryImage class]]) {
-                MPSImageBatchIncrementReadCount(output, node.numChildren - 1);
-                NSLog(@"Temp image readcount: %i", ((MPSTemporaryImage *)output[0]).readCount);
-            }
-            NSLog(@"Result: %@", output);
         }
+        // Ensure temporary images have readCount incremented to match number of children nodes that will be reading.
+        if ([output[0] isKindOfClass:[MPSTemporaryImage class]]) {
+            MPSImageBatchIncrementReadCount(output, node.numChildren - 1);
+            NSLog(@"Temp image readcount: %i", ((MPSTemporaryImage *)output[0]).readCount);
+        }
+        NSLog(@"Result: %@", output);
+        
+        if (i == [graphNodes count] - 2) {
+            [results insertObject:output atIndex:0];
+        }
+        
         NSLog(@"Finished node %i %@", i++, node);
+
     }
     
     // Transfer data from GPU to CPU.
-    NSLog(@"Synchronizing GPU to CPU");
+    NSLog(@"Synchronizing GPU to CPU for %@", output);
     MPSImageBatchSynchronize(output, commandBuffer);
 
     // Commit the command buffer. Wait for the last batch to be processed.
@@ -387,6 +351,7 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
     if (hasSe) {
         // SE Unit.
         Lc0GraphNode *seUnit = [self addSEUnitWithParent:conv2
+                                                skipNode:conv1
                                            inputChannels:inputChannels
                                           outputChannels:outputChannels
                                              seFcOutputs:seFcOutputs
@@ -394,7 +359,8 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
                                                  biases1:seBiases1
                                                 weights2:seWeights2
                                                  biases2:seBiases2
-                                                   label:label];
+                                                   label:label
+                                                 hasRelu:YES];
     }
     
 //    Lc0GraphNode *add = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNAdd alloc] initWithDevice:device] parents:@[conv1, conv2]];
@@ -424,14 +390,14 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
                                                               label:label
                                                     fusedActivation:activation];
     
-    NSLog(@"Got here: inputs %i, outputs %i, weights %f, biases %f", inputChannels, outputChannels, weights[0], biases[0]);
     graphNodes = [graphNodes arrayByAddingObject:[Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNFullyConnected alloc] initWithDevice:device weights:convWeights] parents:@[parent]]];
     parent.numChildren++;
-    NSLog(@"Got here too");
+    
     return graphNodes[[graphNodes count] - 1];;
 }
 
 -(nonnull Lc0GraphNode *) addSEUnitWithParent:(Lc0GraphNode * __nonnull)parent
+                                     skipNode:(Lc0GraphNode * __nonnull)skipNode
                                 inputChannels:(NSUInteger)inputChannels
                                outputChannels:(NSUInteger)outputChannels
                                   seFcOutputs:(NSUInteger)seFcOutputs
@@ -440,10 +406,10 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
                                      weights2:(float * __nonnull)weights2
                                       biases2:(float * __nonnull)biases2
                                         label:(NSString * __nonnull)label
+                                      hasRelu:(BOOL)hasRelu
 {
     // 1. Global Average Pooling 2D
     MPSCNNPoolingAverage *pool = [[MPSCNNPoolingAverage alloc] initWithDevice:device kernelWidth:8 kernelHeight:8 strideInPixelsX:8 strideInPixelsY:8];
-    //pool.paddingPolicy = validPoolingPadding;
 
     Lc0GraphNode * poolNode = [Lc0GraphNode graphNodeWithCnnKernel:pool parents:@[parent]];
     graphNodes = [graphNodes arrayByAddingObject:poolNode];
@@ -468,14 +434,15 @@ void logBeforeAfter(float * before, float * after, int inputPlanes) {
                                                          biases:biases2
                                                      activation:nil
                                                           label:label];
+    
     // 4. Multiply and add.
-    SEMultiply *multiply = [[SEMultiply alloc] initWithDevice:device gammaChannels:inputChannels betaChannels:inputChannels];
+    SEMultiply *multiply = [[SEMultiply alloc] initWithDevice:device gammaChannels:inputChannels betaChannels:inputChannels hasRelu:hasRelu];
     
-    NSLog(@"SE multiply kernel - %@", multiply);
-    
-    Lc0GraphNode * multiplyNode = [Lc0GraphNode graphNodeWithCnnKernel:multiply parents:@[fcNode2]];
+    Lc0GraphNode * multiplyNode = [Lc0GraphNode graphNodeWithCnnKernel:multiply parents:@[fcNode2, parent, skipNode]];
     graphNodes = [graphNodes arrayByAddingObject:multiplyNode];
     fcNode2.numChildren++;
+    parent.numChildren++;
+    skipNode.numChildren++;
     
     return multiplyNode;
     

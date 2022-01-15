@@ -93,6 +93,18 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 activation:(NSString * __nullable)activation
                                                      label:(NSString * __nonnull)label;
 
+-(nonnull Lc0GraphNode *) addSEUnitWithParent:(Lc0GraphNode * __nonnull)parent
+                                     skipNode:(Lc0GraphNode * __nonnull)skipNode
+                                inputChannels:(NSUInteger)inputChannels
+                               outputChannels:(NSUInteger)outputChannels
+                                  seFcOutputs:(NSUInteger)seFcOutputs
+                                     weights1:(float * __nonnull)weights1
+                                      biases1:(float * __nonnull)biases1
+                                     weights2:(float * __nonnull)weights2
+                                      biases2:(float * __nonnull)biases2
+                                        label:(NSString * __nonnull)label
+                                      hasRelu:(BOOL)hasRelu;
+
 -(nonnull Lc0GraphNode *) buildInferenceGraph;
 
 -(nonnull MPSImageBatch *) createInputImageBatchWithBatchSize:(NSUInteger)batchSize

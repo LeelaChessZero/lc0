@@ -28,20 +28,42 @@
 #include <metal_stdlib>
 using namespace metal;
 
-constant bool deviceSupportsNonuniformThreadgroups [[ function_constant(0) ]];
+//constant bool deviceSupportsNonuniformThreadgroups [[ function_constant(0) ]];
 
-kernel void seMultiply(texture2d<float, access::read> source [[ texture(0) ]],
-                        texture2d<float, access::write> destination [[ texture(1) ]],
-                        uint2 position [[ thread_position_in_grid ]]) {
+kernel void seMultiply(texture2d<float, access::read> source   [[ texture(0) ]],
+                       texture2d<float, access::read> conv1    [[ texture(1) ]],
+                       texture2d<float, access::read> conv2    [[ texture(2) ]],
+                       texture2d<float, access::write> out     [[ texture(3) ]],
+                       device float *buffer                    [[ buffer(0) ]],
+                       uint2 gid                               [[ thread_position_in_grid ]],
+                       uint2 tgid                              [[ thread_position_in_threadgroup ]],
+                       uint2 tgsize                            [[ threads_per_threadgroup ]],
+                       uint2 tgpos                             [[ threadgroup_position_in_grid ]],
+                       uint width                              [[ thread_execution_width ]]) {
 
-    if (!deviceSupportsNonuniformThreadgroups) {
-        const auto textureSize = ushort2(destination.get_width(),
-                                         destination.get_height());
-        if (position.x >= textureSize.x || position.y >= textureSize.y) {
+    //if (!deviceSupportsNonuniformThreadgroups) {
+        if (gid.x >= out.get_width() || gid.y >= out.get_height()) {
             return;
         }
-    }
-    const auto sourceValue = source.read(position);
-    destination.write(sourceValue, position);
+    //}
+    
+    const auto c1 = conv1.read(gid);
+    const auto c2 = conv2.read(gid);
+    const auto s = source.read(gid);
+    out.write(5.6381f, gid);
+    buffer[gid.x + width * gid.y] = gid.x;
+    buffer[1011] = gid.x;
+    buffer[1012] = gid.y;
+//    buffer[1013] = c1.z;
+//    buffer[1014] = c1.a;
+    buffer[1015] = c1.x;
+    buffer[1016] = c1.y;
+    buffer[1017] = c1.z;
+    buffer[1018] = c1.a;
+//    buffer[1019] = width;
+//    buffer[1020] = tgsize.x;
+//    buffer[1021] = tgsize.y;
+//    buffer[1022] = tgpos.x;
+//    buffer[1023] = tgpos.y;
+    //threadgroup_barrier(mem_flags::mem_none);
 }
-

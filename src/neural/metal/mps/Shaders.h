@@ -39,11 +39,14 @@
 
 -(nonnull instancetype) initWithDevice:(nonnull id <MTLDevice>) device
                          gammaChannels:(NSUInteger) gammaChannels
-                          betaChannels:(NSUInteger) betaChannels;
+                          betaChannels:(NSUInteger) betaChannels
+                               hasRelu:(BOOL) hasRelu;
 
 
 -(nonnull MPSImageBatch *) encodeBatchToCommandBuffer:(nonnull id <MTLCommandBuffer>) commandBuffer
-                                         sourceImages:(MPSImageBatch * __nonnull) sourceImageBatch;
+                                       seSourceImages:(MPSImageBatch * __nonnull) seSourceImageBatch
+                                     convSourceImages:(MPSImageBatch * __nonnull) convSourceImageBatch
+                                     skipSourceImages:(MPSImageBatch * __nonnull) skipSourceImageBatch;
 
 
 @end

@@ -27,82 +27,149 @@
 
 #import "Shaders.h"
 
+#include "Utilities.h"
+
+
 @implementation SEMultiply {
     id <MTLLibrary> _library;
     BOOL _nonuniformThreadgroups;
     id <MTLComputePipelineState> _computePipeline;
+    BOOL _hasRelu;
 }
 
 -(nonnull instancetype) initWithDevice:(nonnull id <MTLDevice>) device
                          gammaChannels:(NSUInteger) gammaChannels
                           betaChannels:(NSUInteger) betaChannels
+                               hasRelu:(BOOL) hasRelu
 {
     self = [super initWithDevice:device];
     if (nil == self) return nil;
     
     self.gammaChannels = gammaChannels;
     self.betaChannels = betaChannels;
-    
-    _library = [device newDefaultLibrary];
-    MTLFunctionConstantValues * constantValues = [MTLFunctionConstantValues alloc];
-    //[constantValues setConstantValue:_nonuniformThreadgroups type:MTLDataTypeBool atIndex:0];
+    _hasRelu = hasRelu;
+        
+    NSError *libraryError = nil;
+//    NSString *libraryFile = [[NSBundle mainBundle] pathForResource:@"Shaders.metallib" ofType:@"metallib"];
+    _library = [device newLibraryWithFile:@"build/release/src/neural/metal/mps/Shaders.metallib" error:&libraryError];
+    //_library = [device newLibraryWithFile:@"Shaders.metallib" error:&libraryError];
+    //_library = [device newDefaultLibrary];
+    //MTLFunctionConstantValues * constantValues = [MTLFunctionConstantValues alloc];
+    //[constantValues setConstantValue:&_nonuniformThreadgroups type:MTLDataTypeBool atIndex:0];
+    if (!_library) {
+        NSLog(@"Failed to create kernel library, error: %@", libraryError);
+        return nil;
+    }
     
     // Create command encoder.
-    NSError * error = nil;
-    id<MTLFunction> seMultiply = [_library newFunctionWithName:@"seMultiply" constantValues:constantValues];
-    _computePipeline = [device newComputePipelineStateWithFunction:seMultiply error:&error];
+    NSError * kernelError = nil;
+    //id<MTLFunction> seMultiply = [_library newFunctionWithName:@"seMultiply" constantValues:constantValues error:&kernelError];
+    id<MTLFunction> seMultiply = [_library newFunctionWithName:@"seMultiply"];
+    if (!seMultiply)
+    {
+        NSLog(@"Failed to create kernel function, error %@", kernelError);
+        return nil;
+    }
+    NSLog(@"Function: %@", seMultiply);
+    
+    NSError * pipelineError = nil;
+    _computePipeline = [device newComputePipelineStateWithFunction:seMultiply error:&pipelineError];
     if (!_computePipeline)
     {
-        NSLog(@"Failed to create compute pipeline state, error %@", error);
+        NSLog(@"Failed to create compute pipeline state, error %@", pipelineError);
+        return nil;
     }
 
     return self;
 }
 
--(nonnull MPSImageBatch *) encodeBatchToCommandBuffer:(nonnull id <MTLCommandBuffer>) commandBuffer
-                                         sourceImages:(MPSImageBatch * __nonnull) sourceImageBatch
+-(nonnull MPSImageBatch *) encodeBatchToCommandBuffer:(id <MTLCommandBuffer> __nonnull) commandBuffer
+                                       seSourceImages:(MPSImageBatch * __nonnull) seSourceImageBatch
+                                     convSourceImages:(MPSImageBatch * __nonnull) convSourceImageBatch
+                                     skipSourceImages:(MPSImageBatch * __nonnull) skipSourceImageBatch
 {
+    assert([seSourceImageBatch count] == 2 * [convSourceImageBatch count]);
     MPSImageBatch * resultBatch = @[];
-    MPSImage * image = sourceImageBatch[0];
-    MPSImageDescriptor * descriptor = [MPSImageDescriptor imageDescriptorWithChannelFormat:image.featureChannelFormat
-                                                                                     width:image.width
-                                                                                    height:image.height
-                                                                           featureChannels:image.featureChannels
-                                                                            numberOfImages:image.numberOfImages
-                                                                                     usage:image.usage];
+    MPSImage * convImage = convSourceImageBatch[0];
+    MPSImageDescriptor * resultDescriptor = [MPSImageDescriptor imageDescriptorWithChannelFormat:convImage.featureChannelFormat
+                                                                                           width:convImage.width
+                                                                                          height:convImage.height
+                                                                                 featureChannels:convImage.featureChannels
+                                                                                  numberOfImages:convImage.numberOfImages
+                                                                                           usage:MTLTextureUsageShaderRead/* | MTLTextureUsageShaderWrite*/];
+    resultDescriptor.storageMode = MTLStorageModeShared;
     resultBatch = [self.destinationImageAllocator imageBatchForCommandBuffer:commandBuffer
-                                                             imageDescriptor:descriptor
+                                                             imageDescriptor:resultDescriptor
                                                                       kernel:self
-                                                                       count:[sourceImageBatch count]];
+                                                                       count:[convSourceImageBatch count]];
+    
+    MPSImageDescriptor * seMultiplierDescriptor = [MPSImageDescriptor imageDescriptorWithChannelFormat:convImage.featureChannelFormat
+                                                                                                 width:convImage.width
+                                                                                                height:convImage.height
+                                                                                       featureChannels:self.gammaChannels
+                                                                                        numberOfImages:convImage.numberOfImages
+                                                                                                 usage:MTLTextureUsageShaderRead/* | MTLTextureUsageShaderWrite*/];
+    
 
     id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
     encoder.label = @"Encoder";
 
     [encoder setComputePipelineState:_computePipeline];
+    
+    int bufferSize = convImage.width * convImage.height * convImage.featureChannels * convImage.numberOfImages * [convSourceImageBatch count];
+    id<MTLBuffer> buffer = [[commandBuffer device] newBufferWithLength:bufferSize * sizeof(float) options:nil];
+    [encoder setBuffer:buffer offset:0 atIndex:0];
+    
+    NSLog(@"Buffer: %@", buffer);
 
-//    [encoder setTexture:source index:0];
-//    [encoder setTexture:destination index:1];
+    //[seSourceImageBatch enumerateObjectsUsingBlock:^(MPSImage * _Nonnull seSourceImage, NSUInteger idx, BOOL * _Nonnull stop) {
+//    for (int idx = 0; idx < [seSourceImageBatch count]; idx++) {
+    int idx = 0;
+        // Get underlying MTLTextures from MPSImages and pass in them into the encoder.
+        [encoder setTexture:seSourceImageBatch[idx].texture atIndex:0];
+        [encoder setTexture:convSourceImageBatch[idx].texture atIndex:1];
+        [encoder setTexture:skipSourceImageBatch[idx].texture atIndex:2];
+        [encoder setTexture:resultBatch[idx].texture atIndex:3];
 
-//    [encoder setBytes(&self.temperature, length: MemoryLayout<Float>.stride, index: 0)
-//    [encoder setBytes(&self.tint, length: MemoryLayout<Float>.stride, index: 1)
+        NSLog(@"Result Image: %@", resultBatch[idx]);
+        NSLog(@"Result Texture: %@", resultBatch[idx].texture);
+        
+//        showRawImageContent(seSourceImage);
+//        showRawTextureContent(seSourceImage.texture);
+        
+//    }];
 
-    MTLSize gridSize = MTLSizeMake(image.width, image.height, image.featureChannels);
+    int batches = convImage.numberOfImages * [convSourceImageBatch count];
+    MTLSize gridSize = MTLSizeMake(convImage.width * convImage.height, convImage.featureChannels, batches);
     int threadGroupWidth = _computePipeline.threadExecutionWidth;
     int threadGroupHeight = _computePipeline.maxTotalThreadsPerThreadgroup / threadGroupWidth;
     MTLSize threadGroupSize = MTLSizeMake(threadGroupWidth, threadGroupHeight, 1);
-    int threadgroupMemoryLength = _computePipeline.threadExecutionWidth * sizeof(vector_float4);
+    
+    NSLog(@"Thread info: threadgroup width: %i, height: %i, gridsize: x - %i, y - %i, z - %i", threadGroupWidth, threadGroupHeight, gridSize.width, gridSize.height, gridSize.depth);
 
-
-    if (_nonuniformThreadgroups) {
+    if (/*_nonuniformThreadgroups*/ true) {
         [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
     } else {
         MTLSize threadGroupCount = MTLSizeMake((gridSize.width + threadGroupSize.width - 1) / threadGroupSize.width,
                                                (gridSize.height + threadGroupSize.height - 1) / threadGroupSize.height,
-                                               1);
+                                               batches);
         [encoder dispatchThreadgroups:threadGroupCount threadsPerThreadgroup:threadGroupSize];
     }
 
     [encoder endEncoding];
+    
+    id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+    [blitEncoder synchronizeResource:[resultBatch[0] texture]];
+    [blitEncoder endEncoding];
+    
+    // Ensure results are synced back to the CPU.
+    //[resultBatch[0] synchronizeOnCommandBuffer: commandBuffer];
+    
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull) {
+        // Print the information from the buffer.
+        NSLog(@"Debug buffer:");
+        listOfFloats((float *)[buffer contents], bufferSize);
+    }];
 
     return resultBatch;
 }
