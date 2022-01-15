@@ -603,7 +603,12 @@ if get_option('build_backends')
         'src/neural/metal/mps/NetworkGraph.mm',
         'src/neural/metal/mps/MetalNetworkBuilder.mm',
         'src/neural/metal/mps/Shaders.mm',
+        'src/neural/metal/mps/Utilities.mm',
       ]
+
+      # Compile metal shaders.
+      subdir('src/neural/metal/mps')
+      #link_metal = true
 
       has_backends = true
     endif
@@ -661,6 +666,10 @@ endif
 if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
+
+#if link_metal
+#  metallib = static_library('metallib', [shaders_metallib])
+#endif
 
 executable('lc0', 'src/main.cc',
        files, include_directories: includes, dependencies: deps, install: true)
