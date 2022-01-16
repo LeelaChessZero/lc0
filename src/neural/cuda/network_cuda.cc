@@ -126,6 +126,9 @@ class CudaNetwork : public Network {
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
+    attn_policy_ = file.format().network_format().policy() ==
+                   pblczero::NetworkFormat::POLICY_ATTENTION;
+
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
     showInfo();
@@ -298,7 +301,10 @@ class CudaNetwork : public Network {
     resi_last_ = getLastLayer();
 
     // Policy head.
-    if (conv_policy_) {
+    if (attn_policy_) {
+      //TODO!
+      //weights.ip2_mov_b
+    } else if (conv_policy_) {
       auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
           resi_last_, kNumFilters, 8, 8, kNumFilters, true, true, false,
           false, 0, use_gemm_ex);
@@ -490,7 +496,9 @@ class CudaNetwork : public Network {
     }
 
     // Policy head.
-    if (conv_policy_) {
+    if (attn_policy_) {
+        // TODO!
+    } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                           scratch_mem, scratch_size_, nullptr, cublas,
                           stream);  // policy conv1
@@ -686,6 +694,7 @@ class CudaNetwork : public Network {
   int numBlocks_;
   bool has_se_;
   bool conv_policy_;
+  bool attn_policy_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
@@ -796,7 +805,9 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
                     std::to_string(weights.format().network_format().policy()) +
                     " is not supported by the CUDA backend.");
