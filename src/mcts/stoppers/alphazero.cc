@@ -35,17 +35,20 @@ class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        alphazerotimepct_(
-            params.GetOrDefault<float>("alphazero-time-pct", 12.0f)) {
-    if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f)
-      throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
+        timepct_(params.GetOrDefault<float>("time-pct", 4.23f)),
+        maxtimeply_(params.GetOrDefault<float>("max-time-ply", 235.0f)) {
+    if (timepct_ <= 0.0f || timepct_ > 100.0f)
+      throw Exception("time-pct value to be in range [0.0, 100.0]");
+    if (maxtimeply_ < 1.0f || maxtimeply_ > 1000.0f)
+      throw Exception("max-time-ply value to be in range [1.0, 1000.0]");
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
  private:
   const int64_t move_overhead_;
-  const float alphazerotimepct_;
+  const float timepct_;
+  const float maxtimeply_;
 };
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
@@ -58,8 +61,13 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
 
   auto total_moves_time = *time - move_overhead_;
 
-  float this_move_time = total_moves_time * (alphazerotimepct_ / 100.0f);
+  const float add_pct_per_ply = (100.0f - timepct_) / maxtimeply_;
 
+  float this_move_time =
+      total_moves_time *
+      std::min(((timepct_ + position.GetGamePly() * add_pct_per_ply) * 0.01f),
+               1.0f);
+  
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
           << "Remaining time " << *time << "ms(-" << move_overhead_
           << "ms overhead)";
