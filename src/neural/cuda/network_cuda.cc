@@ -422,6 +422,7 @@ class CudaNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
+    if (batchSize < 4) batchSize = 4;
     if (!multi_stream_)
       lock_.lock();
 
