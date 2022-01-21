@@ -50,10 +50,10 @@ class OptionsParser {
 
    protected:
     const OptionId& GetId() const { return id_; }
-    std::string GetUciOption() const { return id_.uci_option; }
-    std::string GetHelpText() const { return id_.help_text; }
-    std::string GetLongFlag() const { return id_.long_flag; }
-    char GetShortFlag() const { return id_.short_flag; }
+    std::string GetUciOption() const { return id_.uci_option(); }
+    std::string GetHelpText() const { return id_.help_text(); }
+    std::string GetLongFlag() const { return id_.long_flag(); }
+    char GetShortFlag() const { return id_.short_flag(); }
 
    private:
     virtual std::string GetOptionString(const OptionsDict& dict) const = 0;
@@ -111,10 +111,10 @@ class OptionsParser {
   OptionsDict* GetMutableDefaultsOptions() { return &defaults_; }
   // Adds a subdictionary for a given context.
   void AddContext(const std::string&);
-
- private:
   // Prints help to std::cout.
   void ShowHelp() const;
+
+ private:
   // Make all hidden options visible.
   void ShowHidden() const;
   // Returns an option based on the long flag.
@@ -166,7 +166,7 @@ class IntOption : public OptionsParser::Option {
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
   int ValidateIntString(const std::string& val) const;
-  
+
   int min_;
   int max_;
 };

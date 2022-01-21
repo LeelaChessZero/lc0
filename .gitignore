@@ -2,6 +2,7 @@
 *.swp
 .clang_complete
 .DS_Store
+.cache/
 .clangd/
 build/
 __pycache__/
@@ -13,3 +14,6 @@ src/.vs/
 subprojects/*
 testdata/
 xcuserdata
+.clang-tidy
+compile_flags.txt
+.vscode

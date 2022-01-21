@@ -35,10 +35,10 @@ option('mkl_include',
 
 option('dnnl_dir',
        type: 'string',
-       value: '',
+       value: '/usr',
        description: 'Paths to DNNL install directory')
 
-option('cudnn_include', 
+option('cudnn_include',
        type: 'array',
        value: ['/opt/cuda/include/', '/usr/local/cuda/include/', '/usr/lib/cuda/include/'],
        description: 'Paths to cudnn include directory')
@@ -68,6 +68,11 @@ option('cudnn',
        value: true,
        description: 'Enable cuDNN backend')
 
+option('plain_cuda',
+       type: 'boolean',
+       value: true,
+       description: 'Enable CUDA backend')
+
 option('opencl',
        type: 'boolean',
        value: true,
@@ -82,6 +87,11 @@ option('tensorflow',
        type: 'boolean',
        value: false,
        description: 'Enable TensorFlow backend')
+
+option('onednn',
+       type: 'boolean',
+       value: false,
+       description: 'Enable oneDNN backend')
 
 option('openblas',
        type: 'boolean',
@@ -103,6 +113,16 @@ option('accelerate',
        value: true,
        description: 'Enable Accelerate BLAS support')
 
+option('malloc',
+       type : 'string',
+       value: '',
+       description: 'Use alternative memory allocator, e.g. tcmalloc/jemalloc')
+
+option('mimalloc_libdir',
+       type : 'string',
+       value: '',
+       description: 'Library directory for malloc=mimalloc')
+
 option('popcnt',
        type: 'boolean',
        value: true,
@@ -112,6 +132,11 @@ option('pext',
        type: 'boolean',
        value: false,
        description: 'Use the pext instruction')
+
+option('neon',
+       type: 'boolean',
+       value: true,
+       description: 'Use neon instructions on arm processors')
 
 option('gtest',
        type: 'boolean',
@@ -132,3 +157,18 @@ option('python_bindings',
        type: 'boolean',
        value: false,
        description: 'Build Python bindings for the python to bind.')
+
+option('cc_cuda',
+       type: 'string',
+       value: '',
+       description: 'Build for a specific cuda CC, e.g. -Dcc_cuda=35 for CC 3.5')
+
+option('onnx_libdir',
+       type: 'string',
+       value: '',
+       description: 'Paths to ONNX runtime libraries')
+
+option('onnx_include',
+       type: 'string',
+       value: '',
+       description: 'Paths to ONNX runtime includes')

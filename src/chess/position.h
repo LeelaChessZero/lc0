@@ -49,9 +49,15 @@ class Position {
   // How many time the same position appeared in the game before.
   int GetRepetitions() const { return repetitions_; }
 
+  // How many half-moves since the same position appeared in the game before.
+  int GetPliesSincePrevRepetition() const { return cycle_length_; }
+
   // Someone outside that class knows better about repetitions, so they can
   // set it.
-  void SetRepetitions(int repetitions) { repetitions_ = repetitions; }
+  void SetRepetitions(int repetitions, int cycle_length) {
+    repetitions_ = repetitions;
+    cycle_length_ = cycle_length;
+  }
 
   // Number of ply with no captures and pawn moves.
   int GetRule50Ply() const { return rule50_ply_; }
@@ -60,6 +66,10 @@ class Position {
   const ChessBoard& GetBoard() const { return us_board_; }
   // Gets board from the point of view of opponent.
   const ChessBoard& GetThemBoard() const { return them_board_; }
+  // Gets board from the point of view of the white player.
+  const ChessBoard& GetWhiteBoard() const {
+    return us_board_.flipped() ? them_board_ : us_board_;
+  };
 
   std::string DebugString() const;
 
@@ -73,9 +83,14 @@ class Position {
   int rule50_ply_ = 0;
   // How many repetitions this position had before. For new positions it's 0.
   int repetitions_;
+  // How many half-moves since the position was repeated or 0.
+  int cycle_length_;
   // number of half-moves since beginning of the game.
   int ply_count_ = 0;
 };
+
+// GetFen returns a FEN notation for the position.
+std::string GetFen(const Position& pos);
 
 // These are ordered so max() prefers the best result.
 enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
@@ -85,6 +100,10 @@ class PositionHistory {
  public:
   PositionHistory() = default;
   PositionHistory(const PositionHistory& other) = default;
+  PositionHistory(PositionHistory&& other) = default;
+
+  PositionHistory& operator=(const PositionHistory& other) = default;
+  PositionHistory& operator=(PositionHistory&& other) = default;  
 
   // Returns first position of the game (or fen from which it was initialized).
   const Position& Starting() const { return positions_.front(); }
@@ -99,6 +118,10 @@ class PositionHistory {
   void Trim(int size) {
     positions_.erase(positions_.begin() + size, positions_.end());
   }
+
+  // Can be used to reduce allocation cost while performing a sequence of moves
+  // in succession.
+  void Reserve(int size) { positions_.reserve(size); }
 
   // Number of positions in history.
   int GetLength() const { return positions_.size(); }
@@ -125,7 +148,7 @@ class PositionHistory {
   bool DidRepeatSinceLastZeroingMove() const;
 
  private:
-  int ComputeLastMoveRepetitions() const;
+  int ComputeLastMoveRepetitions(int* cycle_length) const;
 
   std::vector<Position> positions_;
 };
