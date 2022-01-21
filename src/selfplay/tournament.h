@@ -114,8 +114,6 @@ class SelfPlayTournament {
   const std::string kTournamentResultsFile;
   const float kDiscardedStartChance;
 
-  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
-
 };
 
 }  // namespace lczero

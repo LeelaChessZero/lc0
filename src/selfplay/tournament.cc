@@ -69,11 +69,6 @@ const OptionId kPolicyModeSizeId{"policy-mode-size", "PolicyModeSize",
 const OptionId kTournamentResultsFileId{
     "tournament-results-file", "TournamentResultsFile",
     "Name of file to append the tournament results in fake pgn format."};
-const OptionId kSyzygyTablebaseId{
-    "syzygy-paths", "SyzygyPath",
-    "List of Syzygy tablebase directories, list entries separated by system "
-    "separator (\";\" for Windows, \":\" for Linux).",
-    's'};
 const OptionId kMoveThinkingId{"move-thinking", "MoveThinking",
                                "Show all the per-move thinking."};
 const OptionId kResignPlaythroughId{
@@ -126,7 +121,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<IntOption>(kPolicyModeSizeId, 0, 512) = 0;
   options->Add<StringOption>(kTournamentResultsFileId) = "";
-  options->Add<StringOption>(kSyzygyTablebaseId) = "";
   options->Add<BoolOption>(kMoveThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kDiscardedStartChanceId, 0.0f, 100.0f) = 0.0f;
@@ -197,16 +191,6 @@ SelfPlayTournament::SelfPlayTournament(
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     first_game_black_ = Random::Get().GetBool();
-  }
-
-  std::string tb_paths = options.Get<std::string>(kSyzygyTablebaseId);
-  if (!tb_paths.empty()) {
-    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-    CERR << "Loading Syzygy tablebases from " << tb_paths;
-    if (!syzygy_tb_->init(tb_paths)) {
-      CERR << "Failed to load Syzygy tablebases!";
-      syzygy_tb_ = nullptr;
-    }
   }
 
   // Initializing networks.
