@@ -36,16 +36,23 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 @interface Lc0GraphNode : NSObject
 
-  @property(readwrite, nonatomic, retain) NSArray<Lc0GraphNode *> * __nullable parents;
+@property(readwrite, nonatomic, retain) NSArray<Lc0GraphNode *> * __nullable parents;
 
-  @property(readwrite, nonatomic, retain) MPSKernel * __nonnull kernel;
+@property(readwrite, nonatomic, retain) MPSKernel * __nonnull kernel;
 
-  @property(readwrite, nonatomic, retain) MPSImageBatch * __nullable result;
+@property(readwrite, nonatomic, retain) MPSImageBatch * __nullable result;
 
-  @property(readwrite) NSUInteger numChildren;
+@property(readwrite, nonatomic, retain) NSArray * __nullable params;
+
+@property(readwrite) NSUInteger numChildren;
 
 +(nonnull instancetype) graphNodeWithCnnKernel:(MPSKernel * __nonnull)kernel
-                                       parents:(NSArray<Lc0GraphNode *> * __nullable)parents;
+                                       parents:(NSArray<Lc0GraphNode *> * __nullable)parents
+                                        params:(NSArray * __nullable)params;
+
+-(nonnull MPSImageBatch *) encodeBatchToCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                                                input:(MPSImageBatch * __nullable)input
+                                         retainResult:(BOOL)retainResult;
 
 @end
 
@@ -55,8 +62,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     id<MTLDevice> device;
     id<MTLCommandQueue> queue;
     
+    // All the nodes in the graph.
     NSArray<Lc0GraphNode *> *graphNodes;
-    MPSNNGraph *graph;
+    
+    // Nodes to keep images for output.
+    NSArray<Lc0GraphNode *> *resultNodes;
 }
 
 -(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)inputDevice
@@ -74,8 +84,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(nonnull Lc0GraphNode *) addResidualBlockWithParent:(Lc0GraphNode * __nullable)parent
                                        inputChannels:(NSUInteger)inputChannels
                                       outputChannels:(NSUInteger)outputChannels
-                                         kernelWidth:(NSUInteger)kernelWidth
-                                        kernelHeight:(NSUInteger)kernelHeight
+                                          kernelSize:(NSUInteger)kernelSize
                                             weights1:(float * __nonnull)weights1
                                              biases1:(float * __nonnull)biases1
                                             weights2:(float * __nonnull)weights2
@@ -105,7 +114,17 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                         label:(NSString * __nonnull)label
                                       hasRelu:(BOOL)hasRelu;
 
--(nonnull Lc0GraphNode *) buildInferenceGraph;
+-(nonnull Lc0GraphNode *) addFlattenLayerWithParent:(Lc0GraphNode * __nonnull)parent;
+
+-(nonnull Lc0GraphNode *) addReshapeLayerWithParent:(Lc0GraphNode * __nonnull)parent
+                                       reshapeWidth:(NSUInteger)width
+                                      reshapeHeight:(NSUInteger)height
+                             reshapeFeatureChannels:(NSUInteger)channels;
+
+-(nonnull Lc0GraphNode *) addPolicyMapLayerWithParent:(Lc0GraphNode * __nonnull)parent
+                                            policyMap:(short * __nonnull)policyMap;
+
+-(void) buildGraphWithResultNodes:(NSArray<Lc0GraphNode *> * __nonnull)results;
 
 -(nonnull MPSImageBatch *) createInputImageBatchWithBatchSize:(NSUInteger)batchSize
                                                         masks:(uint64_t * __nonnull)masks
@@ -113,16 +132,14 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 inputChannels:(NSUInteger)inputPlanes
                                                  subBatchSize:(NSUInteger)subBatchSize;
 
--(nonnull NSMutableArray<MPSImageBatch*> *) runInferenceWithBatchSize:(NSUInteger)batchSize
-                                                           masks:(uint64_t * __nonnull)masks
-                                                          values:(float * __nonnull)values
-                                                   inputChannels:(NSUInteger)inputPlanes;
+-(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithImageBatch:(MPSImageBatch * __nonnull)inputBatch;
 
--(nullable MPSImageBatch *) encodeInferenceBatchToCommandBuffer:(id <MTLCommandBuffer> __nonnull) commandBuffer
-                                                    sourceImages:(MPSImageBatch * __nonnull) sourceImage;
--(nonnull const char *) getTestData:(char * __nullable)data;
+-(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
+                                                         masks:(uint64_t * __nonnull)masks
+                                                        values:(float * __nonnull)values
+                                                 inputChannels:(NSUInteger)inputChannels
+                                                  subBatchSize:(NSUInteger)subBatchSize;
 
 -(nonnull id<MTLDevice>) getDevice;
 
 @end
-

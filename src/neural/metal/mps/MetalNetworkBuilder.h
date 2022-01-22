@@ -50,18 +50,16 @@ public:
 
     void* makeFullyConnectedLayer(void * previousLayer, int inputSize, int outputSize,
                                   float * weights, float * biases, std::string activation, std::string label);
+    
+    void* makeFlattenLayer(void * previousLayer);
 
     void* makeReshapeLayer(void * previousLayer, int resultWidth, int resultHeight, int resultChannels);
     
-    void* makePolicyMapLayer(void * previousLayer, std::vector<short> * policyMap);
+    void* makePolicyMapLayer(void * previousLayer, short * policyMap);
     
     void* buildGraph(std::vector<void *> * outputs);
 
     std::vector<float*> forwardEval(uint64_t * masks, float * values, std::vector<float *> * outputs, int batchSize, int inputChannels);
-    
-    // To be removed.
-    const char* getTestData(char * data);
-    void redirectLogs();
     
 private:
     void* self;

@@ -31,7 +31,24 @@
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 
-@interface SEMultiply : MPSCNNKernel
+// Base Kernel Class
+@interface Lc0Kernel : MPSCNNKernel {
+    id <MTLLibrary> _library;
+    BOOL _nonuniformThreadgroups;
+    id <MTLComputePipelineState> _computePipeline;
+}
+
+-(nonnull instancetype) initWithDevice:(nonnull id <MTLDevice>) device;
+
+
+-(nonnull MPSImageBatch *) encodeBatchToCommandBuffer:(nonnull id <MTLCommandBuffer>) commandBuffer
+                                         sourceImages:(MPSImageBatch * __nonnull) sourceImageBatch;
+
+
+@end
+
+
+@interface Lc0SeMultiplyAdd : Lc0Kernel
 
 @property(readwrite) NSUInteger gammaChannels;
 
@@ -48,5 +65,22 @@
                                      convSourceImages:(MPSImageBatch * __nonnull) convSourceImageBatch
                                      skipSourceImages:(MPSImageBatch * __nonnull) skipSourceImageBatch;
 
+
+@end
+
+
+
+
+// Flatten
+@interface Lc0Flatten : Lc0Kernel
+
+@end
+
+
+// Policy Map
+@interface Lc0PolicyMap : Lc0Kernel
+
+-(nonnull instancetype) initWithDevice:(nonnull id <MTLDevice>) device
+                             policyMap:(nonnull short *) policyMap;
 
 @end

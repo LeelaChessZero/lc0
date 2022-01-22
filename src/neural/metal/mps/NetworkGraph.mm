@@ -31,6 +31,8 @@
 
 #import <vector>
 
+#import "Utilities.h"
+
 #ifndef ADVANCE_PTR
 #   define ADVANCE_PTR(_a, _size) (__typeof__(_a))((uintptr_t) (_a) + (size_t)(_size))
 #endif
@@ -38,12 +40,89 @@
 @implementation Lc0GraphNode
 
 +(nonnull instancetype) graphNodeWithCnnKernel:(MPSKernel * __nonnull)kernel
-                                       parents:(NSArray<Lc0GraphNode *> * __nullable)parents {
+                                       parents:(NSArray<Lc0GraphNode *> * __nullable)parents
+                                        params:(NSArray * __nullable)params
+{
     Lc0GraphNode * node = [[Lc0GraphNode alloc] init];
     node.parents = parents;
     node.kernel = kernel;
+    node.params = params;
     
     return node;
+}
+
+-(nonnull MPSImageBatch *) encodeBatchToCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                                                input:(MPSImageBatch * __nullable)input
+                                         retainResult:(BOOL)retainResult
+{
+    assert(input != nil || [self.parents count] > 0);
+    
+    if ([self.parents count] > 0) input = self.parents[0].result;
+    
+    if (retainResult) {
+        // Graph nodes specified as outputs shouldn't be temporary images so we can read it to CPU.
+        [self.kernel setDestinationImageAllocator:[MPSImage defaultAllocator]];
+//        }
+//        else if ([self.kernel isKindOfClass:[MPSCNNBinaryKernel class]]) {
+//            ((MPSCNNBinaryKernel *)self.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
+//        }
+    }
+
+    if ([self.kernel isKindOfClass:[Lc0SeMultiplyAdd class]]) {
+        // SE nodes accept more parameters.
+        assert([self.parents count] >= 3);
+        self.result = [(Lc0SeMultiplyAdd *)self.kernel encodeBatchToCommandBuffer:commandBuffer
+                                                        seSourceImages:input
+                                                      convSourceImages:self.parents[1].result
+                                                      skipSourceImages:self.parents[2].result];
+    }
+    else if ([self.kernel isKindOfClass:[MPSCNNBinaryKernel class]]) {
+        // Binary kernel nodes accept a secondary image.
+        assert([self.parents count] >= 2);
+        self.result = [(MPSCNNBinaryKernel *)self.kernel encodeBatchToCommandBuffer:commandBuffer
+                                                                      primaryImages:input
+                                                                    secondaryImages:self.parents[1].result];
+    }
+    else if ([self.kernel isKindOfClass:[MPSNNReshape class]]) {
+        // Reshape nodes accept more parameters.
+        assert([self.params count] >= 3);
+        NSLog(@"Reshape: width %@, height %@, channels %@", self.params[0], self.params[1], self.params[2]);
+        self.result = [(MPSNNReshape *)self.kernel encodeBatchToCommandBuffer:commandBuffer
+                                                                 sourceImages:input
+                                                                reshapedWidth:[self.params[0] intValue]
+                                                               reshapedHeight:[self.params[1] intValue]
+                                                      reshapedFeatureChannels:[self.params[2] intValue]];
+    }
+    else if ([self.kernel isKindOfClass:[MPSImageTranspose class]]) {
+        MPSImage * image = input[0];
+        MPSImageDescriptor * descriptor = [MPSImageDescriptor imageDescriptorWithChannelFormat:image.featureChannelFormat
+                                                                                         width:image.width
+                                                                                        height:image.height
+                                                                               featureChannels:image.featureChannels
+                                                                                numberOfImages:image.numberOfImages
+                                                                                         usage:MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite];
+        descriptor.storageMode = MTLStorageModeShared;
+        id<MPSImageAllocator> allocator = retainResult ? [MPSImage defaultAllocator] : [MPSTemporaryImage defaultAllocator];
+        self.result = [allocator imageBatchForCommandBuffer:commandBuffer
+                                            imageDescriptor:descriptor
+                                                     kernel:self.kernel
+                                                      count:[input count]];
+        for (int i=0; i < [self.result count]; i++) {
+            [(MPSImageTranspose *)self.kernel encodeToCommandBuffer:commandBuffer
+                                                        sourceImage:input[i]
+                                                   destinationImage:self.result[i]];
+        }
+    }
+    else if ([self.kernel isKindOfClass:[MPSCNNKernel class]]) {
+        self.result = [(MPSCNNKernel *)self.kernel encodeBatchToCommandBuffer:commandBuffer
+                                                                 sourceImages:input];
+    }
+
+    // Ensure temporary images have readCount incremented to match number of children nodes that will be read later.
+    if ([self.result[0] isKindOfClass:[MPSTemporaryImage class]]) {
+        MPSImageBatchIncrementReadCount(self.result, self.numChildren - 1);
+    }
+    return self.result;
 }
 
 @end
@@ -57,6 +136,7 @@
     device = inputDevice;
     queue = commandQueue;
     graphNodes = @[];
+    resultNodes = @[];
     
     return self;
 }
@@ -83,7 +163,7 @@
                                                                           numberOfImages:subBatchSize
                                                                                    usage:MTLTextureUsageShaderRead];
     // Buffer for expanding packed planes.
-    float buffer[inputPlanes * boardWidth * boardHeight];
+    float * buffer = (float *)malloc(inputPlanes * boardWidth * boardHeight * sizeof(float));
     
     // Create an input MPSImageBatch.
     MPSImageBatch *inputBatch = @[];
@@ -101,7 +181,6 @@
                 //NSLog(@"mask[%d]: %lu, value[%d]: %f", j + i * inputPlanes, mask, j + i * inputPlanes, value);
                 for (auto k = 0; k < 64; k++) {
                     *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
-//                    *(dptr++) = j == 1 && k == 9 ? 1 : 0;
                 }
             }
 //            for (int k = 0; k < inputPlanes * boardWidth * boardHeight; k++) {
@@ -119,89 +198,52 @@
 }
 
     
--(nonnull NSMutableArray<MPSImageBatch*> *) runInferenceWithImageBatch:(MPSImageBatch * __nonnull)inputBatch {
+-(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithImageBatch:(MPSImageBatch * __nonnull)inputBatch {
     // Make an MPSCommandBuffer, when passed to the encode of MPSNNGraph, commitAndContinue will be automatically used.
-    NSLog(@"Initializing command buffer");
+//    NSLog(@"Initializing command buffer");
     MPSCommandBuffer *commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:queue];
     
     // Encode inference network
-    NSLog(@"Encoding command buffer");
+//    NSLog(@"Encoding command buffer");
 //    NSLog(@"convkernel: %@", graphNodes[0]);
 //    ((MPSCNNKernel *)graphNodes[0][@"kernel"]).destinationImageAllocator = [MPSImage defaultAllocator];
-//    NSMutableArray<MPSImageBatch*> *results = [[NSMutableArray alloc] init];
 //    MPSImageBatch *output = [graphNodes[0][@"kernel"] encodeBatchToCommandBuffer:commandBuffer
 //                                                     sourceImages:inputBatch];
-    NSLog(@"Processing %i graph nodes %@", [graphNodes count], graphNodes);
-    NSMutableArray<MPSImageBatch*> *results = [[NSMutableArray alloc] init];
+   // NSLog(@"Processing %i graph nodes %@", [graphNodes count], graphNodes);
     MPSImageBatch *output;
-    MPSImageBatch *input;
     int i = 0;
     for (Lc0GraphNode * node in graphNodes) {
-        NSLog(@"Started node %i %@", i, node);
-        NSLog(@"Node info: parents - %i, children - %i, kernel %@", [node.parents count], node.numChildren, node.kernel);
-        if (node.parents == nil || [node.parents count] == 0) {
-            input = inputBatch;
-        }
-        else {
-            input = node.parents[0].result;
-        }
-        
-        if (node /* is in result graph nodes list */) {
-            //((MPSCNNKernel *)node.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
-        }
-        if (i >= [graphNodes count] - 2) {
-            // Last graph node shouldn't be temporary image so we can read it to CPU.
-            // @todo Later on, the list of outputs will be a graph property.
-            ((MPSCNNKernel *)node.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
-        }
-        if ([node.kernel isKindOfClass:[SEMultiply class]]) {
-            // SE nodes accept more parameters.
-            output = [(SEMultiply *)node.kernel encodeBatchToCommandBuffer:commandBuffer
-                                                            seSourceImages:node.parents[0].result
-                                                          convSourceImages:node.parents[1].result
-                                                          skipSourceImages:node.parents[2].result];
-            node.result = output;
-        }
-        else if ([node.kernel isKindOfClass:[MPSCNNKernel class]]) {
-            output = [(MPSCNNKernel *)node.kernel encodeBatchToCommandBuffer:commandBuffer sourceImages:input];
-            node.result = output;
-        }
-        // Ensure temporary images have readCount incremented to match number of children nodes that will be reading.
-        if ([output[0] isKindOfClass:[MPSTemporaryImage class]]) {
-            MPSImageBatchIncrementReadCount(output, node.numChildren - 1);
-            NSLog(@"Temp image readcount: %i", ((MPSTemporaryImage *)output[0]).readCount);
-        }
-        NSLog(@"Result: %@", output);
-        
-        if (i == [graphNodes count] - 2) {
-            [results insertObject:output atIndex:0];
-        }
-        
-        NSLog(@"Finished node %i %@", i++, node);
+        //NSLog(@"Started node %i %@", i, node);
+        //NSLog(@"Node info: parents - %i, children - %i, kernel %@", [node.parents count], node.numChildren, node.kernel);
 
+        output = [node encodeBatchToCommandBuffer:commandBuffer
+                                            input:inputBatch
+                                     retainResult:[resultNodes containsObject:node]];
+        //NSLog(@"Finished node %i %@", i++, node);
     }
-    
+
     // Transfer data from GPU to CPU.
-    NSLog(@"Synchronizing GPU to CPU for %@", output);
-    MPSImageBatchSynchronize(output, commandBuffer);
+//    NSLog(@"Synchronizing GPU to CPU for %@", output);
+    //NSLog(@"Result nodes: %@", resultNodes);
+    for (Lc0GraphNode * node in resultNodes) {
+        MPSImageBatchSynchronize(node.result, commandBuffer);
+    }
 
     // Commit the command buffer. Wait for the last batch to be processed.
-    NSLog(@"Committing command buffer");
+//    NSLog(@"Committing command buffer");
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
-    NSLog(@"Buffer completed");
+//    NSLog(@"Buffer completed");
 
-    // Add the first result at the beginning of the list of result images.
-    [results insertObject:output atIndex:0];
-    NSLog(@"Got results: %@", results);
-    return results;
+//    NSLog(@"Got results: %@", resultNodes);
+    return resultNodes;
 }
 
--(nonnull NSMutableArray<MPSImageBatch*> *) runInferenceWithBatchSize:(NSUInteger)batchSize
-                                                           masks:(uint64_t * __nonnull)masks
-                                                          values:(float * __nonnull)values
-                                                   inputChannels:(NSUInteger)inputChannels
-                                                    subBatchSize:(NSUInteger)subBatchSize
+-(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
+                                                         masks:(uint64_t * __nonnull)masks
+                                                        values:(float * __nonnull)values
+                                                 inputChannels:(NSUInteger)inputChannels
+                                                  subBatchSize:(NSUInteger)subBatchSize
 {
     @autoreleasepool {
         // Use double buffering to keep the GPU completely busy.
@@ -219,58 +261,12 @@
                                                                 subBatchSize:subBatchSize];
         
         return [self runInferenceWithImageBatch:inputBatch];
-
-        // Make an MPSCommandBuffer, when passed to the encode of MPSNNGraph, commitAndContinue will be automatically used.
-        //NSLog(@"Initializing command buffer");
-        MPSCommandBuffer *commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:queue];
-        
-        // Encode inference network
-        NSLog(@"Encoding command buffer");
-        NSMutableArray<MPSImageBatch*> *results = [[NSMutableArray alloc] init];
-        MPSImageBatch *output = [graph encodeBatchToCommandBuffer:commandBuffer
-                                                     sourceImages:@[inputBatch]
-                                                     sourceStates:nil
-                                               intermediateImages:results
-                                                destinationStates:nil];
-
-        // Transfer data from GPU to CPU.
-        MPSImageBatchSynchronize(output, commandBuffer);
-    
-//        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> __nonnull) {
-//            // Release double buffering semaphore for the iteration to be encoded.
-//            dispatch_semaphore_signal(doubleBufferingSemaphore);
-
-//            // Check the output of inference network to calculate accuracy.
-//            [outputBatch enumerateObjectsUsingBlock:^(MPSImage * __nonnull outputImage, NSUInteger idx, BOOL * _Nonnull stop) {
-//                /*uint8_t *start = ADVANCE_PTR(outputs, inputOffset + (boardWidth * boardHeight * idx));
-//                [inputImage writeBytes:start
-//                            dataLayout:(MPSDataLayoutFeatureChannelsxHeightxWidth)
-//                            imageIndex:0];*/
-//            }];
-//
-//        }];
-        
-        // Commit the command buffer. Wait for the last batch to be processed.
-        //NSLog(@"Committing command buffer");
-        [commandBuffer commit];
-        [commandBuffer waitUntilCompleted];
-        
-        // Add the first result at the beginning of the list of result images.
-        [results insertObject:output atIndex:0];
-        NSLog(@"Got results: batchSize: %i, count: %i, %@", batchSize, [results count], results);
-        return results;
     }
 }
 
--(nonnull MPSNNGraph *) buildGraphWithResultImages:(NSArray <MPSNNImageNode *> * __nonnull)resultImages
-                                  resultsAreNeeded:(BOOL * __nullable)areResultsNeeded
+-(void) buildGraphWithResultNodes:(NSArray<Lc0GraphNode *> * __nonnull)results
 {
-    
-//    graph = [MPSNNGraph graphWithDevice:device resultImages:resultImages resultsAreNeeded:areResultsNeeded];
-//    graph.format = fcFormat;
-//
-//    return graph;
-    return nil;
+    resultNodes = results;
 }
 
 -(nonnull Lc0GraphNode *) addConvolutionBlockWithParent:(Lc0GraphNode * __nullable)parent
@@ -290,10 +286,10 @@
                                                             stride:1
                                                            weights:weights
                                                             biases:biases
-                                                             label:label
+                                                             label:[NSString stringWithFormat:@"%@/weights", label]
                                                    fusedActivation:hasRelu ? @"relu" : nil];
     
-    graphNodes = [graphNodes arrayByAddingObject:[Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNConvolution alloc] initWithDevice:device weights:convWeights] parents:parent != nil ? @[parent] : nil]];
+    graphNodes = [graphNodes arrayByAddingObject:[Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNConvolution alloc] initWithDevice:device weights:convWeights] parents:(parent != nil ? @[parent] : nil) params:nil]];
     parent.numChildren++;
 
     return graphNodes[[graphNodes count] - 1];
@@ -324,11 +320,11 @@
                                                              stride:1
                                                             weights:weights1
                                                              biases:biases1
-                                                              label:label
+                                                              label:[NSString stringWithFormat:@"%@/conv1/weights", label]
                                                    fusedActivation:@"relu"];
     
 
-    Lc0GraphNode *conv1 = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNConvolution alloc] initWithDevice:device weights:convWeights1] parents:parent != nil ? @[parent] : nil];
+    Lc0GraphNode *conv1 = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNConvolution alloc] initWithDevice:device weights:convWeights1] parents:(parent != nil ? @[parent] : nil) params:nil];
     graphNodes = [graphNodes arrayByAddingObject:conv1];
     parent.numChildren++;
     
@@ -341,17 +337,18 @@
                                                              stride:1
                                                             weights:weights2
                                                              biases:biases2
-                                                              label:label
+                                                              label:[NSString stringWithFormat:@"%@/conv2/weights", label]
                                                     fusedActivation:nil];
     
-    Lc0GraphNode *conv2 = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNConvolution alloc] initWithDevice:device weights:convWeights2] parents:conv1 != nil ? @[conv1] : nil];
+    Lc0GraphNode *conv2 = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNConvolution alloc] initWithDevice:device weights:convWeights2] parents:(conv1 != nil ? @[conv1] : nil) params:nil];
     graphNodes = [graphNodes arrayByAddingObject:conv2];
     conv1.numChildren++;
     
+
     if (hasSe) {
         // SE Unit.
         Lc0GraphNode *seUnit = [self addSEUnitWithParent:conv2
-                                                skipNode:conv1
+                                                skipNode:parent
                                            inputChannels:inputChannels
                                           outputChannels:outputChannels
                                              seFcOutputs:seFcOutputs
@@ -359,16 +356,26 @@
                                                  biases1:seBiases1
                                                 weights2:seWeights2
                                                  biases2:seBiases2
-                                                   label:label
+                                                   label:[NSString stringWithFormat:@"%@/se", label]
                                                  hasRelu:YES];
+        return seUnit;
     }
-    
-//    Lc0GraphNode *add = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNAdd alloc] initWithDevice:device] parents:@[conv1, conv2]];
-//    graphNodes = [graphNodes arrayByAddingObject:add];
-//    conv1.numChildren++;
-//    conv2.numChildren++;
-    
-    return graphNodes[[graphNodes count] - 1];
+    else {
+        Lc0GraphNode *add = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNAdd alloc] initWithDevice:device]
+                                                         parents:@[parent, conv2]
+                                                          params:nil];
+        graphNodes = [graphNodes arrayByAddingObject:add];
+        parent.numChildren++;
+        conv2.numChildren++;
+
+        Lc0GraphNode *relu = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNNeuronReLU alloc] initWithDevice:device a:0.0]
+                                                          parents:@[add]
+                                                           params:nil];
+        graphNodes = [graphNodes arrayByAddingObject:relu];
+        add.numChildren++;
+        
+        return relu;
+    }
 }
 
 -(nonnull Lc0GraphNode *) addFullyConnectedLayerWithParent:(Lc0GraphNode * __nonnull)parent
@@ -387,10 +394,10 @@
                                                              stride:1
                                                             weights:weights
                                                              biases:biases
-                                                              label:label
+                                                              label:[NSString stringWithFormat:@"%@/weights", label]
                                                     fusedActivation:activation];
     
-    graphNodes = [graphNodes arrayByAddingObject:[Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNFullyConnected alloc] initWithDevice:device weights:convWeights] parents:@[parent]]];
+    graphNodes = [graphNodes arrayByAddingObject:[Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNFullyConnected alloc] initWithDevice:device weights:convWeights] parents:@[parent] params:nil]];
     parent.numChildren++;
     
     return graphNodes[[graphNodes count] - 1];;
@@ -411,12 +418,10 @@
     // 1. Global Average Pooling 2D
     MPSCNNPoolingAverage *pool = [[MPSCNNPoolingAverage alloc] initWithDevice:device kernelWidth:8 kernelHeight:8 strideInPixelsX:8 strideInPixelsY:8];
 
-    Lc0GraphNode * poolNode = [Lc0GraphNode graphNodeWithCnnKernel:pool parents:@[parent]];
+    Lc0GraphNode * poolNode = [Lc0GraphNode graphNodeWithCnnKernel:pool parents:@[parent] params:nil];
     graphNodes = [graphNodes arrayByAddingObject:poolNode];
     parent.numChildren++;
     
-    NSLog(@"Making SE FC node1: inputChannels %i, seFcOutputs %i", inputChannels, seFcOutputs);
-
     // 2. FC Layer 1.
     Lc0GraphNode *fcNode1 = [self addFullyConnectedLayerWithParent:poolNode
                                                      inputChannels:inputChannels
@@ -424,7 +429,7 @@
                                                            weights:weights1
                                                             biases:biases1
                                                         activation:@"relu"
-                                                             label:label];
+                                                             label:[NSString stringWithFormat:@"%@/fc1", label]];
 
     // 3. FC Layer 2.
     Lc0GraphNode *fcNode2 = [self addFullyConnectedLayerWithParent:fcNode1
@@ -433,12 +438,12 @@
                                                         weights:weights2
                                                          biases:biases2
                                                      activation:nil
-                                                          label:label];
+                                                          label:[NSString stringWithFormat:@"%@/fc2", label]];
     
     // 4. Multiply and add.
-    SEMultiply *multiply = [[SEMultiply alloc] initWithDevice:device gammaChannels:inputChannels betaChannels:inputChannels hasRelu:hasRelu];
+    Lc0SeMultiplyAdd *multiply = [[Lc0SeMultiplyAdd alloc] initWithDevice:device gammaChannels:inputChannels betaChannels:inputChannels hasRelu:hasRelu];
     
-    Lc0GraphNode * multiplyNode = [Lc0GraphNode graphNodeWithCnnKernel:multiply parents:@[fcNode2, parent, skipNode]];
+    Lc0GraphNode * multiplyNode = [Lc0GraphNode graphNodeWithCnnKernel:multiply parents:@[fcNode2, parent, skipNode] params:nil];
     graphNodes = [graphNodes arrayByAddingObject:multiplyNode];
     fcNode2.numChildren++;
     parent.numChildren++;
@@ -448,8 +453,50 @@
     
 }
 
--(nonnull const char *) getTestData:(char * __nullable)data {
-    return [[NSString stringWithFormat:@"Test data: %s", data] UTF8String];
+-(nonnull Lc0GraphNode *) addFlattenLayerWithParent:(Lc0GraphNode * __nonnull)parent
+{
+    // Flatten kernel.
+    Lc0Flatten *flatten = [[Lc0Flatten alloc] initWithDevice:device];
+    
+    Lc0GraphNode * flattenNode = [Lc0GraphNode graphNodeWithCnnKernel:flatten parents:@[parent] params:nil];
+    graphNodes = [graphNodes arrayByAddingObject:flattenNode];
+    parent.numChildren++;
+    
+    return flattenNode;
+}
+
+-(nonnull Lc0GraphNode *) addReshapeLayerWithParent:(Lc0GraphNode * __nonnull)parent
+                                       reshapeWidth:(NSUInteger)width
+                                      reshapeHeight:(NSUInteger)height
+                             reshapeFeatureChannels:(NSUInteger)channels
+{
+    // Reshape kernel.
+    MPSNNReshape *reshape = [[MPSNNReshape alloc] initWithDevice:device];
+    
+    Lc0GraphNode * reshapeNode = [Lc0GraphNode graphNodeWithCnnKernel:reshape parents:@[parent] params:@[@(width), @(height), @(channels)]];
+    graphNodes = [graphNodes arrayByAddingObject:reshapeNode];
+    parent.numChildren++;
+    
+//    // Result needs to be transposed.
+//    MPSImageTranspose * transpose = [[Lc0Flatten alloc] initWithDevice:device];
+//    Lc0GraphNode * transposeNode = [Lc0GraphNode graphNodeWithCnnKernel:transpose parents:@[reshapeNode] params:nil];
+//    graphNodes = [graphNodes arrayByAddingObject:transposeNode];
+//    reshapeNode.numChildren++;
+    
+    return reshapeNode;
+}
+
+-(nonnull Lc0GraphNode *) addPolicyMapLayerWithParent:(Lc0GraphNode * __nonnull)parent
+                                            policyMap:(short * __nonnull)policyMap
+{
+    // Policy map kernel.
+    Lc0PolicyMap *map = [[Lc0PolicyMap alloc] initWithDevice:device policyMap:policyMap];
+    
+    Lc0GraphNode * mapNode = [Lc0GraphNode graphNodeWithCnnKernel:map parents:@[parent] params:nil];
+    graphNodes = [graphNodes arrayByAddingObject:mapNode];
+    parent.numChildren++;
+    
+    return mapNode;
 }
 
 @end

@@ -105,13 +105,8 @@ void MetalNetworkComputation::ComputeBlocking() {
 MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()} {
-//  CERR << "Starting...";
 
   LegacyWeights weights(file.weights());
-
-//  for (int i = 0; i < weights.input.biases.size(); ++i) {
-//    CERR << "Biases " << i << ": " << weights.input.biases[i];
-//  }
 
   try {
     // @todo better implementation with unique_ptr??
@@ -152,23 +147,9 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         &weights.input.weights[0],
                                         &weights.input.biases[0],
                                         true, "input/conv");
-  void * inputLayer = layer;
-
-//  for (int j = 0; j < weights.input.weights.size(); ++j) {
-//    CERR << "Weight[" << j << "]: " << weights.input.weights[j];
-//  }
-//  CERR << "";
-//
-//  for (int j = 0; j < weights.input.biases.size(); ++j) {
-//    CERR << "Bias[" << j << "]: " << weights.input.biases[j];
-//  }
-//  CERR << "";
 
   // 2. Residual blocks
-  for (size_t i = 0; i < 1; i++) {
-    //describeWeights(weights.residual[i].conv1, channelSize);
-    //describeWeights(weights.residual[i].conv2, channelSize);
-    CERR << "Residual SE squeeze size: " << weights.residual[i].se.b1.size();
+  for (size_t i = 0; i < weights.residual.size(); i++) { 
     layer = builder->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
                                        &weights.residual[i].conv1.weights[0],
                                        &weights.residual[i].conv1.biases[0],
@@ -183,7 +164,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                        &weights.residual[i].se.b2[0]);
   }
 
-  /*if (false) {
   // 3. Policy head.
   void * policy;
   if (conv_policy_) {
@@ -199,7 +179,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                            false, "policy/conv2");
 
     // [1858 -> HWC or CHW]
-    const bool HWC = true;
+    const bool HWC = false;
     std::vector<short> policy_map(1858);
     for (const auto& mapping : kConvPolicyMap) {
       if (mapping == -1) continue;
@@ -214,16 +194,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
         policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
       }
     }
-    // @todo Policy mapping in GPU.
-    policy = builder->makePolicyMapLayer(policy, &policy_map);
-    *//*auto mapping = MakeIntConst(scope, {1858}, policy_map);
-    auto flattened_conv =
-        Reshape(scope, conv_pol, Const(scope, {-1, 80 * 8 * 8}));
-    policy_head = GatherV2(scope, flattened_conv, mapping, 1);
-
-    mapping.node()->set_name("policy/mapping_table");
-    flattened_conv.node()->set_name("policy/flatten");*//*
-
+    policy = builder->makePolicyMapLayer(policy, &policy_map[0]);
   }
   else {
     const int policySize = weights.policy.biases.size();
@@ -231,13 +202,11 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                            &weights.policy.weights[0],
                                            &weights.policy.biases[0],
                                            true, "policy/conv");
-
-    policy = builder->makeReshapeLayer(policy, 1, 1, policySize * 8 * 8);
-    // @todo check if the weights are correctly aligned.
+    policy = builder->makeFlattenLayer(policy);
     policy = builder->makeFullyConnectedLayer(policy, policySize * 8 * 8, 1858,
                                               &weights.ip_pol_w[0],
                                               &weights.ip_pol_b[0],
-                                              nullptr, "policy/fc");
+                                              "", "policy/fc");
   }
 
   // 4. Value head.
@@ -246,7 +215,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         &weights.value.weights[0],
                                         &weights.value.biases[0],
                                         true, "value/conv");
-  value = builder->makeReshapeLayer(value, 1, 1, 32 * 8 * 8);
+  value = builder->makeFlattenLayer(value);
   value = builder->makeFullyConnectedLayer(value, 32 * 8 * 8, 128,
                                            &weights.ip1_val_w[0],
                                            &weights.ip1_val_b[0],
@@ -277,7 +246,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         &weights.moves_left.weights[0],
                                         &weights.moves_left.biases[0],
                                         true, "mlh/conv");
-    mlh = builder->makeReshapeLayer(mlh, 1, 1, mlhChannels * 8 * 8);
+    mlh = builder->makeFlattenLayer(mlh);
     mlh = builder->makeFullyConnectedLayer(mlh, mlhChannels * 8 * 8, weights.ip1_mov_b.size(),
                                            &weights.ip1_mov_w[0],
                                            &weights.ip1_mov_b[0],
@@ -292,31 +261,29 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   // operation.
   std::vector<void*> outputs;
   if (moves_left_) {
-    outputs = {inputLayer, policy, value, mlh};
+    outputs = {policy, value, mlh};
   }
   else {
-    outputs = {inputLayer, policy, value};
+    outputs = {policy, value};
   }
-  }*/
 
-  std::vector<void*> outputs = {layer};
   builder->buildGraph(&outputs);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
   CERR << "Forwarding eval to graph adapter: batchsize: " << batchSize;
   //describeInputs(io->input_masks_mem_, io->input_val_mem_, batchSize, kInputPlanes);
-  //std::vector<float*> * output_mems;
-  /*memset(io->op_policy_mem_, 0, max_batch_size_ * kNumOutputPolicy * sizeof(uint64_t));
-  memset(io->op_value_mem_, 0, max_batch_size_ * (wdl_ ? 3 : 1) * sizeof(float));
+  std::vector<float*> * output_mems;
+  // memset(io->op_policy_mem_, 0, max_batch_size_ * kNumOutputPolicy * sizeof(uint64_t));
+  // memset(io->op_value_mem_, 0, max_batch_size_ * (wdl_ ? 3 : 1) * sizeof(float));
   if (moves_left_) {
     memset(io->op_moves_left_mem_, 0, max_batch_size_ * sizeof(float));
     output_mems = {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_};
   }
   else {
     output_mems = {io->op_policy_mem_, io->op_value_mem_};
-  }*/
-  std::vector<float*> output_mems = builder->forwardEval(io->input_masks_mem_, io->input_val_mem_, nullptr,
+  }
+  builder->forwardEval(io->input_masks_mem_, io->input_val_mem_, nullptr,
                        batchSize, kInputPlanes);
 
   CERR << "Completed forwarding";

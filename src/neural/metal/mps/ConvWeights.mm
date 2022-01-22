@@ -27,6 +27,8 @@
 
 #import "ConvWeights.h"
 
+#include "Utilities.h"
+
 @implementation ConvWeights
 
 -(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)device
@@ -77,23 +79,39 @@
     else {
         _descriptor.fusedNeuronDescriptor = [MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:(MPSCNNNeuronTypeNone)];
     }
-  
-    // @todo took stuff from here.
+
     _weights = weights;
     _biases = biases;
     
+    [self loadWeights];
+
     return self;
 }
 
 -(MPSDataType) dataType {return  MPSDataTypeFloat32;}
+
 -(nonnull MPSCNNConvolutionDescriptor *) descriptor {return _descriptor;}
+
 -(void * __nonnull) weights {return _weightPointer;}
+
 -(float * __nullable) biasTerms {return _biasPointer;}
 
--(BOOL) load {
-    //NSLog(@"Loading weights...");
-    //[self checkpointWithCommandQueue:gCommandQueue];
+-(BOOL) load { return YES; }
 
+-(void) purge {
+    //NSLog(@"Purging weights...");
+}
+
+- (NSString * _Nullable)label {
+    return _label;
+}
+
+-(nonnull id)copyWithZone:(nullable NSZone *)zone {
+    /* unimplemented */
+    return self;
+}
+
+-(void) loadWeights {
     // Calculating the size of weights and biases.
     _sizeBiases = _outputChannels * sizeof(float);
     NSUInteger lenWeights = _outputChannels * _kernelHeight * _kernelWidth * _inputChannels;
@@ -121,25 +139,10 @@
     MPSNDArray * transposed = [initial arrayViewWithCommandBuffer:commandBuffer
                                                        descriptor:arrayDesc
                                                          aliasing:MPSAliasingStrategyDefault];
-    float buffer[lenWeights];
+    
+    //listOfFloats(_weights, lenWeights);
+    float * buffer = (float *)malloc(lenWeights * sizeof(float));
     [transposed readBytes:buffer strideBytes:nil];
-    
-    /*NSLog(@"Original weights:");
-    for (int j = 0; j < 64; ++j) {
-        NSLog(@"Weight[%i]: %f", j, _weights[j]);
-    }
-    
-    NSLog(@" ");
-    NSLog(@"Transposed weights:");
-    for (int j = 0; j < 64; ++j) {
-        NSLog(@"Weight[%i]: %f", j, buffer[j]);
-    }
-    
-    NSLog(@" ");
-    NSLog(@"Reordered transposed weights:");
-    for (int j = 0; j < 64; ++j) {
-        NSLog(@"Weight[%i x %i]: %f", j, _inputChannels, buffer[j * _inputChannels]);
-    }*/
     
     // Set weights and biases to the specified values.
     _weightPointer = (float *)_weightVector.data.contents;
@@ -151,21 +154,6 @@
     // Notify event listeners.
     [_weightVector.data didModifyRange:NSMakeRange(0, _sizeWeights)];
     [_biasVector.data didModifyRange:NSMakeRange(0, _sizeBiases)];
-    
-    return YES;
-}
-
--(void) purge {
-    //NSLog(@"Purging weights...");
-}
-
-- (NSString * _Nullable)label {
-    return _label;
-}
-
--(nonnull id)copyWithZone:(nullable NSZone *)zone {
-    /* unimplemented */
-    return self;
 }
 
 -(void) describeWeights {
