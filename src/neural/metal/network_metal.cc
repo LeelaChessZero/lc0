@@ -44,50 +44,6 @@
 namespace lczero {
 namespace metal_backend {
 
-void describeWeights(LegacyWeights::ConvBlock &conv, int inputs) {
-  const int channelSize = conv.weights.size() / inputs / 9;
-
-  CERR << "Size of conv weights: " << conv.weights.size() << "; Filters: " << channelSize;
-  float * p = &conv.weights[0];
-  //  for (int i=0; i<input.weights.size(); i++) {
-  for (int i=2000; i<3000; i++) {
-    CERR << "From Weight[" << i << "]: 1) " << conv.weights[i]
-         << "; 2) " << *(p + i);
-  }
-
-  float * q = &conv.biases[0];
-  float * b = &conv.bn_betas[0];
-  float * g = &conv.bn_gammas[0];
-  float * m = &conv.bn_means[0];
-  float * s = &conv.bn_stddivs[0];
-  for (int i=0; i<channelSize; i++) {
-    CERR << "From Bias[" << i << "]: 1) " << conv.biases[i]
-         << "; 2) " << *(q + i);
-    CERR << "From Betas[" << i << "]: 1) " << conv.bn_betas[i]
-         << "; 2) " << *(b + i);
-    CERR << "From Gammas[" << i << "]: 1) " << conv.bn_gammas[i]
-         << "; 2) " << *(g + i);
-    CERR << "From Means[" << i << "]: 1) " << conv.bn_means[i]
-         << "; 2) " << *(m + i);
-    CERR << "From StdDevs[" << i << "]: 1) " << conv.bn_stddivs[i]
-         << "; 2) " << *(s + i);
-  }
-
-}
-
-void describeInputs(uint64_t * masks, float * vals, int batchSize, int numPerBatch) {
-  CERR << "Inputs: batchsize: " << batchSize;
-  uint64_t * p = masks;
-  float * q = vals;
-  for (int i=0; i<batchSize; i++) {
-    for (int j=0; j<numPerBatch; j++) {
-      CERR << "batch[" << i << "]: layer[" << j << "]: mask) "
-           << *(p + (i * numPerBatch) + j) << "; val) "
-           << *(q + (i * numPerBatch) + j);
-    }
-  }
-}
-
 MetalNetworkComputation::MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left)
     : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
@@ -111,7 +67,8 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   try {
     // @todo better implementation with unique_ptr??
     builder = new MetalNetworkBuilder();
-    builder->init();
+    std::string device = builder->init();
+    CERR << "Initialized metal backend on device " << device; 
   } catch (...) {
     throw Exception("There was an error initializing the GPU device.");
   }
@@ -226,7 +183,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     value = builder->makeFullyConnectedLayer(value, 128, 3,
                                              &weights.ip2_val_w[0],
                                              &weights.ip2_val_b[0],
-                                             "softmax", "value/fc2");
+                                             "softmax???", "value/fc2");
   }
   else {
     value = builder->makeFullyConnectedLayer(value, 128, 1,
@@ -271,34 +228,20 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
-  CERR << "Forwarding eval to graph adapter: batchsize: " << batchSize;
-  //describeInputs(io->input_masks_mem_, io->input_val_mem_, batchSize, kInputPlanes);
-  std::vector<float*> * output_mems;
-  // memset(io->op_policy_mem_, 0, max_batch_size_ * kNumOutputPolicy * sizeof(uint64_t));
-  // memset(io->op_value_mem_, 0, max_batch_size_ * (wdl_ ? 3 : 1) * sizeof(float));
+  std::vector<float*> output_mems;
+  float * opVal = (float *)malloc(3 * batchSize * sizeof(float));
   if (moves_left_) {
-    memset(io->op_moves_left_mem_, 0, max_batch_size_ * sizeof(float));
-    output_mems = {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_};
+    output_mems = {io->op_policy_mem_, opVal, io->op_moves_left_mem_};
   }
   else {
-    output_mems = {io->op_policy_mem_, io->op_value_mem_};
+    output_mems = {io->op_policy_mem_, opVal};
   }
-  builder->forwardEval(io->input_masks_mem_, io->input_val_mem_, nullptr,
-                       batchSize, kInputPlanes);
-
-  CERR << "Completed forwarding";
-//  CERR << "Return vector: size: " << output_mems.size();
-//  CERR << "policy: N:" << *output_mems[0];
-//  CERR << "value: N:" << *output_mems[1];
-//  CERR << "mlh: N:" << *output_mems[2];
-  //CERR << "Return vector[1]: " << output_mems[1];
-
-  return;
+  builder->forwardEval(io->input_masks_mem_, io->input_val_mem_, batchSize, kInputPlanes, output_mems);
 
   // Copy memory to output buffers and do final transformations.
+  // @todo Move softmax to backend.
   if (wdl_) {
     // Value softmax done cpu side.
-    float* opVal = output_mems[1];
     for (int i = 0; i < batchSize; i++) {
       float w = opVal[3 * i + 0];
       float d = opVal[3 * i + 1];
@@ -316,29 +259,8 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
       io->op_value_mem_[3 * i + 2] = l;
     }
   } else {
-    memcpy(io->op_value_mem_, output_mems[1], batchSize * sizeof(float));
+    memcpy(io->op_value_mem_, opVal, batchSize * sizeof(float));
   }
-  CERR << "Completed value";
-
-  if (conv_policy_) {
-    float* opPol = output_mems[0];
-    for (int batch = 0; batch < batchSize; batch++) {
-      for (int i = 0; i < 73 * 8 * 8; i++) {
-        auto j = kConvPolicyMap[i];
-        if (j >= 0) {
-          io->op_policy_mem_[batch * kNumOutputPolicy + j] = opPol[batch * 80 * 64 + i];
-        }
-      }
-    }
-  } else {
-    memcpy(io->op_policy_mem_, output_mems[0], batchSize * kNumOutputPolicy * sizeof(float));
-  }
-  CERR << "Completed policy";
-
-  if (moves_left_) {
-    memcpy(io->op_moves_left_mem_, output_mems[2], batchSize * sizeof(float));
-  }
-  CERR << "Completed mlh";
 
 }
 

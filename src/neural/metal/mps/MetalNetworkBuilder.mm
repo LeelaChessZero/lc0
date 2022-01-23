@@ -28,8 +28,6 @@
 #import "MetalNetworkBuilder.h"
 #import "NetworkGraph.h"
 
-#include "Utilities.h"
-
 namespace lczero {
 namespace metal_backend {
 
@@ -41,7 +39,7 @@ MetalNetworkBuilder::~MetalNetworkBuilder(void)
 }
 
 //void MetalNetworkBuilder::init(void* weights, void* options)
-void MetalNetworkBuilder::init()
+std::string MetalNetworkBuilder::init()
 {
     // All metal devices.
     NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
@@ -49,7 +47,7 @@ void MetalNetworkBuilder::init()
     if ([devices count] < 1) {
         // No GPU device.
         [NSException raise:@"Could not find device" format:@"Could not find a GPU or CPU compute device"];
-        return;
+        return "";
     }
     
     // Get the metal device and commandQueue to be used.
@@ -64,7 +62,7 @@ void MetalNetworkBuilder::init()
     // Initialize the metal MPS Graph executor with the device.
     self = [[Lc0NetworkGraph alloc] initWithDevice:device commandQueue:commandQueue];
     
-    NSLog(@"Initialized metal backend on device: %@", device.name);
+    return std::string([device.name UTF8String]);
 }
 
 void* MetalNetworkBuilder::makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
@@ -140,12 +138,12 @@ void* MetalNetworkBuilder::buildGraph(std::vector<void *> * outputs) {
     }
     [(id)self buildGraphWithResultNodes:resultNodes];
 
-    //NSLog(@"Completed building neural network graph: %@ on device: %@", graph, [(id)self getDevice]);
-
     return (void*) self;
 }
 
-std::vector<float*> MetalNetworkBuilder::forwardEval(uint64_t * masks, float * values, std::vector<float *> * outputs, int batchSize, int inputChannels)
+void MetalNetworkBuilder::forwardEval(uint64_t * masks, float * values,
+                                                     int batchSize, int inputChannels,
+                                                     std::vector<float *> output_mems)
 {
     NSUInteger subBatchSize = MIN(1, batchSize);
     NSArray<Lc0GraphNode *> * results = [(id)self runInferenceWithBatchSize:batchSize
@@ -153,39 +151,21 @@ std::vector<float*> MetalNetworkBuilder::forwardEval(uint64_t * masks, float * v
                                                                            values:values
                                                                     inputChannels:inputChannels
                                                                      subBatchSize:subBatchSize];
-    
-    // Create temporary memory to pass results back to MCTS.
-    std::vector<float*> output_mems([results count]);
-    
-    int imgSz;
-    NSArray<NSString *> *names = @[@"Extra", @"Policy", @"Value", @"MLH"];
-    MPSImageBatch * imageBatch;
+    // Transfer results in a loop.
+    int imgSz, idx;
+    MPSImageBatch * resultBatch;
     for (int rsIdx = 0; rsIdx < [results count]; rsIdx++) {
-        imageBatch = results[rsIdx].result;
-        imgSz = imageBatch[0].featureChannels * imageBatch[0].height * imageBatch[0].width;
-        output_mems[rsIdx] = (float*)malloc(batchSize * imgSz * sizeof(float));
-//        NSLog(@"batchSize[%i]: allocated for %@ (%i floats)", batchSize, names[rsIdx], batchSize * imgSz);
-//        updateResults(imageBatch, output_mems[rsIdx], batchSize, subBatchSize);
-//        logImageResultInfo(imageBatch, names[rsIdx]);
-//        NSLog(@"%@", listOfFloats(output_mems[rsIdx], batchSize * imgSz));
-//        listOfFloats(output_mems[rsIdx], batchSize * imgSz);
-        for (int k=0; k < [imageBatch count]; k++) {
-            showRawImageContent(imageBatch[k]);
+        resultBatch = results[rsIdx].result;
+        imgSz = resultBatch[0].featureChannels * resultBatch[0].height * resultBatch[0].width;
+        idx = 0;
+        for (MPSImage * image in resultBatch) {
+            for (int i = 0; i < image.numberOfImages; i++) {
+                [image readBytes:output_mems[rsIdx] + imgSz * i + image.numberOfImages * imgSz * idx++
+                      dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
+                      imageIndex:i];
+            }
         }
-//        showRawTextureContent(imageBatch[0].texture);
-//        NSLog(@"Texture: %@", imageBatch[0].texture);
-    }
-    
-    return output_mems;
-}
-
-void redirectLogs()
-{
-    NSArray *allPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-    NSString *documentsDirectory = [allPaths objectAtIndex:0];
-    NSString *pathForLog = [documentsDirectory stringByAppendingPathComponent:@"lc0logfile.txt"];
-    
-    freopen([pathForLog cStringUsingEncoding:NSASCIIStringEncoding], "a+", stderr);
+    };
 }
 
 }  // namespace metal_backend

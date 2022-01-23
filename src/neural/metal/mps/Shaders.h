@@ -33,8 +33,9 @@
 
 // Base Kernel Class
 @interface Lc0Kernel : MPSCNNKernel {
-    id <MTLLibrary> _library;
     BOOL _nonuniformThreadgroups;
+    id <MTLLibrary> _library;
+    id <MTLFunction> _kernelFunction;
     id <MTLComputePipelineState> _computePipeline;
 }
 

@@ -37,8 +37,7 @@ public:
     MetalNetworkBuilder(void);
     ~MetalNetworkBuilder(void);
 
-    //void init(void* weights, void* options);
-    void init();
+    std::string init();
 
     void* makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
                                float * weights, float * biases, bool withRelu, std::string label);
@@ -59,8 +58,9 @@ public:
     
     void* buildGraph(std::vector<void *> * outputs);
 
-    std::vector<float*> forwardEval(uint64_t * masks, float * values, std::vector<float *> * outputs, int batchSize, int inputChannels);
-    
+    void forwardEval(uint64_t * masks, float * values, int batchSize, int inputChannels,
+                     std::vector<float *> output_mems);
+         
 private:
     void* self;
 };

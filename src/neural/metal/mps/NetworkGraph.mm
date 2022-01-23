@@ -31,8 +31,6 @@
 
 #import <vector>
 
-#import "Utilities.h"
-
 #ifndef ADVANCE_PTR
 #   define ADVANCE_PTR(_a, _size) (__typeof__(_a))((uintptr_t) (_a) + (size_t)(_size))
 #endif
@@ -62,10 +60,6 @@
     if (retainResult) {
         // Graph nodes specified as outputs shouldn't be temporary images so we can read it to CPU.
         [self.kernel setDestinationImageAllocator:[MPSImage defaultAllocator]];
-//        }
-//        else if ([self.kernel isKindOfClass:[MPSCNNBinaryKernel class]]) {
-//            ((MPSCNNBinaryKernel *)self.kernel).destinationImageAllocator = [MPSImage defaultAllocator];
-//        }
     }
 
     if ([self.kernel isKindOfClass:[Lc0SeMultiplyAdd class]]) {
@@ -86,7 +80,6 @@
     else if ([self.kernel isKindOfClass:[MPSNNReshape class]]) {
         // Reshape nodes accept more parameters.
         assert([self.params count] >= 3);
-        NSLog(@"Reshape: width %@, height %@, channels %@", self.params[0], self.params[1], self.params[2]);
         self.result = [(MPSNNReshape *)self.kernel encodeBatchToCommandBuffer:commandBuffer
                                                                  sourceImages:input
                                                                 reshapedWidth:[self.params[0] intValue]
@@ -178,14 +171,10 @@
             for (int j = 0; j < inputPlanes; j++) {
                 const float value = values[j + i * inputPlanes];
                 const uint64_t mask = masks[j + i * inputPlanes];
-                //NSLog(@"mask[%d]: %lu, value[%d]: %f", j + i * inputPlanes, mask, j + i * inputPlanes, value);
                 for (auto k = 0; k < 64; k++) {
                     *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
                 }
             }
-//            for (int k = 0; k < inputPlanes * boardWidth * boardHeight; k++) {
-//                NSLog(@"Input at %i: %f", k, buffer[k]);
-//            }
             [inputImage writeBytes:buffer
                         dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
                         imageIndex:i - subBatch];
@@ -200,42 +189,31 @@
     
 -(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithImageBatch:(MPSImageBatch * __nonnull)inputBatch {
     // Make an MPSCommandBuffer, when passed to the encode of MPSNNGraph, commitAndContinue will be automatically used.
-//    NSLog(@"Initializing command buffer");
     MPSCommandBuffer *commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:queue];
     
+    // Use double buffering to keep the GPU completely busy.
+    //        dispatch_semaphore_t doubleBufferingSemaphore = dispatch_semaphore_create(2);
+    //        dispatch_semaphore_wait(doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
+    
     // Encode inference network
-//    NSLog(@"Encoding command buffer");
-//    NSLog(@"convkernel: %@", graphNodes[0]);
-//    ((MPSCNNKernel *)graphNodes[0][@"kernel"]).destinationImageAllocator = [MPSImage defaultAllocator];
-//    MPSImageBatch *output = [graphNodes[0][@"kernel"] encodeBatchToCommandBuffer:commandBuffer
-//                                                     sourceImages:inputBatch];
-   // NSLog(@"Processing %i graph nodes %@", [graphNodes count], graphNodes);
     MPSImageBatch *output;
     int i = 0;
     for (Lc0GraphNode * node in graphNodes) {
-        //NSLog(@"Started node %i %@", i, node);
-        //NSLog(@"Node info: parents - %i, children - %i, kernel %@", [node.parents count], node.numChildren, node.kernel);
-
-        output = [node encodeBatchToCommandBuffer:commandBuffer
-                                            input:inputBatch
-                                     retainResult:[resultNodes containsObject:node]];
-        //NSLog(@"Finished node %i %@", i++, node);
+        @autoreleasepool {
+            output = [node encodeBatchToCommandBuffer:commandBuffer
+                                                          input:inputBatch
+                                                   retainResult:[resultNodes containsObject:node]];
+        }
     }
 
     // Transfer data from GPU to CPU.
-//    NSLog(@"Synchronizing GPU to CPU for %@", output);
-    //NSLog(@"Result nodes: %@", resultNodes);
     for (Lc0GraphNode * node in resultNodes) {
         MPSImageBatchSynchronize(node.result, commandBuffer);
     }
 
     // Commit the command buffer. Wait for the last batch to be processed.
-//    NSLog(@"Committing command buffer");
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
-//    NSLog(@"Buffer completed");
-
-//    NSLog(@"Got results: %@", resultNodes);
     return resultNodes;
 }
 
@@ -246,13 +224,6 @@
                                                   subBatchSize:(NSUInteger)subBatchSize
 {
     @autoreleasepool {
-        // Use double buffering to keep the GPU completely busy.
-//        dispatch_semaphore_t doubleBufferingSemaphore = dispatch_semaphore_create(2);
-//        dispatch_semaphore_wait(doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
-        
-        // Create batches of MPSImages that each contain multiple images (i.e. multiple board positions
-        // in sub-batches) in order to optimize GPU usage.
-
         // Create an input MPSImageBatch.
         MPSImageBatch *inputBatch = [self createInputImageBatchWithBatchSize:batchSize
                                                                        masks:masks
@@ -476,12 +447,6 @@
     Lc0GraphNode * reshapeNode = [Lc0GraphNode graphNodeWithCnnKernel:reshape parents:@[parent] params:@[@(width), @(height), @(channels)]];
     graphNodes = [graphNodes arrayByAddingObject:reshapeNode];
     parent.numChildren++;
-    
-//    // Result needs to be transposed.
-//    MPSImageTranspose * transpose = [[Lc0Flatten alloc] initWithDevice:device];
-//    Lc0GraphNode * transposeNode = [Lc0GraphNode graphNodeWithCnnKernel:transpose parents:@[reshapeNode] params:nil];
-//    graphNodes = [graphNodes arrayByAddingObject:transposeNode];
-//    reshapeNode.numChildren++;
     
     return reshapeNode;
 }

@@ -26,9 +26,7 @@
  */
 
 #import "Shaders.h"
-
-#include "Utilities.h"
-
+#import <vector>
 
 #pragma mark - Base Kernel Class
 
@@ -54,16 +52,16 @@
     
     // Create command encoder.
     NSError * kernelError = nil;
-    //id<MTLFunction> kernelFunction = [_library newFunctionWithName:functionName constantValues:constantValues error:&kernelError];
-    id<MTLFunction> kernelFunction = [_library newFunctionWithName:functionName];
-    if (!kernelFunction)
+    // _kernelFunction = [_library newFunctionWithName:functionName constantValues:constantValues error:&kernelError];
+    _kernelFunction = [_library newFunctionWithName:functionName];
+    if (!_kernelFunction)
     {
         NSLog(@"Failed to create kernel function \"%@\", error %@", functionName, kernelError);
         return nil;
     }
     
     NSError * pipelineError = nil;
-    _computePipeline = [device newComputePipelineStateWithFunction:kernelFunction error:&pipelineError];
+    _computePipeline = [device newComputePipelineStateWithFunction:_kernelFunction error:&pipelineError];
     if (!_computePipeline)
     {
         NSLog(@"Failed to create compute pipeline state, error %@", pipelineError);
@@ -71,6 +69,16 @@
     }
     
     return self;
+}
+
+-(nonnull id<MTLBuffer>) newGridInfoArgumentWithDevice:(id<MTLDevice>)device
+                                 gridSize:(MTLSize)gridSize
+                                  atIndex:(NSUInteger)index
+{
+    uint grid[3] = {gridSize.width, gridSize.height, gridSize.depth};
+    id<MTLBuffer> argumentBuffer = [device newBufferWithBytes:(void *)&grid[0] length:3 * sizeof(uint) options:nil];
+    
+    return argumentBuffer;
 }
 
 
@@ -133,6 +141,9 @@
     MTLSize threadGroupCount = MTLSizeMake((gridSize.width + threadGroupSize.width - 1) / threadGroupSize.width,
                                            (gridSize.height + threadGroupSize.height - 1) / threadGroupSize.height,
                                            batches);
+    id<MTLBuffer> argumentBuffer = [self newGridInfoArgumentWithDevice:[commandBuffer device]
+                                                              gridSize:gridSize
+                                                               atIndex:0];
     
     // Encoding one batch at a time.
     // @todo Needs to be optimized, may require copying the images into a large buffer to allow for less loops.
@@ -145,6 +156,7 @@
         // @todo Need to confirm if multiple images are encoded in same texture2d_array in metal.
         [encoder setComputePipelineState:_computePipeline];
         [encoder setBuffer:buffer offset:0 atIndex:0];
+        [encoder setBuffer:argumentBuffer offset:0 atIndex:1];
         
         // Get underlying MTLTextures from MPSImages and pass in them into the encoder.
         [encoder setTexture:seSourceImageBatch[idx].texture atIndex:0];
@@ -205,6 +217,10 @@
                                            (gridSize.height + threadGroupSize.height - 1) / threadGroupSize.height,
                                            batches);
     
+    id<MTLBuffer> argumentBuffer = [self newGridInfoArgumentWithDevice:[commandBuffer device]
+                                                              gridSize:gridSize
+                                                               atIndex:0];
+
     // Encoding one batch at a time.
     // @todo Needs to be optimized, may require copying the images into a large buffer to allow for less loops.
     id<MTLComputeCommandEncoder> encoder;
@@ -215,7 +231,8 @@
         [encoder setComputePipelineState:_computePipeline];
         [encoder setTexture:sourceImageBatch[idx].texture atIndex:0];
         [encoder setTexture:resultBatch[idx].texture atIndex:1];
-        
+        [encoder setBuffer:argumentBuffer offset:0 atIndex:1];
+
         if (/*_nonuniformThreadgroups*/ true) {
             [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         } else {
@@ -275,7 +292,11 @@
     MTLSize threadGroupCount = MTLSizeMake((gridSize.width + threadGroupSize.width - 1) / threadGroupSize.width,
                                            (gridSize.height + threadGroupSize.height - 1) / threadGroupSize.height,
                                            batches);
-    
+
+    id<MTLBuffer> argumentBuffer = [self newGridInfoArgumentWithDevice:[commandBuffer device]
+                                                              gridSize:gridSize
+                                                               atIndex:0];
+
     id<MTLBuffer> polMapBuf = [[commandBuffer device] newBufferWithBytes:_policyMap
                                                                   length:policyOutputSize * sizeof(short)
                                                                  options:nil];
@@ -291,7 +312,8 @@
         [encoder setTexture:sourceImageBatch[idx].texture atIndex:0];
         [encoder setTexture:resultBatch[idx].texture atIndex:1];
         [encoder setBuffer:polMapBuf offset:0 atIndex:0];
-        
+        [encoder setBuffer:argumentBuffer offset:0 atIndex:1];
+
         if (/*_nonuniformThreadgroups*/ true) {
             [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadGroupSize];
         } else {

@@ -30,6 +30,15 @@ using namespace metal;
 
 //constant bool deviceSupportsNonuniformThreadgroups [[ function_constant(0) ]];
 
+struct GridInfo {
+    uint3 grid_size;
+};
+
+constant uint used_policy_channels = 73;
+constant uint policy_channels = 80;
+constant uint color_depth = 4;
+constant uint2 board_size = uint2(8, 8);
+
 inline float4 relu(float4 val) {
     float4 ret = float4(0.0, 0.0, 0.0, 0.0);
     for (int i = 0; i < 4; i++)
@@ -43,11 +52,12 @@ kernel void seMultiplyAdd(texture2d_array<float, access::read> sefc_a [[ texture
                        texture2d_array<float, access::read> conv_a [[ texture(1) ]],
                        texture2d_array<float, access::read> skip_a [[ texture(2) ]],
                        texture2d_array<float, access::write> out_a [[ texture(3) ]],
-                       device float *buffer                    [[ buffer(0) ]],
-                       uint3 gid                               [[ thread_position_in_grid ]]) {
+                       device float *buffer                     [[ buffer(0) ]],
+                       constant GridInfo &grid_info             [[ buffer(1) ]],
+                       uint3 gid                                [[ thread_position_in_grid ]]) {
 
-    uint grid_width = 64; // 8 x 8 board
-    uint grid_height = 16;
+    uint grid_width = grid_info.grid_size.x;
+    uint grid_height = grid_info.grid_size.y;
 
     //if (!deviceSupportsNonuniformThreadgroups) {
         if (gid.x >= grid_width || gid.y >= grid_height) {
@@ -56,8 +66,8 @@ kernel void seMultiplyAdd(texture2d_array<float, access::read> sefc_a [[ texture
     //}
     
     const auto slice = gid.y;
-    const auto w = gid.x % 8;
-    const auto h = gid.x / 8;
+    const auto w = gid.x % board_size.x;
+    const auto h = gid.x / board_size.x;
     const auto slices = conv_a.get_array_size();
     
     const auto conv = conv_a.read(uint2(w,h), slice);
@@ -72,11 +82,11 @@ kernel void seMultiplyAdd(texture2d_array<float, access::read> sefc_a [[ texture
 
 kernel void flatten(texture2d_array<float, access::read>  inp_a [[ texture(0) ]],
                     texture2d_array<float, access::write> out_a [[ texture(1) ]],
+                    constant GridInfo &grid_info                [[ buffer(1) ]],
                     uint3 gid [[ thread_position_in_grid ]]) {
 
-    uint color_depth = 4;
-    uint grid_width = 64 / color_depth;
-    uint grid_height = 32;
+    uint grid_width = grid_info.grid_size.x;
+    uint grid_height = grid_info.grid_size.y;
 
     //if (!deviceSupportsNonuniformThreadgroups) {
     if (gid.x >= grid_width || gid.y >= grid_height) {
@@ -93,8 +103,8 @@ kernel void flatten(texture2d_array<float, access::read>  inp_a [[ texture(0) ]]
     uint w, h;
     for (uint i = 0; i < color_depth; i++) {
         // Get actual pixel location matching current thread.
-        w = (gid.x * color_depth + i) % 8;
-        h = (gid.x * color_depth + i) / 8;
+        w = (gid.x * color_depth + i) % board_size.x;
+        h = (gid.x * color_depth + i) / board_size.x;
         
         // Set corresponding pixel in flattened array.
         flat[i] = inp_a.read(uint2(w,h), slice)[color];
@@ -106,15 +116,13 @@ kernel void flatten(texture2d_array<float, access::read>  inp_a [[ texture(0) ]]
 
 kernel void policyMap(texture2d_array<float, access::read>  inp_a [[ texture(0) ]],
                       texture2d_array<float, access::write> out_a [[ texture(1) ]],
-                      constant short * map_buffer                  [[ buffer(0) ]],
+                      constant short * map_buffer                 [[ buffer(0) ]],
+                      constant GridInfo &grid_info                [[ buffer(1) ]],
                       uint2 gid [[ thread_position_in_grid ]]) {
     
-    uint color_depth = 4;
-    uint grid_width = (1858 + color_depth - 1) / color_depth;
-    uint grid_height = 1000; // == batchsize
-    uint used_map_channels = 73;
-    uint policy_channels = 80;
-    uint board_size = 64;
+    uint grid_width = grid_info.grid_size.x;
+    uint grid_height = grid_info.grid_size.y;
+    uint board = board_size.x * board_size.y;
     
     //if (!deviceSupportsNonuniformThreadgroups) {
     if (gid.x >= grid_width || gid.y >= grid_height) {
@@ -132,10 +140,10 @@ kernel void policyMap(texture2d_array<float, access::read>  inp_a [[ texture(0) 
         index = map_buffer[gid.x * color_depth + i];
 
         // Map index to 8 x 8 x 80 convolution input.
-        slice = (index / board_size) / color_depth;
-        color = (index / board_size) % color_depth;
-        w = (index % board_size) % 8;
-        h = (index % board_size) / 8;
+        slice = (index / board) / color_depth;
+        color = (index / board) % color_depth;
+        w = (index % board) % board_size.x;
+        h = (index % board) / board_size.x;
         
         // Set corresponding pixel in mapped policy.
         policy[i] = inp_a.read(uint2(w,h), slice)[color];

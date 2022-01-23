@@ -27,8 +27,6 @@
 
 #import "ConvWeights.h"
 
-#include "Utilities.h"
-
 @implementation ConvWeights
 
 -(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)device
