@@ -115,7 +115,7 @@ option('accelerate',
 
 option('metal',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable Metal backend')
 
 option('malloc',

@@ -588,31 +588,29 @@ if get_option('build_backends')
   ## Metal
   ## ~~~~~~~~
   # Metal backend only available on MacOS.
-  if host_machine.system() == 'darwin' and get_option('metal')
+  # Check for required frameworks - Foundation, Metal and MPS.
+  metal_frameworks = dependency('appleframeworks',
+                                modules : ['Foundation', 'Metal', 'MetalPerformanceShaders'],
+                                required: get_option('metal'))
+    
+  if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
+    deps += metal_frameworks 
 
-    # Add Foundation, Metal and MPS frameworks to clang command line.
-    metal_frameworks = dependency('appleframeworks', modules : ['Foundation', 'Metal', 'MetalPerformanceShaders'])
+    files += [
+      'src/neural/metal/network_metal.cc',
+      'src/neural/metal/mps/ConvWeights.mm',
+      'src/neural/metal/mps/NetworkGraph.mm',
+      'src/neural/metal/mps/MetalNetworkBuilder.mm',
+      'src/neural/metal/mps/Shaders.mm',
+    ]
 
-    if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
+    # Compile metal shaders.
+    subdir('src/neural/metal/mps')
 
-      deps += metal_frameworks 
-
-      files += [
-        'src/neural/metal/network_metal.cc',
-        'src/neural/metal/mps/ConvWeights.mm',
-        'src/neural/metal/mps/NetworkGraph.mm',
-        'src/neural/metal/mps/MetalNetworkBuilder.mm',
-        'src/neural/metal/mps/Shaders.mm',
-        'src/neural/metal/mps/Utilities.mm',
-      ]
-
-      # Compile metal shaders.
-      subdir('src/neural/metal/mps')
-      #link_metal = true
-
-      has_backends = true
-    endif
+    has_backends = true
   endif
+
+    
 
 endif # if get_option('build_backends')
 
@@ -666,10 +664,6 @@ endif
 if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
-
-#if link_metal
-#  metallib = static_library('metallib', [shaders_metallib])
-#endif
 
 executable('lc0', 'src/main.cc',
        files, include_directories: includes, dependencies: deps, install: true)

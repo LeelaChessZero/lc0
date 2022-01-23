@@ -34,8 +34,6 @@ struct GridInfo {
     uint3 grid_size;
 };
 
-constant uint used_policy_channels = 73;
-constant uint policy_channels = 80;
 constant uint color_depth = 4;
 constant uint2 board_size = uint2(8, 8);
 
