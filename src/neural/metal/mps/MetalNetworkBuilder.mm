@@ -145,27 +145,29 @@ void MetalNetworkBuilder::forwardEval(uint64_t * masks, float * values,
                                                      int batchSize, int inputChannels,
                                                      std::vector<float *> output_mems)
 {
-    NSUInteger subBatchSize = MIN(1, batchSize);
-    NSArray<Lc0GraphNode *> * results = [(id)self runInferenceWithBatchSize:batchSize
-                                                                            masks:masks
-                                                                           values:values
-                                                                    inputChannels:inputChannels
-                                                                     subBatchSize:subBatchSize];
-    // Transfer results in a loop.
-    int imgSz, idx;
-    MPSImageBatch * resultBatch;
-    for (int rsIdx = 0; rsIdx < [results count]; rsIdx++) {
-        resultBatch = results[rsIdx].result;
-        imgSz = resultBatch[0].featureChannels * resultBatch[0].height * resultBatch[0].width;
-        idx = 0;
-        for (MPSImage * image in resultBatch) {
-            for (int i = 0; i < image.numberOfImages; i++) {
-                [image readBytes:output_mems[rsIdx] + imgSz * i + image.numberOfImages * imgSz * idx++
-                      dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
-                      imageIndex:i];
+    @autoreleasepool {
+        NSUInteger subBatchSize = MIN(1, batchSize);
+        NSArray<Lc0GraphNode *> * results = [(id)self runInferenceWithBatchSize:batchSize
+                                                                          masks:masks
+                                                                         values:values
+                                                                  inputChannels:inputChannels
+                                                                   subBatchSize:subBatchSize];
+        // Transfer results in a loop.
+        int imgSz, idx;
+        MPSImageBatch * resultBatch;
+        for (int rsIdx = 0; rsIdx < [results count]; rsIdx++) {
+            resultBatch = results[rsIdx].result;
+            imgSz = resultBatch[0].featureChannels * resultBatch[0].height * resultBatch[0].width;
+            idx = 0;
+            for (MPSImage * image in resultBatch) {
+                for (int i = 0; i < image.numberOfImages; i++) {
+                    [image readBytes:output_mems[rsIdx] + imgSz * i + image.numberOfImages * imgSz * idx++
+                          dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
+                          imageIndex:i];
+                }
             }
         }
-    };
+    }
 }
 
 }  // namespace metal_backend

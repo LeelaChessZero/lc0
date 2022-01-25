@@ -97,8 +97,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                            seBiases2:(float * __nullable)seBiases2
                                          seFcOutputs:(NSUInteger)seFcOutputs;
 
--(nonnull Lc0GraphNode *) addFullyConnectedLayerWithParent:(Lc0GraphNode * __nullable)parent
-                                                   weights:(ConvWeights * __nonnull)weights
+-(nonnull Lc0GraphNode *) addFullyConnectedLayerWithParent:(Lc0GraphNode * __nonnull)parent
+                                             inputChannels:(NSUInteger)inputChannels
+                                            outputChannels:(NSUInteger)outputChannels
+                                                   weights:(float * __nonnull)weights
+                                                    biases:(float * __nonnull)biases
                                                 activation:(NSString * __nullable)activation
                                                      label:(NSString * __nonnull)label;
 

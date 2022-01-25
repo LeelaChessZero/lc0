@@ -64,7 +64,7 @@
 
     if ([self.kernel isKindOfClass:[Lc0SeMultiplyAdd class]]) {
         // SE nodes accept more parameters.
-        assert([self.parents count] >= 3);
+        //assert([self.parents count] >= 3);
         self.result = [(Lc0SeMultiplyAdd *)self.kernel encodeBatchToCommandBuffer:commandBuffer
                                                         seSourceImages:input
                                                       convSourceImages:self.parents[1].result
@@ -72,39 +72,21 @@
     }
     else if ([self.kernel isKindOfClass:[MPSCNNBinaryKernel class]]) {
         // Binary kernel nodes accept a secondary image.
-        assert([self.parents count] >= 2);
+        //assert([self.parents count] >= 2);
+//        NSLog(@"Input: %@", [input[0] readCount]);
+//        NSLog(@"Parents[0]: %@", [self.parents[0].result[0] readCount]);
         self.result = [(MPSCNNBinaryKernel *)self.kernel encodeBatchToCommandBuffer:commandBuffer
                                                                       primaryImages:input
                                                                     secondaryImages:self.parents[1].result];
     }
     else if ([self.kernel isKindOfClass:[MPSNNReshape class]]) {
         // Reshape nodes accept more parameters.
-        assert([self.params count] >= 3);
+        //assert([self.params count] >= 3);
         self.result = [(MPSNNReshape *)self.kernel encodeBatchToCommandBuffer:commandBuffer
                                                                  sourceImages:input
                                                                 reshapedWidth:[self.params[0] intValue]
                                                                reshapedHeight:[self.params[1] intValue]
                                                       reshapedFeatureChannels:[self.params[2] intValue]];
-    }
-    else if ([self.kernel isKindOfClass:[MPSImageTranspose class]]) {
-        MPSImage * image = input[0];
-        MPSImageDescriptor * descriptor = [MPSImageDescriptor imageDescriptorWithChannelFormat:image.featureChannelFormat
-                                                                                         width:image.width
-                                                                                        height:image.height
-                                                                               featureChannels:image.featureChannels
-                                                                                numberOfImages:image.numberOfImages
-                                                                                         usage:MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite];
-        descriptor.storageMode = MTLStorageModeShared;
-        id<MPSImageAllocator> allocator = retainResult ? [MPSImage defaultAllocator] : [MPSTemporaryImage defaultAllocator];
-        self.result = [allocator imageBatchForCommandBuffer:commandBuffer
-                                            imageDescriptor:descriptor
-                                                     kernel:self.kernel
-                                                      count:[input count]];
-        for (int i=0; i < [self.result count]; i++) {
-            [(MPSImageTranspose *)self.kernel encodeToCommandBuffer:commandBuffer
-                                                        sourceImage:input[i]
-                                                   destinationImage:self.result[i]];
-        }
     }
     else if ([self.kernel isKindOfClass:[MPSCNNKernel class]]) {
         self.result = [(MPSCNNKernel *)self.kernel encodeBatchToCommandBuffer:commandBuffer
@@ -112,7 +94,7 @@
     }
 
     // Ensure temporary images have readCount incremented to match number of children nodes that will be read later.
-    if ([self.result[0] isKindOfClass:[MPSTemporaryImage class]]) {
+    if (self.result && [self.result[0] isKindOfClass:[MPSTemporaryImage class]] && self.numChildren > 1) {
         MPSImageBatchIncrementReadCount(self.result, self.numChildren - 1);
     }
     return self.result;
@@ -160,15 +142,15 @@
     
     // Create an input MPSImageBatch.
     MPSImageBatch *inputBatch = @[];
-    for (int subBatch = 0; subBatch < batchSize; subBatch += subBatchSize) {
+    for (NSUInteger subBatch = 0; subBatch < batchSize; subBatch += subBatchSize) {
         
         MPSImage *inputImage = [[MPSImage alloc] initWithDevice:device imageDescriptor:inputDesc];
         
         // Expand packed planes to full planes, one batch at a time.
-        int subBatchEnd = MIN(subBatch + subBatchSize, batchSize);
-        for (int i = subBatch; i < subBatchEnd; i++) {
+        NSUInteger subBatchEnd = MIN(subBatch + subBatchSize, batchSize);
+        for (NSUInteger i = subBatch; i < subBatchEnd; i++) {
             float * dptr = buffer;
-            for (int j = 0; j < inputPlanes; j++) {
+            for (NSUInteger j = 0; j < inputPlanes; j++) {
                 const float value = values[j + i * inputPlanes];
                 const uint64_t mask = masks[j + i * inputPlanes];
                 for (auto k = 0; k < 64; k++) {
@@ -187,33 +169,65 @@
 }
 
     
--(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithImageBatch:(MPSImageBatch * __nonnull)inputBatch {
-    // Make an MPSCommandBuffer, when passed to the encode of MPSNNGraph, commitAndContinue will be automatically used.
-    MPSCommandBuffer *commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:queue];
+-(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithImageBatch:(MPSImageBatch * __nonnull)inputs {
+    // Semaphore for double buffering.
+    dispatch_semaphore_t doubleBufferingSemaphore = dispatch_semaphore_create(2);
     
-    // Use double buffering to keep the GPU completely busy.
-    //        dispatch_semaphore_t doubleBufferingSemaphore = dispatch_semaphore_create(2);
-    //        dispatch_semaphore_wait(doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
+    // Array to aggregate results from all batches.
+    NSMutableArray<MPSImageBatch *> * outputResults = [[NSMutableArray alloc] initWithCapacity:[resultNodes count]];
+    for (NSUInteger i = 0; i < [resultNodes count]; i++) {
+        [outputResults addObject:[[MPSImageBatch alloc] init]];
+    }
     
-    // Encode inference network
-    MPSImageBatch *output;
-    int i = 0;
-    for (Lc0GraphNode * node in graphNodes) {
-        @autoreleasepool {
-            output = [node encodeBatchToCommandBuffer:commandBuffer
-                                                          input:inputBatch
-                                                   retainResult:[resultNodes containsObject:node]];
+    const NSUInteger subBatchSize = 5;
+    NSRange range = NSMakeRange(0, subBatchSize);
+    NSUInteger count = [inputs count];
+    
+    // Keep track of the last command buffer, so we can wait for it.
+    MPSCommandBuffer * lastCommandBuffer = nil;
+    
+    // Split into smaller batches.
+    for (NSUInteger subBatch = 0; subBatch < count; subBatch += subBatchSize) {
+        
+        // Use double buffering to keep the GPU completely busy.
+        dispatch_semaphore_wait(doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
+        
+        range.location = subBatch;
+        range.length = MIN(subBatchSize, count - subBatch);
+        MPSImageBatch * inputBatch = [inputs subarrayWithRange:range];
+        
+        // Make an MPSCommandBuffer and encode inference network.
+        MPSCommandBuffer * commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:queue];
+        for (Lc0GraphNode * node in graphNodes) {
+            [node encodeBatchToCommandBuffer:commandBuffer
+                                       input:inputBatch
+                                retainResult:[resultNodes containsObject:node]];
         }
+
+        // Collect results from all inference graph endpoints.
+        // Synchronize the data from GPU to CPU.
+        for (NSUInteger i = 0; i < [resultNodes count]; i++) {
+            outputResults[i] = [outputResults[i] arrayByAddingObjectsFromArray:resultNodes[i].result];
+            MPSImageBatchSynchronize(resultNodes[i].result, commandBuffer);
+        }
+        
+        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull) {
+            // Release double buffering semaphore for the next subBatch to be encoded.
+            dispatch_semaphore_signal(doubleBufferingSemaphore);
+        }];
+
+        // Commit the command buffer. Keep track of the last command buffer.
+        [commandBuffer commit];
+        lastCommandBuffer = commandBuffer;
     }
 
-    // Transfer data from GPU to CPU.
-    for (Lc0GraphNode * node in resultNodes) {
-        MPSImageBatchSynchronize(node.result, commandBuffer);
-    }
-
-    // Commit the command buffer. Wait for the last batch to be processed.
-    [commandBuffer commit];
-    [commandBuffer waitUntilCompleted];
+    // Wait for the last batch to be processed.
+    [lastCommandBuffer waitUntilCompleted];
+        
+    // Update the result nodes to contain the re-combined image batches.
+    [resultNodes enumerateObjectsUsingBlock:^(Lc0GraphNode * _Nonnull node, NSUInteger idx, BOOL * _Nonnull stop) {
+        node.result = outputResults[idx];
+    }];
     return resultNodes;
 }
 
@@ -223,16 +237,14 @@
                                                  inputChannels:(NSUInteger)inputChannels
                                                   subBatchSize:(NSUInteger)subBatchSize
 {
-    @autoreleasepool {
-        // Create an input MPSImageBatch.
-        MPSImageBatch *inputBatch = [self createInputImageBatchWithBatchSize:batchSize
-                                                                       masks:masks
-                                                                      values:values
-                                                               inputChannels:inputChannels
-                                                                subBatchSize:subBatchSize];
-        
-        return [self runInferenceWithImageBatch:inputBatch];
-    }
+    // Create an input MPSImageBatch.
+    MPSImageBatch *inputBatch = [self createInputImageBatchWithBatchSize:batchSize
+                                                                   masks:masks
+                                                                  values:values
+                                                           inputChannels:inputChannels
+                                                            subBatchSize:subBatchSize];
+    
+    return [self runInferenceWithImageBatch:inputBatch];
 }
 
 -(void) buildGraphWithResultNodes:(NSArray<Lc0GraphNode *> * __nonnull)results
@@ -339,7 +351,8 @@
         parent.numChildren++;
         conv2.numChildren++;
 
-        Lc0GraphNode *relu = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNNeuronReLU alloc] initWithDevice:device a:0.0]
+        Lc0GraphNode *relu = [Lc0GraphNode graphNodeWithCnnKernel:[[MPSCNNNeuron alloc] initWithDevice:device
+                                                                                          neuronDescriptor:[MPSNNNeuronDescriptor cnnNeuronDescriptorWithType:MPSCNNNeuronTypeReLU a:0.0]]
                                                           parents:@[add]
                                                            params:nil];
         graphNodes = [graphNodes arrayByAddingObject:relu];

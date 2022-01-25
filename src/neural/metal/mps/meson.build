@@ -27,5 +27,7 @@ shaders_air = custom_target('ShadersAir',
 files += custom_target('ShadersMetallib',
     output : 'Shaders.metallib',
     input : shaders_air,
-    command : [xcrun, '-sdk', 'macosx', 'metallib', '@INPUT@', '-o', '@OUTPUT@']
+    command : [xcrun, '-sdk', 'macosx', 'metallib', '@INPUT@', '-o', '@OUTPUT@'],
+    install : true,
+    install_dir: 'build/release'
 )
