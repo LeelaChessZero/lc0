@@ -291,13 +291,13 @@
     MTLSize threadGroupSize = MTLSizeMake(threadGroupWidth, threadGroupHeight, 1);
     MTLSize threadGroupCount = MTLSizeMake((gridSize.width + threadGroupSize.width - 1) / threadGroupSize.width,
                                            (gridSize.height + threadGroupSize.height - 1) / threadGroupSize.height,
-                                           batches);
+                                           1);
 
     id<MTLBuffer> argumentBuffer = [self newGridInfoArgumentWithDevice:[commandBuffer device]
                                                               gridSize:gridSize
                                                                atIndex:0];
 
-    id<MTLBuffer> polMapBuf = [[commandBuffer device] newBufferWithBytes:_policyMap
+    id<MTLBuffer> policyMapBuffer = [[commandBuffer device] newBufferWithBytes:_policyMap
                                                                   length:policyOutputSize * sizeof(short)
                                                                  options:nil];
     
@@ -311,7 +311,7 @@
         [encoder setComputePipelineState:_computePipeline];
         [encoder setTexture:sourceImageBatch[idx].texture atIndex:0];
         [encoder setTexture:resultBatch[idx].texture atIndex:1];
-        [encoder setBuffer:polMapBuf offset:0 atIndex:0];
+        [encoder setBuffer:policyMapBuffer offset:0 atIndex:0];
         [encoder setBuffer:argumentBuffer offset:0 atIndex:1];
 
         if (/*_nonuniformThreadgroups*/ true) {
