@@ -35,20 +35,24 @@ class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        timepct_(params.GetOrDefault<float>("time-pct", 4.23f)),
-        maxtimeply_(params.GetOrDefault<float>("max-time-ply", 235.0f)) {
-    if (timepct_ <= 0.0f || timepct_ > 100.0f)
-      throw Exception("time-pct value to be in range [0.0, 100.0]");
-    if (maxtimeply_ < 1.0f || maxtimeply_ > 1000.0f)
-      throw Exception("max-time-ply value to be in range [1.0, 1000.0]");
+        minpct_(params.GetOrDefault<float>("min-pct", 2.52f)),
+        timemult_(params.GetOrDefault<float>("time-mult", 2.17f)),
+        plymult_(params.GetOrDefault<float>("ply-mult", 2.72f)) {
+    if (minpct_ <= 0.0f || minpct_ > 10.0f)
+      throw Exception("min-pct value to be in range [0.0, 10.0]");
+    if (timemult_ <= 0.0f || timemult_ > 10.0f)
+      throw Exception("time-mult value to be in range [0.0, 10.0]");
+    if (plymult_ <= 0.0f || plymult_ > 10.0f)
+      throw Exception("ply-mult value to be in range [0.0, 10.0]");
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
  private:
   const int64_t move_overhead_;
-  const float timepct_;
-  const float maxtimeply_;
+  const float minpct_;
+  const float timemult_;
+  const float plymult_;
 };
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
@@ -59,15 +63,18 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
+  const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
+  const int increment = inc ? std::max(int64_t(0), *inc) : 0;
+
   auto total_moves_time = *time - move_overhead_;
 
-  const float add_pct_per_ply = (100.0f - timepct_) / maxtimeply_;
+  const float timeratio_ = (float)increment / (float)total_moves_time;
 
-  float this_move_time =
-      total_moves_time *
-      std::min(((timepct_ + position.GetGamePly() * add_pct_per_ply) * 0.01f),
-               1.0f);
-  
+  const float pct = minpct_ * 0.01f + timeratio_ * timemult_ +
+                    (float)(position.GetGamePly() + 1) * 0.001f * plymult_;
+
+  float this_move_time = total_moves_time * std::min(pct, 0.99f);
+
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
           << "Remaining time " << *time << "ms(-" << move_overhead_
           << "ms overhead)";
