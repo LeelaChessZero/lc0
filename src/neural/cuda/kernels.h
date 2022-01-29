@@ -28,6 +28,8 @@
 namespace lczero {
 namespace cudnn_backend {
 
+void transpose(float* op, float* ip, int rows, int cols);
+
 // Adds two vectors (possibly of different sizes), also do optional
 // activation (relu, tanh or sigmoid).
 template <typename T>
