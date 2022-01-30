@@ -670,6 +670,91 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
 }
 
 
+
+// Compute promotion logits in a single kernel
+// keys matrix is of N * 64 * C (but we use only last 8 from the 'rows' dimension, so N * 8 * C)
+// ppo matrix is 4 * C (weights for dense layer / matrix multiplication)
+// policy_attn_logits matrix is N * 64 * 64, but we use only 8x8 part of it from each batch dimension (so, N * 8 * 8)
+// output matrix (promotion logits) is of N * 8 * 24 size
+template <typename T>
+__global__ void promotion_logits_kernel(int C, T* output, const T* keys,
+                                        const T* ppo,
+                                        const T* policy_attn_logits) {
+  int n = blockIdx.x;    // [0..N)
+  int y = threadIdx.y;   // [0..8)
+  int x = threadIdx.x;   // [0..24)     // Can split into 8 * 3
+
+  int threadInGroup = threadIdx.y * 24 + threadIdx.x;
+
+  // phase 1 : compute promotion_offsets by multiplying keys and ppo matrices
+  const T* keys_start = keys + n * 64 * C + C * 56;      // we are interested only in last 8 out of 64 'rows' of keys matrix
+  __shared__ float promotion_offsets[4][8];
+
+  // only 32 threads out of 192 in the group are active in this phase, and each thread computes one element of the promotion_offsets matrix
+  // TODO: opt idea1, can use more threads to reduce the length of the loop for the matrix multiply (do parallel reduction of partial sums later)
+  //       opt idea2, the below loop for matrix mul has very poor memory access pattern, can do the loop over 32, and do parallel reductions
+  if (threadInGroup < 32) {
+    int x = threadInGroup % 4;
+    int y = threadInGroup / 4;
+
+    float S = 0;
+    for (int i = 0; i < C; i++) {               // TODO: modify to loop over 32 instead of C (doing parallel reductions for the 32 sums)
+      float a = (float) keys_start[y * C + i];
+      float b = (float) ppo[x * C + i];  // weight matrix is transposed (col major)
+      S += a * b;
+    }
+
+    // write the product (promotion_offsets) in shared memory
+    promotion_offsets[x][y] = S;
+  }
+
+  __syncthreads();
+
+  // phase 2: add the last "row" to the other 3
+  // #knight offset is added to the other three
+  // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4, :]
+  // Only 24 threads in the group are active in this phase
+  if (threadInGroup < 32) {
+    int x = threadInGroup % 4;
+    int y = threadInGroup / 4;
+    if (x < 3) {
+      promotion_offsets[x][y] += promotion_offsets[3][y];
+    }
+  }
+
+  __syncthreads();
+
+  // phase 3: add 8x8 chunk of policy_attn_logits matrix to promotion offsets
+  //          the output is 3x8x8 (written as 8 * 24)
+  // All threads are active in this phase and they compute one element each
+  int w = x / 3;
+  int c = x % 3;
+
+  // n_promo_logits = matmul_qk[:, -16:-8, -8:]  # default traversals from rank 7 to rank 8
+  float n_promo_logit = (float) policy_attn_logits[n * 64 * 64 + (48 + y) * 64 + (56 + w)];
+  float promo_offset = promotion_offsets[c][w];
+
+  float op = n_promo_logit + promo_offset;
+
+  output[n * 8 * 24 + threadInGroup] = (T)op;
+
+}
+
+
+template <typename T>
+void ComputePromotionLogits(int N, int C, T* output, const T* keys,
+    const T* ppo, const T* policy_attn_logits,
+    cudaStream_t stream) {
+
+  // N blocks
+  // 8 * 24 threads
+  // Each thread computes a single output element
+  dim3 blockDim(24, 8, 1);
+  promotion_logits_kernel<T>
+      <<<N, blockDim, 0, stream>>>(C, output, keys, ppo, policy_attn_logits);
+}
+
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
                                              cudaStream_t stream);
@@ -799,5 +884,14 @@ template void LayerNorm<float>(int N, int C, float* output, const float* input,
                                const float* skip, const float* gammas,
                                const float* betas, float ep,
                                cudaStream_t stream);
+
+template void ComputePromotionLogits<half>(int N, int C, half* output,
+                                           const half* keys, const half* ppo,
+                                           const half* policy_attn_logits,
+                                           cudaStream_t stream);
+template void ComputePromotionLogits<float>(int N, int C, float* output,
+                                            const float* keys, const float* ppo,
+                                            const float* policy_attn_logits,
+                                            cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero

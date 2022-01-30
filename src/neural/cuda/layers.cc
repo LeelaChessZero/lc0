@@ -1251,7 +1251,7 @@ unsigned short float_to_half(const float x) {
 
 
 template <>
-void lczero::cudnn_backend::AttentionPolicyHead<half>::Eval(
+void AttentionPolicyHead<half>::Eval(
     int N, half* output, const half* input, const half* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t cudnn,
     cublasHandle_t cublas, cudaStream_t stream) {
@@ -1503,13 +1503,18 @@ void lczero::cudnn_backend::AttentionPolicyHead<half>::Eval(
                                N, CUDA_R_16F, CUBLAS_GEMM_DEFAULT);
   }
 
-  // TODO: promotion_logits and ApplyAttentionPolicyMap
+  // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits to get concat for free)
+  half* promotion_logits = scratch3 + N * 64 * 64;
 
+  ComputePromotionLogits<half>(N, policy_d_model_, promotion_logits, scratch2,
+                               ip4_pol_w_, scratch3, stream);
+
+  // TODO: ApplyAttentionPolicyMap (matrix multiply of the weights with 'scratch3' tensor)
 }
 
 
 template <>
-void lczero::cudnn_backend::AttentionPolicyHead<float>::Eval(
+void AttentionPolicyHead<float>::Eval(
     int N, float* output, const float* input, const float* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t cudnn,
     cublasHandle_t cublas, cudaStream_t stream) {
@@ -1531,9 +1536,7 @@ AttentionPolicyHead<DataType>::~AttentionPolicyHead() {
   ReportCUDAErrors(cudaFree(ip4_pol_b_));
 }
 
-template <typename DataType>
-lczero::cudnn_backend::AttentionPolicyHead<
-    DataType>::EncoderWeights::~EncoderWeights() {
+template <typename DataType>AttentionPolicyHead<DataType>::EncoderWeights::~EncoderWeights() {
   ReportCUDAErrors(cudaFree(mha_q_w));
   ReportCUDAErrors(cudaFree(mha_q_b));
   ReportCUDAErrors(cudaFree(mha_k_w));

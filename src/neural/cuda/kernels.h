@@ -113,6 +113,10 @@ template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
                const T* gammas, const T *betas, float ep, cudaStream_t stream);
 
+template <typename T>
+void ComputePromotionLogits(int N, int C, T* output, const T* keys, const T* ppo,
+               const T* policy_attn_logits, cudaStream_t stream);
+
 
 }  // namespace cudnn_backend
 }  // namespace lczero
