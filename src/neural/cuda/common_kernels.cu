@@ -36,14 +36,15 @@ namespace {
 constexpr int kInputPlanes = 112;
 }  // namespace
 
+enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU };
+
 /////////////////////////////////////////////////////////////////////////////
 //          Simple CUDA kernels used by certain layers                     //
 /////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
 __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
-                                  int bsize, bool relu, bool useTanh,
-                                  bool useSigmoid) {
+                                  int bsize, ActivationFunction activation) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
   if (i < size) {
     float aVal = 0;
@@ -53,14 +54,23 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
 
     float cVal = aVal + bVal;
 
-    if (relu && (cVal < 0)) cVal = 0;
-
-    if (useTanh) {
-      cVal = tanh(cVal);
-    }
-
-    if (useSigmoid) {
-      cVal = 1.0f / (1.0f + exp(-cVal));
+    switch (activation) { 
+      case RELU:
+        if (cVal < 0) cVal = 0;
+        break;
+      case TANH:
+        cVal = tanh(cVal);
+        break;
+      case SIGMOID:
+        cVal = 1.0f / (1.0f + exp(-cVal));
+        break;
+      case SELU:
+        float alpha = 1.67326324f, scale = 1.05070098f;
+        if (cVal > 0)
+          cVal = scale * cVal;
+        else
+          cVal = scale * alpha * (exp(cVal) - 1);
+        break;
     }
 
     c[i] = (T)cVal;
@@ -70,13 +80,13 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
 // Adds two vectors (possibly of different sizes), also do optional relu
 // activation.
 template <typename T>
-void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
-                bool use_tanh, bool use_sigmoid, cudaStream_t stream) {
+void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
+                ActivationFunction activation, cudaStream_t stream) {
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
-  addVectors_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, size, asize, bsize, relu,
-                                                       use_tanh, use_sigmoid);
+  addVectors_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, size, asize,
+                                                       bsize, activation);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -566,6 +576,100 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+
+// N * C Tensors
+// performs softmax along the C dimension
+// Each thread processes one element
+// Sums are computed in shared memory
+// C threads per block, N blocks
+template <typename T>
+__global__ void softmax_kernel(T* output, const T* input) {
+  int n = blockIdx.x;
+  int c = threadIdx.x;
+  int C = blockDim.x;
+  int index = n * C + c;
+
+  // softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
+
+  float x = (float)input[index];
+  float ex = exp(x);
+
+  __shared__ float sum;
+
+  // compute warp wide sums first
+  float val = warpReduce(ex);
+
+  // update shared memory sum across C dimension
+  if (c & 0x1F == 0) atomicAdd(&sum, val);
+
+  __syncthreads();
+
+  float op = ex / sum;
+
+  output[index] = (T) op;
+}
+
+template <typename T>
+void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream) {
+  softmax_kernel<T><<<N, C, 0, stream>>>(output, input);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// N * C Tensors
+// performs layer normalization along the C dimension
+// Each thread processes one element
+// Sums/variences are computed in shared memory
+// C threads per block, N blocks
+template <typename T>
+__global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
+                                  const T* gammas, const T* betas, float ep) {
+  int n = blockIdx.x;
+  int c = threadIdx.x;
+  int C = blockDim.x;
+  int index = n * C + c;
+
+  // From: https://www.tensorflow.org/api_docs/python/tf/keras/layers/LayerNormalization
+  // mean_i = sum(x_i[j] for j in range(k)) / k
+  // var_i  = sum((x_i[j] - mean_i) ^ 2 for j in range(k)) / k
+  // x_i_normalized = (x_i - mean_i) / sqrt(var_i + epsilon)
+  // output_i = x_i_normalized * gamma + beta
+
+  float x = (float)input[index];
+  if (skip) x += (float)skip[index];
+
+  __shared__ float sum;
+
+  float s = warpReduce(x);
+  if (c & 0x1F == 0) atomicAdd(&sum, s);
+
+  __syncthreads();
+
+  float mean = sum / C;
+  float d = x - mean;
+  float d_sq = d * d;
+
+  s = warpReduce(d_sq);
+  if (c & 0x1F == 0) atomicAdd(&sum, s);
+  __syncthreads();
+
+  float var = sum / C;
+
+  float norm = d / sqrt(var + ep);
+  float op = norm * (float)gammas[c] + (float)betas[c];
+
+  output[index] = (T)op;
+}
+
+// add (optional) skip connection to input, and then perform Layer normalization
+// normalization is done across C dimension (i.e, sums and std deviations taken over elements in C dim)
+template <typename T>
+void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
+               const T* gammas, const T* betas, float ep, cudaStream_t stream) {
+  layer_norm_kernel<T><<<N, C, 0, stream>>>(output, input, skip, gammas, betas, ep);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
                                              cudaStream_t stream);
@@ -585,11 +689,11 @@ template void batchNorm<half>(half* output, const half* input,
                               float* means, float* var_multipliers, bool relu);
 
 template void addVectors<float>(float* c, float* a, float* b, int size,
-                                int asize, int bsize, bool relu, bool use_tanh,
-                                bool use_sigmoid, cudaStream_t stream);
+                                int asize, int bsize, ActivationFunction act,
+                                cudaStream_t stream);
 template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
-                               int bsize, bool relu, bool use_tanh,
-                               bool use_sigmoid, cudaStream_t stream);
+                               int bsize, ActivationFunction act,
+                               cudaStream_t stream);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
                                   int H, int W, bool relu, cudaStream_t stream);
@@ -683,5 +787,17 @@ template void OutputInputTransform<float, false, true, true, false>(
     const float* w2, const float* b2, cudaStream_t stream);
 
 
+template void Softmax<half>(int N, int C, half* output, const half* input,
+                            cudaStream_t stream);
+template void Softmax<float>(int N, int C, float* output, const float* input,
+                            cudaStream_t stream);
+
+template void LayerNorm<half>(int N, int C, half* output, const half* input,
+                              const half* skip, const half* gammas,
+                              const half* betas, float ep, cudaStream_t stream);
+template void LayerNorm<float>(int N, int C, float* output, const float* input,
+                               const float* skip, const float* gammas,
+                               const float* betas, float ep,
+                               cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero

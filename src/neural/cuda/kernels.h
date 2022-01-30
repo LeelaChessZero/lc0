@@ -28,11 +28,13 @@
 namespace lczero {
 namespace cudnn_backend {
 
+enum ActivationFunction;
+
 // Adds two vectors (possibly of different sizes), also do optional
 // activation (relu, tanh or sigmoid).
 template <typename T>
-void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
-                bool use_tanh, bool use_sigmoid, cudaStream_t stream);
+void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
+                ActivationFunction activation, cudaStream_t stream);
 
 // Add bias to convolution's output.
 template <typename T>
@@ -103,6 +105,14 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream);
+
+template <typename T>
+void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream);
+
+template <typename T>
+void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
+               const T* gammas, const T *betas, float ep, cudaStream_t stream);
+
 
 }  // namespace cudnn_backend
 }  // namespace lczero
