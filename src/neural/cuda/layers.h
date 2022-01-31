@@ -151,7 +151,7 @@ class PolicyMapLayer: public BaseLayer<DataType> {
  using BaseLayer<DataType>::nhwc_;
 
  public:
-  PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize);
+  PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize, bool attention);
   ~PolicyMapLayer();
 
   void LoadWeights(const short* cpuWeight, void* scratch);
@@ -164,6 +164,7 @@ class PolicyMapLayer: public BaseLayer<DataType> {
   int used_size_; // Size of the input without padding (typically 73x64).
                   // This is over-written to contain size with padding 
                   // (typically 80x64) after CHW->HWC conversion for fp16.
+  const bool attention_map_;
   short* weights_ = nullptr;
 };
 

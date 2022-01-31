@@ -574,18 +574,20 @@ FCLayer<DataType>::~FCLayer() {
 
 template <typename DataType>
 PolicyMapLayer<DataType>::PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H,
-                                         int W, int usedSize)
-    : BaseLayer<DataType>(C, H, W, ip), used_size_(usedSize) {
+                                         int W, int usedSize, bool attention)
+    : BaseLayer<DataType>(C, H, W, ip),
+      used_size_(usedSize),
+      attention_map_(attention) {
   size_t weight_size = sizeof(short) * this->input_->GetC() * 64;
-  ReportCUDAErrors(cudaMalloc(&weights_, weight_size));
-}
+  if (attention) weight_size = sizeof(short) * usedSize;
+  ReportCUDAErrors(cudaMalloc(&weights_, weight_size)); }
 
 template <typename DataType>
 void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
                                            void* /*scratch*/) {
   size_t weight_size = sizeof(short) * used_size_;
 
-  if (nhwc_) {
+  if (nhwc_ && !attention_map_) {
     // convert CHW to HWC
     int C = used_size_ / 64;
     int Cin = this->input_->GetC();
@@ -663,6 +665,7 @@ void PolicyMapLayer<DataType>::Eval(int N, DataType* output_tensor,
                                     cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/, cudaStream_t stream) {
   int inputSize =
       this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
+  if (attention_map_) inputSize = used_size_;
   int outputSize = this->C * this->H * this->W;
   PolicyMap(N, output_tensor, input_tensor, weights_, inputSize, used_size_,
             outputSize, stream);
@@ -1496,7 +1499,7 @@ void AttentionPolicyHead<half>::Eval(
                                policy_d_model_ /*LDB*/,
                                64 * policy_d_model_,     /*strideB*/
                                &beta, 
-                               scratch3 /*C*/,  // output (policy_attn_logits) goes to scratch3
+                               output /*C*/,  // output (policy_attn_logits)
                                CUDA_R_16F, 
                                64 /*LDC*/, 
                                64 * 64 /*strideC*/,
@@ -1504,12 +1507,10 @@ void AttentionPolicyHead<half>::Eval(
   }
 
   // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits to get concat for free)
-  half* promotion_logits = scratch3 + N * 64 * 64;
+  half* promotion_logits = output + N * 64 * 64;
 
   ComputePromotionLogits<half>(N, policy_d_model_, promotion_logits, scratch2,
-                               ip4_pol_w_, scratch3, stream);
-
-  // TODO: ApplyAttentionPolicyMap (matrix multiply of the weights with 'scratch3' tensor)
+                               ip4_pol_w_, output, stream);
 }
 
 

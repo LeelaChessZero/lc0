@@ -38,6 +38,7 @@
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
 #include "neural/shared/policy_map.h"
+#include "neural/shared/attention_policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
@@ -306,6 +307,11 @@ class CudaNetwork : public Network {
           getLastLayer(), weights, scratch_mem_);
       network_.emplace_back(std::move(AttentionPolicy));
 
+      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+          getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true);
+      policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
+      network_.emplace_back(std::move(policymap));
+
       // for debug!
       printf("\nsize of weight ip_pol_b/w: %d, %d\n", (int)weights.ip_pol_b.size(),
              (int)weights.ip_pol_w.size());
@@ -338,7 +344,7 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(conv2));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8, false);
       policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
 
       network_.emplace_back(std::move(policymap));
@@ -514,7 +520,12 @@ class CudaNetwork : public Network {
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
                           tensor_mem[1], scratch_mem, scratch_size_, nullptr,
                           cublas,
-                          stream);  // Entire Attention policy head
+                          stream);  // Entire Attention policy head except for the policy map
+
+      network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0], nullptr,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          stream);  // policy map layer  // POLICY output
+
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                           scratch_mem, scratch_size_, nullptr, cublas,
