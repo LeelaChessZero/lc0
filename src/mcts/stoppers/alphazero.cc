@@ -35,14 +35,11 @@ class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        minpct_(params.GetOrDefault<float>("min-pct", 2.52f)),
-        timemult_(params.GetOrDefault<float>("time-mult", 2.17f)),
-        plymult_(params.GetOrDefault<float>("ply-mult", 2.72f)) {
-    if (minpct_ <= 0.0f || minpct_ > 10.0f)
-      throw Exception("min-pct value to be in range [0.0, 10.0]");
-    if (timemult_ <= 0.0f || timemult_ > 10.0f)
-      throw Exception("time-mult value to be in range [0.0, 10.0]");
-    if (plymult_ <= 0.0f || plymult_ > 10.0f)
+        minpct_(params.GetOrDefault<float>("min-pct", 8.84f)),
+        plymult_(params.GetOrDefault<float>("ply-mult", 0.269f)) {
+    if (minpct_ <= 0.0f || minpct_ > 100.0f)
+      throw Exception("min-pct value to be in range [0.0, 100.0]");
+    if (plymult_ < 0.0f || plymult_ > 10.0f)
       throw Exception("ply-mult value to be in range [0.0, 10.0]");
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
@@ -51,8 +48,8 @@ class AlphazeroTimeManager : public TimeManager {
  private:
   const int64_t move_overhead_;
   const float minpct_;
-  const float timemult_;
   const float plymult_;
+  float init_timeratio = -1.0f;
 };
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
@@ -68,12 +65,16 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
 
   auto total_moves_time = *time - move_overhead_;
 
-  const float timeratio_ = (float)increment / (float)total_moves_time;
+  if (init_timeratio < 0.0f) {
+    init_timeratio = (float)increment / (float)total_moves_time;
+  }
+  
+  const float add_pct_per_ply = init_timeratio * plymult_;
 
-  const float pct = minpct_ * 0.01f + timeratio_ * timemult_ +
-                    (float)(position.GetGamePly() + 1) * 0.001f * plymult_;
+  const float pct =
+      minpct_ * 0.01f + std::max((float)position.GetGamePly(), 1.0f) * add_pct_per_ply;
 
-  float this_move_time = total_moves_time * std::min(pct, 0.99f);
+  float this_move_time = total_moves_time * std::min(pct, 1.0f);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
           << "Remaining time " << *time << "ms(-" << move_overhead_
