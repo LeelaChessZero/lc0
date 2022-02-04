@@ -35,8 +35,8 @@ class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        minpct_(params.GetOrDefault<float>("min-pct", 8.84f)),
-        plymult_(params.GetOrDefault<float>("ply-mult", 0.269f)) {
+        minpct_(params.GetOrDefault<float>("min-pct", 7.48f)),
+        plymult_(params.GetOrDefault<float>("ply-mult", 0.248f)) {
     if (minpct_ <= 0.0f || minpct_ > 100.0f)
       throw Exception("min-pct value to be in range [0.0, 100.0]");
     if (plymult_ < 0.0f || plymult_ > 10.0f)
