@@ -106,7 +106,7 @@ class MetalNetwork : public Network {
  public:
   MetalNetwork(const WeightsFile& file, const OptionsDict& options);
   ~MetalNetwork() {
-    if (builder) { /** @todo clean-up delegate first */ delete builder; builder = NULL; }
+    // if (builder_) { /** @todo clean-up delegate first */ delete builder; builder = NULL; }
   }
 
   void forwardEval(InputsOutputs* io, int inputBatchSize);
@@ -151,7 +151,7 @@ class MetalNetwork : public Network {
   bool conv_policy_;
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
-  MetalNetworkBuilder* builder;
+  std::unique_ptr<MetalNetworkBuilder> builder_;
 };
 
 }  // namespace metal_backend

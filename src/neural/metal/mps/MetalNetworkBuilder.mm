@@ -28,6 +28,8 @@
 #import "MetalNetworkBuilder.h"
 #import "NetworkGraph.h"
 
+#import "Utilities.h"
+
 namespace lczero {
 namespace metal_backend {
 
@@ -60,14 +62,23 @@ std::string MetalNetworkBuilder::init()
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
     
     // Initialize the metal MPS Graph executor with the device.
-    self = [[Lc0NetworkGraph alloc] initWithDevice:device commandQueue:commandQueue];
+    self = [[Lc0NetworkGraph alloc] initWithDevice:[MPSGraphDevice deviceWithMTLDevice:device]
+                                      commandQueue:commandQueue];
     
     return std::string([device.name UTF8String]);
 }
 
+void* MetalNetworkBuilder::getInputPlaceholder(int maxBatchSize, int width, int height, int channels, std::string label) {
+    return [(id)self inputPlaceholderWithMaxBatch:maxBatchSize
+                                    inputChannels:channels
+                                           height:height
+                                            width:width
+                                         label:[NSString stringWithUTF8String:label.c_str()]];
+}
+
 void* MetalNetworkBuilder::makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
                                                 float * weights, float * biases, bool withRelu, std::string label) {
-    return [(id)self addConvolutionBlockWithParent:(Lc0GraphNode *)previousLayer
+    return [(id)self addConvolutionBlockWithParent:(MPSGraphTensor *)previousLayer
                                      inputChannels:inputSize
                                     outputChannels:channelSize
                                         kernelSize:kernelSize
@@ -82,7 +93,7 @@ void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize
                                              bool withRelu, std::string label, bool withSe, int seFcOutputs,
                                              float * seWeights1, float * seBiases1, float * seWeights2, float * seBiases2) {
 
-    return [(id)self addResidualBlockWithParent:(Lc0GraphNode *)previousLayer
+    return [(id)self addResidualBlockWithParent:(MPSGraphTensor *)previousLayer
                                   inputChannels:inputSize
                                  outputChannels:channelSize
                                      kernelSize:kernelSize
@@ -103,7 +114,7 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
                                                    float * weights, float * biases,
                                                    std::string activation, std::string label) {
 
-    return [(id)self addFullyConnectedLayerWithParent:(Lc0GraphNode *)previousLayer
+    return [(id)self addFullyConnectedLayerWithParent:(MPSGraphTensor *)previousLayer
                                         inputChannels:inputSize
                                        outputChannels:outputSize
                                               weights:weights
@@ -114,60 +125,32 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
 
 void* MetalNetworkBuilder::makeFlattenLayer(void * previousLayer) {
     
-    return [(id)self addFlattenLayerWithParent:(Lc0GraphNode *)previousLayer];
-}
-
-void* MetalNetworkBuilder::makeReshapeLayer(void * previousLayer, int resultWidth, int resultHeight, int resultChannels) {
-    
-    return [(id)self addReshapeLayerWithParent:(Lc0GraphNode *)previousLayer
-                                  reshapeWidth:resultWidth
-                                 reshapeHeight:resultHeight
-                        reshapeFeatureChannels:resultChannels];
+    return [(id)self addFlattenLayerWithParent:(MPSGraphTensor *)previousLayer];
 }
 
 void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, short * policyMap) {
-    return [(id)self addPolicyMapLayerWithParent:(Lc0GraphNode *)previousLayer
+    //listOfShorts(policyMap, 1858);
+    return [(id)self addPolicyMapLayerWithParent:(MPSGraphTensor *)previousLayer
                                        policyMap:policyMap];
 }
 
-void* MetalNetworkBuilder::buildGraph(std::vector<void *> * outputs) {
-    NSArray<Lc0GraphNode *> * resultNodes = @[];
+void* MetalNetworkBuilder::setSelectedOutputs(std::vector<void *> * outputs) {
+    NSArray<MPSGraphTensor *> * resultTensors = @[];
 
     for (const auto& output : *outputs) {
-        resultNodes = [resultNodes arrayByAddingObject:(Lc0GraphNode *)output];
+        resultTensors = [resultTensors arrayByAddingObject:(MPSGraphTensor *)output];
     }
-    [(id)self buildGraphWithResultNodes:resultNodes];
+    [(id)self setResultTensors:resultTensors];
 
     return (void*) self;
 }
 
-void MetalNetworkBuilder::forwardEval(uint64_t * masks, float * values,
-                                                     int batchSize, int inputChannels,
-                                                     std::vector<float *> output_mems)
+void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, int inputChannels, std::vector<float *> output_mems)
 {
-    @autoreleasepool {
-        NSUInteger subBatchSize = MIN(1, batchSize);
-        NSArray<Lc0GraphNode *> * results = [(id)self runInferenceWithBatchSize:batchSize
-                                                                          masks:masks
-                                                                         values:values
-                                                                  inputChannels:inputChannels
-                                                                   subBatchSize:subBatchSize];
-        // Transfer results in a loop.
-        int imgSz, idx;
-        MPSImageBatch * resultBatch;
-        for (int rsIdx = 0; rsIdx < [results count]; rsIdx++) {
-            resultBatch = results[rsIdx].result;
-            imgSz = resultBatch[0].featureChannels * resultBatch[0].height * resultBatch[0].width;
-            idx = 0;
-            for (MPSImage * image in resultBatch) {
-                for (int i = 0; i < image.numberOfImages; i++) {
-                    [image readBytes:output_mems[rsIdx] + imgSz * i + image.numberOfImages * imgSz * idx++
-                          dataLayout:MPSDataLayoutFeatureChannelsxHeightxWidth
-                          imageIndex:i];
-                }
-            }
-        }
-    }
+    NSArray<MPSGraphTensor *> * resultTensors = [(id)self runInferenceWithBatchSize:batchSize
+                                                                             inputs:inputs
+                                                                      inputChannels:inputChannels
+                                                                      outputBuffers:&output_mems[0]];
 }
 
 }  // namespace metal_backend

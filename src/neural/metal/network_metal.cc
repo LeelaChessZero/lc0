@@ -65,9 +65,8 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   LegacyWeights weights(file.weights());
 
   try {
-    // @todo better implementation with unique_ptr??
-    builder = new MetalNetworkBuilder();
-    std::string device = builder->init();
+    builder_ = std::make_unique<MetalNetworkBuilder>();
+    std::string device = builder_->init();
     CERR << "Initialized metal backend on device " << device; 
   } catch (...) {
     throw Exception("There was an error initializing the GPU device.");
@@ -97,17 +96,18 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   // Pointer to last layer in MPS NN graph.
   void * layer;
 
-  //describeWeights(weights.input, kInputPlanes);
+  // 0. Input placeholder.
+  layer = builder_->getInputPlaceholder(max_batch_size_, 8, 8, kInputPlanes, "inputs");
 
   // 1. Input layer
-  layer = builder->makeConvolutionBlock(nullptr, kInputPlanes, channelSize, kernelSize,
+  layer = builder_->makeConvolutionBlock(layer, kInputPlanes, channelSize, kernelSize,
                                         &weights.input.weights[0],
                                         &weights.input.biases[0],
                                         true, "input/conv");
 
   // 2. Residual blocks
   for (size_t i = 0; i < weights.residual.size(); i++) { 
-    layer = builder->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
+    layer = builder_->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
                                        &weights.residual[i].conv1.weights[0],
                                        &weights.residual[i].conv1.biases[0],
                                        &weights.residual[i].conv2.weights[0],
@@ -124,13 +124,13 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   // 3. Policy head.
   void * policy;
   if (conv_policy_) {
-    policy = builder->makeConvolutionBlock(layer, channelSize, channelSize, kernelSize,
+    policy = builder_->makeConvolutionBlock(layer, channelSize, channelSize, kernelSize,
                                            &weights.policy1.weights[0],
                                            &weights.policy1.biases[0],
                                            true, "policy/conv1");
 
     // No relu.
-    policy = builder->makeConvolutionBlock(policy, channelSize, 80, kernelSize,
+    policy = builder_->makeConvolutionBlock(policy, channelSize, 80, kernelSize,
                                            &weights.policy.weights[0],
                                            &weights.policy.biases[0],
                                            false, "policy/conv2");
@@ -151,16 +151,15 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
         policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
       }
     }
-    policy = builder->makePolicyMapLayer(policy, &policy_map[0]);
+    policy = builder_->makePolicyMapLayer(policy, &policy_map[0]);
   }
   else {
     const int policySize = weights.policy.biases.size();
-    policy = builder->makeConvolutionBlock(layer, channelSize, policySize, 1,
+    policy = builder_->makeConvolutionBlock(layer, channelSize, policySize, 1,
                                            &weights.policy.weights[0],
                                            &weights.policy.biases[0],
                                            true, "policy/conv");
-    policy = builder->makeFlattenLayer(policy);
-    policy = builder->makeFullyConnectedLayer(policy, policySize * 8 * 8, 1858,
+    policy = builder_->makeFullyConnectedLayer(policy, policySize * 8 * 8, 1858,
                                               &weights.ip_pol_w[0],
                                               &weights.ip_pol_b[0],
                                               "", "policy/fc");
@@ -168,25 +167,24 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
   // 4. Value head.
   void * value;
-  value = builder->makeConvolutionBlock(layer, channelSize, 32, 1,
+  value = builder_->makeConvolutionBlock(layer, channelSize, 32, 1,
                                         &weights.value.weights[0],
                                         &weights.value.biases[0],
                                         true, "value/conv");
-  value = builder->makeFlattenLayer(value);
-  value = builder->makeFullyConnectedLayer(value, 32 * 8 * 8, 128,
+  value = builder_->makeFullyConnectedLayer(value, 32 * 8 * 8, 128,
                                            &weights.ip1_val_w[0],
                                            &weights.ip1_val_b[0],
                                            "relu", "value/fc1");
   wdl_ = file.format().network_format().value() ==
          pblczero::NetworkFormat::VALUE_WDL;
   if (wdl_) {
-    value = builder->makeFullyConnectedLayer(value, 128, 3,
+    value = builder_->makeFullyConnectedLayer(value, 128, 3,
                                              &weights.ip2_val_w[0],
                                              &weights.ip2_val_b[0],
-                                             "softmax???", "value/fc2");
+                                             "softmax", "value/fc2");
   }
   else {
-    value = builder->makeFullyConnectedLayer(value, 128, 1,
+    value = builder_->makeFullyConnectedLayer(value, 128, 1,
                                              &weights.ip2_val_w[0],
                                              &weights.ip2_val_b[0],
                                              "tanh", "value/fc2");
@@ -199,23 +197,21 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   void * mlh;
   if (moves_left_) {
     const int mlhChannels = weights.moves_left.biases.size();
-    mlh = builder->makeConvolutionBlock(layer, channelSize, mlhChannels, 1,
+    mlh = builder_->makeConvolutionBlock(layer, channelSize, mlhChannels, 1,
                                         &weights.moves_left.weights[0],
                                         &weights.moves_left.biases[0],
                                         true, "mlh/conv");
-    mlh = builder->makeFlattenLayer(mlh);
-    mlh = builder->makeFullyConnectedLayer(mlh, mlhChannels * 8 * 8, weights.ip1_mov_b.size(),
+    mlh = builder_->makeFullyConnectedLayer(mlh, mlhChannels * 8 * 8, weights.ip1_mov_b.size(),
                                            &weights.ip1_mov_w[0],
                                            &weights.ip1_mov_b[0],
                                            "relu", "mlh/fc1");
-    mlh = builder->makeFullyConnectedLayer(mlh, weights.ip1_mov_b.size(), 1,
+    mlh = builder_->makeFullyConnectedLayer(mlh, weights.ip1_mov_b.size(), 1,
                                            &weights.ip2_mov_w[0],
                                            &weights.ip2_mov_b[0],
                                            "relu", "mlh/fc2");
   }
 
-  // MPSNNGraph requires all three heads to be joined into one optimized graph
-  // operation.
+  // Select the outputs to be run through the inference graph.
   std::vector<void*> outputs;
   if (moves_left_) {
     outputs = {policy, value, mlh};
@@ -224,19 +220,43 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     outputs = {policy, value};
   }
 
-  builder->buildGraph(&outputs);
+  builder_->setSelectedOutputs(&outputs);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
+  // Expand encoded input into N x 112 x 8 x 8.
+  float * dptr = io->input_val_mem_expanded_;
+  for (size_t i = 0; i < batchSize; i++) {
+      for (size_t j = 0; j < kInputPlanes; j++) {
+          const float value = io->input_val_mem_[j + i * kInputPlanes];
+          const uint64_t mask = io->input_masks_mem_[j + i * kInputPlanes];
+          for (auto k = 0; k < 64; k++) {
+              *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
+          }
+      }
+  }
+
   std::vector<float*> output_mems;
-  float * opVal = (float *)malloc(3 * batchSize * sizeof(float));
+  std::vector<int> sizes;
+  float * opVal = (float *)malloc(3 * max_batch_size_ * sizeof(float));
   if (moves_left_) {
     output_mems = {io->op_policy_mem_, opVal, io->op_moves_left_mem_};
+    sizes = {kNumOutputPolicy, wdl_ ? 3 : 1, 1};
   }
   else {
     output_mems = {io->op_policy_mem_, opVal};
+    sizes = {kNumOutputPolicy, wdl_ ? 3 : 1};
   }
-  builder->forwardEval(io->input_masks_mem_, io->input_val_mem_, batchSize, kInputPlanes, output_mems);
+  builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes, output_mems);
+
+  CERR << "Outputs";
+
+  for (auto i=0; i < output_mems.size(); i++) {
+    CERR << (i == 0 ? "Policy" : (i == 1 ? "Value" : "Moves left"));
+    for (auto j=0; j < sizes[i]; j++) {
+      CERR << j << ";" << output_mems[i][j];
+    }
+  }
 
   // Copy memory to output buffers and do final transformations.
   // @todo Move softmax to backend.

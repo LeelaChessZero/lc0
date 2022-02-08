@@ -28,33 +28,17 @@
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
-#import <MetalPerformanceShaders/MetalPerformanceShaders.h>
+#import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
-#import "ConvWeights.h"
+@interface MPSGraphTensor(Lc0Extensions)
 
-static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
+-(NSUInteger) size;
 
-@interface Lc0GraphNode : NSObject
-
-@property(readwrite, nonatomic, retain) NSArray<Lc0GraphNode *> * __nullable parents;
-
-@property(readwrite, nonatomic, retain) MPSKernel * __nonnull kernel;
-
-@property(readwrite, nonatomic, retain) MPSImageBatch * __nullable result;
-
-@property(readwrite, nonatomic, retain) NSArray * __nullable params;
-
-@property(readwrite) NSUInteger numChildren;
-
-+(nonnull instancetype) graphNodeWithCnnKernel:(MPSKernel * __nonnull)kernel
-                                       parents:(NSArray<Lc0GraphNode *> * __nullable)parents
-                                        params:(NSArray * __nullable)params;
-
--(nonnull MPSImageBatch *) encodeBatchToCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
-                                                input:(MPSImageBatch * __nullable)input
-                                         retainResult:(BOOL)retainResult;
+-(NSUInteger) sizeOfDimensions:(NSArray<NSNumber *> *)dimensions;
 
 @end
+
+static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
 
 @interface Lc0NetworkGraph : NSObject {
   @public
@@ -63,16 +47,30 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     id<MTLCommandQueue> queue;
     
     // All the nodes in the graph.
-    NSArray<Lc0GraphNode *> *graphNodes;
+    MPSGraph * graph;
     
-    // Nodes to keep images for output.
-    NSArray<Lc0GraphNode *> *resultNodes;
+    // Input tensor placeholder.
+    MPSGraphTensor * inputTensor;
+    
+    // Array to keep output tensors.
+    NSArray<MPSGraphTensor *> *resultTensors;
+    
+    // Variables for triple buffering
+    dispatch_semaphore_t doubleBufferingSemaphore;
+//    NSUInteger currentFrameIndex;
+//    NSArray<id <MTLBuffer>> dynamicDataBuffers;
 }
 
 -(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)inputDevice
                           commandQueue:(id <MTLCommandQueue> __nonnull)commandQueue;
 
--(nonnull Lc0GraphNode *) addConvolutionBlockWithParent:(Lc0GraphNode * __nullable)parent
+-(nonnull MPSGraphTensor *) inputPlaceholderWithMaxBatch:(NSUInteger)maxBatchSize
+                                           inputChannels:(NSUInteger)channels
+                                                  height:(NSUInteger)height
+                                                   width:(NSUInteger)width
+                                                   label:(NSString * __nullable)label;
+
+-(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nullable)parent
                                           inputChannels:(NSUInteger)inputChannels
                                          outputChannels:(NSUInteger)outputChannels
                                              kernelSize:(NSUInteger)kernelSize
@@ -81,7 +79,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 hasRelu:(BOOL)hasRelu
                                                   label:(NSString * __nonnull)label;
 
--(nonnull Lc0GraphNode *) addResidualBlockWithParent:(Lc0GraphNode * __nullable)parent
+-(nonnull MPSGraphTensor *) addResidualBlockWithParent:(MPSGraphTensor * __nullable)parent
                                        inputChannels:(NSUInteger)inputChannels
                                       outputChannels:(NSUInteger)outputChannels
                                           kernelSize:(NSUInteger)kernelSize
@@ -97,7 +95,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                            seBiases2:(float * __nullable)seBiases2
                                          seFcOutputs:(NSUInteger)seFcOutputs;
 
--(nonnull Lc0GraphNode *) addFullyConnectedLayerWithParent:(Lc0GraphNode * __nonnull)parent
+-(nonnull MPSGraphTensor *) addFullyConnectedLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                              inputChannels:(NSUInteger)inputChannels
                                             outputChannels:(NSUInteger)outputChannels
                                                    weights:(float * __nonnull)weights
@@ -105,8 +103,8 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 activation:(NSString * __nullable)activation
                                                      label:(NSString * __nonnull)label;
 
--(nonnull Lc0GraphNode *) addSEUnitWithParent:(Lc0GraphNode * __nonnull)parent
-                                     skipNode:(Lc0GraphNode * __nonnull)skipNode
+-(nonnull MPSGraphTensor *) addSEUnitWithParent:(MPSGraphTensor * __nonnull)parent
+                                     skipNode:(MPSGraphTensor * __nonnull)skipNode
                                 inputChannels:(NSUInteger)inputChannels
                                outputChannels:(NSUInteger)outputChannels
                                   seFcOutputs:(NSUInteger)seFcOutputs
@@ -117,31 +115,17 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                         label:(NSString * __nonnull)label
                                       hasRelu:(BOOL)hasRelu;
 
--(nonnull Lc0GraphNode *) addFlattenLayerWithParent:(Lc0GraphNode * __nonnull)parent;
+-(nonnull MPSGraphTensor *) addFlattenLayerWithParent:(MPSGraphTensor * __nonnull)parent;
 
--(nonnull Lc0GraphNode *) addReshapeLayerWithParent:(Lc0GraphNode * __nonnull)parent
-                                       reshapeWidth:(NSUInteger)width
-                                      reshapeHeight:(NSUInteger)height
-                             reshapeFeatureChannels:(NSUInteger)channels;
-
--(nonnull Lc0GraphNode *) addPolicyMapLayerWithParent:(Lc0GraphNode * __nonnull)parent
+-(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                             policyMap:(short * __nonnull)policyMap;
 
--(void) buildGraphWithResultNodes:(NSArray<Lc0GraphNode *> * __nonnull)results;
+-(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 
--(nonnull MPSImageBatch *) createInputImageBatchWithBatchSize:(NSUInteger)batchSize
-                                                        masks:(uint64_t * __nonnull)masks
-                                                       values:(float * __nonnull)values
-                                                inputChannels:(NSUInteger)inputPlanes
-                                                 subBatchSize:(NSUInteger)subBatchSize;
-
--(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithImageBatch:(MPSImageBatch * __nonnull)inputBatch;
-
--(nonnull NSArray<Lc0GraphNode *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
-                                                         masks:(uint64_t * __nonnull)masks
-                                                        values:(float * __nonnull)values
-                                                 inputChannels:(NSUInteger)inputChannels
-                                                  subBatchSize:(NSUInteger)subBatchSize;
+-(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
+                                                          inputs:(float * __nonnull)inputs
+                                                   inputChannels:(NSUInteger)inputPlanes
+                                                   outputBuffers:(float * * __nonnull)outputBuffers;
 
 -(nonnull id<MTLDevice>) getDevice;
 

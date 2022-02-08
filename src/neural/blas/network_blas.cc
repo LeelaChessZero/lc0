@@ -300,6 +300,11 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         }
       }
 
+      CERR << "Policy map outputs";
+      for (auto i=0; i < num_output_policy; i++) {
+        CERR << i << ";" << output_fc[i];
+      }
+
     } else {
       Convolution1<use_eigen>::Forward(
           batch_size, output_channels, num_policy_input_planes, conv_out,
@@ -314,6 +319,12 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           weights_.ip_pol_b.data(),
           false,  // Relu Off
           output_fc.data());
+
+
+      CERR << "Policy outputs";
+      for (auto i=0; i < num_output_policy; i++) {
+        CERR << i << ";" << output_fc[i];
+      }
     }
 
     for (size_t j = 0; j < batch_size; j++) {

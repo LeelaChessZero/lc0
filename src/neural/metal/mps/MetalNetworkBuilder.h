@@ -38,6 +38,8 @@ public:
     ~MetalNetworkBuilder(void);
 
     std::string init();
+    
+    void* getInputPlaceholder(int maxBatchSize, int width, int height, int channels, std::string label);
 
     void* makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
                                float * weights, float * biases, bool withRelu, std::string label);
@@ -52,14 +54,11 @@ public:
     
     void* makeFlattenLayer(void * previousLayer);
 
-    void* makeReshapeLayer(void * previousLayer, int resultWidth, int resultHeight, int resultChannels);
-    
     void* makePolicyMapLayer(void * previousLayer, short * policyMap);
     
-    void* buildGraph(std::vector<void *> * outputs);
+    void* setSelectedOutputs(std::vector<void *> * outputs);
 
-    void forwardEval(uint64_t * masks, float * values, int batchSize, int inputChannels,
-                     std::vector<float *> output_mems);
+    void forwardEval(float * inputs, int batchSize, int inputChannels, std::vector<float *> output_mems);
          
 private:
     void* self;

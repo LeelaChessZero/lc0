@@ -38,6 +38,8 @@ struct InputsOutputs {
 
     input_val_mem_ = (float*)malloc(maxBatchSize * kInputPlanes * sizeof(float));
 
+    input_val_mem_expanded_ = (float*)malloc(maxBatchSize * kInputPlanes * 64 * sizeof(float));
+
     op_policy_mem_ = (float*)malloc(maxBatchSize * kNumOutputPolicy * sizeof(float));
 
     op_value_mem_ = (float*)malloc(maxBatchSize * (wdl ? 3 : 1) * sizeof(float));
@@ -50,6 +52,7 @@ struct InputsOutputs {
   ~InputsOutputs() {
     free(input_masks_mem_);
     free(input_val_mem_);
+    free(input_val_mem_expanded_);
     free(op_policy_mem_);
     free(op_value_mem_);
     if (op_moves_left_mem_) {
@@ -58,6 +61,7 @@ struct InputsOutputs {
   }
   uint64_t* input_masks_mem_;
   float* input_val_mem_;
+  float* input_val_mem_expanded_;
   float* op_policy_mem_;
   float* op_value_mem_;
   float* op_moves_left_mem_;

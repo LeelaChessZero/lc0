@@ -590,7 +590,7 @@ if get_option('build_backends')
   # Metal backend only available on MacOS.
   # Check for required frameworks - Foundation, Metal and MPS.
   metal_frameworks = dependency('appleframeworks',
-                                modules : ['Foundation', 'Metal', 'MetalPerformanceShaders'],
+                                modules : ['Foundation', 'Metal', 'MetalPerformanceShaders', 'MetalPerformanceShadersGraph'],
                                 required: get_option('metal'))
     
   if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
@@ -602,6 +602,7 @@ if get_option('build_backends')
       'src/neural/metal/mps/NetworkGraph.mm',
       'src/neural/metal/mps/MetalNetworkBuilder.mm',
       'src/neural/metal/mps/Shaders.mm',
+      'src/neural/metal/mps/Utilities.mm',
     ]
 
     # Compile metal shaders.
