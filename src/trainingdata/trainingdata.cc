@@ -74,6 +74,41 @@ void DriftCorrect(float* q, float* d) {
     }
   }
 }
+
+Eval CalculateOriginalEval(const Node* node) {
+  Eval result;
+
+  int n = node->GetN();
+  result.wl = -node->GetWL() * n;
+  result.d = node->GetD() * n;
+
+  for (auto& edge : node->Edges()) {
+    int n = edge.GetN();
+    result.wl -= edge.GetWL(0) * n;
+    result.d -= edge.GetD(0) * n;
+  }
+
+  // Checks to compensate for drift.
+  if (result.wl > 1.0f) {
+    result.wl = 1.0f;
+  } else if (result.wl < -1.0f) {
+    result.wl = -1.0f;
+  }
+
+  if (result.d > 1.0f) {
+    result.d = 1.0f;
+  } else if (result.d < 0.0f) {
+    result.d = 0.0f;
+  }
+
+  DriftCorrect(&result.wl, &result.d);
+
+  // Moves left suffers from enough drift that the calculated value can be
+  // quite inaccurate, so just leave as NaN.
+  result.ml = std::numeric_limits<float>::quiet_NaN();
+
+  return result;
+}
 }  // namespace
 
 
@@ -231,14 +266,13 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   result.result_d = 1;
 
   Eval orig_eval;
+  // If cached values exist, use those.
   if (nneval) {
     orig_eval.wl = nneval->q;
     orig_eval.d = nneval->d;
     orig_eval.ml = nneval->m;
   } else {
-    orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
-    orig_eval.d = std::numeric_limits<float>::quiet_NaN();
-    orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
+    orig_eval = CalculateOriginalEval(node);
   }
 
   // Aggregate evaluation WL.
