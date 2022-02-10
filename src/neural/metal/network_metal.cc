@@ -78,11 +78,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   const int channelSize = weights.input.weights.size() / kInputPlanes / 9;
   const int kernelSize = 3;
 
-  bool has_se_ = false;
-  if (weights.residual[0].has_se) {
-    has_se_ = true;
-  }
-
   max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
   batch_size_ = options.GetOrDefault<int>("batch", 64);
   steps_ = options.GetOrDefault<int>("steps", 2);
@@ -105,6 +100,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         &weights.input.biases[0],
                                         true, "input/conv");
 
+CERR << "SE? " << weights.residual[0].has_se;
   // 2. Residual blocks
   for (size_t i = 0; i < weights.residual.size(); i++) { 
     layer = builder_->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
@@ -137,7 +133,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
     // [1858 -> HWC or CHW]
     const bool HWC = false;
-    std::vector<short> policy_map(1858);
+    std::vector<uint32_t> policy_map(1858);
     for (const auto& mapping : kConvPolicyMap) {
       if (mapping == -1) continue;
       const auto index = &mapping - kConvPolicyMap;
@@ -151,7 +147,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
         policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
       }
     }
-    policy = builder_->makePolicyMapLayer(policy, &policy_map[0]);
+    policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
   }
   else {
     const int policySize = weights.policy.biases.size();

@@ -147,7 +147,6 @@ class MetalNetwork : public Network {
   int steps_;
   bool wdl_;
   bool moves_left_;
-  bool has_se_;
   bool conv_policy_;
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;

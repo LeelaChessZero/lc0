@@ -52,9 +52,7 @@ public:
     void* makeFullyConnectedLayer(void * previousLayer, int inputSize, int outputSize,
                                   float * weights, float * biases, std::string activation, std::string label);
     
-    void* makeFlattenLayer(void * previousLayer);
-
-    void* makePolicyMapLayer(void * previousLayer, short * policyMap);
+    void* makePolicyMapLayer(void * previousLayer, uint32_t * policyMap, std::string label);
     
     void* setSelectedOutputs(std::vector<void *> * outputs);
 

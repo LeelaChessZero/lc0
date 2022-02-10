@@ -70,7 +70,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                    width:(NSUInteger)width
                                                    label:(NSString * __nullable)label;
 
--(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nullable)parent
+-(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
                                           inputChannels:(NSUInteger)inputChannels
                                          outputChannels:(NSUInteger)outputChannels
                                              kernelSize:(NSUInteger)kernelSize
@@ -79,7 +79,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 hasRelu:(BOOL)hasRelu
                                                   label:(NSString * __nonnull)label;
 
--(nonnull MPSGraphTensor *) addResidualBlockWithParent:(MPSGraphTensor * __nullable)parent
+-(nonnull MPSGraphTensor *) addResidualBlockWithParent:(MPSGraphTensor * __nonnull)parent
                                        inputChannels:(NSUInteger)inputChannels
                                       outputChannels:(NSUInteger)outputChannels
                                           kernelSize:(NSUInteger)kernelSize
@@ -115,10 +115,9 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                         label:(NSString * __nonnull)label
                                       hasRelu:(BOOL)hasRelu;
 
--(nonnull MPSGraphTensor *) addFlattenLayerWithParent:(MPSGraphTensor * __nonnull)parent;
-
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                            policyMap:(short * __nonnull)policyMap;
+                                              policyMap:(uint32_t * __nonnull)policyMap
+                                                  label:(NSString *)label;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 

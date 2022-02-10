@@ -123,15 +123,10 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
                                                 label:[NSString stringWithUTF8String:label.c_str()]];
 }
 
-void* MetalNetworkBuilder::makeFlattenLayer(void * previousLayer) {
-    
-    return [(id)self addFlattenLayerWithParent:(MPSGraphTensor *)previousLayer];
-}
-
-void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, short * policyMap) {
-    //listOfShorts(policyMap, 1858);
+void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, uint32_t * policyMap, std::string label) {
     return [(id)self addPolicyMapLayerWithParent:(MPSGraphTensor *)previousLayer
-                                       policyMap:policyMap];
+                                       policyMap:policyMap
+                                           label:[NSString stringWithUTF8String:label.c_str()]];
 }
 
 void* MetalNetworkBuilder::setSelectedOutputs(std::vector<void *> * outputs) {
