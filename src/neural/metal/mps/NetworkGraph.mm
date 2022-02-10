@@ -29,8 +29,6 @@
 
 #import <vector>
 
-#import "Utilities.h"
-
 static MPSGraphConvolution2DOpDescriptor * __nonnull convolution2DDescriptor = [MPSGraphConvolution2DOpDescriptor descriptorWithStrideInX:1
                                                                                                              strideInY:1
                                                                                                        dilationRateInX:1
@@ -113,7 +111,6 @@ static const NSUInteger kMaxInflightBuffers = 2;
                                                    outputBuffers:(float * * __nonnull)outputBuffers
 {
     NSLog(@"Batchsize: %u", batchSize);
-    //NSLog(@"Size of input dimensions: %lu", [inputTensor sizeOfDimensions:@[@1,@2,@3]] * batchSize);
     NSUInteger splits = (batchSize + kBatchesPerSplit - 1) / kBatchesPerSplit;
     NSUInteger inputDataLength = [inputTensor size];
     
@@ -141,18 +138,9 @@ static const NSUInteger kMaxInflightBuffers = 2;
         // Create execution descriptor with block to update results for each iteration.
         MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
         executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultsDictionary, NSError * error) {
-            MPSNDArray * array;
             for (NSUInteger rsIdx = 0; rsIdx < [resultTensors count]; rsIdx++) {
                 NSUInteger outputDataLength = [resultTensors[rsIdx] size];
-                // @todo: read directly from the DataTensor.
-                array = [resultsDictionary[resultTensors[rsIdx]] mpsndarray];
-                NSLog(@"mpsndarray: %@ %i dimensions; output data length %i; step %i", array, [array numberOfDimensions], outputDataLength, step);
-                for (int k=0;k< [array numberOfDimensions]; k++) {
-                    NSLog(@"dimension %i => %i", k, [array lengthOfDimension:k]);
-                }
                 [[resultsDictionary[resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] + step * outputDataLength strideBytes:nil];
-                
-                NSLog(@"Output mems, %f, %f, %f, %f", outputBuffers[rsIdx][0], outputBuffers[rsIdx][1], outputBuffers[rsIdx][2], outputBuffers[rsIdx][3]);
             }
             
             // Release double buffering semaphore for the next training iteration to be encoded.
@@ -176,8 +164,6 @@ static const NSUInteger kMaxInflightBuffers = 2;
     }
     // Wait for the last batch to be processed.
     [latestCommandBuffer waitUntilCompleted];
-    
-    NSLog(@"Finished inference");
     
     return resultTensors;
 }

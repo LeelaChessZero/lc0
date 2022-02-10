@@ -598,15 +598,9 @@ if get_option('build_backends')
 
     files += [
       'src/neural/metal/network_metal.cc',
-      'src/neural/metal/mps/ConvWeights.mm',
       'src/neural/metal/mps/NetworkGraph.mm',
       'src/neural/metal/mps/MetalNetworkBuilder.mm',
-      'src/neural/metal/mps/Shaders.mm',
-      'src/neural/metal/mps/Utilities.mm',
     ]
-
-    # Compile metal shaders.
-    subdir('src/neural/metal/mps')
 
     has_backends = true
   endif
