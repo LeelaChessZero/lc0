@@ -47,7 +47,7 @@ static MPSGraphPooling2DOpDescriptor * __nonnull averagePoolingDescriptor = [MPS
 
 static const NSUInteger kNumPolicyOutputs = 1858;
 
-static const NSUInteger kBatchesPerSplit = 10;
+static const NSUInteger kBatchesPerSplit = 32;
 
 static const NSUInteger kMaxInflightBuffers = 2;
 
@@ -110,7 +110,7 @@ static const NSUInteger kMaxInflightBuffers = 2;
                                                    inputChannels:(NSUInteger)inputPlanes
                                                    outputBuffers:(float * * __nonnull)outputBuffers
 {
-    NSLog(@"Batchsize: %u", batchSize);
+//    NSLog(@"Batchsize: %u", batchSize);
     NSUInteger splits = (batchSize + kBatchesPerSplit - 1) / kBatchesPerSplit;
     NSUInteger inputDataLength = [inputTensor size];
     
@@ -138,6 +138,8 @@ static const NSUInteger kMaxInflightBuffers = 2;
         // Create execution descriptor with block to update results for each iteration.
         MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
         executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultsDictionary, NSError * error) {
+            
+            // Copy results for sub-batch back into the output buffers.
             for (NSUInteger rsIdx = 0; rsIdx < [resultTensors count]; rsIdx++) {
                 NSUInteger outputDataLength = [resultTensors[rsIdx] size];
                 [[resultsDictionary[resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] + step * outputDataLength strideBytes:nil];
@@ -154,14 +156,11 @@ static const NSUInteger kMaxInflightBuffers = 2;
                     targetOperations:nil
                  executionDescriptor:executionDescriptor];
 
-        //[graph runWithFeeds:@{inputTensor : inputTensorData} targetTensors:resultTensors targetOperations:nil];
-
         // Commit the command buffer
         [commandBuffer commit];
         latestCommandBuffer = commandBuffer;
-
-
     }
+
     // Wait for the last batch to be processed.
     [latestCommandBuffer waitUntilCompleted];
     
@@ -407,8 +406,8 @@ static const NSUInteger kMaxInflightBuffers = 2;
     
     // 5. Multiply and add.
     MPSGraphTensor * reshape1Tensor = [graph reshapeTensor:gammaTensor
-                                           withShape:@[gammaTensor.shape[0], gammaTensor.shape[1], @1, @1]
-                                                name:[NSString stringWithFormat:@"%@/reshape1", label]];
+                                                 withShape:@[gammaTensor.shape[0], gammaTensor.shape[1], @1, @1]
+                                                      name:[NSString stringWithFormat:@"%@/reshape1", label]];
     
     
     MPSGraphTensor * multiplyTensor = [graph multiplicationWithPrimaryTensor:parent
@@ -448,13 +447,13 @@ static const NSUInteger kMaxInflightBuffers = 2;
     MPSGraphTensor * reluTensor = [graph reLUWithTensor:add2Tensor
                                                    name:[NSString stringWithFormat:@"%@/relu", label]];
 
-    NSLog(@"Shapes: multiply %@, reshape2 %@, add1 %@, skip %@, add2 %@, relu %@, slice1 %@, slice2 %@", multiplyTensor.shape, reshape2Tensor.shape, add2Tensor.shape, skipTensor.shape, add2Tensor.shape, reluTensor.shape, slice1Tensor.shape, slice2Tensor.shape);
+    //NSLog(@"Shapes: multiply %@, reshape2 %@, add1 %@, skip %@, add2 %@, relu %@, slice1 %@, slice2 %@", multiplyTensor.shape, reshape2Tensor.shape, add2Tensor.shape, skipTensor.shape, add2Tensor.shape, reluTensor.shape, slice1Tensor.shape, slice2Tensor.shape);
           
     return reluTensor;
 }
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                            policyMap:(uint32_t * __nonnull)policyMap
+                                              policyMap:(uint32_t * __nonnull)policyMap
                                                   label:(NSString *)label
 {
     

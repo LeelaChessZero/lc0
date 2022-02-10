@@ -88,7 +88,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     steps_ = max_batch_size_ / batch_size_;
   }
 
-  // Pointer to last layer in MPS NN graph.
+  // Pointer to last layer in MPS Graph.
   void * layer;
 
   // 0. Input placeholder.
@@ -100,7 +100,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         &weights.input.biases[0],
                                         true, "input/conv");
 
-CERR << "SE? " << weights.residual[0].has_se;
   // 2. Residual blocks
   for (size_t i = 0; i < weights.residual.size(); i++) { 
     layer = builder_->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
@@ -245,14 +244,14 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
   }
   builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes, output_mems);
 
-  CERR << "Outputs";
+  // CERR << "Outputs";
 
-  for (auto i=0; i < output_mems.size(); i++) {
-    CERR << (i == 0 ? "Policy" : (i == 1 ? "Value" : "Moves left"));
-    for (auto j=0; j < sizes[i]; j++) {
-      CERR << j << ";" << output_mems[i][j];
-    }
-  }
+  // for (auto i=0; i < output_mems.size(); i++) {
+  //   CERR << (i == 0 ? "Policy" : (i == 1 ? "Value" : "Moves left"));
+  //   for (auto j=0; j < sizes[i]; j++) {
+  //     CERR << j << ";" << output_mems[i][j];
+  //   }
+  // }
 
   // Copy memory to output buffers and do final transformations.
   // @todo Move softmax to backend.
