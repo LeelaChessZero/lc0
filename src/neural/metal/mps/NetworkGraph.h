@@ -42,27 +42,30 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 @interface Lc0NetworkGraph : NSObject {
   @public
-    // Keep the MTLDevice and MTLCommandQueue objects around for ease of use.
-    id<MTLDevice> device;
-    id<MTLCommandQueue> queue;
+    // Keep the device and command queue objects around for ease of use.
+    MPSGraphDevice * _device;
+    id<MTLCommandQueue> _queue;
     
     // All the nodes in the graph.
-    MPSGraph * graph;
+    MPSGraph * _graph;
     
     // Input tensor placeholder.
-    MPSGraphTensor * inputTensor;
+    MPSGraphTensor * _inputTensor;
     
     // Array to keep output tensors.
-    NSArray<MPSGraphTensor *> *resultTensors;
+    NSArray<MPSGraphTensor *> * _resultTensors;
+    
+    // Size of inference volume.
+    NSUInteger _batchesPerSplit;
     
     // Variables for triple buffering
-    dispatch_semaphore_t doubleBufferingSemaphore;
+    dispatch_semaphore_t _doubleBufferingSemaphore;
 //    NSUInteger currentFrameIndex;
 //    NSArray<id <MTLBuffer>> dynamicDataBuffers;
 }
 
--(nonnull instancetype) initWithDevice:(id <MTLDevice> __nonnull)inputDevice
-                          commandQueue:(id <MTLCommandQueue> __nonnull)commandQueue;
+-(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device
+                       batchesPerSplit:(NSUInteger)batchesPerSplit;
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithMaxBatch:(NSUInteger)maxBatchSize
                                            inputChannels:(NSUInteger)channels
@@ -125,7 +128,5 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                           inputs:(float * __nonnull)inputs
                                                    inputChannels:(NSUInteger)inputPlanes
                                                    outputBuffers:(float * * __nonnull)outputBuffers;
-
--(nonnull id<MTLDevice>) getDevice;
 
 @end

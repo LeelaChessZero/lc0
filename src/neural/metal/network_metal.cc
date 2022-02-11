@@ -65,8 +65,10 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   LegacyWeights weights(file.weights());
 
   try {
+    const int sub_batch_size = options.GetOrDefault<int>("sub_batch", 64);
+    const int gpu_id = options.GetOrDefault<int>("gpu", 0);
     builder_ = std::make_unique<MetalNetworkBuilder>();
-    std::string device = builder_->init();
+    std::string device = builder_->init(sub_batch_size, gpu_id);
     CERR << "Initialized metal backend on device " << device; 
   } catch (...) {
     throw Exception("There was an error initializing the GPU device.");

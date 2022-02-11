@@ -37,7 +37,7 @@ public:
     MetalNetworkBuilder(void);
     ~MetalNetworkBuilder(void);
 
-    std::string init();
+    std::string init(int sub_batch_size, int gpu_id);
     
     void* getInputPlaceholder(int maxBatchSize, int width, int height, int channels, std::string label);
 

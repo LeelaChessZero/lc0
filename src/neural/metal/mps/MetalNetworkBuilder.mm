@@ -41,31 +41,22 @@ MetalNetworkBuilder::~MetalNetworkBuilder(void)
 }
 
 //void MetalNetworkBuilder::init(void* weights, void* options)
-std::string MetalNetworkBuilder::init()
+std::string MetalNetworkBuilder::init(int sub_batch_size, int gpu_id)
 {
     // All metal devices.
-    NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
+    NSArray<id<MTLDevice>> * devices = MTLCopyAllDevices();
     
-    if ([devices count] < 1) {
-        // No GPU device.
-        [NSException raise:@"Could not find device" format:@"Could not find a GPU or CPU compute device"];
+    if ([devices count] <= gpu_id) {
+        // No GPU device matching ID.
+        [NSException raise:@"Could not find device" format:@"Could not find a GPU or CPU compute device with specified id"];
         return "";
     }
     
-    // Get the metal device and commandQueue to be used.
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    if (device == NULL) {
-        // Fallback to first device if there is none.
-        // @todo allow GPU to be specified via options.
-        device = devices[0];
-    }
-    id<MTLCommandQueue> commandQueue = [device newCommandQueue];
+    // Initialize the metal MPS Graph executor with the selected device.
+    self = [[Lc0NetworkGraph alloc] initWithDevice:devices[gpu_id]
+                                   batchesPerSplit:sub_batch_size];
     
-    // Initialize the metal MPS Graph executor with the device.
-    self = [[Lc0NetworkGraph alloc] initWithDevice:[MPSGraphDevice deviceWithMTLDevice:device]
-                                      commandQueue:commandQueue];
-    
-    return std::string([device.name UTF8String]);
+    return std::string([devices[gpu_id].name UTF8String]);
 }
 
 void* MetalNetworkBuilder::getInputPlaceholder(int maxBatchSize, int width, int height, int channels, std::string label) {
