@@ -387,7 +387,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   const int policy_d_model_ = 64 * 2;
 
 
-  std::vector<EncoderWeights> encoder_weights_;
+  std::vector<EncoderWeights *> encoder_weights_;
 
 };
 

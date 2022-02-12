@@ -589,18 +589,20 @@ __global__ void softmax_kernel(T* output, const T* input) {
   int C = blockDim.x;
   int index = n * C + c;
 
+  __shared__ float sum;
+  if (c == 0) sum = 0;
+  __syncthreads();
+
   // softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
 
   float x = (float)input[index];
   float ex = exp(x);
 
-  __shared__ float sum;
-
   // compute warp wide sums first
   float val = warpReduce(ex);
 
   // update shared memory sum across C dimension
-  if (c & 0x1F == 0) atomicAdd(&sum, val);
+  if ((c & 0x1F) == 0) atomicAdd(&sum, val);
 
   __syncthreads();
 
@@ -626,6 +628,11 @@ __global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
   int n = blockIdx.x;
   int c = threadIdx.x;
   int C = blockDim.x;
+
+  __shared__ float sum;
+  if (c == 0) sum = 0;
+  __syncthreads();
+
   int index = n * C + c;
 
   // From: https://www.tensorflow.org/api_docs/python/tf/keras/layers/LayerNormalization
@@ -637,10 +644,8 @@ __global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
   float x = (float)input[index];
   if (skip) x += (float)skip[index];
 
-  __shared__ float sum;
-
   float s = warpReduce(x);
-  if (c & 0x1F == 0) atomicAdd(&sum, s);
+  if ((c & 0x1F) == 0) atomicAdd(&sum, s);
 
   __syncthreads();
 
@@ -649,7 +654,7 @@ __global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
   float d_sq = d * d;
 
   s = warpReduce(d_sq);
-  if (c & 0x1F == 0) atomicAdd(&sum, s);
+  if ((c & 0x1F) == 0) atomicAdd(&sum, s);
   __syncthreads();
 
   float var = sum / C;

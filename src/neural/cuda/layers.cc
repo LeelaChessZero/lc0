@@ -1179,8 +1179,8 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   allocAndUpload<DataType>(&ip4_pol_b_, weights.ip4_pol_b, scratch);
 
   for (const auto& enc : weights.encoder) {
-    EncoderWeights w(enc, scratch);
-    encoder_weights_.emplace_back(w);
+    EncoderWeights* pW = new EncoderWeights(enc, scratch);
+    encoder_weights_.emplace_back(pW);
   }
 }
 
@@ -1288,7 +1288,8 @@ void AttentionPolicyHead<half>::Eval(
   }
 
   // 2. Encoder layers
-  for (const auto& enc : encoder_weights_) {
+  for (const auto pEnc : encoder_weights_) {
+    const auto& enc = *pEnc;
     const int depth = d_model_ / encoder_heads_;
 
     // MHA q (scratch1)
@@ -1475,8 +1476,8 @@ void AttentionPolicyHead<half>::Eval(
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N,
                                    num_outputs, batch, num_inputs, &alpha,
                                    ip3_pol_w_, num_inputs, scratch0, num_inputs,
-                                   &beta, scratch1, num_outputs));
-    addVectors(scratch1, ip3_pol_b_, scratch1, num_outputs * batch, num_outputs,
+                                   &beta, scratch2, num_outputs));
+    addVectors(scratch2, ip3_pol_b_, scratch2, num_outputs * batch, num_outputs,
                num_outputs * batch, NONE, stream);
   }
 
@@ -1535,6 +1536,8 @@ AttentionPolicyHead<DataType>::~AttentionPolicyHead() {
   ReportCUDAErrors(cudaFree(ip3_pol_b_));
   ReportCUDAErrors(cudaFree(ip4_pol_w_));
   ReportCUDAErrors(cudaFree(ip4_pol_b_));
+  for (const auto pEnc : encoder_weights_)
+    delete pEnc;
 }
 
 template <typename DataType>AttentionPolicyHead<DataType>::EncoderWeights::~EncoderWeights() {
