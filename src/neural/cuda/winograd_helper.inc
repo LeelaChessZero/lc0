@@ -309,7 +309,19 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
         S += shared_data[i] * float(readw1(i, k));
       }
       S += (float)b1[k];
-      if (S < 0) S = 0;  // relu
+      if (mish) {
+        float el = S;
+        auto e = __expf(el);
+        auto n = e * e + 2 * e;
+        if (el <= -0.6f) {
+          el = n * __fdividef(el, n + 2);
+        } else {
+          el = el - 2 * __fdividef(el, n + 2);
+        }
+        S = el;
+      } else {
+        if (S < 0) S = 0;  // relu
+      }
       shared_data[k] = S;
     }
     __syncthreads();
