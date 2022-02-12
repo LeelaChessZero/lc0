@@ -112,23 +112,25 @@ void ConvLayer<DataType>::init() {
 
 template <typename DataType>
 ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                               int filter, int Cin, bool relu, bool bias)
+                               int filter, int Cin, bool relu, bool bias, bool mish)
     : BaseLayer<DataType>(C, H, W, ip),
       c_input_(Cin),
       filter_size_(filter),
       use_relu_(relu),
-      use_bias_(bias) {
+      use_bias_(bias),
+      use_mish_(mish) {
   init();
 }
 
 template <typename DataType>
 ConvLayer<DataType>::ConvLayer(bool nhwc, int C, int H, int W, int filter,
-                               int Cin, bool relu, bool bias)
+                               int Cin, bool relu, bool bias, bool mish)
     : BaseLayer<DataType>(C, H, W, nullptr, nhwc),
       c_input_(Cin),
       filter_size_(filter),
       use_relu_(relu),
-      use_bias_(bias) {
+      use_bias_(bias),
+      use_mish_(mish) {
   init();
 }
 
@@ -196,14 +198,14 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
 
   float alpha = 1.0f, beta = 0.0f;
 
-  if (!(use_relu_ || use_bias_ || input2)) {
+  if (!(use_relu_ || use_mish_ || use_bias_ || input2)) {
     ReportCUDNNErrors(cudnnConvolutionForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
         output));
   }
 #if CUDNN_MAJOR != 7 || CUDNN_MINOR != 0
-  else if (input2) {
+  else if (input2 && !use_mish_) {
     // fused bias + sum + relu!
     ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
@@ -213,19 +215,21 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
     // For some reason cudnn doesn't support just Convolution + Bias with nchw
     // (winograd algorithm) it works fine when RELU is also needed which is
     // somewhat strange.
-    if ((!nhwc_) && (!use_relu_)) {
+    if ((!nhwc_) && (!use_relu_) && (!use_mish_)) {
       ReportCUDNNErrors(cudnnConvolutionForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
           out_tensor_desc_, output));
       // add bias
-      addBias_NCHW(output, output, biases, N, C, H, W, false, stream);
-    } else {
+      addBias_NCHW(output, output, biases, N, C, H, W, false, false, stream);
+    } else if (!use_mish_) {
       ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
           out_tensor_desc_, output, bias_desc_, biases, activation_,
           out_tensor_desc_, output));
+    } else {
+      // TODO: Support mish in cudnn.
     }
   }
 #else
@@ -247,6 +251,9 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                                out_tensor_desc_, output, &beta,
                                                out_tensor_desc_, output));
     }
+    if (use_mish_) {
+      // TODO: Support mish in cudnn.
+    }
   }
 #endif
 }
@@ -266,9 +273,10 @@ ConvLayer<DataType>::~ConvLayer() {
 #endif
 
 template <typename DataType>
-SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
+SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs, bool mish,
                            bool addPrevLayerBias)
     : BaseLayer<DataType>(ip->GetC(), ip->GetH(), ip->GetW(), ip),
+      use_mish_(mish),
       numFc1Out_(fc1Outputs),
       addPrevLayerBias_(addPrevLayerBias) {
   ReportCUDAErrors(cudaMalloc(&w1_, C * numFc1Out_ * sizeof(DataType)));
@@ -398,19 +406,19 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   float alpha = 1.0f, beta = 0.0f;
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numFc1Out_,
                                  N, C, &alpha, w1_, C, op2, C, &beta, op1,
-                                 numFc1Out_));
-  addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, true,
-             false, false, stream);
+                                 numFc1Out_));  
+  addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, !use_mish_,
+             false, false, use_mish_, stream);
 
   // 3. Second fully connected layer.
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                  numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                  numFc1Out_, &beta, op2, 2 * C));
-  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, stream);
+  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, false, stream);
 
   // 4. (Optional prev layer bias add), Global scale, residual add, relu and
   // bias.
-  globalScale(N, C, output, input, op2, bPrev_, false);
+  globalScale(N, C, output, input, op2, bPrev_, use_mish_, false);
 }
 
 template <>
@@ -421,7 +429,7 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
   bool se_done = false;
   if (kUseFusedSELayer && nhwc_) {
     se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_t_, b1_,
-                           w2_t_, b2_, bPrev_);
+                           w2_t_, b2_, bPrev_, use_mish_);
   }
   if (!se_done) {
     assert(output == input2);
@@ -441,29 +449,30 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numFc1Out_,
                                    N, C, &alpha, w1_, C, op2, C, &beta, op1,
                                    numFc1Out_));
-    addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, true,
-               false, false, stream);
+    addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, !use_mish_,
+               false, false, use_mish_, stream);
 
     // 3. Second fully connected layer.
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                    numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                    numFc1Out_, &beta, op2, 2 * C));
-    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, stream);
+    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, false, stream);
 
     // 4. (Optional prev layer bias add), Global scale, residual add, relu and
     // bias.
-    globalScale(N, C, output, input, op2, bPrev_, nhwc_);
+    globalScale(N, C, output, input, op2, bPrev_, use_mish_, nhwc_);
   }
 }
 
 template <typename DataType>
 FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                           bool relu, bool bias, bool tanh, bool sigmoid)
+                           bool relu, bool bias, bool tanh, bool sigmoid, bool mish)
     : BaseLayer<DataType>(C, H, W, ip),
       use_bias_(bias),
       use_relu_(relu),
       use_tanh_(tanh),
-      use_sigmoid_(sigmoid) {
+      use_sigmoid_(sigmoid),
+      use_mish_(mish) {
   const size_t weight_size =
       sizeof(DataType) * C * H * W * ip->GetC() * ip->GetH() * ip->GetW();
   const size_t bias_size = sizeof(DataType) * C * H * W;
@@ -539,10 +548,10 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs));
 
-  if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_) {
+  if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_ || use_mish_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
                num_outputs, num_outputs * N, use_relu_, use_tanh_,
-               use_sigmoid_, stream);
+               use_sigmoid_, use_mish_, stream);
   }
 }
 
@@ -561,10 +570,10 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs));
 
-  if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_) {
+  if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_ || use_mish_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
                num_outputs, num_outputs * N, use_relu_, use_tanh_,
-               use_sigmoid_, stream);
+               use_sigmoid_, use_mish_, stream);
   }
 }
 
@@ -678,13 +687,14 @@ PolicyMapLayer<DataType>::~PolicyMapLayer() {
 template <typename DataType>
 FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
     BaseLayer<DataType>* ip, int C, int H, int W, int Cin, bool relu, bool bias,
-    bool skip_add, bool se, int se_k, bool use_gemm_ex, bool op_nhcw)
+    bool skip_add, bool se, bool mish, int se_k, bool use_gemm_ex, bool op_nhcw)
     : BaseLayer<DataType>(C, H, W, ip, false),
       c_input_(Cin),
       use_relu_(relu),
       use_bias_(bias),
       skip_add_(skip_add),
       has_se_(se),
+      use_mish_(mish),
       se_k_(se_k),
       use_gemm_ex_(use_gemm_ex),
       op_nhcw_(op_nhcw) {
@@ -842,24 +852,42 @@ void FusedWinogradConvSELayer<DataType>::Eval(
   cublasRowMajorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
 
   if (has_se_ && use_relu_ && use_bias_ && skip_add_)
-    OutputTransform<DataType, true, true, true, true, false, false>(
+    OutputTransform<DataType, true, true, true, true, false, false, false>(
+        N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_, w2_,
+        b2_, stream);
+  else if (has_se_ && use_mish_ && use_bias_ && skip_add_)
+    OutputTransform<DataType, true, false, true, true, true, false, false>(
         N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_, w2_,
         b2_, stream);
   else if (!has_se_ && use_relu_ && use_bias_ && !skip_add_) {
     if (op_nhcw_)
-      OutputTransform<DataType, false, true, true, false, false, true>(
+      OutputTransform<DataType, false, true, true, false, false, false, true>(
           N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
           nullptr, nullptr, nullptr, stream);
     else
-      OutputTransform<DataType, false, true, true, false, false, false>(
+      OutputTransform<DataType, false, true, true, false, false, false, false>(
           N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
           nullptr, nullptr, nullptr, stream);
+  } else if (!has_se_ && use_mish_ && use_bias_ && !skip_add_) {
+      if (op_nhcw_)
+        OutputTransform<DataType, false, false, true, false, true, false, true>(
+            N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
+            nullptr, nullptr, nullptr, stream);
+      else
+        OutputTransform<DataType, false, false, true, false, true, false,
+                        false>(N, C, 0, output, transformed_output, nullptr,
+                               biases_, nullptr, nullptr, nullptr, nullptr,
+                               stream);
   } else if (!has_se_ && use_relu_ && use_bias_ && skip_add_)
-    OutputTransform<DataType, false, true, true, true, false, false>(
+    OutputTransform<DataType, false, true, true, true, false, false, false>(
         N, C, 0, output, transformed_output, input2, biases_, nullptr, nullptr,
         nullptr, nullptr, stream);
-  else if (!has_se_ && !use_relu_ && use_bias_ && !skip_add_)
-    OutputTransform<DataType, false, false, true, false, false, false>(
+  else if (!has_se_ && use_mish_ && use_bias_ && skip_add_)
+    OutputTransform<DataType, false, false, true, true, true, false, false>(
+        N, C, 0, output, transformed_output, input2, biases_, nullptr, nullptr,
+        nullptr, nullptr, stream);
+  else if (!has_se_ && !use_relu_ && !use_mish_ && use_bias_ && !skip_add_)
+    OutputTransform<DataType, false, false, true, false, false, false, false>(
         N, C, 0, output, transformed_output, nullptr, biases_, nullptr, nullptr,
         nullptr, nullptr, stream);
   else
@@ -881,12 +909,13 @@ FusedWinogradConvSELayer<DataType>::~FusedWinogradConvSELayer() {
 
 template <typename DataType>
 Conv1Layer<DataType>::Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
-                                 int Cin, bool relu, bool bias,
+                                 int Cin, bool relu, bool bias, bool mish,
                                  bool use_gemm_ex)
     : BaseLayer<DataType>(C, H, W, ip, false),
       c_input_(Cin),
       use_relu_(relu),
       use_bias_(bias),
+      use_mish_(mish),
       use_gemm_ex_(use_gemm_ex) {
   // Allocate memory for weights (filter tensor) and biases.
   const size_t weight_size = sizeof(DataType) * c_input_ * C * 1 * 1;
@@ -971,10 +1000,10 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
                           cublas);
 
   if (use_bias_)
-    addBias_NCHW(output, output, biases_, N, C, H, W, use_relu_, stream);
-  else if (use_relu_)
+    addBias_NCHW(output, output, biases_, N, C, H, W, use_relu_, use_mish_, stream);
+  else if (use_relu_ || use_mish_)
     addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W,
-               0, use_relu_, false, false, stream);
+               0, use_relu_, false, false, use_mish_, stream);
 }
 
 template <typename DataType>
@@ -985,10 +1014,11 @@ Conv1Layer<DataType>::~Conv1Layer() {
 
 template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(
-    BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last)
+    BaseLayer<DataType>* ip, int C, bool se, int se_k, bool mish, bool use_gemm_ex, bool first, bool last)
     : BaseLayer<DataType>(C, 8, 8, ip),
       has_se_(se),
       se_k_(se_k),
+      use_mish_(mish),
       use_gemm_ex_(use_gemm_ex),
       c_input_(C),
       first_block_(first),
@@ -1179,9 +1209,15 @@ void ResidualBlock<DataType>::Eval(
  
   }
 
-  OutputInputTransform<DataType, false, true, true, false>(
-      N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
-      nullptr, nullptr, nullptr, nullptr, stream);
+  if (use_mish_) {
+    OutputInputTransform<DataType, false, false, true, false, true>(
+        N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
+        nullptr, nullptr, nullptr, nullptr, stream);
+  } else {
+    OutputInputTransform<DataType, false, true, true, false, false>(
+        N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
+        nullptr, nullptr, nullptr, nullptr, stream);
+  }
   // "transformed_input" tensor now contains transformed input for the next
   // convolution
 
@@ -1189,23 +1225,45 @@ void ResidualBlock<DataType>::Eval(
                           transformed_output, N * 4, C, C, 36, cublas);
 
   if (last_block_) {
-    if (has_se_)
-      OutputTransform<DataType, true, true, true, true, true, false>(
-          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-          w2_, b2_, stream);
-    else
-      OutputTransform<DataType, false, true, true, true, true, false>(
-          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-          w2_, b2_, stream);
+    if (use_mish_) {
+      if (has_se_)
+        OutputTransform<DataType, true, false, true, true, true, true, false>(
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+      else
+        OutputTransform<DataType, false, false, true, true, true, true, false>(
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+    } else {
+      if (has_se_)
+        OutputTransform<DataType, true, true, true, true, false, true, false>(
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+      else
+        OutputTransform<DataType, false, true, true, true, false, true, false>(
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+    }
   } else {
-    if (has_se_)
-      OutputInputTransform<DataType, true, true, true, true>(
-        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-          w2_, b2_, stream);
-    else
-      OutputInputTransform<DataType, false, true, true, true>(
-        N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-          w2_, b2_, stream);
+    if (use_mish_) {
+      if (has_se_)
+        OutputInputTransform<DataType, true, false, true, true, true>(
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+      else
+        OutputInputTransform<DataType, false, false, true, true, true>(
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+    } else {
+      if (has_se_)
+        OutputInputTransform<DataType, true, true, true, true, false>(
+          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+      else
+        OutputInputTransform<DataType, false, true, true, true, false>(
+          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            w2_, b2_, stream);
+    }
     // "output" tensor now contains transformed input for the next
     // convolution
   }

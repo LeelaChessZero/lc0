@@ -247,7 +247,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip, bool mish,
           bool skipInput_nhcw, bool output_nhcw>
 __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
@@ -356,6 +356,20 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
       for (int w = 0; w < 8; w++)
         if (board[h][w] < (T)0) board[h][w] = 0;
     }
+    if (mish) {
+#pragma unroll
+        for (int w = 0; w < 8; w++) {
+            float el = board[h][w];
+            auto e = __expf(el);
+            auto n = e * e + 2 * e;
+            if (el <= -0.6f) {
+              el = n * __fdividef(el, n + 2);
+            } else {
+              el = el - 2 * __fdividef(el, n + 2);
+            }
+            board[h][w] = el;
+        }
+    }
 
     // Write to output (use 128 bit writes to store one row a time)
     if (output_nhcw) {
@@ -391,7 +405,7 @@ __device__ __forceinline__ void copyAs(void* dst, const void* src) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip, bool mish>
 __global__ __launch_bounds__(kMaxResBlockFusingChannels, 1)
 void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
                                                    T* output, const T* input,
@@ -514,6 +528,20 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
       for (int w = 0; w < 8; w++)
         if (board[h][w] < (T)0) board[h][w] = 0;
     }
+    if (mish) {
+#pragma unroll
+        for (int w = 0; w < 8; w++) {
+            float el = board[h][w];
+            auto e = __expf(el);
+            auto n = e * e + 2 * e;
+            if (el <= -0.6f) {
+              el = n * __fdividef(el, n + 2);
+            } else {
+              el = el - 2 * __fdividef(el, n + 2);
+            }
+            board[h][w] = el;
+        }
+    }
 
     // write un-transformed output to 'skip' if required
     if (use_skip) {
@@ -627,13 +655,13 @@ void InputTransform(int N, int C, T* transformed_input, const T* input,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip, bool mish,
           bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2, cudaStream_t stream) {
   // Each thread processes entire chess board
-  OutputTransform_kernel<T, use_se, relu, use_bias, use_skip, skipInput_nhcw,
+  OutputTransform_kernel<T, use_se, relu, use_bias, use_skip, mish, skipInput_nhcw,
                          output_nhcw><<<N, C, 0, stream>>>(
       N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
   ReportCUDAErrors(cudaGetLastError());

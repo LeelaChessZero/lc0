@@ -43,7 +43,7 @@ constexpr int kInputPlanes = 112;
 template <typename T>
 __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
                                   int bsize, bool relu, bool useTanh,
-                                  bool useSigmoid) {
+                                  bool useSigmoid, bool useMish) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
   if (i < size) {
     float aVal = 0;
@@ -63,6 +63,17 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
       cVal = 1.0f / (1.0f + exp(-cVal));
     }
 
+    if (useMish) {
+      auto e = __expf(cVal);
+      auto n = e * e + 2 * e;
+      if (cVal <= -0.6f) {
+        cVal = n * __fdividef(cVal, n + 2);
+      } else {
+        cVal = cVal - 2 * __fdividef(cVal, n + 2);
+      }
+
+    }
+
     c[i] = (T)cVal;
   }
 }
@@ -71,18 +82,18 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
 // activation.
 template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
-                bool use_tanh, bool use_sigmoid, cudaStream_t stream) {
+                bool use_tanh, bool use_sigmoid, bool use_mish, cudaStream_t stream) {
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
   addVectors_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, size, asize, bsize, relu,
-                                                       use_tanh, use_sigmoid);
+                                                       use_tanh, use_sigmoid, use_mish);
   ReportCUDAErrors(cudaGetLastError());
 }
 
 template <typename T>
 __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
-                                    int W, bool relu) {
+                                    int W, bool relu, bool mish) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
   int size = N * C * H * W;
   if (i < size) {
@@ -95,6 +106,15 @@ __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
     float cVal = aVal + bVal;
 
     if (relu && (cVal < 0)) cVal = 0;
+    if (mish) {
+      auto e = __expf(cVal);
+      auto n = e * e + 2 * e;
+      if (cVal <= -0.6f) {
+        cVal = n * __fdividef(cVal, n + 2);
+      } else {
+        cVal = cVal - 2 * __fdividef(cVal, n + 2);
+      }
+    }
 
     c[i] = (T)cVal;
   }
@@ -102,12 +122,12 @@ __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
 
 // Add bias to convolution's output.
 template <typename T>
-void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu, cudaStream_t stream) {
+void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu, bool mish, cudaStream_t stream) {
   int size = N * C * H * W;
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
-  addBias_NCHW_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, N, C, H, W, relu);
+  addBias_NCHW_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, N, C, H, W, relu, mish);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -176,7 +196,7 @@ void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream) {
 template <typename T>
 __global__ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
                                  int N, int C, int H, int W, const float* means,
-                                 const float* varMultipliers, bool relu) {
+                                 const float* varMultipliers, bool relu, bool mish) {
   int index = threadIdx.x + blockDim.x * blockIdx.x;
 
   int wIndex = 0;
@@ -195,6 +215,15 @@ __global__ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
   if (skipInput) el += (float)skipInput[index];
 
   if (relu && (el < 0)) el = 0;
+  if (mish) {
+    auto e = __expf(el);
+    auto n = e * e + 2 * e;
+    if (el <= -0.6f) {
+      el = n * __fdividef(el, n + 2);
+    } else {
+      el = el - 2 * __fdividef(el, n + 2);
+    }
+  }
 
   output[index] = (T)el;
 }
@@ -202,13 +231,13 @@ __global__ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
 // Every thread processes single element.
 template <typename T>
 void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
-               int H, int W, float* means, float* var_multipliers, bool relu) {
+               int H, int W, float* means, float* var_multipliers, bool relu, bool mish) {
   const int total_elements = N * C * H * W;
   const int kBlockSize = 256;
   int blocks = DivUp(total_elements, kBlockSize);
 
   batchNorm_kernel<<<blocks, kBlockSize>>>(output, input, skipInput, N, C, H, W,
-                                           means, var_multipliers, relu);
+                                           means, var_multipliers, relu, mish);
 
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -336,7 +365,7 @@ void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
 template <typename T>
 __global__ void globalScale_kernel(T* output, const T* input,
                                    const T* scaleBias, const T* prevLayerBias,
-                                   int inputSize, int C) {
+                                   int inputSize, int C, bool mish) {
   const int kPlaneSize = 64;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -362,14 +391,24 @@ __global__ void globalScale_kernel(T* output, const T* input,
   float b = scaleBias[startIdx + c + C];
 
   float op = val1 * s + val2 + b;
-  if (op < 0) op = 0;
+  if (mish) {
+    auto e = __expf(op);
+    auto n = e * e + 2 * e;
+    if (op <= -0.6f) {
+      op = n * __fdividef(op, n + 2);
+    } else {
+      op = op - 2 * __fdividef(op, n + 2);
+    }
+  } else {
+    if (op < 0) op = 0;
+  }
   output[tid] = (T)op;
 }
 
 __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
                                              const half* scaleBias,
                                              const half* prevLayerBias,
-                                             int inputSize, int C, int HWC) {
+                                             int inputSize, int C, int HWC, bool mish) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (tid > inputSize) return;
@@ -391,7 +430,17 @@ __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
   float b = scaleBias[startIdx + c + C];
 
   float op = val1 * s + val2 + b;
-  if (op < 0) op = 0;
+  if (mish) {
+    auto e = __expf(op);
+    auto n = e * e + 2 * e;
+    if (op <= -0.6f) {
+      op = n * __fdividef(op, n + 2);
+    } else {
+      op = op - 2 * __fdividef(op, n + 2);
+    }
+  } else {
+    if (op < 0) op = 0;
+  }
 
   output[tid] = (half)op;
 }
@@ -495,7 +544,7 @@ void globalAvgPool(int N, int C, T* output, const T* input,
 
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
-                 const T* prevLayerBias, bool nhwc) {
+                 const T* prevLayerBias, bool mish, bool nhwc) {
   const bool fp16 = std::is_same<half, T>::value;
 
   // Each thread writes one output.
@@ -506,10 +555,10 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
     assert(fp16);
     globalScale_kernel_fp16_nhwc<<<kBlocks, kBlockSize>>>(
         (half*)output, (half*)input, (half*)scaleBias, (half*)prevLayerBias,
-        N * C * 8 * 8, C, 8 * 8 * C);
+        N * C * 8 * 8, C, 8 * 8 * C, mish);
   } else {
     globalScale_kernel<<<kBlocks, kBlockSize>>>(
-        output, input, scaleBias, prevLayerBias, N * C * 8 * 8, C);
+        output, input, scaleBias, prevLayerBias, N * C * 8 * 8, C, mish);
   }
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -547,7 +596,7 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
 }
 
 template <typename T = float, bool use_se, bool relu, bool use_bias,
-          bool use_skip>
+          bool use_skip, bool mish>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
                           const T* b1, const T* w2, const T* b2,
@@ -559,7 +608,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           "of filters\n");
   } else {
     OutputTransform_SE_relu_InputTransform_kernel<float, use_se, relu, use_bias,
-                                                  use_skip>
+                                                  use_skip, mish>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (float*)skip, bias, w1,
                               b1, w2, b2);
   }
@@ -579,23 +628,23 @@ template void copyTypeConverted<half, half>(half* op, half* ip, int N,
 template void batchNorm<float>(float* output, const float* input,
                                const float* skipInput, int N, int C, int H,
                                int W, float* means, float* var_multipliers,
-                               bool relu);
+                               bool relu, bool mish);
 template void batchNorm<half>(half* output, const half* input,
                               const half* skipInput, int N, int C, int H, int W,
-                              float* means, float* var_multipliers, bool relu);
+                              float* means, float* var_multipliers, bool relu, bool mish);
 
 template void addVectors<float>(float* c, float* a, float* b, int size,
                                 int asize, int bsize, bool relu, bool use_tanh,
-                                bool use_sigmoid, cudaStream_t stream);
+                                bool use_sigmoid, bool use_mish, cudaStream_t stream);
 template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                int bsize, bool relu, bool use_tanh,
-                               bool use_sigmoid, cudaStream_t stream);
+                               bool use_sigmoid, bool use_mish, cudaStream_t stream);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
-                                  int H, int W, bool relu, cudaStream_t stream);
+                                  int H, int W, bool relu, bool mish, cudaStream_t stream);
 
 template void addBias_NCHW<half>(half* c, half* a, half* b, int N, int C, int H,
-                                 int W, bool relu, cudaStream_t stream);
+                                 int W, bool relu, bool mish, cudaStream_t stream);
 
 template void globalAvgPool<float>(int N, int C, float* output,
                                    const float* input,
@@ -605,10 +654,11 @@ template void globalAvgPool<half>(int N, int C, half* output, const half* input,
 
 template void globalScale<float>(int N, int C, float* output,
                                  const float* input, const float* scaleBias,
-                                 const float* prevLayerBias, bool nhwc);
+                                 const float* prevLayerBias, bool mish, bool nhwc);
 template void globalScale<half>(int N, int C, half* output, const half* input,
                                 const half* scaleBias,
-                                const half* prevLayerBias, bool nhwc);
+                                const half* prevLayerBias, bool mish,
+                                bool nhwc);
 
 template void PolicyMap<float>(int N, float* output, const float* input,
                                const short* indices, int inputSize,
@@ -632,52 +682,106 @@ template void InputTransform<float, false>(int N, int C,
                                            const float* input,
                                            cudaStream_t stream);
 
-template void OutputTransform<float, true, true, true, true, false, false>(
+template void OutputTransform<float, true, true, true, true, false, false, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, true, false, true, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, false, true, true, true, false, false,
+                              false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, false, true, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, true, true, true, true, false, true,
+                              false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, true, false, true, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, false, true, true, true, false, true,
+                              false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, false, true, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, false, true, true, false, false, false,
+                              false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, false, true, false, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, false, true, true, false, false, false,
+                              true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, false, true, false, true, false,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, false, false, true, false, false, false,
+                              false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, true, true, true, false, false>(
+template void OutputInputTransform<float, true, true, true, true, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputInputTransform<float, true, false, true, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, true, true, true, true, true, false>(
+template void OutputInputTransform<float, false, true, true, true, false>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputInputTransform<float, false, false, true, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, true, true, true, true, false>(
+template void OutputInputTransform<float, false, true, true, false, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputTransform<float, false, true, true, false, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputTransform<float, false, true, true, false, false, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputTransform<float, false, false, true, false, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputInputTransform<float, true, true, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputInputTransform<float, false, true, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputInputTransform<float, false, true, true, false>(
+template void OutputInputTransform<float, false, false, true, false, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);

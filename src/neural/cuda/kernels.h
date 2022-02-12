@@ -32,11 +32,11 @@ namespace cudnn_backend {
 // activation (relu, tanh or sigmoid).
 template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
-                bool use_tanh, bool use_sigmoid, cudaStream_t stream);
+                bool use_tanh, bool use_sigmoid, bool mish, cudaStream_t stream);
 
 // Add bias to convolution's output.
 template <typename T>
-void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu,
+void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu, bool mish,
                   cudaStream_t stream);
 
 // Conversion from: fp32 -> fp16 datatype, and NCHW -> NHWC layout.
@@ -51,7 +51,7 @@ void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream);
 // Perform batch normilization.
 template <typename T>
 void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
-               int H, int W, float* means, float* var_multipliers, bool relu);
+               int H, int W, float* means, float* var_multipliers, bool relu, bool mish);
 
 // Unpack planes (input to network).
 void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
@@ -71,13 +71,13 @@ void globalAvgPool(int N, int C, T* output, const T* input,
 // Perform global scale.
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
-                 const T* prevLayerBias, bool nhwc);
+                 const T* prevLayerBias, bool mish, bool nhwc);
 
 // Perform Squeeze-and-Excitation (SE) in a single fused kernel.
 // Returns false if the fused kernel can't handle the sizes.
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
-                  const half* w2, const half* b2, const half* bPrev);
+                  const half* w2, const half* b2, const half* bPrev, bool mish);
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
@@ -92,13 +92,13 @@ template <typename T, bool nhcw>
 void InputTransform(int N, int C, T* transformedInput, const T* input,
                     cudaStream_t stream);
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip, bool mish,
           bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2, cudaStream_t stream);
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip, bool mish>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
                           const T* b1, const T* w2, const T* b2,

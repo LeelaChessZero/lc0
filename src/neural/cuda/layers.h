@@ -81,10 +81,10 @@ class ConvLayer : public BaseLayer<DataType> {
 
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
-            bool relu = false, bool bias = false);
+            bool relu = false, bool bias = false, bool mish = false);
   
   ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
-            bool relu = false, bool bias = false);
+            bool relu = false, bool bias = false, bool mish = false);
 
   ~ConvLayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -98,6 +98,7 @@ class ConvLayer : public BaseLayer<DataType> {
   const int filter_size_;
   const bool use_relu_;
   const bool use_bias_;
+  const bool use_mish_;
 
   DataType* biases = nullptr;
   DataType* weights = nullptr;
@@ -122,7 +123,7 @@ class FCLayer : public BaseLayer<DataType> {
 
  public:
   FCLayer(BaseLayer<DataType>* ip, int C, int H, int W, bool relu, bool bias,
-          bool tanh = false, bool sigmoid = false);
+          bool tanh = false, bool sigmoid = false, bool mish = false);
   ~FCLayer();
 
   void LoadWeights(float* cpuWeight, float* cpuBias, void* scratch);
@@ -136,6 +137,7 @@ class FCLayer : public BaseLayer<DataType> {
   const bool use_relu_;
   const bool use_tanh_;
   const bool use_sigmoid_;
+  const bool use_mish_;
   DataType* weights_ = nullptr;
   DataType* biases_ = nullptr;
 };
@@ -170,7 +172,7 @@ class SELayer : public BaseLayer<DataType> {
  using BaseLayer<DataType>::nhwc_;
 
  public:
-  SELayer(BaseLayer<DataType>* ip, int numFc1Out,
+  SELayer(BaseLayer<DataType>* ip, int numFc1Out, bool mish,
           bool addPrevLayerBias = false);
   ~SELayer();
 
@@ -183,6 +185,7 @@ class SELayer : public BaseLayer<DataType> {
             cudaStream_t stream) override;
 
  private:
+  const bool use_mish_;
   DataType* w1_ = nullptr;
   DataType* w1_t_ = nullptr;    // transposed copy used by fused SE kernel
   DataType* b1_ = nullptr;
@@ -208,7 +211,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                           int Cin, bool relu, bool bias, bool skipAdd, bool se,
+                           int Cin, bool relu, bool bias, bool skipAdd, bool se, bool mish,
                            int se_k, bool use_gemm_ex, bool op_nhcw = false);
 
   ~FusedWinogradConvSELayer();
@@ -226,6 +229,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   const bool use_bias_;
   const bool skip_add_;
   const bool has_se_;
+  const bool use_mish_;
   const int se_k_;
   const bool use_gemm_ex_;
   const bool op_nhcw_;
@@ -256,7 +260,7 @@ class Conv1Layer : public BaseLayer<DataType> {
 
  public:
   Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
-                         int Cin, bool relu, bool bias, bool use_gemm_ex);
+                         int Cin, bool relu, bool bias, bool mish, bool use_gemm_ex);
 
   ~Conv1Layer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -270,6 +274,7 @@ class Conv1Layer : public BaseLayer<DataType> {
   const int c_input_;
   const bool use_relu_;
   const bool use_bias_;
+  const bool use_mish_;
   const bool use_gemm_ex_;
 
   DataType* biases_ = nullptr;
@@ -291,7 +296,7 @@ class ResidualBlock : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetW;
 
  public:
-  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last);
+  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool mish, bool use_gemm_ex, bool first, bool last);
 
   ~ResidualBlock();
   void LoadWeights0(float* pfilter, float* pBias, void* scratch);
@@ -306,6 +311,7 @@ class ResidualBlock : public BaseLayer<DataType> {
  private:
   const bool has_se_;
   const int se_k_;
+  const bool use_mish_;
   const bool use_gemm_ex_;
   const int c_input_;
   const bool first_block_;
