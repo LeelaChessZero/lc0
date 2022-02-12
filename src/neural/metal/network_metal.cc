@@ -94,7 +94,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   void * layer;
 
   // 0. Input placeholder.
-  layer = builder_->getInputPlaceholder(max_batch_size_, 8, 8, kInputPlanes, "inputs");
+  layer = builder_->getInputPlaceholder(8, 8, kInputPlanes, "inputs");
 
   // 1. Input layer
   layer = builder_->makeConvolutionBlock(layer, kInputPlanes, channelSize, kernelSize,
@@ -233,18 +233,22 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
       }
   }
 
-  std::vector<float*> output_mems;
-  std::vector<int> sizes;
-  float * opVal = (float *)malloc(3 * max_batch_size_ * sizeof(float));
+  // std::vector<float*> output_mems;
+  //std::vector<int> sizes;
+  //float * opVal = (float *)malloc(3 * max_batch_size_ * sizeof(float));
   if (moves_left_) {
-    output_mems = {io->op_policy_mem_, opVal, io->op_moves_left_mem_};
-    sizes = {kNumOutputPolicy, wdl_ ? 3 : 1, 1};
+    // output_mems = {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_};
+    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes,
+                          {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+    // sizes = {kNumOutputPolicy, wdl_ ? 3 : 1, 1};
   }
   else {
-    output_mems = {io->op_policy_mem_, opVal};
-    sizes = {kNumOutputPolicy, wdl_ ? 3 : 1};
+    // output_mems = {io->op_policy_mem_, io->op_value_mem_};
+    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes,
+                          {io->op_policy_mem_, io->op_value_mem_});
+    // sizes = {kNumOutputPolicy, wdl_ ? 3 : 1};
   }
-  builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes, output_mems);
+  // builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes, output_mems);
 
   // CERR << "Outputs";
 
@@ -257,27 +261,27 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 
   // Copy memory to output buffers and do final transformations.
   // @todo Move softmax to backend.
-  if (wdl_) {
-    // Value softmax done cpu side.
-    for (int i = 0; i < batchSize; i++) {
-      float w = opVal[3 * i + 0];
-      float d = opVal[3 * i + 1];
-      float l = opVal[3 * i + 2];
-      float m = std::max({w, d, l});
-      w = std::exp(w - m);
-      d = std::exp(d - m);
-      l = std::exp(l - m);
-      float sum = w + d + l;
-      w /= sum;
-      l /= sum;
-      d = 1.0f - w - l;
-      io->op_value_mem_[3 * i + 0] = w;
-      io->op_value_mem_[3 * i + 1] = d;
-      io->op_value_mem_[3 * i + 2] = l;
-    }
-  } else {
-    memcpy(io->op_value_mem_, opVal, batchSize * sizeof(float));
-  }
+  // if (wdl_) {
+  //   // Value softmax done cpu side.
+  //   for (int i = 0; i < batchSize; i++) {
+  //     float w = opVal[3 * i + 0];
+  //     float d = opVal[3 * i + 1];
+  //     float l = opVal[3 * i + 2];
+  //     float m = std::max({w, d, l});
+  //     w = std::exp(w - m);
+  //     d = std::exp(d - m);
+  //     l = std::exp(l - m);
+  //     float sum = w + d + l;
+  //     w /= sum;
+  //     l /= sum;
+  //     d = 1.0f - w - l;
+  //     io->op_value_mem_[3 * i + 0] = w;
+  //     io->op_value_mem_[3 * i + 1] = d;
+  //     io->op_value_mem_[3 * i + 2] = l;
+  //   }
+  // } else {
+  //   memcpy(io->op_value_mem_, opVal, batchSize * sizeof(float));
+  // }
 
 }
 

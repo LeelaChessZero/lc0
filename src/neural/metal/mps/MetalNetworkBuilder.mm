@@ -28,8 +28,6 @@
 #import "MetalNetworkBuilder.h"
 #import "NetworkGraph.h"
 
-#import "Utilities.h"
-
 namespace lczero {
 namespace metal_backend {
 
@@ -59,12 +57,11 @@ std::string MetalNetworkBuilder::init(int sub_batch_size, int gpu_id)
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
-void* MetalNetworkBuilder::getInputPlaceholder(int maxBatchSize, int width, int height, int channels, std::string label) {
-    return [(id)self inputPlaceholderWithMaxBatch:maxBatchSize
-                                    inputChannels:channels
-                                           height:height
-                                            width:width
-                                         label:[NSString stringWithUTF8String:label.c_str()]];
+void* MetalNetworkBuilder::getInputPlaceholder(int width, int height, int channels, std::string label) {
+    return [(id)self inputPlaceholderWithInputChannels:channels
+                                                height:height
+                                                 width:width
+                                                 label:[NSString stringWithUTF8String:label.c_str()]];
 }
 
 void* MetalNetworkBuilder::makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,

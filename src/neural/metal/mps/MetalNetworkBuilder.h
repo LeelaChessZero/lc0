@@ -39,7 +39,7 @@ public:
 
     std::string init(int sub_batch_size, int gpu_id);
     
-    void* getInputPlaceholder(int maxBatchSize, int width, int height, int channels, std::string label);
+    void* getInputPlaceholder(int width, int height, int channels, std::string label);
 
     void* makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
                                float * weights, float * biases, bool withRelu, std::string label);

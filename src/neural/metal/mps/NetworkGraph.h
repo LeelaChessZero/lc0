@@ -67,11 +67,10 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device
                        batchesPerSplit:(NSUInteger)batchesPerSplit;
 
--(nonnull MPSGraphTensor *) inputPlaceholderWithMaxBatch:(NSUInteger)maxBatchSize
-                                           inputChannels:(NSUInteger)channels
-                                                  height:(NSUInteger)height
-                                                   width:(NSUInteger)width
-                                                   label:(NSString * __nullable)label;
+-(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
+                                                       height:(NSUInteger)height
+                                                        width:(NSUInteger)width
+                                                        label:(NSString * __nullable)label;
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
                                           inputChannels:(NSUInteger)inputChannels

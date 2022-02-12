@@ -47,7 +47,7 @@ static MPSGraphPooling2DOpDescriptor * __nonnull averagePoolingDescriptor = [MPS
 
 static const NSUInteger kNumPolicyOutputs = 1858;
 
-static const NSUInteger kMaxInflightBuffers = 3;
+static const NSUInteger kMaxInflightBuffers = 4;
 
 @implementation MPSGraphTensor(Lc0Extensions)
 
@@ -106,14 +106,14 @@ static const NSUInteger kMaxInflightBuffers = 3;
                                                    outputBuffers:(float * * __nonnull)outputBuffers
 {
 //    NSLog(@"Batchsize: %u", batchSize);
-    NSUInteger splits = (batchSize + _batchesPerSplit - 1) / _batchesPerSplit;
-    NSUInteger inputDataLength = [_inputTensor size];
+    //NSUInteger splits = (batchSize + _batchesPerSplit - 1) / _batchesPerSplit;
+    NSUInteger inputDataLength = [_inputTensor sizeOfDimensions:@[@1, @2, @3]] * batchSize;
     
     // Keeping track of latest command buffer.
-    MPSCommandBuffer * latestCommandBuffer = nil;
+    //MPSCommandBuffer * latestCommandBuffer = nil;
     
     // Split batchSize into smaller sub-batches and run using double-buffering.
-    for (NSUInteger step = 0; step < splits; step++) {
+    //for (NSUInteger step = 0; step < splits; step++) {
         
         // Double buffering semaphore to correctly double buffer iterations.
         dispatch_semaphore_wait(_doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
@@ -121,13 +121,15 @@ static const NSUInteger kMaxInflightBuffers = 3;
         // Create command buffer for this sub-batch.
         MPSCommandBuffer * commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:_queue];
         
-        NSData * inputData = [NSData dataWithBytesNoCopy:inputs + step * inputDataLength
+        NSData * inputData = [NSData dataWithBytesNoCopy:inputs //+ step * inputDataLength
                                                   length:inputDataLength * sizeof(float)
                                             freeWhenDone:NO];
+    
+        MPSShape * inputShape = @[@(batchSize), _inputTensor.shape[1], _inputTensor.shape[2], _inputTensor.shape[3]];
         
         MPSGraphTensorData * inputTensorData = [[MPSGraphTensorData alloc] initWithDevice:_device
                                                                                      data:inputData
-                                                                                    shape:_inputTensor.shape
+                                                                                    shape:inputShape
                                                                                  dataType:_inputTensor.dataType];
         
         // Create execution descriptor with block to update results for each iteration.
@@ -138,12 +140,13 @@ static const NSUInteger kMaxInflightBuffers = 3;
             // Copy results for sub-batch back into the output buffers.
             for (NSUInteger rsIdx = 0; rsIdx < [_resultTensors count]; rsIdx++) {
                 NSUInteger outputDataLength = [_resultTensors[rsIdx] size];
-                [[resultsDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] + step * outputDataLength strideBytes:nil];
+                [[resultsDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] //+ step * outputDataLength
+                                                                     strideBytes:nil];
             }
             
             // Release double buffering semaphore for the next training iteration to be encoded.
             dispatch_semaphore_signal(_doubleBufferingSemaphore);
-            
+
         };
         
         [_graph encodeToCommandBuffer:commandBuffer
@@ -154,11 +157,12 @@ static const NSUInteger kMaxInflightBuffers = 3;
 
         // Commit the command buffer
         [commandBuffer commit];
-        latestCommandBuffer = commandBuffer;
-    }
+        //latestCommandBuffer = commandBuffer;
+    //}
 
     // Wait for the last batch to be processed.
-    [latestCommandBuffer waitUntilCompleted];
+    //[latestCommandBuffer waitUntilCompleted];
+    [commandBuffer waitUntilCompleted];
     
     return _resultTensors;
 }
@@ -168,14 +172,13 @@ static const NSUInteger kMaxInflightBuffers = 3;
     _resultTensors = results;
 }
 
--(nonnull MPSGraphTensor *) inputPlaceholderWithMaxBatch:(NSUInteger)maxBatchSize
-                                           inputChannels:(NSUInteger)channels
-                                                  height:(NSUInteger)height
-                                                   width:(NSUInteger)width
-                                                   label:(NSString * __nullable)label
+-(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
+                                                       height:(NSUInteger)height
+                                                        width:(NSUInteger)width
+                                                        label:(NSString * __nullable)label
 {
     // Create a placeholder tensor that can hold the specified number of sub-batches.
-    _inputTensor = [_graph placeholderWithShape:@[@(_batchesPerSplit), @(channels), @(height), @(width)] name:label];
+    _inputTensor = [_graph placeholderWithShape:@[@(-1), @(channels), @(height), @(width)] name:label];
     
     return _inputTensor;
 }
@@ -309,7 +312,7 @@ static const NSUInteger kMaxInflightBuffers = 3;
                                                           name:[NSString stringWithFormat:@"%@/weights_transpose", label]];
     
     MPSGraphTensor * reshaped = [_graph reshapeTensor:parent
-                                            withShape:@[parent.shape[0], @([parent sizeOfDimensions:@[@1, @2, @3]])]
+                                            withShape:@[@(-1), @([parent sizeOfDimensions:@[@1, @2, @3]])]
                                                  name:[NSString stringWithFormat:@"%@/reshape", label]];
     
     MPSGraphTensor * fcTensor = [_graph matrixMultiplicationWithPrimaryTensor:reshaped
@@ -402,7 +405,7 @@ static const NSUInteger kMaxInflightBuffers = 3;
     
     // 5. Multiply and add.
     MPSGraphTensor * reshape1Tensor = [_graph reshapeTensor:gammaTensor
-                                                  withShape:@[gammaTensor.shape[0], gammaTensor.shape[1], @1, @1]
+                                                  withShape:@[@(-1), gammaTensor.shape[1], @1, @1]
                                                        name:[NSString stringWithFormat:@"%@/reshape1", label]];
     
     
@@ -411,7 +414,7 @@ static const NSUInteger kMaxInflightBuffers = 3;
                                                                          name:[NSString stringWithFormat:@"%@/multiply", label]];
     
     MPSGraphTensor * reshape2Tensor = [_graph reshapeTensor:slice2Tensor
-                                                  withShape:@[slice2Tensor.shape[0], slice2Tensor.shape[1], @1, @1]
+                                                  withShape:@[@(-1), slice2Tensor.shape[1], @1, @1]
                                                        name:[NSString stringWithFormat:@"%@/reshape2", label]];
     
     
@@ -462,7 +465,7 @@ static const NSUInteger kMaxInflightBuffers = 3;
                                                      dataType:MPSDataTypeUInt32];
     
     MPSGraphTensor * flatConvTensor = [_graph reshapeTensor:parent
-                                                  withShape:@[parent.shape[0], @([parent sizeOfDimensions:@[@1, @2, @3]])]
+                                                  withShape:@[@(-1), @([parent sizeOfDimensions:@[@1, @2, @3]])]
                                                        name:[NSString stringWithFormat:@"%@/flatten", label]];
     
     return [_graph gatherWithUpdatesTensor:flatConvTensor
