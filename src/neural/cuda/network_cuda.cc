@@ -237,7 +237,8 @@ class CudaNetwork : public Network {
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 
-    const bool mish_net = true; 
+    const bool mish_net = file.format().network_format().default_activation() ==
+                          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH; 
 
     // 2. Build the network, and copy the weights to GPU memory.
 
