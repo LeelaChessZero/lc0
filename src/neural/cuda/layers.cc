@@ -233,7 +233,34 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
           out_tensor_desc_, output, bias_desc_, biases, activation_,
           out_tensor_desc_, output));
     } else {
-      // TODO: Support mish in cudnn.
+      // The mish path.
+      ReportCUDNNErrors(cudnnConvolutionForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, conv_algo_, scratch, scratch_size, &beta,
+          out_tensor_desc_, output));
+      bool mish_done = false;
+      if (input2 && input2 != output) {
+        // Merge mish with residual add unless there is bias.
+        addVectors(output, output, (DataType*)input2, N * C * H * W,
+                   N * C * H * W,
+                   N * C * H * W,
+                   false, false, false, !use_bias_, stream);
+        mish_done = !use_bias_;
+      }
+      // Merge mish with bias.
+      if (use_bias_) {
+        if (!nhwc_) {
+          // add bias
+          addBias_NCHW(output, output, biases, N, C, H, W, false, true,
+                       stream);
+        } else {
+          addVectors(output, output, biases, N * C * H * W, N * C * H * W, C,
+                     false, false, false, true, stream);
+        }
+      } else if (!mish_done) {
+        addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W, 0,
+                   false, false, false, true, stream);
+      }
     }
   }
 #else
@@ -256,6 +283,8 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                                out_tensor_desc_, output));
     }
     if (use_mish_) {
+      addVectors(output, output, nullptr, N * C * H * W, N * C * H * W, 0,
+                 false, false, false, true, stream);
       // TODO: Support mish in cudnn.
     }
   }

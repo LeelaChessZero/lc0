@@ -308,6 +308,9 @@ class CudnnNetwork : public Network {
       has_se_ = true;
     }
 
+    const bool mish_net = file.format().network_format().default_activation() ==
+                     pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH;
+
     // 1. Allocate scratch space (used internally by cudnn to run convolutions,
     //     and also for format/layout conversion for weights).
     cudnnFilterDescriptor_t wDesc;
@@ -378,14 +381,14 @@ class CudnnNetwork : public Network {
     // Input.
     if (use_custom_winograd_) {
       auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          nullptr, kNumFilters, 8, 8, kNumInputPlanes, true, true, false, false,
-          false, 0, use_gemm_ex, use_res_block_winograd_fuse_opt_);
+          nullptr, kNumFilters, 8, 8, kNumInputPlanes, !mish_net, true, false, false,
+          mish_net, 0, use_gemm_ex, use_res_block_winograd_fuse_opt_);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
     } else {
       auto inputConv = std::make_unique<ConvLayer<DataType>>(
-          nhwc_, kNumFilters, 8, 8, 3, kNumInputPlanes, true, true, false);
+          nhwc_, kNumFilters, 8, 8, 3, kNumInputPlanes, !mish_net, true, mish_net);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
@@ -399,7 +402,7 @@ class CudnnNetwork : public Network {
 
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
-              getLastLayer(), kNumFilters, has_se, se_k, false, use_gemm_ex,
+              getLastLayer(), kNumFilters, has_se, se_k, mish_net, use_gemm_ex,
               block == 0, block == (numBlocks_ - 1));
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                               &weights.residual[block].conv1.biases[0],
@@ -416,16 +419,16 @@ class CudnnNetwork : public Network {
           network_.emplace_back(std::move(layer));
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
-              false, false, 0, use_gemm_ex);
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, !mish_net, true, false,
+              false, mish_net, 0, use_gemm_ex);
           conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                              &weights.residual[block].conv1.biases[0],
                              scratch_mem_);
           network_.emplace_back(std::move(conv1));
 
           auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, true,
-              has_se, false, se_k, use_gemm_ex);
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, !mish_net, true, true,
+              has_se, mish_net, se_k, use_gemm_ex);
           conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                              &weights.residual[block].conv2.biases[0],
                              scratch_mem_);
@@ -440,8 +443,8 @@ class CudnnNetwork : public Network {
 
       } else {
         auto conv1 = std::make_unique<ConvLayer<DataType>>(
-            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, true, true,
-            false);
+            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, !mish_net, true,
+            mish_net);
         conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                            &weights.residual[block].conv1.biases[0],
                            scratch_mem_);
@@ -451,8 +454,8 @@ class CudnnNetwork : public Network {
         bool useReluAndBias = weights.residual[block].has_se ? false : true;
 
         auto conv2 = std::make_unique<ConvLayer<DataType>>(
-            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useReluAndBias,
-            useReluAndBias, false);
+            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useReluAndBias && !mish_net,
+            useReluAndBias, useReluAndBias && mish_net);
         conv2->LoadWeights(
             &weights.residual[block].conv2.weights[0],
             useReluAndBias ? &weights.residual[block].conv2.biases[0] : nullptr,
@@ -462,7 +465,7 @@ class CudnnNetwork : public Network {
         if (weights.residual[block].has_se) {
           int numFCOut = (int)weights.residual[block].se.b1.size();
           auto se = std::make_unique<SELayer<DataType>>(getLastLayer(),
-                                                        numFCOut, false, false);
+                                                        numFCOut, mish_net, false);
           se->LoadWeights(&weights.residual[block].se.w1[0],
                           &weights.residual[block].se.b1[0],
                           &weights.residual[block].se.w2[0],
@@ -479,7 +482,7 @@ class CudnnNetwork : public Network {
     // Policy head.
     if (conv_policy_) {
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, kNumFilters, 8, 8, 3, kNumFilters, true, true, false);
+          resi_last_, kNumFilters, 8, 8, 3, kNumFilters, !mish_net, true, mish_net);
       conv1->LoadWeights(&weights.policy1.weights[0],
                          &weights.policy1.biases[0], scratch_mem_);
       network_.emplace_back(std::move(conv1));
@@ -501,8 +504,8 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(policymap));
     } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters, true,
-          true, false);
+          resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters, !mish_net,
+          true, mish_net);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
@@ -519,15 +522,15 @@ class CudnnNetwork : public Network {
     // Value head.
     {
       auto convVal = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, weights.value.biases.size(), 8, 8, 1, kNumFilters, true,
-          true, false);
+          resi_last_, weights.value.biases.size(), 8, 8, 1, kNumFilters, !mish_net,
+          true, mish_net);
       convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],
                            scratch_mem_);
       network_.emplace_back(std::move(convVal));
 
       auto FCVal1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, true, false,
-          false, false);
+          getLastLayer(), weights.ip1_val_b.size(), 1, 1, !mish_net, true, false,
+          false, mish_net);
       FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
@@ -552,18 +555,19 @@ class CudnnNetwork : public Network {
     if (moves_left_) {
       auto convMov = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.moves_left.biases.size(), 8, 8, 1, kNumFilters,
-          true, true, false);
+          !mish_net, true, mish_net);
       convMov->LoadWeights(&weights.moves_left.weights[0],
                            &weights.moves_left.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convMov));
 
       auto FCMov1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, true, false,
-          false, false);
+          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, !mish_net, true, false,
+          false, mish_net);
       FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov1));
 
+      // Always relu even for mish_net.
       auto FCMov2 = std::make_unique<FCLayer<DataType>>(
           getLastLayer(), 1, 1, 1, true, true, false, false, false);
       FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
