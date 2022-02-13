@@ -28,6 +28,16 @@
 namespace lczero {
 namespace cudnn_backend {
 
+__device__ __forceinline__ float mishActivate(float el) {
+  auto e = __expf(el);
+  auto n = e * e + 2 * e;
+  if (el <= -0.6f) {
+    return n * __fdividef(el, n + 2);
+  } else {
+    return el - 2 * __fdividef(el, n + 2);
+  }
+}
+
 template <typename T, int M, int N, int K>
 __device__ __forceinline__ void matrixMul_gpu_serial(T* c, const T* a,
                                                      const T* b) {
@@ -310,15 +320,7 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
       }
       S += (float)b1[k];
       if (mish) {
-        float el = S;
-        auto e = __expf(el);
-        auto n = e * e + 2 * e;
-        if (el <= -0.6f) {
-          el = n * __fdividef(el, n + 2);
-        } else {
-          el = el - 2 * __fdividef(el, n + 2);
-        }
-        S = el;
+        S = mishActivate(S);
       } else {
         if (S < 0) S = 0;  // relu
       }
@@ -370,17 +372,9 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     }
     if (mish) {
 #pragma unroll
-        for (int w = 0; w < 8; w++) {
-            float el = board[h][w];
-            auto e = __expf(el);
-            auto n = e * e + 2 * e;
-            if (el <= -0.6f) {
-              el = n * __fdividef(el, n + 2);
-            } else {
-              el = el - 2 * __fdividef(el, n + 2);
-            }
-            board[h][w] = el;
-        }
+      for (int w = 0; w < 8; w++) {
+        board[h][w] = mishActivate(board[h][w]);
+      }
     }
 
     // Write to output (use 128 bit writes to store one row a time)
@@ -503,15 +497,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
 
       S += (float)b1[k];
       if (mish) {
-        float el = S;
-        auto e = __expf(el);
-        auto n = e * e + 2 * e;
-        if (el <= -0.6f) {
-          el = n * __fdividef(el, n + 2);
-        } else {
-          el = el - 2 * __fdividef(el, n + 2);
-        }
-        S = el;
+        S = mishActivate(S);
       } else {
         if (S < 0) S = 0;  // relu
       }
@@ -554,17 +540,9 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
     }
     if (mish) {
 #pragma unroll
-        for (int w = 0; w < 8; w++) {
-            float el = board[h][w];
-            auto e = __expf(el);
-            auto n = e * e + 2 * e;
-            if (el <= -0.6f) {
-              el = n * __fdividef(el, n + 2);
-            } else {
-              el = el - 2 * __fdividef(el, n + 2);
-            }
-            board[h][w] = el;
-        }
+      for (int w = 0; w < 8; w++) {
+        board[h][w] = mishActivate(board[h][w]);
+      }
     }
 
     // write un-transformed output to 'skip' if required

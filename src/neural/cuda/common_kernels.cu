@@ -64,13 +64,7 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
     }
 
     if (useMish) {
-      auto e = __expf(cVal);
-      auto n = e * e + 2 * e;
-      if (cVal <= -0.6f) {
-        cVal = n * __fdividef(cVal, n + 2);
-      } else {
-        cVal = cVal - 2 * __fdividef(cVal, n + 2);
-      }
+      cVal = mishActivate(cVal);
     }
 
     c[i] = (T)cVal;
@@ -107,13 +101,7 @@ __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
 
     if (relu && (cVal < 0)) cVal = 0;
     if (mish) {
-      auto e = __expf(cVal);
-      auto n = e * e + 2 * e;
-      if (cVal <= -0.6f) {
-        cVal = n * __fdividef(cVal, n + 2);
-      } else {
-        cVal = cVal - 2 * __fdividef(cVal, n + 2);
-      }
+      cVal = mishActivate(cVal);
     }
 
     c[i] = (T)cVal;
@@ -219,13 +207,7 @@ __global__ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
 
   if (relu && (el < 0)) el = 0;
   if (mish) {
-    auto e = __expf(el);
-    auto n = e * e + 2 * e;
-    if (el <= -0.6f) {
-      el = n * __fdividef(el, n + 2);
-    } else {
-      el = el - 2 * __fdividef(el, n + 2);
-    }
+    el = mishActivate(el);
   }
 
   output[index] = (T)el;
@@ -396,13 +378,7 @@ __global__ void globalScale_kernel(T* output, const T* input,
 
   float op = val1 * s + val2 + b;
   if (mish) {
-    auto e = __expf(op);
-    auto n = e * e + 2 * e;
-    if (op <= -0.6f) {
-      op = n * __fdividef(op, n + 2);
-    } else {
-      op = op - 2 * __fdividef(op, n + 2);
-    }
+    op = mishActivate(op);
   } else {
     if (op < 0) op = 0;
   }
@@ -436,13 +412,7 @@ __global__ void globalScale_kernel_fp16_nhwc(half* output, const half* input,
 
   float op = val1 * s + val2 + b;
   if (mish) {
-    auto e = __expf(op);
-    auto n = e * e + 2 * e;
-    if (op <= -0.6f) {
-      op = n * __fdividef(op, n + 2);
-    } else {
-      op = op - 2 * __fdividef(op, n + 2);
-    }
+    op = mishActivate(op);
   } else {
     if (op < 0) op = 0;
   }

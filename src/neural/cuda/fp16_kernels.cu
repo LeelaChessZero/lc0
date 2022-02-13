@@ -91,15 +91,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
     S += b1[c];
 
     if (mish) {
-      float el = S;
-      auto e = __expf(el);
-      auto n = e * e + 2 * e;
-      if (el <= -0.6f) {
-        el = n * __fdividef(el, n + 2);
-      } else {
-        el = el - 2 * __fdividef(el, n + 2);
-      }
-      S = el;
+      S = mishActivate(S);
     } else {
       // relu
       if (S < (half)0) S = 0;
@@ -132,15 +124,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
     half val = localData[i].y + localData[i].x * S + B;
 
     if (mish) {
-      float el = val;
-      auto e = __expf(el);
-      auto n = e * e + 2 * e;
-      if (el <= -0.6f) {
-        el = n * __fdividef(el, n + 2);
-      } else {
-        el = el - 2 * __fdividef(el, n + 2);
-      }
-      val = el;
+      val = mishActivate(val);
     } else {
       // Relu activation function.
       if (val < (half)0) val = 0;
@@ -320,15 +304,7 @@ __global__ __launch_bounds__(
 
       S += (float)b1[k];
       if (mish) {
-        float el = S;
-        auto e = __expf(el);
-        auto n = e * e + 2 * e;
-        if (el <= -0.6f) {
-          el = n * __fdividef(el, n + 2);
-        } else {
-          el = el - 2 * __fdividef(el, n + 2);
-        }
-        S = el;
+        S = mishActivate(S);
       } else {
         if (S < 0) S = 0;  // relu
       }
@@ -382,15 +358,7 @@ __global__ __launch_bounds__(
       if (mish) {
 #pragma unroll
         for (int w = 0; w < 8; w++) {
-          float el = boardRow[w];
-          auto e = __expf(el);
-          auto n = e * e + 2 * e;
-          if (el <= -0.6f) {
-            el = n * __fdividef(el, n + 2);
-          } else {
-            el = el - 2 * __fdividef(el, n + 2);
-          }
-          boardRow[w] = el;
+          boardRow[w] = mishActivate(boardRow[w]);
         }
       }
 
