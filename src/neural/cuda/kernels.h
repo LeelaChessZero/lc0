@@ -46,6 +46,9 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu,
 void fp32NCHWtofp16NHWC(half* output_tensor, float* input_tensor, int Nin,
                         int Cin, int Nout, int Cout, int H, int W);
 
+void fp16NCHWtoNHWC(half* output_tensor, const half* input_tensor, int Nin,
+                    int Cin, int Nout, int Cout, int H, int W);
+
 // Plain data-type conversion (no layout conversion).
 template <typename DstType, typename SrcType>
 void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream);

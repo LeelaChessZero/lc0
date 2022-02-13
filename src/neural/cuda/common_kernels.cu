@@ -121,7 +121,8 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu, cudaS
   ReportCUDAErrors(cudaGetLastError());
 }
 
-__device__ half readNCHW(float* input_tensor, int n, int c, int h, int w,
+template <typename dT, typename sT>
+__device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
                          int Nin, int Cin, int H, int W) {
   if (n >= Nin || c >= Cin) return 0;
 
@@ -134,12 +135,13 @@ __device__ half readNCHW(float* input_tensor, int n, int c, int h, int w,
   index *= W;
   index += w;
 
-  return (half)(input_tensor[index]);
+  return (dT)(input_tensor[index]);
 }
 
-__global__ void fp32NCHWtofp16NHWC_kernel(half* output_tensor,
-                                          float* input_tensor, int Nin, int Cin,
-                                          int Nout, int Cout, int H, int W) {
+template <typename dT, typename sT>
+__global__ void NCHWtoNHWC_kernel(dT* output_tensor,
+                                  const sT* input_tensor, int Nin, int Cin,
+                                  int Nout, int Cout, int H, int W) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (tid >= Nout * Cout * H * W) return;
@@ -154,7 +156,7 @@ __global__ void fp32NCHWtofp16NHWC_kernel(half* output_tensor,
   index /= H;
   int n = index;
 
-  output_tensor[tid] = readNCHW(input_tensor, n, c, h, w, Nin, Cin, H, W);
+  output_tensor[tid] = readNCHW<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
 }
 
 void fp32NCHWtofp16NHWC(half* output_tensor, float* input_tensor, int Nin,
@@ -162,8 +164,17 @@ void fp32NCHWtofp16NHWC(half* output_tensor, float* input_tensor, int Nin,
   size_t numElements = Nout * Cout * H * W;
   const int blockSize = 256;
   int blocks = DivUp(numElements, blockSize);
-  fp32NCHWtofp16NHWC_kernel<<<blocks, blockSize>>>(output_tensor, input_tensor,
-                                                   Nin, Cin, Nout, Cout, H, W);
+  NCHWtoNHWC_kernel<<<blocks, blockSize>>>(output_tensor, input_tensor,
+                                           Nin, Cin, Nout, Cout, H, W);
+}
+
+void fp16NCHWtoNHWC(half* output_tensor, const half* input_tensor, int Nin, int Cin,
+    int Nout, int Cout, int H, int W) {
+  size_t numElements = Nout * Cout * H * W;
+  const int blockSize = 256;
+  int blocks = DivUp(numElements, blockSize);
+  NCHWtoNHWC_kernel<<<blocks, blockSize>>>(output_tensor, input_tensor, Nin,
+                                           Cin, Nout, Cout, H, W);
 }
 
 template <typename DstType, typename SrcType>

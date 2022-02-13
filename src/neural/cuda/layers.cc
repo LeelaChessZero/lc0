@@ -1272,6 +1272,7 @@ void AttentionPolicyHead<half>::Eval(
   half beta = zero_h;
 
 
+  fp16NCHWtoNHWC(scratch1, input, N, 64, N, 64, 8, 8);
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
 
@@ -1281,7 +1282,7 @@ void AttentionPolicyHead<half>::Eval(
     const int batch = N * 64;
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N,
                                    num_outputs, batch, num_inputs, &alpha,
-                                   (const half*)ip_pol_w_, num_inputs, input,
+                                   (const half*)ip_pol_w_, num_inputs, scratch1,
                                    num_inputs, &beta, scratch0, num_outputs));
     addVectors(scratch0, (half*)ip_pol_b_, scratch0, num_outputs * batch,
                num_outputs, num_outputs * batch, SELU, stream);
