@@ -25,13 +25,16 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "layers.h"
+
 #include <cassert>
 #include <cstring>
 #include <vector>
+
 #include "cuda_common.h"
 #include "kernels.h"
 namespace lczero {
-//void dumpTensor(void* memory, int elements, const char* message, bool fp16 = false);
+// void dumpTensor(void* memory, int elements, const char* message, bool fp16 =
+// false);
 
 namespace cudnn_backend {
 
@@ -112,7 +115,8 @@ void ConvLayer<DataType>::init() {
 
 template <typename DataType>
 ConvLayer<DataType>::ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                               int filter, int Cin, bool relu, bool bias, bool mish)
+                               int filter, int Cin, bool relu, bool bias,
+                               bool mish)
     : BaseLayer<DataType>(C, H, W, ip),
       c_input_(Cin),
       filter_size_(filter),
@@ -406,15 +410,16 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   float alpha = 1.0f, beta = 0.0f;
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numFc1Out_,
                                  N, C, &alpha, w1_, C, op2, C, &beta, op1,
-                                 numFc1Out_));  
-  addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, !use_mish_,
-             false, false, use_mish_, stream);
+                                 numFc1Out_));
+  addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N,
+             !use_mish_, false, false, use_mish_, stream);
 
   // 3. Second fully connected layer.
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                  numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                  numFc1Out_, &beta, op2, 2 * C));
-  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, false, stream);
+  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false,
+             false, stream);
 
   // 4. (Optional prev layer bias add), Global scale, residual add, relu and
   // bias.
@@ -449,14 +454,15 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, numFc1Out_,
                                    N, C, &alpha, w1_, C, op2, C, &beta, op1,
                                    numFc1Out_));
-    addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, !use_mish_,
-               false, false, use_mish_, stream);
+    addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N,
+               !use_mish_, false, false, use_mish_, stream);
 
     // 3. Second fully connected layer.
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                    numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                    numFc1Out_, &beta, op2, 2 * C));
-    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false, false, stream);
+    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, false, false, false,
+               false, stream);
 
     // 4. (Optional prev layer bias add), Global scale, residual add, relu and
     // bias.
@@ -466,7 +472,8 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
 
 template <typename DataType>
 FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                           bool relu, bool bias, bool tanh, bool sigmoid, bool mish)
+                           bool relu, bool bias, bool tanh, bool sigmoid,
+                           bool mish)
     : BaseLayer<DataType>(C, H, W, ip),
       use_bias_(bias),
       use_relu_(relu),
@@ -550,8 +557,8 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
 
   if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_ || use_mish_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
-               num_outputs, num_outputs * N, use_relu_, use_tanh_,
-               use_sigmoid_, use_mish_, stream);
+               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_sigmoid_,
+               use_mish_, stream);
   }
 }
 
@@ -572,8 +579,8 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
 
   if (use_bias_ || use_relu_ || use_tanh_ || use_sigmoid_ || use_mish_) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
-               num_outputs, num_outputs * N, use_relu_, use_tanh_,
-               use_sigmoid_, use_mish_, stream);
+               num_outputs, num_outputs * N, use_relu_, use_tanh_, use_sigmoid_,
+               use_mish_, stream);
   }
 }
 
@@ -667,11 +674,10 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
 }
 
 template <typename DataType>
-void PolicyMapLayer<DataType>::Eval(int N, DataType* output_tensor,
-                                    const DataType* input_tensor,
-                                    const DataType* /*input2*/,
-                                    void* /*scratch*/, size_t /*scratch_size*/,
-                                    cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/, cudaStream_t stream) {
+void PolicyMapLayer<DataType>::Eval(
+    int N, DataType* output_tensor, const DataType* input_tensor,
+    const DataType* /*input2*/, void* /*scratch*/, size_t /*scratch_size*/,
+    cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/, cudaStream_t stream) {
   int inputSize =
       this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
   int outputSize = this->C * this->H * this->W;
@@ -742,7 +748,8 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3, 0);
+  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3,
+                    0);
 
   if (pBias) {
     ReportCUDAErrors(
@@ -755,7 +762,8 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
 }
 
 // TODO: Do this on the GPU to improve network load time!
-static inline void CpuTranspose(float* op, float* ip, size_t rows, size_t cols) {
+static inline void CpuTranspose(float* op, float* ip, size_t rows,
+                                size_t cols) {
   for (size_t i = 0; i < rows; i++)
     for (size_t j = 0; j < cols; j++) op[j * rows + i] = ip[i * cols + j];
 }
@@ -773,7 +781,8 @@ void FusedWinogradConvSELayer<DataType>::LoadSEWeights(float* w1, float* b1,
   std::vector<float> temp_transposed(num_weights2);
 
   CpuTranspose(temp_transposed.data(), w1, se_k_, C);
-  ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(), num_weights1*sizeof(float),
+  ReportCUDAErrors(cudaMemcpy(scratch, temp_transposed.data(),
+                              num_weights1 * sizeof(float),
                               cudaMemcpyHostToDevice));
   copyTypeConverted((DataType*)w1_, (float*)scratch, (int)num_weights1, 0);
 
@@ -782,8 +791,6 @@ void FusedWinogradConvSELayer<DataType>::LoadSEWeights(float* w1, float* b1,
                               num_weights2 * sizeof(float),
                               cudaMemcpyHostToDevice));
   copyTypeConverted((DataType*)w2_, (float*)scratch, (int)num_weights2, 0);
-
-
 
   ReportCUDAErrors(cudaMemcpy(scratch, b1, num_biases1 * sizeof(float),
                               cudaMemcpyHostToDevice));
@@ -821,8 +828,7 @@ template <>
 void FusedWinogradConvSELayer<float>::cublasRowMajorMatrixMul(
     const float* A, const float* B, float* Out, int M, int N, int K,
     int batchSize, cublasHandle_t cublas) {
-
-  float floatOne  = 1.0f;
+  float floatOne = 1.0f;
   float floatZero = 0.0f;
   if (use_gemm_ex_)
     ReportCUBLASErrors(cublasGemmStridedBatchedEx(
@@ -841,15 +847,16 @@ void FusedWinogradConvSELayer<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream) {
-
   // Split the scratch space into two parts - use first part for holding
   // transformed input and second part for transformed output.
   DataType* transformed_input = (DataType*)scratch;
   DataType* transformed_output =
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
-  InputTransform<DataType, false>(N, c_input_, transformed_input, input, stream);
-  cublasRowMajorMatrixMul(transformed_input, transformed_weights_, transformed_output, N*4, C, c_input_, 36, cublas);  
+  InputTransform<DataType, false>(N, c_input_, transformed_input, input,
+                                  stream);
+  cublasRowMajorMatrixMul(transformed_input, transformed_weights_,
+                          transformed_output, N * 4, C, c_input_, 36, cublas);
 
   if (has_se_ && use_relu_ && use_bias_ && skip_add_)
     OutputTransform<DataType, true, true, true, true, false, false, false>(
@@ -869,15 +876,14 @@ void FusedWinogradConvSELayer<DataType>::Eval(
           N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
           nullptr, nullptr, nullptr, stream);
   } else if (!has_se_ && use_mish_ && use_bias_ && !skip_add_) {
-      if (op_nhcw_)
-        OutputTransform<DataType, false, false, true, false, true, false, true>(
-            N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
-            nullptr, nullptr, nullptr, stream);
-      else
-        OutputTransform<DataType, false, false, true, false, true, false,
-                        false>(N, C, 0, output, transformed_output, nullptr,
-                               biases_, nullptr, nullptr, nullptr, nullptr,
-                               stream);
+    if (op_nhcw_)
+      OutputTransform<DataType, false, false, true, false, true, false, true>(
+          N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
+          nullptr, nullptr, nullptr, stream);
+    else
+      OutputTransform<DataType, false, false, true, false, true, false, false>(
+          N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
+          nullptr, nullptr, nullptr, stream);
   } else if (!has_se_ && use_relu_ && use_bias_ && skip_add_)
     OutputTransform<DataType, false, true, true, true, false, false, false>(
         N, C, 0, output, transformed_output, input2, biases_, nullptr, nullptr,
@@ -892,7 +898,6 @@ void FusedWinogradConvSELayer<DataType>::Eval(
         nullptr, nullptr, stream);
   else
     throw Exception("unsupported network type!");
-
 }
 
 template <typename DataType>
@@ -938,7 +943,8 @@ void Conv1Layer<DataType>::LoadWeights(float* pfilter, float* pBias,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights_, (float*)scratch, C * c_input_ * 1 * 1, 0);
+  copyTypeConverted((DataType*)weights_, (float*)scratch, C * c_input_ * 1 * 1,
+                    0);
 
   if (pBias) {
     ReportCUDAErrors(
@@ -996,11 +1002,12 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                 size_t /*scratch_size*/,
                                 cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
                                 cudaStream_t stream) {
-   cublasRowMajorMatrixMul(weights_, input, output, C, H * W, c_input_, N,
+  cublasRowMajorMatrixMul(weights_, input, output, C, H * W, c_input_, N,
                           cublas);
 
   if (use_bias_)
-    addBias_NCHW(output, output, biases_, N, C, H, W, use_relu_, use_mish_, stream);
+    addBias_NCHW(output, output, biases_, N, C, H, W, use_relu_, use_mish_,
+                 stream);
   else if (use_relu_ || use_mish_)
     addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W,
                0, use_relu_, false, false, use_mish_, stream);
@@ -1013,8 +1020,9 @@ Conv1Layer<DataType>::~Conv1Layer() {
 }
 
 template <typename DataType>
-ResidualBlock<DataType>::ResidualBlock(
-    BaseLayer<DataType>* ip, int C, bool se, int se_k, bool mish, bool use_gemm_ex, bool first, bool last)
+ResidualBlock<DataType>::ResidualBlock(BaseLayer<DataType>* ip, int C, bool se,
+                                       int se_k, bool mish, bool use_gemm_ex,
+                                       bool first, bool last)
     : BaseLayer<DataType>(C, 8, 8, ip),
       has_se_(se),
       se_k_(se_k),
@@ -1053,10 +1061,8 @@ ResidualBlock<DataType>::ResidualBlock(
 }
 
 template <typename DataType>
-void ResidualBlock<DataType>::LoadWeights0(float* pfilter,
-                                           float* pBias,
+void ResidualBlock<DataType>::LoadWeights0(float* pfilter, float* pBias,
                                            void* scratch) {
-
   const size_t weight_size = sizeof(float) * c_input_ * C * 3 * 3;
   const size_t bias_size = sizeof(float) * C;
 
@@ -1068,7 +1074,8 @@ void ResidualBlock<DataType>::LoadWeights0(float* pfilter,
   assert(scratch);
   ReportCUDAErrors(
       cudaMemcpy(scratch, pfilter, weight_size, cudaMemcpyHostToDevice));
-  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3, 0);
+  copyTypeConverted((DataType*)weights, (float*)scratch, C * c_input_ * 3 * 3,
+                    0);
 
   if (pBias) {
     ReportCUDAErrors(
@@ -1107,9 +1114,8 @@ void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
 }
 
 template <typename DataType>
-void ResidualBlock<DataType>::LoadSEWeights(float* w1, float* b1,
-                                            float* w2, float* b2,
-                                            void* scratch) {
+void ResidualBlock<DataType>::LoadSEWeights(float* w1, float* b1, float* w2,
+                                            float* b2, void* scratch) {
   const size_t num_weights1 = C * se_k_;
   const size_t num_weights2 = num_weights1 * 2;
   const size_t num_biases1 = se_k_;
@@ -1140,9 +1146,10 @@ void ResidualBlock<DataType>::LoadSEWeights(float* w1, float* b1,
 }
 
 template <>
-void ResidualBlock<half>::cublasRowMajorMatrixMul(
-    const half* A, const half* B, half* Out, int M, int N, int K, int batchSize,
-    cublasHandle_t cublas) {
+void ResidualBlock<half>::cublasRowMajorMatrixMul(const half* A, const half* B,
+                                                  half* Out, int M, int N,
+                                                  int K, int batchSize,
+                                                  cublasHandle_t cublas) {
   // Need to initialize 1.0 and 0.0 as hexadecimal for fp16 because typecasting
   // float to half type doesn't work before CUDA 10.0
   __half_raw one_h{0x3C00};
@@ -1163,9 +1170,11 @@ void ResidualBlock<half>::cublasRowMajorMatrixMul(
 }
 
 template <>
-void ResidualBlock<float>::cublasRowMajorMatrixMul(
-    const float* A, const float* B, float* Out, int M, int N, int K,
-    int batchSize, cublasHandle_t cublas) {
+void ResidualBlock<float>::cublasRowMajorMatrixMul(const float* A,
+                                                   const float* B, float* Out,
+                                                   int M, int N, int K,
+                                                   int batchSize,
+                                                   cublasHandle_t cublas) {
   float floatOne = 1.0f;
   float floatZero = 0.0f;
   if (use_gemm_ex_)
@@ -1180,17 +1189,19 @@ void ResidualBlock<float>::cublasRowMajorMatrixMul(
 }
 
 template <typename DataType>
-void ResidualBlock<DataType>::Eval(
-    int N, DataType* output, const DataType* input, const DataType* /*input2*/,
-    void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
+void ResidualBlock<DataType>::Eval(int N, DataType* output,
+                                   const DataType* input,
+                                   const DataType* /*input2*/, void* scratch,
+                                   size_t scratch_size, cudnnHandle_t /*cudnn*/,
                                    cublasHandle_t cublas, cudaStream_t stream) {
   // normally:
-  // - "output" initially contains the transformed input, 
+  // - "output" initially contains the transformed input,
   //    and after this layer, it contains the transformed input for next layer
   // - "input" contains the original/untransformed input
   // special cases:
   //   - for first_block_, input is real input (untransformed)
-  //   - for last_block_, output is the final output of this block (untransformed)
+  //   - for last_block_, output is the final output of this block
+  //   (untransformed)
 
   // Split the scratch space into two parts - use first part for holding
   // transformed input and second part for transformed output.
@@ -1199,14 +1210,14 @@ void ResidualBlock<DataType>::Eval(
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
   if (first_block_) {
-    InputTransform<DataType, true>(N, c_input_, transformed_input, input, stream);
+    InputTransform<DataType, true>(N, c_input_, transformed_input, input,
+                                   stream);
 
     cublasRowMajorMatrixMul(transformed_input, transformed_weights0_,
                             transformed_output, N * 4, C, c_input_, 36, cublas);
   } else {
-    cublasRowMajorMatrixMul(output, transformed_weights0_,
-                            transformed_output, N * 4, C, c_input_, 36, cublas);
- 
+    cublasRowMajorMatrixMul(output, transformed_weights0_, transformed_output,
+                            N * 4, C, c_input_, 36, cublas);
   }
 
   if (use_mish_) {
@@ -1257,11 +1268,11 @@ void ResidualBlock<DataType>::Eval(
     } else {
       if (has_se_)
         OutputInputTransform<DataType, true, true, true, true, false>(
-          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
       else
         OutputInputTransform<DataType, false, true, true, true, false>(
-          N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
+            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     }
     // "output" tensor now contains transformed input for the next
@@ -1282,7 +1293,6 @@ ResidualBlock<DataType>::~ResidualBlock() {
     ReportCUDAErrors(cudaFree(b2_));
   }
 }
-
 
 // Template instantiation.
 #ifdef USE_CUDNN

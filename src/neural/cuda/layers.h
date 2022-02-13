@@ -26,8 +26,9 @@
 */
 #pragma once
 
-#include <cstddef>
 #include <cublas_v2.h>
+
+#include <cstddef>
 
 #ifdef USE_CUDNN
 #include <cudnn.h>
@@ -56,7 +57,8 @@ class BaseLayer {
   // Input2 is optional (skip connection).
   virtual void Eval(int N, DataType* output, const DataType* input,
                     const DataType* input2, void* scratch, size_t scratch_size,
-                    cudnnHandle_t cudnn, cublasHandle_t cublas, cudaStream_t stream) = 0;
+                    cudnnHandle_t cudnn, cublasHandle_t cublas,
+                    cudaStream_t stream) = 0;
 
  protected:
   BaseLayer* input_;
@@ -65,7 +67,7 @@ class BaseLayer {
   int H;
   int W;
 
-  bool nhwc_;   // tensor layout
+  bool nhwc_;  // tensor layout
 };
 
 #ifdef USE_CUDNN
@@ -82,7 +84,7 @@ class ConvLayer : public BaseLayer<DataType> {
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
             bool relu = false, bool bias = false, bool mish = false);
-  
+
   ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
             bool relu = false, bool bias = false, bool mish = false);
 
@@ -119,7 +121,7 @@ class ConvLayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
- using BaseLayer<DataType>::nhwc_;
+  using BaseLayer<DataType>::nhwc_;
 
  public:
   FCLayer(BaseLayer<DataType>* ip, int C, int H, int W, bool relu, bool bias,
@@ -143,8 +145,8 @@ class FCLayer : public BaseLayer<DataType> {
 };
 
 template <typename DataType>
-class PolicyMapLayer: public BaseLayer<DataType> {
- using BaseLayer<DataType>::nhwc_;
+class PolicyMapLayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::nhwc_;
 
  public:
   PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize);
@@ -157,9 +159,9 @@ class PolicyMapLayer: public BaseLayer<DataType> {
             cudaStream_t stream) override;
 
  private:
-  int used_size_; // Size of the input without padding (typically 73x64).
-                  // This is over-written to contain size with padding 
-                  // (typically 80x64) after CHW->HWC conversion for fp16.
+  int used_size_;  // Size of the input without padding (typically 73x64).
+                   // This is over-written to contain size with padding
+                   // (typically 80x64) after CHW->HWC conversion for fp16.
   short* weights_ = nullptr;
 };
 
@@ -168,8 +170,8 @@ class PolicyMapLayer: public BaseLayer<DataType> {
 // connection -> RELU.
 template <typename DataType>
 class SELayer : public BaseLayer<DataType> {
- using BaseLayer<DataType>::C;
- using BaseLayer<DataType>::nhwc_;
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::nhwc_;
 
  public:
   SELayer(BaseLayer<DataType>* ip, int numFc1Out, bool mish,
@@ -187,7 +189,7 @@ class SELayer : public BaseLayer<DataType> {
  private:
   const bool use_mish_;
   DataType* w1_ = nullptr;
-  DataType* w1_t_ = nullptr;    // transposed copy used by fused SE kernel
+  DataType* w1_t_ = nullptr;  // transposed copy used by fused SE kernel
   DataType* b1_ = nullptr;
   DataType* w2_ = nullptr;
   DataType* w2_t_ = nullptr;
@@ -196,7 +198,6 @@ class SELayer : public BaseLayer<DataType> {
   int numFc1Out_;
   bool addPrevLayerBias_;
 };
-
 
 // Multi-pass Winograd Conv fused with (optional) SE
 template <typename DataType>
@@ -211,15 +212,15 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                           int Cin, bool relu, bool bias, bool skipAdd, bool se, bool mish,
-                           int se_k, bool use_gemm_ex, bool op_nhcw = false);
+                           int Cin, bool relu, bool bias, bool skipAdd, bool se,
+                           bool mish, int se_k, bool use_gemm_ex,
+                           bool op_nhcw = false);
 
   ~FusedWinogradConvSELayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
-  void LoadSEWeights(float* w1, float* b1, float* w2, float* b2, void *scratch);
+  void LoadSEWeights(float* w1, float* b1, float* w2, float* b2, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2,
-            void* scratch, size_t scratch_size,
+            const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
             cudaStream_t stream) override;
 
@@ -243,7 +244,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   DataType* b1_;
   DataType* b2_;
 
- void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
+  void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
                                DataType* Out, int M, int N, int K,
                                int batchSize, cublasHandle_t cublas);
 };
@@ -259,14 +260,13 @@ class Conv1Layer : public BaseLayer<DataType> {
   using BaseLayer<DataType>::nhwc_;
 
  public:
-  Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
-                         int Cin, bool relu, bool bias, bool mish, bool use_gemm_ex);
+  Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W, int Cin, bool relu,
+             bool bias, bool mish, bool use_gemm_ex);
 
   ~Conv1Layer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2,
-            void* scratch, size_t scratch_size,
+            const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
             cudaStream_t stream) override;
 
@@ -280,7 +280,7 @@ class Conv1Layer : public BaseLayer<DataType> {
   DataType* biases_ = nullptr;
   DataType* weights_ = nullptr;
 
- void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
+  void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
                                DataType* Out, int M, int N, int K,
                                int batchSize, cublasHandle_t cublas);
 };
@@ -296,7 +296,8 @@ class ResidualBlock : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetW;
 
  public:
-  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool mish, bool use_gemm_ex, bool first, bool last);
+  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool mish,
+                bool use_gemm_ex, bool first, bool last);
 
   ~ResidualBlock();
   void LoadWeights0(float* pfilter, float* pBias, void* scratch);
