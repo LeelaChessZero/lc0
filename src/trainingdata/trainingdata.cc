@@ -76,36 +76,38 @@ void DriftCorrect(float* q, float* d) {
 }
 
 Eval CalculateOriginalEval(const Node* node) {
-  Eval result;
-
-  int n = node->GetN();
-  result.wl = -node->GetWL() * n;
-  result.d = node->GetD() * n;
+  double n = node->GetN();
+  double q = -node->GetWL() * n;
+  double d = node->GetD() * n;
+  double m = node->GetM() * n - n + 1;
 
   for (auto& edge : node->Edges()) {
-    int n = edge.GetN();
-    result.wl -= edge.GetWL(0) * n;
-    result.d -= edge.GetD(0) * n;
+    double n = edge.GetN();
+    q -= edge.GetWL(0) * n;
+    d -= edge.GetD(0) * n;
+    m -= edge.GetM(0) * n;
   }
 
   // Checks to compensate for drift.
-  if (result.wl > 1.0f) {
-    result.wl = 1.0f;
-  } else if (result.wl < -1.0f) {
-    result.wl = -1.0f;
+  if (q > 1.0f) {
+    q = 1.0f;
+  } else if (q < -1.0f) {
+    q = -1.0f;
   }
 
-  if (result.d > 1.0f) {
-    result.d = 1.0f;
-  } else if (result.d < 0.0f) {
-    result.d = 0.0f;
+  if (d > 1.0f) {
+    d = 1.0f;
+  } else if (d < 0.0f) {
+    d = 0.0f;
   }
+
+  Eval result;
+
+  result.wl = q;
+  result.d = d;
+  result.ml = m;
 
   DriftCorrect(&result.wl, &result.d);
-
-  // Moves left suffers from enough drift that the calculated value can be
-  // quite inaccurate, so just leave as NaN.
-  result.ml = std::numeric_limits<float>::quiet_NaN();
 
   return result;
 }
