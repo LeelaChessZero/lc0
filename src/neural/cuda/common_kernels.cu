@@ -640,8 +640,11 @@ __global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
   int c = threadIdx.x;
   int C = blockDim.x;
 
-  __shared__ float sum;
-  if (c == 0) sum = 0;
+  __shared__ float sum, sum_sq;
+  if (c == 0) {
+    sum = 0;
+    sum_sq = 0;
+  }
   __syncthreads();
 
   int index = n * C + c;
@@ -665,10 +668,10 @@ __global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
   float d_sq = d * d;
 
   s = warpReduce(d_sq);
-  if ((c & 0x1F) == 0) atomicAdd(&sum, s);
+  if ((c & 0x1F) == 0) atomicAdd(&sum_sq, s);
   __syncthreads();
 
-  float var = sum / C;
+  float var = sum_sq / C;
 
   float norm = d / sqrt(var + ep);
   float op = norm * (float)gammas[c] + (float)betas[c];
