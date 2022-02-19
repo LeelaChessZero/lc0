@@ -46,6 +46,7 @@ int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
 // Encodes the last position in history for the neural network request.
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
+    pblczero::NetworkFormat::InputStaticFormat input_static_format,
     const PositionHistory& history, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out);
 

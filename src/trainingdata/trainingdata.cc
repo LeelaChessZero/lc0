@@ -76,7 +76,6 @@ void DriftCorrect(float* q, float* d) {
 }
 }  // namespace
 
-
 void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
                                 bool adjudicated) const {
   if (training_data_.empty()) return;
@@ -124,9 +123,10 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
 
   // Populate planes.
   int transform;
+  // Training data doesn't need additional static planes, so always pass none.
   InputPlanes planes = EncodePositionForNN(
-      input_format_, history, 8, fill_empty_history_[position.IsBlackToMove()],
-      &transform);
+      input_format_, pblczero::NetworkFormat::INPUT_STATIC_NONE, history, 8,
+      fill_empty_history_[position.IsBlackToMove()], &transform);
   int plane_idx = 0;
   for (auto& plane : result.planes) {
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);

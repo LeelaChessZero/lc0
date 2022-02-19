@@ -97,8 +97,9 @@ void BackendBenchmark::Run() {
     // Do any backend initialization outside the loop.
     auto warmup = network->NewComputation();
     warmup->AddInput(EncodePositionForNN(
-        network->GetCapabilities().input_format, tree.GetPositionHistory(), 8,
-        FillEmptyHistory::ALWAYS, nullptr));
+        network->GetCapabilities().input_format,
+        network->GetCapabilities().input_static_format,
+        tree.GetPositionHistory(), 8, FillEmptyHistory::ALWAYS, nullptr));
     warmup->ComputeBlocking();
 
     const int batches = option_dict.Get<int>(kBatchesId);
@@ -119,6 +120,7 @@ void BackendBenchmark::Run() {
         for (int k = 0; k < i; k++) {
           computation->AddInput(EncodePositionForNN(
               network->GetCapabilities().input_format,
+              network->GetCapabilities().input_static_format,
               tree.GetPositionHistory(), 8, FillEmptyHistory::ALWAYS, nullptr));
         }
         computation->ComputeBlocking();

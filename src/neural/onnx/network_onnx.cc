@@ -188,6 +188,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
       session_(onnx_env_, file.onnx_model().model().data(),
                file.onnx_model().model().size(), GetOptions(provider)),
       capabilities_{file.format().network_format().input(),
+                    file.format().network_format().input_static(),
                     file.format().network_format().moves_left()} {
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {

@@ -133,9 +133,24 @@ int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
 
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
+    pblczero::NetworkFormat::InputStaticFormat input_static_format,
     const PositionHistory& history, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out) {
-  InputPlanes result(kAuxPlaneBase + 8);
+  int additional = 0;
+  if (input_static_format == pblczero::NetworkFormat::INPUT_STATIC_SQUARES) {
+    additional = 64;
+  }
+  InputPlanes result(kAuxPlaneBase + 8 + additional);
+
+  if (input_static_format == pblczero::NetworkFormat::INPUT_STATIC_SQUARES) {
+    for (int i = 0; i < 64; i++) {
+      result[kAuxPlaneBase + 8 + i].mask = 1ULL << i;
+    }
+  } else if (input_static_format !=
+             pblczero::NetworkFormat::INPUT_STATIC_NONE) {
+    throw Exception("Unsupported additional static input planes " +
+                    std::to_string(input_static_format));
+  }
 
   int transform = 0;
   // Canonicalization format needs to stop early to avoid applying transform in
