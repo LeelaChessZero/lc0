@@ -260,7 +260,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   if (best_is_proven) {
     result.invariance_info |= 1u << 3;  // Best node is proven best;
   }
-  result.dummy = 0;
+  result.info2 = 0;
   result.rule50_count = position.GetRule50Ply();
 
   // Game result is undecided.
@@ -275,6 +275,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
     orig_eval.ml = nneval->m;
   } else {
     orig_eval = CalculateOriginalEval(node);
+    result.info2 |= (1u << 7);
   }
 
   // Aggregate evaluation WL.
