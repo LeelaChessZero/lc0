@@ -493,7 +493,7 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(conv2));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8, false);
       policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
 
       network_.emplace_back(std::move(policymap));
@@ -506,7 +506,7 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(convPol));
 
       auto FCPol = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip_pol_b.size(), 1, 1, false, true);
+          getLastLayer(), weights.ip_pol_b.size(), 1, 1, true, NONE);
       FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
                          scratch_mem_);
       network_.emplace_back(std::move(FCPol));
@@ -523,7 +523,7 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(convVal));
 
       auto FCVal1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, true);
+          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, RELU);
       FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
@@ -533,8 +533,7 @@ class CudnnNetwork : public Network {
       auto fc2_tanh = !wdl_;
 
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip2_val_b.size(), 1, 1, false, true,
-          fc2_tanh);
+          getLastLayer(), weights.ip2_val_b.size(), 1, 1, true, fc2_tanh ? TANH : NONE);
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
@@ -554,13 +553,13 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(convMov));
 
       auto FCMov1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, true);
+          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, RELU);
       FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov1));
 
       auto FCMov2 = std::make_unique<FCLayer<DataType>>(getLastLayer(), 1, 1, 1,
-                                                        true, true);
+                                                        true, RELU);
       FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov2));
