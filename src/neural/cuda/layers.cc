@@ -1165,6 +1165,8 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
   ppo_op_size_ = 4;
+  encoder_heads_ = weights.encoder_head_count;
+  policy_d_model_ = wq_op_size_;
 
   allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
   allocAndUpload<DataType>(&ip_pol_b_, weights.ip_pol_b, scratch);
@@ -1191,6 +1193,8 @@ AttentionPolicyHead<DataType>::EncoderWeights::EncoderWeights(
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
   mha_dense_size_ = cpu_weights.mha.dense_b.size();
+  ffn_dense1_size_ = cpu_weights.ffn.dense1_b.size();
+  ffn_dense2_size_ = cpu_weights.ffn.dense2_b.size();
 
   // debug!
   printf("\nsize of weight mha.q_b/w: %d, %d\n",
@@ -1291,12 +1295,13 @@ void AttentionPolicyHead<half>::Eval(
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
     const auto& enc = *pEnc;
-    const int depth = d_model_ / encoder_heads_;
+    const int d_model = enc.mha_q_size_;
+    const int depth = d_model / encoder_heads_;
 
     // MHA q (scratch1)
     {
       const int num_inputs = embedding_op_size_;
-      const int num_outputs = d_model_;
+      const int num_outputs = d_model;
       const int batch = N * 64;
       ReportCUBLASErrors(
           cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
@@ -1308,8 +1313,8 @@ void AttentionPolicyHead<half>::Eval(
 
     // MHA k (scratch2)
     {
-      const int num_inputs = d_model_;
-      const int num_outputs = d_model_;
+      const int num_inputs = embedding_op_size_;
+      const int num_outputs = d_model;
       const int batch = N * 64;
       ReportCUBLASErrors(
           cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
@@ -1321,8 +1326,8 @@ void AttentionPolicyHead<half>::Eval(
 
     // MHA v (scratch3)
     {
-      const int num_inputs = d_model_;
-      const int num_outputs = d_model_;
+      const int num_inputs = embedding_op_size_;
+      const int num_outputs = d_model;
       const int batch = N * 64;
       ReportCUBLASErrors(
           cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
@@ -1360,13 +1365,13 @@ void AttentionPolicyHead<half>::Eval(
                                  &factor,                            // to handle "/ tf.math.sqrt(dk)"
                                  scratch2 + offset /*A*/,
                                  CUDA_R_16F, 
-                                 d_model_ /*LDA*/,  // (d_model_ = depth * encoder_heads_) to skip over
+                                 d_model /*LDA*/,  // (d_model_ = depth * encoder_heads_) to skip over
                                                     // other "depth" slices / heads
-                                 64 * d_model_,    /*strideA*/
+                                 64 * d_model,    /*strideA*/
                                  scratch1 + offset /*B*/, 
                                  CUDA_R_16F, 
-                                 d_model_ /*LDB*/,  // to skip over other other "depth" slices / heads
-                                 64 * d_model_,     /*strideB*/
+                                 d_model /*LDB*/,  // to skip over other other "depth" slices / heads
+                                 64 * d_model,     /*strideB*/
                                  &beta, 
                                  scratch4 + outOffset /*C*/,  // output (matmul_qk) goes to scratch4
                                  CUDA_R_16F, 
@@ -1389,8 +1394,8 @@ void AttentionPolicyHead<half>::Eval(
           &alpha,
           scratch3 + offset /*A*/,          // "v" matrix
           CUDA_R_16F,
-          d_model_ /*LDA*/,  // to skip over other "depth" slices / heads
-          64 * d_model_,     /*strideA*/
+          d_model /*LDA*/,  // to skip over other "depth" slices / heads
+          64 * d_model,     /*strideA*/
           scratch4 + weightsOffset /*B*/, 
           CUDA_R_16F,
           64 /*LDB*/,
@@ -1398,14 +1403,14 @@ void AttentionPolicyHead<half>::Eval(
           &beta,
           scratch1 + offset /*C*/,  // output goes to scratch1 again
           CUDA_R_16F, 
-          d_model_ /*LDC*/, 
-          64 * d_model_ /*strideC*/, 
+          d_model /*LDC*/, 
+          64 * d_model /*strideC*/, 
           N, CUDA_R_16F, CUBLAS_GEMM_DEFAULT);
     }
 
     // #final dense layer (mha_dense), scratch1 -> scratch2
     {
-      const int num_inputs = d_model_;
+      const int num_inputs = d_model;
       const int num_outputs = embedding_op_size_;
       const int batch = N * 64;
       ReportCUBLASErrors(
@@ -1422,9 +1427,10 @@ void AttentionPolicyHead<half>::Eval(
               enc.ln1_gammas, enc.ln1_betas, 1e-6, stream);
 
     // #FFN dense 1, scratch3 -> scratch1
+    const int encoder_dff = enc.ffn_dense1_size_;
     {
       const int num_inputs = embedding_op_size_;
-      const int num_outputs = encoder_dff_;
+      const int num_outputs = encoder_dff;
       const int batch = N * 64;
       ReportCUBLASErrors(cublasHgemm(
           cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
@@ -1437,7 +1443,7 @@ void AttentionPolicyHead<half>::Eval(
 
     // #FFN dense 2, scratch1 -> scratch2
     {
-      const int num_inputs = encoder_dff_;
+      const int num_inputs = encoder_dff;
       const int num_outputs = embedding_op_size_;
       const int batch = N * 64;
       ReportCUBLASErrors(cublasHgemm(
