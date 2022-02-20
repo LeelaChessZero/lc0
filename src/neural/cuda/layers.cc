@@ -1151,7 +1151,7 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
   }
   ReportCUDAErrors(cudaMalloc(gpu_dest, size));
   ReportCUDAErrors(
-      cudaMemcpy(scratch, &cpu_src[0], size, cudaMemcpyHostToDevice));
+      cudaMemcpy(scratch, &cpu_src[0], cpu_src.size() * sizeof(float), cudaMemcpyHostToDevice));
   copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch,
                     (int)cpu_src.size(), 0);
 }
