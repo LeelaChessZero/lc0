@@ -1504,12 +1504,13 @@ void AttentionPolicyHead<half>::Eval(
                                output /*C*/,  // output (policy_attn_logits)
                                CUDA_R_16F, 
                                64 /*LDC*/, 
-                               64 * 64 /*strideC*/,
+                               64 * 64 + 8 * 24 /*strideC*/,            // leave 8*24 after each batch to interleave promotion_logits (computed below)
                                N, CUDA_R_16F, CUBLAS_GEMM_DEFAULT);
   }
 
-  // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits to get concat for free)
-  half* promotion_logits = output + N * 64 * 64;
+
+  // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits interleaved to get concat for free)
+  half* promotion_logits = output + 64 * 64;
 
   ComputePromotionLogits<half>(N, policy_d_model_, promotion_logits, scratch2,
                                ip4_pol_w_, output, stream);

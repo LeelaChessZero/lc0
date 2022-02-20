@@ -699,6 +699,8 @@ template <typename T>
 __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
                                         const T* ppo,
                                         const T* policy_attn_logits) {
+
+  constexpr int output_stride = 64 * 64 + 8 * 24;
   int n = blockIdx.x;    // [0..N)
   int y = threadIdx.y;   // [0..8)
   int x = threadIdx.x;   // [0..24)     // Can split into 8 * 3
@@ -750,12 +752,13 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   int c = x % 3;
 
   // n_promo_logits = matmul_qk[:, -16:-8, -8:]  # default traversals from rank 7 to rank 8
-  float n_promo_logit = (float) policy_attn_logits[n * 64 * 64 + (48 + y) * 64 + (56 + w)];
+  float n_promo_logit =
+      (float)policy_attn_logits[n * output_stride + (48 + y) * 64 + (56 + w)];
   float promo_offset = promotion_offsets[c][w];
 
   float op = n_promo_logit + promo_offset;
 
-  output[n * 8 * 24 + threadInGroup] = (T)op;
+  output[n * output_stride + threadInGroup] = (T)op;
 
 }
 

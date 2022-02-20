@@ -522,9 +522,18 @@ class CudaNetwork : public Network {
                           cublas,
                           stream);  // Entire Attention policy head except for the policy map
 
-      network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0], nullptr,
-                          scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // policy map layer  // POLICY output
+      if (fp16) {
+        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // policy map layer
+        copyTypeConverted(opPol, (half*)(tensor_mem[1]),
+                          batchSize * kNumOutputPolicy,
+                          stream);  // POLICY output
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // policy map layer  // POLICY output
+      }
 
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
