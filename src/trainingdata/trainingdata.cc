@@ -105,6 +105,10 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
     if (adjudicated && result == GameResult::UNDECIDED) {
       chunk.invariance_info |= 1u << 4;  // Max game length exceeded.
     }
+    if (result == GameResult::UNDECIDED) {
+      chunk.result_q = training_data_.back().best_q;
+      chunk.result_d = training_data_.back().best_d;
+    }
     chunk.plies_left = m_estimate;
     m_estimate -= 1.0f;
     writer->WriteChunk(chunk);

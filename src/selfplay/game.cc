@@ -125,7 +125,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
     // If endgame, stop.
     if (game_result_ != GameResult::UNDECIDED) break;
-    if (tree_[0]->GetPositionHistory().Last().GetGamePly() >= 450) {
+    if (to_replay.moves.empty() &&
+        tree_[0]->GetPositionHistory().Last().GetGamePly() >= 450) {
       adjudicated_ = true;
       break;
     }
@@ -133,7 +134,9 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         static_cast<int>(to_replay.moves.size()) <=
             tree_[0]->GetPositionHistory().GetLength() - 1) {
       game_result_ = to_replay.result;
-      adjudicated_ = true;
+      if (game_result_ != GameResult::UNDECIDED) {
+        adjudicated_ = true;
+      }
       break;
     }
 

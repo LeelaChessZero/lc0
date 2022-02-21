@@ -376,7 +376,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
             game_to_replay, enable_resign);
 
   // If game was aborted, it's still undecided.
-  if (game.GetGameResult() != GameResult::UNDECIDED) {
+  if (game.GetGameResult() != GameResult::UNDECIDED ||
+      !game_to_replay.moves.empty()) {
     // Game callback.
     GameInfo game_info;
     game_info.game_result = game.GetGameResult();
@@ -400,11 +401,14 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     // Update tournament stats.
     {
       Mutex::Lock lock(mutex_);
-      int result = game.GetGameResult() == GameResult::DRAW
-                       ? 1
-                       : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
-      if (player1_black) result = 2 - result;
-      ++tournament_info_.results[result][player1_black ? 1 : 0];
+      if (game.GetGameResult() != GameResult::UNDECIDED) {
+        int result =
+            game.GetGameResult() == GameResult::DRAW
+                ? 1
+                : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
+        if (player1_black) result = 2 - result;
+        ++tournament_info_.results[result][player1_black ? 1 : 0];
+      }
       tournament_info_.move_count_ += game.move_count_;
       tournament_info_.nodes_total_ += game.nodes_total_;
       tournament_callback_(tournament_info_);
