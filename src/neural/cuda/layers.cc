@@ -1211,7 +1211,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
 
-  encoder_heads_ = /*weights.encoder_head_count*/ 2;    // Ankan - TODO! 
+  encoder_heads_ = weights.encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
   allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);

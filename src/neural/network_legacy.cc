@@ -53,6 +53,7 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
+  encoder_head_count = weights.headcount();
   for (const auto& enc : weights.encoder()) {
     encoder.emplace_back(enc);
   }
