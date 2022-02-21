@@ -383,13 +383,9 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   int embedding_op_size_;
   int wq_op_size_;
   int wk_op_size_;
-  int ppo_op_size_;
 
-  // TODO: get these constants correctly from the network file (after parsing the weights) ?
-  const int d_model_ = 64;
-  const int encoder_heads_ = 2;
-  const int encoder_dff_ = 64 * 2;
-  const int policy_d_model_ = 64 * 2;
+  int encoder_heads_;
+  int policy_d_model_;
 
 
   std::vector<EncoderWeights *> encoder_weights_;
