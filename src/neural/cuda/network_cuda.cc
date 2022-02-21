@@ -429,7 +429,7 @@ class CudaNetwork : public Network {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
     }
 
-    if (use_res_block_winograd_fuse_opt_ && scratch_size_ > maxSize)
+    if ((attn_policy_ || use_res_block_winograd_fuse_opt_) && scratch_size_ > maxSize)
       maxSize = scratch_size_;
 
     if (!multi_stream_) {

@@ -1150,8 +1150,9 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
     return;
   }
   ReportCUDAErrors(cudaMalloc(gpu_dest, size));
-  ReportCUDAErrors(
-      cudaMemcpy(scratch, &cpu_src[0], size, cudaMemcpyHostToDevice));
+  ReportCUDAErrors(cudaMemcpy(scratch, &cpu_src[0],
+                              cpu_src.size() * sizeof(float),
+                              cudaMemcpyHostToDevice));
   copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch,
                     (int)cpu_src.size(), 0);
 }
@@ -1276,7 +1277,7 @@ void AttentionPolicyHead<half>::Eval(
   half beta = zero_h;
 
 
-  fp16NCHWtoNHWC(scratch1, input, N, 64, N, 64, 8, 8);
+  fp16NCHWtoNHWC(scratch1, input, N, input_->GetC(), N, input_->GetC(), 8, 8);
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
 
@@ -1510,14 +1511,14 @@ void AttentionPolicyHead<half>::Eval(
                                output /*C*/,  // output (policy_attn_logits)
                                CUDA_R_16F, 
                                64 /*LDC*/, 
-                               64 * 64 /*strideC*/,
+                               64 * 64 + 8 * 24 /*strideC*/,
                                N, CUDA_R_16F, CUBLAS_GEMM_DEFAULT);
   }
 //  addVectors(output, output, (half*)nullptr, N * 64 * 64, N * 64 * 64,
 //             1, NONE, stream, true);
 
   // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits to get concat for free)
-  half* promotion_logits = output + N * 64 * 64;
+  half* promotion_logits = output + 64 * 64;
 
   ComputePromotionLogits<half>(N, policy_d_model_, promotion_logits, scratch2,
                                ip4_pol_w_, output, stream);
