@@ -275,6 +275,11 @@ class Conv1Layer : public BaseLayer<DataType> {
 
   DataType* biases_ = nullptr;
   DataType* weights_ = nullptr;
+
+  // uses stride of 0 to read a vector as a matrix
+  void cublasSpecialMatrixMul(const DataType* A, const DataType* B,
+                              DataType* Out, int M, int N, int K,
+                              int batchSize, cublasHandle_t cublas);
 };
 
 // Multi-pass Winograd Conv fused with (optional) SE
