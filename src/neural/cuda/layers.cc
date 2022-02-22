@@ -207,31 +207,48 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
         output));
   }
 #if CUDNN_MAJOR != 7 || CUDNN_MINOR != 0
-  else if (input2 && act_ == RELU) {
+  else if (input2 && (act_ == RELU || act_ == NONE) && use_bias_) {
     // fused bias + sum + relu!
     ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, conv_algo_, scratch, scratch_size, &alpha, out_tensor_desc_,
         input2, bias_desc_, biases, activation_, out_tensor_desc_, output));
   } else {
-    // TODO: handle input2 && act_ != RELU
     // For some reason cudnn doesn't support just Convolution + Bias with nchw
     // (winograd algorithm) it works fine when RELU is also needed which is
     // somewhat strange.
-    if ((!nhwc_) && (act_ != RELU)) {
-      ReportCUDNNErrors(cudnnConvolutionForward(
-          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
-          conv_desc_, conv_algo_, scratch, scratch_size, &beta,
-          out_tensor_desc_, output));
-      // add bias
-      addBias_NCHW(output, output, biases, N, C, H, W, act_, stream);
-    } else {
-      // TODO: handle nhwc_ act_ != RELU for the act_ != NONE case.
+    if ((act_ == RELU || act_ == NONE && nhwc_) && !input2 && use_bias_) {
       ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
           out_tensor_desc_, output, bias_desc_, biases, activation_,
           out_tensor_desc_, output));
+    } else {
+      // The no special case path...
+      ReportCUDNNErrors(cudnnConvolutionForward(
+          cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
+          conv_desc_, conv_algo_, scratch, scratch_size, &beta,
+          out_tensor_desc_, output));
+      bool act_done = false;
+      if (input2 && input2 != output) {
+        // Merge act with residual add unless there is bias.
+        addVectors(output, output, (DataType*)input2, N * C * H * W,
+                   N * C * H * W, N * C * H * W, use_bias_ ? NONE : act_, stream);
+        act_done = !use_bias_;
+      }
+      // Merge act with bias.
+      if (use_bias_) {
+        if (!nhwc_) {
+          // add bias
+          addBias_NCHW(output, output, biases, N, C, H, W, act_, stream);
+        } else {
+          addVectors(output, output, biases, N * C * H * W, N * C * H * W, C,
+                     act_, stream);
+        }
+      } else if (!act_done && act_ != NONE) {
+        addVectors(output, output, (DataType*)nullptr, N * C * H * W,
+                   N * C * H * W, 0, act_, stream);
+      }
     }
   }
 #else
@@ -253,7 +270,11 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                                out_tensor_desc_, output, &beta,
                                                out_tensor_desc_, output));
     }
-    // TODO: handle the act_ != RELU && act_ != NONE case.
+    if (act_ != RELU && act_ != NONE) {
+      addVectors(output, output, nullptr, N * C * H * W, N * C * H * W, 0,
+                 act_, stream);
+      // TODO: check this actually compiles?
+    }
   }
 #endif
 }
