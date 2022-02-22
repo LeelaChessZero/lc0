@@ -26,6 +26,7 @@
 */
 #pragma once
 
+#include "cuda_common.h"
 #include <cstddef>
 #include <cublas_v2.h>
 #include "neural/network_legacy.h"
@@ -41,8 +42,6 @@ namespace cudnn_backend {
 
 // The Layer objects only hold memory for weights, biases, etc
 // memory for input and output tensors is provided by caller of Eval.
-
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU };
 
 template <typename DataType>
 class BaseLayer {
@@ -90,10 +89,10 @@ class ConvLayer : public BaseLayer<DataType> {
 
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
-            bool relu = false, bool bias = false);
+            ActivationFunction activation = NONE, bool bias = false);
   
   ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
-            bool relu = false, bool bias = false);
+            ActivationFunction activation = NONE, bool bias = false);
 
   ~ConvLayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -105,7 +104,7 @@ class ConvLayer : public BaseLayer<DataType> {
  private:
   const int c_input_;
   const int filter_size_;
-  const bool use_relu_;
+  const ActivationFunction act_;
   const bool use_bias_;
 
   DataType* biases = nullptr;
@@ -178,7 +177,7 @@ class SELayer : public BaseLayer<DataType> {
 
  public:
   SELayer(BaseLayer<DataType>* ip, int numFc1Out,
-          bool addPrevLayerBias = false);
+          bool addPrevLayerBias, ActivationFunction activation);
   ~SELayer();
 
   void LoadWeights(float* w1, float* b1, float* w2, float* b2,
@@ -199,6 +198,7 @@ class SELayer : public BaseLayer<DataType> {
   DataType* bPrev_ = nullptr;
   int numFc1Out_;
   bool addPrevLayerBias_;
+  const ActivationFunction act_;
 };
 
 
@@ -215,7 +215,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                           int Cin, bool relu, bool bias, bool skipAdd, bool se,
+                           int Cin, ActivationFunction activation, bool bias, bool skipAdd, bool se,
                            int se_k, bool use_gemm_ex, bool op_nhcw = false);
 
   ~FusedWinogradConvSELayer();
@@ -229,7 +229,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  private:
   const int c_input_;
-  const bool use_relu_;
+  const ActivationFunction act_;
   const bool use_bias_;
   const bool skip_add_;
   const bool has_se_;
@@ -258,7 +258,7 @@ class Conv1Layer : public BaseLayer<DataType> {
 
  public:
   Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
-                         int Cin, bool relu, bool bias, bool use_gemm_ex);
+                         int Cin, ActivationFunction activation, bool bias, bool use_gemm_ex);
 
   ~Conv1Layer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -270,7 +270,7 @@ class Conv1Layer : public BaseLayer<DataType> {
 
  private:
   const int c_input_;
-  const bool use_relu_;
+  const ActivationFunction act_;
   const bool use_bias_;
 
   DataType* biases_ = nullptr;
@@ -293,7 +293,7 @@ class ResidualBlock : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetW;
 
  public:
-  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last);
+  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last, ActivationFunction activation);
 
   ~ResidualBlock();
   void LoadWeights0(float* pfilter, float* pBias, void* scratch);
@@ -311,6 +311,7 @@ class ResidualBlock : public BaseLayer<DataType> {
   const int c_input_;
   const bool first_block_;
   const bool last_block_;
+  const ActivationFunction act_;
 
   DataType* biases0_ = nullptr;
   DataType* biases1_ = nullptr;

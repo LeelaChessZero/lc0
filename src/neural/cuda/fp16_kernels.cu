@@ -48,7 +48,7 @@ namespace cudnn_backend {
 template <int C, int K>
 __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
                               const half* w1, const half* b1, const half* w2,
-                              const half* b2, const half* bPrev) {
+                              const half* b2, const half* bPrev, ActivationFunction activation) {
   const int elementsPerThread = 64;  // 8x8 board
   const int se_K = K;
 
@@ -90,8 +90,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
     S += b1[c];
 
-    // relu
-    if (S < (half)0) S = 0;
+    S = activate(S, activation);
 
     sharedData[c] = S;
   }
@@ -120,7 +119,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
     half val = localData[i].y + localData[i].x * S + B;
 
     // Relu activation function.
-    if (val < (half)0) val = 0;
+    val = (half)activate((float)val, activation);
 
     output[inputIndex] = val;
   }
@@ -128,12 +127,12 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
-                  const half* w2, const half* b2, const half* bPrev) {
+                  const half* w2, const half* b2, const half* bPrev, ActivationFunction activation) {
   // TODO: Think of more elegant way to avoid this hardcoding :-/
   if (numFc1Out == 16) {
     if (C == 64) {
       SE_Layer_NHWC<64, 16>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else {
       // TODO: support other channel counts.
       throw Exception("channel count unsupported by SE layer");
@@ -141,25 +140,25 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
   } else if (numFc1Out == 32) {
     if (C == 64) {
       SE_Layer_NHWC<64, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 128) {
       SE_Layer_NHWC<128, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 192) {
       SE_Layer_NHWC<192, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 256) {
       SE_Layer_NHWC<256, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 320) {
       SE_Layer_NHWC<320, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 352) {
       SE_Layer_NHWC<352, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 384) {
       SE_Layer_NHWC<384, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else {
       // TODO: support other channel counts.
       return false;
@@ -167,22 +166,22 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
   } else if (numFc1Out == 64) {
     if (C == 64) {
       SE_Layer_NHWC<64, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 128) {
       SE_Layer_NHWC<128, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 192) {
       SE_Layer_NHWC<192, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 256) {
       SE_Layer_NHWC<256, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 320) {
       SE_Layer_NHWC<320, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else if (C == 384) {
       SE_Layer_NHWC<384, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev);
+          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
     } else {
       // TODO: support other channel counts.
       return false;
@@ -206,7 +205,7 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 // 'C' threads per block
 // 'N' blocks
 // Every thread generates an entire board/plane (8x8 elements).
-template <bool use_se, bool relu, bool use_bias, bool use_skip>
+template <bool use_se, ActivationFunction activation, bool use_bias, bool use_skip>
 __global__ __launch_bounds__(kMaxResBlockFusingSeKFp16Ampere, 1)
 void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
                                                  half* output,
@@ -294,7 +293,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
         S += shared_sums[i][k];
 
       S += (float)b1[k];
-      if (S < 0) S = 0;  // relu
+      S = activate(S, activation);
       shared_data[k] = S;
     }
 
@@ -315,7 +314,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
   }
 
   // Scale/bias, add skip connection, perform relu, and write to output.
-  if (use_se || use_skip || relu) {
+  if (use_se || use_skip || activation != NONE) {
     for (int h = 0; h < 8; h++) {
       half boardRow[8];
       copyAs<uint4>(&boardRow[0], &BOARD(h, 0));
@@ -336,10 +335,10 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
       }
 
       // relu
-      if (relu) {
+      if (activation != NONE) {
 #pragma unroll
         for (int w = 0; w < 8; w++)
-          if (boardRow[w] < (half)0) boardRow[w] = 0;
+          boardRow[w] = (half)activate((float)boardRow[w], activation);
       }
 
       // write un-transformed output to 'skip' if required
@@ -432,7 +431,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
   }
 }
 
-template <typename T = half, bool use_se, bool relu, bool use_bias,
+template <typename T = half, bool use_se, ActivationFunction activation, bool use_bias,
           bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
@@ -444,10 +443,10 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
-          OutputInputTransformKernel_fp16_shmem_board<use_se, relu, use_bias,
+          OutputInputTransformKernel_fp16_shmem_board<use_se, activation, use_bias,
                                                       use_skip>,
           cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * 1024);
-      OutputInputTransformKernel_fp16_shmem_board<use_se, relu, use_bias,
+      OutputInputTransformKernel_fp16_shmem_board<use_se, activation, use_bias,
                                                   use_skip>
           <<<N, C, 72 * 1024, stream>>>(
               N, C, se_K, (half*)output, (const half*)input, (half*)skip,
@@ -458,7 +457,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           "of filters\n");
     }
   } else {
-    OutputTransform_SE_relu_InputTransform_kernel<half, use_se, relu, use_bias,
+    OutputTransform_SE_relu_InputTransform_kernel<half, use_se, activation,
+                                                  use_bias,
                                                   use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (half*)skip, bias, w1,
                               b1, w2, b2);
@@ -475,52 +475,97 @@ template void InputTransform<half, true>(int N, int C, half* transformed_input,
 template void InputTransform<half, false>(int N, int C, half* transformed_input,
                                           const half* input, cudaStream_t stream);
 
-template void OutputTransform<half, true, true, true, true, false, false>(
+template void OutputTransform<half, true, RELU, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, true, true, true, false, false>(
+template void OutputTransform<half, false, RELU, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, true, true, true, true, true, false>(
+template void OutputTransform<half, true, RELU, true, true, true, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, true, true, true, true, false>(
+template void OutputTransform<half, false, RELU, true, true, true, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, true, true, false, false, false>(
+template void OutputTransform<half, false, RELU, true, false, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, true, true, false, false, true>(
+template void OutputTransform<half, false, RELU, true, false, false, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, false, true, false, false, false>(
+template void OutputTransform<half, true, MISH, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputInputTransform<half, true, true, true, true>(
+template void OutputTransform<half, false, MISH, true, true, false, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, true, MISH, true, true, true, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, MISH, true, true, true, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, MISH, true, false, false, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, MISH, true, false, false, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, NONE, true, false, false, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputInputTransform<half, true, RELU, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2, 
     const half* b2, cudaStream_t stream);
 
-template void OutputInputTransform<half, false, true, true, true>(
+template void OutputInputTransform<half, false, RELU, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputInputTransform<half, false, true, true, false>(
+template void OutputInputTransform<half, false, RELU, true, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputInputTransform<half, true, MISH, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputInputTransform<half, false, MISH, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputInputTransform<half, false, MISH, true, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);

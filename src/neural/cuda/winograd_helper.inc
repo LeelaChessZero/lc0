@@ -28,6 +28,40 @@
 namespace lczero {
 namespace cudnn_backend {
 
+__device__ __forceinline__ float mishActivate(float el) {
+  auto e = __expf(el);
+  auto n = e * e + 2 * e;
+  if (el <= -0.6f) {
+    return n * __fdividef(el, n + 2);
+  } else {
+    return el - 2 * __fdividef(el, n + 2);
+  }
+}
+__device__ __forceinline__ float activate(float cVal, ActivationFunction activation) {
+  switch (activation) { 
+    case RELU:
+      if (cVal < 0) cVal = 0;
+      break;
+    case TANH:
+      cVal = tanh(cVal);
+      break;
+    case SIGMOID:
+      cVal = 1.0f / (1.0f + exp(-cVal));
+      break;
+    case SELU:
+      float alpha = 1.67326324f, scale = 1.05070098f;
+      if (cVal > 0)
+        cVal = scale * cVal;
+      else
+        cVal = scale * alpha * (exp(cVal) - 1);
+      break;
+    case MISH:
+      cVal = mishActivate(cVal);
+      break;
+  }
+  return cVal;
+}
+
 template <typename T, int M, int N, int K>
 __device__ __forceinline__ void matrixMul_gpu_serial(T* c, const T* a,
                                                      const T* b) {
@@ -247,7 +281,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias, bool use_skip,
           bool skipInput_nhcw, bool output_nhcw>
 __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
@@ -309,7 +343,7 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
         S += shared_data[i] * float(readw1(i, k));
       }
       S += (float)b1[k];
-      if (S < 0) S = 0;  // relu
+      S = activate(S, activation);
     }
     __syncthreads();
     if (k < se_K) {
@@ -354,10 +388,10 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     }
 
     // relu
-    if (relu) {
+    if (activation != NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
-        if (board[h][w] < (T)0) board[h][w] = 0;
+        board[h][w] = (T)activate((float)board[h][w], activation);
     }
 
     // Write to output (use 128 bit writes to store one row a time)
@@ -394,7 +428,7 @@ __device__ __forceinline__ void copyAs(void* dst, const void* src) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias, bool use_skip>
 __global__ __launch_bounds__(kMaxResBlockFusingChannels, 1)
 void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
                                                    T* output, const T* input,
@@ -479,7 +513,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
       for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
 
       S += (float)b1[k];
-      if (S < 0) S = 0;  // relu
+      S = activate(S, activation);
       shared_data[k] = S;
     }
 
@@ -512,10 +546,10 @@ void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
     }
 
     // relu
-    if (relu) {
+    if (activation != NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
-        if (board[h][w] < (T)0) board[h][w] = 0;
+        board[h][w] = (T)activate((float)board[h][w], activation);
     }
 
     // write un-transformed output to 'skip' if required
@@ -630,13 +664,13 @@ void InputTransform(int N, int C, T* transformed_input, const T* input,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias, bool use_skip,
           bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2, cudaStream_t stream) {
   // Each thread processes entire chess board
-  OutputTransform_kernel<T, use_se, relu, use_bias, use_skip, skipInput_nhcw,
+  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip, skipInput_nhcw,
                          output_nhcw><<<N, C, 0, stream>>>(
       N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
   ReportCUDAErrors(cudaGetLastError());

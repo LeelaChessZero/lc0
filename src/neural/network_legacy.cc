@@ -39,7 +39,6 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip3_pol_w(LayerAdapter(weights.ip3_pol_w()).as_vector()),
       ip3_pol_b(LayerAdapter(weights.ip3_pol_b()).as_vector()),
       ip4_pol_w(LayerAdapter(weights.ip4_pol_w()).as_vector()),
-      ip4_pol_b(LayerAdapter(weights.ip4_pol_b()).as_vector()),
       value(weights.value()),
       ip1_val_w(LayerAdapter(weights.ip1_val_w()).as_vector()),
       ip1_val_b(LayerAdapter(weights.ip1_val_b()).as_vector()),
@@ -53,8 +52,8 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
-  encoder_head_count = weights.headcount();
-  for (const auto& enc : weights.encoder()) {
+  encoder_head_count = weights.pol_headcount();
+  for (const auto& enc : weights.pol_encoder()) {
     encoder.emplace_back(enc);
   }
 }
