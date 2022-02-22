@@ -275,6 +275,11 @@ class Conv1Layer : public BaseLayer<DataType> {
 
   DataType* biases_ = nullptr;
   DataType* weights_ = nullptr;
+
+  // uses stride of 0 to read a vector as a matrix
+  void cublasSpecialMatrixMul(const DataType* A, const DataType* B,
+                              DataType* Out, int M, int N, int K, int batchSize,
+                              cublasHandle_t cublas);
 };
 
 // Multi-pass Winograd Conv fused with (optional) SE
@@ -378,9 +383,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   int embedding_op_size_;
   int wq_op_size_;
   int wk_op_size_;
-  int ppo_op_size_;
 
-  // TODO: get these constants correctly from the network file (after parsing the weights) ?
   int encoder_heads_;
   int policy_d_model_;
 

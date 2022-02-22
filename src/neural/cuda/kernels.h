@@ -34,7 +34,7 @@ enum ActivationFunction;
 // activation (relu, tanh or sigmoid).
 template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
-                ActivationFunction activation, cudaStream_t stream, bool log=false);
+                ActivationFunction activation, cudaStream_t stream);
 
 // Add bias to convolution's output.
 template <typename T>

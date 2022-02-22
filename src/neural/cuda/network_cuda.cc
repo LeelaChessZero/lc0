@@ -311,20 +311,6 @@ class CudaNetwork : public Network {
           getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true);
       policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
       network_.emplace_back(std::move(policymap));
-
-      // for debug!
-      printf("\nsize of weight ip_pol_b/w: %d, %d\n", (int)weights.ip_pol_b.size(),
-             (int)weights.ip_pol_w.size());
-      printf("\nsize of weight ip2_pol_b/w: %d, %d\n",
-             (int)weights.ip2_pol_b.size(), (int)weights.ip2_pol_w.size());
-      printf("\nsize of weight ip3_pol_b/w: %d, %d\n",
-             (int)weights.ip3_pol_b.size(), (int)weights.ip3_pol_w.size());
-      printf("\nsize of weight ip4_pol_b/w: %d, %d\n",
-             (int)weights.ip4_pol_b.size(), (int)weights.ip4_pol_w.size());
-
-      // exit(0);  // Ankan - test!
-      //TODO!
-      //weights.ip2_mov_b
     } else if (conv_policy_) {
       auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
           resi_last_, kNumFilters, 8, 8, kNumFilters, true, true, false,

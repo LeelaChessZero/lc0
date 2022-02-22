@@ -44,11 +44,8 @@ enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU };
 
 template <typename T>
 __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
-                                  int bsize, ActivationFunction activation, bool log) {
+                                  int bsize, ActivationFunction activation) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
-  if (log && i == 0) {
-    printf("\n");
-  }
   if (i < size) {
     float aVal = 0;
     float bVal = 0;
@@ -77,9 +74,6 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
     }
 
     c[i] = (T)cVal;
-    if (log) {
-      printf("%d %f ", i, cVal);
-    }
   }
 }
 
@@ -87,12 +81,12 @@ __global__ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
 // activation.
 template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
-                ActivationFunction activation, cudaStream_t stream, bool log) {
+                ActivationFunction activation, cudaStream_t stream) {
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
   addVectors_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, size, asize,
-                                                       bsize, activation, log);
+                                                       bsize, activation);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -803,10 +797,10 @@ template void batchNorm<half>(half* output, const half* input,
 
 template void addVectors<float>(float* c, float* a, float* b, int size,
                                 int asize, int bsize, ActivationFunction act,
-                                cudaStream_t stream, bool log);
+                                cudaStream_t stream);
 template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                int bsize, ActivationFunction act,
-                               cudaStream_t stream, bool log);
+                               cudaStream_t stream);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
                                   int H, int W, bool relu, cudaStream_t stream);

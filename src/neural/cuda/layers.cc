@@ -916,6 +916,51 @@ void Conv1Layer<DataType>::LoadWeights(float* pfilter, float* pBias,
     copyTypeConverted((DataType*)biases_, (float*)scratch, C, 0);
   }
 }
+template <>
+void Conv1Layer<half>::cublasSpecialMatrixMul(const half* A, const half* B,
+                                              half* Out, int M, int N, int K,
+                                              int batchSize,
+                                              cublasHandle_t cublas) {
+  // Need to initialize 1.0 and 0.0 as hexadecimal for fp16 because typecasting
+  // float to half type doesn't work before CUDA 10.0
+  __half_raw one_h{0x3C00};
+  __half_raw zero_h{0};
+  half halfOne = one_h;
+  half halfZero = zero_h;
+
+  // dimensions of matrix A = M x K
+  // dimensions of matrix B = K x N
+  // dimensions of output   = M x N
+
+  // cublas supports only col major output
+  // to multiply row major matrices, use the trick below
+  // NOTE strideB set to 0 below!
+  ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+      cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &halfOne, B, CUDA_R_16F, N,
+      N * K, A, CUDA_R_16F, K, 0, &halfZero, Out, CUDA_R_16F, N, N * M,
+      batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
+}
+
+template <>
+void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
+                                               float* Out, int M, int N, int K,
+                                               int batchSize,
+                                               cublasHandle_t cublas) {
+  float floatOne = 1.0f;
+  float floatZero = 0.0f;
+
+  // NOTE strideB set to 0 below!
+  if (use_gemm_ex_)
+    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+        cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_32F, N,
+        N * K, A, CUDA_R_32F, K, 0, &floatZero, Out, CUDA_R_32F, N, N * M,
+        batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+  else
+    // Much slower on RTX 2060.. why? Maybe a cublas bug :-/
+    ReportCUBLASErrors(cublasSgemmStridedBatched(
+        cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, N, N * K, A, K,
+        0, &floatZero, Out, N, N * M, batchSize));
+}
 
 template <typename DataType>
 void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
@@ -923,8 +968,8 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                 size_t /*scratch_size*/,
                                 cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
                                 cudaStream_t stream) {
-  BaseLayer<DataType>::cublasRowMajorMatrixMul(weights_, input, output, C,
-                                               H * W, c_input_, N, cublas);
+  cublasSpecialMatrixMul(weights_, input, output, C, H * W, c_input_, N,
+                         cublas);
 
   if (use_bias_)
     addBias_NCHW(output, output, biases_, N, C, H, W, use_relu_, stream);
@@ -1161,11 +1206,10 @@ template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
                                                    const LegacyWeights& weights,
                                                    void* scratch)
-    : BaseLayer<DataType>(ip->GetC(), 8, 8, ip) {
+    : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip) {
   embedding_op_size_ = weights.ip_pol_b.size();
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
-  ppo_op_size_ = 4;
   encoder_heads_ = weights.encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
@@ -1179,7 +1223,6 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   allocAndUpload<DataType>(&ip3_pol_b_, weights.ip3_pol_b, scratch);
 
   allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
-  allocAndUpload<DataType>(&ip4_pol_b_, weights.ip4_pol_b, scratch);
 
   for (const auto& enc : weights.encoder) {
     EncoderWeights* pW = new EncoderWeights(enc, scratch);
@@ -1278,6 +1321,8 @@ void AttentionPolicyHead<half>::Eval(
 
 
   fp16NCHWtoNHWC(scratch1, input, N, input_->GetC(), N, input_->GetC(), 8, 8);
+
+
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
 
@@ -1486,7 +1531,7 @@ void AttentionPolicyHead<half>::Eval(
                                    ip3_pol_w_, num_inputs, scratch0, num_inputs,
                                    &beta, scratch2, num_outputs));
     addVectors(scratch2, ip3_pol_b_, scratch2, num_outputs * batch, num_outputs,
-               num_outputs * batch, NONE, stream, false);
+               num_outputs * batch, NONE, stream);
   }
 
   // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))  # constant for scaling
@@ -1514,16 +1559,12 @@ void AttentionPolicyHead<half>::Eval(
                                64 * 64 + 8 * 24 /*strideC*/,
                                N, CUDA_R_16F, CUBLAS_GEMM_DEFAULT);
   }
-//  addVectors(output, output, (half*)nullptr, N * 64 * 64, N * 64 * 64,
-//             1, NONE, stream, true);
 
   // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits to get concat for free)
   half* promotion_logits = output + 64 * 64;
 
   ComputePromotionLogits<half>(N, policy_d_model_, promotion_logits, scratch2,
                                ip4_pol_w_, output, stream);
-//  addVectors(output, output, (half*)nullptr, N * 64 * 64, N * 64 * 64, 1, NONE,
-//             stream, true);
 }
 
 
@@ -1547,7 +1588,6 @@ AttentionPolicyHead<DataType>::~AttentionPolicyHead() {
   ReportCUDAErrors(cudaFree(ip3_pol_w_));
   ReportCUDAErrors(cudaFree(ip3_pol_b_));
   ReportCUDAErrors(cudaFree(ip4_pol_w_));
-  ReportCUDAErrors(cudaFree(ip4_pol_b_));
   for (const auto pEnc : encoder_weights_)
     delete pEnc;
 }
