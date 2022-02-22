@@ -713,7 +713,7 @@ FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
       has_se_(se),
       se_k_(se_k),
       op_nhcw_(op_nhcw) {
-  if (act_ != RELU && act_ != MISH) {
+  if (act_ != RELU && act_ != MISH && act_ != NONE) {
     throw Exception("Unsupported activation for fused winograd conv SE layer.");
   }
   // Allocate memory for weights (filter tensor) and biases.
