@@ -1211,7 +1211,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
 
-  encoder_heads_ = weights.encoder_head_count;
+  encoder_heads_ = weights.pol_encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
   allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
@@ -1225,7 +1225,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 
   allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
 
-  for (const auto& enc : weights.encoder) {
+  for (const auto& enc : weights.pol_encoder) {
     EncoderWeights* pW = new EncoderWeights(enc, scratch);
     encoder_weights_.emplace_back(pW);
   }
@@ -1240,28 +1240,6 @@ AttentionPolicyHead<DataType>::EncoderWeights::EncoderWeights(
   mha_dense_size_ = cpu_weights.mha.dense_b.size();
   ffn_dense1_size_ = cpu_weights.ffn.dense1_b.size();
   ffn_dense2_size_ = cpu_weights.ffn.dense2_b.size();
-
-  // debug!
-  printf("\nsize of weight mha.q_b/w: %d, %d\n",
-         (int)cpu_weights.mha.q_b.size(), (int)cpu_weights.mha.q_w.size());
-  printf("\nsize of weight mha.k_b/w: %d, %d\n",
-         (int)cpu_weights.mha.k_b.size(), (int)cpu_weights.mha.k_w.size());
-  printf("\nsize of weight mha.v_b/w: %d, %d\n",
-         (int)cpu_weights.mha.v_b.size(), (int)cpu_weights.mha.v_w.size());
-  printf("\nsize of weight mha.dense_b/w: %d, %d\n",
-         (int)cpu_weights.mha.dense_b.size(),
-         (int)cpu_weights.mha.dense_w.size());
-  printf("\nsize of ln1 betas/gammas: %d, %d\n",
-         (int)cpu_weights.ln1_betas.size(), (int)cpu_weights.ln1_gammas.size());
-  printf("\nsize of ln2 betas/gammas: %d, %d\n",
-         (int)cpu_weights.ln2_betas.size(), (int)cpu_weights.ln2_gammas.size());
-  printf("\nsize of weight ffn.dense1_b/w: %d, %d\n",
-         (int)cpu_weights.ffn.dense1_b.size(),
-         (int)cpu_weights.ffn.dense1_w.size());
-  printf("\nsize of weight ffn.dense2_b/w: %d, %d\n",
-         (int)cpu_weights.ffn.dense2_b.size(),
-         (int)cpu_weights.ffn.dense2_w.size());
-
 
   allocAndUpload<DataType>(&mha_q_w, cpu_weights.mha.q_w, scratch);
   allocAndUpload<DataType>(&mha_q_b, cpu_weights.mha.q_b, scratch);
@@ -1387,7 +1365,7 @@ void AttentionPolicyHead<half>::Eval(
     // Apply split_heads() to q, k and v
     // which basically transposes (batch_size, 64, num_heads, depth)
     // to (batch_size, num_heads, 64, depth)
-    // Ankan - do we really need to transpose here?
+    // Do we really need to transpose here?
     // (Maybe not, we can play with strides of the gemm and do independent gemms for each encoder head)
 
     // Apply scaled dot product attention:

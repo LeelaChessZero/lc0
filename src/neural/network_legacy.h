@@ -103,9 +103,8 @@ struct LegacyWeights {
   Vec ip3_pol_w;
   Vec ip3_pol_b;
   Vec ip4_pol_w;
-  Vec ip4_pol_b;
-  int encoder_head_count;
-  std::vector<EncoderLayer> encoder;
+  int pol_encoder_head_count;
+  std::vector<EncoderLayer> pol_encoder;
 
 
   // Value head

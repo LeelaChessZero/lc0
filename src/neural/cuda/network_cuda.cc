@@ -416,8 +416,15 @@ class CudaNetwork : public Network {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
     }
 
-    if (use_res_block_winograd_fuse_opt_ && scratch_size_ > maxSize)
+
+    if ((attn_policy_ || use_res_block_winograd_fuse_opt_) && (scratch_size_ > maxSize)) {
+      // When attention is used, we split the tensor memory allocations into two
+      // halves and use them as scratch space to hold intermediate data
+      if (attn_policy_ && (scratch_size_ < maxSize * 2)) {
+        throw Exception("Fix assumption with scratch_size in cuda backend");
+      }
       maxSize = scratch_size_;
+    }
 
     if (!multi_stream_) {
       for (auto& mem : tensor_mem_) {
