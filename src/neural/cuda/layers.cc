@@ -1476,7 +1476,7 @@ void AttentionPolicyHead<half>::Eval(
     // Apply split_heads() to q, k and v
     // which basically transposes (batch_size, 64, num_heads, depth)
     // to (batch_size, num_heads, 64, depth)
-    // Ankan - do we really need to transpose here?
+    // Do we really need to transpose here?
     // (Maybe not, we can play with strides of the gemm and do independent gemms for each encoder head)
 
     // Apply scaled dot product attention:
@@ -1501,7 +1501,7 @@ void AttentionPolicyHead<half>::Eval(
                                  &factor,                            // to handle "/ tf.math.sqrt(dk)"
                                  scratch2 + offset /*A*/,
                                  CUDA_R_16F, 
-                                 d_model /*LDA*/,  // (d_model_ = depth * encoder_heads_) to skip over
+                                 d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
                                                     // other "depth" slices / heads
                                  64 * d_model,    /*strideA*/
                                  scratch1 + offset /*B*/, 
@@ -1646,11 +1646,12 @@ void AttentionPolicyHead<half>::Eval(
                                output /*C*/,  // output (policy_attn_logits)
                                CUDA_R_16F, 
                                64 /*LDC*/, 
-                               64 * 64 + 8 * 24 /*strideC*/,
+                               64 * 64 + 8 * 24 /*strideC*/,            // leave 8*24 after each batch to interleave promotion_logits (computed below)
                                N, CUDA_R_16F, CUBLAS_GEMM_DEFAULT);
   }
 
-  // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits to get concat for free)
+
+  // Compute promotion_logits in a single kernel (and put the result just after policy_attn_logits interleaved to get concat for free)
   half* promotion_logits = output + 64 * 64;
 
   ComputePromotionLogits<half>(N, policy_d_model_, promotion_logits, scratch2,
