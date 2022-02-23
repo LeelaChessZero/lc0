@@ -42,13 +42,11 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
                   ActivationFunction activation,
                   cudaStream_t stream);
 
-// Conversion from: fp32 -> fp16 datatype, and NCHW -> NHWC layout.
-// Cudnn kernels work best with NCHW layout for fp32, and with NHWC for fp16.
-void fp32NCHWtofp16NHWC(half* output_tensor, float* input_tensor, int Nin,
-                        int Cin, int Nout, int Cout, int H, int W);
-
-void fp16NCHWtoNHWC(half* output_tensor, const half* input_tensor, int Nin,
-                    int Cin, int Nout, int Cout, int H, int W);
+// Conversion from NCHW to NHWC, can also change datatype depending on template
+// params, also pad/un-pad elements from Batch or Channel dimensions
+template <typename DstType, typename SrcType>
+void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
+                      int Nin, int Cin, int Nout, int Cout, int H, int W);
 
 // Plain data-type conversion (no layout conversion).
 template <typename DstType, typename SrcType>
