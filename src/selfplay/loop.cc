@@ -364,17 +364,21 @@ void ChangeInputFormat(int newInputFormat, V6TrainingData* data,
     // Probabilities need reshuffling.
     float newProbs[1858];
     std::fill(std::begin(newProbs), std::end(newProbs), -1);
+    bool played_fixed = false;
+    bool best_fixed = false;
     for (auto move : history.Last().GetBoard().GenerateLegalMoves()) {
       int i = move.as_nn_index(transform);
       int j = move.as_nn_index(data->invariance_info & 7);
       newProbs[i] = data->probabilities[j];
       // For V6 data only, the played/best idx need updating.
       if (data->visits > 0) {
-        if (data->played_idx == j) {
+        if (data->played_idx == j && !played_fixed) {
           data->played_idx = i;
+          played_fixed = true;
         }
-        if (data->best_idx == j) {
+        if (data->best_idx == j && !best_fixed) {
           data->best_idx = i;
+          best_fixed = true;
         }
       }
     }
