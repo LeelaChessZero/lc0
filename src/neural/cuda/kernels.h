@@ -28,8 +28,6 @@
 namespace lczero {
 namespace cudnn_backend {
 
-enum ActivationFunction;
-
 // Adds two vectors (possibly of different sizes), also do optional
 // activation (relu, tanh or sigmoid).
 template <typename T>

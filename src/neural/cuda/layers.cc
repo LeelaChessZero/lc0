@@ -24,12 +24,14 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#include "cuda_common.h"
 #include "layers.h"
 #include <cassert>
 #include <cstring>
 #include <vector>
-#include "cuda_common.h"
 #include "kernels.h"
+#include "utils/fp16_utils.h"
+
 namespace lczero {
 //void dumpTensor(void* memory, int elements, const char* message, bool fp16 = false);
 
@@ -1267,18 +1269,6 @@ AttentionPolicyHead<DataType>::EncoderWeights::EncoderWeights(
   allocAndUpload<DataType>(&ln2_betas, cpu_weights.ln2_betas, scratch);
 }
 
-// taken from https://stackoverflow.com/questions/1659440/32-bit-to-16-bit-floating-point-conversion
-unsigned short float_to_half(const float x) {
-  const unsigned int b = (*(unsigned int*)&x) + 0x00001000;
-  const unsigned int e = (b & 0x7F800000) >> 23;
-  const unsigned int m = b & 0x007FFFFF;
-  return (b & 0x80000000) >> 16 |
-         (e > 112) * ((((e - 112) << 10) & 0x7C00) | m >> 13) |
-         ((e < 113) & (e > 101)) *
-             ((((0x007FF000 + m) >> (125 - e)) + 1) >> 1) |
-         (e > 143) * 0x7FFF;
-}
-
 template <typename DataType>
 static void cublasXgemm(cublasHandle_t handle, cublasOperation_t transa,
                         cublasOperation_t transb, int m, int n, int k,
@@ -1287,8 +1277,8 @@ static void cublasXgemm(cublasHandle_t handle, cublasOperation_t transa,
                         int ldc) {
   const bool fp16 = std::is_same<half, DataType>::value;
   if (fp16) {
-    unsigned short alpha_h = float_to_half(alpha);
-    unsigned short beta_h = float_to_half(beta);
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
     ReportCUBLASErrors(cublasHgemm(
         handle, transa, transb, m, n, k, (const half*)&alpha_h, (const half*)A,
         lda, (const half*)B, ldb, (const half*)&beta_h, (half*)C, ldc));
@@ -1307,8 +1297,8 @@ static void cublasXGemmStridedBatched(
     float beta, void* C, int ldc, long long int strideC, int batchCount) {
   const bool fp16 = std::is_same<half, DataType>::value;
   if (fp16) {
-    unsigned short alpha_h = float_to_half(alpha);
-    unsigned short beta_h = float_to_half(beta);
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
     ReportCUBLASErrors(cublasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha_h, A, CUDA_R_16F, lda, strideA,
         B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
@@ -1324,7 +1314,7 @@ static void cublasXGemmStridedBatched(
 template <typename DataType>
 void AttentionPolicyHead<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
-    void* scratch, size_t scratch_size, cudnnHandle_t cudnn,
+    void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream) {
 
   DataType* scratch0 = (DataType*)scratch;

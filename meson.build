@@ -208,6 +208,7 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
+  'src/utils/fp16_utils.cc',
   'src/version.cc',
 ]
 includes += include_directories('src')
@@ -544,7 +545,6 @@ if get_option('build_backends')
       'src/neural/dx/network_dx.cc',
       'src/neural/dx/shader_wrapper.cc',
       'src/neural/dx/layers_dx.cc',
-      'src/neural/dx/fp16_utils.cc',
     ]
     files += dx_files
     deps += [dx_d3d12, dx_dxgi]
