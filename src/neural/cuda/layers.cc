@@ -1502,7 +1502,7 @@ void AttentionPolicyHead<half>::Eval(
                                  scratch2 + offset /*A*/,
                                  CUDA_R_16F, 
                                  d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
-                                                    // other "depth" slices / heads
+                                                   // other "depth" slices / heads
                                  64 * d_model,    /*strideA*/
                                  scratch1 + offset /*B*/, 
                                  CUDA_R_16F, 
