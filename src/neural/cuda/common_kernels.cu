@@ -159,17 +159,9 @@ __global__ void NCHWtoNHWC_kernel(dT* output_tensor,
   output_tensor[tid] = readNCHW<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
 }
 
-void fp32NCHWtofp16NHWC(half* output_tensor, float* input_tensor, int Nin,
-                        int Cin, int Nout, int Cout, int H, int W) {
-  size_t numElements = Nout * Cout * H * W;
-  const int blockSize = 256;
-  int blocks = DivUp(numElements, blockSize);
-  NCHWtoNHWC_kernel<<<blocks, blockSize>>>(output_tensor, input_tensor,
-                                           Nin, Cin, Nout, Cout, H, W);
-}
-
-void fp16NCHWtoNHWC(half* output_tensor, const half* input_tensor, int Nin, int Cin,
-    int Nout, int Cout, int H, int W) {
+template <typename DstType, typename SrcType>
+void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
+    int Nin, int Cin, int Nout, int Cout, int H, int W) {
   size_t numElements = Nout * Cout * H * W;
   const int blockSize = 256;
   int blocks = DivUp(numElements, blockSize);
@@ -915,5 +907,18 @@ template void ComputePromotionLogits<float>(int N, int C, float* output,
                                             const float* keys, const float* ppo,
                                             const float* policy_attn_logits,
                                             cudaStream_t stream);
+
+template void convertNCHWtoNHWC<half, float>(half* output_tensor,
+                                             const float* input_tensor, int Nin,
+                                             int Cin, int Nout, int Cout, int H,
+                                             int W);
+template void convertNCHWtoNHWC<float, float>(float* output_tensor,
+                                              const float* input_tensor,
+                                              int Nin, int Cin, int Nout,
+                                              int Cout, int H, int W);
+template void convertNCHWtoNHWC<half, half>(half* output_tensor,
+                                            const half* input_tensor, int Nin,
+                                            int Cin, int Nout, int Cout, int H,
+                                            int W);
 }  // namespace cudnn_backend
 }  // namespace lczero
