@@ -51,6 +51,8 @@ struct LegacyWeights {
     explicit Residual(const pblczero::Weights::Residual& residual);
     ConvBlock conv1;
     ConvBlock conv2;
+    ConvBlock conv3;
+    ConvBlock conv4;
     SEunit se;
     bool has_se;
   };

@@ -251,6 +251,12 @@ class CudaNetwork : public Network {
     if (weights.residual[0].has_se) {
       has_se_ = true;
     }
+    has_bottleneck_ = false;
+    if (weights.residual[0].conv4.weights.size() != 0) {
+      has_bottleneck_ = true;
+      // bottleneck will need its own fused op.
+      use_res_block_winograd_fuse_opt_ = false;
+    }
 
     // Have some minumum as we also use this for transforming weights.
     size_t max_weight_size = 128 * 1024 * 1024;
@@ -311,6 +317,47 @@ class CudaNetwork : public Network {
                                  &weights.residual[block].se.w2[0],
                                  &weights.residual[block].se.b2[0], scratch_mem_);
           network_.emplace_back(std::move(layer));
+        } else if (has_bottleneck_) {
+          auto conv1 = std::make_unique<Conv1Layer<DataType>>(
+              getLastLayer(), kNumFilters / 2, 8, 8, kNumFilters, true, true, use_gemm_ex);
+          conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
+                             &weights.residual[block].conv1.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv1));
+
+          auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              getLastLayer(), kNumFilters / 2, 8, 8, kNumFilters / 2, true, true, false,
+              false, 0, use_gemm_ex);
+          conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
+                             &weights.residual[block].conv2.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv2));
+
+          auto conv3 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              getLastLayer(), kNumFilters / 2, 8, 8, kNumFilters / 2, true, true, false,
+              false, 0, use_gemm_ex);
+          conv3->LoadWeights(&weights.residual[block].conv3.weights[0],
+                             &weights.residual[block].conv3.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv3));
+          auto conv4 = std::make_unique<Conv1Layer<DataType>>(
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters / 2, false, true,
+              use_gemm_ex);
+          conv4->LoadWeights(&weights.residual[block].conv4.weights[0],
+                             &weights.residual[block].conv4.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv4));
+          if (has_se) {
+            auto se = std::make_unique<SELayer<DataType>>(
+                getLastLayer(), se_k);
+            se->LoadWeights(&weights.residual[block].se.w1[0],
+                               &weights.residual[block].se.b1[0],
+                               &weights.residual[block].se.w2[0],
+                               &weights.residual[block].se.b2[0],
+                               nullptr,
+                               scratch_mem_);
+            network_.emplace_back(std::move(se));
+          }
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
               getLastLayer(), kNumFilters, 8, 8, kNumFilters, true, true, false,
@@ -530,6 +577,25 @@ class CudaNetwork : public Network {
         network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
                             stream);  // block
+      } else if (has_bottleneck_) {
+        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // conv1
+
+        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
+                            nullptr, scratch_mem, scratch_size_, nullptr,
+                            cublas, stream);  // conv2
+        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // conv3
+
+        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+                            scratch_mem, scratch_size_, nullptr,
+                            cublas, stream);  // conv4
+        network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1],
+                            tensor_mem[2],
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // se
       } else {
         network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
@@ -755,6 +821,7 @@ class CudaNetwork : public Network {
 
   int numBlocks_;
   bool has_se_;
+  bool has_bottleneck_;
   bool conv_policy_;
   bool attn_policy_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
