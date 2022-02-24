@@ -48,6 +48,35 @@ using namespace cudnn_backend;
 template <typename DataType>
 class CudaNetwork;
 
+static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
+  const size_t embedding_op_size = weights.ip_pol_b.size();
+  const size_t policy_d_model = weights.ip2_pol_b.size();
+  assert(policy_d_model == weights.ip3_pol_b.size());
+
+  size_t encoder_d_model = 0;
+  size_t encoder_dff = 0;
+
+  if (weights.pol_encoder.size() > 0) {
+    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
+
+    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
+  }
+
+  const size_t encoder_heads = weights.pol_encoder_head_count;
+
+  size_t size = N * 64 *
+                std::max(std::max(embedding_op_size, encoder_dff),
+                         std::max(policy_d_model, encoder_d_model));
+
+  // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
+  const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
+  size = std::max(size, matmul_qk_size);
+  return size;
+}
+
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
@@ -239,6 +268,12 @@ class CudaNetwork : public Network {
         max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) * sizeof(DataType));
     scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
 
+    // Attention policy head may need more memory
+    // (We also split the allocations into two parts, so need 2x)
+    const size_t attentionSize =
+        getMaxAttentionHeadSize(weights, max_batch_size_);
+    scratch_size_ = std::max(scratch_size_, 2 * attentionSize);
+
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 
     // 2. Build the network, and copy the weights to GPU memory.
@@ -418,11 +453,6 @@ class CudaNetwork : public Network {
 
 
     if ((attn_policy_ || use_res_block_winograd_fuse_opt_) && (scratch_size_ > maxSize)) {
-      // When attention is used, we split the tensor memory allocations into two
-      // halves and use them as scratch space to hold intermediate data
-      if (attn_policy_ && (scratch_size_ < maxSize * 2)) {
-        throw Exception("Fix assumption with scratch_size in cuda backend");
-      }
       maxSize = scratch_size_;
     }
 
@@ -511,10 +541,14 @@ class CudaNetwork : public Network {
 
     // Policy head.
     if (attn_policy_) {
+#if 0
+      l++;
+#else
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
                           tensor_mem[1], scratch_mem, scratch_size_, nullptr,
                           cublas,
                           stream);  // Entire Attention policy head except for the policy map
+#endif
 
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
