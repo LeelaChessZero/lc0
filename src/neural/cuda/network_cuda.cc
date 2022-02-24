@@ -73,7 +73,9 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
 
   // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
   const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
-  size = std::max(size, matmul_qk_size);
+  const size_t output_size = N * (64 * 64 + 8 * 24);
+
+  size = std::max(size, std::max(matmul_qk_size, output_size));
   return size;
 }
 
@@ -541,15 +543,10 @@ class CudaNetwork : public Network {
 
     // Policy head.
     if (attn_policy_) {
-#if 0
-      l++;
-#else
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
                           tensor_mem[1], scratch_mem, scratch_size_, nullptr,
                           cublas,
                           stream);  // Entire Attention policy head except for the policy map
-#endif
-
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
