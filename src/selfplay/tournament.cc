@@ -353,38 +353,42 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
             enable_resign);
 
-  // Game callback.
-  GameInfo game_info;
-  game_info.game_result = game.GetGameResult();
-  game_info.is_black = player1_black;
-  game_info.game_id = game_number;
-  game_info.initial_fen = opening.start_fen;
-  game_info.moves = game.GetMoves();
-  game_info.play_start_ply = opening.moves.size();
-  if (!enable_resign) {
-    game_info.min_false_positive_threshold = game.GetWorstEvalForWinnerOrDraw();
-  }
-  if (kTraining) {
-    TrainingDataWriter writer(game_number);
-    game.WriteTrainingData(&writer);
-    writer.Finalize();
-    game_info.training_filename = writer.GetFileName();
-  }
-  game_callback_(game_info);
-
-  // Update tournament stats.
-  {
-    Mutex::Lock lock(mutex_);
-    if (game.GetGameResult() != GameResult::UNDECIDED) {
-      int result = game.GetGameResult() == GameResult::DRAW
-                       ? 1
-                       : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
-      if (player1_black) result = 2 - result;
-      ++tournament_info_.results[result][player1_black ? 1 : 0];
+  if (!abort_) {
+    // Game callback.
+    GameInfo game_info;
+    game_info.game_result = game.GetGameResult();
+    game_info.is_black = player1_black;
+    game_info.game_id = game_number;
+    game_info.initial_fen = opening.start_fen;
+    game_info.moves = game.GetMoves();
+    game_info.play_start_ply = opening.moves.size();
+    if (!enable_resign) {
+      game_info.min_false_positive_threshold =
+          game.GetWorstEvalForWinnerOrDraw();
     }
-    tournament_info_.move_count_ += game.move_count_;
-    tournament_info_.nodes_total_ += game.nodes_total_;
-    tournament_callback_(tournament_info_);
+    if (kTraining) {
+      TrainingDataWriter writer(game_number);
+      game.WriteTrainingData(&writer);
+      writer.Finalize();
+      game_info.training_filename = writer.GetFileName();
+    }
+    game_callback_(game_info);
+
+    // Update tournament stats.
+    {
+      Mutex::Lock lock(mutex_);
+      if (game.GetGameResult() != GameResult::UNDECIDED) {
+        int result =
+            game.GetGameResult() == GameResult::DRAW
+                ? 1
+                : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
+        if (player1_black) result = 2 - result;
+        ++tournament_info_.results[result][player1_black ? 1 : 0];
+      }
+      tournament_info_.move_count_ += game.move_count_;
+      tournament_info_.nodes_total_ += game.nodes_total_;
+      tournament_callback_(tournament_info_);
+    }
   }
 
   {
