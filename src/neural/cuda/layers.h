@@ -278,8 +278,8 @@ class Conv1Layer : public BaseLayer<DataType> {
 
   // uses stride of 0 to read a vector as a matrix
   void cublasSpecialMatrixMul(const DataType* A, const DataType* B,
-                              DataType* Out, int M, int N, int K, int batchSize,
-                              cublasHandle_t cublas);
+                              DataType* Out, int M, int N, int K,
+                              int batchSize, cublasHandle_t cublas);
 };
 
 // Multi-pass Winograd Conv fused with (optional) SE
@@ -379,7 +379,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   DataType *ip_pol_w_, *ip_pol_b_;      // "embedding" in policy attention
   DataType *ip2_pol_w_, *ip2_pol_b_;    // "wq" in policy attention
   DataType *ip3_pol_w_, *ip3_pol_b_;    // "wk" in policy attention
-  DataType *ip4_pol_w_, *ip4_pol_b_;    // "ppo" in policy attention
+  DataType *ip4_pol_w_;                 // "ppo" in policy attention
 
   int embedding_op_size_;
   int wq_op_size_;

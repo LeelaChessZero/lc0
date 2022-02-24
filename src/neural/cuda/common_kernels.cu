@@ -676,7 +676,7 @@ template <typename T>
 __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
                                         const T* ppo,
                                         const T* policy_attn_logits) {
-  
+
   constexpr int output_stride = 64 * 64 + 8 * 24;
   int n = blockIdx.x;    // [0..N)
   int y = threadIdx.y;   // [0..8)

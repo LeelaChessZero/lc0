@@ -1302,7 +1302,8 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   embedding_op_size_ = weights.ip_pol_b.size();
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
-  encoder_heads_ = weights.encoder_head_count;
+
+  encoder_heads_ = weights.pol_encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
   allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
@@ -1316,7 +1317,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 
   allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
 
-  for (const auto& enc : weights.encoder) {
+  for (const auto& enc : weights.pol_encoder) {
     EncoderWeights* pW = new EncoderWeights(enc, scratch);
     encoder_weights_.emplace_back(pW);
   }
@@ -1331,28 +1332,6 @@ AttentionPolicyHead<DataType>::EncoderWeights::EncoderWeights(
   mha_dense_size_ = cpu_weights.mha.dense_b.size();
   ffn_dense1_size_ = cpu_weights.ffn.dense1_b.size();
   ffn_dense2_size_ = cpu_weights.ffn.dense2_b.size();
-
-  // debug!
-  printf("\nsize of weight mha.q_b/w: %d, %d\n",
-         (int)cpu_weights.mha.q_b.size(), (int)cpu_weights.mha.q_w.size());
-  printf("\nsize of weight mha.k_b/w: %d, %d\n",
-         (int)cpu_weights.mha.k_b.size(), (int)cpu_weights.mha.k_w.size());
-  printf("\nsize of weight mha.v_b/w: %d, %d\n",
-         (int)cpu_weights.mha.v_b.size(), (int)cpu_weights.mha.v_w.size());
-  printf("\nsize of weight mha.dense_b/w: %d, %d\n",
-         (int)cpu_weights.mha.dense_b.size(),
-         (int)cpu_weights.mha.dense_w.size());
-  printf("\nsize of ln1 betas/gammas: %d, %d\n",
-         (int)cpu_weights.ln1_betas.size(), (int)cpu_weights.ln1_gammas.size());
-  printf("\nsize of ln2 betas/gammas: %d, %d\n",
-         (int)cpu_weights.ln2_betas.size(), (int)cpu_weights.ln2_gammas.size());
-  printf("\nsize of weight ffn.dense1_b/w: %d, %d\n",
-         (int)cpu_weights.ffn.dense1_b.size(),
-         (int)cpu_weights.ffn.dense1_w.size());
-  printf("\nsize of weight ffn.dense2_b/w: %d, %d\n",
-         (int)cpu_weights.ffn.dense2_b.size(),
-         (int)cpu_weights.ffn.dense2_w.size());
-
 
   allocAndUpload<DataType>(&mha_q_w, cpu_weights.mha.q_w, scratch);
   allocAndUpload<DataType>(&mha_q_b, cpu_weights.mha.q_b, scratch);
@@ -1639,11 +1618,9 @@ void AttentionPolicyHead<DataType>::Eval(
                num_outputs * batch, NONE, stream);
   }
 
-  // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))  #
-  // constant for scaling # POLICY SELF-ATTENTION: self-attention weights are
-  // interpreted as from->to policy matmul_qk = tf.matmul(queries, keys,
-  // transpose_b=True)  # Bx64x64 (from 64 queries, 64 keys) policy_attn_logits
-  // = matmul_qk / dk       # Bx64x64 (64 from-squares, 64 to-squares)
+  // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))
+  // policy matmul_qk = tf.matmul(queries, keys, transpose_b=True)
+  // policy_attn_logits = matmul_qk / dk
   {
     // shape(keys)[-1] = policy_d_model_
     float factor = 1.0f / sqrt((float)policy_d_model_);

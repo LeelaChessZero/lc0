@@ -52,9 +52,9 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
-  encoder_head_count = weights.pol_headcount();
+  pol_encoder_head_count = weights.pol_headcount();
   for (const auto& enc : weights.pol_encoder()) {
-    encoder.emplace_back(enc);
+    pol_encoder.emplace_back(enc);
   }
 }
 
