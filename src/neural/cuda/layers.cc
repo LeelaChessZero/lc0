@@ -1528,11 +1528,9 @@ void AttentionPolicyHead<DataType>::Eval(
                num_outputs * batch, NONE, stream);
   }
 
-  // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))  #
-  // constant for scaling # POLICY SELF-ATTENTION: self-attention weights are
-  // interpreted as from->to policy matmul_qk = tf.matmul(queries, keys,
-  // transpose_b=True)  # Bx64x64 (from 64 queries, 64 keys) policy_attn_logits
-  // = matmul_qk / dk       # Bx64x64 (64 from-squares, 64 to-squares)
+  // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))
+  // policy matmul_qk = tf.matmul(queries, keys, transpose_b=True)
+  // policy_attn_logits = matmul_qk / dk
   {
     // shape(keys)[-1] = policy_d_model_
     float factor = 1.0f / sqrt((float)policy_d_model_);
