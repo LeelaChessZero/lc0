@@ -24,6 +24,7 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
 
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
@@ -64,6 +65,8 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 #define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
+
+enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU };
 
 }  // namespace cudnn_backend
 }  // namespace lczero

@@ -38,6 +38,7 @@
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
 #include "neural/shared/policy_map.h"
+#include "neural/shared/attention_policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
@@ -46,6 +47,37 @@ using namespace cudnn_backend;
 
 template <typename DataType>
 class CudaNetwork;
+
+static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
+  const size_t embedding_op_size = weights.ip_pol_b.size();
+  const size_t policy_d_model = weights.ip2_pol_b.size();
+  assert(policy_d_model == weights.ip3_pol_b.size());
+
+  size_t encoder_d_model = 0;
+  size_t encoder_dff = 0;
+
+  if (weights.pol_encoder.size() > 0) {
+    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
+
+    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
+  }
+
+  const size_t encoder_heads = weights.pol_encoder_head_count;
+
+  size_t size = N * 64 *
+                std::max(std::max(embedding_op_size, encoder_dff),
+                         std::max(policy_d_model, encoder_d_model));
+
+  // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
+  const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
+  const size_t output_size = N * (64 * 64 + 8 * 24);
+
+  size = std::max(size, std::max(matmul_qk_size, output_size));
+  return size;
+}
 
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
@@ -125,6 +157,9 @@ class CudaNetwork : public Network {
 
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
+    attn_policy_ = file.format().network_format().policy() ==
+                   pblczero::NetworkFormat::POLICY_ATTENTION;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
@@ -235,6 +270,12 @@ class CudaNetwork : public Network {
         max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) * sizeof(DataType));
     scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
 
+    // Attention policy head may need more memory
+    // (We also split the allocations into two parts, so need 2x)
+    const size_t attentionSize =
+        getMaxAttentionHeadSize(weights, max_batch_size_);
+    scratch_size_ = std::max(scratch_size_, 2 * attentionSize);
+
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 
     // 2. Build the network, and copy the weights to GPU memory.
@@ -298,7 +339,17 @@ class CudaNetwork : public Network {
     resi_last_ = getLastLayer();
 
     // Policy head.
-    if (conv_policy_) {
+    if (attn_policy_) {
+      auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
+          getLastLayer(), weights, scratch_mem_);
+      network_.emplace_back(std::move(AttentionPolicy));
+
+      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+          getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true);
+      policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
+      network_.emplace_back(std::move(policymap));
+
+    } else if (conv_policy_) {
       auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
           resi_last_, kNumFilters, 8, 8, kNumFilters, true, true, false,
           false, 0, use_gemm_ex);
@@ -317,7 +368,7 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(conv2));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8, false);
       policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
 
       network_.emplace_back(std::move(policymap));
@@ -330,7 +381,7 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(convPol));
 
       auto FCPol = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip_pol_b.size(), 1, 1, false, true);
+          getLastLayer(), weights.ip_pol_b.size(), 1, 1, true, NONE);
       FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
                          scratch_mem_);
       network_.emplace_back(std::move(FCPol));
@@ -347,7 +398,7 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(convVal));
 
       auto FCVal1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, true);
+          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, RELU);
       FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
@@ -357,8 +408,7 @@ class CudaNetwork : public Network {
       auto fc2_tanh = !wdl_;
 
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip2_val_b.size(), 1, 1, false, true,
-          fc2_tanh);
+          getLastLayer(), weights.ip2_val_b.size(), 1, 1, true, fc2_tanh ? TANH : NONE);
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
@@ -378,13 +428,13 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(convMov));
 
       auto FCMov1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, true);
+          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, RELU);
       FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov1));
 
       auto FCMov2 = std::make_unique<FCLayer<DataType>>(getLastLayer(), 1, 1, 1,
-                                                        true, true);
+                                                        true, RELU);
       FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov2));
@@ -403,8 +453,10 @@ class CudaNetwork : public Network {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
     }
 
-    if (use_res_block_winograd_fuse_opt_ && scratch_size_ > maxSize)
+
+    if ((attn_policy_ || use_res_block_winograd_fuse_opt_) && (scratch_size_ > maxSize)) {
       maxSize = scratch_size_;
+    }
 
     if (!multi_stream_) {
       for (auto& mem : tensor_mem_) {
@@ -490,7 +542,25 @@ class CudaNetwork : public Network {
     }
 
     // Policy head.
-    if (conv_policy_) {
+    if (attn_policy_) {
+      network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
+                          tensor_mem[1], scratch_mem, scratch_size_, nullptr,
+                          cublas,
+                          stream);  // Entire Attention policy head except for the policy map
+      if (fp16) {
+        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // policy map layer
+        copyTypeConverted(opPol, (half*)(tensor_mem[1]),
+                          batchSize * kNumOutputPolicy,
+                          stream);  // POLICY output
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // policy map layer  // POLICY output
+      }
+
+    } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
                           scratch_mem, scratch_size_, nullptr, cublas,
                           stream);  // policy conv1
@@ -686,6 +756,7 @@ class CudaNetwork : public Network {
   int numBlocks_;
   bool has_se_;
   bool conv_policy_;
+  bool attn_policy_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
@@ -796,7 +867,9 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
                     std::to_string(weights.format().network_format().policy()) +
                     " is not supported by the CUDA backend.");
