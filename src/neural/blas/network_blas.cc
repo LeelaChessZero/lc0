@@ -528,6 +528,13 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by BLAS backend.");
   }
+  if (weights.format().network_format().default_activation() !=
+      pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+    throw Exception(
+        "Default activation " +
+        std::to_string(weights.format().network_format().default_activation()) +
+        " is not supported by BLAS backend.");
+  }
   return std::make_unique<BlasNetwork<use_eigen>>(weights, options);
 }
 

@@ -104,4 +104,4 @@ float FP16toFP32(uint16_t f16) {
 #endif
 }
 
-};  // namespace lczero
+}  // namespace lczero

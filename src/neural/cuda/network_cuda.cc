@@ -914,6 +914,15 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
         std::to_string(weights.format().network_format().moves_left()) +
         " is not supported by the CUDA backend.");
   }
+  if (weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+      weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
+    throw Exception(
+        "Default activation " +
+        std::to_string(weights.format().network_format().default_activation()) +
+        " is not supported by the CUDA backend.");
+  }
   return std::make_unique<CudaNetwork<DataType>>(weights, options);
 }
 

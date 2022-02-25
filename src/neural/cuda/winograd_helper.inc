@@ -48,13 +48,14 @@ __device__ __forceinline__ float activate(float cVal, ActivationFunction activat
     case SIGMOID:
       cVal = 1.0f / (1.0f + exp(-cVal));
       break;
-    case SELU:
+    case SELU: {
       float alpha = 1.67326324f, scale = 1.05070098f;
       if (cVal > 0)
         cVal = scale * cVal;
       else
         cVal = scale * alpha * (exp(cVal) - 1);
       break;
+    }
     case MISH:
       cVal = mishActivate(cVal);
       break;
