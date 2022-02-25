@@ -38,6 +38,10 @@
 typedef void* cudnnHandle_t;
 #endif
 
+#if CUBLAS_VER_MAJOR < 11
+#define CUBLAS_PEDANTIC_MATH CUBLAS_DEFAULT_MATH
+#endif
+
 namespace lczero {
 namespace cudnn_backend {
 

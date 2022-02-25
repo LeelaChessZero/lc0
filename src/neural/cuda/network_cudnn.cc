@@ -182,8 +182,9 @@ class CudnnNetwork : public Network {
     // Default layout is nchw.
     nhwc_ = false;
     bool hasTensorCores = false;
+    constexpr bool fp16 = std::is_same<half, DataType>::value;
 
-    if (std::is_same<half, DataType>::value) {
+    if (fp16) {
       // Check if the GPU support FP16.
 
       if ((deviceProp.major == 6 && deviceProp.minor != 1) ||
@@ -212,9 +213,17 @@ class CudnnNetwork : public Network {
     }
 
     if (hasTensorCores)
-      ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+      ReportCUBLASErrors(cublasSetMathMode(
+          cublas_,
+          CUBLAS_TENSOR_OP_MATH));  // Deprecated on CUDA 11.0 and later
+    else if (fp16)
+      ReportCUBLASErrors(cublasSetMathMode(
+          cublas_,
+          CUBLAS_PEDANTIC_MATH));  // Explicitly set PEDANTIC_MATH mode to
+                                   // avoid cublas bug of making use of tensor
+                                   // core math on TU11x GPUs that don't
+                                   // support it.
 
-    constexpr bool fp16 = std::is_same<half, DataType>::value;
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = (int)weights.input.biases.size();
     numBlocks_ = (int)weights.residual.size();
