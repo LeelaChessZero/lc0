@@ -37,8 +37,9 @@ __device__ __forceinline__ float mishActivate(float el) {
     return el - 2 * __fdividef(el, n + 2);
   }
 }
-__device__ __forceinline__ float activate(float cVal, ActivationFunction activation) {
-  switch (activation) { 
+__device__ __forceinline__ float activate(float cVal,
+                                          ActivationFunction activation) {
+  switch (activation) {
     case RELU:
       if (cVal < 0) cVal = 0;
       break;
@@ -282,8 +283,8 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, ActivationFunction activation, bool use_bias, bool use_skip,
-          bool skipInput_nhcw, bool output_nhcw>
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
 __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
                                        const T* bias, const T* w1, const T* b1,
@@ -429,13 +430,12 @@ __device__ __forceinline__ void copyAs(void* dst, const void* src) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, ActivationFunction activation, bool use_bias, bool use_skip>
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip>
 __global__ __launch_bounds__(kMaxResBlockFusingChannels, 1)
-void OutputTransform_SE_relu_InputTransform_kernel(int N, int C, int se_K,
-                                                   T* output, const T* input,
-                                                   T* skip, const T* bias,
-                                                   const T* w1, const T* b1,
-                                                   const T* w2, const T* b2) {
+void OutputTransform_SE_relu_InputTransform_kernel(
+        int N, int C, int se_K, T* output, const T* input, T* skip,
+        const T* bias, const T* w1, const T* b1, const T* w2, const T* b2) {
   const bool fp16 = std::is_same<half, T>::value;
 
   int k = threadIdx.x;
@@ -659,20 +659,20 @@ void InputTransform(int N, int C, T* transformed_input, const T* input,
                     cudaStream_t stream) {
   // Each thread processes entire chess board (input 8x8 elements -> outputs
   // 2x2, 6x6 elements)
-  InputTransform_kernel<T, nhcw><<<N, C, 0, stream>>>(N, C, input,
-                                                      transformed_input);
+  InputTransform_kernel<T, nhcw>
+      <<<N, C, 0, stream>>>(N, C, input, transformed_input);
 
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T, bool use_se, ActivationFunction activation, bool use_bias, bool use_skip,
-          bool skipInput_nhcw, bool output_nhcw>
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2, cudaStream_t stream) {
   // Each thread processes entire chess board
-  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip, skipInput_nhcw,
-                         output_nhcw><<<N, C, 0, stream>>>(
+  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip,
+                         skipInput_nhcw, output_nhcw><<<N, C, 0, stream>>>(
       N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
   ReportCUDAErrors(cudaGetLastError());
 }
