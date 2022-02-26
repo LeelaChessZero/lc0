@@ -390,8 +390,8 @@ class CudnnNetwork : public Network {
     // Input.
     if (use_custom_winograd_) {
       auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          nullptr, kNumFilters, 8, 8, kNumInputPlanes, mish_net ? MISH : RELU, true, false, false,
-          0, use_gemm_ex, use_res_block_winograd_fuse_opt_);
+          nullptr, kNumFilters, 8, 8, kNumInputPlanes, mish_net ? MISH : RELU,
+          true, false, false, 0, use_gemm_ex, use_res_block_winograd_fuse_opt_);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
@@ -430,8 +430,7 @@ class CudnnNetwork : public Network {
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
               getLastLayer(), kNumFilters, 8, 8, kNumFilters,
-              mish_net ? MISH : RELU, true, false,
-              false, 0, use_gemm_ex);
+              mish_net ? MISH : RELU, true, false, false, 0, use_gemm_ex);
           conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                              &weights.residual[block].conv1.biases[0],
                              scratch_mem_);
@@ -439,8 +438,7 @@ class CudnnNetwork : public Network {
 
           auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
               getLastLayer(), kNumFilters, 8, 8, kNumFilters,
-              mish_net ? MISH : RELU, true, true,
-              has_se, se_k, use_gemm_ex);
+              mish_net ? MISH : RELU, true, true, has_se, se_k, use_gemm_ex);
           conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                              &weights.residual[block].conv2.biases[0],
                              scratch_mem_);
@@ -466,8 +464,8 @@ class CudnnNetwork : public Network {
         bool useReluAndBias = weights.residual[block].has_se ? false : true;
 
         auto conv2 = std::make_unique<ConvLayer<DataType>>(
-            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters, useReluAndBias ? (mish_net ? MISH : RELU) : NONE,
-            useReluAndBias);
+            getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters,
+            useReluAndBias ? (mish_net ? MISH : RELU) : NONE, useReluAndBias);
         conv2->LoadWeights(
             &weights.residual[block].conv2.weights[0],
             useReluAndBias ? &weights.residual[block].conv2.biases[0] : nullptr,
@@ -476,7 +474,8 @@ class CudnnNetwork : public Network {
 
         if (weights.residual[block].has_se) {
           int numFCOut = (int)weights.residual[block].se.b1.size();
-          auto se = std::make_unique<SELayer<DataType>>(getLastLayer(), numFCOut, false, mish_net ? MISH : RELU);
+          auto se = std::make_unique<SELayer<DataType>>(
+              getLastLayer(), numFCOut, false, mish_net ? MISH : RELU);
           se->LoadWeights(&weights.residual[block].se.w1[0],
                           &weights.residual[block].se.b1[0],
                           &weights.residual[block].se.w2[0],
@@ -516,8 +515,7 @@ class CudnnNetwork : public Network {
     } else {
       auto convPol = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.policy.biases.size(), 8, 8, 1, kNumFilters,
-          mish_net ? MISH : RELU,
-          true);
+          mish_net ? MISH : RELU, true);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
@@ -534,8 +532,7 @@ class CudnnNetwork : public Network {
     {
       auto convVal = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.value.biases.size(), 8, 8, 1, kNumFilters,
-          mish_net ? MISH : RELU,
-          true);
+          mish_net ? MISH : RELU, true);
       convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],
                            scratch_mem_);
       network_.emplace_back(std::move(convVal));
@@ -552,7 +549,8 @@ class CudnnNetwork : public Network {
       auto fc2_tanh = !wdl_;
 
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip2_val_b.size(), 1, 1, true, fc2_tanh ? TANH : NONE);
+          getLastLayer(), weights.ip2_val_b.size(), 1, 1, true,
+          fc2_tanh ? TANH : NONE);
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
@@ -626,7 +624,7 @@ class CudnnNetwork : public Network {
 #endif
 
     // TODO: consider supporting multi-stream path for cudnn backend too.
-    cudaStream_t stream = 0;    // default stream
+    cudaStream_t stream = 0;  // default stream
 
     // Expand packed planes to full planes.
     uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
@@ -657,25 +655,24 @@ class CudnnNetwork : public Network {
     network_[l++]->Eval(
         batchSize,
         use_res_block_winograd_fuse_opt_ ? tensor_mem_[1] : tensor_mem_[2],
-        tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_,
-        cublas_, stream);  // input conv
+        tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_, cublas_,
+        stream);  // input conv
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
       if (use_res_block_winograd_fuse_opt_) {
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_, stream);  // block
+                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            stream);  // block
       } else {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_,
-                            cublas_, stream);  // conv1
+                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            stream);  // conv1
 
         if (use_custom_winograd_) {
           network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                               tensor_mem_[2], scratch_mem_, scratch_size_,
-                              cudnn_,
-                              cublas_, stream);  // conv2
+                              cudnn_, cublas_, stream);  // conv2
         } else {
           // For SE Resnet, skip connection is added after SE (and bias is added
           // as part of SE).
@@ -686,15 +683,13 @@ class CudnnNetwork : public Network {
           } else {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
-                                cudnn_,
-                                cublas_, stream);  // conv2
+                                cudnn_, cublas_, stream);  // conv2
           }
 
           if (has_se_) {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
-                                cudnn_,
-                                cublas_, stream);  // SE layer
+                                cudnn_, cublas_, stream);  // SE layer
           }
         }
       }
@@ -765,8 +760,8 @@ class CudnnNetwork : public Network {
                         wdl_ ? 3 * batchSize : batchSize, stream);  // VALUE
     } else {
       network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_,
-                          cublas_, stream);  // value FC2    // VALUE
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          stream);  // value FC2    // VALUE
     }
 
     if (moves_left_) {
