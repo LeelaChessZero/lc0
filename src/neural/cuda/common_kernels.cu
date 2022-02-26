@@ -725,7 +725,8 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   // phase 2: add the last "row" to the other 3
   // #knight offset is added to the other three
   // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4,
-  // :] Only 24 threads in the group are active in this phase
+  // :] 
+  // Only 24 threads in the group are active in this phase
   if (threadInGroup < 32) {
     int x = threadInGroup % 4;
     int y = threadInGroup / 4;
