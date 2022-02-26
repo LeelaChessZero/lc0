@@ -39,8 +39,7 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
 // Add bias to convolution's output.
 template <typename T>
 void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
-                  ActivationFunction activation,
-                  cudaStream_t stream);
+                  ActivationFunction activation, cudaStream_t stream);
 
 // Conversion from NCHW to NHWC, can also change datatype depending on template
 // params, also pad/un-pad elements from Batch or Channel dimensions
@@ -83,7 +82,8 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
 // Returns false if the fused kernel can't handle the sizes.
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
-                  const half* w2, const half* b2, const half* bPrev, ActivationFunction activation);
+                  const half* w2, const half* b2, const half* bPrev,
+                  ActivationFunction activation);
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
@@ -99,8 +99,7 @@ void InputTransform(int N, int C, T* transformedInput, const T* input,
                     cudaStream_t stream);
 
 template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
-          bool use_skip,
-          bool skipInput_nhcw, bool output_nhcw>
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2, cudaStream_t stream);
@@ -117,12 +116,12 @@ void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream);
 
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
-               const T* gammas, const T *betas, float ep, cudaStream_t stream);
+               const T* gammas, const T* betas, float ep, cudaStream_t stream);
 
 template <typename T>
-void ComputePromotionLogits(int N, int C, T* output, const T* keys, const T* ppo,
-               const T* policy_attn_logits, cudaStream_t stream);
-
+void ComputePromotionLogits(int N, int C, T* output, const T* keys,
+                            const T* ppo, const T* policy_attn_logits,
+                            cudaStream_t stream);
 
 }  // namespace cudnn_backend
 }  // namespace lczero
