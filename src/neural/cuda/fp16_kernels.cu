@@ -48,7 +48,8 @@ namespace cudnn_backend {
 template <int C, int K>
 __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
                               const half* w1, const half* b1, const half* w2,
-                              const half* b2, const half* bPrev, ActivationFunction activation) {
+                              const half* b2, const half* bPrev,
+                              ActivationFunction activation) {
   const int elementsPerThread = 64;  // 8x8 board
   const int se_K = K;
 
@@ -127,7 +128,8 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
-                  const half* w2, const half* b2, const half* bPrev, ActivationFunction activation) {
+                  const half* w2, const half* b2, const half* bPrev,
+                  ActivationFunction activation) {
   // TODO: Think of more elegant way to avoid this hardcoding :-/
   if (numFc1Out == 16) {
     if (C == 64) {
@@ -197,7 +199,7 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 // Get board for this thread from shared memory.
 // We are just using shared memory to store local thread data in this kernel to
 // help reduce some register pressure and spills to local memory.
-#define BOARD(y,x) shboard[(y) * 8 + (x)]
+#define BOARD(y, x) shboard[(y)*8 + (x)]
 
 // input is in transformed space (HWNC layout) --- output of GEMM
 // output is also in transformed space (HWNC layout) --- input to GEMM (for
@@ -205,21 +207,19 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 // 'C' threads per block
 // 'N' blocks
 // Every thread generates an entire board/plane (8x8 elements).
-template <bool use_se, ActivationFunction activation, bool use_bias, bool use_skip>
-__global__ __launch_bounds__(kMaxResBlockFusingSeKFp16Ampere, 1)
-void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
-                                                 half* output,
-                                                 const half* input,
-                                                 half* skip, const half* bias,
-                                                 const half* w1, const half* b1,
-                                                 const half* w2,
-                                                 const half* b2) {
+template <bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip>
+__global__ __launch_bounds__(kMaxResBlockFusingSeKFp16Ampere,1)
+void OutputInputTransformKernel_fp16_shmem_board(
+        int N, int C, int se_K, half* output, const half* input, half* skip,
+        const half* bias, const half* w1, const half* b1, const half* w2,
+        const half* b2) {
   int k = threadIdx.x;
   int n = blockIdx.x;
 
   extern __shared__ half _sboard[];
-  half *shboard = &_sboard[k * 72];     // 72 instead of 64 to reduce shared
-                                        // memory bank conflicts.
+  half* shboard = &_sboard[k * 72];  // 72 instead of 64 to reduce shared
+                                     // memory bank conflicts.
   half b = bias[k];
 
 #pragma unroll
@@ -276,21 +276,18 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
     // As se_K << C, we want to loop over se_K instead of C
     // even if it means taking the sum across threads
 
-    __shared__ float shared_sums[kMaxResBlockFusingSeKFp16Ampere/32]
+    __shared__ float shared_sums[kMaxResBlockFusingSeKFp16Ampere / 32]
                                 [kMaxResBlockFusingSeK];  // per-warp sums
 
     for (int i = 0; i < se_K; i++) {
       float val = shared_data[k] * float(readw1(k, i));
       val = warpReduce(val);
-      if (lane == 0)
-        shared_sums[warp][i] = val;
+      if (lane == 0) shared_sums[warp][i] = val;
     }
     __syncthreads();
-    if (k < se_K)
-    {
+    if (k < se_K) {
       S = 0;
-      for (int i=0;i<C/32;i++)
-        S += shared_sums[i][k];
+      for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
 
       S += (float)b1[k];
       S = activate(S, activation);
@@ -342,8 +339,7 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
       }
 
       // write un-transformed output to 'skip' if required
-      if (use_skip)
-      {
+      if (use_skip) {
         copyAs<uint4>(&skip[INDEX_NHCW(n, k, h, 0)], &boardRow[0]);
       }
 
@@ -357,12 +353,12 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
   // top-left
   {
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
 #pragma unroll
-      for (int j = 0; j < 5; j++) inEl[i + 1][j + 1] = BOARD(i,j);
+      for (int j = 0; j < 5; j++) inEl[i + 1][j + 1] = BOARD(i, j);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
@@ -376,12 +372,12 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
   // top-right
   {
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
 #pragma unroll
-      for (int j = 0; j < 5; j++) inEl[i + 1][j] = BOARD(i,j+3);
+      for (int j = 0; j < 5; j++) inEl[i + 1][j] = BOARD(i, j + 3);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
@@ -395,12 +391,12 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
   // bottom-left
   {
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
 #pragma unroll
-      for (int j = 0; j < 5; j++) inEl[i][j + 1] = BOARD(i+3,j);
+      for (int j = 0; j < 5; j++) inEl[i][j + 1] = BOARD(i + 3, j);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
@@ -414,12 +410,12 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
   // bottom-right
   {
     half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
 #pragma unroll
-      for (int j = 0; j < 5; j++) inEl[i][j] = BOARD(i+3,j+3);
+      for (int j = 0; j < 5; j++) inEl[i][j] = BOARD(i + 3, j + 3);
 
     InputTransform4x4(&inEl[0][0], &inEl[0][0]);
 
@@ -431,8 +427,8 @@ void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
   }
 }
 
-template <typename T = half, bool use_se, ActivationFunction activation, bool use_bias,
-          bool use_skip>
+template <typename T = half, bool use_se, ActivationFunction activation,
+          bool use_bias, bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
                           const T* b1, const T* w2, const T* b2,
@@ -443,8 +439,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
-          OutputInputTransformKernel_fp16_shmem_board<use_se, activation, use_bias,
-                                                      use_skip>,
+          OutputInputTransformKernel_fp16_shmem_board<use_se, activation,
+                                                      use_bias, use_skip>,
           cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * 1024);
       OutputInputTransformKernel_fp16_shmem_board<use_se, activation, use_bias,
                                                   use_skip>
@@ -458,8 +454,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     }
   } else {
     OutputTransform_SE_relu_InputTransform_kernel<half, use_se, activation,
-                                                  use_bias,
-                                                  use_skip>
+                                                  use_bias, use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (half*)skip, bias, w1,
                               b1, w2, b2);
   }
@@ -469,11 +464,12 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
 template void FilterTransform<half>(int N, int C, half* transformedFilter,
                                     const half* filter);
 
-
 template void InputTransform<half, true>(int N, int C, half* transformed_input,
-                                         const half* input, cudaStream_t stream);
+                                         const half* input,
+                                         cudaStream_t stream);
 template void InputTransform<half, false>(int N, int C, half* transformed_input,
-                                          const half* input, cudaStream_t stream);
+                                          const half* input,
+                                          cudaStream_t stream);
 
 template void OutputTransform<half, true, RELU, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
@@ -542,7 +538,7 @@ template void OutputTransform<half, false, NONE, true, false, false, false>(
 
 template void OutputInputTransform<half, true, RELU, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2, 
+    const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
 template void OutputInputTransform<half, false, RELU, true, true>(
@@ -570,5 +566,5 @@ template void OutputInputTransform<half, false, MISH, true, false>(
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-}   // namespace cudnn_backend
-}   // namespace lczero
+}  // namespace cudnn_backend
+}  // namespace lczero
