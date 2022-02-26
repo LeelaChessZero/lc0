@@ -99,13 +99,14 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
-  addBias_NCHW_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, N, C, H, W, activation);
+  addBias_NCHW_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, N, C, H, W,
+                                                         activation);
   ReportCUDAErrors(cudaGetLastError());
 }
 
 template <typename dT, typename sT>
 __device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
-                         int Nin, int Cin, int H, int W) {
+                       int Nin, int Cin, int H, int W) {
   if (n >= Nin || c >= Cin) return 0;
 
   int index;
@@ -121,9 +122,9 @@ __device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
 }
 
 template <typename dT, typename sT>
-__global__ void NCHWtoNHWC_kernel(dT* output_tensor,
-                                  const sT* input_tensor, int Nin, int Cin,
-                                  int Nout, int Cout, int H, int W) {
+__global__ void NCHWtoNHWC_kernel(dT* output_tensor, const sT* input_tensor,
+                                  int Nin, int Cin, int Nout, int Cout, int H,
+                                  int W) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (tid >= Nout * Cout * H * W) return;
@@ -138,12 +139,13 @@ __global__ void NCHWtoNHWC_kernel(dT* output_tensor,
   index /= H;
   int n = index;
 
-  output_tensor[tid] = readNCHW<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
+  output_tensor[tid] =
+      readNCHW<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
 }
 
 template <typename DstType, typename SrcType>
 void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
-    int Nin, int Cin, int Nout, int Cout, int H, int W) {
+                       int Nin, int Cin, int Nout, int Cout, int H, int W) {
   size_t numElements = Nout * Cout * H * W;
   const int blockSize = 256;
   int blocks = DivUp(numElements, blockSize);
@@ -171,7 +173,8 @@ void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream) {
 template <typename T>
 __global__ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
                                  int N, int C, int H, int W, const float* means,
-                                 const float* varMultipliers, ActivationFunction activation) {
+                                 const float* varMultipliers,
+                                 ActivationFunction activation) {
   int index = threadIdx.x + blockDim.x * blockIdx.x;
 
   int wIndex = 0;
@@ -332,7 +335,8 @@ void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
 template <typename T>
 __global__ void globalScale_kernel(T* output, const T* input,
                                    const T* scaleBias, const T* prevLayerBias,
-                                   int inputSize, int C, ActivationFunction activation) {
+                                   int inputSize, int C,
+                                   ActivationFunction activation) {
   const int kPlaneSize = 64;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -492,7 +496,8 @@ void globalAvgPool(int N, int C, T* output, const T* input,
 
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
-                 const T* prevLayerBias, bool nhwc, ActivationFunction activation) {
+                 const T* prevLayerBias, bool nhwc,
+                 ActivationFunction activation) {
   const bool fp16 = std::is_same<half, T>::value;
 
   // Each thread writes one output.
@@ -531,39 +536,38 @@ __global__ void policyMap_kernel(T* output, const T* input,
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
-               int inputSize, int usedSize, int outputSize, cudaStream_t stream) {
+               int inputSize, int usedSize, int outputSize,
+               cudaStream_t stream) {
   // Each thread processes one input element
   // Only some of the threads (with valid mapping) write output
   const int kBlockSize = 256;
   const int kBlocks = DivUp(N * usedSize, kBlockSize);
 
-  policyMap_kernel<T><<<kBlocks, kBlockSize, 0, stream>>>((T*)output, (T*)input,
-                                               (short*)indices, N, inputSize,
-                                               usedSize, outputSize);
+  policyMap_kernel<T><<<kBlocks, kBlockSize, 0, stream>>>(
+      (T*)output, (T*)input, (short*)indices, N, inputSize, usedSize,
+      outputSize);
   ReportCUDAErrors(cudaGetLastError());
 }
 
 template <typename T = float, bool use_se, ActivationFunction activation,
-          bool use_bias,
-          bool use_skip>
+          bool use_bias, bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board
   if (C > kMaxResBlockFusingChannels) {
-      throw Exception(
-          "res block fusing opt not supported for the given data type and no "
-          "of filters\n");
+    throw Exception(
+        "res block fusing opt not supported for the given data type and no "
+        "of filters\n");
   } else {
-    OutputTransform_SE_relu_InputTransform_kernel<float, use_se, activation, use_bias,
-                                                  use_skip>
+    OutputTransform_SE_relu_InputTransform_kernel<float, use_se, activation,
+                                                  use_bias, use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (float*)skip, bias, w1,
                               b1, w2, b2);
   }
   ReportCUDAErrors(cudaGetLastError());
 }
-
 
 // N * C Tensors
 // performs softmax along the C dimension
@@ -596,7 +600,7 @@ __global__ void softmax_kernel(T* output, const T* input) {
 
   float op = ex / sum;
 
-  output[index] = (T) op;
+  output[index] = (T)op;
 }
 
 template <typename T>
@@ -626,7 +630,8 @@ __global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
 
   int index = n * C + c;
 
-  // From: https://www.tensorflow.org/api_docs/python/tf/keras/layers/LayerNormalization
+  // From:
+  // https://www.tensorflow.org/api_docs/python/tf/keras/layers/LayerNormalization
   // mean_i = sum(x_i[j] for j in range(k)) / k
   // var_i  = sum((x_i[j] - mean_i) ^ 2 for j in range(k)) / k
   // x_i_normalized = (x_i - mean_i) / sqrt(var_i + epsilon)
@@ -657,48 +662,57 @@ __global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
 }
 
 // add (optional) skip connection to input, and then perform Layer normalization
-// normalization is done across C dimension (i.e, sums and std deviations taken over elements in C dim)
+// normalization is done across C dimension (i.e, sums and std deviations taken
+// over elements in C dim)
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
                const T* gammas, const T* betas, float ep, cudaStream_t stream) {
-  layer_norm_kernel<T><<<N, C, 0, stream>>>(output, input, skip, gammas, betas, ep);
+  layer_norm_kernel<T>
+      <<<N, C, 0, stream>>>(output, input, skip, gammas, betas, ep);
   ReportCUDAErrors(cudaGetLastError());
 }
 
-
-
 // Compute promotion logits in a single kernel
-// keys matrix is of N * 64 * C (but we use only last 8 from the 'rows' dimension, so N * 8 * C)
+// keys matrix is of N * 64 * C (but we use only last 8 from the 'rows'
+// dimension, so N * 8 * C)
 // ppo matrix is 4 * C (weights for dense layer / matrix multiplication)
-// policy_attn_logits matrix is N * 64 * 64, but we use only 8x8 part of it from each batch dimension (so, N * 8 * 8)
+// policy_attn_logits matrix is N * 64 * 64, but we use only 8x8 part of it
+// from each batch dimension (so, N * 8 * 8)
 // output matrix (promotion logits) is of N * 8 * 24 size
 template <typename T>
 __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
                                         const T* ppo,
                                         const T* policy_attn_logits) {
-
   constexpr int output_stride = 64 * 64 + 8 * 24;
-  int n = blockIdx.x;    // [0..N)
-  int y = threadIdx.y;   // [0..8)
-  int x = threadIdx.x;   // [0..24)     // Can split into 8 * 3
+  int n = blockIdx.x;   // [0..N)
+  int y = threadIdx.y;  // [0..8)
+  int x = threadIdx.x;  // [0..24)     // Can split into 8 * 3
 
   int threadInGroup = threadIdx.y * 24 + threadIdx.x;
 
   // phase 1 : compute promotion_offsets by multiplying keys and ppo matrices
-  const T* keys_start = keys + n * 64 * C + C * 56;      // we are interested only in last 8 out of 64 'rows' of keys matrix
+  const T* keys_start =
+      keys + n * 64 * C + C * 56;  // we are interested only in last 8 out of 64
+                                   // 'rows' of keys matrix
   __shared__ float promotion_offsets[4][8];
 
-  // only 32 threads out of 192 in the group are active in this phase, and each thread computes one element of the promotion_offsets matrix
-  // TODO: opt idea1, can use more threads to reduce the length of the loop for the matrix multiply (do parallel reduction of partial sums later)
-  //       opt idea2, the below loop for matrix mul has very poor memory access pattern, can do the loop over 32, and do parallel reductions
+  // only 32 threads out of 192 in the group are active in this phase, and each
+  // thread computes one element of the promotion_offsets matrix
+  // TODO: opt idea1, can use more threads to reduce the length of the loop for
+  // the matrix multiply (do parallel reduction of partial sums later)
+  //       opt idea2, the below loop for matrix mul has very poor memory access
+  //       pattern, can do the loop over 32, and do parallel reductions
   if (threadInGroup < 32) {
     int x = threadInGroup % 4;
     int y = threadInGroup / 4;
 
     float S = 0;
-    for (int i = 0; i < C; i++) {               // TODO: modify to loop over 32 instead of C (doing parallel reductions for the 32 sums)
-      float a = (float) keys_start[y * C + i];
-      float b = (float) ppo[x * C + i];  // weight matrix is transposed (col major)
+    for (int i = 0; i < C;
+         i++) {  // TODO: modify to loop over 32 instead of C (doing parallel
+                 // reductions for the 32 sums)
+      float a = (float)keys_start[y * C + i];
+      float b =
+          (float)ppo[x * C + i];  // weight matrix is transposed (col major)
       S += a * b;
     }
 
@@ -710,8 +724,8 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
 
   // phase 2: add the last "row" to the other 3
   // #knight offset is added to the other three
-  // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4, :]
-  // Only 24 threads in the group are active in this phase
+  // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4,
+  // :] Only 24 threads in the group are active in this phase
   if (threadInGroup < 32) {
     int x = threadInGroup % 4;
     int y = threadInGroup / 4;
@@ -728,7 +742,8 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   int w = x / 3;
   int c = x % 3;
 
-  // n_promo_logits = matmul_qk[:, -16:-8, -8:]  # default traversals from rank 7 to rank 8
+  // n_promo_logits = matmul_qk[:, -16:-8, -8:]  # default traversals from rank
+  // 7 to rank 8
   float n_promo_logit =
       (float)policy_attn_logits[n * output_stride + (48 + y) * 64 + (56 + w)];
   float promo_offset = promotion_offsets[c][w];
@@ -736,15 +751,12 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   float op = n_promo_logit + promo_offset;
 
   output[n * output_stride + threadInGroup] = (T)op;
-
 }
-
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,
-    const T* ppo, const T* policy_attn_logits,
-    cudaStream_t stream) {
-
+                            const T* ppo, const T* policy_attn_logits,
+                            cudaStream_t stream) {
   // N blocks
   // 8 * 24 threads
   // Each thread computes a single output element
@@ -752,7 +764,6 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
   promotion_logits_kernel<T>
       <<<N, blockDim, 0, stream>>>(C, output, keys, ppo, policy_attn_logits);
 }
-
 
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
@@ -920,11 +931,10 @@ template void OutputInputTransform<float, false, MISH, true, false>(
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
 
-
 template void Softmax<half>(int N, int C, half* output, const half* input,
                             cudaStream_t stream);
 template void Softmax<float>(int N, int C, float* output, const float* input,
-                            cudaStream_t stream);
+                             cudaStream_t stream);
 
 template void LayerNorm<half>(int N, int C, half* output, const half* input,
                               const half* skip, const half* gammas,
