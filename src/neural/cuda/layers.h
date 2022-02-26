@@ -26,9 +26,11 @@
 */
 #pragma once
 
-#include "cuda_common.h"
-#include <cstddef>
 #include <cublas_v2.h>
+
+#include <cstddef>
+
+#include "cuda_common.h"
 #include "neural/network_legacy.h"
 
 #ifdef USE_CUDNN
@@ -60,7 +62,9 @@ class BaseLayer {
   // Input2 is optional (skip connection).
   virtual void Eval(int N, DataType* output, const DataType* input,
                     const DataType* input2, void* scratch, size_t scratch_size,
-                    cudnnHandle_t cudnn, cublasHandle_t cublas, cudaStream_t stream) = 0;
+                    cudnnHandle_t cudnn, cublasHandle_t cublas,
+                    cudaStream_t stream) = 0;
+
  protected:
   BaseLayer* input_;
 
@@ -68,7 +72,7 @@ class BaseLayer {
   int H;
   int W;
 
-  bool nhwc_;   // tensor layout
+  bool nhwc_;  // tensor layout
   const bool use_gemm_ex_;
 
   void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
@@ -90,7 +94,7 @@ class ConvLayer : public BaseLayer<DataType> {
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
             ActivationFunction activation = NONE, bool bias = false);
-  
+
   ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
             ActivationFunction activation = NONE, bool bias = false);
 
@@ -126,10 +130,11 @@ class ConvLayer : public BaseLayer<DataType> {
 
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
- using BaseLayer<DataType>::nhwc_;
+  using BaseLayer<DataType>::nhwc_;
 
  public:
-  FCLayer(BaseLayer<DataType>* ip, int C, int H, int W, bool bias, ActivationFunction activation);
+  FCLayer(BaseLayer<DataType>* ip, int C, int H, int W, bool bias,
+          ActivationFunction activation);
   ~FCLayer();
 
   void LoadWeights(float* cpuWeight, float* cpuBias, void* scratch);
@@ -146,11 +151,12 @@ class FCLayer : public BaseLayer<DataType> {
 };
 
 template <typename DataType>
-class PolicyMapLayer: public BaseLayer<DataType> {
- using BaseLayer<DataType>::nhwc_;
+class PolicyMapLayer : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::nhwc_;
 
  public:
-  PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize, bool attention);
+  PolicyMapLayer(BaseLayer<DataType>* ip, int C, int H, int W, int usedSize,
+                 bool attention);
   ~PolicyMapLayer();
 
   void LoadWeights(const short* cpuWeight, void* scratch);
@@ -160,9 +166,9 @@ class PolicyMapLayer: public BaseLayer<DataType> {
             cudaStream_t stream) override;
 
  private:
-  int used_size_; // Size of the input without padding (typically 73x64).
-                  // This is over-written to contain size with padding 
-                  // (typically 80x64) after CHW->HWC conversion for fp16.
+  int used_size_;  // Size of the input without padding (typically 73x64).
+                   // This is over-written to contain size with padding
+                   // (typically 80x64) after CHW->HWC conversion for fp16.
   const bool attention_map_;
   short* weights_ = nullptr;
 };
@@ -172,12 +178,12 @@ class PolicyMapLayer: public BaseLayer<DataType> {
 // connection -> RELU.
 template <typename DataType>
 class SELayer : public BaseLayer<DataType> {
- using BaseLayer<DataType>::C;
- using BaseLayer<DataType>::nhwc_;
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::nhwc_;
 
  public:
-  SELayer(BaseLayer<DataType>* ip, int numFc1Out,
-          bool addPrevLayerBias, ActivationFunction activation);
+  SELayer(BaseLayer<DataType>* ip, int numFc1Out, bool addPrevLayerBias,
+          ActivationFunction activation);
   ~SELayer();
 
   void LoadWeights(float* w1, float* b1, float* w2, float* b2,
@@ -190,7 +196,7 @@ class SELayer : public BaseLayer<DataType> {
 
  private:
   DataType* w1_ = nullptr;
-  DataType* w1_t_ = nullptr;    // transposed copy used by fused SE kernel
+  DataType* w1_t_ = nullptr;  // transposed copy used by fused SE kernel
   DataType* b1_ = nullptr;
   DataType* w2_ = nullptr;
   DataType* w2_t_ = nullptr;
@@ -200,7 +206,6 @@ class SELayer : public BaseLayer<DataType> {
   bool addPrevLayerBias_;
   const ActivationFunction act_;
 };
-
 
 // Multi-pass Winograd Conv fused with (optional) SE
 template <typename DataType>
@@ -215,15 +220,15 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
 
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
-                           int Cin, ActivationFunction activation, bool bias, bool skipAdd, bool se,
-                           int se_k, bool use_gemm_ex, bool op_nhcw = false);
+                           int Cin, ActivationFunction activation, bool bias,
+                           bool skipAdd, bool se, int se_k, bool use_gemm_ex,
+                           bool op_nhcw = false);
 
   ~FusedWinogradConvSELayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
-  void LoadSEWeights(float* w1, float* b1, float* w2, float* b2, void *scratch);
+  void LoadSEWeights(float* w1, float* b1, float* w2, float* b2, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2,
-            void* scratch, size_t scratch_size,
+            const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
             cudaStream_t stream) override;
 
@@ -257,14 +262,13 @@ class Conv1Layer : public BaseLayer<DataType> {
   using BaseLayer<DataType>::nhwc_;
 
  public:
-  Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
-                         int Cin, ActivationFunction activation, bool bias, bool use_gemm_ex);
+  Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W, int Cin,
+             ActivationFunction activation, bool bias, bool use_gemm_ex);
 
   ~Conv1Layer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
   void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2,
-            void* scratch, size_t scratch_size,
+            const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
             cudaStream_t stream) override;
 
@@ -278,8 +282,8 @@ class Conv1Layer : public BaseLayer<DataType> {
 
   // uses stride of 0 to read a vector as a matrix
   void cublasSpecialMatrixMul(const DataType* A, const DataType* B,
-                              DataType* Out, int M, int N, int K,
-                              int batchSize, cublasHandle_t cublas);
+                              DataType* Out, int M, int N, int K, int batchSize,
+                              cublasHandle_t cublas);
 };
 
 // Multi-pass Winograd Conv fused with (optional) SE
@@ -293,7 +297,9 @@ class ResidualBlock : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetW;
 
  public:
-  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k, bool use_gemm_ex, bool first, bool last, ActivationFunction activation);
+  ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k,
+                bool use_gemm_ex, bool first, bool last,
+                ActivationFunction activation);
 
   ~ResidualBlock();
   void LoadWeights0(float* pfilter, float* pBias, void* scratch);
@@ -323,12 +329,11 @@ class ResidualBlock : public BaseLayer<DataType> {
   DataType* w2_;
   DataType* b1_;
   DataType* b2_;
-
 };
 
-
 // The Attention policy head implementation
-// Responsible for loading weights into GPU memory, and evaluating the entire policy head
+// Responsible for loading weights into GPU memory, and evaluating the entire
+// policy head
 template <typename DataType>
 class AttentionPolicyHead : public BaseLayer<DataType> {
   using BaseLayer<DataType>::C;
@@ -348,7 +353,6 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
             cudaStream_t stream) override;
 
  private:
-
   struct EncoderWeights {
     EncoderWeights(const LegacyWeights::EncoderLayer& cpu_weights,
                    void* scratch);
@@ -376,10 +380,10 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   };
 
   // GPU allocations to hold various weights used by the attention policy head
-  DataType *ip_pol_w_, *ip_pol_b_;      // "embedding" in policy attention
-  DataType *ip2_pol_w_, *ip2_pol_b_;    // "wq" in policy attention
-  DataType *ip3_pol_w_, *ip3_pol_b_;    // "wk" in policy attention
-  DataType *ip4_pol_w_;                 // "ppo" in policy attention
+  DataType *ip_pol_w_, *ip_pol_b_;    // "embedding" in policy attention
+  DataType *ip2_pol_w_, *ip2_pol_b_;  // "wq" in policy attention
+  DataType *ip3_pol_w_, *ip3_pol_b_;  // "wk" in policy attention
+  DataType* ip4_pol_w_;               // "ppo" in policy attention
 
   int embedding_op_size_;
   int wq_op_size_;
@@ -388,11 +392,8 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   int encoder_heads_;
   int policy_d_model_;
 
-
-  std::vector<EncoderWeights *> encoder_weights_;
-
+  std::vector<EncoderWeights*> encoder_weights_;
 };
-
 
 }  // namespace cudnn_backend
 }  // namespace lczero
