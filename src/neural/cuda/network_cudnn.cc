@@ -1049,7 +1049,9 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
         " is not supported by CuDNN backend.");
   }
   if (weights.format().network_format().default_activation() !=
-      pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+      weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
     throw Exception(
         "Default activation " +
         std::to_string(weights.format().network_format().default_activation()) +
