@@ -228,6 +228,37 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
   } else {
+    if (w->format().network_format().network() !=
+            pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
+        w->format().network_format().network() !=
+            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+      throw Exception("Network format " +
+                      std::to_string(w->format().network_format().network()) +
+                      " is not supported by the ONNX backend.");
+    }
+    if (w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_CLASSICAL &&
+        w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+      throw Exception("Policy format " +
+                      std::to_string(w->format().network_format().policy()) +
+                      " is not supported by the ONNX backend.");
+    }
+    if (w->format().network_format().value() !=
+            pblczero::NetworkFormat::VALUE_CLASSICAL &&
+        w->format().network_format().value() !=
+            pblczero::NetworkFormat::VALUE_WDL) {
+      throw Exception("Value format " +
+                      std::to_string(w->format().network_format().value()) +
+                      " is not supported by the ONNX backend.");
+    }
+    if (w->format().network_format().default_activation() !=
+        pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+      throw Exception(
+          "Default activation " +
+          std::to_string(w->format().network_format().default_activation()) +
+          " is not supported by the ONNX backend.");
+    }
     auto converted = ConvertWeightsToOnnx(*w, {});
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
   }

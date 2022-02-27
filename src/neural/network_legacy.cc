@@ -143,10 +143,11 @@ LegacyWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
       dense2_w(LayerAdapter(ffn.dense2_w()).as_vector()),
       dense2_b(LayerAdapter(ffn.dense2_b()).as_vector()) {}
 
-LegacyWeights::EncoderLayer::EncoderLayer(const pblczero::Weights::EncoderLayer& encoder)
-    : ln1_gammas(LayerAdapter(encoder.ln1_gammas()).as_vector()),
+LegacyWeights::EncoderLayer::EncoderLayer(
+    const pblczero::Weights::EncoderLayer& encoder)
+    : mha(MHA(encoder.mha())),
+      ln1_gammas(LayerAdapter(encoder.ln1_gammas()).as_vector()),
       ln1_betas(LayerAdapter(encoder.ln1_betas()).as_vector()),
-      mha(MHA(encoder.mha())),
       ffn(FFN(encoder.ffn())),
       ln2_gammas(LayerAdapter(encoder.ln2_gammas()).as_vector()),
       ln2_betas(LayerAdapter(encoder.ln2_betas()).as_vector()) {}

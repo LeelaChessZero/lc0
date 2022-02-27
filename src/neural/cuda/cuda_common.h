@@ -70,7 +70,7 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU };
+enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH };
 
 }  // namespace cudnn_backend
 }  // namespace lczero
