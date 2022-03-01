@@ -27,6 +27,7 @@
 
 #pragma once
 #include <cstdint>
+#include <iterator>
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
@@ -92,6 +93,12 @@ inline uint64_t TransposeBitsInBytes(uint64_t v) {
 template <typename T>
 class BitIterator {
  public:
+  using iterator_category = std::input_iterator_tag;
+  using difference_type = T;
+  using value_type = T;
+  using pointer = T*;
+  using reference = T&;
+
   BitIterator(std::uint64_t value) : value_(value){};
   bool operator!=(const BitIterator& other) { return value_ != other.value_; }
 

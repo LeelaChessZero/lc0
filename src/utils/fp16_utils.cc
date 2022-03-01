@@ -41,7 +41,8 @@
 namespace lczero {
 
 uint16_t FP32toFP16(float f32) {
-#if defined(NO_POPCNT) || defined(NO_F16C)
+#if defined(NO_POPCNT) || defined(NO_F16C) || \
+    (defined(__GNUC__) && !defined(__F16C__))
   unsigned int x;
   unsigned int sign = 0;
   memcpy(&x, &f32, sizeof(float));
@@ -78,7 +79,8 @@ uint16_t FP32toFP16(float f32) {
 }
 
 float FP16toFP32(uint16_t f16) {
-#if defined(NO_POPCNT) || defined(NO_F16C)
+#if defined(NO_POPCNT) || defined(NO_F16C) || \
+    (defined(__GNUC__) && !defined(__F16C__))
   unsigned int x;
   float f;
   x = f16 & 0x7fff;
@@ -102,4 +104,4 @@ float FP16toFP32(uint16_t f16) {
 #endif
 }
 
-};  // namespace lczero
+}  // namespace lczero
