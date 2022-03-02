@@ -460,7 +460,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           "of filters\n");
     }
   } else {
-    OutputTransform_SE_relu_InputTransform_kernel<half, use_se, activation,
+    OutputTransform_SE_relu_InputTransform_kernel<half, activation,
                                                   use_bias, use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (half*)skip, bias, w1,
                               b1, w2, b2);

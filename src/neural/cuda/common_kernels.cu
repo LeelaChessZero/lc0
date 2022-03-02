@@ -566,7 +566,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
         "res block fusing opt not supported for the given data type and no "
         "of filters\n");
   } else {
-    OutputTransform_SE_relu_InputTransform_kernel<float, use_se, activation,
+    OutputTransform_SE_relu_InputTransform_kernel<float, activation,
                                                   use_bias, use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (float*)skip, bias, w1,
                               b1, w2, b2);

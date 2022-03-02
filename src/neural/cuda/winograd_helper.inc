@@ -30,11 +30,12 @@ namespace cudnn_backend {
 
 __device__ __forceinline__ float mishActivate(float el) {
   auto e = __expf(el);
-  auto n = e * e + 2 * e;
+  auto n = e * e + 2.0f * e;
+  auto d = __fdividef(el, n + 2.0f);
   if (el <= -0.6f) {
-    return n * __fdividef(el, n + 2);
+    return n * d;
   } else {
-    return el - 2 * __fdividef(el, n + 2);
+    return el - 2.0f * d;
   }
 }
 __device__ __forceinline__ float activate(float cVal,
@@ -47,14 +48,14 @@ __device__ __forceinline__ float activate(float cVal,
       cVal = tanh(cVal);
       break;
     case SIGMOID:
-      cVal = 1.0f / (1.0f + exp(-cVal));
+      cVal = 1.0f / (1.0f + __expf(-cVal));
       break;
     case SELU: {
       float alpha = 1.67326324f, scale = 1.05070098f;
       if (cVal > 0)
         cVal = scale * cVal;
       else
-        cVal = scale * alpha * (exp(cVal) - 1);
+        cVal = scale * alpha * (__expf(cVal) - 1.0f);
       break;
     }
     case MISH:
@@ -430,7 +431,7 @@ __device__ __forceinline__ void copyAs(void* dst, const void* src) {
 // 'C' threads per block
 // 'N' blocks
 // every thread generates an entire board/plane (8x8 elements)
-template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+template <typename T, ActivationFunction activation, bool use_bias,
           bool use_skip>
 __global__ __launch_bounds__(kMaxResBlockFusingChannels, 1)
 void OutputTransform_SE_relu_InputTransform_kernel(
@@ -476,10 +477,10 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 #pragma unroll
     for (int x = 0; x < 8; x++) {
       if (use_bias) board[y][x] += b;
-      if (use_se) S += (float)board[y][x];
+      S += (float)board[y][x];
     }
 
-  if (use_se) {
+  {
     __shared__ float shared_data[kMaxResBlockFusingChannels];
     float avg = S / 64;
     shared_data[k] = avg;
@@ -529,9 +530,8 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 
   // Scale/bias, add skip connection, perform relu, and write to output.
   for (int h = 0; h < 8; h++) {
-    if (use_se)
 #pragma unroll
-      for (int w = 0; w < 8; w++) board[h][w] = (T)(float(board[h][w]) * S + B);
+    for (int w = 0; w < 8; w++) board[h][w] = (T)(float(board[h][w]) * S + B);
 
     // residual add
     if (use_skip) {
