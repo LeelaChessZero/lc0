@@ -533,6 +533,13 @@ std::unique_ptr<Network> MakeTFNetwork(const std::optional<WeightsFile>& w,
                     std::to_string(weights.format().network_format().value()) +
                     " is not supported by Tensorflow C++ backend.");
   }
+  if (weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+    throw Exception(
+        "Default activation " +
+        std::to_string(weights.format().network_format().default_activation()) +
+        " is not supported by Tensorflow C++ backend.");
+  }
   return std::make_unique<TFNetwork<CPU>>(
       weights, options,
       weights.format().network_format().value() ==
