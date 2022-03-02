@@ -448,7 +448,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           OutputInputTransformKernel_fp16_shmem_board<use_se, activation,
                                                       use_bias, use_skip>,
           cudaFuncAttributeMaxDynamicSharedMemorySize,
-          kMaxResBlockFusingSeFp16AmpereSmem);
+          72 * C * sizeof(half));
       OutputInputTransformKernel_fp16_shmem_board<use_se, activation, use_bias,
                                                   use_skip>
           <<<N, C, kMaxResBlockFusingSeFp16AmpereSmem, stream>>>(
@@ -508,6 +508,11 @@ template void OutputTransform<half, false, RELU, true, false, false, true>(
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
+template void OutputTransform<half, true, RELU, true, true, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
 template void OutputTransform<half, true, MISH, true, true, false, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
@@ -534,6 +539,11 @@ template void OutputTransform<half, false, MISH, true, false, false, false>(
     const half* b2, cudaStream_t stream);
 
 template void OutputTransform<half, false, MISH, true, false, false, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, true, MISH, true, true, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);

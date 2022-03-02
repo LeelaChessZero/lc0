@@ -444,13 +444,6 @@ void OutputTransform_SE_relu_InputTransform_kernel(
   T board[8][8];
   T b = bias[k];
 
-  T skipInp[8][8];
-#pragma unroll
-  for (int h = 0; h < 8; h++) {
-    copyAs<uint4>(&skipInp[h][0], &skip[INDEX_NHCW(n, k, h, 0)]);
-    if (!fp16) copyAs<uint4>(&skipInp[h][4], &skip[INDEX_NHCW(n, k, h, 4)]);
-  }
-
 #pragma unroll
   for (int hStart = 0; hStart < 8; hStart += 4)
 #pragma unroll
@@ -542,8 +535,11 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 
     // residual add
     if (use_skip) {
+      T skipInp[8];
+      copyAs<uint4>(&skipInp[0], &skip[INDEX_NHCW(n, k, h, 0)]);
+      if (!fp16) copyAs<uint4>(&skipInp[4], &skip[INDEX_NHCW(n, k, h, 4)]);
 #pragma unroll
-      for (int w = 0; w < 8; w++) board[h][w] += skipInp[h][w];
+      for (int w = 0; w < 8; w++) board[h][w] += skipInp[w];
     }
 
     // relu
@@ -644,7 +640,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 
 constexpr int kOpInpTransformBlockSize = 64;
 template <typename T, ActivationFunction activation, bool use_bias, bool use_skip>
-__global__ __launch_bounds__(kOpInpTransformBlockSize, 6)
+__global__ __launch_bounds__(kOpInpTransformBlockSize, 4)
 void OutputTransform_relu_InputTransform_kernel(int N, int C,
                                                 T* output, const T* input,
                                                 T* skip, const T* bias) {
