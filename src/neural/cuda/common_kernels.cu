@@ -558,7 +558,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   // Each thread processes entire chess board
   if (use_se == false) {
     dim3 grid_dim(DivUp(C, kOpInpTransformBlockSize), N, 1);
-    OutputTransform_relu_InputTransform_kernel<float, relu, use_bias, use_skip>
+    OutputTransform_relu_InputTransform_kernel<float, activation, use_bias, use_skip>
         <<<grid_dim, kOpInpTransformBlockSize, 0, stream>>>(N, C, output, input,
                                                             (float*)skip, bias);
   } else if (C > kMaxResBlockFusingChannels) {

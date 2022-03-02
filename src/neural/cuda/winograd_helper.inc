@@ -643,7 +643,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 
 
 constexpr int kOpInpTransformBlockSize = 64;
-template <typename T, bool relu, bool use_bias, bool use_skip>
+template <typename T, ActivationFunction activation, bool use_bias, bool use_skip>
 __global__ __launch_bounds__(kOpInpTransformBlockSize, 6)
 void OutputTransform_relu_InputTransform_kernel(int N, int C,
                                                 T* output, const T* input,
@@ -703,11 +703,11 @@ void OutputTransform_relu_InputTransform_kernel(int N, int C,
       for (int w = 0; w < 8; w++) board[h][w] += skipInp[h][w];
     }
 
-    // relu
-    if (relu) {
+    // activation
+    if (activation != NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
-        if (board[h][w] < (T)0) board[h][w] = 0;
+        board[h][w] = (T) activate((float)board[h][w], activation);
     }
 
     // write un-transformed output to 'skip' if required
