@@ -260,7 +260,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
     if (use_bias) copyAs<uint4>(&BOARD(y, 0), &boardRow);
   }
 
-    __shared__ float shared_data[kMaxResBlockFusingSeKFp16Ampere];
+  __shared__ float shared_data[kMaxResBlockFusingSeKFp16Ampere];
   float avg = S / 64;
   shared_data[k] = avg;
 
