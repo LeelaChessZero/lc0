@@ -76,7 +76,10 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
   const size_t output_size = N * (64 * 64 + 8 * 24);
 
   size = std::max(size, std::max(matmul_qk_size, output_size));
-  return size;
+
+  // We process the k, q, and v matrix multiplications in parallel using single allocation
+  // so need 3x of this.
+  return size * 3;
 }
 
 template <typename DataType>
@@ -280,10 +283,9 @@ class CudaNetwork : public Network {
     scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
 
     // Attention policy head may need more memory
-    // (We also split the allocations into two parts, so need 2x)
     const size_t attentionSize =
         getMaxAttentionHeadSize(weights, max_batch_size_);
-    scratch_size_ = std::max(scratch_size_, 2 * attentionSize);
+    scratch_size_ = std::max(scratch_size_, attentionSize);
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 

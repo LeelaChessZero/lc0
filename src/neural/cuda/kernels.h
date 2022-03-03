@@ -36,6 +36,12 @@ template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
                 ActivationFunction activation, cudaStream_t stream);
 
+// Optimized kernel to add bias to innermost dimension
+// and perform optional activation (to be used with GEMMs/fully connected)
+template <typename T>
+void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+                    int C, ActivationFunction activation, cudaStream_t stream);
+
 // Add bias to convolution's output.
 template <typename T>
 void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
@@ -115,8 +121,9 @@ template <typename T>
 void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream);
 
 template <typename T>
-void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
-               const T* gammas, const T* betas, float ep, cudaStream_t stream);
+void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
+               const T* skip, const T* gammas, const T* betas, float ep,
+               cudaStream_t stream);
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,
