@@ -556,16 +556,22 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* b1, const T* w2, const T* b2,
                           cudaStream_t stream) {
   // Each thread processes entire chess board
-  if (C > kMaxResBlockFusingChannels) {
+  if (use_se == false) {
+    dim3 grid_dim(DivUp(C, kOpInpTransformBlockSize), N, 1);
+    OutputTransform_relu_InputTransform_kernel<float, activation, use_bias, use_skip>
+        <<<grid_dim, kOpInpTransformBlockSize, 0, stream>>>(N, C, output, input,
+                                                            (float*)skip, bias);
+  } else if (C > kMaxResBlockFusingChannels) {
     throw Exception(
         "res block fusing opt not supported for the given data type and no "
         "of filters\n");
   } else {
-    OutputTransform_SE_relu_InputTransform_kernel<float, use_se, activation,
+    OutputTransform_SE_relu_InputTransform_kernel<float, activation,
                                                   use_bias, use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (float*)skip, bias, w1,
                               b1, w2, b2);
   }
+
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -843,6 +849,7 @@ template void OutputTransform<float, true, RELU, true, true, false, false>(
     const float* w2, const float* b2, cudaStream_t stream);
 
 template void OutputTransform<float, false, RELU, true, true, false, false>(
+
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
@@ -863,6 +870,11 @@ template void OutputTransform<float, false, RELU, true, false, false, false>(
     const float* w2, const float* b2, cudaStream_t stream);
 
 template void OutputTransform<float, false, RELU, true, false, false, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, true, RELU, true, true, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
@@ -893,6 +905,11 @@ template void OutputTransform<float, false, MISH, true, false, false, false>(
     const float* w2, const float* b2, cudaStream_t stream);
 
 template void OutputTransform<float, false, MISH, true, false, false, true>(
+    int N, int C, int se_K, float* output, const float* input,
+    const float* skip, const float* bias, const float* w1, const float* b1,
+    const float* w2, const float* b2, cudaStream_t stream);
+
+template void OutputTransform<float, true, MISH, true, true, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);

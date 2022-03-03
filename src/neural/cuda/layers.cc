@@ -1055,13 +1055,15 @@ Conv1Layer<DataType>::~Conv1Layer() {
 template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(BaseLayer<DataType>* ip, int C, bool se,
                                        int se_k, bool use_gemm_ex, bool first,
-                                       bool last, ActivationFunction activation)
+
+                                       bool last, ActivationFunction activation, int shared_mem_size)
     : BaseLayer<DataType>(C, 8, 8, ip, ip->isNHWC(), use_gemm_ex),
       has_se_(se),
       se_k_(se_k),
       c_input_(C),
       first_block_(first),
       last_block_(last),
+      shared_mem_size_(shared_mem_size),
       act_(activation) {
   if (act_ != RELU && act_ != MISH) {
     throw Exception("Unsupported activation for residual block.");
@@ -1229,6 +1231,12 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
       transformed_input, transformed_weights1_, transformed_output, N * 4, C, C,
       36, cublas);
 
+  const bool fp16 = std::is_same<half, DataType>::value;
+  bool allowFusing =
+      (C <= kMaxResBlockFusingChannels) ||
+      (fp16 && (shared_mem_size_ >= kMaxResBlockFusingSeFp16AmpereSmem) &&
+       (C <= kMaxResBlockFusingSeKFp16Ampere));
+
   if (act_ == RELU) {
     if (last_block_) {
       if (has_se_)
@@ -1240,11 +1248,19 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     } else {
-      if (has_se_)
-        OutputInputTransform<DataType, true, RELU, true, true>(
-            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-            w2_, b2_, stream);
-      else
+      if (has_se_) {
+        if (allowFusing) {
+          OutputInputTransform<DataType, true, RELU, true, true>(
+              N, C, se_k_, output, transformed_output, input, biases1_, w1_,
+              b1_, w2_, b2_, stream);
+        } else {
+          OutputTransform<DataType, true, RELU, true, true, true, true>(
+              N, C, se_k_, (DataType*)input, transformed_output, input,
+              biases1_, w1_, b1_, w2_, b2_, stream);
+          InputTransform<DataType, true>(N, C, output, (DataType*)input,
+                                         stream);
+        }
+      } else
         OutputInputTransform<DataType, false, RELU, true, true>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
@@ -1260,11 +1276,19 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     } else {
-      if (has_se_)
-        OutputInputTransform<DataType, true, MISH, true, true>(
-            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-            w2_, b2_, stream);
-      else
+      if (has_se_) {
+        if (allowFusing) {
+          OutputInputTransform<DataType, true, MISH, true, true>(
+              N, C, se_k_, output, transformed_output, input, biases1_, w1_,
+              b1_, w2_, b2_, stream);
+        } else {
+          OutputTransform<DataType, true, MISH, true, true, true, true>(
+              N, C, se_k_, (DataType*)input, transformed_output, input,
+              biases1_, w1_, b1_, w2_, b2_, stream);
+          InputTransform<DataType, true>(N, C, output, (DataType*)input,
+                                         stream);
+        }
+      } else
         OutputInputTransform<DataType, false, MISH, true, true>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
