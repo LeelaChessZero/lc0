@@ -26,7 +26,7 @@
 */
 
 #include <cassert>
-
+#include <algorithm>
 #include "cuda_common.h"
 #include "winograd_helper.inc"
 
@@ -71,9 +71,9 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T>
+template <typename T, ActivationFunction act>
 __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
-                                      int N, int C, ActivationFunction act) {
+                                      int N, int C) {
   int batch = blockIdx.y;
   int n = blockIdx.x * blockDim.y + threadIdx.y;
   if (n >= N) return;
@@ -137,8 +137,20 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
   gridDim.y = Batch;
   gridDim.z = 1;
 
-  addBiasBatched_kernel<<<gridDim, blockDim, 0, stream>>>(output, input, bias,
-                                                          N, C, activation);
+  switch (activation) {
+    case NONE:
+      addBiasBatched_kernel<T, NONE><<<gridDim, blockDim, 0, stream>>>(
+          output, input, bias, N, C);
+      break;
+    case SELU:
+      addBiasBatched_kernel<T, SELU><<<gridDim, blockDim, 0, stream>>>(
+          output, input, bias, N, C);
+      break;
+    default:
+      throw Exception(
+          "unsupported activation in addBiasBatched. Add in switch-case here");
+  }
+
   ReportCUDAErrors(cudaGetLastError());
 }
 
