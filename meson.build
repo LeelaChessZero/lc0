@@ -490,7 +490,7 @@ if get_option('build_backends')
     cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
     nvcc_extra_args = []
     if cuda_cc != ''
-      nvcc_extra_args = ['--use_fast_math', '-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
+      nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
     endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]

@@ -207,7 +207,7 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 // 'C' threads per block
 // 'N' blocks
 // Every thread generates an entire board/plane (8x8 elements).
-template <bool use_se, ActivationFunction activation, bool use_bias,
+template <ActivationFunction activation, bool use_bias,
           bool use_skip>
 __global__ __launch_bounds__(kMaxResBlockFusingSeKFp16Ampere,1)
 void OutputInputTransformKernel_fp16_shmem_board(
@@ -248,104 +248,96 @@ void OutputInputTransformKernel_fp16_shmem_board(
   float S = 0;
   float B = 0;
 
-  if (use_bias || use_se) {
 #pragma unroll
-    for (int y = 0; y < 8; y++) {
-      half boardRow[8];
-      copyAs<uint4>(&boardRow, &BOARD(y, 0));
+  for (int y = 0; y < 8; y++) {
+    half boardRow[8];
+    copyAs<uint4>(&boardRow, &BOARD(y, 0));
 #pragma unroll
-      for (int x = 0; x < 8; x++) {
-        if (use_bias) boardRow[x] += b;
-        if (use_se) S += (float)boardRow[x];
-      }
-      if (use_bias) copyAs<uint4>(&BOARD(y, 0), &boardRow);
+    for (int x = 0; x < 8; x++) {
+      if (use_bias) boardRow[x] += b;
+      S += (float)boardRow[x];
     }
+    if (use_bias) copyAs<uint4>(&BOARD(y, 0), &boardRow);
   }
 
-  if (use_se) {
     __shared__ float shared_data[kMaxResBlockFusingSeKFp16Ampere];
-    float avg = S / 64;
-    shared_data[k] = avg;
+  float avg = S / 64;
+  shared_data[k] = avg;
 
-    int lane = k & 0x1F;
-    int warp = k >> 5;
-    __syncthreads();
+  int lane = k & 0x1F;
+  int warp = k >> 5;
+  __syncthreads();
 
-    // First fully-connected layer for SE
+  // First fully-connected layer for SE
 
-    // As se_K << C, we want to loop over se_K instead of C
-    // even if it means taking the sum across threads
+  // As se_K << C, we want to loop over se_K instead of C
+  // even if it means taking the sum across threads
 
-    __shared__ float shared_sums[kMaxResBlockFusingSeKFp16Ampere / 32]
-                                [kMaxResBlockFusingSeK];  // per-warp sums
+  __shared__ float shared_sums[kMaxResBlockFusingSeKFp16Ampere / 32]
+                              [kMaxResBlockFusingSeK];  // per-warp sums
 
-    for (int i = 0; i < se_K; i++) {
-      float val = shared_data[k] * float(readw1(k, i));
-      val = warpReduce(val);
-      if (lane == 0) shared_sums[warp][i] = val;
-    }
-    __syncthreads();
-    if (k < se_K) {
-      S = 0;
-      for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
-
-      S += (float)b1[k];
-      S = activate(S, activation);
-      shared_data[k] = S;
-    }
-
-    __syncthreads();
-
-    // Second fully-connected layer for SE
+  for (int i = 0; i < se_K; i++) {
+    float val = shared_data[k] * float(readw1(k, i));
+    val = warpReduce(val);
+    if (lane == 0) shared_sums[warp][i] = val;
+  }
+  __syncthreads();
+  if (k < se_K) {
     S = 0;
-    for (int i = 0; i < se_K; i++) {
-      float val = shared_data[i];
-      S += val * float(readw2(i, k));
-      B += val * float(readw2(i, k + C));
-    }
-    S += (float)b2[k];
-    B += (float)b2[k + C];
+    for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
 
-    // Sigmoid (only on the scale part).
-    S = 1.0f / (1.0f + exp(-S));
+    S += (float)b1[k];
+    S = activate(S, activation);
+    shared_data[k] = S;
   }
 
-  // Scale/bias, add skip connection, perform relu, and write to output.
-  if (use_se || use_skip || activation != NONE) {
-    for (int h = 0; h < 8; h++) {
-      half boardRow[8];
-      copyAs<uint4>(&boardRow[0], &BOARD(h, 0));
+  __syncthreads();
 
-      if (use_se) {
-#pragma unroll
-        for (int w = 0; w < 8; w++) {
-          boardRow[w] = (half)(float(boardRow[w]) * S + B);
-        }
-      }
-
-      // residual add
-      if (use_skip) {
-        half skipInp[8];
-        copyAs<uint4>(&skipInp[0], &skip[INDEX_NHCW(n, k, h, 0)]);
-#pragma unroll
-        for (int w = 0; w < 8; w++) boardRow[w] += skipInp[w];
-      }
-
-      // relu
-      if (activation != NONE) {
-#pragma unroll
-        for (int w = 0; w < 8; w++)
-          boardRow[w] = (half)activate((float)boardRow[w], activation);
-      }
-
-      // write un-transformed output to 'skip' if required
-      if (use_skip) {
-        copyAs<uint4>(&skip[INDEX_NHCW(n, k, h, 0)], &boardRow[0]);
-      }
-
-      copyAs<uint4>(&BOARD(h, 0), &boardRow);
-    }
+  // Second fully-connected layer for SE
+  S = 0;
+  for (int i = 0; i < se_K; i++) {
+    float val = shared_data[i];
+    S += val * float(readw2(i, k));
+    B += val * float(readw2(i, k + C));
   }
+  S += (float)b2[k];
+  B += (float)b2[k + C];
+
+  // Sigmoid (only on the scale part).
+  S = 1.0f / (1.0f + exp(-S));
+
+  // Scale/bias, add skip connection, perform activation, and write to output.
+  for (int h = 0; h < 8; h++) {
+    half boardRow[8];
+    copyAs<uint4>(&boardRow[0], &BOARD(h, 0));
+
+#pragma unroll
+    for (int w = 0; w < 8; w++) {
+      boardRow[w] = (half)(float(boardRow[w]) * S + B);
+    }
+
+    // residual add
+    if (use_skip) {
+      half skipInp[8];
+      copyAs<uint4>(&skipInp[0], &skip[INDEX_NHCW(n, k, h, 0)]);
+#pragma unroll
+      for (int w = 0; w < 8; w++) boardRow[w] += skipInp[w];
+    }
+
+    if (activation != NONE) {
+#pragma unroll
+      for (int w = 0; w < 8; w++)
+        boardRow[w] = (half)activate((float)boardRow[w], activation);
+    }
+
+    // write un-transformed output to 'skip' if required
+    if (use_skip) {
+      copyAs<uint4>(&skip[INDEX_NHCW(n, k, h, 0)], &boardRow[0]);
+    }
+
+    copyAs<uint4>(&BOARD(h, 0), &boardRow);
+  }
+
 
   // Perform input transform.
 
@@ -445,11 +437,11 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
-          OutputInputTransformKernel_fp16_shmem_board<use_se, activation,
+          OutputInputTransformKernel_fp16_shmem_board<activation,
                                                       use_bias, use_skip>,
           cudaFuncAttributeMaxDynamicSharedMemorySize,
           72 * C * sizeof(half));
-      OutputInputTransformKernel_fp16_shmem_board<use_se, activation, use_bias,
+      OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
                                                   use_skip>
           <<<N, C, kMaxResBlockFusingSeFp16AmpereSmem, stream>>>(
               N, C, se_K, (half*)output, (const half*)input, (half*)skip,
