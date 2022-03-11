@@ -1690,8 +1690,8 @@ void AttentionPolicyHead<DataType>::Eval(
   // policy_attn_logits interleaved to get concat for free)
   DataType* promotion_logits = output + 64 * 64;
 
-  ComputePromotionLogits<DataType>(N, policy_d_model_, promotion_logits,
-                                   scratch0, ip4_pol_w_, output, stream);
+  ComputePromotionLogits<DataType>(N, policy_d_model_, promotion_logits, wk,
+                                   ip4_pol_w_, output, stream);
 }
 
 template <typename DataType>
