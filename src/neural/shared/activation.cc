@@ -68,6 +68,9 @@ float Activate(const float val, const ActivationFunction activation) {
         return scale * alpha * (expf(val) - 1.0f);
       }
     }
+    case NONE:
+      // Nothing to do.
+      break;
   }
   return val;
 }
