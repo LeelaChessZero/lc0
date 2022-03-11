@@ -46,8 +46,8 @@ template <bool use_eigen>
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
-                  const bool wdl, const bool moves_left,
-                  const bool conv_policy);
+                  const bool wdl, const bool moves_left, const bool conv_policy,
+                  const ActivationFunction default_activation);
 
   virtual ~BlasComputation() {}
 
@@ -113,6 +113,7 @@ class BlasComputation : public NetworkComputation {
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
+  ActivationFunction default_activation_;
 };
 
 template <bool use_eigen>
@@ -123,7 +124,8 @@ class BlasNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
-        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_);
+        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_, 
+        default_activation_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -140,19 +142,22 @@ class BlasNetwork : public Network {
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
+  ActivationFunction default_activation_;
 };
 
 template <bool use_eigen>
 BlasComputation<use_eigen>::BlasComputation(
     const LegacyWeights& weights, const size_t max_batch_size, const bool wdl,
-    const bool moves_left, const bool conv_policy)
+    const bool moves_left, const bool conv_policy,
+    const ActivationFunction default_activation)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
       q_values_(0),
       wdl_(wdl),
       moves_left_(moves_left),
-      conv_policy_(conv_policy) {
+      conv_policy_(conv_policy),
+      default_activation_(default_activation) {
 #ifdef USE_DNNL
   omp_set_num_threads(1);
 #endif
@@ -233,7 +238,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                       weights_.input.weights.data(), conv_out);
 
     BiasResidualRelu(batch_size, output_channels, conv_out,
-                     weights_.input.biases.data());
+                     weights_.input.biases.data(), nullptr,
+                     default_activation_);
 
     // Residual tower
 
@@ -248,7 +254,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                         conv1.weights.data(), conv_out);
 
       BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                       conv1.biases.data());
+                       conv1.biases.data(), nullptr, default_activation_);
 
       std::swap(conv_in, res);
       std::swap(conv_out, conv_in);
@@ -259,17 +265,18 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       if (residual.has_se) {
         // No relu if followed by SE-unit and residual is added later
         BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                         conv2.biases.data(), nullptr, false);
+                         conv2.biases.data(), nullptr, NONE);
 
         std::swap(conv_out, conv_in);
 
         auto se_fc_outputs = se.b1.size();
         ApplySEUnit<use_eigen>(batch_size, output_channels, se_fc_outputs,
                                conv_in, res, se.w1.data(), se.b1.data(),
-                               se.w2.data(), se.b2.data(), conv_out);
+                               se.w2.data(), se.b2.data(), conv_out,
+                               default_activation_);
       } else {
         BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                         conv2.biases.data(), res);
+                         conv2.biases.data(), res, default_activation_);
       }
     }
 
@@ -279,7 +286,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                         weights_.policy1.weights.data(), res);
 
       BiasResidualRelu(batch_size, output_channels, &res[0],
-                       weights_.policy1.biases.data());
+                       weights_.policy1.biases.data(), nullptr,
+                       default_activation_);
 
       convolve3.Forward(batch_size, output_channels, num_policy_input_planes,
                         res, weights_.policy.weights.data(),
@@ -287,7 +295,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
       BiasResidualRelu(batch_size, num_policy_input_planes,
                        &head_buffer.data()[0], weights_.policy.biases.data(),
-                       nullptr, false);
+                       nullptr, NONE);
 
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -306,13 +314,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           weights_.policy.weights.data(), head_buffer.data());
 
       BiasResidualRelu(batch_size, num_policy_input_planes, &head_buffer[0],
-                       weights_.policy.biases.data());
+                       weights_.policy.biases.data(), nullptr,
+                       default_activation_);
 
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_policy_input_planes * kSquares, num_output_policy,
           head_buffer.data(), weights_.ip_pol_w.data(),
           weights_.ip_pol_b.data(),
-          false,  // Relu Off
+          NONE,  // Activation Off
           output_fc.data());
     }
 
@@ -331,13 +340,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         weights_.value.weights.data(), head_buffer.data());
 
     BiasResidualRelu(batch_size, num_value_input_planes, &head_buffer[0],
-                     weights_.value.biases.data());
+                     weights_.value.biases.data(), nullptr,
+                     default_activation_);
 
     FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,
         head_buffer.data(), weights_.ip1_val_w.data(),
         weights_.ip1_val_b.data(),
-        true,  // Relu On
+        default_activation_,  // Activation On
         output_fc.data());
 
     // Now get the score
@@ -346,7 +356,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_value_channels, 3, output_fc.data(),
           weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
-          false,  // Relu Off
+          NONE,  // Activation Off
           wdl.data());
 
       for (size_t j = 0; j < batch_size; j++) {
@@ -373,20 +383,21 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           weights_.moves_left.weights.data(), head_buffer.data());
 
       BiasResidualRelu(batch_size, num_moves_input_planes, &head_buffer[0],
-                       weights_.moves_left.biases.data());
+                       weights_.moves_left.biases.data(), nullptr,
+                       default_activation_);
 
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_moves_input_planes * kSquares, num_moves_channels,
           head_buffer.data(), weights_.ip1_mov_w.data(),
           weights_.ip1_mov_b.data(),
-          true,  // Relu On
+          default_activation_,  // Activation On
           output_fc.data());
 
       std::vector<float> output_moves_left(batch_size);
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_moves_channels, 1, output_fc.data(),
           weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
-          true,  // Relu On
+          RELU,  // Specifically Relu
           output_moves_left.data());
 
       for (size_t j = 0; j < batch_size; j++) {
@@ -424,6 +435,11 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
   conv_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
+  default_activation_ = file.format().network_format().default_activation() ==
+                                pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+                            ? MISH
+                            : RELU;
 
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
@@ -529,7 +545,9 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
                     " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().default_activation() !=
-      pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+      weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
     throw Exception(
         "Default activation " +
         std::to_string(weights.format().network_format().default_activation()) +

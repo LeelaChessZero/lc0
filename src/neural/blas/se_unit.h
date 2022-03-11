@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include "neural/shared/activation.h"
+
 #include <cstddef>
 
 namespace lczero {
@@ -27,6 +29,7 @@ void ApplySEUnit(const size_t batch_size, const size_t channels,
                  const size_t se_fc_outputs, const float* input,
                  const float* residual, const float* weights_w1,
                  const float* weights_b1, const float* weights_w2,
-                 const float* weights_b2, float* output);
+                 const float* weights_b2, float* output,
+                 const ActivationFunction activation);
 
 }  // namespace lczero

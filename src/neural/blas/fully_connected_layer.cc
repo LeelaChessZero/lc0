@@ -18,6 +18,7 @@
 
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/blas.h"
+#include "neural/shared/activation.h"
 
 #include <algorithm>
 #include <cassert>
@@ -28,13 +29,13 @@
 namespace lczero {
 namespace {
 void ApplyBias(size_t batch_size, const size_t output_size, const float* biases,
-               bool apply_relu, float* outputs) {
-  if (apply_relu) {
+               const ActivationFunction activation, float* outputs) {
+  if (activation != NONE) {
     for (size_t i = 0; i < batch_size; i++) {
       float* batch_outputs = outputs + i * output_size;
       for (size_t o = 0; o < output_size; o++) {
         float val = biases[o] + batch_outputs[o];
-        batch_outputs[o] = val >= 0 ? val : 0;
+        batch_outputs[o] = Activate(val, activation);
       }
     }
   } else {
@@ -65,7 +66,7 @@ template <>
 void FullyConnectedLayer<false>::Forward1D(
     size_t batch_size, const size_t input_size, const size_t output_size,
     const float* inputs, const float* weights, const float* biases,
-    bool apply_relu, float* outputs) {
+    const ActivationFunction activation, float* outputs) {
   if (batch_size == 1) {
     // Just a matrix-vector multiplication
     //
@@ -114,7 +115,7 @@ void FullyConnectedLayer<false>::Forward1D(
                 outputs,            // C
                 (int)output_size);  // ldc, leading rank of C
   }
-  ApplyBias(batch_size, output_size, biases, apply_relu, outputs);
+  ApplyBias(batch_size, output_size, biases, activation, outputs);
 }
 
 template <>
@@ -132,7 +133,7 @@ template <>
 void FullyConnectedLayer<true>::Forward1D(
     size_t batch_size, const size_t input_size, const size_t output_size,
     const float* inputs, const float* weights, const float* biases,
-    bool apply_relu, float* outputs) {
+    const ActivationFunction activation, float* outputs) {
   if (batch_size == 1) {
     EigenVectorMap<float> y(outputs, output_size);
     y.noalias() = ConstEigenMatrixMap<float>(weights, input_size, output_size)
@@ -145,7 +146,7 @@ void FullyConnectedLayer<true>::Forward1D(
             .transpose() *
         ConstEigenMatrixMap<float>(inputs, input_size, batch_size);
   }
-  ApplyBias(batch_size, output_size, biases, apply_relu, outputs);
+  ApplyBias(batch_size, output_size, biases, activation, outputs);
 }
 
 template <>

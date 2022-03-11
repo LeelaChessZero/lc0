@@ -42,10 +42,47 @@ void SoftmaxActivation(const size_t size, const float* input, float* output) {
   }
 }
 
+float Activate(const float val, const ActivationFunction activation) {
+  switch (activation) {
+    case RELU:
+      return val > 0 ? val : 0;
+    case MISH: {
+      auto e = expf(val);
+      auto n = e * e + 2.0f * e;
+      auto d = val / (n + 2.0f);
+      if (val <= -0.6f) {
+        return n * d;
+      } else {
+        return val - 2.0f * d;
+      }
+    }
+    case TANH:
+      return tanhf(val);
+    case SIGMOID:
+      return 1.0f / (1.0f + expf(-val));
+    case SELU: {
+      float alpha = 1.67326324f, scale = 1.05070098f;
+      if (val > 0) {
+        return scale * val;
+      } else {
+        return scale * alpha * (expf(val) - 1.0f);
+      }
+    }
+  }
+  return val;
+}
+
+void Activate(const size_t len, float* data,
+              const ActivationFunction activation) {
+  for (size_t i = 0; i < len; i++) {
+    data[i] = Activate(data[i], activation);
+  }
+}
+
 void BiasResidualRelu(const size_t batch_size, const size_t channels,
                  float* data, const float* biases,
                  const float* eltwise,
-                 const bool relu) {
+                 const ActivationFunction activation) {
   for (size_t i = 0; i < batch_size; i++) {
     for (size_t c = 0; c < channels; ++c) {
       auto bias = biases[c];
@@ -54,8 +91,8 @@ void BiasResidualRelu(const size_t batch_size, const size_t channels,
         auto arr = &data[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;
-          if (relu) {
-            val = val > 0 ? val : 0;
+          if (activation != NONE) {
+            val = Activate(val, activation);
           }
           arr[b] = val;
         }
@@ -64,8 +101,8 @@ void BiasResidualRelu(const size_t batch_size, const size_t channels,
         auto res = &eltwise[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
-          if (relu) {
-            val = val > 0 ? val : 0;
+          if (activation != NONE) {
+            val = Activate(val, activation);
           }
           arr[b] = val;
         }

@@ -22,6 +22,7 @@
 #include <vector>
 
 namespace lczero {
+enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH };
 
   // Softmax activation
 void SoftmaxActivation(const size_t size, const float* input, float* output);
@@ -29,5 +30,9 @@ void SoftmaxActivation(const size_t size, const float* input, float* output);
 void BiasResidualRelu(const size_t batch_size, const size_t channels,
                  float* data, const float* biases,
                  const float* eltwise = nullptr,
-                 const bool relu = true);
+                 const ActivationFunction activation = RELU);
+float Activate(const float val,
+              const ActivationFunction activation);
+void Activate(const size_t len, float* data,
+              const ActivationFunction activation);
 }  // namespace lczero
