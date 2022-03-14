@@ -379,7 +379,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
   has_conv_policy_ = file.format().network_format().policy() ==
                      pblczero::NetworkFormat::POLICY_CONVOLUTION;
-  max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+  max_batch_size_ = options.GetOrDefault<int>("max_batch",
+                                              kMaxSupportedBatchSize);
 
   // Default is fp16, to use fp32: --backend-opts=fp16=false.
   fp16_ = options.GetOrDefault<bool>("fp16", DEFAULT_FP16);
