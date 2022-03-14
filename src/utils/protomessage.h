@@ -6,6 +6,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <array>
 #include <vector>
 
 // Undef g++ macros to ged rid of warnings.
@@ -39,14 +40,11 @@ class ProtoMessage {
     }
   }
 
-  void AppendVarInt(int /* field_id */, std::uint64_t /* value */,
-                    std::string* /* out */) const;
-  void AppendInt64(int /* field_id */, std::uint64_t /* value */,
-                   std::string* /* out */) const;
-  void AppendInt32(int /* field_id */, std::uint32_t /* value */,
-                   std::string* /* out */) const;
-  void AppendString(int /* field_id */, std::string_view /* value */,
-                    std::string* /* out */) const;
+  void AppendVarInt(int field_id, std::uint64_t value, std::string* out) const;
+  void AppendInt64(int field_id, std::uint64_t value, std::string* out) const;
+  void AppendInt32(int field_id, std::uint32_t value, std::string* out) const;
+  void AppendString(int field_id, std::string_view value,
+                    std::string* out) const;
 
  private:
   virtual void SetVarInt(int /* field_id */, uint64_t /* value */) {}

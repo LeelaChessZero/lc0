@@ -55,6 +55,36 @@ struct LegacyWeights {
     bool has_se;
   };
 
+  struct MHA {
+    explicit MHA(const pblczero::Weights::MHA& mha);
+    Vec q_w;
+    Vec q_b;
+    Vec k_w;
+    Vec k_b;
+    Vec v_w;
+    Vec v_b;
+    Vec dense_w;
+    Vec dense_b;
+  };
+
+  struct FFN {
+    explicit FFN(const pblczero::Weights::FFN& mha);
+    Vec dense1_w;
+    Vec dense1_b;
+    Vec dense2_w;
+    Vec dense2_b;
+  };
+
+  struct EncoderLayer {
+    explicit EncoderLayer(const pblczero::Weights::EncoderLayer& encoder);
+    MHA mha;
+    Vec ln1_gammas;
+    Vec ln1_betas;
+    FFN ffn;
+    Vec ln2_gammas;
+    Vec ln2_betas;
+  };
+
   // Input convnet.
   ConvBlock input;
 
@@ -67,6 +97,15 @@ struct LegacyWeights {
   ConvBlock policy;
   Vec ip_pol_w;
   Vec ip_pol_b;
+  // Extra params for attention policy head
+  Vec ip2_pol_w;
+  Vec ip2_pol_b;
+  Vec ip3_pol_w;
+  Vec ip3_pol_b;
+  Vec ip4_pol_w;
+  int pol_encoder_head_count;
+  std::vector<EncoderLayer> pol_encoder;
+
 
   // Value head
   ConvBlock value;

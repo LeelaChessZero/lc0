@@ -139,25 +139,37 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
+# ONNX protobufs.
+gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
+  arguments : [
+    '--proto_path=@CURRENT_SOURCE_DIR@/src',
+    '--cpp_out=@BUILD_DIR@',
+    '@INPUT@'])
+
+files += gen_proto_src.process('src/neural/onnx/onnx.proto',
+  preserve_path_from : meson.current_source_dir() + '/src/')
+
 #############################################################################
 ## Main files
 #############################################################################
 files += [
-  'src/engine.cc',
-  'src/version.cc',
   'src/benchmark/backendbench.cc',
   'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
+  'src/engine.cc',
+  'src/lc0ctl/describenet.cc',
+  'src/lc0ctl/leela2onnx.cc',
+  'src/lc0ctl/onnx2leela.cc',  
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/alphazero.cc',
   'src/mcts/stoppers/common.cc',
   'src/mcts/stoppers/factory.cc',
   'src/mcts/stoppers/legacy.cc',
-  'src/mcts/stoppers/alphazero.cc',
   'src/mcts/stoppers/smooth.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
@@ -173,6 +185,10 @@ files += [
   'src/neural/network_random.cc',
   'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
+  'src/neural/network_trivial.cc',
+  'src/neural/onnx/adapters.cc',
+  'src/neural/onnx/builder.cc',
+  'src/neural/onnx/converter.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
@@ -183,6 +199,7 @@ files += [
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/esc_codes.cc',
+  'src/utils/files.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/numa.cc',
@@ -191,6 +208,8 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
+  'src/utils/fp16_utils.cc',
+  'src/version.cc',
 ]
 includes += include_directories('src')
 
@@ -526,7 +545,6 @@ if get_option('build_backends')
       'src/neural/dx/network_dx.cc',
       'src/neural/dx/shader_wrapper.cc',
       'src/neural/dx/layers_dx.cc',
-      'src/neural/dx/fp16_utils.cc',
     ]
     files += dx_files
     deps += [dx_d3d12, dx_dxgi]
@@ -559,22 +577,9 @@ if get_option('build_backends')
                   args: '-I' + get_option('onnx_include'))
     deps += [onnx_lib]
 
-
-    gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
-      arguments : [
-        '--proto_path=@CURRENT_SOURCE_DIR@/src',
-        '--cpp_out=@BUILD_DIR@',
-        '@INPUT@'])    
-
     files += [
-      'src/neural/onnx/adapters.cc',
-      'src/neural/onnx/builder.cc',
-      'src/neural/onnx/converter.cc',
       'src/neural/onnx/network_onnx.cc',
     ]
-
-    files +=   gen_proto_src.process('src/neural/onnx/onnx.proto',
-      preserve_path_from : meson.current_source_dir() + '/src/')
 
     has_backends = true
   endif
@@ -633,7 +638,7 @@ if get_option('embed')
 endif
 
 executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps, install: true)
+       files, include_directories: includes, dependencies: deps, install: true)
 
 #############################################################################
 ## Tests

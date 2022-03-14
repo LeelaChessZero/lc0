@@ -799,6 +799,13 @@ std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
         std::to_string(weights.format().network_format().moves_left()) +
         " is not supported by the oneDNN backend.");
   }
+  if (weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+    throw Exception(
+        "Default activation " +
+        std::to_string(weights.format().network_format().default_activation()) +
+        " is not supported by the oneDNN backend.");
+  }
   return std::make_unique<OnednnNetwork>(weights, options);
 }
 

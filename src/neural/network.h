@@ -67,7 +67,7 @@ class NetworkComputation {
   // Returns P value @move_id of @sample.
   virtual float GetPVal(int sample, int move_id) const = 0;
   virtual float GetMVal(int sample) const = 0;
-  virtual ~NetworkComputation() {}
+  virtual ~NetworkComputation() = default;
 };
 
 // The plan:
@@ -80,7 +80,7 @@ class NetworkComputation {
 // 4. On the other hand, output part of NetworkCapabilities is set of
 //    independent parameters (like WDL, moves left head etc), because search can
 //    look what's set and act accordingly. Backends may derive it from
-//    OutputFormat field or other places.
+//    output head format fields or other places.
 
 struct NetworkCapabilities {
   pblczero::NetworkFormat::InputFormat input_format;
@@ -107,7 +107,7 @@ class Network {
  public:
   virtual const NetworkCapabilities& GetCapabilities() const = 0;
   virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
-  virtual ~Network(){};
+  virtual ~Network() = default;
 };
 
 }  // namespace lczero
