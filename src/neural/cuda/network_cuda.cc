@@ -68,14 +68,17 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
   const size_t encoder_heads = weights.pol_encoder_head_count;
 
   size_t size = N * 64 *
-                std::max(std::max(embedding_op_size, encoder_dff),
-                         std::max(policy_d_model, encoder_d_model));
+      std::max(std::max(embedding_op_size, encoder_dff), policy_d_model);
 
   // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
   const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
   const size_t output_size = N * (64 * 64 + 8 * 24);
-
   size = std::max(size, std::max(matmul_qk_size, output_size));
+
+  size_t qkv_size = N * 64 * encoder_d_model;
+  // We store qkv in single allocation, and other intermediate tensors are
+  // sometimes stored by splitting an allocation into two halves.
+  size = std::max(2 * size, 3 * qkv_size);
   return size;
 }
 
@@ -280,10 +283,9 @@ class CudaNetwork : public Network {
     scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
 
     // Attention policy head may need more memory
-    // (We also split the allocations into two parts, so need 2x)
     const size_t attentionSize =
         getMaxAttentionHeadSize(weights, max_batch_size_);
-    scratch_size_ = std::max(scratch_size_, 2 * attentionSize);
+    scratch_size_ = std::max(scratch_size_, attentionSize);
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 

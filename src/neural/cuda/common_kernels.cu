@@ -26,7 +26,7 @@
 */
 
 #include <cassert>
-
+#include <algorithm>
 #include "cuda_common.h"
 #include "winograd_helper.inc"
 
@@ -68,6 +68,89 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
 
   addVectors_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, size, asize,
                                                        bsize, activation);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T, ActivationFunction act>
+__global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
+                                      int N, int C) {
+  int batch = blockIdx.y;
+  int n = blockIdx.x * blockDim.y + threadIdx.y;
+  if (n >= N) return;
+  int c = threadIdx.x * 4;
+
+  int biasIndex = batch * C + c;
+  int tensorIndex = batch * N * C + n * C + c;
+
+  float val[4];
+  float b[4];
+
+  // Load from memory
+  const bool fp16 = std::is_same<half, T>::value;
+  if (fp16) {
+    half inp[4];
+    copyAs<uint2>(&inp[0], &input[tensorIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
+
+    copyAs<uint2>(&inp[0], &bias[biasIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
+  } else {
+    copyAs<uint4>(&val[0], &input[tensorIndex]);
+    copyAs<uint4>(&b[0], &bias[biasIndex]);
+  }
+  
+  // Perform bias add and activation
+#pragma unroll
+  for (int i = 0; i < 4; i++) {
+    float x = val[i] + b[i];
+    x = activate(x, act);
+    val[i] = x;
+  }
+
+  // write to memory
+  if (fp16) {
+    half op[4];
+#pragma unroll
+    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+    copyAs<uint2>(&output[tensorIndex], &op[0]);
+  } else {
+    copyAs<uint4>(&output[tensorIndex], &val[0]);
+  }
+}
+
+// Input/output tensors are Batch * N * C
+// bias tensor is N * C (i.e, different bias for each Batch dimension)
+template <typename T>
+void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+                    int C, ActivationFunction activation, cudaStream_t stream) {
+  // process 4 elements per thread to achieve close to peak memory bandwidth
+  if (C % 4 != 0) throw Exception("unsupported filter size");
+  if (C > 4096) throw Exception("unsupported filter size");
+
+  dim3 blockDim, gridDim;
+  blockDim.x = C / 4;
+  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int) N);
+  blockDim.z = 1;
+  gridDim.x = DivUp(N, blockDim.y);
+  gridDim.y = Batch;
+  gridDim.z = 1;
+
+  switch (activation) {
+    case NONE:
+      addBiasBatched_kernel<T, NONE><<<gridDim, blockDim, 0, stream>>>(
+          output, input, bias, N, C);
+      break;
+    case SELU:
+      addBiasBatched_kernel<T, SELU><<<gridDim, blockDim, 0, stream>>>(
+          output, input, bias, N, C);
+      break;
+    default:
+      throw Exception(
+          "unsupported activation in addBiasBatched. Add in switch-case here");
+  }
+
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -575,6 +658,52 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+
+// softmax along C dimension which is assumed to be 64
+// each thread processes two elements. Each warp computes a sum (over 64
+// elements)
+template <typename T>
+__global__ void softmax_opt_64_kernel(T* output, const T* input, int N) {
+
+  int index = blockDim.x * blockIdx.x + threadIdx.x;
+  if (index >= N) return;
+
+  float x[2];
+  float ex[2];
+
+  // Load from memory
+  const bool fp16 = std::is_same<half, T>::value;
+  if (fp16) {
+    half inp[2];
+    copyAs<int>(&inp[0], &input[index * 2]);
+    x[0] = (float)inp[0];
+    x[1] = (float)inp[1];
+  } else {
+    copyAs<uint2>(&x[0], &input[index * 2]);
+  }
+
+  ex[0] = exp(x[0]);
+  ex[1] = exp(x[1]);
+
+  float threadSum = ex[0] + ex[1];
+  float Sum = warpReduce(threadSum);
+  Sum = __shfl_sync(0xFFFFFFFF, Sum, 0);
+
+  ex[0] = ex[0] / Sum;
+  ex[1] = ex[1] / Sum;
+
+  // Store to memory
+  if (fp16) {
+    half op[2];
+    op[0] = (half)ex[0];
+    op[1] = (half)ex[1];
+    copyAs<int>(&output[index * 2], &op[0]);
+  } else {
+    copyAs<uint2>(&output[index * 2], &ex[0]);
+  }
+}
+
+
 // N * C Tensors
 // performs softmax along the C dimension
 // Each thread processes one element
@@ -611,70 +740,153 @@ __global__ void softmax_kernel(T* output, const T* input) {
 
 template <typename T>
 void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream) {
-  softmax_kernel<T><<<N, C, 0, stream>>>(output, input);
+  if (C == 64) {
+    int size = N * 32;              // Total no of threads needed
+    const int kBlockSize = 256;
+    int blocks = DivUp(size, kBlockSize);
+    softmax_opt_64_kernel<T><<<blocks, kBlockSize, 0, stream>>>(output, input, size);
+  } else {
+    softmax_kernel<T><<<N, C, 0, stream>>>(output, input);
+  }
+
   ReportCUDAErrors(cudaGetLastError());
 }
 
-// N * C Tensors
-// performs layer normalization along the C dimension
-// Each thread processes one element
-// Sums/variences are computed in shared memory
-// C threads per block, N blocks
-template <typename T>
-__global__ void layer_norm_kernel(T* output, const T* input, const T* skip,
-                                  const T* gammas, const T* betas, float ep) {
-  int n = blockIdx.x;
-  int c = threadIdx.x;
-  int C = blockDim.x;
+__device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
+  // compute warp-wide sum
+  float s = warpReduce(x);
 
-  __shared__ float sum, sum_sq;
-  if (c == 0) {
-    sum = 0;
-    sum_sq = 0;
+  // warp-wide sums
+  // Max product of the two dimension for the below array is 16 (512/32), but
+  // we make each dimension 16 for simplicity. if shared memory capacity is the
+  // bottleneck (it's not), we can convert these to single dim array and
+  // dynamically index
+  __shared__ float sum[16][16];
+
+  // compute sum across C dimension using the warp wide partial sums
+  if (threadIdx.x == 0) sum[threadIdx.z][threadIdx.y] = s;
+  __syncthreads();
+
+  if (threadIdx.x == 0 && threadIdx.y == 0) {
+    float cSum = 0;
+    for (int j = 0; j < blockDim.y; j++) cSum += sum[threadIdx.z][j];
+    sum[threadIdx.z][0] = cSum;
   }
   __syncthreads();
 
-  int index = n * C + c;
+  // s now contains the sum across C dimension
+  return sum[threadIdx.z][0];
+}
 
-  // From:
-  // https://www.tensorflow.org/api_docs/python/tf/keras/layers/LayerNormalization
-  // mean_i = sum(x_i[j] for j in range(k)) / k
-  // var_i  = sum((x_i[j] - mean_i) ^ 2 for j in range(k)) / k
-  // x_i_normalized = (x_i - mean_i) / sqrt(var_i + epsilon)
-  // output_i = x_i_normalized * gamma + beta
+// Each thread processes 4 elements
+// 1. Perform Bias add, and skip add
+// 2. Perform layer norm (normalize across C dimension)
+template <typename T>
+__global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const T* bias,
+                                  const T* skip, const T* gammas,
+                                  const T* betas, float ep) {
+  int n = blockIdx.x * blockDim.z + threadIdx.z;
+  if (n >= N) return;
+  int c = (threadIdx.y * 32 + threadIdx.x) * 4;
+  bool oobThread = c >= C;
 
-  float x = (float)input[index];
-  if (skip) x += (float)skip[index];
+  int biasIndex = c;
+  int tensorIndex = n * C + c;
 
-  float s = warpReduce(x);
-  if ((c & 0x1F) == 0) atomicAdd(&sum, s);
+  float val[4] = {0, 0, 0, 0};
+  float b[4] = {0, 0, 0, 0};
+  float sk[4] = {0, 0, 0, 0};
+  float bts[4] = {0, 0, 0, 0};
+  float gms[4] = {0, 0, 0, 0};
 
-  __syncthreads();
+  const bool fp16 = std::is_same<half, T>::value;
+  if (!oobThread) {
+    // Load from memory (4 elements a time)
+    if (fp16) {
+      half inp[4];
+      copyAs<uint2>(&inp[0], &input[tensorIndex]);
+      for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
+      copyAs<uint2>(&inp[0], &skip[tensorIndex]);
+      for (int i = 0; i < 4; i++) sk[i] = (float)inp[i];
+      copyAs<uint2>(&inp[0], &bias[biasIndex]);
+      for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
+      copyAs<uint2>(&inp[0], &betas[biasIndex]);
+      for (int i = 0; i < 4; i++) bts[i] = (float)inp[i];
+      copyAs<uint2>(&inp[0], &gammas[biasIndex]);
+      for (int i = 0; i < 4; i++) gms[i] = (float)inp[i];
+    } else {
+      copyAs<uint4>(&val[0], &input[tensorIndex]);
+      copyAs<uint4>(&sk[0], &skip[tensorIndex]);
+      copyAs<uint4>(&b[0], &bias[biasIndex]);
+      copyAs<uint4>(&bts[0], &betas[biasIndex]);
+      copyAs<uint4>(&gms[0], &gammas[biasIndex]);
+    }
+  }
 
-  float mean = sum / C;
-  float d = x - mean;
-  float d_sq = d * d;
+  // 1. Compute mean
+  float s = 0;
+  if (!oobThread)
+    for (int i = 0; i < 4; i++) {
+      val[i] += b[i] + sk[i];
+      s += val[i];
+    }
+  
+  s = shared_sum_for_layer_norm(s);
+  float mean = s / C;
 
-  s = warpReduce(d_sq);
-  if ((c & 0x1F) == 0) atomicAdd(&sum_sq, s);
-  __syncthreads();
+  // 2. Compute varience
+  s = 0;
+  if (!oobThread)
+    for (int i = 0; i < 4; i++) {
+      float d = val[i] - mean;
+      float d_sq = d * d;
+      s += d_sq;
+    }
+  s = shared_sum_for_layer_norm(s);
+  float var = s / C;
 
-  float var = sum_sq / C;
+  // 3. Normalize
+  for (int i = 0; i < 4; i++) {
+    float d = val[i] - mean;
+    float norm = d / sqrt(var + ep);
+    float op = norm * gms[i] + bts[i];
+    val[i] = op;
+  }
 
-  float norm = d / sqrt(var + ep);
-  float op = norm * (float)gammas[c] + (float)betas[c];
-
-  output[index] = (T)op;
+  if (!oobThread) {
+    // Write to memory
+    if (fp16) {
+      half op[4];
+      for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+      copyAs<uint2>(&output[tensorIndex], &op[0]);
+    } else {
+      copyAs<uint4>(&output[tensorIndex], &val[0]);
+    }
+  }
 }
 
 // add (optional) skip connection to input, and then perform Layer normalization
-// normalization is done across C dimension (i.e, sums and std deviations taken
-// over elements in C dim)
+// normalization is done across C dimension (i.e, sums and std deviations taken over elements in C dim)
 template <typename T>
-void LayerNorm(int N, int C, T* output, const T* input, const T* skip,
-               const T* gammas, const T* betas, float ep, cudaStream_t stream) {
-  layer_norm_kernel<T>
-      <<<N, C, 0, stream>>>(output, input, skip, gammas, betas, ep);
+void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
+               const T* skip, const T* gammas, const T* betas, float ep,
+               cudaStream_t stream) {
+  // process 4 elements per thread to achieve close to peak memory bandwidth
+  if (C % 4 != 0) throw Exception("unsupported filter size");
+  if (C > 4096) throw Exception("unsupported filter size");
+
+  dim3 blockDim, gridDim;
+  blockDim.x = 32;
+  blockDim.y = DivUp(C / 4, 32);
+  blockDim.z =
+      std::min(std::max(512 / (blockDim.x * blockDim.y), 1u), (unsigned int)N);
+  gridDim.x = DivUp(N, blockDim.z);
+  gridDim.y = 1;
+  gridDim.z = 1;
+
+  layer_norm_kernel<T><<<gridDim, blockDim, 0, stream>>>(
+      N, C, output, input, bias, skip, gammas, betas, ep);
+
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -797,6 +1009,15 @@ template void addVectors<float>(float* c, float* a, float* b, int size,
 template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                int bsize, ActivationFunction act,
                                cudaStream_t stream);
+
+template void addBiasBatched<float>(float* output, const float* input,
+                                    const float* bias, int Batch, int N, int C,
+                                    ActivationFunction activation,
+                                    cudaStream_t stream);
+template void addBiasBatched<half>(half* output, const half* input,
+                                   const half* bias, int Batch, int N, int C,
+                                   ActivationFunction activation,
+                                   cudaStream_t stream);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
                                   int H, int W, ActivationFunction activation,
@@ -955,12 +1176,13 @@ template void Softmax<float>(int N, int C, float* output, const float* input,
                              cudaStream_t stream);
 
 template void LayerNorm<half>(int N, int C, half* output, const half* input,
-                              const half* skip, const half* gammas,
-                              const half* betas, float ep, cudaStream_t stream);
+                              const half* bias, const half* skip,
+                              const half* gammas, const half* betas, float ep,
+                              cudaStream_t stream);
 template void LayerNorm<float>(int N, int C, float* output, const float* input,
-                               const float* skip, const float* gammas,
-                               const float* betas, float ep,
-                               cudaStream_t stream);
+                               const float* bias, const float* skip,
+                               const float* gammas, const float* betas,
+                               float ep, cudaStream_t stream);
 
 template void ComputePromotionLogits<half>(int N, int C, half* output,
                                            const half* keys, const half* ppo,

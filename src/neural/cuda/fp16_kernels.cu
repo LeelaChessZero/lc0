@@ -443,7 +443,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           72 * C * sizeof(half));
       OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
                                                   use_skip>
-          <<<N, C, kMaxResBlockFusingSeFp16AmpereSmem, stream>>>(
+          <<<N, C, 72 * C * sizeof(half), stream>>>(
               N, C, se_K, (half*)output, (const half*)input, (half*)skip,
               (half*)bias, (half*)w1, (half*)b1, (half*)w2, (half*)b2);
     } else {
