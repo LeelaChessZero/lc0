@@ -139,29 +139,42 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
+# ONNX protobufs.
+gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
+  arguments : [
+    '--proto_path=@CURRENT_SOURCE_DIR@/src',
+    '--cpp_out=@BUILD_DIR@',
+    '@INPUT@'])
+
+files += gen_proto_src.process('src/neural/onnx/onnx.proto',
+  preserve_path_from : meson.current_source_dir() + '/src/')
+
 #############################################################################
 ## Main files
 #############################################################################
 files += [
-  'src/engine.cc',
-  'src/version.cc',
   'src/benchmark/backendbench.cc',
   'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
+  'src/engine.cc',
+  'src/lc0ctl/describenet.cc',
+  'src/lc0ctl/leela2onnx.cc',
+  'src/lc0ctl/onnx2leela.cc',  
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/alphazero.cc',
   'src/mcts/stoppers/common.cc',
   'src/mcts/stoppers/factory.cc',
   'src/mcts/stoppers/legacy.cc',
-  'src/mcts/stoppers/alphazero.cc',
   'src/mcts/stoppers/smooth.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
   'src/neural/cache.cc',
+  'src/neural/decoder.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
   'src/neural/loader.cc',
@@ -172,14 +185,21 @@ files += [
   'src/neural/network_random.cc',
   'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
-  'src/neural/writer.cc',
+  'src/neural/network_trivial.cc',
+  'src/neural/onnx/adapters.cc',
+  'src/neural/onnx/builder.cc',
+  'src/neural/onnx/converter.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
   'src/syzygy/syzygy.cc',
+  'src/trainingdata/reader.cc',
+  'src/trainingdata/trainingdata.cc',
+  'src/trainingdata/writer.cc',
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/esc_codes.cc',
+  'src/utils/files.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/numa.cc',
@@ -188,6 +208,8 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
+  'src/utils/fp16_utils.cc',
+  'src/version.cc',
 ]
 includes += include_directories('src')
 
@@ -233,7 +255,7 @@ if get_option('build_backends')
     mkl_lib = cc.find_library('mklml', dirs: mkl_libdirs, required: false)
   endif
 
-  dnnl_libdirs = get_option('dnnl_dir') + '/lib'
+  dnnl_libdirs = [get_option('dnnl_dir') + '/lib64', get_option('dnnl_dir') + '/lib']
   dnnl_lib = cc.find_library('dnnl', dirs: dnnl_libdirs, required: false)
 
   openblas_libdirs = get_option('openblas_libdirs')
@@ -523,12 +545,41 @@ if get_option('build_backends')
       'src/neural/dx/network_dx.cc',
       'src/neural/dx/shader_wrapper.cc',
       'src/neural/dx/layers_dx.cc',
-      'src/neural/dx/fp16_utils.cc',
     ]
     files += dx_files
     deps += [dx_d3d12, dx_dxgi]
 
     subdir('src/neural/dx/shaders')
+
+    has_backends = true
+  endif
+
+  if get_option('onednn') and dnnl_lib.found()
+    includes += include_directories(get_option('dnnl_dir') + '/include')
+    deps += [ dnnl_lib, dependency('openmp', required:true) ]
+    files += [
+      'src/neural/onednn/network_onednn.cc',
+      'src/neural/onednn/layers.cc',
+    ]
+    has_backends = true
+  endif
+
+  ## ~~~~~~~~~~
+  ## ONNX
+  ## ~~~~~~~~~~
+  if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
+    onnx_lib = cc.find_library('onnxruntime',
+                               dirs: get_option('onnx_libdir'),
+                               required: true)
+    includes += include_directories(get_option('onnx_include'), is_system: true)
+    cc.has_header('onnxruntime_cxx_api.h',
+                  required: true,
+                  args: '-I' + get_option('onnx_include'))
+    deps += [onnx_lib]
+
+    files += [
+      'src/neural/onnx/network_onnx.cc',
+    ]
 
     has_backends = true
   endif
@@ -587,7 +638,7 @@ if get_option('embed')
 endif
 
 executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps, install: true)
+       files, include_directories: includes, dependencies: deps, install: true)
 
 #############################################################################
 ## Tests

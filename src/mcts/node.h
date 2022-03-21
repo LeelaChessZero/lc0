@@ -36,8 +36,8 @@
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/position.h"
+#include "neural/cache.h"
 #include "neural/encoder.h"
-#include "neural/writer.h"
 #include "proto/net.pb.h"
 #include "utils/mutex.h"
 
@@ -220,33 +220,9 @@ class Node {
   // Updates max depth, if new depth is larger.
   void UpdateMaxDepth(int depth);
 
-  // Caches the best child if possible.
-  void UpdateBestChild(const Iterator& best_edge, int collisions_allowed);
-
-  // Gets a cached best child if it is still valid.
-  Node* GetCachedBestChild() {
-    if (n_in_flight_ < best_child_cache_in_flight_limit_) {
-      return best_child_cached_;
-    }
-    return nullptr;
-  }
-
-  // Gets how many more visits the cached value is valid for. Only valid if
-  // GetCachedBestChild returns a value.
-  int GetRemainingCacheVisits() {
-    return best_child_cache_in_flight_limit_ - n_in_flight_;
-  }
-
   // Calculates the full depth if new depth is larger, updates it, returns
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
-
-  V6TrainingData GetV6TrainingData(
-      GameResult result, const PositionHistory& history,
-      FillEmptyHistory fill_empty_history,
-      pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
-      Eval played_eval, Eval orig_eval, bool best_is_proven, Move best_move,
-      Move played_move) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -328,9 +304,6 @@ class Node {
   // Pointer to a next sibling. nullptr if there are no further siblings.
   // Also null in the solid case.
   std::unique_ptr<Node> sibling_;
-  // Cached pointer to best child, valid while n_in_flight <
-  // best_child_cache_in_flight_limit_
-  Node* best_child_cached_ = nullptr;
 
   // 4 byte fields.
   // Averaged draw probability. Works similarly to WL, except that D is not
@@ -338,17 +311,12 @@ class Node {
   float d_ = 0.0f;
   // Estimated remaining plies.
   float m_ = 0.0f;
-  // Sum of policy priors which have had at least one playout.
-  float visited_policy_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
   uint32_t n_in_flight_ = 0;
-  // If best_child_cached_ is non-null, and n_in_flight_ < this,
-  // best_child_cached_ is still the best child.
-  uint32_t best_child_cache_in_flight_limit_ = 0;
 
   // 2 byte fields.
   // Index of this node is parent's edge list.
@@ -386,9 +354,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 56, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 80, "Unexpected size of Node");
+static_assert(sizeof(Node) == 64, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
