@@ -146,6 +146,10 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
       addBiasBatched_kernel<T, SELU><<<gridDim, blockDim, 0, stream>>>(
           output, input, bias, N, C);
       break;
+    case MISH:
+      addBiasBatched_kernel<T, MISH>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
     default:
       throw Exception(
           "unsupported activation in addBiasBatched. Add in switch-case here");
@@ -984,6 +988,75 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
       <<<N, blockDim, 0, stream>>>(C, output, keys, ppo, policy_attn_logits);
 }
 
+__device__ constexpr float kPosEncoding[64][6] = {
+    {0., 0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0., 1.},
+    {0., 0., 0., 0., 1., 0.}, {0., 0., 0., 0., 1., 1.},
+    {0., 0., 0., 1., 0., 0.}, {0., 0., 0., 1., 0., 1.},
+    {0., 0., 0., 1., 1., 0.}, {0., 0., 0., 1., 1., 1.},
+    {0., 0., 1., 0., 0., 0.}, {0., 0., 1., 0., 0., 1.},
+    {0., 0., 1., 0., 1., 0.}, {0., 0., 1., 0., 1., 1.},
+    {0., 0., 1., 1., 0., 0.}, {0., 0., 1., 1., 0., 1.},
+    {0., 0., 1., 1., 1., 0.}, {0., 0., 1., 1., 1., 1.},
+    {0., 1., 0., 0., 0., 0.}, {0., 1., 0., 0., 0., 1.},
+    {0., 1., 0., 0., 1., 0.}, {0., 1., 0., 0., 1., 1.},
+    {0., 1., 0., 1., 0., 0.}, {0., 1., 0., 1., 0., 1.},
+    {0., 1., 0., 1., 1., 0.}, {0., 1., 0., 1., 1., 1.},
+    {0., 1., 1., 0., 0., 0.}, {0., 1., 1., 0., 0., 1.},
+    {0., 1., 1., 0., 1., 0.}, {0., 1., 1., 0., 1., 1.},
+    {0., 1., 1., 1., 0., 0.}, {0., 1., 1., 1., 0., 1.},
+    {0., 1., 1., 1., 1., 0.}, {0., 1., 1., 1., 1., 1.},
+    {1., 0., 0., 0., 0., 0.}, {1., 0., 0., 0., 0., 1.},
+    {1., 0., 0., 0., 1., 0.}, {1., 0., 0., 0., 1., 1.},
+    {1., 0., 0., 1., 0., 0.}, {1., 0., 0., 1., 0., 1.},
+    {1., 0., 0., 1., 1., 0.}, {1., 0., 0., 1., 1., 1.},
+    {1., 0., 1., 0., 0., 0.}, {1., 0., 1., 0., 0., 1.},
+    {1., 0., 1., 0., 1., 0.}, {1., 0., 1., 0., 1., 1.},
+    {1., 0., 1., 1., 0., 0.}, {1., 0., 1., 1., 0., 1.},
+    {1., 0., 1., 1., 1., 0.}, {1., 0., 1., 1., 1., 1.},
+    {1., 1., 0., 0., 0., 0.}, {1., 1., 0., 0., 0., 1.},
+    {1., 1., 0., 0., 1., 0.}, {1., 1., 0., 0., 1., 1.},
+    {1., 1., 0., 1., 0., 0.}, {1., 1., 0., 1., 0., 1.},
+    {1., 1., 0., 1., 1., 0.}, {1., 1., 0., 1., 1., 1.},
+    {1., 1., 1., 0., 0., 0.}, {1., 1., 1., 0., 0., 1.},
+    {1., 1., 1., 0., 1., 0.}, {1., 1., 1., 0., 1., 1.},
+    {1., 1., 1., 1., 0., 0.}, {1., 1., 1., 1., 0., 1.},
+    {1., 1., 1., 1., 1., 0.}, {1., 1., 1., 1., 1., 1.}};
+
+template <typename T>
+__global__ void preprocess_for_attention_body_kernel(T* output, const T* input) {
+  int n = blockIdx.x;
+  int hw = blockIdx.y;
+  int c = threadIdx.x;
+
+  T op;
+  if (c >= kInputPlanes) 
+  {
+    // concatenate from fixed pos encoding array
+    op = (T) (kPosEncoding[hw][c - kInputPlanes]);
+  } else {
+
+    op = input[n * 64 * kInputPlanes + c * 64 + hw];    // nchw
+  }
+
+  constexpr int outputC = kInputPlanes + 6;
+
+  // convert to nhwc
+  output[n * 64 * outputC + hw * outputC + c] = op;
+}
+
+template <typename T>
+void inputPreprocessForAttentionBody(T* output, const T* input, int N,
+                                     cudaStream_t stream) {
+  // N * 64 blocks
+  // (kInputPlanes + 6) threads
+  // Each thread computes a single output element
+  dim3 gridSize = dim3(N, 64);
+  int blockSize = kInputPlanes + 6;
+  preprocess_for_attention_body_kernel<T>
+      <<<gridSize, blockSize, 0, stream>>>(output, input);
+}
+
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
                                              cudaStream_t stream);
@@ -1205,5 +1278,13 @@ template void convertNCHWtoNHWC<half, half>(half* output_tensor,
                                             const half* input_tensor, int Nin,
                                             int Cin, int Nout, int Cout, int H,
                                             int W);
+
+template void inputPreprocessForAttentionBody<half>(half* output,
+                                                    const half* input,
+                                                    int N, cudaStream_t stream);
+
+template void inputPreprocessForAttentionBody<float>(float* output,
+                                                     const float* input, int N,
+                                                     cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero

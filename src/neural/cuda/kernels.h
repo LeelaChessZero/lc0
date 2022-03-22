@@ -130,5 +130,8 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
                             const T* ppo, const T* policy_attn_logits,
                             cudaStream_t stream);
 
+template <typename T>
+void inputPreprocessForAttentionBody(T* output, const T* input, int N,
+                                     cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero
