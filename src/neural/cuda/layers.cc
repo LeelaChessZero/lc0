@@ -56,7 +56,7 @@ BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc,
 
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
-    : input_(ip), C(c), H(h), W(w), nhwc_(ip->nhwc_), use_gemm_ex_(false) {}
+    : input_(ip), C(c), H(h), W(w), nhwc_(ip ? ip->nhwc_ : false), use_gemm_ex_(false) {}
 
 #ifdef USE_CUDNN
 template <typename DataType>
@@ -1786,7 +1786,7 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
       num_resi_blocks_(num_res_blocks),
       default_act_(default_act),
       input_c_(input_c),
-      BaseLayer<DataType>(embedding_op_size_, 8, 8, nullptr) {
+      BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr) {
 
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);

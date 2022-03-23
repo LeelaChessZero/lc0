@@ -271,7 +271,7 @@ class CudaNetwork : public Network {
 
     // 0. Check for SE.
     has_se_ = false;
-    if (weights.residual[0].has_se) {
+    if (numBlocks_ && weights.residual[0].has_se) {
       has_se_ = true;
     }
 
