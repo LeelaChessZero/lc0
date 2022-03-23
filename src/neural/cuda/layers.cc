@@ -35,8 +35,37 @@
 #include "utils/fp16_utils.h"
 
 namespace lczero {
-// void dumpTensor(void* memory, int elements, const char* message, bool fp16 =
-// false);
+
+#if 0
+// debug code to dump allocation in GPU memory
+void dumpTensor(void *memory, int elements, const char *message, bool fp16 = true)
+{
+    printf("\n%s\n", message);
+    int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
+    int bytes = elements * elementSize;
+    void *temp = malloc(bytes);
+    cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < elements; i++)
+    {
+        float val;
+        if (fp16) 
+        {
+            half *arr = (half*)temp;
+            val = (float)arr[i];
+        }
+        else
+        {
+            float *arr = (float *)temp;
+            val = arr[i];
+        }
+        printf("%8.4f ", val);
+        if ((i % 8) == 7) printf("\n");
+    }
+    free(temp);
+    printf("\n");
+}
+#endif
 
 namespace cudnn_backend {
 
@@ -1632,7 +1661,6 @@ void AttentionPolicyHead<DataType>::Eval(
   DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
   DataType* scratch3 = scratch1 + scratch_size / (2 * sizeof(DataType));
 
-
   int inputC = this->input_->GetC();
   if (!attention_body_)
     convertNCHWtoNHWC(scratch0, input, N, inputC, N, inputC, 8, 8);
@@ -1814,9 +1842,9 @@ void AttentionBody<DataType>::Eval(
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream) {
   DataType* scratch0 = (DataType*)scratch;
-  DataType* scratch1 = (DataType*)input2;
-  DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
-  DataType* scratch3 = scratch1 + scratch_size / (2 * sizeof(DataType));
+  DataType* scratch1 = (DataType*)output;
+  DataType* scratch2 = (DataType*)input2;
+  DataType* scratch3 = scratch2 + scratch_size / (2 * sizeof(DataType));
 
   int inputC = input_c_;
   if (num_resi_blocks_ == 0)
@@ -1862,8 +1890,6 @@ void AttentionBody<DataType>::Eval(
     pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream,
                default_act_);
   }  // End of encoder blocks
-
-
 }
 
 

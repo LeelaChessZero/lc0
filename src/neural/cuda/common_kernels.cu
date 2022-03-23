@@ -150,6 +150,10 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
       addBiasBatched_kernel<T, MISH>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
       break;
+    case RELU:
+      addBiasBatched_kernel<T, RELU>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
     default:
       throw Exception(
           "unsupported activation in addBiasBatched. Add in switch-case here");
