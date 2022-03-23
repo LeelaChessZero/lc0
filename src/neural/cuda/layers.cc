@@ -1791,9 +1791,9 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
 
-  int num_encoders = weights.pol_encoder.size();
+  int num_encoders = weights.encoder.size();
   float alpha = (float) pow(2.0 * num_encoders, 0.25);
-  for (const auto& enc : weights.pol_encoder) {
+  for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha);
     encoder_weights_.emplace_back(pW);
