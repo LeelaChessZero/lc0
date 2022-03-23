@@ -1331,8 +1331,12 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
 template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
                                                    const LegacyWeights& weights,
-                                                   void* scratch)
-    : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip) {
+                                                   void* scratch,
+                                                   bool attention_body,
+                                                   ActivationFunction act)
+    : attention_body_(attention_body),
+      act_(attention_body ? act : SELU),        // HACK : old networks without attention body (e.g: T79 use hardcoded SELU activations)
+      BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip) {
   embedding_op_size_ = weights.ip_pol_b.size();
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
@@ -1374,7 +1378,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
-        enc, scratch, encoder_heads_, embedding_op_size_);
+        enc, scratch, encoder_heads_, embedding_op_size_, 1.0f);    // using alpha = 1 for now (TODO: may change?)
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1382,7 +1386,8 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 template <typename DataType>
 EncoderBlock<DataType>::EncoderBlock(
     const LegacyWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
-    int size) : encoder_heads_(heads), embedding_op_size_(size) {
+    int size, float alpha)
+    : encoder_heads_(heads), embedding_op_size_(size), alpha_(alpha) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1483,12 +1488,10 @@ static void cublasXGemmStridedBatched(
 // input/output tensor is scratch1, others are used as scratch.
 // TODO: fix naming of scratch buffers
 template <typename DataType>
-void EncoderBlock<DataType>::Eval(int N, DataType* scratch1,
-                                  DataType* scratch0,
-                                  DataType* scratch2, 
-                                  DataType* scratch3,
-                                  cublasHandle_t cublas,
-                                  cudaStream_t stream) const {
+void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
+                                  DataType* scratch2, DataType* scratch3,
+                                  cublasHandle_t cublas, cudaStream_t stream,
+                                  ActivationFunction act) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
@@ -1586,8 +1589,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1,
   // LN1: skip connection and layer normalization (also bias add of prev gemm)
   // scratch2/scratch1 -> scratch0
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch0, scratch2,
-                      mha_dense_b, scratch1, ln1_gammas, ln1_betas,
-                      1e-6, stream);
+                      mha_dense_b, scratch1, ln1_gammas, ln1_betas, 1e-6,
+                      alpha_, stream);
 
   // #FFN dense 1, scratch0 -> scratch1
   const int encoder_dff = ffn_dense1_size_;
@@ -1599,7 +1602,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1,
                 num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                 scratch0, num_inputs, 0.0f, scratch1, num_outputs);
     addBiasBatched(scratch1, scratch1, ffn_dense1_b, 1, batch, num_outputs,
-                   SELU, stream);
+                   act, stream);
   }
 
   // #FFN dense 2, scratch1 -> scratch2
@@ -1615,8 +1618,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1,
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
   // scratch2/scratch0 -> scratch1
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
-                      ffn_dense2_b, scratch0, ln2_gammas, ln2_betas,
-                      1e-6, stream);
+                      ffn_dense2_b, scratch0, ln2_gammas, ln2_betas, 1e-6,
+                      alpha_, stream);
 }
 
 template <typename DataType>
@@ -1629,8 +1632,10 @@ void AttentionPolicyHead<DataType>::Eval(
   DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
   DataType* scratch3 = scratch1 + scratch_size / (2 * sizeof(DataType));
 
+
   int inputC = this->input_->GetC();
-  convertNCHWtoNHWC(scratch0, input, N, inputC, N, inputC, 8, 8);
+  if (!attention_body_)
+    convertNCHWtoNHWC(scratch0, input, N, inputC, N, inputC, 8, 8);
 
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
@@ -1641,15 +1646,15 @@ void AttentionPolicyHead<DataType>::Eval(
     const int batch = N * 64;
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                           num_inputs, 1.0f, (const DataType*)ip_pol_w_,
-                          num_inputs, scratch0, num_inputs, 0.0f, pol_embedding,
-                          num_outputs);
+                          num_inputs, attention_body_ ? input : scratch0,
+                          num_inputs, 0.0f, pol_embedding, num_outputs);
     addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
-                   num_outputs, SELU, stream);
+                   num_outputs, act_, stream);
   }
 
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, act_);
   }  // End of encoder blocks
 
   DataType* wq;
@@ -1738,23 +1743,59 @@ EncoderBlock<DataType>::~EncoderBlock() {
 
 
 template <typename DataType>
-AttentionBody<DataType>::AttentionBody(BaseLayer<DataType>* ip,
-                                       const LegacyWeights& weights,
+EmbeddingLayer<DataType>::EmbeddingLayer(BaseLayer<DataType>* ip,
+                                         const std::vector<float>& weights,
+                                         const std::vector<float>& biases,
+                                         void* scratch,
+                                         ActivationFunction act)
+    : BaseLayer<DataType>(biases.size(), 8, 8, ip), act_(act) {
+  allocAndUpload<DataType>(&weights_, weights, scratch);
+  allocAndUpload<DataType>(&biases_, biases, scratch);
+}
+
+template <typename DataType>
+EmbeddingLayer<DataType>::~EmbeddingLayer() {
+  ReportCUDAErrors(cudaFree(weights_));
+  ReportCUDAErrors(cudaFree(biases_));
+}
+
+template <typename DataType>
+void EmbeddingLayer<DataType>::Eval(
+    int N, DataType* output, const DataType* input, const DataType* /*input2*/,
+    void* /*scratch*/, size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
+    cublasHandle_t cublas, cudaStream_t stream) {
+
+  const int num_outputs = this->GetC();
+  const int num_inputs = this->input_->GetC();
+  const int batch = N * 64;
+  cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                        num_inputs, 1.0f, weights_,
+                        num_inputs, input, num_inputs, 0.0f, output,
+                        num_outputs);
+  addBiasBatched(output, output, biases_, 1, batch, num_outputs,
+                 act_, stream);
+}
+
+template <typename DataType>
+AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
                                        void* scratch,
                                        ActivationFunction default_act,
-                                       int num_res_blocks)
-    : BaseLayer<DataType>(64 * weights.ip_emb_b.size(), 1, 1, ip) {
-  embedding_op_size_ = weights.ip_emb_b.size();
-  encoder_head_count_ = weights.encoder_head_count;
-  num_resi_blocks_ = num_res_blocks;
-  default_act_ = default_act;
+                                       int num_res_blocks, int input_c)
+    : embedding_op_size_(weights.ip_emb_b.size()),
+      encoder_head_count_(weights.encoder_head_count),
+      num_resi_blocks_(num_res_blocks),
+      default_act_(default_act),
+      input_c_(input_c),
+      BaseLayer<DataType>(embedding_op_size_, 8, 8, nullptr) {
 
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
 
+  int num_encoders = weights.pol_encoder.size();
+  float alpha = (float) pow(2.0 * num_encoders, 0.25);
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
-        enc, scratch, encoder_head_count_, embedding_op_size_);
+        enc, scratch, encoder_head_count_, embedding_op_size_, alpha);
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1777,7 +1818,7 @@ void AttentionBody<DataType>::Eval(
   DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
   DataType* scratch3 = scratch1 + scratch_size / (2 * sizeof(DataType));
 
-  int inputC = this->input_->GetC();
+  int inputC = input_c_;
   if (num_resi_blocks_ == 0)
   { 
     assert(inputC == kInputPlanes);
@@ -1818,7 +1859,8 @@ void AttentionBody<DataType>::Eval(
 
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream,
+               default_act_);
   }  // End of encoder blocks
 
 
@@ -1857,6 +1899,9 @@ template class EncoderBlock<float>;
 
 template class AttentionBody<half>;
 template class AttentionBody<float>;
+
+template class EmbeddingLayer<half>;
+template class EmbeddingLayer<float>;
 
 // Misc error handling stuff.
 #ifdef USE_CUDNN

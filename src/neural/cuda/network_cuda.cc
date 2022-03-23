@@ -226,12 +226,11 @@ class CudaNetwork : public Network {
     const int kNumFilters = (int)weights.input.biases.size();
     numBlocks_ = (int)weights.residual.size();
 
-    attn_body_ = (weights.ip_emb_b.size() > 0);
-    if (attn_body_) {
-      if (numBlocks_ > 0)
-        throw Exception("Found residual blocks in network with attention body!");
-    }
     num_encoder_blocks_ = (int) weights.encoder.size();
+    attn_body_ = (num_encoder_blocks_ > 0);
+    if (attn_body_) {
+      assert(weights.ip_emb_b.size() > 0);
+    }
 
     // Ankan - test!
     printf("\nNum filters: %d, num blocks: %d\n", kNumFilters, numBlocks_);
@@ -305,18 +304,16 @@ class CudaNetwork : public Network {
     const bool mish_net = file.format().network_format().default_activation() ==
                           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH;
 
+    ActivationFunction act = mish_net ? MISH : RELU;
+
     // 2. Build the network, and copy the weights to GPU memory.
 
-    if (attn_body_) {
-      auto body = std::make_unique<AttentionBody<DataType>>(
-          getLastLayer(), weights, scratch_mem_, mish_net ? MISH : RELU,
-          numBlocks_);
-      network_.emplace_back(std::move(body));
-    } else {
+    // Input conv only used if there are residual blocks in the network
+    if (numBlocks_ > 0) {
       // Input.
       {
         auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-            nullptr, kNumFilters, 8, 8, kNumInputPlanes, mish_net ? MISH : RELU,
+            nullptr, kNumFilters, 8, 8, kNumInputPlanes, act,
             true, false, false, 0, use_gemm_ex,
             use_res_block_winograd_fuse_opt_);
         inputConv->LoadWeights(&weights.input.weights[0],
@@ -332,7 +329,7 @@ class CudaNetwork : public Network {
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
               getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
-              block == 0, block == (numBlocks_ - 1), mish_net ? MISH : RELU,
+              block == 0, block == (numBlocks_ - 1), act,
               deviceProp.sharedMemPerBlockOptin);
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                               &weights.residual[block].conv1.biases[0],
@@ -349,16 +346,16 @@ class CudaNetwork : public Network {
           network_.emplace_back(std::move(layer));
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters,
-              mish_net ? MISH : RELU, true, false, false, 0, use_gemm_ex);
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, false,
+              false, 0, use_gemm_ex);
           conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                              &weights.residual[block].conv1.biases[0],
                              scratch_mem_);
           network_.emplace_back(std::move(conv1));
 
           auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters,
-              mish_net ? MISH : RELU, true, true, has_se, se_k, use_gemm_ex);
+              getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, true,
+              has_se, se_k, use_gemm_ex);
           conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                              &weights.residual[block].conv2.biases[0],
                              scratch_mem_);
@@ -371,15 +368,22 @@ class CudaNetwork : public Network {
           network_.emplace_back(std::move(conv2));
         }
       }
+      resi_last_ = getLastLayer();
     }
 
-    resi_last_ = getLastLayer();
+    if (attn_body_) {
+      auto attention_body = std::make_unique<AttentionBody<DataType>>(
+          weights, scratch_mem_, act, numBlocks_,
+          numBlocks_ > 0 ? kNumFilters : kInputPlanes);
+      network_.emplace_back(std::move(attention_body));
 
+      encoder_last_ = getLastLayer();
+    }
 
     // Policy head.
     if (attn_policy_) {
       auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
-          getLastLayer(), weights, scratch_mem_);
+          getLastLayer(), weights, scratch_mem_, attn_body_, act);
       network_.emplace_back(std::move(AttentionPolicy));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
@@ -388,8 +392,9 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(policymap));
 
     } else if (conv_policy_) {
+      assert(!attn_body_);  // not supported with attention body
       auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          resi_last_, kNumFilters, 8, 8, kNumFilters, mish_net ? MISH : RELU,
+          resi_last_, kNumFilters, 8, 8, kNumFilters, act,
           true, false, false, 0, use_gemm_ex);
       conv1->LoadWeights(&weights.policy1.weights[0],
                          &weights.policy1.biases[0], scratch_mem_);
@@ -411,9 +416,10 @@ class CudaNetwork : public Network {
 
       network_.emplace_back(std::move(policymap));
     } else {
+      assert(!attn_body_);  // not supported with attention body
       auto convPol = std::make_unique<Conv1Layer<DataType>>(
-          resi_last_, weights.policy.biases.size(), 8, 8, kNumFilters,
-          mish_net ? MISH : RELU, true, use_gemm_ex);
+          resi_last_, weights.policy.biases.size(), 8, 8, kNumFilters, act,
+          true, use_gemm_ex);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
@@ -426,18 +432,23 @@ class CudaNetwork : public Network {
     }
 
     // Value head.
-    if (!attn_body_)
     {
-      auto convVal = std::make_unique<Conv1Layer<DataType>>(
-          resi_last_, weights.value.biases.size(), 8, 8, kNumFilters,
-          mish_net ? MISH : RELU, true, use_gemm_ex);
-      convVal->LoadWeights(&weights.value.weights[0], &weights.value.biases[0],
-                           scratch_mem_);
-      network_.emplace_back(std::move(convVal));
+      if (attn_body_) {
+        auto embedded_val = std::make_unique<EmbeddingLayer<DataType>>(
+            encoder_last_, weights.ip_val_w, weights.ip_val_b, scratch_mem_,
+            act);
+        network_.emplace_back(std::move(embedded_val));
+      } else {
+        auto convVal = std::make_unique<Conv1Layer<DataType>>(
+            resi_last_, weights.value.biases.size(), 8, 8, kNumFilters, act,
+            true, use_gemm_ex);
+        convVal->LoadWeights(&weights.value.weights[0],
+                             &weights.value.biases[0], scratch_mem_);
+        network_.emplace_back(std::move(convVal));
+      }
 
       auto FCVal1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true,
-          mish_net ? MISH : RELU);
+          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, act);
       FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
@@ -458,17 +469,22 @@ class CudaNetwork : public Network {
     moves_left_ = (file.format().network_format().moves_left() ==
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                   options.GetOrDefault<bool>("mlh", true);
-    if ((!attn_body_) && moves_left_) {
-      auto convMov = std::make_unique<Conv1Layer<DataType>>(
-          resi_last_, weights.moves_left.biases.size(), 8, 8, kNumFilters,
-          mish_net ? MISH : RELU, true, use_gemm_ex);
-      convMov->LoadWeights(&weights.moves_left.weights[0],
-                           &weights.moves_left.biases[0], scratch_mem_);
-      network_.emplace_back(std::move(convMov));
-
+    if (moves_left_) {
+      if (attn_body_) {
+        auto embedded_mov = std::make_unique<EmbeddingLayer<DataType>>(
+            encoder_last_, weights.ip_mov_w, weights.ip_mov_b, scratch_mem_,
+            act);
+        network_.emplace_back(std::move(embedded_mov));
+      } else {
+        auto convMov = std::make_unique<Conv1Layer<DataType>>(
+            resi_last_, weights.moves_left.biases.size(), 8, 8, kNumFilters,
+            act, true, use_gemm_ex);
+        convMov->LoadWeights(&weights.moves_left.weights[0],
+                             &weights.moves_left.biases[0], scratch_mem_);
+        network_.emplace_back(std::move(convMov));
+      }
       auto FCMov1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true,
-          mish_net ? MISH : RELU);
+          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, act);
       FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov1));
@@ -556,34 +572,11 @@ class CudaNetwork : public Network {
 
     int l = 0;
 
-    if (attn_body_) {
-      // 1. Entire Attention network body (including value and wdl heads)
-      network_[l++]->Eval(
-          batchSize, tensor_mem[2], tensor_mem[0], tensor_mem[1], scratch_mem,
-          scratch_size_, nullptr, cublas,
-          stream);
-      
-      // 2. Attention policy head
-      network_[l++]->Eval(
-          batchSize, tensor_mem[0], tensor_mem[2], tensor_mem[1], scratch_mem,
-          scratch_size_, nullptr, cublas,
-          stream);  // Entire Attention policy head except for the policy map
+    DataType* flow = tensor_mem[0];
+    DataType* spare1 = tensor_mem[1];
+    DataType* spare2 = tensor_mem[2];
 
-      // 3. Policy map layer
-      if (fp16) {
-        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // policy map layer
-        copyTypeConverted(opPol, (half*)(tensor_mem[1]),
-                          batchSize * kNumOutputPolicy,
-                          stream);  // POLICY output
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // policy map layer  // POLICY output
-      }
-    } else {
-      // Old CNN style networks
+    if (numBlocks_ > 0) {
       // Input.
       network_[l++]->Eval(
           batchSize,
@@ -608,134 +601,146 @@ class CudaNetwork : public Network {
         }
       }
 
-      // Policy head.
-      if (attn_policy_) {
-        network_[l++]->Eval(
-            batchSize, tensor_mem[0], tensor_mem[2], tensor_mem[1], scratch_mem,
-            scratch_size_, nullptr, cublas,
-            stream);  // Entire Attention policy head except for the policy map
-        if (fp16) {
-          network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
-                              scratch_mem, scratch_size_, nullptr, cublas,
-                              stream);  // policy map layer
-          copyTypeConverted(opPol, (half*)(tensor_mem[1]),
-                            batchSize * kNumOutputPolicy,
-                            stream);  // POLICY output
-        } else {
-          network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0],
-                              nullptr, scratch_mem, scratch_size_, nullptr,
-                              cublas,
-                              stream);  // policy map layer  // POLICY output
-        }
+      flow = tensor_mem[2];
+      spare1 = tensor_mem[0];
+      spare2 = tensor_mem[1];
+    }
 
-      } else if (conv_policy_) {
-        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+
+    if (attn_body_) {
+      network_[l++]->Eval(batchSize, tensor_mem[1],
+                          (numBlocks_ > 0) ? tensor_mem[2] : tensor_mem[0],
+                          (numBlocks_ > 0) ? tensor_mem[0] : tensor_mem[2],
+                          scratch_mem, scratch_size_, nullptr,
+                          cublas, stream);  // Entire attention body of the network
+
+      flow = tensor_mem[1];
+      spare1 = tensor_mem[0];
+      spare2 = tensor_mem[2];
+    }
+
+    // Policy head.
+    if (attn_policy_) {
+      network_[l++]->Eval(
+          batchSize, spare1, flow, spare2, scratch_mem,
+          scratch_size_, nullptr, cublas,
+          stream);  // Entire Attention policy head except for the policy map
+      if (fp16) {
+        network_[l++]->Eval(batchSize, spare2, spare1, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // policy conv1
-
-        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // policy conv2
-
-        if (fp16) {
-          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                              scratch_mem, scratch_size_, nullptr, cublas,
-                              stream);  // policy map layer
-          copyTypeConverted(opPol, (half*)(tensor_mem[0]),
-                            batchSize * kNumOutputPolicy,
-                            stream);  // POLICY output
-        } else {
-          network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[1],
-                              nullptr, scratch_mem, scratch_size_, nullptr,
-                              cublas,
-                              stream);  // policy map layer  // POLICY output
-        }
+                            stream);  // policy map layer
+        copyTypeConverted(opPol, (half*)spare2,
+                          batchSize * kNumOutputPolicy,
+                          stream);  // POLICY output
       } else {
-        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+        network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // pol conv
-
-        if (fp16) {
-          network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
-                              scratch_mem, scratch_size_, nullptr, cublas,
-                              stream);  // pol FC
-
-          copyTypeConverted(opPol, (half*)(tensor_mem[1]),
-                            batchSize * kNumOutputPolicy, stream);  // POLICY
-        } else {
-          network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem[0],
-                              nullptr, scratch_mem, scratch_size_, nullptr,
-                              cublas,
-                              stream);  // pol FC  // POLICY
-        }
+                            stream);  // policy map layer  // POLICY output
       }
 
-      // Copy policy output from device memory to host memory.
-      ReportCUDAErrors(
-          cudaMemcpyAsync(io->op_policy_mem_, io->op_policy_mem_gpu_,
-                          sizeof(float) * kNumOutputPolicy * batchSize,
-                          cudaMemcpyDeviceToHost, stream));
-
-      // value head
-      network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+    } else if (conv_policy_) {
+      network_[l++]->Eval(batchSize, spare1, flow, nullptr,
                           scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // value conv
+                          stream);  // policy conv1
 
-      network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+      network_[l++]->Eval(batchSize, spare2, spare1, nullptr,
                           scratch_mem, scratch_size_, nullptr, cublas,
-                          stream);  // value FC1
+                          stream);  // policy conv2
 
-      if (wdl_) {
-        if (fp16) {
-          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                              scratch_mem, scratch_size_, nullptr, cublas,
-                              stream);  // value FC2    // VALUE
-          copyTypeConverted(opVal, (half*)(tensor_mem[0]), 3 * batchSize,
-                            stream);  // VALUE
-        } else {
-          network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem[1],
-                              nullptr, scratch_mem, scratch_size_, nullptr,
-                              cublas,
-                              stream);  // value FC2    // VALUE
-        }
+      if (fp16) {
+        network_[l++]->Eval(batchSize, spare1, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // policy map layer
+        copyTypeConverted(opPol, (half*)(spare1),
+                          batchSize * kNumOutputPolicy,
+                          stream);  // POLICY output
       } else {
-        if (fp16) {
-          // TODO: consider fusing the bias-add of FC2 with format conversion.
-          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                              scratch_mem, scratch_size_, nullptr, cublas,
-                              stream);  // value FC2
-          copyTypeConverted(opVal, (half*)(tensor_mem[0]), batchSize,
-                            stream);  // VALUE
-        } else {
-          network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem[1],
-                              nullptr, scratch_mem, scratch_size_, nullptr,
-                              cublas,
-                              stream);  // value FC2    // VALUE
-        }
+        network_[l++]->Eval(batchSize, (DataType*)opPol, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // policy map layer  // POLICY output
       }
+    } else {
+      network_[l++]->Eval(batchSize, spare1, flow, nullptr,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          stream);  // pol conv
 
-      if (moves_left_) {
-        // Moves left head
-        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+      if (fp16) {
+        network_[l++]->Eval(batchSize, spare2, spare1, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // moves conv
+                            stream);  // pol FC
 
-        network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+        copyTypeConverted(opPol, (half*)(spare2),
+                          batchSize * kNumOutputPolicy, stream);  // POLICY
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // moves FC1
+                            stream);  // pol FC  // POLICY
+      }
+    }
 
-        // Moves left FC2
-        if (fp16) {
-          // TODO: consider fusing the bias-add of FC2 with format conversion.
-          network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
-                              scratch_mem, scratch_size_, nullptr, cublas,
-                              stream);
-          copyTypeConverted(opMov, (half*)(tensor_mem[0]), batchSize, stream);
-        } else {
-          network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem[1],
-                              nullptr, scratch_mem, scratch_size_, nullptr,
-                              cublas, stream);
-        }
+    // Copy policy output from device memory to host memory.
+    ReportCUDAErrors(
+        cudaMemcpyAsync(io->op_policy_mem_, io->op_policy_mem_gpu_,
+                        sizeof(float) * kNumOutputPolicy * batchSize,
+                        cudaMemcpyDeviceToHost, stream));
+
+    // value head
+    network_[l++]->Eval(batchSize, spare1, flow, nullptr,
+                        scratch_mem, scratch_size_, nullptr, cublas,
+                        stream);  // value conv or embedding
+
+    network_[l++]->Eval(batchSize, spare2, spare1, nullptr,
+                        scratch_mem, scratch_size_, nullptr, cublas,
+                        stream);  // value FC1
+
+    if (wdl_) {
+      if (fp16) {
+        network_[l++]->Eval(batchSize, spare1, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // value FC2    // VALUE
+        copyTypeConverted(opVal, (half*)spare1, 3 * batchSize,
+                          stream);  // VALUE
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opVal, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // value FC2    // VALUE
+      }
+    } else {
+      if (fp16) {
+        // TODO: consider fusing the bias-add of FC2 with format conversion.
+        network_[l++]->Eval(batchSize, spare1, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // value FC2
+        copyTypeConverted(opVal, (half*)(spare1), batchSize,
+                          stream);  // VALUE
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opVal, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // value FC2    // VALUE
+      }
+    }
+
+    if (moves_left_) {
+      // Moves left head
+      network_[l++]->Eval(batchSize, spare1, flow, nullptr,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          stream);  // moves conv or embedding
+
+      network_[l++]->Eval(batchSize, spare2, spare1, nullptr,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          stream);  // moves FC1
+
+      // Moves left FC2
+      if (fp16) {
+        // TODO: consider fusing the bias-add of FC2 with format conversion.
+        network_[l++]->Eval(batchSize, spare1, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);
+        copyTypeConverted(opMov, (half*)(spare1), batchSize, stream);
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opMov, spare2, nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);
       }
     }
 
@@ -838,6 +843,7 @@ class CudaNetwork : public Network {
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
   BaseLayer<DataType>* resi_last_;
+  BaseLayer<DataType>* encoder_last_;
 
   size_t tensor_mem_size_;
   size_t scratch_size_;

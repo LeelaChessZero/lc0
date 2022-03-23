@@ -788,7 +788,7 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 template <typename T>
 __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const T* bias,
                                   const T* skip, const T* gammas,
-                                  const T* betas, float ep) {
+                                  const T* betas, float ep, float alpha) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
   if (n >= N) return;
   int c = (threadIdx.y * 32 + threadIdx.x) * 4;
@@ -831,7 +831,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
   float s = 0;
   if (!oobThread)
     for (int i = 0; i < 4; i++) {
-      val[i] += b[i] + sk[i];
+      val[i] += b[i] + sk[i] * alpha;
       s += val[i];
     }
   
@@ -873,7 +873,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
 // normalization is done across C dimension (i.e, sums and std deviations taken over elements in C dim)
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
-               const T* skip, const T* gammas, const T* betas, float ep,
+               const T* skip, const T* gammas, const T* betas, float ep, float alpha,
                cudaStream_t stream) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 4 != 0) throw Exception("unsupported filter size");
@@ -889,7 +889,7 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
   gridDim.z = 1;
 
   layer_norm_kernel<T><<<gridDim, blockDim, 0, stream>>>(
-      N, C, output, input, bias, skip, gammas, betas, ep);
+      N, C, output, input, bias, skip, gammas, betas, ep, alpha);
 
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -1251,11 +1251,11 @@ template void Softmax<float>(int N, int C, float* output, const float* input,
 template void LayerNorm<half>(int N, int C, half* output, const half* input,
                               const half* bias, const half* skip,
                               const half* gammas, const half* betas, float ep,
-                              cudaStream_t stream);
+                              float alpha, cudaStream_t stream);
 template void LayerNorm<float>(int N, int C, float* output, const float* input,
                                const float* bias, const float* skip,
                                const float* gammas, const float* betas,
-                               float ep, cudaStream_t stream);
+                               float ep, float alpha, cudaStream_t stream);
 
 template void ComputePromotionLogits<half>(int N, int C, half* output,
                                            const half* keys, const half* ppo,
