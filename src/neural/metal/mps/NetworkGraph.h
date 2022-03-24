@@ -34,7 +34,7 @@
 
 -(NSUInteger) size;
 
--(NSUInteger) sizeOfDimensions:(NSArray<NSNumber *> *)dimensions;
+-(NSUInteger) sizeOfDimensions:(NSArray<NSNumber *> * __nonnull)dimensions;
 
 @end
 
@@ -119,13 +119,13 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                               policyMap:(uint32_t * __nonnull)policyMap
-                                                  label:(NSString *)label;
+                                                  label:(NSString * __nonnull)label;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
                                                    inputChannels:(NSUInteger)inputPlanes
-                                                   outputBuffers:(float * * __nonnull)outputBuffers;
+                                                   outputBuffers:(float * __nonnull * __nonnull)outputBuffers;
 
 @end

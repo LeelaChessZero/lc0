@@ -90,6 +90,7 @@ class MetalNetworkComputation : public NetworkComputation {
     if (moves_left_) {
       return inputs_outputs_->op_moves_left_mem_[sample];
     }
+    return 0.0f;
   }
 
  private:
