@@ -30,6 +30,8 @@
 #include "cuda_common.h"
 #include "winograd_helper.inc"
 
+#include "neural/shared/attention_policy_map.h"
+
 namespace lczero {
 namespace cudnn_backend {
 namespace {
@@ -992,40 +994,6 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
       <<<N, blockDim, 0, stream>>>(C, output, keys, ppo, policy_attn_logits);
 }
 
-__device__ constexpr float kPosEncoding[64][6] = {
-    {0., 0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0., 1.},
-    {0., 0., 0., 0., 1., 0.}, {0., 0., 0., 0., 1., 1.},
-    {0., 0., 0., 1., 0., 0.}, {0., 0., 0., 1., 0., 1.},
-    {0., 0., 0., 1., 1., 0.}, {0., 0., 0., 1., 1., 1.},
-    {0., 0., 1., 0., 0., 0.}, {0., 0., 1., 0., 0., 1.},
-    {0., 0., 1., 0., 1., 0.}, {0., 0., 1., 0., 1., 1.},
-    {0., 0., 1., 1., 0., 0.}, {0., 0., 1., 1., 0., 1.},
-    {0., 0., 1., 1., 1., 0.}, {0., 0., 1., 1., 1., 1.},
-    {0., 1., 0., 0., 0., 0.}, {0., 1., 0., 0., 0., 1.},
-    {0., 1., 0., 0., 1., 0.}, {0., 1., 0., 0., 1., 1.},
-    {0., 1., 0., 1., 0., 0.}, {0., 1., 0., 1., 0., 1.},
-    {0., 1., 0., 1., 1., 0.}, {0., 1., 0., 1., 1., 1.},
-    {0., 1., 1., 0., 0., 0.}, {0., 1., 1., 0., 0., 1.},
-    {0., 1., 1., 0., 1., 0.}, {0., 1., 1., 0., 1., 1.},
-    {0., 1., 1., 1., 0., 0.}, {0., 1., 1., 1., 0., 1.},
-    {0., 1., 1., 1., 1., 0.}, {0., 1., 1., 1., 1., 1.},
-    {1., 0., 0., 0., 0., 0.}, {1., 0., 0., 0., 0., 1.},
-    {1., 0., 0., 0., 1., 0.}, {1., 0., 0., 0., 1., 1.},
-    {1., 0., 0., 1., 0., 0.}, {1., 0., 0., 1., 0., 1.},
-    {1., 0., 0., 1., 1., 0.}, {1., 0., 0., 1., 1., 1.},
-    {1., 0., 1., 0., 0., 0.}, {1., 0., 1., 0., 0., 1.},
-    {1., 0., 1., 0., 1., 0.}, {1., 0., 1., 0., 1., 1.},
-    {1., 0., 1., 1., 0., 0.}, {1., 0., 1., 1., 0., 1.},
-    {1., 0., 1., 1., 1., 0.}, {1., 0., 1., 1., 1., 1.},
-    {1., 1., 0., 0., 0., 0.}, {1., 1., 0., 0., 0., 1.},
-    {1., 1., 0., 0., 1., 0.}, {1., 1., 0., 0., 1., 1.},
-    {1., 1., 0., 1., 0., 0.}, {1., 1., 0., 1., 0., 1.},
-    {1., 1., 0., 1., 1., 0.}, {1., 1., 0., 1., 1., 1.},
-    {1., 1., 1., 0., 0., 0.}, {1., 1., 1., 0., 0., 1.},
-    {1., 1., 1., 0., 1., 0.}, {1., 1., 1., 0., 1., 1.},
-    {1., 1., 1., 1., 0., 0.}, {1., 1., 1., 1., 0., 1.},
-    {1., 1., 1., 1., 1., 0.}, {1., 1., 1., 1., 1., 1.}};
-
 template <typename T>
 __global__ void preprocess_for_attention_body_kernel(T* output, const T* input) {
   int n = blockIdx.x;
@@ -1042,7 +1010,7 @@ __global__ void preprocess_for_attention_body_kernel(T* output, const T* input) 
     op = input[n * 64 * kInputPlanes + c * 64 + hw];    // nchw
   }
 
-  constexpr int outputC = kInputPlanes + 6;
+  constexpr int outputC = kInputPlanes + kNumPosEncodingChannels;
 
   // convert to nhwc
   output[n * 64 * outputC + hw * outputC + c] = op;
@@ -1055,7 +1023,7 @@ void inputPreprocessForAttentionBody(T* output, const T* input, int N,
   // (kInputPlanes + 6) threads
   // Each thread computes a single output element
   dim3 gridSize = dim3(N, 64);
-  int blockSize = kInputPlanes + 6;
+  int blockSize = kInputPlanes + kNumPosEncodingChannels;
   preprocess_for_attention_body_kernel<T>
       <<<gridSize, blockSize, 0, stream>>>(output, input);
 }

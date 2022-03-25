@@ -33,13 +33,15 @@
 #include "cuda_common.h"
 #include "kernels.h"
 #include "utils/fp16_utils.h"
+#include "neural/shared/attention_policy_map.h"
 
 namespace lczero {
 
 #if 0
 // debug code to dump allocation in GPU memory
-void dumpTensor(void *memory, int elements, const char *message, bool fp16 = true)
-{
+template <typename T>
+void dumpTensor(T* memory, int elements, const char* message) {
+    const bool fp16 = std::is_same<half, T>::value;
     printf("\n%s\n", message);
     int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
     int bytes = elements * elementSize;
@@ -1792,7 +1794,6 @@ void EmbeddingLayer<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* /*input2*/,
     void* /*scratch*/, size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream) {
-
   const int num_outputs = this->GetC();
   const int num_inputs = this->input_->GetC();
   const int batch = N * 64;
@@ -1862,7 +1863,7 @@ void AttentionBody<DataType>::Eval(
     axis=2)
     */
     inputPreprocessForAttentionBody(scratch0, input, N, stream);
-    inputC += 6;
+    inputC += kNumPosEncodingChannels;
   } else {
     // #redirect flow through encoder blocks
     // flow = tf.transpose(flow, perm = [ 0, 2, 3, 1 ])
@@ -1890,6 +1891,7 @@ void AttentionBody<DataType>::Eval(
     pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream,
                default_act_);
   }  // End of encoder blocks
+
 }
 
 
