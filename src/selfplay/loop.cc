@@ -32,8 +32,8 @@
 
 #include "gtb-probe.h"
 #include "neural/decoder.h"
-#include "neural/reader.h"
 #include "selfplay/tournament.h"
+#include "trainingdata/reader.h"
 #include "utils/configfile.h"
 #include "utils/filesystem.h"
 #include "utils/optionsparser.h"
