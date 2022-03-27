@@ -185,14 +185,10 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
 namespace {
 std::vector<int> MakePolicyMap() {
   std::vector<int> policy_map(1858);
+  int idx = 0;
   for (const auto& mapping : kConvPolicyMap) {
-    if (mapping == -1) continue;
-    const auto index = &mapping - kConvPolicyMap;
-    const auto displacement = index / 64;
-    const auto square = index % 64;
-    const auto row = square / 8;
-    const auto col = square % 8;
-    policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
+    if (mapping > -1) policy_map[mapping] = idx;
+    idx++;
   }
   return policy_map;
 }
@@ -206,7 +202,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     auto flow = MakeConvBlock(builder, weights.policy1, NumFilters(),
                               NumFilters(), input, "/policy/conv1");
     flow = MakeConvBlock(builder, weights.policy, NumFilters(), 80, flow,
-                         "/policy/conv2");
+                         "/policy/conv2", nullptr, "", false);
     flow = builder->Reshape(
         "/policy/flatten", flow,
         builder->AddInitializer("/const/policy_shape",
@@ -220,9 +216,23 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     onnx->set_output_policy(output);
   } else {
     // Dense policy head.
-    throw Exception(
-        "The old fully connected policy head is not implemented due to "
-        "laziness.");
+    const int pol_channels = weights.policy.biases.size();
+    auto flow =
+        MakeConvBlock(builder, weights.policy, NumFilters(), pol_channels,
+                      input, "/policy/conv", nullptr, "", true, 1);
+    flow =
+        builder->Reshape("/policy/reshape", flow,
+                         builder->AddInitializer(
+                             "/const/policy_shape",
+                             Int64OnnxConst({-1, pol_channels * 8 * 8}, {2})));
+    flow = builder->MatMul(
+        "/policy/dense/matmul", flow,
+        *GetWeghtsConverter(weights.ip_pol_w, {pol_channels * 8 * 8, 1858},
+                            {1, 0}));
+    auto output = builder->Add(options_.output_policy_head, flow,
+                               *GetWeghtsConverter(weights.ip_pol_b, {1858}));
+    builder->AddOutput(output, {-1, 1858}, GetDataType());
+    onnx->set_output_policy(output);
   }
 }
 
