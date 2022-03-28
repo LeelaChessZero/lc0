@@ -1006,9 +1006,10 @@ __global__ void preprocess_for_attention_body_kernel(T* output, const T* input) 
     // concatenate from fixed pos encoding array
     op = (T) (kPosEncoding[hw][c - kInputPlanes]);
   } else {
-
-    op = input[n * 64 * kInputPlanes + c * 64 + hw];    // nchw
+    op = input[n * kInputPlanes * 64 + c * 64 + hw];  // nchw
   }
+
+  if (c == 109) op = (T) (float(op) / 99.0f);    // Ankan - hack to match bug in training side!
 
   constexpr int outputC = kInputPlanes + kNumPosEncodingChannels;
 
@@ -1020,7 +1021,7 @@ template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input, int N,
                                      cudaStream_t stream) {
   // N * 64 blocks
-  // (kInputPlanes + 6) threads
+  // (kInputPlanes + kNumPosEncodingChannels) threads
   // Each thread computes a single output element
   dim3 gridSize = dim3(N, 64);
   int blockSize = kInputPlanes + kNumPosEncodingChannels;
