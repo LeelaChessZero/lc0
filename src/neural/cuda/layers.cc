@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "cuda_common.h"
+#include "neural/network.h"
 #include "kernels.h"
 #include "utils/fp16_utils.h"
 #include "neural/shared/attention_policy_map.h"
