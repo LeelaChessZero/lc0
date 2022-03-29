@@ -82,6 +82,39 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
   return size;
 }
 
+static size_t getMaxAttentionBodySize(const LegacyWeights& weights, int N) {
+  const size_t embedding_op_size = weights.ip_emb_b.size();
+
+  size_t encoder_d_model = 0;
+  size_t encoder_dff = 0;
+
+  if (weights.encoder.size() > 0) {
+    encoder_d_model = weights.encoder[0].mha.q_b.size();
+    encoder_dff = weights.encoder[0].ffn.dense1_b.size();
+
+    assert(encoder_d_model == weights.encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.encoder[0].ffn.dense2_b.size());
+  }
+
+  const size_t encoder_heads = weights.encoder_head_count;
+
+  size_t size =
+      N * 64 * std::max(embedding_op_size, encoder_d_model);
+
+  // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
+  const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
+  const size_t output_size = N * (64 * 64 + 8 * 24);
+  size = std::max(size, std::max(matmul_qk_size, output_size));
+
+  size_t qkv_size = N * 64 * encoder_d_model;
+  // We store qkv in single allocation, and other intermediate tensors are
+  // sometimes stored by splitting an allocation into two halves.
+  size = std::max(2 * size, 3 * qkv_size);
+  return size;
+}
+
+
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
@@ -232,11 +265,6 @@ class CudaNetwork : public Network {
       assert(weights.ip_emb_b.size() > 0);
     }
 
-    // Ankan - test!
-    printf("\nNum filters: %d, num blocks: %d\n", kNumFilters, numBlocks_);
-    printf("\nNum encoder blocks: %d, num policy encoder blocks: %d\n",
-           num_encoder_blocks_, (int)weights.pol_encoder.size());
-
 
     // Warn if the memory required for storing transformed weights is
     // going to exceed 40% of total video memory, force custom_winograd off
@@ -289,15 +317,21 @@ class CudaNetwork : public Network {
 
     // Need additional space for transformed input/outputs which are 36/16
     // times size (4x4 block transformed into 6x6).
-    const size_t transformed_tensor_size =
-        (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) *
-                 sizeof(DataType));
-    scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
+    if (numBlocks_ > 0) {
+      const size_t transformed_tensor_size =
+          (size_t)(max_batch_size_ * kNumFilters * 64 * (36.0 / 16.0) *
+                   sizeof(DataType));
+      scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
+    }
 
-    // Attention policy head may need more memory
-    const size_t attentionSize =
+    // Attention policy head or body may need more memory
+    const size_t attentionPolicySize =
         getMaxAttentionHeadSize(weights, max_batch_size_);
-    scratch_size_ = std::max(scratch_size_, attentionSize);
+
+    const size_t attentionBodySize =
+        getMaxAttentionBodySize(weights, max_batch_size_);
+    scratch_size_ = std::max(scratch_size_,
+                             std::max(attentionPolicySize, attentionBodySize));
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 
@@ -508,7 +542,7 @@ class CudaNetwork : public Network {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
     }
 
-    if ((attn_policy_ || use_res_block_winograd_fuse_opt_) &&
+    if ((attn_policy_ || use_res_block_winograd_fuse_opt_ || attn_body_) &&
         (scratch_size_ > maxSize)) {
       maxSize = scratch_size_;
     }
