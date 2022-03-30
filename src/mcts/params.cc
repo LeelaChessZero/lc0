@@ -316,6 +316,19 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
 const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
     "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
     "Power to apply to the interpolation between 1 and max to make it curved."};
+const OptionId SearchParams::kMaxInFlightVisitsId{
+    "max-in-flight-visits", "MaxInFlightVisits",
+    "Maximum number of inflight for any subtree >= max in flight visits scaling end."};
+const OptionId SearchParams::kMaxInFlightVisitsScalingBasisId{
+    "max-in-flight-visits-scaling-basis", "MaxInFlightVisitsScalingBasis",
+    "The smallest value for the max in flight limit as part of the scaling."};
+const OptionId SearchParams::kMaxInFlightVisitsScalingStartId{
+    "max-in-flight-visits-scaling-start", "MaxInFlightVisitsScalingStart",
+    "Tree size where max in flight visits starts scaling up from 1."};
+const OptionId SearchParams::kMaxInFlightVisitsScalingEndId{
+    "max-in-flight-visits-scaling-end", "MaxInFlightVisitsScalingEnd",
+    "Tree size where max in flight visits reaches max. Set to 0 to disable "
+    "scaling entirely."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -357,6 +370,11 @@ void SearchParams::Populate(OptionsParser* options) {
       145000;
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
+  options->Add<IntOption>(kMaxInFlightVisitsId, 1, 100000000) = 160000;
+  options->Add<IntOption>(kMaxInFlightVisitsScalingBasisId, 1, 1000000) = 28;
+  options->Add<IntOption>(kMaxInFlightVisitsScalingStartId, 1, 100000) = 36;
+  options->Add<IntOption>(kMaxInFlightVisitsScalingEndId, 0, 100000000) =
+      719;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
@@ -486,8 +504,15 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisitsScalingEnd(
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
-          options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
-  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
+          options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
+      kMaxInFlightVisits(options.Get<int>(kMaxInFlightVisitsId)),
+      kMaxInFlightVisitsScalingBasis(
+          options.Get<int>(kMaxInFlightVisitsScalingBasisId)),
+      kMaxInFlightVisitsScalingStart(
+          options.Get<int>(kMaxInFlightVisitsScalingStartId)),
+      kMaxInFlightVisitsScalingEnd(
+          options.Get<int>(kMaxInFlightVisitsScalingEndId)) {
+    if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
     throw Exception(

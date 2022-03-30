@@ -405,6 +405,7 @@ class SearchWorker {
     Node* start;
     int base_depth;
     int collision_limit;
+    int extra_collisions;
     std::vector<Move> moves_to_base;
     std::vector<NodeToProcess> results;
 
@@ -415,11 +416,12 @@ class SearchWorker {
     bool complete = false;
 
     PickTask(Node* node, uint16_t depth, const std::vector<Move>& base_moves,
-             int collision_limit)
+             int collision_limit, int extra_collisions)
         : task_type(kGathering),
           start(node),
           base_depth(depth),
           collision_limit(collision_limit),
+          extra_collisions(extra_collisions),
           moves_to_base(base_moves) {}
     PickTask(int start_idx, int end_idx)
         : task_type(kProcessing), start_idx(start_idx), end_idx(end_idx) {}
@@ -437,6 +439,7 @@ class SearchWorker {
   void PickNodesToExtendTask(Node* starting_point, int collision_limit,
                              int base_depth,
                              const std::vector<Move>& moves_to_base,
+                             int extra_collisions,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
   void EnsureNodeTwoFoldCorrectForDepth(Node* node, int depth);

@@ -1035,7 +1035,8 @@ void SearchWorker::RunTasks(int tid) {
         case PickTask::kGathering: {
           PickNodesToExtendTask(task->start, task->base_depth,
                                 task->collision_limit, task->moves_to_base,
-                                &(task->results), &(task_workspaces_[tid]));
+                                task->extra_collisions, &(task->results),
+                                &(task_workspaces_[tid]));
           break;
         }
         case PickTask::kProcessing: {
@@ -1409,7 +1410,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // Since the tasks perform work which assumes they have the lock, even though
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist,
+  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist, 0,
                         &minibatch_, &main_workspace_);
 
   WaitForTasks();
@@ -1462,11 +1463,32 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
   }
 }
 
+namespace {
+
+int CalculateAllowedInFlight(int64_t nodes, const SearchParams& params) {
+  // End checked first
+  if (nodes >= params.GetMaxInFlightVisitsScalingEnd()) {
+    return params.GetMaxInFlightVisits();
+  }
+  if (nodes <= params.GetMaxInFlightVisitsScalingStart()) {
+    return params.GetMaxInFlightVisitsScalingBasis();
+  }
+  return Mix(
+      params.GetMaxInFlightVisits(), params.GetMaxInFlightVisitsScalingBasis(),
+      (static_cast<float>(nodes) - params.GetMaxInFlightVisitsScalingStart()) /
+          (params.GetMaxInFlightVisitsScalingEnd() -
+           params.GetMaxInFlightVisitsScalingStart()));
+}
+
+}
+
 void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          int collision_limit,
                                          const std::vector<Move>& moves_to_base,
+                                         int extra_collisions,
                                          std::vector<NodeToProcess>* receiver,
                                          TaskWorkspace* workspace) {
+  int initial_extra_collisions = extra_collisions;
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
@@ -1536,16 +1558,17 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
           }
         }
         // Visits are created elsewhere, just need the collisions here.
-        if (cur_limit > 0) {
+        if (cur_limit + extra_collisions > 0) {
           int max_count = 0;
-          if (cur_limit == collision_limit && base_depth == 0 &&
-              max_limit > cur_limit) {
+          if (cur_limit + extra_collisions == collision_limit &&
+              base_depth == 0 && max_limit > cur_limit + extra_collisions) {
             max_count = max_limit;
           }
           receiver->push_back(NodeToProcess::Collision(
               node, static_cast<uint16_t>(current_path.size() + base_depth),
-              cur_limit, max_count));
-          completed_visits += cur_limit;
+              cur_limit + extra_collisions, max_count));
+          completed_visits += cur_limit + extra_collisions;
+          extra_collisions = 0;
         }
         node = node->GetParent();
         current_path.pop_back();
@@ -1555,6 +1578,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         // Root node is again special - needs its n in flight updated separately
         // as its not handled on the path to it, since there isn't one.
         node->IncrementNInFlight(cur_limit);
+      }
+      if (extra_collisions != 0) {
+        node->IncrementNInFlight(extra_collisions);
       }
 
       // Create visits_to_perform new back entry for this level.
@@ -1566,6 +1592,15 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
       vtp_last_filled.push_back(-1);
 
+      int in_flight_limit = CalculateAllowedInFlight(node->GetN(), params_);
+      int existing_in_flight =
+          node->GetNInFlight() - cur_limit - extra_collisions;
+      int new_in_flight_limit =
+          std::max(0, in_flight_limit - existing_in_flight);
+      if (cur_limit > new_in_flight_limit) {
+        extra_collisions += cur_limit - new_in_flight_limit;
+        cur_limit = new_in_flight_limit;
+      }
       // Cache all constant UCT parameters.
       // When we're near the leaves we can copy less of the policy, since there
       // is no way iteration will ever reach it.
@@ -1762,12 +1797,13 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
               moves_to_path.push_back(cur_iters[i].GetMove());
               picking_tasks_.emplace_back(
                   child_node, current_path.size() - 1 + base_depth + 1,
-                  moves_to_path, child_limit);
+                  moves_to_path, child_limit, extra_collisions);
               moves_to_path.pop_back();
               task_count_.fetch_add(1, std::memory_order_acq_rel);
               task_added_.notify_all();
               passed = true;
-              passed_off += child_limit;
+              passed_off += child_limit + extra_collisions;
+              extra_collisions = 0;
             }
           }
           if (passed) {
@@ -1799,6 +1835,50 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       }
     }
     if (!found_child) {
+      if (extra_collisions != 0 && min_idx != -1) {
+        LOGFILE << "Oops lost some collisions.";
+        assert(false);
+      } else if (extra_collisions != 0) {
+        // If we get here, then the limit has forced all children visits to
+        // become extra_collisions. there are two possible ways forward. 1) We
+        // give the extra collisions to the first visited or visit in flight
+        // child. 2) We give the extra collisions to ourselves. Solid tree makes
+        // this second option dangerous, so we must always try to do 1 if
+        // possible. If 1 is impossible, it should be safe, since solid tree
+        // conversion shouldn't be able to take place, as it has no children
+        // visits yet.
+        // TODO: would it be better to instead select the 'last already created
+        // child?' to minimize depth on average?
+        for (auto& child : node->Edges()) {
+          if (child.GetN() == 0 && child.GetNInFlight() == 0) continue;
+          // This won't have been cleared, but it is going to be read, so force
+          // it clear now.
+          (*visits_to_perform.back())[0] = 0;
+          if (moves_to_path.size() != current_path.size() + base_depth) {
+            moves_to_path.push_back(child.GetMove());
+          } else {
+            moves_to_path.back() = child.GetMove();
+          }
+          current_path.back() = 0;
+          current_path.push_back(-1);
+          node = child.GetOrSpawnNode(/* parent */ node, nullptr);
+          found_child = true;
+          break;
+        }
+        if (!found_child) {
+          assert(node->GetN() == 1);
+          // InFlight was already incremented assuming the collisions would end
+          // up on a child, so that needs to be reverted.
+          node->IncrementNInFlight(-extra_collisions);
+          receiver->push_back(NodeToProcess::Collision(
+              node, static_cast<uint16_t>(current_path.size() + base_depth),
+              extra_collisions, 0));
+          completed_visits += extra_collisions;
+          extra_collisions = 0;
+        }
+      }
+    }
+    if (!found_child) {
       node = node->GetParent();
       if (!moves_to_path.empty()) moves_to_path.pop_back();
       current_path.pop_back();
@@ -1807,6 +1887,8 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
       vtp_last_filled.pop_back();
     }
   }
+  assert(completed_visits + passed_off ==
+         collision_limit + initial_extra_collisions);
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth,
@@ -2357,6 +2439,14 @@ void SearchWorker::UpdateCounters() {
   }
   if (!work_done) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // If no work was done, shared collisions weren't cancelled earlier by this
+    // thread. The sleep should have given plenty of time for the other threads
+    // to take advantage of the shared collisions if it is possible to take
+    // advantage of them, so cancel them now rather than potentially
+    // accumulating collisions forever in cases where the in flight limit has
+    // been reached.
+    SharedMutex::Lock lock(search_->nodes_mutex_);
+    search_->CancelSharedCollisions();
   }
 }
 
