@@ -1134,6 +1134,34 @@ void SearchWorker::InitializeIteration(
   computation_->Reserve(params_.GetMiniBatchSize());
   minibatch_.clear();
   minibatch_.reserve(2 * params_.GetMiniBatchSize());
+  // Re-balance workspaces.
+  if (!task_workspaces_.empty()) {
+    while (true) {
+      bool any_changes = false;
+      for (int i = 0; i < static_cast<int>(task_workspaces_.size()); i++) {
+        if (task_workspaces_[i].node_source.size() + 2 <
+            main_workspace_.node_source.size()) {
+          task_workspaces_[i].node_source.push_back(
+              std::move(main_workspace_.node_source.back()));
+          main_workspace_.node_source.pop_back();
+          any_changes = true;
+        }
+      }
+      if (!any_changes) break;
+    }
+  }
+  main_workspace_.node_source.reserve(params_.GetMiniBatchSize() * 4);
+  while (static_cast<int>(main_workspace_.node_source.size()) <
+         params_.GetMiniBatchSize() * 4) {
+    main_workspace_.node_source.push_back(std::make_unique<Node>(nullptr, 0));
+  }
+  for (int i = 0; i < static_cast<int>(task_workspaces_.size()); i++) {
+    task_workspaces_[i].node_source.reserve(params_.GetMiniBatchSize() * 4);
+    while (static_cast<int>(task_workspaces_[i].node_source.size()) < params_.GetMiniBatchSize() * 4) {
+      task_workspaces_[i].node_source.push_back(
+          std::make_unique<Node>(nullptr, 0));
+    }
+  }
 }
 
 // 2. Gather minibatch.
@@ -1467,8 +1495,6 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
                                          const std::vector<Move>& moves_to_base,
                                          std::vector<NodeToProcess>* receiver,
                                          TaskWorkspace* workspace) {
-  // TODO: Bring back pre-cached nodes created outside locks in a way that works
-  // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
   auto& vtp_buffer = workspace->vtp_buffer;
@@ -1699,7 +1725,14 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
         }
         (*visits_to_perform.back())[best_idx] += new_visits;
         cur_limit -= new_visits;
-        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
+        std::unique_ptr<Node>* node_source = nullptr;
+        if (!workspace->node_source.empty()) {
+          node_source = &(workspace->node_source.back());
+        }
+        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, node_source);
+        if (!workspace->node_source.empty() && !workspace->node_source.back()) {
+          workspace->node_source.pop_back();
+        }
 
         // Probably best place to check for two-fold draws consistently.
         // Depth starts with 1 at root, so real depth is depth - 1.
@@ -2222,7 +2255,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
     if (n->GetN() >= solid_threshold) {
-      if (n->MakeSolid() && n == search_->root_node_) {
+      if (n->MakeSolid(&(main_workspace_.node_source)) && n == search_->root_node_) {
         // If we make the root solid, the current_best_edge_ becomes invalid and
         // we should repopulate it.
         search_->current_best_edge_ =

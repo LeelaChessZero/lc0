@@ -387,6 +387,7 @@ class SearchWorker {
     std::vector<int> current_path;
     std::vector<Move> moves_to_path;
     PositionHistory history;
+    std::vector<std::unique_ptr<Node>> node_source;
     TaskWorkspace() {
       vtp_buffer.reserve(30);
       visits_to_perform.reserve(30);

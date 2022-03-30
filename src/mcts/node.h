@@ -251,7 +251,7 @@ class Node {
 
   // Reallocates this nodes children to be in a solid block, if possible and not
   // already done. Returns true if the transformation was performed.
-  bool MakeSolid();
+  bool MakeSolid(std::vector<std::unique_ptr<Node>>* cache);
 
   void SortEdges();
 
@@ -276,6 +276,22 @@ class Node {
   void Reinit(Node* parent, uint16_t index) {
     parent_ = parent;
     index_ = index;
+  }
+
+  // Clear out fields that aren't reset by std::move or Reinit - so a moved from node is safe to reinit and reuse.
+  void PrepareForReinit() {
+    wl_ = 0.0;
+    d_ = 0.0f;
+    m_ = 0.0f;
+    visited_policy_ = 0.0f;
+    n_ = 0;
+    n_in_flight_ = 0;
+    best_child_cache_in_flight_limit_ = 0;
+    num_edges_ = 0;
+    terminal_type_ = Terminal::NonTerminal;
+    lower_bound_ = GameResult::BLACK_WON;
+    upper_bound_ = GameResult::WHITE_WON;
+    solid_children_ = false;
   }
 
   // For each child, ensures that its parent pointer is pointing to this.
