@@ -42,7 +42,6 @@ static void global_avg_pooling(const size_t channels, const float* input,
 static void apply_se(const size_t channels, const size_t batch_size,
                      const float* input, const float* res, const float* scale,
                      float* output, const ActivationFunction activation) {
-
   const auto lambda_sigmoid = [](const auto val) {
     return 1.0f / (1.0f + std::exp(-val));
   };
@@ -51,11 +50,8 @@ static void apply_se(const size_t channels, const size_t batch_size,
     auto batch = c / channels;
     auto gamma = lambda_sigmoid(scale[c + batch * channels]);
     auto beta = scale[c + batch * channels + channels];
-    for (auto i = size_t{0}; i < kSquares; i++) {
-      output[c * kSquares + i] = Activate(
-          gamma * input[c * kSquares + i] + beta + res[c * kSquares + i],
-          activation);
-    }
+    Activate(kSquares, gamma, &input[c * kSquares], &res[c * kSquares], beta,
+             &output[c * kSquares], activation);
   }
 }
 
@@ -83,7 +79,8 @@ void ApplySEUnit(const size_t batch_size, const size_t channels,
                                             pool.data());
 
   // Sigmoid, scale and add residual
-  apply_se(channels, batch_size, input, residual, pool.data(), output, activation);
+  apply_se(channels, batch_size, input, residual, pool.data(), output,
+           activation);
 }
 
 template void ApplySEUnit<true>(const size_t batch_size, const size_t channels,

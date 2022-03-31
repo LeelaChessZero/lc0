@@ -30,24 +30,12 @@ namespace lczero {
 namespace {
 void ApplyBias(size_t batch_size, const size_t output_size, const float* biases,
                const ActivationFunction activation, float* outputs) {
-  if (activation != NONE) {
-    for (size_t i = 0; i < batch_size; i++) {
-      float* batch_outputs = outputs + i * output_size;
-      for (size_t o = 0; o < output_size; o++) {
-        float val = biases[o] + batch_outputs[o];
-        batch_outputs[o] = Activate(val, activation);
-      }
-    }
-  } else {
-    for (size_t i = 0; i < batch_size; i++) {
-      float* batch_outputs = outputs + i * output_size;
-      for (size_t o = 0; o < output_size; o++) {
-        batch_outputs[o] += biases[o];
-      }
-    }
+  for (size_t i = 0; i < batch_size; i++) {
+    float* batch_outputs = outputs + i * output_size;
+    Activate(output_size, batch_outputs, biases, batch_outputs, activation);
   }
 }
-} // namespace
+}  // namespace
 
 template <typename T>
 using EigenVectorMap = Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, 1>>;
@@ -152,8 +140,8 @@ void FullyConnectedLayer<true>::Forward1D(
 template <>
 float FullyConnectedLayer<true>::Forward0D(const size_t size, const float* x,
                                            const float* y) {
-  return ConstEigenVectorMap<float>(x, size)
-      .dot(ConstEigenVectorMap<float>(y, size));
+  return ConstEigenVectorMap<float>(x, size).dot(
+      ConstEigenVectorMap<float>(y, size));
 }
 
 }  // namespace lczero
