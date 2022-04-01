@@ -1078,7 +1078,7 @@ std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
-        std::to_string(weights.format().network_format().network()) +
+        pblczero::NetworkFormat::NetworkStructure_Name(weights.format().network_format().network()) +
         " is not supported by the DX12 backend.");
   }
   if (weights.format().network_format().policy() !=
@@ -1086,7 +1086,7 @@ std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CONVOLUTION) {
     throw Exception("Policy format " +
-                    std::to_string(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(weights.format().network_format().policy()) +
                     " is not supported by the DX12 backend.");
   }
   if (weights.format().network_format().value() !=
@@ -1094,14 +1094,14 @@ std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    std::to_string(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(weights.format().network_format().value()) +
                     " is not supported by the DX12 backend.");
   }
   if (weights.format().network_format().default_activation() !=
           pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
     throw Exception(
         "Default activation " +
-        std::to_string(weights.format().network_format().default_activation()) +
+        pblczero::NetworkFormat::DefaultActivation_Name(weights.format().network_format().default_activation()) +
         " is not supported by the DX12 backend.");
   }
   return std::make_unique<DxNetwork>(weights, options);

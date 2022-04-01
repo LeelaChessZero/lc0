@@ -880,7 +880,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
     throw Exception(
         "Network format " +
-        std::to_string(weights.format().network_format().network()) +
+        pblczero::NetworkFormat::NetworkStructure_Name(weights.format().network_format().network()) +
         " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().policy() !=
@@ -890,7 +890,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
-                    std::to_string(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(weights.format().network_format().policy()) +
                     " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().value() !=
@@ -898,7 +898,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    std::to_string(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(weights.format().network_format().value()) +
                     " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().moves_left() !=
@@ -907,7 +907,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::MOVES_LEFT_V1) {
     throw Exception(
         "Movest left head format " +
-        std::to_string(weights.format().network_format().moves_left()) +
+        pblczero::NetworkFormat::MovesLeftFormat_Name(weights.format().network_format().moves_left()) +
         " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().default_activation() !=
@@ -916,7 +916,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
     throw Exception(
         "Default activation " +
-        std::to_string(weights.format().network_format().default_activation()) +
+        pblczero::NetworkFormat::DefaultActivation_Name(weights.format().network_format().default_activation()) +
         " is not supported by the CUDA backend.");
   }
   return std::make_unique<CudaNetwork<DataType>>(weights, options);
