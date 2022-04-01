@@ -158,13 +158,15 @@ void OnnxComputation::ComputeBlocking() {
       network_->outputs_cstr_.data(), network_->outputs_cstr_.size());
 }
 
-Ort::SessionOptions GetOptions(OnnxProvider provider) {
+Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
   Ort::SessionOptions options;
+  OrtCUDAProviderOptions cuda_options;
   // options.SetIntraOpNumThreads(1);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   switch (provider) {
     case OnnxProvider::CUDA:
-      options.AppendExecutionProvider_CUDA({});
+      cuda_options.device_id = dict.GetOrDefault<int>("gpu", 0);
+      options.AppendExecutionProvider_CUDA(cuda_options);
       break;
     case OnnxProvider::CPU:
       // Doesn't really work. :-( There are two execution providers (CUDA and
@@ -182,11 +184,11 @@ Ort::SessionOptions GetOptions(OnnxProvider provider) {
   return options;
 }
 
-OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
+OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& dict,
                          OnnxProvider provider)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       session_(onnx_env_, file.onnx_model().model().data(),
-               file.onnx_model().model().size(), GetOptions(provider)),
+               file.onnx_model().model().size(), GetOptions(provider, dict)),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()} {
   const auto& md = file.onnx_model();
