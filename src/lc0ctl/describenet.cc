@@ -82,7 +82,7 @@ void ShowNetworkFormatInfo(const pblczero::Net& weights) {
   }
   if (net_format.has_network()) {
     COUT << Justify("Network")
-         << pblczero::NetworkFormat::NetworkStructure_Name(net_format.network());
+         << NetworkFormat::NetworkStructure_Name(net_format.network());
   }
   if (net_format.has_policy()) {
     COUT << Justify("Policy")
