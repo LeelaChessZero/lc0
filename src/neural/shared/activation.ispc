@@ -20,7 +20,7 @@ static inline float mish(float val) {
   float e = exp(val);
   float n = e * e + 2.0f * e;
   float d = val / (n + 2.0f);
-  if (val <= -0.125f) {
+  if (val <= -0.5f) {
     return n * d;
   } else {
     return val - 2.0f * d;
