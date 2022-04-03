@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2018-2022 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -20,6 +20,10 @@
 
 #include <algorithm>
 #include <cmath>
+
+#ifdef USE_ISPC
+#include "activation_ispc.h"
+#endif
 
 namespace lczero {
 namespace {
@@ -93,10 +97,14 @@ void Activate(const size_t len, const float* data, const float* bias,
       output[b] = val > 0 ? val : 0;
     }
   } else if (activation == MISH) {
+#ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = data[b] + bias[b];
       output[b] = mish(val);
     }
+#else
+    ispc::ActivateMish(len, 1.0f, data, bias, 0.0f, output);
+#endif
   } else {
     for (size_t b = 0; b < len; b++) {
       float val = data[b] + bias[b];
@@ -119,10 +127,14 @@ void Activate(const size_t len, float gamma, const float* data,
       output[b] = val > 0 ? val : 0;
     }
   } else if (activation == MISH) {
+#ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = gamma * data[b] + bias[b] + beta;
       output[b] = mish(val);
     }
+#else
+    ispc::ActivateMish(len, gamma, data, bias, beta, output);
+#endif
   } else {
     for (size_t b = 0; b < len; b++) {
       float val = gamma * data[b] + bias[b] + beta;
@@ -137,30 +149,28 @@ void BiasResidual(const size_t batch_size, const size_t channels, float* data,
   for (size_t i = 0; i < batch_size; i++) {
     for (size_t c = 0; c < channels; ++c) {
       auto bias = biases[c];
+      auto arr = &data[c * kSquares];
+      auto res = &eltwise[c * kSquares];
       if (activation == NONE) {
-        auto arr = &data[c * kSquares];
-        auto res = &eltwise[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
           arr[b] = val;
         }
       } else if (activation == RELU) {
-        auto arr = &data[c * kSquares];
-        auto res = &eltwise[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
           arr[b] = val > 0 ? val : 0;
         }
       } else if (activation == MISH) {
-        auto arr = &data[c * kSquares];
-        auto res = &eltwise[c * kSquares];
+#ifndef USE_ISPC
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
           arr[b] = mish(val);
         }
+#else
+        ispc::ActivateMish(kSquares, 1.0f, res, arr, bias, arr);
+#endif
       } else {
-        auto arr = &data[c * kSquares];
-        auto res = &eltwise[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
           arr[b] = Activate(val, activation);
@@ -177,26 +187,27 @@ void BiasActivate(const size_t batch_size, const size_t channels, float* data,
   for (size_t i = 0; i < batch_size; i++) {
     for (size_t c = 0; c < channels; ++c) {
       auto bias = biases[c];
+      auto arr = &data[c * kSquares];
       if (activation == NONE) {
-        auto arr = &data[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;
           arr[b] = val;
         }
       } else if (activation == RELU) {
-        auto arr = &data[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;
           arr[b] = val > 0 ? val : 0;
         }
       } else if (activation == MISH) {
-        auto arr = &data[c * kSquares];
+#ifndef USE_ISPC
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;
           arr[b] = mish(val);
         }
+#else
+        ispc::ActivateMish(kSquares, 0.0f, arr, arr, bias, arr);
+#endif
       } else {
-        auto arr = &data[c * kSquares];
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;
           arr[b] = Activate(val, activation);
