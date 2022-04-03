@@ -796,7 +796,7 @@ std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::MOVES_LEFT_NONE &&
       weights.format().network_format().moves_left() !=
           pblczero::NetworkFormat::MOVES_LEFT_V1) {
-    throw Exception("Movest left head format " +
+    throw Exception("Moves left head format " +
                     pblczero::NetworkFormat::MovesLeftFormat_Name(
                         weights.format().network_format().moves_left()) +
                     " is not supported by the oneDNN backend.");
