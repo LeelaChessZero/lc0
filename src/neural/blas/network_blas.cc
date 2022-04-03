@@ -48,7 +48,8 @@ class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
                   const bool wdl, const bool moves_left, const bool conv_policy,
-                  const ActivationFunction default_activation, const bool attn_policy);
+                  const ActivationFunction default_activation,
+                  const bool attn_policy);
 
   virtual ~BlasComputation() {}
 
@@ -126,7 +127,7 @@ class BlasNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
-        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_, 
+        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
         default_activation_, attn_policy_);
   }
 
@@ -300,27 +301,26 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       const size_t embedding_size = weights_.ip_pol_b.size();
       // Embedding.
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, output_channels, embedding_size,
-          res, weights_.ip_pol_w.data(),
-          weights_.ip_pol_b.data(),
+          batch_size * kSquares, output_channels, embedding_size, res,
+          weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
           SELU,  // SELU activation for attention head.
           head_buffer.data());
 
       for (auto layer : weights_.pol_encoder) {
         // TODO: support encoder heds.
-        throw Exception("Eigen/Blas backend doesn't support encoder heads yet.");
+        throw Exception(
+            "Eigen/Blas backend doesn't support encoder heads yet.");
       }
       const size_t policy_d_model = weights_.ip2_pol_b.size();
       std::vector<float> head_buffer2(largest_batch_size * policy_d_model *
-                                     kSquares);
+                                      kSquares);
       std::vector<float> head_buffer3(largest_batch_size * policy_d_model *
                                       kSquares);
       // Q
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, embedding_size, policy_d_model, head_buffer.data(),
-          weights_.ip2_pol_w.data(), weights_.ip2_pol_b.data(),
-          NONE,
-          head_buffer2.data());
+          batch_size * kSquares, embedding_size, policy_d_model,
+          head_buffer.data(), weights_.ip2_pol_w.data(),
+          weights_.ip2_pol_b.data(), NONE, head_buffer2.data());
       // K
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, embedding_size, policy_d_model,
@@ -376,7 +376,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       }
       // Mapping from attention policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
-        for (auto i = 0; i < 64*64+8*24; i++) {
+        for (auto i = 0; i < 64 * 64 + 8 * 24; i++) {
           auto j = kAttnPolicyMap[i];
           if (j >= 0) {
             output_fc[batch * num_output_policy + j] =
@@ -625,10 +625,10 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-    throw Exception(
-        "Network format " +
-        pblczero::NetworkFormat::NetworkStructure_Name(weights.format().network_format().network()) +
-        " is not supported by BLAS backend.");
+    throw Exception("Network format " +
+                    pblczero::NetworkFormat::NetworkStructure_Name(
+                        weights.format().network_format().network()) +
+                    " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
@@ -637,7 +637,8 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
-                    pblczero::NetworkFormat::PolicyFormat_Name(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(
+                        weights.format().network_format().policy()) +
                     " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().value() !=
@@ -645,7 +646,8 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    pblczero::NetworkFormat::ValueFormat_Name(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(
+                        weights.format().network_format().value()) +
                     " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().default_activation() !=
@@ -654,7 +656,8 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
     throw Exception(
         "Default activation " +
-        pblczero::NetworkFormat::DefaultActivation_Name(weights.format().network_format().default_activation()) +
+        pblczero::NetworkFormat::DefaultActivation_Name(
+            weights.format().network_format().default_activation()) +
         " is not supported by BLAS backend.");
   }
   return std::make_unique<BlasNetwork<use_eigen>>(weights, options);
