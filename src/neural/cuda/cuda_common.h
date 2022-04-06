@@ -24,6 +24,7 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
 
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
@@ -35,6 +36,10 @@
 #include <cudnn.h>
 #else
 typedef void* cudnnHandle_t;
+#endif
+
+#if CUBLAS_VER_MAJOR < 11
+#define CUBLAS_PEDANTIC_MATH CUBLAS_DEFAULT_MATH
 #endif
 
 namespace lczero {
@@ -50,6 +55,10 @@ static constexpr int kMaxResBlockFusingSeKFp16Ampere =
     512;  // (use a different kernel with reduced register pressure)
 static constexpr int kMaxResBlockFusingSeK =
     128;  // limit on (num_filters / se_ratio)
+static constexpr int kMaxResBlockFusingSeFp16AmpereSmem =
+    72 * kMaxResBlockFusingSeKFp16Ampere *
+    sizeof(half);  // shared memory used by the special
+                   // kernel
 
 #ifdef USE_CUDNN
 void CudnnError(cudnnStatus_t status, const char* file, const int& line);
@@ -64,6 +73,8 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 #define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
+
+enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH };
 
 }  // namespace cudnn_backend
 }  // namespace lczero

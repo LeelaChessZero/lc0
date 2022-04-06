@@ -33,7 +33,7 @@
 #include <cstdint>
 
 #include "d3dx12.h"
-#include "fp16_utils.h"
+#include "utils/fp16_utils.h"
 
 #define DEFAULT_FP16 true
 
