@@ -32,7 +32,8 @@ namespace cudnn_backend {
 
 struct InputsOutputs {
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
-                size_t tensor_mem_size = 0, size_t scratch_size = 0) {
+                size_t tensor_mem_size = 0, size_t scratch_size = 0,
+                bool cublasDisableTensorCores = false) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -77,7 +78,9 @@ struct InputsOutputs {
         ReportCUDAErrors(cudaMemsetAsync(mem, 0, tensor_mem_size, stream_));
       }
       ReportCUBLASErrors(cublasCreate(&cublas_));
-      ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+      ReportCUBLASErrors(cublasSetMathMode(
+          cublas_, cublasDisableTensorCores ? CUBLAS_PEDANTIC_MATH
+                                            : CUBLAS_TENSOR_OP_MATH));
       ReportCUBLASErrors(cublasSetStream(cublas_, stream_));
     } else {
       multi_stream_ = false;

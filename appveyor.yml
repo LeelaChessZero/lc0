@@ -42,8 +42,8 @@ install:
 - cmd: IF %NAME%==onednn set ONEDNN=true
 - cmd: set NET=744204
 - cmd: set NET_HASH=0f2f738e314bf618384045d4320a55333375d273d093adb805a4268ee53b519c
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET=752187
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET_HASH=65d1d197e81e221552b0803dd3623c738887dcb132e084fbab20f93deb66a0c0
+- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET=753723
+- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.5.0_cpu_vcomp appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.5/dnnl_win_1.5.0_cpu_vcomp.zip
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.5.0_cpu_vcomp 7z x dnnl_win_1.5.0_cpu_vcomp.zip -oC:\cache
 - cmd: set DNNL_NAME=dnnl_win_1.5.0_cpu_vcomp
