@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2020-2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -379,7 +379,8 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
 
   has_conv_policy_ = file.format().network_format().policy() ==
                      pblczero::NetworkFormat::POLICY_CONVOLUTION;
-  max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+  max_batch_size_ =
+      options.GetOrDefault<int>("max_batch", kMaxSupportedBatchSize);
 
   // Default is fp16, to use fp32: --backend-opts=fp16=false.
   fp16_ = options.GetOrDefault<bool>("fp16", DEFAULT_FP16);
@@ -656,7 +657,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
   dx_context_.ResetCL(cl, io->command_allocator_, io->needs_reset_);
 #endif
 
-  // Expand packed board representation into full planes.
+// Expand packed board representation into full planes.
 
 #ifdef COPY_BEFORE_SHADER_READ
   // First copy from upload heap to scratch mem
@@ -821,7 +822,7 @@ void DxNetwork::Eval(InputsOutputsDx* io, int batch_size) {
                            8, fp16_);
   }
 
-  //-----------------------------------///---------------------------------------
+//-----------------------------------///---------------------------------------
 #ifdef DEBUG_DUMP_PER_LAYER_DATA
   dx_context_.FlushAndWait();
   lock_.unlock();
@@ -1076,17 +1077,18 @@ std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-    throw Exception(
-        "Network format " +
-        std::to_string(weights.format().network_format().network()) +
-        " is not supported by the DX12 backend.");
+    throw Exception("Network format " +
+                    pblczero::NetworkFormat::NetworkStructure_Name(
+                        weights.format().network_format().network()) +
+                    " is not supported by the DX12 backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CONVOLUTION) {
     throw Exception("Policy format " +
-                    std::to_string(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(
+                        weights.format().network_format().policy()) +
                     " is not supported by the DX12 backend.");
   }
   if (weights.format().network_format().value() !=
@@ -1094,14 +1096,16 @@ std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    std::to_string(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(
+                        weights.format().network_format().value()) +
                     " is not supported by the DX12 backend.");
   }
   if (weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+      pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
     throw Exception(
         "Default activation " +
-        std::to_string(weights.format().network_format().default_activation()) +
+        pblczero::NetworkFormat::DefaultActivation_Name(
+            weights.format().network_format().default_activation()) +
         " is not supported by the DX12 backend.");
   }
   return std::make_unique<DxNetwork>(weights, options);
