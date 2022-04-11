@@ -47,19 +47,75 @@ export void winograd_TransformIn_ispc(uniform size_t batch_size,
 
         foreach (channel = 0 ... channels) {
           size_t V_channel = V_batch + channel;
-          size_t input_channel = input_batch + channel * (kWidth * kHeight);
+          const float* input_channel = input + input_batch + channel * kSquares;
 
-          for (uniform int i = 0; i < kWinogradAlpha; i++) {
+          if (block_y == 0) {
             for (uniform int j = 0; j < kWinogradAlpha; j++) {
-              if ((yin + i) >= 0 && (xin + j) >= 0 && (yin + i) < kHeight &&
-                  (xin + j) < kWidth) {
-                x[i][j] = input[input_channel + (yin + i) * kWidth + (xin + j)];
-              } else {
-                x[i][j] = 0.0f;
+              x[0][j] = 0.0f;
+            }
+            for (uniform int i = 1; i < kWinogradAlpha; i++) {
+              for (uniform int j = 0; j < kWinogradAlpha / 2; j++) {
+                if ((xin + j) >= 0) {
+                  x[i][j] =
+                      input_channel[(yin + i) * kWidth + (xin + j)];
+                } else {
+                  x[i][j] = 0.0f;
+                }
+              }
+              for (uniform int j = kWinogradAlpha / 2; j < kWinogradAlpha;
+                   j++) {
+                if ((xin + j) < kWidth) {
+                  x[i][j] =
+                      input_channel[(yin + i) * kWidth + (xin + j)];
+                } else {
+                  x[i][j] = 0.0f;
+                }
+              }
+            }
+          } else if (block_y == kWtiles - 1) {
+            for (uniform int i = 0; i < kWinogradAlpha - 1; i++) {
+              for (uniform int j = 0; j < kWinogradAlpha / 2; j++) {
+                if ((xin + j) >= 0) {
+                  x[i][j] =
+                      input_channel[(yin + i) * kWidth + (xin + j)];
+                } else {
+                  x[i][j] = 0.0f;
+                }
+              }
+              for (uniform int j = kWinogradAlpha / 2; j < kWinogradAlpha;
+                   j++) {
+                if ((xin + j) < kWidth) {
+                  x[i][j] =
+                      input_channel[(yin + i) * kWidth + (xin + j)];
+                } else {
+                  x[i][j] = 0.0f;
+                }
+              }
+            }
+            for (uniform int j = 0; j < kWinogradAlpha; j++) {
+              x[kWinogradAlpha - 1][j] = 0.0f;
+            }
+          } else {
+            for (uniform int i = 0; i < kWinogradAlpha; i++) {
+              for (uniform int j = 0; j < kWinogradAlpha / 2; j++) {
+                if ((xin + j) >= 0) {
+                  x[i][j] =
+                      input_channel[(yin + i) * kWidth + (xin + j)];
+                } else {
+                  x[i][j] = 0.0f;
+                }
+              }
+              for (uniform int j = kWinogradAlpha / 2; j < kWinogradAlpha;
+                   j++) {
+                if ((xin + j) < kWidth) {
+                  x[i][j] =
+                      input_channel[(yin + i) * kWidth + (xin + j)];
+                } else {
+                  x[i][j] = 0.0f;
+                }
               }
             }
           }
-
           T1[0][0] = x[0][0] - x[2][0];
           T1[0][1] = x[0][1] - x[2][1];
           T1[0][2] = x[0][2] - x[2][2];
@@ -107,8 +163,6 @@ export void winograd_TransformOut_ispc(uniform size_t batch_size,
                                        const uniform float input[],
                                        uniform size_t channels,
                                        uniform float output[]) {
-  float m[kWinogradTile];
-
   for (uniform size_t batch_index = 0; batch_index < batch_size;
        batch_index++) {
     const uniform size_t M_batch = channels * kTiles * batch_index;
@@ -123,28 +177,61 @@ export void winograd_TransformOut_ispc(uniform size_t batch_size,
           const size_t M_channel = M_batch + channel;
           const size_t output_channel = output_batch + channel * kSquares;
           const uniform int b = block_y * kWtiles + block_x;
-          const size_t M_wtile = M_channel + channels * b;
+
+          const float* M_wtile = input + M_channel + channels * b;
           const uniform int M_incr = channels * kTiles * batch_size;
 
-          for (uniform int wTile = 0; wTile < kWinogradTile; wTile++) {
-            m[wTile] = input[M_wtile + wTile * M_incr];
-          }
-
-          float o11 = m[0 * 4 + 0] + m[0 * 4 + 1] + m[0 * 4 + 2] +
-                      m[1 * 4 + 0] + m[1 * 4 + 1] + m[1 * 4 + 2] +
-                      m[2 * 4 + 0] + m[2 * 4 + 1] + m[2 * 4 + 2];
-
-          float o12 = m[0 * 4 + 1] - m[0 * 4 + 2] - m[0 * 4 + 3] +
-                      m[1 * 4 + 1] - m[1 * 4 + 2] - m[1 * 4 + 3] +
-                      m[2 * 4 + 1] - m[2 * 4 + 2] - m[2 * 4 + 3];
-
-          float o21 = m[1 * 4 + 0] + m[1 * 4 + 1] + m[1 * 4 + 2] -
-                      m[2 * 4 + 0] - m[2 * 4 + 1] - m[2 * 4 + 2] -
-                      m[3 * 4 + 0] - m[3 * 4 + 1] - m[3 * 4 + 2];
-
-          float o22 = m[1 * 4 + 1] - m[1 * 4 + 2] - m[1 * 4 + 3] -
-                      m[2 * 4 + 1] + m[2 * 4 + 2] + m[2 * 4 + 3] -
-                      m[3 * 4 + 1] + m[3 * 4 + 2] + m[3 * 4 + 3];
+          float o11 = M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          float o12 = M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          o12 -= M_wtile[0];
+          M_wtile += M_incr;
+          o12 -= M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          float o21 = M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          o12 += M_wtile[0];
+          o21 += M_wtile[0];
+          float o22 = M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          o12 -= M_wtile[0];
+          o21 += M_wtile[0];
+          o22 -= M_wtile[0];
+          M_wtile += M_incr;
+          o12 -= M_wtile[0];
+          o22 -= M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          o21 -= M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          o12 += M_wtile[0];
+          o21 -= M_wtile[0];
+          o22 -= M_wtile[0];
+          M_wtile += M_incr;
+          o11 += M_wtile[0];
+          o12 -= M_wtile[0];
+          o21 -= M_wtile[0];
+          o22 += M_wtile[0];
+          M_wtile += M_incr;
+          o12 -= M_wtile[0];
+          o22 += M_wtile[0];
+          M_wtile += M_incr;
+          o21 -= M_wtile[0];
+          M_wtile += M_incr;
+          o21 -= M_wtile[0];
+          o22 -= M_wtile[0];
+          M_wtile += M_incr;
+          o21 -= M_wtile[0];
+          o22 += M_wtile[0];
+          M_wtile += M_incr;
+          o22 += M_wtile[0];
 
           output[output_channel + (y)*kWidth + (x)] = o11;
           output[output_channel + (y)*kWidth + (x + 1)] = o12;
