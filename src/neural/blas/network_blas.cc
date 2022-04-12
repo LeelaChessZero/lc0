@@ -271,17 +271,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                         conv2.weights.data(), conv_out);
 
       if (residual.has_se) {
-        // No relu if followed by SE-unit and residual is added later
-        BiasActivate(batch_size, output_channels, &conv_out[0],
-                     conv2.biases.data(), NONE);
-
+        // No relu if followed by SE-unit and residual/bias is added later
         std::swap(conv_out, conv_in);
 
         auto se_fc_outputs = se.b1.size();
         ApplySEUnit<use_eigen>(batch_size, output_channels, se_fc_outputs,
-                               conv_in, res, se.w1.data(), se.b1.data(),
-                               se.w2.data(), se.b2.data(), conv_out,
-                               default_activation_);
+                               conv_in, conv2.biases.data(), res, se.w1.data(),
+                               se.b1.data(), se.w2.data(), se.b2.data(),
+                               conv_out, default_activation_);
       } else {
         BiasResidual(batch_size, output_channels, &conv_out[0],
                      conv2.biases.data(), res, default_activation_);
