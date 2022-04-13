@@ -77,6 +77,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   if (managers[0] == "legacy") {
     time_manager =
         MakeLegacyTimeManager(move_overhead, tm_options.GetSubdict("legacy"));
+    
   } else if (managers[0] == "alphazero") {
     time_manager = MakeAlphazeroTimeManager(move_overhead,
                                             tm_options.GetSubdict("alphazero"));
@@ -84,7 +85,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
     time_manager =
         MakeSmoothTimeManager(move_overhead, tm_options.GetSubdict("smooth"));
     
-    else if (managers[0] == "human") {
+  } else if (managers[0] == "human") {
       time_manager = 
         MakeHumanTimeManager(move_overhead, tm_options.GetSubdict("human"));
   }
