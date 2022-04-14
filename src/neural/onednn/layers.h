@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2021-2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@
 */
 #pragma once
 
+#include "neural/shared/activation.h"
 #include "utils/exception.h"
 
 #include "dnnl.hpp"
@@ -64,7 +65,7 @@ class BaseLayer {
 class ConvLayer : public BaseLayer {
  public:
   ConvLayer(BaseLayer* ip, int C, int H, int W, int size, int Cin,
-            bool relu = false, bool skip = false);
+            ActivationFunction activation = NONE, bool skip = false);
 
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
                    dnnl::stream& stream);
@@ -76,7 +77,7 @@ class ConvLayer : public BaseLayer {
  private:
   const int c_input_;
   const int filter_size_;
-  const bool use_relu_;
+  const ActivationFunction activation_;
   const bool use_skip_;
 
   dnnl::memory filter_mem;       // The original weights.
@@ -96,7 +97,7 @@ class ConvLayer : public BaseLayer {
 
 class FCLayer : public BaseLayer {
  public:
-  FCLayer(BaseLayer* ip, int C, int H, int W, bool relu, bool tanh = false);
+  FCLayer(BaseLayer* ip, int C, int H, int W, ActivationFunction activation);
 
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
                    dnnl::stream& stream);
@@ -104,8 +105,7 @@ class FCLayer : public BaseLayer {
             dnnl::stream& stream) override;
 
  private:
-  const bool use_relu_;
-  const bool use_tanh_;
+  ActivationFunction activation_;
 
   dnnl::memory filter_mem;
   dnnl::memory bias_mem;
@@ -121,12 +121,13 @@ class FCLayer : public BaseLayer {
 };
 
 // Fused SE layer:
-// global avg -> FC1 -> FC2 -> global scale -> add skip connection -> RELU.
+// global avg -> FC1 -> FC2 -> global scale -> add skip connection ->
+// activation.
 class SELayer : public BaseLayer {
   using BaseLayer::C;
 
  public:
-  SELayer(BaseLayer* ip, int numFc1Out);
+  SELayer(BaseLayer* ip, int numFc1Out, ActivationFunction activation);
 
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
                    dnnl::memory& b2, dnnl::engine& eng, dnnl::stream& stream);
@@ -143,6 +144,8 @@ class SELayer : public BaseLayer {
   dnnl::memory bias2_mem;
 
   int numFc1Out_;
+
+  ActivationFunction activation_;
 
   // Cache previous primitives in case the batch size is the same.
   int last_batch_ = 0;

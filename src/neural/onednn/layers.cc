@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2021-2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -46,11 +46,11 @@ BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip)
 }
 
 ConvLayer::ConvLayer(BaseLayer* ip, int C, int H, int W, int filter, int Cin,
-                     bool relu, bool skip)
+                     ActivationFunction activation, bool skip)
     : BaseLayer(C, H, W, ip),
       c_input_(Cin),
       filter_size_(filter),
-      use_relu_(relu),
+      activation_(activation),
       use_skip_(skip) {}
 
 void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
@@ -92,8 +92,12 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     if (use_skip_) {
       conv_ops.append_sum();
     }
-    if (use_relu_) {
+    if (activation_ == RELU) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+    } else if (activation_ == MISH) {
+      conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+    } else if (activation_ == TANH) {
+      conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
     dnnl::primitive_attr conv_attr;
     conv_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
@@ -150,9 +154,10 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                          {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 }
 
-SELayer::SELayer(BaseLayer* ip, int fc1Outputs)
+SELayer::SELayer(BaseLayer* ip, int fc1Outputs, ActivationFunction activation)
     : BaseLayer(ip->GetC(), ip->GetH(), ip->GetW(), ip),
-      numFc1Out_(fc1Outputs) {}
+      numFc1Out_(fc1Outputs),
+      activation_(activation) {}
 
 void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
                           dnnl::memory& b2, dnnl::engine& eng,
@@ -222,7 +227,13 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         dnnl::prop_kind::forward_inference, t_fc1_in_md, t_filter_md,
         bias_mem.get_desc(), t_fc1_out_md);
     dnnl::post_ops fc_ops;
-    fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+    if (activation_ == RELU) {
+      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+    } else if (activation_ == MISH) {
+      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+    } else if (activation_ == TANH) {
+      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+    }
     dnnl::primitive_attr fc_attr;
     fc_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     fc_attr.set_post_ops(fc_ops);
@@ -275,7 +286,13 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     if (eng.get_kind() == dnnl::engine::kind::gpu) {
       // Using binary post-ops is a gain on gpu but a huge loss on cpu.
       mul_ops.append_binary(dnnl::algorithm::binary_add, pool_out_md);
-      mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+      if (activation_ == RELU) {
+        mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+      } else if (activation_ == MISH) {
+        mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+      } else if (activation_ == TANH) {
+        mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+      }
     }
     dnnl::primitive_attr mul_attr;
     mul_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
@@ -289,7 +306,13 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
           dnnl::binary::desc(dnnl::algorithm::binary_add, output.get_desc(),
                              pool_out_md, output.get_desc());
       dnnl::post_ops add_ops;
-      add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+      if (activation_ == RELU) {
+        add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+      } else if (activation_ == MISH) {
+        add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+      } else if (activation_ == TANH) {
+        add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+      }
       dnnl::primitive_attr add_attr;
       add_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
       add_attr.set_post_ops(add_ops);
@@ -374,8 +397,9 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
   }
 }
 
-FCLayer::FCLayer(BaseLayer* ip, int C, int H, int W, bool relu, bool tanh)
-    : BaseLayer(C, H, W, ip), use_relu_(relu), use_tanh_(tanh) {}
+FCLayer::FCLayer(BaseLayer* ip, int C, int H, int W,
+                 ActivationFunction activation)
+    : BaseLayer(C, H, W, ip), activation_(activation) {}
 
 void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
                           dnnl::stream& stream) {
@@ -414,10 +438,11 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         dnnl::prop_kind::forward_inference, t_in_md, t_filter_md,
         bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}));
     dnnl::post_ops fc_ops;
-    if (use_relu_) {
+    if (activation_ == RELU) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    }
-    if (use_tanh_) {
+    } else if (activation_ == MISH) {
+      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+    } else if (activation_ == TANH) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
     dnnl::primitive_attr fc_attr;
