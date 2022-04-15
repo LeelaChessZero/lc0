@@ -629,8 +629,6 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     final_pondermove_ = GetBestChildNoTemperature(bestmove_edge.node(), 1)
                             .GetMove(!played_history_.IsBlackToMove());
   }
-
-
 }
 
 // Returns @count children with most visits.
