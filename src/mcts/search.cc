@@ -819,10 +819,8 @@ EdgeAndNode Search::GetRandomChildbyP() const {
   }
   
   // In case of floating point subtraction issues above.
-  // Probably not the best way to grab a single edge from the iterator.
-  for (auto& edge : root_node_->Edges()) {
-    return edge;
-  }
+  return *root_node_->Edges();
+  
   assert(false);
   return {};
 }
