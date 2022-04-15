@@ -803,20 +803,20 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   return {};
 }
 
-// Returns a child of a root weighted by P
+// Returns a random child of a root weighted by move probability.
 EdgeAndNode Search::GetRandomChildbyP() const {
-  //Get sum of weights
+  // Get sum of weights for roll.
   float total_weights = 0.0;
   for (auto& edge : root_node_->Edges()) {
     total_weights += edge.GetP();
   }
 
-  //Choose edge from roll
+  // Choose edge with roll.
   float roll = Random::Get().GetFloat(total_weights);
   for (auto& edge : root_node_->Edges()) {
     if (roll < edge.GetP()) return edge;
     roll -= edge.GetP();
-    if (roll <= 0.0) return edge; //just in case floating point nonsense
+    if (roll <= 0.0) return edge; // In case of floating point nonsense.
   }
   assert(false);
   return {};
