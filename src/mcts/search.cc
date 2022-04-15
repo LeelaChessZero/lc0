@@ -816,7 +816,12 @@ EdgeAndNode Search::GetRandomChildbyP() const {
   for (auto& edge : root_node_->Edges()) {
     if (roll < edge.GetP()) return edge;
     roll -= edge.GetP();
-    if (roll <= 0.0) return edge; // In case of floating point nonsense.
+  }
+  
+  // In case of floating point subtraction issues above.
+  // Probably not the best way to grab a single edge from the iterator.
+  for (auto& edge : root_node_->Edges()) {
+    return edge;
   }
   assert(false);
   return {};
