@@ -597,6 +597,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
+	bool randombyp = params_.GetRandombyP();
   const int cutoff_move = params_.GetTemperatureCutoffMove();
   const int decay_delay_moves = params_.GetTempDecayDelayMoves();
   const int decay_moves = params_.GetTempDecayMoves();
@@ -621,12 +622,15 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   auto bestmove_edge = temperature
                            ? GetBestRootChildWithTemperature(temperature)
                            : GetBestChildNoTemperature(root_node_, 0);
+  if (randombyp) bestmove_edge = GetRandomChildbyP();
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
   if (bestmove_edge.GetN() > 0 && bestmove_edge.node()->HasChildren()) {
     final_pondermove_ = GetBestChildNoTemperature(bestmove_edge.node(), 1)
                             .GetMove(!played_history_.IsBlackToMove());
   }
+
+
 }
 
 // Returns @count children with most visits.
@@ -794,6 +798,25 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     }
     if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     if (idx-- == 0) return edge;
+  }
+  assert(false);
+  return {};
+}
+
+// Returns a child of a root weighted by P
+EdgeAndNode Search::GetRandomChildbyP() const {
+  //Get sum of weights
+  float total_weights = 0.0;
+  for (auto& edge : root_node_->Edges()) {
+    total_weights += edge.GetP();
+  }
+
+  //Choose edge from roll
+  float roll = Random::Get().GetFloat(total_weights);
+  for (auto& edge : root_node_->Edges()) {
+    if (roll < edge.GetP()) return edge;
+    roll -= edge.GetP();
+    if (roll <= 0.0) return edge; //just in case floating point nonsense
   }
   assert(false);
   return {};
