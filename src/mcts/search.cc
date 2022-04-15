@@ -597,7 +597,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
-	bool randombyp = params_.GetRandombyP();
+  bool randombyp = params_.GetRandombyP();
   const int cutoff_move = params_.GetTemperatureCutoffMove();
   const int decay_delay_moves = params_.GetTempDecayDelayMoves();
   const int decay_moves = params_.GetTempDecayMoves();
