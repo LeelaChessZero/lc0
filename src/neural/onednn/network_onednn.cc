@@ -35,6 +35,7 @@
 #include "layers.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
@@ -157,6 +158,9 @@ class OnednnNetwork : public Network {
 
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
+    attn_policy_ = file.format().network_format().policy() ==
+                   pblczero::NetworkFormat::POLICY_ATTENTION;
 
     default_activation_ =
         file.format().network_format().default_activation() ==
@@ -316,7 +320,49 @@ class OnednnNetwork : public Network {
       BaseLayer* resi_last = getLastLayer(idx);
 
       // Policy head.
-      if (conv_policy_) {
+      if (attn_policy_) {
+        for (auto layer : weights.pol_encoder) {
+          // TODO: support encoder heads.
+          throw Exception(
+              "Encoder heads are not yet supported by the oneDNN backend.");
+        }
+        const int embedding_size = weights.ip_pol_b.size();
+        const int policy_d_model = weights.ip2_pol_b.size();
+
+        auto attn = std::make_unique<AttentionPolicyHead>(
+            resi_last, embedding_size, policy_d_model);
+        auto ip_w_md =
+            dnnl::memory::desc({numFilters_, embedding_size}, data_type_,
+                               dnnl::memory::format_tag::ab);
+        auto ip_w_mem =
+            dnnl::memory(ip_w_md, cpu_eng_, weights.ip_pol_w.data());
+        auto ip_b_md =
+            dnnl::memory::desc({embedding_size}, dnnl::memory::data_type::f32,
+                               dnnl::memory::format_tag::a);
+        auto ip_b_mem =
+            dnnl::memory(ip_b_md, cpu_eng_, weights.ip_pol_b.data());
+        auto ip23_w_md =
+            dnnl::memory::desc({embedding_size, policy_d_model}, data_type_,
+                               dnnl::memory::format_tag::ab);
+        auto ip2_w_mem =
+            dnnl::memory(ip23_w_md, cpu_eng_, weights.ip2_pol_w.data());
+        auto ip23_b_md =
+            dnnl::memory::desc({policy_d_model}, dnnl::memory::data_type::f32,
+                               dnnl::memory::format_tag::a);
+        auto ip2_b_mem =
+            dnnl::memory(ip23_b_md, cpu_eng_, weights.ip2_pol_b.data());
+        auto ip3_w_mem =
+            dnnl::memory(ip23_w_md, cpu_eng_, weights.ip3_pol_w.data());
+        auto ip3_b_mem =
+            dnnl::memory(ip23_b_md, cpu_eng_, weights.ip3_pol_b.data());
+        auto ip4_w_md = dnnl::memory::desc({1, 4, policy_d_model}, data_type_,
+                                           dnnl::memory::format_tag::abc);
+        auto ip4_w_mem =
+            dnnl::memory(ip4_w_md, cpu_eng_, weights.ip4_pol_w.data());
+        attn->LoadWeights(ip_w_mem, ip_b_mem, ip2_w_mem, ip2_b_mem, ip3_w_mem,
+                          ip3_b_mem, ip4_w_mem, eng_, eng_stream_);
+        layers_[idx].emplace_back(std::move(attn));
+      } else if (conv_policy_) {
         auto conv1 = std::make_unique<ConvLayer>(
             resi_last, numFilters_, 8, 8, 3, numFilters_, default_activation_);
         auto w_md = dnnl::memory::desc({numFilters_, numFilters_, 3, 3},
@@ -532,7 +578,11 @@ class OnednnNetwork : public Network {
 
       // Output descriptors.
       dnnl::memory::desc opPol_desc;
-      if (conv_policy_) {
+      if (attn_policy_) {
+        opPol_desc = dnnl::memory::desc({batchSize, 67, 8, 8},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      } else if (conv_policy_) {
         opPol_desc = dnnl::memory::desc({batchSize, pol_channels_, 8, 8},
                                         dnnl::memory::data_type::f32,
                                         dnnl::memory::format_tag::nchw);
@@ -582,7 +632,10 @@ class OnednnNetwork : public Network {
       }
 
       // Policy head.
-      if (conv_policy_) {
+      if (attn_policy_) {
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[2], eng_,
+                                eng_stream_);  // attention head
+      } else if (conv_policy_) {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], eng_,
                                 eng_stream_);  // policy conv1
 
@@ -675,8 +728,18 @@ class OnednnNetwork : public Network {
         memcpy(io->op_value_mem_ + start, opVal_mem.get_data_handle(),
                currentBatchSize * sizeof(float));
       }
-
-      if (conv_policy_) {
+      if (attn_policy_) {
+        float* opPol = (float*)opPol_mem.get_data_handle();
+        for (int batch = 0; batch < currentBatchSize; batch++) {
+          for (int i = 0; i < 64 * 64 + 8 * 24; i++) {
+            auto j = kAttnPolicyMap[i];
+            if (j >= 0) {
+              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
+                  opPol[batch * (64 * 64 + 8 * 24) + i];
+            }
+          }
+        }
+      } else if (conv_policy_) {
         float* opPol = (float*)opPol_mem.get_data_handle();
         for (int batch = 0; batch < currentBatchSize; batch++) {
           for (int i = 0; i < 73 * 8 * 8; i++) {
@@ -749,6 +812,7 @@ class OnednnNetwork : public Network {
 
   bool has_se_;
   bool conv_policy_;
+  bool attn_policy_;
   ActivationFunction default_activation_;
 
   std::vector<std::vector<std::unique_ptr<BaseLayer>>> layers_;
@@ -791,7 +855,9 @@ std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
                     pblczero::NetworkFormat::PolicyFormat_Name(
                         weights.format().network_format().policy()) +

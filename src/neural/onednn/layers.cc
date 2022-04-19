@@ -30,6 +30,10 @@
 #include <cstring>
 #include <vector>
 
+#include <cmath>
+#include "neural/blas/blas.h"
+#include "neural/blas/fully_connected_layer.h"
+
 namespace lczero {
 
 namespace onednn_backend {
@@ -483,6 +487,215 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                        {DNNL_ARG_BIAS, bias_mem},
                        {DNNL_ARG_DST, output},
                        {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+}
+
+void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
+                                      dnnl::memory& w2, dnnl::memory& b2,
+                                      dnnl::memory& w3, dnnl::memory& b3,
+                                      dnnl::memory& w4, dnnl::engine& eng,
+                                      dnnl::stream& stream) {
+  auto fc_filter_md = dnnl::memory::desc({C, embedding_size_}, data_type_,
+                                         dnnl::memory::format_tag::ab);
+  fc_filter_mem = dnnl::memory(fc_filter_md, eng);
+  dnnl::reorder(w1, fc_filter_mem).execute(stream, w1, fc_filter_mem);
+  auto fc_bias_md =
+      dnnl::memory::desc({embedding_size_}, dnnl::memory::data_type::f32,
+                         dnnl::memory::format_tag::a);
+  fc_bias_mem = dnnl::memory(fc_bias_md, eng);
+  dnnl::reorder(b1, fc_bias_mem).execute(stream, b1, fc_bias_mem);
+
+  auto fcQK_filter_md =
+      dnnl::memory::desc({embedding_size_, policy_d_model_}, data_type_,
+                         dnnl::memory::format_tag::ab);
+
+  fcQ_filter_mem = dnnl::memory(fcQK_filter_md, eng);
+  dnnl::reorder(w2, fcQ_filter_mem).execute(stream, w2, fcQ_filter_mem);
+  auto fcQK_bias_md =
+      dnnl::memory::desc({policy_d_model_}, dnnl::memory::data_type::f32,
+                         dnnl::memory::format_tag::a);
+  fcQ_bias_mem = dnnl::memory(fcQK_bias_md, eng);
+  dnnl::reorder(b2, fcQ_bias_mem).execute(stream, b2, fcQ_bias_mem);
+
+  fcK_filter_mem = dnnl::memory(fcQK_filter_md, eng);
+  dnnl::reorder(w3, fcK_filter_mem).execute(stream, w3, fcK_filter_mem);
+  fcK_bias_mem = dnnl::memory(fcQK_bias_md, eng);
+  dnnl::reorder(b3, fcK_bias_mem).execute(stream, b3, fcK_bias_mem);
+
+  auto pmul_md = dnnl::memory::desc({1, 4, policy_d_model_}, data_type_,
+                                    dnnl::memory::format_tag::abc);
+  pmul_mem = dnnl::memory(pmul_md, eng);
+  dnnl::reorder(w4, pmul_mem).execute(stream, w4, pmul_mem);
+}
+
+void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
+                               dnnl::engine& eng, dnnl::stream& stream) {
+  std::lock_guard<std::mutex> lock(lock_);
+  if (last_batch_ != N) {
+    in_md = dnnl::memory::desc({N, C, H, W}, data_type_,
+                               dnnl::memory::format_tag::nhwc);
+    out_md = dnnl::memory::desc({N, 67, 8, 8}, data_type_,
+                                dnnl::memory::format_tag::nchw);
+
+    auto fc_out_md = dnnl::memory::desc({N * 64, embedding_size_}, data_type_,
+                                        dnnl::memory::format_tag::ab);
+    fc_out_mem = dnnl::memory(fc_out_md, eng);
+    auto foo_md = dnnl::memory::desc({N, H, W, C}, data_type_,
+                                     dnnl::memory::format_tag::nchw);
+    auto fc_d = dnnl::inner_product_forward::desc(
+        dnnl::prop_kind::forward_inference, foo_md.reshape({N * H * W, C}),
+        fc_filter_mem.get_desc(), fc_bias_mem.get_desc(), fc_out_md);
+    dnnl::post_ops fc_ops;
+    // SELU activation.
+    fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_elu, 1.67326324f,
+                          0.0f);
+    fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_linear, 1.05070098f,
+                          0.0f);
+    dnnl::primitive_attr fc_attr;
+    fc_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    fc_attr.set_post_ops(fc_ops);
+    auto fc_pd =
+        dnnl::inner_product_forward::primitive_desc(fc_d, fc_attr, eng);
+    auto scratchpad_md = fc_pd.scratchpad_desc();
+    fc_ = dnnl::inner_product_forward(fc_pd);
+
+    // Q
+    auto fcQK_out_md = dnnl::memory::desc({N * 64, policy_d_model_}, data_type_,
+                                          dnnl::memory::format_tag::ab);
+    fcQ_out_mem = dnnl::memory(fcQK_out_md, eng);
+
+    auto fcQK_d = dnnl::inner_product_forward::desc(
+        dnnl::prop_kind::forward_inference, fc_out_md,
+        fcQ_filter_mem.get_desc(), fcQ_bias_mem.get_desc(), fcQK_out_md);
+    dnnl::primitive_attr fcQK_attr;
+    fcQK_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    auto fcQK_pd =
+        dnnl::inner_product_forward::primitive_desc(fcQK_d, fcQK_attr, eng);
+    if (scratchpad_md.get_size() < fcQK_pd.scratchpad_desc().get_size()) {
+      scratchpad_md = fcQK_pd.scratchpad_desc();
+    }
+    auto fcQK_scratchpad_mem = dnnl::memory(fcQK_pd.scratchpad_desc(), eng);
+    fcQK_ = dnnl::inner_product_forward(fcQK_pd);
+
+    // K
+    fcK_out_mem = dnnl::memory(fcQK_out_md, eng);
+    const float scaling = sqrtf(policy_d_model_);
+    auto mul_A_md = dnnl::memory::desc({N, 64, policy_d_model_}, data_type_,
+                                       dnnl::memory::format_tag::abc);
+    auto mul_B_md = dnnl::memory::desc({N, policy_d_model_, 64}, data_type_,
+                                       dnnl::memory::format_tag::acb);
+    auto mul_C_md =
+        dnnl::memory::desc({N, 64, 64}, data_type_, {64 * 67, 64, 1});
+    auto mul_d = dnnl::matmul::desc(mul_A_md, mul_B_md, mul_C_md);
+    dnnl::primitive_attr mul_attr;
+    mul_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    mul_attr.set_output_scales(0, {1.0f / scaling});
+    auto mul_pd = dnnl::matmul::primitive_desc(mul_d, mul_attr, eng);
+    if (scratchpad_md.get_size() < mul_pd.scratchpad_desc().get_size()) {
+      scratchpad_md = mul_pd.scratchpad_desc();
+    }
+    mul_ = dnnl::matmul(mul_pd);
+
+    auto promo_md = dnnl::memory::desc({N, 4, 8}, data_type_,
+                                       dnnl::memory::format_tag::abc);
+    promo_mem = dnnl::memory(promo_md, eng);
+    auto pmul_d = dnnl::matmul::desc(
+        pmul_mem.get_desc(),
+        mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 56}), promo_md);
+    dnnl::primitive_attr pmul_attr;
+    pmul_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    auto pmul_pd = dnnl::matmul::primitive_desc(pmul_d, pmul_attr, eng);
+    if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
+      scratchpad_md = pmul_pd.scratchpad_desc();
+    }
+    pmul_ = dnnl::matmul(pmul_pd);
+
+    auto add_d =
+        dnnl::binary::desc(dnnl::algorithm::binary_add,
+                           promo_md.submemory_desc({N, 3, 8}, {0, 0, 0}),
+                           promo_md.submemory_desc({N, 1, 8}, {0, 3, 0}),
+                           promo_md.submemory_desc({N, 3, 8}, {0, 0, 0}));
+    dnnl::primitive_attr add_attr;
+    add_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    auto add_pd = dnnl::binary::primitive_desc(add_d, add_attr, eng);
+    if (scratchpad_md.get_size() < add_pd.scratchpad_desc().get_size()) {
+      scratchpad_md = add_pd.scratchpad_desc();
+    }
+    add_ = dnnl::binary(add_pd);
+
+    auto promo2_md = dnnl::memory::desc({N, 8, 4}, data_type_,
+                                        dnnl::memory::format_tag::acb);
+    auto add2_d = dnnl::binary::desc(
+        dnnl::algorithm::binary_add,
+        out_md.submemory_desc({N, 8, 1, 8}, {0, 48, 7, 0})
+            .reshape({N, 8, 8, 1}),
+        promo2_md.submemory_desc({N, 8, 3}, {0, 0, 0}).reshape({N, 1, 8, 3}),
+        out_md.submemory_desc({N, 3, 8, 8}, {0, 64, 0, 0})
+            .reshape({N, 8, 8, 3}));
+    dnnl::primitive_attr add2_attr;
+    add2_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    auto add2_pd = dnnl::binary::primitive_desc(add2_d, add2_attr, eng);
+    if (scratchpad_md.get_size() < add2_pd.scratchpad_desc().get_size()) {
+      scratchpad_md = add2_pd.scratchpad_desc();
+    }
+    add2_ = dnnl::binary(add2_pd);
+
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
+
+    auto in_reorder_pd =
+        dnnl::reorder::primitive_desc(eng, input.get_desc(), eng, in_md);
+    in_reorder_ = dnnl::reorder(in_reorder_pd);
+
+    last_batch_ = N;
+  }
+
+  // Convert to NHWC.
+  if (in_md != input.get_desc()) {
+    auto tmp = dnnl::memory(in_md, eng);
+    in_reorder_.execute(stream, input, tmp);
+    input = tmp;
+  }
+
+  if (!output || out_md != output.get_desc()) {
+    output = dnnl::memory(out_md, eng);
+  }
+
+  fc_.execute(stream, {{DNNL_ARG_SRC, input},
+                       {DNNL_ARG_WEIGHTS, fc_filter_mem},
+                       {DNNL_ARG_BIAS, fc_bias_mem},
+                       {DNNL_ARG_DST, fc_out_mem},
+                       {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  fcQK_.execute(stream, {{DNNL_ARG_SRC, fc_out_mem},
+                         {DNNL_ARG_WEIGHTS, fcQ_filter_mem},
+                         {DNNL_ARG_BIAS, fcQ_bias_mem},
+                         {DNNL_ARG_DST, fcQ_out_mem},
+                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  fcQK_.execute(stream, {{DNNL_ARG_SRC, fc_out_mem},
+                         {DNNL_ARG_WEIGHTS, fcK_filter_mem},
+                         {DNNL_ARG_BIAS, fcK_bias_mem},
+                         {DNNL_ARG_DST, fcK_out_mem},
+                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  mul_.execute(stream, {{DNNL_ARG_SRC, fcQ_out_mem},
+                        {DNNL_ARG_WEIGHTS, fcK_out_mem},
+                        {DNNL_ARG_DST, output},
+                        {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  pmul_.execute(stream, {{DNNL_ARG_SRC, pmul_mem},
+                         {DNNL_ARG_WEIGHTS, fcK_out_mem},
+                         {DNNL_ARG_DST, promo_mem},
+                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  add_.execute(stream, {{DNNL_ARG_SRC_0, promo_mem},
+                        {DNNL_ARG_SRC_1, promo_mem},
+                        {DNNL_ARG_DST, promo_mem},
+                        {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  add2_.execute(stream, {{DNNL_ARG_SRC_0, output},
+                         {DNNL_ARG_SRC_1, promo_mem},
+                         {DNNL_ARG_DST, output},
+                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 }
 
 }  // namespace onednn_backend

@@ -26,6 +26,7 @@
 */
 #pragma once
 
+#include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
 #include "utils/exception.h"
 
@@ -124,8 +125,6 @@ class FCLayer : public BaseLayer {
 // global avg -> FC1 -> FC2 -> global scale -> add skip connection ->
 // activation.
 class SELayer : public BaseLayer {
-  using BaseLayer::C;
-
  public:
   SELayer(BaseLayer* ip, int numFc1Out, ActivationFunction activation);
 
@@ -169,6 +168,53 @@ class SELayer : public BaseLayer {
   dnnl::memory::desc fc1_in_md;
   dnnl::memory::desc fc1_out_md;
   dnnl::memory::desc fc2_out_md;
+};
+
+class AttentionPolicyHead : public BaseLayer {
+ public:
+  AttentionPolicyHead(BaseLayer* ip, const int embedding_size,
+                      const int policy_d_model)
+      : BaseLayer(ip->GetC(), ip->GetH(), ip->GetW(), ip),
+        embedding_size_(embedding_size),
+        policy_d_model_(policy_d_model) {}
+  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
+                   dnnl::memory& b2, dnnl::memory& w3, dnnl::memory& b3,
+                   dnnl::memory& w4, dnnl::engine& eng, dnnl::stream& stream);
+  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
+            dnnl::stream& stream) override;
+
+ private:
+  const int embedding_size_;
+  const int policy_d_model_;
+
+  dnnl::memory fc_filter_mem;
+  dnnl::memory fc_bias_mem;
+  dnnl::memory fcQ_filter_mem;
+  dnnl::memory fcQ_bias_mem;
+  dnnl::memory fcK_filter_mem;
+  dnnl::memory fcK_bias_mem;
+  dnnl::memory pmul_mem;
+
+  // Cache previous primitives in case the batch size is the same.
+  int last_batch_ = 0;
+
+  dnnl::memory::desc in_md;
+  dnnl::memory::desc out_md;
+
+  dnnl::memory fc_out_mem;
+  dnnl::memory fcQ_out_mem;
+  dnnl::memory fcK_out_mem;
+  dnnl::memory promo_mem;
+
+  dnnl::memory scratchpad_mem;
+
+  dnnl::reorder in_reorder_;
+  dnnl::inner_product_forward fc_;
+  dnnl::inner_product_forward fcQK_;
+  dnnl::matmul mul_;
+  dnnl::matmul pmul_;
+  dnnl::binary add_;
+  dnnl::binary add2_;
 };
 
 }  // namespace onednn_backend
