@@ -331,9 +331,9 @@ class OnednnNetwork : public Network {
 
         auto attn = std::make_unique<AttentionPolicyHead>(
             resi_last, embedding_size, policy_d_model);
-        auto ip_w_md =
-            dnnl::memory::desc({numFilters_, embedding_size}, data_type_,
-                               dnnl::memory::format_tag::ab);
+        auto ip_w_md = dnnl::memory::desc({numFilters_, embedding_size},
+                                          dnnl::memory::data_type::f32,
+                                          dnnl::memory::format_tag::ab);
         auto ip_w_mem =
             dnnl::memory(ip_w_md, cpu_eng_, weights.ip_pol_w.data());
         auto ip_b_md =
@@ -341,9 +341,9 @@ class OnednnNetwork : public Network {
                                dnnl::memory::format_tag::a);
         auto ip_b_mem =
             dnnl::memory(ip_b_md, cpu_eng_, weights.ip_pol_b.data());
-        auto ip23_w_md =
-            dnnl::memory::desc({embedding_size, policy_d_model}, data_type_,
-                               dnnl::memory::format_tag::ab);
+        auto ip23_w_md = dnnl::memory::desc({embedding_size, policy_d_model},
+                                            dnnl::memory::data_type::f32,
+                                            dnnl::memory::format_tag::ab);
         auto ip2_w_mem =
             dnnl::memory(ip23_w_md, cpu_eng_, weights.ip2_pol_w.data());
         auto ip23_b_md =
@@ -355,7 +355,8 @@ class OnednnNetwork : public Network {
             dnnl::memory(ip23_w_md, cpu_eng_, weights.ip3_pol_w.data());
         auto ip3_b_mem =
             dnnl::memory(ip23_b_md, cpu_eng_, weights.ip3_pol_b.data());
-        auto ip4_w_md = dnnl::memory::desc({1, 4, policy_d_model}, data_type_,
+        auto ip4_w_md = dnnl::memory::desc({1, 4, policy_d_model},
+                                           dnnl::memory::data_type::f32,
                                            dnnl::memory::format_tag::abc);
         auto ip4_w_mem =
             dnnl::memory(ip4_w_md, cpu_eng_, weights.ip4_pol_w.data());
