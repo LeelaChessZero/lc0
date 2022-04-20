@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include "neural/shared/activation.h"
+
 #include <cstddef>
 #include <vector>
 
@@ -32,7 +34,7 @@ class FullyConnectedLayer {
   static void Forward1D(const size_t batch_size, const size_t input_size,
                         const size_t output_size, const float* input,
                         const float* weights, const float* biases,
-                        bool apply_relu, float* output);
+                        const ActivationFunction activation, float* output);
 
   // Forward inference, no batched, from input_size to scalar
   static float Forward0D(const size_t input_size, const float* input,

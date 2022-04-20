@@ -41,11 +41,7 @@ static void global_avg_pooling(const size_t channels, const float* input,
 
 static void apply_se(const size_t channels, const size_t batch_size,
                      const float* input, const float* res, const float* scale,
-                     float* output) {
-  const auto lambda_ReLU = [](const auto val) {
-    return (val > 0.0f) ? val : 0;
-  };
-
+                     float* output, const ActivationFunction activation) {
   const auto lambda_sigmoid = [](const auto val) {
     return 1.0f / (1.0f + std::exp(-val));
   };
@@ -54,10 +50,8 @@ static void apply_se(const size_t channels, const size_t batch_size,
     auto batch = c / channels;
     auto gamma = lambda_sigmoid(scale[c + batch * channels]);
     auto beta = scale[c + batch * channels + channels];
-    for (auto i = size_t{0}; i < kSquares; i++) {
-      output[c * kSquares + i] = lambda_ReLU(gamma * input[c * kSquares + i] +
-                                             beta + res[c * kSquares + i]);
-    }
+    Activate(kSquares, gamma, &input[c * kSquares], &res[c * kSquares], beta,
+             &output[c * kSquares], activation);
   }
 }
 
@@ -66,7 +60,8 @@ void ApplySEUnit(const size_t batch_size, const size_t channels,
                  const size_t se_fc_outputs, const float* input,
                  const float* residual, const float* weights_w1,
                  const float* weights_b1, const float* weights_w2,
-                 const float* weights_b2, float* output) {
+                 const float* weights_b2, float* output,
+                 const ActivationFunction activation) {
   std::vector<float> pool(2 * channels * batch_size);
   std::vector<float> fc_out1(batch_size * se_fc_outputs);
 
@@ -74,17 +69,18 @@ void ApplySEUnit(const size_t batch_size, const size_t channels,
 
   FullyConnectedLayer<use_eigen>::Forward1D(batch_size, channels, se_fc_outputs,
                                             pool.data(), weights_w1, weights_b1,
-                                            true,  // Relu On
+                                            activation,  // Activation On
                                             fc_out1.data());
 
   FullyConnectedLayer<use_eigen>::Forward1D(batch_size, se_fc_outputs,
                                             2 * channels, fc_out1.data(),
                                             weights_w2, weights_b2,
-                                            false,  // Relu Off
+                                            NONE,  // Activation Off
                                             pool.data());
 
   // Sigmoid, scale and add residual
-  apply_se(channels, batch_size, input, residual, pool.data(), output);
+  apply_se(channels, batch_size, input, residual, pool.data(), output,
+           activation);
 }
 
 template void ApplySEUnit<true>(const size_t batch_size, const size_t channels,
@@ -92,13 +88,15 @@ template void ApplySEUnit<true>(const size_t batch_size, const size_t channels,
                                 const float* residual, const float* weights_w1,
                                 const float* weights_b1,
                                 const float* weights_w2,
-                                const float* weights_b2, float* output);
+                                const float* weights_b2, float* output,
+                                const ActivationFunction activation);
 #ifdef USE_BLAS
 template void ApplySEUnit<false>(const size_t batch_size, const size_t channels,
                                  const size_t se_fc_outputs, const float* input,
                                  const float* residual, const float* weights_w1,
                                  const float* weights_b1,
                                  const float* weights_w2,
-                                 const float* weights_b2, float* output);
+                                 const float* weights_b2, float* output,
+                                 const ActivationFunction activation);
 #endif
 }  // namespace lczero
