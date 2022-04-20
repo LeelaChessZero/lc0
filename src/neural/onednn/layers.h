@@ -87,6 +87,7 @@ class ConvLayer : public BaseLayer {
   // Cache previous convolution primitive in case the batch size is the same.
   int last_batch_ = 0;
   dnnl::convolution_forward conv_;
+  dnnl::eltwise_forward mish_;
   dnnl::reorder in_reorder_;
   dnnl::reorder skip_reorder_;
   dnnl::memory scratchpad_mem;

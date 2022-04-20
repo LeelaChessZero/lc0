@@ -95,7 +95,8 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     }
     if (activation_ == RELU) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    } else if (activation_ == MISH) {
+    } else if (activation_ == MISH &&
+               convolution_type_ != dnnl::algorithm::convolution_winograd) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
     } else if (activation_ == TANH) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
@@ -105,11 +106,29 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     conv_attr.set_post_ops(conv_ops);
     auto conv_pd =
         dnnl::convolution_forward::primitive_desc(conv_d, conv_attr, eng);
+    auto scratchpad_md = conv_pd.scratchpad_desc();
     conv_ = dnnl::convolution_forward(conv_pd);
-    scratchpad_mem = dnnl::memory(conv_pd.scratchpad_desc(), eng);
 
     in_md = conv_pd.src_desc();
     out_md = conv_pd.dst_desc();
+
+    // Apparently winograd convolution doesn't go well with mish post op.
+    if (activation_ == MISH &&
+        convolution_type_ == dnnl::algorithm::convolution_winograd) {
+      auto mish_d = dnnl::eltwise_forward::desc(
+          dnnl::prop_kind::forward_inference, dnnl::algorithm::eltwise_mish,
+          out_md, 0.f, 0.f);
+      dnnl::primitive_attr mish_attr;
+      mish_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+      auto mish_pd =
+          dnnl::eltwise_forward::primitive_desc(mish_d, mish_attr, eng);
+      mish_ = dnnl::eltwise_forward(mish_pd);
+      if (scratchpad_md.get_size() < mish_pd.scratchpad_desc().get_size()) {
+        scratchpad_md = mish_pd.scratchpad_desc();
+      }
+    }
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
+
     if (!conv_filter_mem ||
         conv_pd.weights_desc() != conv_filter_mem.get_desc()) {
       // This may be a transformation for Winograd convolution, so keep the
@@ -153,6 +172,13 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                          {DNNL_ARG_BIAS, bias_mem},
                          {DNNL_ARG_DST, output},
                          {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  if (activation_ == MISH &&
+      convolution_type_ == dnnl::algorithm::convolution_winograd) {
+    mish_.execute(stream, {{DNNL_ARG_SRC, output},
+                           {DNNL_ARG_DST, output},
+                           {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+  }
 }
 
 SELayer::SELayer(BaseLayer* ip, int fc1Outputs, ActivationFunction activation)
