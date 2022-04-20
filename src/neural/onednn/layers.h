@@ -26,7 +26,6 @@
 */
 #pragma once
 
-#include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
 #include "utils/exception.h"
 

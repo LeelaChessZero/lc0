@@ -27,12 +27,9 @@
 
 #include "layers.h"
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <vector>
-
-#include <cmath>
-#include "neural/blas/blas.h"
-#include "neural/blas/fully_connected_layer.h"
 
 namespace lczero {
 
