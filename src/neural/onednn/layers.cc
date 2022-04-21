@@ -521,9 +521,8 @@ void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
                                          dnnl::memory::format_tag::ab);
   fc_filter_mem = dnnl::memory(fc_filter_md, eng);
   dnnl::reorder(w1, fc_filter_mem).execute(stream, w1, fc_filter_mem);
-  auto fc_bias_md =
-      dnnl::memory::desc({embedding_size_}, dnnl::memory::data_type::f32,
-                         dnnl::memory::format_tag::a);
+  auto fc_bias_md = dnnl::memory::desc({embedding_size_}, data_type_,
+                                       dnnl::memory::format_tag::a);
   fc_bias_mem = dnnl::memory(fc_bias_md, eng);
   dnnl::reorder(b1, fc_bias_mem).execute(stream, b1, fc_bias_mem);
 
@@ -533,9 +532,8 @@ void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
 
   fcQ_filter_mem = dnnl::memory(fcQK_filter_md, eng);
   dnnl::reorder(w2, fcQ_filter_mem).execute(stream, w2, fcQ_filter_mem);
-  auto fcQK_bias_md =
-      dnnl::memory::desc({policy_d_model_}, dnnl::memory::data_type::f32,
-                         dnnl::memory::format_tag::a);
+  auto fcQK_bias_md = dnnl::memory::desc({policy_d_model_}, data_type_,
+                                         dnnl::memory::format_tag::a);
   fcQ_bias_mem = dnnl::memory(fcQK_bias_md, eng);
   dnnl::reorder(b2, fcQ_bias_mem).execute(stream, b2, fcQ_bias_mem);
 
