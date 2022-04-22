@@ -269,6 +269,13 @@ const OptionId SearchParams::kDrawScoreWhiteId{
 const OptionId SearchParams::kDrawScoreBlackId{
     "draw-score-black", "DrawScoreBlack",
     "Adjustment, added to a draw score of a black player."};
+const OptionId SearchParams::kDrawScoreRootQDeltaId{
+    "draw-score-delta", "DrawScoreDelta",
+    "Adjustment, subtracted from the draw score for the player with "
+    "the upper hand and added to the draw score for the player "
+    "which is worse. The parameter value is divided by 100 before "
+    "it is applied, so a value of 10 will change the draw score "
+    "with 0.1"};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
@@ -386,6 +393,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
+  options->Add<IntOption>(kDrawScoreRootQDeltaId, -100, 100) = 10;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
@@ -465,6 +473,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
+      kDrawScoreRootQDelta{options.Get<int>(kDrawScoreRootQDeltaId) / 100.0f},
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
