@@ -65,7 +65,7 @@ class BoardSquare {
 
   // Checks whether coordinates are within 0..7.
   static bool IsValid(int row, int col) {
-    return row >= 0 && col >= 0 && row < 8 && col < 8;
+    return IsValidCoord(row) && IsValidCoord(col);
   }
 
   constexpr bool operator==(const BoardSquare& other) const {
