@@ -151,7 +151,7 @@ class SearchParams {
   static const OptionId kCpuctFactorAtRootId;
   static const OptionId kRootHasOwnCpuctParamsId;
   static const OptionId kTwoFoldDrawsId;
-  static const OptionId kRandombyP;
+  static const OptionId kRandomByPId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTempDecayDelayMovesId;
