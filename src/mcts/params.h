@@ -54,7 +54,7 @@ class SearchParams {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
   bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
-  float GetRandombyP() const { return options_.Get<bool>(kRandombyP); }
+  float GetRandomByP() const { return options_.Get<bool>(kRandomByPId); }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
     return options_.Get<float>(kTemperatureVisitOffsetId);

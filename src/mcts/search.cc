@@ -619,10 +619,10 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     }
   }
 
-  auto bestmove_edge = temperature
-                           ? GetBestRootChildWithTemperature(temperature)
-                           : GetBestChildNoTemperature(root_node_, 0);
-  if (randombyp) bestmove_edge = GetRandomChildbyP();
+  auto bestmove_edge = randombyp ? GetRandomChildByP()
+	                         : temperature
+                                 ? GetBestRootChildWithTemperature(temperature)
+                                 : GetBestChildNoTemperature(root_node_, 0);
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
   if (bestmove_edge.GetN() > 0 && bestmove_edge.node()->HasChildren()) {
@@ -802,7 +802,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 // Returns a random child of a root weighted by move probability.
-EdgeAndNode Search::GetRandomChildbyP() const {
+EdgeAndNode Search::GetRandomChildByP() const {
   // Get sum of weights for roll.
   float total_weights = 0.0;
   for (auto& edge : root_node_->Edges()) {
@@ -815,12 +815,9 @@ EdgeAndNode Search::GetRandomChildbyP() const {
     if (roll < edge.GetP()) return edge;
     roll -= edge.GetP();
   }
-  
+
   // In case of floating point subtraction issues above.
   return *root_node_->Edges();
-  
-  assert(false);
-  return {};
 }
 
 void Search::StartThreads(size_t how_many) {
