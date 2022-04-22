@@ -773,8 +773,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     sum += std::pow(
         std::max(0.0f, (max_n <= 0.0f ? edge.GetP()
-				                : ((static_cast<float>(edge.GetN()) + offset) / max_n))),
-                                1 / temperature);
+				               : ((static_cast<float>(edge.GetN()) + offset) / max_n))),
+                               1 / temperature);
     cumulative_sums.push_back(sum);
   }
   assert(sum);
