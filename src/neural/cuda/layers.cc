@@ -225,7 +225,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
     // For some reason cudnn doesn't support just Convolution + Bias with nchw
     // (winograd algorithm) it works fine when RELU is also needed which is
     // somewhat strange.
-    if ((act_ == RELU || act_ == NONE && nhwc_) && !input2 && use_bias_) {
+    if ((act_ == RELU || (act_ == NONE && nhwc_)) && !input2 && use_bias_) {
       ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
@@ -1056,7 +1056,8 @@ template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(BaseLayer<DataType>* ip, int C, bool se,
                                        int se_k, bool use_gemm_ex, bool first,
 
-                                       bool last, ActivationFunction activation, int shared_mem_size)
+                                       bool last, ActivationFunction activation,
+                                       int shared_mem_size)
     : BaseLayer<DataType>(C, 8, 8, ip, ip->isNHWC(), use_gemm_ex),
       has_se_(se),
       se_k_(se_k),
@@ -1402,8 +1403,8 @@ AttentionPolicyHead<DataType>::EncoderWeights::EncoderWeights(
     size_t elements = cpu_weights.mha.q_w.size();
     size_t size = elements * sizeof(DataType) * 3;
     ReportCUDAErrors(cudaMalloc(&mha_qkv_w, size));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_w, mha_q_w, size / 3, 
-                                cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(
+        cudaMemcpy(mha_qkv_w, mha_q_w, size / 3, cudaMemcpyDeviceToDevice));
     ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements, mha_k_w, size / 3,
                                 cudaMemcpyDeviceToDevice));
     ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements * 2, mha_v_w, size / 3,
@@ -1483,8 +1484,8 @@ void AttentionPolicyHead<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream) {
-  DataType* scratch0 = (DataType*) scratch;
-  DataType* scratch1 = (DataType*) input2;
+  DataType* scratch0 = (DataType*)scratch;
+  DataType* scratch1 = (DataType*)input2;
   DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
   DataType* scratch3 = scratch1 + scratch_size / (2 * sizeof(DataType));
 
@@ -1557,13 +1558,12 @@ void AttentionPolicyHead<DataType>::Eval(
     for (int i = 0; i < encoder_heads_; i++) {
       int offset = i * depth;
       // layout of the output: encoder_heads_ * Batch * 64 * 64
-      int outOffset = i * N * 64 * 64;  
+      int outOffset = i * N * 64 * 64;
       cublasXGemmStridedBatched<DataType>(
-          cublas, CUBLAS_OP_T, CUBLAS_OP_N, 
-          64 /*M*/, 64 /*N*/,
-          depth /*K*/,      // A/B, and M/N are swapped for row-major to col-major
-                            // transform
-          factor,           // to handle "/ tf.math.sqrt(dk)"
+          cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
+          depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
+                        // transform
+          factor,       // to handle "/ tf.math.sqrt(dk)"
           mha_k + offset /*A*/,
           d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
                             // other "depth" slices / heads
@@ -1643,7 +1643,6 @@ void AttentionPolicyHead<DataType>::Eval(
                         enc.ffn_dense2_b, scratch0, enc.ln2_gammas,
                         enc.ln2_betas, 1e-6, stream);
 
-
   }  // End of encoder blocks
 
   DataType* wq;
@@ -1660,8 +1659,8 @@ void AttentionPolicyHead<DataType>::Eval(
         wqk_w_, num_inputs, num_inputs * num_outputs, scratch1, num_inputs, 0,
         0.0f, wq, num_outputs, num_outputs * batch, 2);
 
-    addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs,
-                             NONE, stream);
+    addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs, NONE,
+                             stream);
   }
 
   // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))
@@ -1678,11 +1677,9 @@ void AttentionPolicyHead<DataType>::Eval(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
         policy_d_model_ /*K*/,
         factor,  // to handle "/ tf.math.sqrt(dk)"
-        wk /*A*/, policy_d_model_ /*LDA*/,
-        64 * policy_d_model_, /*strideA*/
-        wq /*B*/, policy_d_model_ /*LDB*/,
-        64 * policy_d_model_, /*strideB*/
-        0.0f, output /*C*/,   // output (policy_attn_logits)
+        wk /*A*/, policy_d_model_ /*LDA*/, 64 * policy_d_model_, /*strideA*/
+        wq /*B*/, policy_d_model_ /*LDB*/, 64 * policy_d_model_, /*strideB*/
+        0.0f, output /*C*/,  // output (policy_attn_logits)
         64 /*LDC*/, 64 * 64 + 8 * 24 /*strideC*/, N);
   }
 
