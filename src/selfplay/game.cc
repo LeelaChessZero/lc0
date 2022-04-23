@@ -78,8 +78,8 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
     : options_{white, black},
       chess960_{white.uci_options->Get<bool>(kUciChess960) ||
                 black.uci_options->Get<bool>(kUciChess960)},
-      training_data_(SearchParams(white.uci_options).GetHistoryFill(),
-                     SearchParams(black.uci_options).GetHistoryFill(),
+      training_data_(SearchParams(*white.uci_options).GetHistoryFill(),
+                     SearchParams(*black.uci_options).GetHistoryFill(),
                      white.network->GetCapabilities().input_format) {
   orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
@@ -136,7 +136,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       auto stoppers = options_[idx].search_limits.MakeSearchStopper();
-      PopulateIntrinsicStoppers(stoppers.get(), options_[idx].uci_options);
+      PopulateIntrinsicStoppers(stoppers.get(), *options_[idx].uci_options);
 
       std::unique_ptr<UciResponder> responder =
           std::make_unique<CallbackUciResponder>(
