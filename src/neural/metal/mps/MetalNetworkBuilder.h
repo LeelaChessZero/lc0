@@ -52,11 +52,17 @@ public:
     void* makeFullyConnectedLayer(void * previousLayer, int inputSize, int outputSize,
                                   float * weights, float * biases, std::string activation, std::string label);
     
-    void* makePolicyMapLayer(void * previousLayer, uint32_t * policyMap, std::string label);
+    void* makePolicyMapLayer(void * previousLayer, const short * policyMap, int size, std::string label);
     
     void* setSelectedOutputs(std::vector<void *> * outputs);
 
-    void forwardEval(float * inputs, int batchSize, int inputChannels, std::vector<float *> output_mems);
+    void forwardEval(float * inputs, int batchSize, int inputChannels);
+    
+    void copyResults(int batchSize, std::vector<float *> output_mems);
+    
+    void saveVariables(std::vector<std::string> names);
+    
+    void dumpVariables(std::vector<std::string> names, int batches);
          
 private:
     void* self;

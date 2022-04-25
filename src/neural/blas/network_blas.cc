@@ -289,6 +289,13 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                        &head_buffer.data()[0], weights_.policy.biases.data(),
                        nullptr, false);
 
+                          
+  CERR << "\n" << "Policy conv2 ";
+  for (auto j=0; j < 100; j++) {
+    CERR << j << ";" << head_buffer[j];
+  }
+       
+
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
         for (auto i = 0; i < kPolicyUsedPlanes * kSquares; i++) {
@@ -299,6 +306,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           }
         }
       }
+
+         
+  CERR << "\n" << "Policy Map ";
+  for (auto j=0; j < 100; j++) {
+    CERR << j << ";" << output_fc[j];
+  }
+       
+
 
     } else {
       Convolution1<use_eigen>::Forward(

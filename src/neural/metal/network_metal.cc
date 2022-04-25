@@ -44,6 +44,13 @@
 namespace lczero {
 namespace metal_backend {
 
+void describeWeights(std::string desc, float * weights, size_t size) {
+  CERR  << "\n" << desc;
+  for (size_t i = 0; i < size; i++) {
+    CERR << i << "; " << *(weights + i);
+  }
+}
+
 MetalNetworkComputation::MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left)
     : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
@@ -90,6 +97,12 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     steps_ = max_batch_size_ / batch_size_;
   }
 
+  // Variables to save for debugging.
+  builder_->saveVariables({
+    "block_1", "policy/conv1", "policy/conv2", "policy_map", "policy/conv", "policy/fc",
+    "policy_map/constant", "policy_map/flatten", "policy_map/gather",
+ });
+
   // Pointer to last layer in MPS Graph.
   void * layer;
 
@@ -103,7 +116,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                         true, "input/conv");
 
   // 2. Residual blocks
-  for (size_t i = 0; i < weights.residual.size(); i++) { 
+  for (size_t i = 0; i < weights.residual.size(); i++) {
     layer = builder_->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
                                        &weights.residual[i].conv1.weights[0],
                                        &weights.residual[i].conv1.biases[0],
@@ -132,23 +145,8 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                            &weights.policy.biases[0],
                                            false, "policy/conv2");
 
-    // [1858 -> HWC or CHW]
-    const bool HWC = false;
-    std::vector<uint32_t> policy_map(1858);
-    for (const auto& mapping : kConvPolicyMap) {
-      if (mapping == -1) continue;
-      const auto index = &mapping - kConvPolicyMap;
-      const auto displacement = index / 64;
-      const auto square = index % 64;
-      const auto row = square / 8;
-      const auto col = square % 8;
-      if (HWC) {
-        policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
-      } else {
-        policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
-      }
-    }
-    policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
+    // Policy map using the original policy mapping (73x8x8).
+    policy = builder_->makePolicyMapLayer(policy, &kConvPolicyMap[0], 4672, "policy_map");
   }
   else {
     const int policySize = weights.policy.biases.size();
@@ -233,21 +231,28 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
       }
   }
 
-  // std::vector<float*> output_mems;
-  //std::vector<int> sizes;
-  //float * opVal = (float *)malloc(3 * max_batch_size_ * sizeof(float));
   if (moves_left_) {
     // output_mems = {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_};
-    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes,
-                          {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
-    // sizes = {kNumOutputPolicy, wdl_ ? 3 : 1, 1};
+    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes);
+    builder_->copyResults(batchSize, {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
   }
   else {
     // output_mems = {io->op_policy_mem_, io->op_value_mem_};
-    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes,
-                          {io->op_policy_mem_, io->op_value_mem_});
-    // sizes = {kNumOutputPolicy, wdl_ ? 3 : 1};
+    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes);
+    builder_->copyResults(batchSize, {io->op_policy_mem_, io->op_value_mem_});
   }
+
+  CERR << "Policy Layer";
+  for (auto j=0; j < 1024; j++) {
+    CERR << j << ";" << io->op_policy_mem_[j];
+  }
+
+  // builder_->dumpVariable("policy/conv2/transposed_weights", batchSize);
+  builder_->dumpVariables({
+        "block_1", "policy/conv1", "policy/conv2", "policy_map", "policy/conv", "policy/fc",
+        "policy_map/constant", "policy_map/flatten", "policy_map/gather",
+   }, batchSize);
+
   // builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes, output_mems);
 
   // CERR << "Outputs";

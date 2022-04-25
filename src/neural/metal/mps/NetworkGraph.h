@@ -62,6 +62,14 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     dispatch_semaphore_t _doubleBufferingSemaphore;
 //    NSUInteger currentFrameIndex;
 //    NSArray<id <MTLBuffer>> dynamicDataBuffers;
+    
+    NSMutableDictionary<NSString *, NSObject *> * _readVariables;
+    
+    NSArray<MPSGraphTensor *> * _targetTensors;
+    
+    MPSGraphTensorDataDictionary * _resultDataDictionary;
+    
+    uint32_t * _reducedPolicyMap;
 }
 
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device
@@ -118,14 +126,26 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                       hasRelu:(BOOL)hasRelu;
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                              policyMap:(uint32_t * __nonnull)policyMap
-                                                  label:(NSString * __nonnull)label;
+                                              policyMap:(short * __nonnull)policyMap
+                                        policyMapLength:(NSUInteger)policyMapLength
+                                                  label:(NSString *)label;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
-                                                   inputChannels:(NSUInteger)inputPlanes
-                                                   outputBuffers:(float * __nonnull * __nonnull)outputBuffers;
+                                                   inputChannels:(NSUInteger)inputPlanes;
+
+
+-(void) copyResultsWithBatchSize:(NSUInteger)batchSize
+                   outputBuffers:(float * __nonnull * __nonnull)outputBuffers;
+
+-(void) setVariable:(NSString * __nonnull)name
+             tensor:(MPSGraphTensor * __nonnull)tensor;
+
+-(void) addVariable:(NSString * __nonnull)name;
+
+-(void) dumpVariable:(NSString * __nonnull)name
+             batches:(NSUInteger)batches;
 
 @end

@@ -97,13 +97,14 @@ static const NSUInteger kMaxInflightBuffers = 4;
 //    }
 //    _dynamicDataBuffers = [mutableDynamicDataBuffers copy];
     
+    _readVariables = [[NSMutableDictionary alloc] init];
+    
     return self;
 }
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
                                                    inputChannels:(NSUInteger)inputPlanes
-                                                   outputBuffers:(float * * __nonnull)outputBuffers
 {
 //    NSLog(@"Batchsize: %u", batchSize);
     //NSUInteger splits = (batchSize + _batchesPerSplit - 1) / _batchesPerSplit;
@@ -138,22 +139,29 @@ static const NSUInteger kMaxInflightBuffers = 4;
             
             //NSLog(@"Done one sub batch %i", step);
             // Copy results for sub-batch back into the output buffers.
-            for (NSUInteger rsIdx = 0; rsIdx < [_resultTensors count]; rsIdx++) {
-                NSUInteger outputDataLength = [_resultTensors[rsIdx] size];
-                [[resultsDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] //+ step * outputDataLength
-                                                                     strideBytes:nil];
-            }
+//            float * array = (float *)malloc(10240 * sizeof(float));
+//            for (NSUInteger rsIdx = 0; rsIdx < [_resultTensors count]; rsIdx++) {
+//                NSUInteger outputDataLength = [_resultTensors[rsIdx] size];
+//                [[resultsDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] //+ step * outputDataLength
+//                                                                     strideBytes:nil];
+//                [[resultsDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:array //+ step * outputDataLength
+//                                                                     strideBytes:nil];
+////                NSLog(@"Completed: _resultTensors[%i]", rsIdx);
+////                for (int i=0; i<100; i++) {
+////                    NSLog(@";%i;%f", i, array);
+////                }
+//            }
             
             // Release double buffering semaphore for the next training iteration to be encoded.
             dispatch_semaphore_signal(_doubleBufferingSemaphore);
 
         };
-        
-        [_graph encodeToCommandBuffer:commandBuffer
-                                feeds:@{_inputTensor : inputTensorData}
-                        targetTensors:_resultTensors
-                     targetOperations:nil
-                  executionDescriptor:executionDescriptor];
+
+        _resultDataDictionary = [_graph encodeToCommandBuffer:commandBuffer
+                                                        feeds:@{_inputTensor : inputTensorData}
+                                                targetTensors:_targetTensors
+                                             targetOperations:nil
+                                          executionDescriptor:executionDescriptor];
 
         // Commit the command buffer
         [commandBuffer commit];
@@ -164,12 +172,55 @@ static const NSUInteger kMaxInflightBuffers = 4;
     //[latestCommandBuffer waitUntilCompleted];
     [commandBuffer waitUntilCompleted];
     
+    float * array = (float *)malloc(10240 * sizeof(float));
+    for (NSUInteger rsIdx = 0; rsIdx < [_resultTensors count]; rsIdx++) {
+//        NSUInteger outputDataLength = [_resultTensors[rsIdx] size];
+//        [[resultsDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] //+ step * outputDataLength
+//                                                             strideBytes:nil];
+        [[_resultDataDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:array //+ step * outputDataLength
+                                                             strideBytes:nil];
+        NSLog(@"Completed(immediate): _resultTensors[%i]", rsIdx);
+        for (int i=0; i<100; i++) {
+            NSLog(@";%i;%f", i, array);
+        }
+    }
+    
+    NSLog(@"_targets: %@", _targetTensors);
+    
     return _resultTensors;
 }
 
+
+-(void) copyResultsWithBatchSize:(NSUInteger)batchSize
+                   outputBuffers:(float * __nonnull * __nonnull)outputBuffers
+{
+    // Copy results for sub-batch back into the output buffers.
+    float * array = (float *)malloc(10240 * sizeof(float));
+    for (NSUInteger rsIdx = 0; rsIdx < [_resultTensors count]; rsIdx++) {
+        NSUInteger outputDataLength = [_resultTensors[rsIdx] size];
+        [[_resultDataDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] //+ step * outputDataLength
+                                                                 strideBytes:nil];
+        [[_resultDataDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:array //+ step * outputDataLength
+                                                                 strideBytes:nil];
+        NSLog(@"Completed(after): _resultTensors[%i]", rsIdx);
+        for (int i=0; i<100; i++) {
+            NSLog(@";%i;%f", i, array);
+        }
+    }
+}
+
+
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results
 {
+    // Okay to remove nulls from the read variables.
+    [_readVariables removeObjectsForKeys:[_readVariables allKeysForObject:[NSNull null]]];
+    
+    // Set the results we're interested in.
     _resultTensors = results;
+    
+    // Target tensor for graph is combination of both.
+    _targetTensors = [NSArray arrayWithArray:_resultTensors];
+    _targetTensors = [_targetTensors arrayByAddingObjectsFromArray:[_readVariables allValues]];
 }
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
@@ -219,11 +270,19 @@ static const NSUInteger kMaxInflightBuffers = 4;
                                                         secondaryTensor:biasTensor
                                                                    name:[NSString stringWithFormat:@"%@/bias_add", label]];
     
+    [self setVariable:[NSString stringWithFormat:@"%@/weights", label] tensor:weightsTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/biases", label] tensor:biasTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/conv", label] tensor:convTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/bias_add", label] tensor:convBiasTensor];
+
     if (hasRelu) {
         MPSGraphTensor * reluTensor = [_graph reLUWithTensor:convBiasTensor name:[NSString stringWithFormat:@"%@/relu", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
+        [self setVariable:label tensor:reluTensor];
         return reluTensor;
     }
     
+    [self setVariable:label tensor:convBiasTensor];
     return convBiasTensor;
 }
 
@@ -262,6 +321,9 @@ static const NSUInteger kMaxInflightBuffers = 4;
                                                                hasRelu:NO
                                                                  label:[NSString stringWithFormat:@"%@/conv2", label]];
     
+    [self setVariable:[NSString stringWithFormat:@"%@/conv1", label] tensor:conv1Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/conv2", label] tensor:conv2Tensor];
+    
     if (hasSe) {
         // SE Unit.
         MPSGraphTensor * seUnit = [self addSEUnitWithParent:conv2Tensor
@@ -275,15 +337,22 @@ static const NSUInteger kMaxInflightBuffers = 4;
                                                     biases2:seBiases2
                                                       label:[NSString stringWithFormat:@"%@/se", label]
                                                     hasRelu:YES];
+    
+        [self setVariable:label tensor:seUnit];
+        NSLog(@"SE Unit");
         return seUnit;
     }
     else {
         MPSGraphTensor * residualTensor = [_graph additionWithPrimaryTensor:parent
                                                             secondaryTensor:conv2Tensor
                                                                        name:[NSString stringWithFormat:@"%@/add", label]];
-        
+
         MPSGraphTensor * reluTensor = [_graph reLUWithTensor:residualTensor
                                                         name:[NSString stringWithFormat:@"%@/relu", label]];
+        NSLog(@"No SE Unit");
+        [self setVariable:[NSString stringWithFormat:@"%@/add", label] tensor:residualTensor];
+        [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
+        [self setVariable:label tensor:reluTensor];
         return reluTensor;
     }
 }
@@ -332,21 +401,40 @@ static const NSUInteger kMaxInflightBuffers = 4;
                                                    secondaryTensor:biasTensor
                                                               name:[NSString stringWithFormat:@"%@/bias_add", label]];
     
+    [self setVariable:[NSString stringWithFormat:@"%@/weights", label] tensor:weightTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/weights_transpose", label] tensor:transposeTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/reshape", label] tensor:reshaped];
+    [self setVariable:[NSString stringWithFormat:@"%@/matmul", label] tensor:fcTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/biases", label] tensor:biasTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/bias_add", label] tensor:addTensor];
     
     if ([activation isEqual:@"relu"]) {
-        return [_graph reLUWithTensor:addTensor name:[NSString stringWithFormat:@"%@/relu", label]];
+        MPSGraphTensor * reluTensor = [_graph reLUWithTensor:addTensor name:[NSString stringWithFormat:@"%@/relu", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
+        [self setVariable:label tensor:reluTensor];
+        return reluTensor;
     }
     else if ([activation isEqual:@"tanh"]) {
-        return [_graph tanhWithTensor:addTensor name:[NSString stringWithFormat:@"%@/tanh", label]];
+        MPSGraphTensor * tanhTensor = [_graph tanhWithTensor:addTensor name:[NSString stringWithFormat:@"%@/tanh", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/tanh", label] tensor:tanhTensor];
+        [self setVariable:label tensor:tanhTensor];
+        return tanhTensor;
     }
     else if ([activation isEqual:@"sigmoid"]) {
-        return [_graph sigmoidWithTensor:addTensor name:[NSString stringWithFormat:@"%@/sigmoid", label]];
+        MPSGraphTensor * sigmoidTensor = [_graph sigmoidWithTensor:addTensor name:[NSString stringWithFormat:@"%@/sigmoid", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/sigmoid", label] tensor:sigmoidTensor];
+        [self setVariable:label tensor:sigmoidTensor];
+        return sigmoidTensor;
     }
     else if ([activation isEqual:@"softmax"]) {
         NSLog(@"Doing softmax");
-        return [_graph softMaxWithTensor:addTensor axis:1 name:[NSString stringWithFormat:@"%@/softmax", label]];
+        MPSGraphTensor * softmaxTensor = [_graph softMaxWithTensor:addTensor axis:1 name:[NSString stringWithFormat:@"%@/softmax", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/softmax", label] tensor:softmaxTensor];
+        [self setVariable:label tensor:softmaxTensor];
+        return softmaxTensor;
     }
     
+    [self setVariable:label tensor:addTensor];
     return addTensor;
 }
 
@@ -447,16 +535,50 @@ static const NSUInteger kMaxInflightBuffers = 4;
                                                     name:[NSString stringWithFormat:@"%@/relu", label]];
 
     //NSLog(@"Shapes: multiply %@, reshape2 %@, add1 %@, skip %@, add2 %@, relu %@, slice1 %@, slice2 %@", multiplyTensor.shape, reshape2Tensor.shape, add2Tensor.shape, skipTensor.shape, add2Tensor.shape, reluTensor.shape, slice1Tensor.shape, slice2Tensor.shape);
-          
+    
+    // Add all the variables if specified.
+    [self setVariable:[NSString stringWithFormat:@"%@/pool", label] tensor:poolTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/fc1", label] tensor:fc1Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/fc2", label] tensor:fc2Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/slice1", label] tensor:slice1Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/slice2", label] tensor:slice2Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/sigmoid", label] tensor:gammaTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/reshape1", label] tensor:reshape1Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/reshape2", label] tensor:reshape2Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/multiply", label] tensor:multiplyTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/add1", label] tensor:add1Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/add2", label] tensor:add2Tensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
+    
+    [self setVariable:label tensor:reluTensor];
+
     return reluTensor;
 }
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                              policyMap:(uint32_t * __nonnull)policyMap
+                                              policyMap:(short * __nonnull)policyMap
+                                        policyMapLength:(NSUInteger)policyMapLength
                                                   label:(NSString *)label
 {
-    
-    NSData * policyMapData = [NSData dataWithBytesNoCopy:policyMap
+    // [1858 -> HWC or CHW]
+    const bool HWC = false;
+    // @todo: free this later.
+    _reducedPolicyMap = (uint32_t *) malloc(kNumPolicyOutputs * sizeof(uint32_t));
+    for (NSUInteger index = 0; index < policyMapLength; index++) {
+        if (*(policyMap + index) == -1) continue;
+//        const auto index = &mapping - kConvPolicyMap;
+        const size_t displacement = index / 64;
+        const size_t square = index % 64;
+        const size_t row = square / 8;
+        const size_t col = square % 8;
+        if (HWC) {
+            _reducedPolicyMap[*(policyMap + index)] = ((row * 8) + col) * 80 + displacement;
+        } else {
+            _reducedPolicyMap[*(policyMap + index)] = ((displacement * 8) + row) * 8 + col;
+        }
+    }
+
+    NSData * policyMapData = [NSData dataWithBytesNoCopy:_reducedPolicyMap
                                                   length:kNumPolicyOutputs * sizeof(uint32_t)
                                             freeWhenDone:NO];
     
@@ -468,11 +590,49 @@ static const NSUInteger kMaxInflightBuffers = 4;
                                                   withShape:@[@(-1), @([parent sizeOfDimensions:@[@1, @2, @3]])]
                                                        name:[NSString stringWithFormat:@"%@/flatten", label]];
     
-    return [_graph gatherWithUpdatesTensor:flatConvTensor
-                             indicesTensor:mappingTensor
-                                      axis:1
-                           batchDimensions:0
-                                      name:[NSString stringWithFormat:@"%@/gather", label]];
+    MPSGraphTensor * policyTensor = [_graph gatherWithUpdatesTensor:flatConvTensor
+                                                      indicesTensor:mappingTensor
+                                                               axis:1
+                                                    batchDimensions:0
+                                                               name:[NSString stringWithFormat:@"%@/gather", label]];
+
+    [self setVariable:[NSString stringWithFormat:@"%@/constant", label] tensor:mappingTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/flatten", label] tensor:flatConvTensor];
+    [self setVariable:[NSString stringWithFormat:@"%@/gather", label] tensor:policyTensor];
+    [self setVariable:label tensor:policyTensor];
+    
+    return policyTensor;
+}
+
+
+-(void) setVariable:(NSString * __nonnull)name
+             tensor:(MPSGraphTensor *)tensor
+{
+    if (![[_readVariables allKeys] containsObject:name]) return;
+    
+    _readVariables[name] = tensor;
+}
+
+-(void) addVariable:(NSString * __nonnull)name
+{
+    _readVariables[name] = [NSNull null];
+}
+
+-(void) dumpVariable:(NSString * __nonnull)name
+             batches:(NSUInteger)batches
+{
+    if (!_readVariables[name] || _readVariables[name] == [NSNull null]) {
+        NSLog(@"No variable '%@' found", name);
+        return;
+    }
+
+    NSUInteger size = batches * [_readVariables[name] sizeOfDimensions:@[@1, @2, @3]];
+    float * dumpArray = (float *)malloc(size * sizeof(float));
+    [[_resultDataDictionary[_readVariables[name]] mpsndarray] readBytes:dumpArray strideBytes:nil];
+    NSLog(@"Dumping: '%@', size: %i", name, size);
+    for (NSUInteger i = 0; i < (size > 100 ? 100 : size); i++) {
+        NSLog(@";%i;%f", i, dumpArray[i]);
+    }
 }
 
 @end

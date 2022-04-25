@@ -111,9 +111,10 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
                                                 label:[NSString stringWithUTF8String:label.c_str()]];
 }
 
-void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, uint32_t * policyMap, std::string label) {
+void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, const short * policyMap, int size, std::string label) {
     return [(id)self addPolicyMapLayerWithParent:(MPSGraphTensor *)previousLayer
-                                       policyMap:policyMap
+                                       policyMap:(short *)policyMap
+                                 policyMapLength:size
                                            label:[NSString stringWithUTF8String:label.c_str()]];
 }
 
@@ -128,12 +129,32 @@ void* MetalNetworkBuilder::setSelectedOutputs(std::vector<void *> * outputs) {
     return (void*) self;
 }
 
-void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, int inputChannels, std::vector<float *> output_mems)
+void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, int inputChannels)
 {
     NSArray<MPSGraphTensor *> * resultTensors = [(id)self runInferenceWithBatchSize:batchSize
                                                                              inputs:inputs
-                                                                      inputChannels:inputChannels
-                                                                      outputBuffers:&output_mems[0]];
+                                                                      inputChannels:inputChannels];
+}
+
+
+void MetalNetworkBuilder::copyResults(int batchSize, std::vector<float *> output_mems)
+{
+    [(id)self copyResultsWithBatchSize:batchSize
+                         outputBuffers:&output_mems[0]];
+}
+
+void MetalNetworkBuilder::saveVariables(std::vector<std::string> names)
+{
+    for (const std::string name : names) {
+        [(id)self addVariable:[NSString stringWithUTF8String:name.c_str()]];
+    }
+}
+
+void MetalNetworkBuilder::dumpVariables(std::vector<std::string> names, int batches)
+{
+    for (const std::string name : names) {
+        [(id)self dumpVariable:[NSString stringWithUTF8String:name.c_str()] batches:batches];
+    }
 }
 
 }  // namespace metal_backend
