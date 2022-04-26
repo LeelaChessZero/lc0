@@ -157,12 +157,8 @@ class SELayer : public BaseLayer {
   dnnl::reorder fc1_reorder_;
   dnnl::reorder mul_reorder_;
   dnnl::reorder add_reorder_;
-  dnnl::memory pooling_scratchpad_mem;
-  dnnl::memory fc_scratchpad_mem;
-  dnnl::memory fc2_scratchpad_mem;
-  dnnl::memory sigmoid_scratchpad_mem;
-  dnnl::memory mul_scratchpad_mem;
-  dnnl::memory add_scratchpad_mem;
+  dnnl::memory scratchpad_mem;
+
   // Cached values to change tensors for best performance.
   dnnl::memory::desc pool_out_md;
   dnnl::memory::desc fc1_in_md;
