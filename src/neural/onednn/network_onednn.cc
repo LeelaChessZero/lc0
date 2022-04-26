@@ -705,6 +705,8 @@ class OnednnNetwork : public Network {
         opMov_mem = tmp;
       }
 
+      eng_stream_.wait();
+
       // Copy memory to output buffers and do final transformations.
       if (wdl_) {
         // Value softmax done cpu side.
