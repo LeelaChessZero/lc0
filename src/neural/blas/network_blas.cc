@@ -16,6 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -33,8 +34,6 @@
 #include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
-
-#include <Eigen/Core>
 
 #ifdef USE_DNNL
 #include <omp.h>
@@ -292,7 +291,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       // NCHW to NHWC conversion.
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
         for (auto i = 0; i < kSquares; i++) {
-          for (auto j = 0; j < output_channels; j++) {
+          for (size_t j = 0; j < output_channels; j++) {
             res[batch * kSquares * output_channels + i * output_channels + j] =
                 conv_out[batch * kSquares * output_channels + j * kSquares + i];
           }
@@ -332,7 +331,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (auto i = 0; i < kSquares; i++) {
           for (auto j = 0; j < kSquares; j++) {
             float sum = 0.0f;
-            for (auto k = 0; k < policy_d_model; k++) {
+            for (size_t k = 0; k < policy_d_model; k++) {
               sum += head_buffer2.data()[batch * 64 * policy_d_model +
                                          i * policy_d_model + k] *
                      head_buffer3.data()[batch * 64 * policy_d_model +
@@ -349,7 +348,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (int i = 0; i < 4; i++) {
           for (int j = 0; j < 8; j++) {
             float sum = 0;
-            for (int k = 0; k < policy_d_model; k++) {
+            for (size_t k = 0; k < policy_d_model; k++) {
               sum += head_buffer3.data()[batch * kSquares * policy_d_model +
                                          (56 + j) * policy_d_model + k] *
                      weights_.ip4_pol_w.data()[i * policy_d_model + k];
