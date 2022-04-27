@@ -874,6 +874,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
         stats->num_losing_edges += 1;
       }
       // If game is lost anyway, no need for moving quicker.
+      // Hardcoded resign threshold, because there is no available parameter.
       if (n > 0 && q > -0.98f) {
         stats->can_resign = false;
       }
