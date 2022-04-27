@@ -43,17 +43,17 @@ std::string MetalNetworkBuilder::init(int sub_batch_size, int gpu_id)
 {
     // All metal devices.
     NSArray<id<MTLDevice>> * devices = MTLCopyAllDevices();
-    
+
     if ([devices count] <= gpu_id) {
         // No GPU device matching ID.
         [NSException raise:@"Could not find device" format:@"Could not find a GPU or CPU compute device with specified id"];
         return "";
     }
-    
+
     // Initialize the metal MPS Graph executor with the selected device.
     self = [[Lc0NetworkGraph alloc] initWithDevice:devices[gpu_id]
                                    batchesPerSplit:sub_batch_size];
-    
+
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
@@ -111,10 +111,9 @@ void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inp
                                                 label:[NSString stringWithUTF8String:label.c_str()]];
 }
 
-void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, const short * policyMap, int size, std::string label) {
+void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, uint32_t * policyMap, std::string label) {
     return [(id)self addPolicyMapLayerWithParent:(MPSGraphTensor *)previousLayer
-                                       policyMap:(short *)policyMap
-                                 policyMapLength:size
+                                       policyMap:policyMap
                                            label:[NSString stringWithUTF8String:label.c_str()]];
 }
 

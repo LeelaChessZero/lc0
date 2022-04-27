@@ -45,31 +45,29 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     // Keep the device and command queue objects around for ease of use.
     MPSGraphDevice * _device;
     id<MTLCommandQueue> _queue;
-    
+
     // All the nodes in the graph.
     MPSGraph * _graph;
-    
+
     // Input tensor placeholder.
     MPSGraphTensor * _inputTensor;
-    
+
     // Array to keep output tensors.
     NSArray<MPSGraphTensor *> * _resultTensors;
-    
+
     // Size of inference volume.
     NSUInteger _batchesPerSplit;
-    
+
     // Variables for triple buffering
     dispatch_semaphore_t _doubleBufferingSemaphore;
 //    NSUInteger currentFrameIndex;
 //    NSArray<id <MTLBuffer>> dynamicDataBuffers;
-    
+
     NSMutableDictionary<NSString *, NSObject *> * _readVariables;
-    
+
     NSArray<MPSGraphTensor *> * _targetTensors;
-    
+
     MPSGraphTensorDataDictionary * _resultDataDictionary;
-    
-    uint32_t * _reducedPolicyMap;
 }
 
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device

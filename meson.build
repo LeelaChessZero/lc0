@@ -592,9 +592,9 @@ if get_option('build_backends')
   metal_frameworks = dependency('appleframeworks',
                                 modules : ['Foundation', 'Metal', 'MetalPerformanceShaders', 'MetalPerformanceShadersGraph'],
                                 required: get_option('metal'))
-    
+
   if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
-    deps += metal_frameworks 
+    deps += metal_frameworks
 
     files += [
       'src/neural/metal/network_metal.cc',
@@ -605,7 +605,7 @@ if get_option('build_backends')
     has_backends = true
   endif
 
-    
+
 
 endif # if get_option('build_backends')
 

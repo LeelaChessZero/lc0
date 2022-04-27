@@ -51,6 +51,13 @@ void describeWeights(std::string desc, float * weights, size_t size) {
   }
 }
 
+void describeWeights(std::string desc, uint32_t * weights, size_t size) {
+  CERR  << "\n" << desc;
+  for (size_t i = 0; i < size; i++) {
+    CERR << i << "; " << *(weights + i);
+  }
+}
+
 MetalNetworkComputation::MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left)
     : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
@@ -76,7 +83,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     const int gpu_id = options.GetOrDefault<int>("gpu", 0);
     builder_ = std::make_unique<MetalNetworkBuilder>();
     std::string device = builder_->init(sub_batch_size, gpu_id);
-    CERR << "Initialized metal backend on device " << device; 
+    CERR << "Initialized metal backend on device " << device;
   } catch (...) {
     throw Exception("There was an error initializing the GPU device.");
   }
@@ -98,10 +105,10 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   }
 
   // Variables to save for debugging.
-  builder_->saveVariables({
-    "block_1", "policy/conv1", "policy/conv2", "policy_map", "policy/conv", "policy/fc",
-    "policy_map/constant", "policy_map/flatten", "policy_map/gather",
- });
+//   builder_->saveVariables({
+//     "policy_map/constant", "policy_map/flatten", "policy_map/gather",
+//     "policy", "value/fc2", "mlh/fc2",
+//  });
 
   // Pointer to last layer in MPS Graph.
   void * layer;
@@ -145,8 +152,23 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                            &weights.policy.biases[0],
                                            false, "policy/conv2");
 
-    // Policy map using the original policy mapping (73x8x8).
-    policy = builder_->makePolicyMapLayer(policy, &kConvPolicyMap[0], 4672, "policy_map");
+    // [1858 -> HWC or CHW]
+    const bool HWC = false;
+    std::vector<uint32_t> policy_map(1858);
+    for (const auto& mapping : kConvPolicyMap) {
+      if (mapping == -1) continue;
+      const auto index = &mapping - kConvPolicyMap;
+      const auto displacement = index / 64;
+      const auto square = index % 64;
+      const auto row = square / 8;
+      const auto col = square % 8;
+      if (HWC) {
+        policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
+      } else {
+        policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
+      }
+    }
+    policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
   }
   else {
     const int policySize = weights.policy.biases.size();
@@ -242,16 +264,16 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     builder_->copyResults(batchSize, {io->op_policy_mem_, io->op_value_mem_});
   }
 
-  CERR << "Policy Layer";
-  for (auto j=0; j < 1024; j++) {
-    CERR << j << ";" << io->op_policy_mem_[j];
-  }
+  // CERR << "Policy Layer";
+  // for (auto j=0; j < 1024; j++) {
+  //   CERR << j << ";" << io->op_policy_mem_[j];
+  // }
 
   // builder_->dumpVariable("policy/conv2/transposed_weights", batchSize);
-  builder_->dumpVariables({
-        "block_1", "policy/conv1", "policy/conv2", "policy_map", "policy/conv", "policy/fc",
-        "policy_map/constant", "policy_map/flatten", "policy_map/gather",
-   }, batchSize);
+  // builder_->dumpVariables({
+  //   "policy_map/constant", "policy_map/flatten", "policy_map/gather",
+  //   "policy", "value/fc2", "mlh/fc2",
+  //  }, batchSize);
 
   // builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes, output_mems);
 
