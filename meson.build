@@ -306,7 +306,7 @@ if get_option('build_backends')
 
     endif
 
-    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep'])
+    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep']).as_system()
 
     ispc = find_program('ispc', required: false)
     ispc_arch = 'x86-64'

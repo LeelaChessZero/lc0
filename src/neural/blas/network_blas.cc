@@ -16,6 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -33,8 +34,6 @@
 #include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
-
-#include <Eigen/Core>
 
 #ifdef USE_DNNL
 #include <omp.h>
@@ -297,7 +296,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       // NCHW to NHWC conversion.
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
         for (auto i = 0; i < kSquares; i++) {
-          for (auto j = size_t{0}; j < output_channels; j++) {
+          for (size_t j = 0; j < output_channels; j++) {
             res[batch * kSquares * output_channels + i * output_channels + j] =
                 conv_out[batch * kSquares * output_channels + j * kSquares + i];
           }

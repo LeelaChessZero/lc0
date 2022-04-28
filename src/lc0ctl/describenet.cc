@@ -35,7 +35,7 @@ namespace lczero {
 namespace {
 
 const OptionId kWeightsFilenameId{"weights", "WeightsFile",
-                                  "Path of the input Lc0 weights file."};
+                                  "Path of the input Lc0 weights file.", 'w'};
 
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kWeightsFilenameId);
@@ -130,9 +130,24 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
   COUT << "~~~~~~~";
   const auto& w = weights.weights();
   COUT << Justify("Blocks") << w.residual_size();
+  int se_count = 0;
+  for (size_t i = 0; i < w.residual_size(); i++) {
+    if (w.residual(i).has_se()) se_count++;
+  }
+  if (se_count > 0) {
+    COUT << Justify("SE blocks") << se_count;
+  }
+
   COUT << Justify("Filters")
        << w.input().weights().params().size() / 2 / 112 / 9;
   COUT << Justify("Policy") << (w.has_policy1() ? "Convolution" : "Dense");
+  if (!w.has_policy1()) {
+    int policy_channels = w.policy().biases().params().size() / 2;
+    if (policy_channels == 0) {
+      policy_channels = w.policy().bn_means().params().size() / 2;
+    }
+    COUT << Justify("Policy channels") << policy_channels;
+  }
   COUT << Justify("Value")
        << (w.ip2_val_w().params().size() / 2 % 3 == 0 ? "WDL" : "Classical");
   COUT << Justify("MLH") << (w.has_moves_left() ? "Present" : "Absent");

@@ -152,11 +152,6 @@ bool ValidateNetwork(const pblczero::Net& weights) {
             "ONNX file.";
     return false;
   }
-  if (!onnx.has_domain()) {
-    CERR << "ONNX file doesn't appear to have domain specified. Likely not an "
-            "ONNX file.";
-    return false;
-  }
   const auto& onnx_inputs = onnx.graph().input();
   std::set<std::string> inputs;
   std::transform(onnx_inputs.begin(), onnx_inputs.end(),
