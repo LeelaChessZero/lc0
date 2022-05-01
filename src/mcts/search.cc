@@ -365,8 +365,8 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
                           bool is_root_node, int depth) {
   // scale by depth so that for depth > 5 is cpuct lower than the parameter and for depth < 5 the cpuct is higher.
   // Let the maximum range be from cpuct * 0.9 to cpuct * 1.4 for depth = 0 to depth = 30
-  // f(0) = 0.9, f(5) = 1, f(30) = 1.4
-  const float init = params.GetCpuct(is_root_node) * (0.908065 + depth * 0.01164516);
+  // f(0) = 1.1, f(5) = 1, f(30) = 0.8
+  const float init = params.GetCpuct(is_root_node) * (1.07581 - depth * 0.00935484);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
