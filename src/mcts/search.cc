@@ -1506,7 +1506,7 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   // if current node is negative, side to move has the upper hand, then decrease the draw score.
   float a = 4.0f;
   float b = 0.5f;
-  float scale_draw_score_delta_by = 1 / (1 + FastExp(-a * node->GetQ(0.0) + b));
+  float scale_draw_score_delta_by = 1 / (1 + FastExp(-a * std::abs(node->GetQ(0.0)) + b));
   float draw_score_delta = node->GetQ(0.0) < 0 ? -params_.GetRootQDelta() * scale_draw_score_delta_by : params_.GetRootQDelta() * scale_draw_score_delta_by;
 
   const float even_draw_score = search_->GetDrawScore(false) + draw_score_delta;
