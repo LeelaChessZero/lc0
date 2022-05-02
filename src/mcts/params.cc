@@ -28,6 +28,7 @@
 #include "mcts/params.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "utils/exception.h"
 
@@ -257,6 +258,10 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
     "at once."};
+const OptionId SearchParams::kContemptId{"contempt", "Contempt",
+                                         "Used to express the estimated Elo "
+                                         "superiority (or inferiority if "
+                                         "negative) over the opponent."};
 const OptionId SearchParams::kDrawScoreSidetomoveId{
     "draw-score-sidetomove", "DrawScoreSideToMove",
     "Score of a drawn game, as seen by a player making the move."};
@@ -317,7 +322,7 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
     "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
     "Power to apply to the interpolation between 1 and max to make it curved."};
 
-void SearchParams::Populate(OptionsParser* options) {
+void SearchParams::Populate(OptionsParser* options, bool is_simple) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
@@ -382,10 +387,14 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
+  if (is_simple) {
+    options->Add<IntOption>(kContemptId, -400, 400) = 0;
+  } else {
+    options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
+    options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
+    options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
+    options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
+  }
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
@@ -461,16 +470,13 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
-      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
-      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
-      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
-      kTaskWorkersPerSearchWorker(options.Get<int>(kTaskWorkersPerSearchWorkerId)),
+      kTaskWorkersPerSearchWorker(
+          options.Get<int>(kTaskWorkersPerSearchWorkerId)),
       kMinimumWorkSizeForProcessing(
           options.Get<int>(kMinimumWorkSizeForProcessingId)),
       kMinimumWorkSizeForPicking(
@@ -487,6 +493,21 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
+  try {
+    kDrawScoreSidetomove = options.Get<int>(kDrawScoreSidetomoveId) / 100.0f;
+    kDrawScoreOpponent = options.Get<int>(kDrawScoreOpponentId) / 100.0f;
+    kDrawScoreWhite = options.Get<int>(kDrawScoreWhiteId) / 100.0f;
+    kDrawScoreBlack = options.Get<int>(kDrawScoreBlackId) / 100.0f;
+  } catch (...) {
+    kDrawScoreSidetomove =
+        2.0f / (1.0f + std::pow(10, -options.Get<int>(kContemptId) / 400.0f)) -
+        1.0f;
+    kDrawScoreOpponent =
+        2.0f / (1.0f + std::pow(10, options.Get<int>(kContemptId) / 400.0f)) -
+        1.0f;
+    kDrawScoreWhite = 0;
+    kDrawScoreBlack = 0;
+  }
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

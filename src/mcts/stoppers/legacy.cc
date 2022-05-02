@@ -73,6 +73,13 @@ class LegacyTimeManager : public TimeManager {
         time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
         spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)),
         book_ply_bonus_(params.GetOrDefault<float>("book-ply-bonus", 0.25f)) {}
+  LegacyTimeManager(int64_t move_overhead, float slowmover)
+      : move_overhead_(move_overhead),
+        slowmover_(slowmover),
+        time_curve_midpoint_(51.5f),
+        time_curve_steepness_(7.0f),
+        spend_saved_time_(1.0f),
+        book_ply_bonus_(0.25f) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
@@ -133,8 +140,8 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   // Limit the bonus to max. 12 plies, which also prevents spending too much
   // time on the first move in resumed games.
   if (first_move_of_game_) {
-    this_move_time *= (1.0f + book_ply_bonus_ *
-                       std::min(12, position.GetGamePly()));
+    this_move_time *=
+        (1.0f + book_ply_bonus_ * std::min(12, position.GetGamePly()));
     first_move_of_game_ = false;
   }
 
@@ -166,5 +173,10 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
 std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params) {
   return std::make_unique<LegacyTimeManager>(move_overhead, params);
+}
+
+std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
+                                                   float slowmover) {
+  return std::make_unique<LegacyTimeManager>(move_overhead, slowmover);
 }
 }  // namespace lczero

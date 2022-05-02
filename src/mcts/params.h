@@ -39,7 +39,7 @@ class SearchParams {
   SearchParams(const SearchParams&) = delete;
 
   // Populates UciOptions with search parameters.
-  static void Populate(OptionsParser* options);
+  static void Populate(OptionsParser* options, bool is_simple = false);
 
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
@@ -184,6 +184,7 @@ class SearchParams {
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
+  static const OptionId kContemptId;
   static const OptionId kDrawScoreSidetomoveId;
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
@@ -240,10 +241,6 @@ class SearchParams {
   const float kMovesLeftQuadraticFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
-  const float kDrawScoreSidetomove;
-  const float kDrawScoreOpponent;
-  const float kDrawScoreWhite;
-  const float kDrawScoreBlack;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
@@ -257,6 +254,10 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
+  float kDrawScoreSidetomove;
+  float kDrawScoreOpponent;
+  float kDrawScoreWhite;
+  float kDrawScoreBlack;
 };
 
 }  // namespace lczero
