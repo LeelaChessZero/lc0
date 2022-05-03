@@ -48,8 +48,6 @@ namespace lczero {
 
 namespace {
 
-using namespace boost::math;
-  
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -1508,9 +1506,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
 
   bool is_root_node = node == search_->root_node_;
   // if current node is negative, side to move has the upper hand, then decrease the draw score.
-  // using namespace boost::math;
-  float scale_draw_score_delta_by = ibeta(2, 2, std::abs(search_->root_node_->GetQ(0.0)));
-  float draw_score_delta = search_->root_node_->GetQ(0.0) < 0 ? -params_.GetRootQDelta() * scale_draw_score_delta_by : params_.GetRootQDelta() * scale_draw_score_delta_by;
+  // TODO optimise speed by creating a vector of values to lookup, instead of calculating this on the fly.
+  float scale_draw_score_delta_by = boost::math::ibeta(2, 2, std::abs(node->GetQ(0.0)));
+  float draw_score_delta = node->GetQ(0.0) < 0 ? -params_.GetRootQDelta() * scale_draw_score_delta_by : params_.GetRootQDelta() * scale_draw_score_delta_by;
 
   const float even_draw_score = search_->GetDrawScore(false) + draw_score_delta;
   const float odd_draw_score = search_->GetDrawScore(true) + draw_score_delta;
