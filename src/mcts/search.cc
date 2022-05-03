@@ -42,6 +42,7 @@
 #include "neural/encoder.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
+#include <boost/math/special_functions/beta.hpp>
 
 namespace lczero {
 
@@ -1504,9 +1505,12 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
 
   bool is_root_node = node == search_->root_node_;
   // if current node is negative, side to move has the upper hand, then decrease the draw score.
+  using namespace boost::math;
+  float scaling_factor = ibeta(2, 2, std::abs(search_->root_node_->GetQ(0.0)));
   float a = 4.0f;
   float b = 0.5f;
   float scale_draw_score_delta_by = 1 / (1 + FastExp(-a * std::abs(search_->root_node_->GetQ(0.0)) + b));
+  LOGFILE << "for absQ=" << std::abs(search_->root_node_->GetQ(0.0)) << " scaling factor becomes " << scaling_factor << " old scaler gives: " << scale_draw_score_delta_by;
   float draw_score_delta = search_->root_node_->GetQ(0.0) < 0 ? -params_.GetRootQDelta() * scale_draw_score_delta_by : params_.GetRootQDelta() * scale_draw_score_delta_by;
 
   const float even_draw_score = search_->GetDrawScore(false) + draw_score_delta;
