@@ -500,10 +500,10 @@ SearchParams::SearchParams(const OptionsDict& options)
     kDrawScoreBlack = options.Get<int>(kDrawScoreBlackId) / 100.0f;
   } catch (...) {
     kDrawScoreSidetomove =
-        2.0f / (1.0f + std::pow(10, -options.Get<int>(kContemptId) / 400.0f)) -
+        2.0f / (1.0f + std::pow(10, options.Get<int>(kContemptId) / 400.0f)) -
         1.0f;
     kDrawScoreOpponent =
-        2.0f / (1.0f + std::pow(10, options.Get<int>(kContemptId) / 400.0f)) -
+        2.0f / (1.0f + std::pow(10, -options.Get<int>(kContemptId) / 400.0f)) -
         1.0f;
     kDrawScoreWhite = 0;
     kDrawScoreBlack = 0;
