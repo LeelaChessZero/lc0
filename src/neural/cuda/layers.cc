@@ -1472,10 +1472,17 @@ static void cublasXGemmStridedBatched(
         B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
         batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
   } else {
+#if __CUDA_ARCH__ >= 500
     ReportCUBLASErrors(cublasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha, A, CUDA_R_32F, lda, strideA, B,
         CUDA_R_32F, ldb, strideB, &beta, C, CUDA_R_32F, ldc, strideC,
         batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+#else
+    ReportCUBLASErrors(cublasSgemmStridedBatched(
+        handle, transa, transb, m, n, k, &alpha, (const float*)A, lda, strideA,
+        (const float*)B, ldb, strideB, &beta, (float*)C, ldc, strideC,
+        batchCount));
+#endif
   }
 }
 
