@@ -733,12 +733,34 @@ class OnednnNetwork : public Network {
       }
       if (attn_policy_) {
         float* opPol = (float*)opPol_mem.get_data_handle();
+        // The promotion offsets are extracted from the output tensor.
+        float promotion_offsets[3][8];
         for (int batch = 0; batch < currentBatchSize; batch++) {
-          for (int i = 0; i < 64 * 64 + 8 * 24; i++) {
-            auto j = kAttnPolicyMap[i];
-            if (j >= 0) {
-              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
-                  opPol[batch * (64 * 64 + 8 * 24) + i];
+          for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 8; j++) {
+              promotion_offsets[i][j] =
+                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + i * 8 + j] +
+                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j];
+            }
+          }
+          for (int x = 0; x < 64 * 64; x++) {
+            auto y = kAttnPolicyMap[x];
+            if (y >= 0) {
+              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                  opPol[batch * (64 * 64 + 8 * 24) + x];
+            }
+          }
+          for (int k = 0; k < 8; k++) {
+            for (int j = 0; j < 8; j++) {
+              for (int i = 0; i < 3; i++) {
+                auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
+                if (y >= 0) {
+                  io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                      opPol[batch * (64 * 64 + 8 * 24) + (48 + k) * 64 + 56 +
+                            j] +
+                      promotion_offsets[i][j];
+                }
+              }
             }
           }
         }

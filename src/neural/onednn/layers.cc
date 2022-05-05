@@ -671,31 +671,39 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       scratchpad_md = mul_pd.scratchpad_desc();
     }
 
-    auto promo_md = dnnl::memory::desc({N, 4, 8}, data_type_,
-                                       dnnl::memory::format_tag::abc);
-    promo_mem = dnnl::memory(promo_md, eng);
+    // The promotion offsets are stored in the output array for now.
+    auto promo_md =
+        out_md.submemory_desc({N, 1, 4, 8}, {0, 64, 0, 0}).reshape({N, 4, 8});
 
     if (eng.get_kind() == dnnl::engine::kind::gpu) {
       // The gpu matmul primitive ignores memory offsets, so a copy is needed.
-      auto in_reorder_pd = dnnl::reorder::primitive_desc(
+      auto reorder_pd = dnnl::reorder::primitive_desc(
           eng, mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 56}),
           eng, mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 0}),
           common_attr);
-      hack_reorder_ = dnnl::reorder(in_reorder_pd);
-      if (scratchpad_md.get_size() <
-          in_reorder_pd.scratchpad_desc().get_size()) {
-        scratchpad_md = in_reorder_pd.scratchpad_desc();
+      hack_reorder_ = dnnl::reorder(reorder_pd);
+      if (scratchpad_md.get_size() < reorder_pd.scratchpad_desc().get_size()) {
+        scratchpad_md = reorder_pd.scratchpad_desc();
       }
 
       auto pmul_d = dnnl::matmul::desc(
           pmul_mem.get_desc(),
           mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 0}),
-          promo_md);
+          mul_A_md.submemory_desc({N, 4, 8}, {0, 0, 0}));
       auto pmul_pd = dnnl::matmul::primitive_desc(pmul_d, common_attr, eng);
       pmul_ = dnnl::matmul(pmul_pd);
       if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
         scratchpad_md = pmul_pd.scratchpad_desc();
       }
+
+      reorder_pd = dnnl::reorder::primitive_desc(
+          eng, mul_A_md.submemory_desc({N, 4, 8}, {0, 0, 0}), eng, promo_md,
+          common_attr);
+      hack_reorder_2_ = dnnl::reorder(reorder_pd);
+      if (scratchpad_md.get_size() < reorder_pd.scratchpad_desc().get_size()) {
+        scratchpad_md = reorder_pd.scratchpad_desc();
+      }
+
     } else {
       auto pmul_d = dnnl::matmul::desc(
           pmul_mem.get_desc(),
@@ -706,32 +714,6 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
         scratchpad_md = pmul_pd.scratchpad_desc();
       }
-    }
-
-    auto add_d =
-        dnnl::binary::desc(dnnl::algorithm::binary_add,
-                           promo_md.submemory_desc({N, 3, 8}, {0, 0, 0}),
-                           promo_md.submemory_desc({N, 1, 8}, {0, 3, 0}),
-                           promo_md.submemory_desc({N, 3, 8}, {0, 0, 0}));
-    auto add_pd = dnnl::binary::primitive_desc(add_d, common_attr, eng);
-    add_ = dnnl::binary(add_pd);
-    if (scratchpad_md.get_size() < add_pd.scratchpad_desc().get_size()) {
-      scratchpad_md = add_pd.scratchpad_desc();
-    }
-
-    auto promo2_md = dnnl::memory::desc({N, 8, 4}, data_type_,
-                                        dnnl::memory::format_tag::acb);
-    auto add2_d = dnnl::binary::desc(
-        dnnl::algorithm::binary_add,
-        out_md.submemory_desc({N, 8, 1, 8}, {0, 48, 7, 0})
-            .reshape({N, 8, 8, 1}),
-        promo2_md.submemory_desc({N, 8, 3}, {0, 0, 0}).reshape({N, 1, 8, 3}),
-        out_md.submemory_desc({N, 3, 8, 8}, {0, 64, 0, 0})
-            .reshape({N, 8, 8, 3}));
-    auto add2_pd = dnnl::binary::primitive_desc(add2_d, common_attr, eng);
-    add2_ = dnnl::binary(add2_pd);
-    if (scratchpad_md.get_size() < add2_pd.scratchpad_desc().get_size()) {
-      scratchpad_md = add2_pd.scratchpad_desc();
     }
 
     auto in_reorder_pd = dnnl::reorder::primitive_desc(eng, input.get_desc(),
@@ -784,24 +766,22 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 
   if (eng.get_kind() == dnnl::engine::kind::gpu) {
     hack_reorder_.execute(stream, {{DNNL_ARG_SRC, fcK_out_mem},
-                                   {DNNL_ARG_DST, fcK_out_mem},
+                                   {DNNL_ARG_DST, fcQ_out_mem},
                                    {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+    pmul_.execute(stream, {{DNNL_ARG_SRC, pmul_mem},
+                           {DNNL_ARG_WEIGHTS, fcQ_out_mem},
+                           {DNNL_ARG_DST, fcK_out_mem},
+                           {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+    hack_reorder_2_.execute(stream, {{DNNL_ARG_SRC, fcK_out_mem},
+                                     {DNNL_ARG_DST, output},
+                                     {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  } else {
+    pmul_.execute(stream, {{DNNL_ARG_SRC, pmul_mem},
+                           {DNNL_ARG_WEIGHTS, fcK_out_mem},
+                           {DNNL_ARG_DST, output},
+                           {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
   }
-
-  pmul_.execute(stream, {{DNNL_ARG_SRC, pmul_mem},
-                         {DNNL_ARG_WEIGHTS, fcK_out_mem},
-                         {DNNL_ARG_DST, promo_mem},
-                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-
-  add_.execute(stream, {{DNNL_ARG_SRC_0, promo_mem},
-                        {DNNL_ARG_SRC_1, promo_mem},
-                        {DNNL_ARG_DST, promo_mem},
-                        {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-
-  add2_.execute(stream, {{DNNL_ARG_SRC_0, output},
-                         {DNNL_ARG_SRC_1, promo_mem},
-                         {DNNL_ARG_DST, output},
-                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 }
 
 }  // namespace onednn_backend
