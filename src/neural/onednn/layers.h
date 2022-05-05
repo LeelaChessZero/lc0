@@ -211,6 +211,8 @@ class AttentionPolicyHead : public BaseLayer {
   dnnl::matmul pmul_;
   dnnl::binary add_;
   dnnl::binary add2_;
+  // For gpu bug workaround.
+  dnnl::reorder hack_reorder_;
 };
 
 }  // namespace onednn_backend

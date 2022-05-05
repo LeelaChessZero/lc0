@@ -643,10 +643,10 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     auto fcQK_d = dnnl::inner_product_forward::desc(
         dnnl::prop_kind::forward_inference, fc_out_md,
         fcQ_filter_mem.get_desc(), fcQ_bias_mem.get_desc(), fcQK_out_md);
-    dnnl::primitive_attr fcQK_attr;
-    fcQK_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    dnnl::primitive_attr common_attr;
+    common_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     auto fcQK_pd =
-        dnnl::inner_product_forward::primitive_desc(fcQK_d, fcQK_attr, eng);
+        dnnl::inner_product_forward::primitive_desc(fcQK_d, common_attr, eng);
     fcQK_ = dnnl::inner_product_forward(fcQK_pd);
     if (scratchpad_md.get_size() < fcQK_pd.scratchpad_desc().get_size()) {
       scratchpad_md = fcQK_pd.scratchpad_desc();
@@ -674,15 +674,38 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     auto promo_md = dnnl::memory::desc({N, 4, 8}, data_type_,
                                        dnnl::memory::format_tag::abc);
     promo_mem = dnnl::memory(promo_md, eng);
-    auto pmul_d = dnnl::matmul::desc(
-        pmul_mem.get_desc(),
-        mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 56}), promo_md);
-    dnnl::primitive_attr pmul_attr;
-    pmul_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    auto pmul_pd = dnnl::matmul::primitive_desc(pmul_d, pmul_attr, eng);
-    pmul_ = dnnl::matmul(pmul_pd);
-    if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
-      scratchpad_md = pmul_pd.scratchpad_desc();
+
+    if (eng.get_kind() == dnnl::engine::kind::gpu) {
+      // The gpu matmul primitive ignores memory offsets, so a copy is needed.
+      auto in_reorder_pd = dnnl::reorder::primitive_desc(
+          eng, mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 56}),
+          eng, mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 0}),
+          common_attr);
+      hack_reorder_ = dnnl::reorder(in_reorder_pd);
+      if (scratchpad_md.get_size() <
+          in_reorder_pd.scratchpad_desc().get_size()) {
+        scratchpad_md = in_reorder_pd.scratchpad_desc();
+      }
+
+      auto pmul_d = dnnl::matmul::desc(
+          pmul_mem.get_desc(),
+          mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 0}),
+          promo_md);
+      auto pmul_pd = dnnl::matmul::primitive_desc(pmul_d, common_attr, eng);
+      pmul_ = dnnl::matmul(pmul_pd);
+      if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
+        scratchpad_md = pmul_pd.scratchpad_desc();
+      }
+    } else {
+      auto pmul_d = dnnl::matmul::desc(
+          pmul_mem.get_desc(),
+          mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 56}),
+          promo_md);
+      auto pmul_pd = dnnl::matmul::primitive_desc(pmul_d, common_attr, eng);
+      pmul_ = dnnl::matmul(pmul_pd);
+      if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
+        scratchpad_md = pmul_pd.scratchpad_desc();
+      }
     }
 
     auto add_d =
@@ -690,9 +713,7 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                            promo_md.submemory_desc({N, 3, 8}, {0, 0, 0}),
                            promo_md.submemory_desc({N, 1, 8}, {0, 3, 0}),
                            promo_md.submemory_desc({N, 3, 8}, {0, 0, 0}));
-    dnnl::primitive_attr add_attr;
-    add_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    auto add_pd = dnnl::binary::primitive_desc(add_d, add_attr, eng);
+    auto add_pd = dnnl::binary::primitive_desc(add_d, common_attr, eng);
     add_ = dnnl::binary(add_pd);
     if (scratchpad_md.get_size() < add_pd.scratchpad_desc().get_size()) {
       scratchpad_md = add_pd.scratchpad_desc();
@@ -707,18 +728,14 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         promo2_md.submemory_desc({N, 8, 3}, {0, 0, 0}).reshape({N, 1, 8, 3}),
         out_md.submemory_desc({N, 3, 8, 8}, {0, 64, 0, 0})
             .reshape({N, 8, 8, 3}));
-    dnnl::primitive_attr add2_attr;
-    add2_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    auto add2_pd = dnnl::binary::primitive_desc(add2_d, add2_attr, eng);
+    auto add2_pd = dnnl::binary::primitive_desc(add2_d, common_attr, eng);
     add2_ = dnnl::binary(add2_pd);
     if (scratchpad_md.get_size() < add2_pd.scratchpad_desc().get_size()) {
       scratchpad_md = add2_pd.scratchpad_desc();
     }
 
-    dnnl::primitive_attr reorder_attr;
-    reorder_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    auto in_reorder_pd = dnnl::reorder::primitive_desc(
-        eng, input.get_desc(), eng, in_md, reorder_attr);
+    auto in_reorder_pd = dnnl::reorder::primitive_desc(eng, input.get_desc(),
+                                                       eng, in_md, common_attr);
     in_reorder_ = dnnl::reorder(in_reorder_pd);
     if (scratchpad_md.get_size() < in_reorder_pd.scratchpad_desc().get_size()) {
       scratchpad_md = in_reorder_pd.scratchpad_desc();
@@ -764,6 +781,12 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                         {DNNL_ARG_WEIGHTS, fcK_out_mem},
                         {DNNL_ARG_DST, output},
                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+
+  if (eng.get_kind() == dnnl::engine::kind::gpu) {
+    hack_reorder_.execute(stream, {{DNNL_ARG_SRC, fcK_out_mem},
+                                   {DNNL_ARG_DST, fcK_out_mem},
+                                   {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+  }
 
   pmul_.execute(stream, {{DNNL_ARG_SRC, pmul_mem},
                          {DNNL_ARG_WEIGHTS, fcK_out_mem},
