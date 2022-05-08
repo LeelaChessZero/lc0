@@ -95,9 +95,6 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     }
     if (activation_ == RELU) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    } else if (activation_ == MISH &&
-               convolution_type_ != dnnl::algorithm::convolution_winograd) {
-      conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
     } else if (activation_ == TANH) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
@@ -112,9 +109,8 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     in_md = conv_pd.src_desc();
     out_md = conv_pd.dst_desc();
 
-    // Apparently winograd convolution doesn't go well with mish post op.
-    if (activation_ == MISH &&
-        convolution_type_ == dnnl::algorithm::convolution_winograd) {
+    // Apparently convolution doesn't go well with mish post op.
+    if (activation_ == MISH) {
       auto mish_d = dnnl::eltwise_forward::desc(
           dnnl::prop_kind::forward_inference, dnnl::algorithm::eltwise_mish,
           out_md, 0.f, 0.f);
@@ -187,8 +183,7 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                          {DNNL_ARG_DST, output},
                          {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 
-  if (activation_ == MISH &&
-      convolution_type_ == dnnl::algorithm::convolution_winograd) {
+  if (activation_ == MISH) {
     mish_.execute(stream, {{DNNL_ARG_SRC, output},
                            {DNNL_ARG_DST, output},
                            {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
