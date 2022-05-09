@@ -84,7 +84,7 @@ OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
     auto longflg = val->GetLongFlag();
-    if (flag == longflg || flag == ("no-" + longflg)) return val.get();
+    if (StringsEqualIgnoreCase(flag, longflg) || flag == ("no-" + longflg)) return val.get();
   }
   return nullptr;
 }
@@ -306,7 +306,7 @@ void StringOption::SetValue(const std::string& value, OptionsDict* dict) {
 bool StringOption::ProcessLongFlag(const std::string& flag,
                                    const std::string& value,
                                    OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
+  if (StringsEqualIgnoreCase(flag, GetLongFlag())) {
     SetVal(dict, value);
     return true;
   }
@@ -353,7 +353,7 @@ void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
 
 bool IntOption::ProcessLongFlag(const std::string& flag,
                                 const std::string& value, OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
+  if (StringsEqualIgnoreCase(flag, GetLongFlag())) {
     SetVal(dict, ValidateIntString(value));
     return true;
   }
@@ -448,7 +448,7 @@ void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
 
 bool FloatOption::ProcessLongFlag(const std::string& flag,
                                   const std::string& value, OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
+  if (StringsEqualIgnoreCase(flag, GetLongFlag())) {
     try {
       SetVal(dict, std::stof(value));
     } catch (std::invalid_argument&) {
@@ -525,14 +525,14 @@ bool BoolOption::ProcessLongFlag(const std::string& flag,
     SetVal(dict, false);
     return true;
   }
-  if (flag == GetLongFlag() && value.empty()) {
+  if (StringsEqualIgnoreCase(flag, GetLongFlag()) && value.empty()) {
     SetVal(dict, true);
     return true;
   }
 
   ValidateBoolString(value);
 
-  if (flag == GetLongFlag()) {
+  if (StringsEqualIgnoreCase(flag, GetLongFlag())) {
     SetVal(dict, value.empty() || (value != "false"));
     return true;
   }
@@ -592,7 +592,7 @@ void ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
 bool ChoiceOption::ProcessLongFlag(const std::string& flag,
                                    const std::string& value,
                                    OptionsDict* dict) {
-  if (flag == GetLongFlag()) {
+  if (StringsEqualIgnoreCase(flag, GetLongFlag())) {
     SetVal(dict, value);
     return true;
   }
