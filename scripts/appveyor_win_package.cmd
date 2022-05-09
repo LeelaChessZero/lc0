@@ -26,6 +26,8 @@ IF %NAME%==onednn copy "%PKG_FOLDER%\%DNNL_NAME%\LICENSE" dist\DNNL-LICENSE
 IF %NAME%==onednn copy "%PKG_FOLDER%\%DNNL_NAME%\THIRD-PARTY-PROGRAMS" dist\DNNL-THIRD-PARTY-PROGRAMS
 IF %NAME%==onednn 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
 IF %NAME%==onednn 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-THIRD-PARTY-PROGRAMS
+IF %ONNX%==true type dist\README-onnx.txt |more /P > dist\README.txt
+IF %ONNX%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt
 IF %OPENCL%==true type scripts\check_opencl.bat |more /P > dist\check_opencl.bat
 IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\check_opencl.bat
 IF %DX%==true type scripts\check_dx.bat |more /P > dist\check_dx.bat
