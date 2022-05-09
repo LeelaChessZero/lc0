@@ -196,9 +196,20 @@ class OnednnNetwork : public Network {
       }
     }
 
+    // Unfortunately current oneDNN versions get this wrong, selecting Winograd
+    // on gpu and not on cpu (last tested with version 2.6.0). So for the time
+    // being this will be overriden in every case.
     auto convolution_type = dnnl::algorithm::convolution_auto;
     if (!options.IsDefault<bool>("winograd")) {
       if (options.Get<bool>("winograd")) {
+        convolution_type = dnnl::algorithm::convolution_winograd;
+      } else {
+        convolution_type = dnnl::algorithm::convolution_direct;
+      }
+    } else {
+      // Heuristic: only use Winograd convolution on cpu newer than avx2.
+      if (eng_.get_kind() == dnnl::engine::kind::cpu &&
+          dnnl::get_effective_cpu_isa() > dnnl::cpu_isa::avx2) {
         convolution_type = dnnl::algorithm::convolution_winograd;
       } else {
         convolution_type = dnnl::algorithm::convolution_direct;
