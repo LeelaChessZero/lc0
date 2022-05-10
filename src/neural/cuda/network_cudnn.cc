@@ -653,8 +653,8 @@ class CudnnNetwork : public Network {
     if (use_res_block_winograd_fuse_opt_ && transformed_tensor_size > maxSize)
       maxSize = transformed_tensor_size;
 
-    if (attn_policy_ && attentionSize > maxSize) {
-      maxSize = attentionSize;
+    if (attn_policy_ && scratch_size_ > maxSize) {
+      maxSize = scratch_size_;
     }
 
     for (auto& mem : tensor_mem_) {
