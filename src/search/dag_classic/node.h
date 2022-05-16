@@ -217,7 +217,7 @@ class Node {
   uint32_t GetChildrenVisits() const;
   uint32_t GetTotalVisits() const;
   // Returns n + n_in_flight.
-  int GetNStarted() const { return n_ + n_in_flight_; }
+  int GetNStarted() const { return n_ + GetNInFlight(); }
 
   float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
@@ -377,7 +377,7 @@ class Node {
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
-  uint32_t n_in_flight_ = 0;
+  std::atomic<uint32_t> n_in_flight_ = 0;
 
   // Move and policy for this edge.
   Edge edge_;
