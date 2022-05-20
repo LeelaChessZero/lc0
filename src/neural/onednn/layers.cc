@@ -69,7 +69,8 @@ void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
 }
 
 void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                     dnnl::engine& eng, dnnl::stream& stream) {
+                     dnnl::memory& scratch, dnnl::engine& eng,
+                     dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     auto t_in_md = dnnl::memory::desc({N, c_input_, H, W}, data_type_,
@@ -79,8 +80,10 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         dnnl::memory::desc({C, c_input_, filter_size_, filter_size_},
                            data_type_, dnnl::memory::format_tag::any);
 
-    auto t_out_md = dnnl::memory::desc({N, C, H, W}, data_type_,
-                                       dnnl::memory::format_tag::any);
+    auto t_out_md = use_skip_
+                        ? output.get_desc()
+                        : dnnl::memory::desc({N, C, H, W}, data_type_,
+                                             dnnl::memory::format_tag::any);
 
     const int padding = filter_size_ / 2;
     auto conv_d = dnnl::convolution_forward::desc(
@@ -107,7 +110,7 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     conv_ = dnnl::convolution_forward(conv_pd);
 
     in_md = conv_pd.src_desc();
-    out_md = conv_pd.dst_desc();
+    out_md = use_skip_ ? output.get_desc() : conv_pd.dst_desc();
 
     // Apparently convolution doesn't go well with mish post op.
     if (activation_ == MISH) {
@@ -142,42 +145,26 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       scratchpad_md = in_reorder_pd.scratchpad_desc();
     }
 
-    if (use_skip_) {
-      auto skip_reorder_pd = dnnl::reorder::primitive_desc(
-          eng, output.get_desc(), eng, out_md, reorder_attr);
-      skip_reorder_ = dnnl::reorder(skip_reorder_pd);
-      if (scratchpad_md.get_size() <
-          skip_reorder_pd.scratchpad_desc().get_size()) {
-        scratchpad_md = skip_reorder_pd.scratchpad_desc();
-      }
-    }
-
     scratchpad_mem = dnnl::memory(scratchpad_md, eng);
 
     last_batch_ = N;
   }
 
+  dnnl::memory in;
   if (in_md != input.get_desc()) {
-    auto tmp = dnnl::memory(in_md, eng);
     in_reorder_.execute(stream, {{DNNL_ARG_SRC, input},
-                                 {DNNL_ARG_DST, tmp},
+                                 {DNNL_ARG_DST, scratch},
                                  {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-    input = tmp;
+    in = scratch;
+  } else {
+    in = input;
   }
 
-  if (!output || out_md != output.get_desc()) {
-    if (use_skip_) {
-      auto tmp = dnnl::memory(out_md, eng);
-      skip_reorder_.execute(stream, {{DNNL_ARG_SRC, output},
-                                     {DNNL_ARG_DST, tmp},
-                                     {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-      output = tmp;
-    } else {
-      output = dnnl::memory(out_md, eng);
-    }
+  if (out_md != output.get_desc()) {
+    output = dnnl::memory(out_md, eng, output.get_data_handle());
   }
 
-  conv_.execute(stream, {{DNNL_ARG_SRC, input},
+  conv_.execute(stream, {{DNNL_ARG_SRC, in},
                          {DNNL_ARG_WEIGHTS, conv_filter_mem},
                          {DNNL_ARG_BIAS, bias_mem},
                          {DNNL_ARG_DST, output},
@@ -222,7 +209,8 @@ void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
 }
 
 void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                   dnnl::engine& eng, dnnl::stream& stream) {
+                   dnnl::memory& /*scratch*/, dnnl::engine& eng,
+                   dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     // Also the broadcast input memory format for the binary primitives.
@@ -487,7 +475,8 @@ void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
 }
 
 void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                   dnnl::engine& eng, dnnl::stream& stream) {
+                   dnnl::memory& scratch, dnnl::engine& eng,
+                   dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     const int num_outputs = C * H * W;
@@ -544,19 +533,21 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     last_batch_ = N;
   }
 
+  dnnl::memory in;
   if (in_md != input.get_desc()) {
-    auto tmp = dnnl::memory(in_md, eng);
     in_reorder_.execute(stream, {{DNNL_ARG_SRC, input},
-                                 {DNNL_ARG_DST, tmp},
+                                 {DNNL_ARG_DST, scratch},
                                  {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-    input = tmp;
+    in = scratch;
+  } else {
+    in = input;
   }
 
-  if (!output || out_md != output.get_desc()) {
-    output = dnnl::memory(out_md, eng);
+  if (out_md != output.get_desc()) {
+    output = dnnl::memory(out_md, eng, output.get_data_handle());
   }
 
-  fc_.execute(stream, {{DNNL_ARG_SRC, input},
+  fc_.execute(stream, {{DNNL_ARG_SRC, in},
                        {DNNL_ARG_WEIGHTS, filter_mem},
                        {DNNL_ARG_BIAS, bias_mem},
                        {DNNL_ARG_DST, output},
@@ -600,7 +591,8 @@ void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
 }
 
 void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                               dnnl::engine& eng, dnnl::stream& stream) {
+                               dnnl::memory& scratch, dnnl::engine& eng,
+                               dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     in_md = dnnl::memory::desc({N, C, H, W}, data_type_,
@@ -723,20 +715,22 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     last_batch_ = N;
   }
 
+  dnnl::memory in;
   // Convert to NHWC.
   if (in_md != input.get_desc()) {
-    auto tmp = dnnl::memory(in_md, eng);
     in_reorder_.execute(stream, {{DNNL_ARG_SRC, input},
-                                 {DNNL_ARG_DST, tmp},
+                                 {DNNL_ARG_DST, scratch},
                                  {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-    input = tmp;
+    in = scratch;
+  } else {
+    in = input;
   }
 
-  if (!output || out_md != output.get_desc()) {
-    output = dnnl::memory(out_md, eng);
+  if (out_md != output.get_desc()) {
+    output = dnnl::memory(out_md, eng, output.get_data_handle());
   }
 
-  fc_.execute(stream, {{DNNL_ARG_SRC, input},
+  fc_.execute(stream, {{DNNL_ARG_SRC, in},
                        {DNNL_ARG_WEIGHTS, fc_filter_mem},
                        {DNNL_ARG_BIAS, fc_bias_mem},
                        {DNNL_ARG_DST, fc_out_mem},
