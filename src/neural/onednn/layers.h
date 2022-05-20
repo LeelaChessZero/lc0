@@ -161,6 +161,8 @@ class SELayer : public BaseLayer {
   dnnl::reorder mul_reorder_;
   dnnl::reorder add_reorder_;
   dnnl::memory scratchpad_mem;
+  dnnl::memory buf1;
+  dnnl::memory buf2;
 
   // Cached values to change tensors for best performance.
   dnnl::memory::desc pool_out_md;
