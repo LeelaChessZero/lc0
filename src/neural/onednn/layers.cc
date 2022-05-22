@@ -55,7 +55,8 @@ ConvLayer::ConvLayer(BaseLayer* ip, int C, int H, int W, int filter, int Cin,
       use_skip_(skip) {}
 
 void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
-                            dnnl::engine& eng, dnnl::stream& stream) {
+                            const dnnl::engine& eng,
+                            const dnnl::stream& stream) {
   auto filter_md =
       dnnl::memory::desc({C, c_input_, filter_size_, filter_size_}, data_type_,
                          dnnl::memory::format_tag::oihw);
@@ -68,9 +69,9 @@ void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
   dnnl::reorder(b1, bias_mem).execute(stream, b1, bias_mem);
 }
 
-void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                     dnnl::memory& scratch, dnnl::engine& eng,
-                     dnnl::stream& stream) {
+void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                     const dnnl::memory& scratch, const dnnl::engine& eng,
+                     const dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     auto t_in_md = dnnl::memory::desc({N, c_input_, H, W}, data_type_,
@@ -183,8 +184,8 @@ SELayer::SELayer(BaseLayer* ip, int fc1Outputs, ActivationFunction activation)
       activation_(activation) {}
 
 void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
-                          dnnl::memory& b2, dnnl::engine& eng,
-                          dnnl::stream& stream) {
+                          dnnl::memory& b2, const dnnl::engine& eng,
+                          const dnnl::stream& stream) {
   auto filter_md = dnnl::memory::desc({numFc1Out_, C}, data_type_,
                                       dnnl::memory::format_tag::ab);
   filter_mem = dnnl::memory(filter_md, eng);
@@ -208,9 +209,9 @@ void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
   dnnl::reorder(b2, bias2_mem).execute(stream, b2, bias2_mem);
 }
 
-void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                   dnnl::memory& scratch, dnnl::engine& eng,
-                   dnnl::stream& stream) {
+void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                   const dnnl::memory& scratch, const dnnl::engine& eng,
+                   const dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     // Also the broadcast input memory format for the binary primitives.
@@ -463,8 +464,8 @@ FCLayer::FCLayer(BaseLayer* ip, int C, int H, int W,
                  ActivationFunction activation)
     : BaseLayer(C, H, W, ip), activation_(activation) {}
 
-void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
-                          dnnl::stream& stream) {
+void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
+                          const dnnl::engine& eng, const dnnl::stream& stream) {
   const int num_outputs = C * H * W;
 
   auto filter_md = dnnl::memory::desc(
@@ -479,9 +480,9 @@ void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
   dnnl::reorder(b1, bias_mem).execute(stream, b1, bias_mem);
 }
 
-void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                   dnnl::memory& scratch, dnnl::engine& eng,
-                   dnnl::stream& stream) {
+void FCLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                   const dnnl::memory& scratch, const dnnl::engine& eng,
+                   const dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     const int num_outputs = C * H * W;
@@ -562,8 +563,8 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
                                       dnnl::memory& w2, dnnl::memory& b2,
                                       dnnl::memory& w3, dnnl::memory& b3,
-                                      dnnl::memory& w4, dnnl::engine& eng,
-                                      dnnl::stream& stream) {
+                                      dnnl::memory& w4, const dnnl::engine& eng,
+                                      const dnnl::stream& stream) {
   auto fc_filter_md = dnnl::memory::desc({C, embedding_size_}, data_type_,
                                          dnnl::memory::format_tag::ab);
   fc_filter_mem = dnnl::memory(fc_filter_md, eng);
@@ -595,9 +596,11 @@ void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
   dnnl::reorder(w4, pmul_mem).execute(stream, w4, pmul_mem);
 }
 
-void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                               dnnl::memory& scratch, dnnl::engine& eng,
-                               dnnl::stream& stream) {
+void AttentionPolicyHead::Eval(int N, dnnl::memory& output,
+                               const dnnl::memory& input,
+                               const dnnl::memory& scratch,
+                               const dnnl::engine& eng,
+                               const dnnl::stream& stream) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     in_md = dnnl::memory::desc({N, C, H, W}, data_type_,

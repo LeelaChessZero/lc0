@@ -48,9 +48,9 @@ class BaseLayer {
   size_t GetOutputSize(int N) const { return sizeof(float) * N * C * H * W; }
   void SetDataType(dnnl::memory::data_type type) { data_type_ = type; }
   void SetConvolutionType(dnnl::algorithm type) { convolution_type_ = type; }
-  virtual void Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                    dnnl::memory& scratch, dnnl::engine& eng,
-                    dnnl::stream& stream) = 0;
+  virtual void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                    const dnnl::memory& scratch, const dnnl::engine& eng,
+                    const dnnl::stream& stream) = 0;
 
  protected:
   BaseLayer* input_;
@@ -68,13 +68,13 @@ class ConvLayer : public BaseLayer {
   ConvLayer(BaseLayer* ip, int C, int H, int W, int size, int Cin,
             ActivationFunction activation = NONE, bool skip = false);
 
-  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
-                   dnnl::stream& stream);
+  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
 
   // If there is a skip connection the output doubles as an input.
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input,
-            dnnl::memory& scratch, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream) override;
 
  private:
   const int c_input_;
@@ -101,11 +101,11 @@ class FCLayer : public BaseLayer {
  public:
   FCLayer(BaseLayer* ip, int C, int H, int W, ActivationFunction activation);
 
-  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
-                   dnnl::stream& stream);
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input,
-            dnnl::memory& scratch, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream) override;
 
  private:
   ActivationFunction activation_;
@@ -131,13 +131,14 @@ class SELayer : public BaseLayer {
   SELayer(BaseLayer* ip, int numFc1Out, ActivationFunction activation);
 
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
-                   dnnl::memory& b2, dnnl::engine& eng, dnnl::stream& stream);
+                   dnnl::memory& b2, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
 
   // Initially output holds the skip connection. Both input and output are
   // assumed to be the same memory format.
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input,
-            dnnl::memory& scratch, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream) override;
 
  private:
   dnnl::memory filter_mem;
@@ -180,10 +181,11 @@ class AttentionPolicyHead : public BaseLayer {
         policy_d_model_(policy_d_model) {}
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
                    dnnl::memory& b2, dnnl::memory& w3, dnnl::memory& b3,
-                   dnnl::memory& w4, dnnl::engine& eng, dnnl::stream& stream);
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input,
-            dnnl::memory& scratch, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+                   dnnl::memory& w4, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream) override;
 
  private:
   const int embedding_size_;

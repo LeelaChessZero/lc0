@@ -81,8 +81,8 @@ struct InputsOutputs {
   float* op_value_mem_;
   float* op_moves_left_mem_;
 
-  // Input memory
-  dnnl::memory input_mem;
+  // Scratch memory
+  dnnl::memory scratch_mem;
 
   // Output memory.
   dnnl::memory opPol_mem;
@@ -559,28 +559,43 @@ class OnednnNetwork : public Network {
       auto tensor_desc =
           dnnl::memory::desc({alloc_batch, numFilters_, 8, 8}, data_type_,
                              dnnl::memory::format_tag::nchw);
+      io->tensor_mem[0] = dnnl::memory(tensor_desc, eng_);
+      io->tensor_mem[1] = dnnl::memory(tensor_desc, eng_);
+      io->tensor_mem[2] = dnnl::memory(tensor_desc, eng_);
 
-      int scratch_size = attn_policy_ ? 67 * 64 : conv_policy_
-                                                      ? pol_channels_ * 64
-                                                      : kNumOutputPolicy;
-      if (scratch_size < kInputPlanes * 64) {
-        scratch_size = kInputPlanes * 64;
-      }
-      auto scratch_desc = dnnl::memory::desc({alloc_batch, scratch_size, 1, 1},
+      auto scratch_desc = dnnl::memory::desc({alloc_batch, kInputPlanes, 8, 8},
                                              dnnl::memory::data_type::f32,
                                              dnnl::memory::format_tag::nchw);
-
       if (tensor_desc.get_size() > scratch_desc.get_size()) {
         scratch_desc = tensor_desc;
       }
+      io->scratch_mem = dnnl::memory(scratch_desc, eng_);
 
-      io->tensor_mem[0] = dnnl::memory(scratch_desc, eng_);
-      io->tensor_mem[1] = dnnl::memory(scratch_desc, eng_);
-      io->tensor_mem[2] = dnnl::memory(scratch_desc, eng_);
-      io->opPol_mem = dnnl::memory(scratch_desc, eng_);
-      io->opVal_mem = dnnl::memory(scratch_desc, eng_);
-      io->opMov_mem = dnnl::memory(scratch_desc, eng_);
-      io->input_mem = dnnl::memory(scratch_desc, eng_);
+      dnnl::memory::desc opPol_desc;
+      if (attn_policy_) {
+        opPol_desc = dnnl::memory::desc({alloc_batch, 67, 8, 8},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      } else if (conv_policy_) {
+        opPol_desc = dnnl::memory::desc({alloc_batch, pol_channels_, 8, 8},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      } else {
+        opPol_desc = dnnl::memory::desc({alloc_batch, kNumOutputPolicy, 1, 1},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      }
+      io->opPol_mem = dnnl::memory(opPol_desc, eng_);
+
+      auto opVal_desc = dnnl::memory::desc({alloc_batch, wdl_ ? 3 : 1, 1, 1},
+                                           dnnl::memory::data_type::f32,
+                                           dnnl::memory::format_tag::nchw);
+      io->opVal_mem = dnnl::memory(opVal_desc, eng_);
+
+      auto opMov_desc = dnnl::memory::desc({alloc_batch, 1, 1, 1},
+                                           dnnl::memory::data_type::f32,
+                                           dnnl::memory::format_tag::nchw);
+      io->opMov_mem = dnnl::memory(opMov_desc, eng_);
     }
 
     int batchSize = steps_ * batch_size_;
@@ -606,7 +621,8 @@ class OnednnNetwork : public Network {
                                            dnnl::memory::format_tag::nchw);
       dnnl::memory input_mem =
           eng_.get_kind() == dnnl::engine::kind::cpu
-              ? dnnl::memory(input_desc, eng_, io->input_mem.get_data_handle())
+              ? dnnl::memory(input_desc, eng_,
+                             io->scratch_mem.get_data_handle())
               : dnnl::memory(input_desc, cpu_eng_);
 
       float* buffer = (float*)input_mem.get_data_handle();
@@ -623,7 +639,7 @@ class OnednnNetwork : public Network {
       // Move input to the gpu.
       if (eng_.get_kind() != dnnl::engine::kind::cpu) {
         dnnl::memory tmp =
-            dnnl::memory(input_desc, eng_, io->input_mem.get_data_handle());
+            dnnl::memory(input_desc, eng_, io->scratch_mem.get_data_handle());
         dnnl::reorder in_reorder = dnnl::reorder(input_mem, tmp);
         in_reorder.execute(eng_stream_, input_mem, tmp);
         input_mem = tmp;
@@ -663,7 +679,6 @@ class OnednnNetwork : public Network {
       auto tensor_desc =
           dnnl::memory::desc({batchSize, numFilters_, 8, 8}, data_type_,
                              dnnl::memory::format_tag::nchw);
-
       dnnl::memory tensor_mem[3];
       tensor_mem[0] =
           dnnl::memory(tensor_desc, eng_, io->tensor_mem[0].get_data_handle());
@@ -671,6 +686,9 @@ class OnednnNetwork : public Network {
           dnnl::memory(tensor_desc, eng_, io->tensor_mem[1].get_data_handle());
       tensor_mem[2] =
           dnnl::memory(tensor_desc, eng_, io->tensor_mem[2].get_data_handle());
+
+      dnnl::memory scratch_mem =
+          dnnl::memory(tensor_desc, eng_, io->scratch_mem.get_data_handle());
 
       int l = 0;
 
@@ -682,78 +700,78 @@ class OnednnNetwork : public Network {
       // Residual block.
       for (int block = 0; block < numBlocks_; block++) {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                input_mem, eng_,
+                                scratch_mem, eng_,
                                 eng_stream_);  // conv1
 
         // For SE Resnet, skip connection is added after SE.
         if (has_se_) {
           layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
-                                  input_mem, eng_,
+                                  scratch_mem, eng_,
                                   eng_stream_);  // conv2
         } else {
           layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[0],
-                                  input_mem, eng_,
+                                  scratch_mem, eng_,
                                   eng_stream_);  // conv2
         }
 
         if (has_se_) {
           layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1],
-                                  input_mem, eng_,
+                                  scratch_mem, eng_,
                                   eng_stream_);  // SE layer
         }
       }
 
       // Policy head.
       if (attn_policy_) {
-        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[2], input_mem,
-                                eng_,
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[2],
+                                scratch_mem, eng_,
                                 eng_stream_);  // attention head
       } else if (conv_policy_) {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                input_mem, eng_,
+                                scratch_mem, eng_,
                                 eng_stream_);  // policy conv1
 
-        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0], input_mem,
-                                eng_,
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0],
+                                scratch_mem, eng_,
                                 eng_stream_);  // policy conv2
       } else {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                input_mem, eng_,
+                                scratch_mem, eng_,
                                 eng_stream_);  // pol conv
 
-        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0], input_mem,
-                                eng_,
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0],
+                                scratch_mem, eng_,
                                 eng_stream_);  // pol FC  // POLICY
       }
 
       // value head
       {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                input_mem, eng_,
+                                scratch_mem, eng_,
                                 eng_stream_);  // value conv
 
         layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
-                                input_mem, eng_,
+                                scratch_mem, eng_,
                                 eng_stream_);  // value FC1
 
-        layers_[idx][l++]->Eval(batchSize, opVal_mem, tensor_mem[1], input_mem,
-                                eng_,
+        layers_[idx][l++]->Eval(batchSize, opVal_mem, tensor_mem[1],
+                                scratch_mem, eng_,
                                 eng_stream_);  // value FC2    // VALUE
       }
 
       if (moves_left_) {
         // Moves left head
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                input_mem, eng_,
+                                scratch_mem, eng_,
                                 eng_stream_);  // moves conv
 
         layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
-                                input_mem, eng_,
+                                scratch_mem, eng_,
                                 eng_stream_);  // moves FC1
 
         // Moves left FC2
-        layers_[idx][l++]->Eval(batchSize, opMov_mem, tensor_mem[1], input_mem,
-                                eng_, eng_stream_);
+        layers_[idx][l++]->Eval(batchSize, opMov_mem, tensor_mem[1],
+                                scratch_mem, eng_, eng_stream_);
       }
 
       // Convert output data to nchw and if on gpu move them to the cpu.
