@@ -71,7 +71,7 @@ void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
 
 void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
                      const dnnl::memory& scratch, const dnnl::engine& eng,
-                     const dnnl::stream& stream) {
+                     const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     auto t_in_md = dnnl::memory::desc({N, c_input_, H, W}, data_type_,
@@ -107,7 +107,7 @@ void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
     conv_attr.set_post_ops(conv_ops);
     auto conv_pd =
         dnnl::convolution_forward::primitive_desc(conv_d, conv_attr, eng);
-    auto scratchpad_md = conv_pd.scratchpad_desc();
+    scratchpad_md = conv_pd.scratchpad_desc();
     conv_ = dnnl::convolution_forward(conv_pd);
 
     in_md = conv_pd.src_desc();
@@ -146,9 +146,12 @@ void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
       scratchpad_md = in_reorder_pd.scratchpad_desc();
     }
 
-    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
-
     last_batch_ = N;
+  }
+
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
   }
 
   dnnl::memory in;
@@ -211,7 +214,7 @@ void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
 
 void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
                    const dnnl::memory& scratch, const dnnl::engine& eng,
-                   const dnnl::stream& stream) {
+                   const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     // Also the broadcast input memory format for the binary primitives.
@@ -242,7 +245,7 @@ void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
     auto pooling_pd =
         dnnl::pooling_forward::primitive_desc(pooling_d, pooling_attr, eng);
     pooling_ = dnnl::pooling_forward(pooling_pd);
-    auto scratchpad_md = pooling_pd.scratchpad_desc();
+    scratchpad_md = pooling_pd.scratchpad_desc();
 
     // This is also the optimized memory format descriptor for the binary
     // primitives.
@@ -384,8 +387,6 @@ void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
       scratchpad_md = add_reorder_pd.scratchpad_desc();
     }
 
-    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
-
     buf1 = dnnl::memory(pool_out_md, eng);
     if (fc1_out_md.get_size() > pool_out_md.get_size()) {
       buf2 = dnnl::memory(fc1_out_md, eng);
@@ -394,6 +395,11 @@ void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
     }
 
     last_batch_ = N;
+  }
+
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
   }
 
   auto& pool_out_mem = buf1;
@@ -482,7 +488,7 @@ void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
 
 void FCLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
                    const dnnl::memory& scratch, const dnnl::engine& eng,
-                   const dnnl::stream& stream) {
+                   const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     const int num_outputs = C * H * W;
@@ -515,7 +521,7 @@ void FCLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
     auto fc_pd =
         dnnl::inner_product_forward::primitive_desc(fc_d, fc_attr, eng);
     fc_ = dnnl::inner_product_forward(fc_pd);
-    auto scratchpad_md = fc_pd.scratchpad_desc();
+    scratchpad_md = fc_pd.scratchpad_desc();
 
     in_md = fc_pd.src_desc();
     out_md = fc_pd.dst_desc().reshape({N, C, H, W});
@@ -534,9 +540,12 @@ void FCLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
       scratchpad_md = in_reorder_pd.scratchpad_desc();
     }
 
-    scratchpad_mem = dnnl::memory(fc_pd.scratchpad_desc(), eng);
-
     last_batch_ = N;
+  }
+
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
   }
 
   dnnl::memory in;
@@ -600,7 +609,8 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output,
                                const dnnl::memory& input,
                                const dnnl::memory& scratch,
                                const dnnl::engine& eng,
-                               const dnnl::stream& stream) {
+                               const dnnl::stream& stream,
+                               dnnl::memory& scratchpad_mem) {
   std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     in_md = dnnl::memory::desc({N, C, H, W}, data_type_,
@@ -628,7 +638,7 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output,
     auto fc_pd =
         dnnl::inner_product_forward::primitive_desc(fc_d, fc_attr, eng);
     fc_ = dnnl::inner_product_forward(fc_pd);
-    auto scratchpad_md = fc_pd.scratchpad_desc();
+    scratchpad_md = fc_pd.scratchpad_desc();
 
     // Q
     auto fcQK_out_md = dnnl::memory::desc({N * 64, policy_d_model_}, data_type_,
@@ -718,9 +728,12 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output,
       scratchpad_md = in_reorder_pd.scratchpad_desc();
     }
 
-    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
-
     last_batch_ = N;
+  }
+
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
   }
 
   dnnl::memory in;

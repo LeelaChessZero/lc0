@@ -83,6 +83,7 @@ struct InputsOutputs {
 
   // Scratch memory
   dnnl::memory scratch_mem;
+  dnnl::memory scratchpad_mem;
 
   // Output memory.
   dnnl::memory opPol_mem;
@@ -690,88 +691,91 @@ class OnednnNetwork : public Network {
       dnnl::memory scratch_mem =
           dnnl::memory(tensor_desc, eng_, io->scratch_mem.get_data_handle());
 
+      // A reference to be allocated and enlarged as needed.
+      dnnl::memory& scratchpad_mem = io->scratchpad_mem;
+
       int l = 0;
 
       // Input.
       layers_[idx][l++]->Eval(batchSize, tensor_mem[2], input_mem,
-                              tensor_mem[1], eng_,
-                              eng_stream_);  // input conv
+                              tensor_mem[1], eng_, eng_stream_,
+                              scratchpad_mem);  // input conv
 
       // Residual block.
       for (int block = 0; block < numBlocks_; block++) {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                scratch_mem, eng_,
-                                eng_stream_);  // conv1
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // conv1
 
         // For SE Resnet, skip connection is added after SE.
         if (has_se_) {
           layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
-                                  scratch_mem, eng_,
-                                  eng_stream_);  // conv2
+                                  scratch_mem, eng_, eng_stream_,
+                                  scratchpad_mem);  // conv2
         } else {
           layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[0],
-                                  scratch_mem, eng_,
-                                  eng_stream_);  // conv2
+                                  scratch_mem, eng_, eng_stream_,
+                                  scratchpad_mem);  // conv2
         }
 
         if (has_se_) {
           layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1],
-                                  scratch_mem, eng_,
-                                  eng_stream_);  // SE layer
+                                  scratch_mem, eng_, eng_stream_,
+                                  scratchpad_mem);  // SE layer
         }
       }
 
       // Policy head.
       if (attn_policy_) {
         layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[2],
-                                scratch_mem, eng_,
-                                eng_stream_);  // attention head
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // attention head
       } else if (conv_policy_) {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                scratch_mem, eng_,
-                                eng_stream_);  // policy conv1
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // policy conv1
 
         layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0],
-                                scratch_mem, eng_,
-                                eng_stream_);  // policy conv2
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // policy conv2
       } else {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                scratch_mem, eng_,
-                                eng_stream_);  // pol conv
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // pol conv
 
         layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0],
-                                scratch_mem, eng_,
-                                eng_stream_);  // pol FC  // POLICY
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // pol FC  // POLICY
       }
 
       // value head
       {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                scratch_mem, eng_,
-                                eng_stream_);  // value conv
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // value conv
 
         layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
-                                scratch_mem, eng_,
-                                eng_stream_);  // value FC1
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // value FC1
 
         layers_[idx][l++]->Eval(batchSize, opVal_mem, tensor_mem[1],
-                                scratch_mem, eng_,
-                                eng_stream_);  // value FC2    // VALUE
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // value FC2    // VALUE
       }
 
       if (moves_left_) {
         // Moves left head
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
-                                scratch_mem, eng_,
-                                eng_stream_);  // moves conv
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // moves conv
 
         layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
-                                scratch_mem, eng_,
-                                eng_stream_);  // moves FC1
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // moves FC1
 
         // Moves left FC2
         layers_[idx][l++]->Eval(batchSize, opMov_mem, tensor_mem[1],
-                                scratch_mem, eng_, eng_stream_);
+                                scratch_mem, eng_, eng_stream_, scratchpad_mem);
       }
 
       // Convert output data to nchw and if on gpu move them to the cpu.
