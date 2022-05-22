@@ -72,7 +72,6 @@ void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
 void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
                      const dnnl::memory& scratch, const dnnl::engine& eng,
                      const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
-  std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     auto t_in_md = dnnl::memory::desc({N, c_input_, H, W}, data_type_,
                                       dnnl::memory::format_tag::any);
@@ -489,7 +488,6 @@ void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
 void FCLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
                    const dnnl::memory& scratch, const dnnl::engine& eng,
                    const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
-  std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     const int num_outputs = C * H * W;
 
