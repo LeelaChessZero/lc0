@@ -807,7 +807,6 @@ class OnednnNetwork : public Network {
       // Convert output data to nchw and if on gpu move them to the cpu.
       dnnl::memory opPol_mem_cpu;
       dnnl::memory opVal_mem_cpu;
-      dnnl::memory opMov_mem_cpu;
 
       if (opPol_desc != opPol_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
@@ -827,15 +826,13 @@ class OnednnNetwork : public Network {
         opVal_mem_cpu = opVal_mem;
       }
 
-      if (moves_left_ && (opMov_desc != opMov_mem.get_desc() ||
-                          eng_.get_kind() != dnnl::engine::kind::cpu)) {
-        opMov_mem_cpu = dnnl::memory(opMov_desc, cpu_eng_);
+      if (moves_left_) {
+        // MLH doesn't need post-processing so move directly to output buffer.
+        dnnl::memory opMov_mem_cpu =
+            dnnl::memory(opMov_desc, cpu_eng_, io->op_moves_left_mem_ + start);
         dnnl::reorder mov_reorder_ = dnnl::reorder(opMov_mem, opMov_mem_cpu);
         mov_reorder_.execute(eng_stream_, opMov_mem, opMov_mem_cpu);
-      } else if (moves_left_) {
-        opMov_mem_cpu = opMov_mem;
       }
-
       eng_stream_.wait();
 
       // Copy memory to output buffers and do final transformations.
@@ -960,11 +957,6 @@ class OnednnNetwork : public Network {
         memcpy(io->op_policy_mem_ + start * kNumOutputPolicy,
                opPol_mem_cpu.get_data_handle(),
                currentBatchSize * kNumOutputPolicy * sizeof(float));
-      }
-
-      if (moves_left_) {
-        memcpy(io->op_moves_left_mem_ + start, opMov_mem_cpu.get_data_handle(),
-               currentBatchSize * sizeof(float));
       }
     }
   }
