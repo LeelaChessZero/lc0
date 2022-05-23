@@ -39,6 +39,7 @@
 #include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
+#include "utils/fp16_utils.h"
 
 #include <omp.h>
 
@@ -564,9 +565,12 @@ class OnednnNetwork : public Network {
       io->tensor_mem[1] = dnnl::memory(tensor_desc, eng_);
       io->tensor_mem[2] = dnnl::memory(tensor_desc, eng_);
 
-      auto scratch_desc = dnnl::memory::desc({alloc_batch, kInputPlanes, 8, 8},
-                                             dnnl::memory::data_type::f32,
-                                             dnnl::memory::format_tag::nchw);
+      auto scratch_desc =
+          dnnl::memory::desc({alloc_batch, kInputPlanes, 8, 8},
+                             data_type_ == dnnl::memory::data_type::f16
+                                 ? dnnl::memory::data_type::f16
+                                 : dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::nchw);
       if (tensor_desc.get_size() > scratch_desc.get_size()) {
         scratch_desc = tensor_desc;
       }
@@ -617,25 +621,42 @@ class OnednnNetwork : public Network {
         batchSize = (idx + 1) * batch_size_;
       }
 
-      auto input_desc = dnnl::memory::desc({batchSize, kInputPlanes, 8, 8},
-                                           dnnl::memory::data_type::f32,
-                                           dnnl::memory::format_tag::nchw);
+      auto input_desc =
+          dnnl::memory::desc({batchSize, kInputPlanes, 8, 8},
+                             data_type_ == dnnl::memory::data_type::f16
+                                 ? dnnl::memory::data_type::f16
+                                 : dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::nchw);
+
       dnnl::memory input_mem =
           eng_.get_kind() == dnnl::engine::kind::cpu
               ? dnnl::memory(input_desc, eng_,
                              io->scratch_mem.get_data_handle())
               : dnnl::memory(input_desc, cpu_eng_);
 
-      float* buffer = (float*)input_mem.get_data_handle();
-      for (int j = 0; j < currentBatchSize * kInputPlanes; j++) {
-        const float value = ipDataValues[j + start * kInputPlanes];
-        const uint64_t mask = ipDataMasks[j + start * kInputPlanes];
-        for (auto i = 0; i < 64; i++)
-          *(buffer++) = (mask & (((uint64_t)1) << i)) != 0 ? value : 0;
+      if (data_type_ == dnnl::memory::data_type::f16) {
+        uint16_t* buffer = (uint16_t*)input_mem.get_data_handle();
+        for (int j = 0; j < currentBatchSize * kInputPlanes; j++) {
+          const auto value = FP32toFP16(ipDataValues[j + start * kInputPlanes]);
+          const uint64_t mask = ipDataMasks[j + start * kInputPlanes];
+          for (auto i = 0; i < 64; i++)
+            *(buffer++) = (mask & (((uint64_t)1) << i)) != 0 ? value : 0;
+        }
+        // Clear remaining buffer (if any).
+        memset(buffer, 0, (batchSize - currentBatchSize) * kInputPlanes * 64 *
+                              sizeof(short));
+      } else {
+        float* buffer = (float*)input_mem.get_data_handle();
+        for (int j = 0; j < currentBatchSize * kInputPlanes; j++) {
+          const float value = ipDataValues[j + start * kInputPlanes];
+          const uint64_t mask = ipDataMasks[j + start * kInputPlanes];
+          for (auto i = 0; i < 64; i++)
+            *(buffer++) = (mask & (((uint64_t)1) << i)) != 0 ? value : 0;
+        }
+        // Clear remaining buffer (if any).
+        memset(buffer, 0, (batchSize - currentBatchSize) * kInputPlanes * 64 *
+                              sizeof(float));
       }
-      // Clear remaining buffer (if any).
-      memset(buffer, 0, (batchSize - currentBatchSize) * kInputPlanes * 64 *
-                            sizeof(float));
 
       // Move input to the gpu.
       if (eng_.get_kind() != dnnl::engine::kind::cpu) {
@@ -649,13 +670,18 @@ class OnednnNetwork : public Network {
       // Output descriptors.
       dnnl::memory::desc opPol_desc;
       if (attn_policy_) {
-        opPol_desc = dnnl::memory::desc({batchSize, 67, 8, 8},
-                                        dnnl::memory::data_type::f32,
-                                        dnnl::memory::format_tag::nchw);
+        opPol_desc = dnnl::memory::desc(
+            {batchSize, 67, 8, 8}, data_type_ == dnnl::memory::data_type::f16
+                                       ? dnnl::memory::data_type::f16
+                                       : dnnl::memory::data_type::f32,
+            dnnl::memory::format_tag::nchw);
       } else if (conv_policy_) {
-        opPol_desc = dnnl::memory::desc({batchSize, pol_channels_, 8, 8},
-                                        dnnl::memory::data_type::f32,
-                                        dnnl::memory::format_tag::nchw);
+        opPol_desc =
+            dnnl::memory::desc({batchSize, pol_channels_, 8, 8},
+                               data_type_ == dnnl::memory::data_type::f16
+                                   ? dnnl::memory::data_type::f16
+                                   : dnnl::memory::data_type::f32,
+                               dnnl::memory::format_tag::nchw);
       } else {
         opPol_desc = dnnl::memory::desc({batchSize, kNumOutputPolicy, 1, 1},
                                         dnnl::memory::data_type::f32,
@@ -837,46 +863,96 @@ class OnednnNetwork : public Network {
                currentBatchSize * sizeof(float));
       }
       if (attn_policy_) {
-        float* opPol = (float*)opPol_mem_cpu.get_data_handle();
-        // The promotion offsets are extracted from the output tensor.
-        float promotion_offsets[3][8];
-        for (int batch = 0; batch < currentBatchSize; batch++) {
-          for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 8; j++) {
-              promotion_offsets[i][j] =
-                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + i * 8 + j] +
-                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j];
+        if (data_type_ == dnnl::memory::data_type::f16) {
+          uint16_t* opPol = (uint16_t*)opPol_mem_cpu.get_data_handle();
+          // The promotion offsets are extracted from the output tensor.
+          float promotion_offsets[3][8];
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 3; i++) {
+              for (int j = 0; j < 8; j++) {
+                promotion_offsets[i][j] =
+                    FP16toFP32(opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 +
+                                     i * 8 + j]) +
+                    FP16toFP32(
+                        opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j]);
+              }
+            }
+            for (int x = 0; x < 64 * 64; x++) {
+              auto y = kAttnPolicyMap[x];
+              if (y >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                    FP16toFP32(opPol[batch * (64 * 64 + 8 * 24) + x]);
+              }
+            }
+            for (int k = 0; k < 8; k++) {
+              for (int j = 0; j < 8; j++) {
+                for (int i = 0; i < 3; i++) {
+                  auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
+                  if (y >= 0) {
+                    io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                        FP16toFP32(opPol[batch * (64 * 64 + 8 * 24) +
+                                         (48 + k) * 64 + 56 + j]) +
+                        promotion_offsets[i][j];
+                  }
+                }
+              }
             }
           }
-          for (int x = 0; x < 64 * 64; x++) {
-            auto y = kAttnPolicyMap[x];
-            if (y >= 0) {
-              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
-                  opPol[batch * (64 * 64 + 8 * 24) + x];
+        } else {
+          float* opPol = (float*)opPol_mem_cpu.get_data_handle();
+          // The promotion offsets are extracted from the output tensor.
+          float promotion_offsets[3][8];
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 3; i++) {
+              for (int j = 0; j < 8; j++) {
+                promotion_offsets[i][j] =
+                    opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + i * 8 + j] +
+                    opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j];
+              }
             }
-          }
-          for (int k = 0; k < 8; k++) {
-            for (int j = 0; j < 8; j++) {
-              for (int i = 0; i < 3; i++) {
-                auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
-                if (y >= 0) {
-                  io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
-                      opPol[batch * (64 * 64 + 8 * 24) + (48 + k) * 64 + 56 +
-                            j] +
-                      promotion_offsets[i][j];
+            for (int x = 0; x < 64 * 64; x++) {
+              auto y = kAttnPolicyMap[x];
+              if (y >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                    opPol[batch * (64 * 64 + 8 * 24) + x];
+              }
+            }
+            for (int k = 0; k < 8; k++) {
+              for (int j = 0; j < 8; j++) {
+                for (int i = 0; i < 3; i++) {
+                  auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
+                  if (y >= 0) {
+                    io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                        opPol[batch * (64 * 64 + 8 * 24) + (48 + k) * 64 + 56 +
+                              j] +
+                        promotion_offsets[i][j];
+                  }
                 }
               }
             }
           }
         }
       } else if (conv_policy_) {
-        float* opPol = (float*)opPol_mem_cpu.get_data_handle();
-        for (int batch = 0; batch < currentBatchSize; batch++) {
-          for (int i = 0; i < 73 * 8 * 8; i++) {
-            auto j = kConvPolicyMap[i];
-            if (j >= 0) {
-              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
-                  opPol[batch * pol_channels_ * 64 + i];
+        if (data_type_ == dnnl::memory::data_type::f16) {
+          uint16_t* opPol = (uint16_t*)opPol_mem_cpu.get_data_handle();
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 73 * 8 * 8; i++) {
+              auto j = kConvPolicyMap[i];
+              if (j >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
+                    FP16toFP32(opPol[batch * pol_channels_ * 64 + i]);
+              }
+            }
+          }
+        } else {
+          float* opPol = (float*)opPol_mem_cpu.get_data_handle();
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 73 * 8 * 8; i++) {
+              auto j = kConvPolicyMap[i];
+              if (j >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
+                    opPol[batch * pol_channels_ * 64 + i];
+              }
             }
           }
         }

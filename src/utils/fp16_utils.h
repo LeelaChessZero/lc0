@@ -25,9 +25,41 @@
   Program grant you additional permission to convey the resulting work.
 */
 #pragma once
+
+#include <cstdint>
+
+// Define NO_F16C to avoid the F16C intrinsics. Also disabled with NO_POPCNT
+// since it catches most processors without F16C instructions.
+#if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || \
+    defined(__x86_64__)
+#include <immintrin.h>
+#else
+#define NO_F16C
+#endif
+
 namespace lczero {
+
+#if defined(NO_POPCNT) || defined(NO_F16C) || \
+    (defined(__GNUC__) && !defined(__F16C__))
 
 uint16_t FP32toFP16(float f32);
 float FP16toFP32(uint16_t f16);
 
-};  // namespace lczero
+#else
+
+static inline uint16_t FP32toFP16(float f32) {
+  __m128 A = _mm_set_ss(f32);
+  __m128i H = _mm_cvtps_ph(A, 0);
+  return _mm_extract_epi16(H, 0);
+}
+
+static inline float FP16toFP32(uint16_t f16) {
+  __m128i H = _mm_setzero_si128();
+  H = _mm_insert_epi16(H, f16, 0);
+  __m128 A = _mm_cvtph_ps(H);
+  return _mm_cvtss_f32(A);
+}
+
+#endif
+
+}  // namespace lczero
