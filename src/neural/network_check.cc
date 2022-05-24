@@ -129,7 +129,7 @@ class CheckComputation : public NetworkComputation {
     }
     float total = 0;
     for (auto& p : policy) {
-      p -= max_p;
+      p = std::exp(p - max_p);
       total += p;
     }
     if (total > 0) {
