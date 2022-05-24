@@ -37,6 +37,7 @@ namespace lczero {
 
 OnnxBuilder::OnnxBuilder() {
   model_.set_ir_version(4);
+  model_.set_domain("org.lczero.models.*");
   model_.set_producer_name("Lc0");
   model_.set_producer_version(GetVersionStr());
   model_.add_opset_import()->set_version(9);

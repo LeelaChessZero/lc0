@@ -25,23 +25,33 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "cuda_common.h"
+
 namespace lczero {
 namespace cudnn_backend {
 
 // Adds two vectors (possibly of different sizes), also do optional
 // activation (relu, tanh or sigmoid).
 template <typename T>
-void addVectors(T* c, T* a, T* b, int size, int asize, int bsize, bool relu,
-                bool use_tanh, bool use_sigmoid, cudaStream_t stream);
+void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
+                ActivationFunction activation, cudaStream_t stream);
+
+// Optimized kernel to add bias to innermost dimension
+// and perform optional activation (to be used with GEMMs/fully connected)
+template <typename T>
+void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+                    int C, ActivationFunction activation, cudaStream_t stream);
 
 // Add bias to convolution's output.
 template <typename T>
-void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W, bool relu, cudaStream_t stream);
+void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
+                  ActivationFunction activation, cudaStream_t stream);
 
-// Conversion from: fp32 -> fp16 datatype, and NCHW -> NHWC layout.
-// Cudnn kernels work best with NCHW layout for fp32, and with NHWC for fp16.
-void fp32NCHWtofp16NHWC(half* output_tensor, float* input_tensor, int Nin,
-                        int Cin, int Nout, int Cout, int H, int W);
+// Conversion from NCHW to NHWC, can also change datatype depending on template
+// params, also pad/un-pad elements from Batch or Channel dimensions
+template <typename DstType, typename SrcType>
+void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
+                       int Nin, int Cin, int Nout, int Cout, int H, int W);
 
 // Plain data-type conversion (no layout conversion).
 template <typename DstType, typename SrcType>
@@ -50,7 +60,8 @@ void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream);
 // Perform batch normilization.
 template <typename T>
 void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
-               int H, int W, float* means, float* var_multipliers, bool relu);
+               int H, int W, float* means, float* var_multipliers,
+               ActivationFunction activation);
 
 // Unpack planes (input to network).
 void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
@@ -70,37 +81,54 @@ void globalAvgPool(int N, int C, T* output, const T* input,
 // Perform global scale.
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
-                 const T* prevLayerBias, bool nhwc);
+                 const T* prevLayerBias, bool nhwc,
+                 ActivationFunction activation);
 
 // Perform Squeeze-and-Excitation (SE) in a single fused kernel.
 // Returns false if the fused kernel can't handle the sizes.
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
-                  const half* w2, const half* b2, const half* bPrev);
+                  const half* w2, const half* b2, const half* bPrev,
+                  ActivationFunction activation);
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
                int inputSize, int usedSize, int outputSize,
                cudaStream_t stream);
 
-
 // Custom winograd helper functions
 template <typename T>
 void FilterTransform(int N, int C, T* transformedFilter, const T* filter);
 
 template <typename T, bool nhcw>
-void InputTransform(int N, int C, T* transformedInput, const T* input, cudaStream_t stream);
+void InputTransform(int N, int C, T* transformedInput, const T* input,
+                    cudaStream_t stream);
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip,
-          bool skipInput_nhcw, bool output_nhcw>
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
 void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2, cudaStream_t stream);
 
-template <typename T, bool use_se, bool relu, bool use_bias, bool use_skip>
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
-                     const T* skip, const T* bias, const T* w1, const T* b1,
-                     const T* w2, const T* b2, cudaStream_t stream);
+                          const T* skip, const T* bias, const T* w1,
+                          const T* b1, const T* w2, const T* b2,
+                          cudaStream_t stream);
+
+template <typename T>
+void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream);
+
+template <typename T>
+void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
+               const T* skip, const T* gammas, const T* betas, float ep,
+               cudaStream_t stream);
+
+template <typename T>
+void ComputePromotionLogits(int N, int C, T* output, const T* keys,
+                            const T* ppo, const T* policy_attn_logits,
+                            cudaStream_t stream);
 
 }  // namespace cudnn_backend
 }  // namespace lczero

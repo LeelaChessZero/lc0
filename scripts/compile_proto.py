@@ -310,6 +310,12 @@ class ProtoFieldParser:
             2: 'AppendString',
             5: 'AppendInt32'
         }
+        tname = {
+            0: 'std::uint64_t',
+            1: 'std::uint64_t',
+            2: 'std::string_view',
+            5: 'std::uint32_t'
+        }
         wire_id = self.type.GetWireType()
         if self.category == 'repeated':
             prefix = 'for (const auto& x : %s)' % (self.name.group(0) + '_')
@@ -319,6 +325,9 @@ class ProtoFieldParser:
             prefix = 'if (has_%s)' % (name)
         if self.type.IsMessage():
             name += '.OutputAsString()'
+        elif self.type.IsFloatType():
+            name = 'bit_cast<%s>(%s)' % (tname[wire_id], name)
+
         w.Write('%s %s(%d, %s, &out);' %
                 (prefix, fname[wire_id], self.number, name))
 
@@ -409,6 +418,28 @@ class ProtoEnumParser:
             w.Write('%s = %d,' % (key, value))
         w.Unindent()
         w.Write('};')
+        # Static array of all possible enum values.
+        w.Write('static constexpr std::array<%s,%d> %s_AllValues = {' %
+                (self.name, len(self.values), self.name))
+        w.Indent()
+        for key, _ in self.values:
+            w.Write('%s,' % key)
+        w.Unindent()
+        w.Write('};')
+        # Static function to convert an enum value to its name.
+        w.Write('static std::string %s_Name(%s val) {' %
+                (self.name, self.name))
+        w.Indent()
+        w.Write('switch (val) {')
+        w.Indent()
+        for key, _ in self.values:
+            w.Write('case %s:' % key)
+            w.Write('  return "%s";' % key)
+        w.Unindent()
+        w.Write('};')
+        w.Write('return "%s(" + std::to_string(val) + ")";' % self.name)
+        w.Unindent()
+        w.Write('}')
 
 
 class ProtoMessageParser:
