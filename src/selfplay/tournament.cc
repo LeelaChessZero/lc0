@@ -100,7 +100,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
   SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;

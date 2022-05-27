@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018 The LCZero Authors
+ Copyright (C) 2022 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -16,20 +16,22 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+static inline float mish(float val) {
+  float e = exp(val);
+  float n = e * e + 2.0f * e;
+  float d = val / (n + 2.0f);
+  if (val <= -0.5f) {
+    return n * d;
+  } else {
+    return val - 2.0f * d;
+  }
+}
 
-#include "neural/shared/activation.h"
-
-#include <cstddef>
-
-namespace lczero {
-
-template <bool use_eigen>
-void ApplySEUnit(const size_t batch_size, const size_t channels,
-                 const size_t se_fc_outputs, const float* input,
-                 const float* bias, const float* residual,
-                 const float* weights_w1, const float* weights_b1,
-                 const float* weights_w2, const float* weights_b2,
-                 float* output, const ActivationFunction activation);
-
-}  // namespace lczero
+export void ActivateMish(uniform const size_t len, uniform float gamma,
+                         const uniform float data[], const uniform float bias[],
+                         uniform float beta, uniform float output[]) {
+  foreach (b = 0 ... len) {
+    float val = gamma * data[b] + bias[b] + beta;
+    output[b] = mish(val);
+  }
+}
