@@ -120,7 +120,7 @@ class MetalNetwork : public Network {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
-                                             moves_left_);
+                                             moves_left_, conv_policy_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -152,6 +152,9 @@ class MetalNetwork : public Network {
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
   std::unique_ptr<MetalNetworkBuilder> builder_;
+
+  // Metal not really good at multi-threading, so we need to do one NN eval at a time.
+  mutable std::mutex lock_;
 };
 
 }  // namespace metal_backend

@@ -46,32 +46,22 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     MPSGraphDevice * _device;
     id<MTLCommandQueue> _queue;
 
-    // All the nodes in the graph.
+    // MPSGraph implementation.
     MPSGraph * _graph;
 
-    // Input tensor placeholder.
+    // Input tensor and tensor data placeholders.
     MPSGraphTensor * _inputTensor;
+    MPSGraphTensorData * _inputTensorData;
+    NSData * _inputData;
 
-    // Array to keep output tensors.
+    // Variables to track results of graph inference.
     NSArray<MPSGraphTensor *> * _resultTensors;
-
-    // Size of inference volume.
-    NSUInteger _batchesPerSplit;
-
-    // Variables for triple buffering
-    dispatch_semaphore_t _doubleBufferingSemaphore;
-//    NSUInteger currentFrameIndex;
-//    NSArray<id <MTLBuffer>> dynamicDataBuffers;
-
-    NSMutableDictionary<NSString *, NSObject *> * _readVariables;
-
     NSArray<MPSGraphTensor *> * _targetTensors;
-
     MPSGraphTensorDataDictionary * _resultDataDictionary;
+    NSMutableDictionary<NSString *, NSObject *> * _readVariables;
 }
 
--(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device
-                       batchesPerSplit:(NSUInteger)batchesPerSplit;
+-(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
                                                        height:(NSUInteger)height
@@ -131,17 +121,14 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
-                                                          inputs:(float * __nonnull)inputs
-                                                   inputChannels:(NSUInteger)inputPlanes;
+                                                          inputs:(float * __nonnull)inputs;
 
-
--(void) copyResultsWithBatchSize:(NSUInteger)batchSize
-                   outputBuffers:(float * __nonnull * __nonnull)outputBuffers;
+-(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers;
 
 -(void) setVariable:(NSString * __nonnull)name
              tensor:(MPSGraphTensor * __nonnull)tensor;
 
--(void) addVariable:(NSString * __nonnull)name;
+-(void) trackVariable:(NSString * __nonnull)name;
 
 -(void) dumpVariable:(NSString * __nonnull)name
              batches:(NSUInteger)batches;

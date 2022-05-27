@@ -44,20 +44,6 @@
 namespace lczero {
 namespace metal_backend {
 
-void describeWeights(std::string desc, float * weights, size_t size) {
-  CERR  << "\n" << desc;
-  for (size_t i = 0; i < size; i++) {
-    CERR << i << "; " << *(weights + i);
-  }
-}
-
-void describeWeights(std::string desc, uint32_t * weights, size_t size) {
-  CERR  << "\n" << desc;
-  for (size_t i = 0; i < size; i++) {
-    CERR << i << "; " << *(weights + i);
-  }
-}
-
 MetalNetworkComputation::MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left)
     : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
@@ -79,10 +65,9 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   LegacyWeights weights(file.weights());
 
   try {
-    const int sub_batch_size = options.GetOrDefault<int>("sub_batch", 64);
     const int gpu_id = options.GetOrDefault<int>("gpu", 0);
     builder_ = std::make_unique<MetalNetworkBuilder>();
-    std::string device = builder_->init(sub_batch_size, gpu_id);
+    std::string device = builder_->init(gpu_id);
     CERR << "Initialized metal backend on device " << device;
   } catch (...) {
     throw Exception("There was an error initializing the GPU device.");
@@ -103,12 +88,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   } else if (steps_ > max_batch_size_ / batch_size_) {
     steps_ = max_batch_size_ / batch_size_;
   }
-
-  // Variables to save for debugging.
-//   builder_->saveVariables({
-//     "policy_map/constant", "policy_map/flatten", "policy_map/gather",
-//     "policy", "value/fc2", "mlh/fc2",
-//  });
 
   // Pointer to last layer in MPS Graph.
   void * layer;
@@ -152,6 +131,12 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                                            &weights.policy.biases[0],
                                            false, "policy/conv2");
 
+    /**
+     * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
+     * Implementation of policy map to be done in CPU for now.
+     *
+     * Reinstate this section when bug is fixed. See comments below.
+     *
     // [1858 -> HWC or CHW]
     const bool HWC = false;
     std::vector<uint32_t> policy_map(1858);
@@ -169,6 +154,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
       }
     }
     policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
+    */
   }
   else {
     const int policySize = weights.policy.biases.size();
@@ -253,62 +239,51 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
       }
   }
 
-  if (moves_left_) {
-    // output_mems = {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_};
-    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes);
-    builder_->copyResults(batchSize, {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+  // Metal is not thread-safe, so lock is needed.
+  lock_.lock();
+
+  if (conv_policy_) {
+    /**
+     * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
+     * Implementation of policy map to be done in CPU for now.
+     *
+     * Remove this if-branch when bug is fixed. See comments above.
+     */
+
+    if (moves_left_) {
+      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
+      builder_->copyResults({io->op_policy_raw_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+    }
+    else {
+      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
+      builder_->copyResults({io->op_policy_raw_mem_, io->op_value_mem_});
+    }
+
+    // Mapping from convolutional policy to lc0 policy
+    for (size_t batch = 0; batch < batchSize; batch++) {
+      for (size_t i = 0; i < 73 * 64; i++) {
+        short j = kConvPolicyMap[i];
+        if (j >= 0) {
+          io->op_policy_mem_[batch * 1858 + j] =
+              io->op_policy_raw_mem_[batch * 32 * 64 + i];
+        }
+      }
+    }
+
   }
   else {
-    // output_mems = {io->op_policy_mem_, io->op_value_mem_};
-    builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes);
-    builder_->copyResults(batchSize, {io->op_policy_mem_, io->op_value_mem_});
+    if (moves_left_) {
+      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
+      builder_->copyResults({io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+    }
+    else {
+      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
+      builder_->copyResults({io->op_policy_mem_, io->op_value_mem_});
+    }
   }
 
-  // CERR << "Policy Layer";
-  // for (auto j=0; j < 1024; j++) {
-  //   CERR << j << ";" << io->op_policy_mem_[j];
-  // }
-
-  // builder_->dumpVariable("policy/conv2/transposed_weights", batchSize);
-  // builder_->dumpVariables({
-  //   "policy_map/constant", "policy_map/flatten", "policy_map/gather",
-  //   "policy", "value/fc2", "mlh/fc2",
-  //  }, batchSize);
-
-  // builder_->forwardEval(io->input_val_mem_expanded_, batchSize, kInputPlanes, output_mems);
-
-  // CERR << "Outputs";
-
-  // for (auto i=0; i < output_mems.size(); i++) {
-  //   CERR << (i == 0 ? "Policy" : (i == 1 ? "Value" : "Moves left"));
-  //   for (auto j=0; j < sizes[i]; j++) {
-  //     CERR << j << ";" << output_mems[i][j];
-  //   }
-  // }
-
-  // Copy memory to output buffers and do final transformations.
-  // @todo Move softmax to backend.
-  // if (wdl_) {
-  //   // Value softmax done cpu side.
-  //   for (int i = 0; i < batchSize; i++) {
-  //     float w = opVal[3 * i + 0];
-  //     float d = opVal[3 * i + 1];
-  //     float l = opVal[3 * i + 2];
-  //     float m = std::max({w, d, l});
-  //     w = std::exp(w - m);
-  //     d = std::exp(d - m);
-  //     l = std::exp(l - m);
-  //     float sum = w + d + l;
-  //     w /= sum;
-  //     l /= sum;
-  //     d = 1.0f - w - l;
-  //     io->op_value_mem_[3 * i + 0] = w;
-  //     io->op_value_mem_[3 * i + 1] = d;
-  //     io->op_value_mem_[3 * i + 2] = l;
-  //   }
-  // } else {
-  //   memcpy(io->op_value_mem_, opVal, batchSize * sizeof(float));
-  // }
+  // The next thread can start using the GPU now.
+  lock_.unlock();
 
 }
 

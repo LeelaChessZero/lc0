@@ -37,7 +37,7 @@ public:
     MetalNetworkBuilder(void);
     ~MetalNetworkBuilder(void);
 
-    std::string init(int sub_batch_size, int gpu_id);
+    std::string init(int gpu_id);
 
     void* getInputPlaceholder(int width, int height, int channels, std::string label);
 
@@ -56,9 +56,9 @@ public:
 
     void* setSelectedOutputs(std::vector<void *> * outputs);
 
-    void forwardEval(float * inputs, int batchSize, int inputChannels);
+    void forwardEval(float * inputs, int batchSize);
 
-    void copyResults(int batchSize, std::vector<float *> output_mems);
+    void copyResults(std::vector<float *> output_mems);
 
     void saveVariables(std::vector<std::string> names);
 

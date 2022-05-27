@@ -39,7 +39,7 @@ MetalNetworkBuilder::~MetalNetworkBuilder(void)
 }
 
 //void MetalNetworkBuilder::init(void* weights, void* options)
-std::string MetalNetworkBuilder::init(int sub_batch_size, int gpu_id)
+std::string MetalNetworkBuilder::init(int gpu_id)
 {
     // All metal devices.
     NSArray<id<MTLDevice>> * devices = MTLCopyAllDevices();
@@ -51,8 +51,7 @@ std::string MetalNetworkBuilder::init(int sub_batch_size, int gpu_id)
     }
 
     // Initialize the metal MPS Graph executor with the selected device.
-    self = [[Lc0NetworkGraph alloc] initWithDevice:devices[gpu_id]
-                                   batchesPerSplit:sub_batch_size];
+    self = [[Lc0NetworkGraph alloc] initWithDevice:devices[gpu_id]];
 
     return std::string([devices[gpu_id].name UTF8String]);
 }
@@ -128,24 +127,22 @@ void* MetalNetworkBuilder::setSelectedOutputs(std::vector<void *> * outputs) {
     return (void*) self;
 }
 
-void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, int inputChannels)
+void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize)
 {
     NSArray<MPSGraphTensor *> * resultTensors = [(id)self runInferenceWithBatchSize:batchSize
-                                                                             inputs:inputs
-                                                                      inputChannels:inputChannels];
+                                                                             inputs:inputs];
 }
 
 
-void MetalNetworkBuilder::copyResults(int batchSize, std::vector<float *> output_mems)
+void MetalNetworkBuilder::copyResults(std::vector<float *> output_mems)
 {
-    [(id)self copyResultsWithBatchSize:batchSize
-                         outputBuffers:&output_mems[0]];
+    [(id)self copyResultsToBuffers:&output_mems[0]];
 }
 
 void MetalNetworkBuilder::saveVariables(std::vector<std::string> names)
 {
     for (const std::string name : names) {
-        [(id)self addVariable:[NSString stringWithUTF8String:name.c_str()]];
+        [(id)self trackVariable:[NSString stringWithUTF8String:name.c_str()]];
     }
 }
 

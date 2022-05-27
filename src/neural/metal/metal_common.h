@@ -33,7 +33,7 @@ static int kNumOutputPolicy = 1858;
 static int kInputPlanes = 112;
 
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left) {
+  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left, bool conv_policy) {
     input_masks_mem_ = (uint64_t*)malloc(maxBatchSize * kInputPlanes * sizeof(uint64_t));
 
     input_val_mem_ = (float*)malloc(maxBatchSize * kInputPlanes * sizeof(float));
@@ -48,6 +48,19 @@ struct InputsOutputs {
       op_moves_left_mem_ = (float*)malloc(maxBatchSize * sizeof(float));
     } else
       op_moves_left_mem_ = nullptr;
+
+    /**
+     * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
+     * Implementation of policy map to be done in CPU for now.
+     *
+     * Remove this op_policy_raw_mem_ memory allocation when bug is fixed.
+     */
+    if (conv_policy) {
+      op_policy_raw_mem_ = (float*)malloc(maxBatchSize * 73 * 64 * sizeof(float));
+    }
+    else {
+      op_policy_raw_mem_ = nullptr;
+    }
   }
   ~InputsOutputs() {
     free(input_masks_mem_);
@@ -58,6 +71,9 @@ struct InputsOutputs {
     if (op_moves_left_mem_) {
       free(op_moves_left_mem_);
     }
+    if (op_policy_raw_mem_) {
+      free(op_policy_raw_mem_);
+    }
   }
   uint64_t* input_masks_mem_;
   float* input_val_mem_;
@@ -65,6 +81,7 @@ struct InputsOutputs {
   float* op_policy_mem_;
   float* op_value_mem_;
   float* op_moves_left_mem_;
+  float* op_policy_raw_mem_;
 };
 
 }  // namespace metal_backend
