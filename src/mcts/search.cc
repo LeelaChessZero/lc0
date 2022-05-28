@@ -761,9 +761,6 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     }
   }
 
-  // No move had enough visits for temperature, so use default child criteria
-  if (max_n <= 0.0f) return GetBestChildNoTemperature(root_node_, 0);
-
   // TODO(crem) Simplify this code when samplers.h is merged.
   const float min_eval =
       max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
@@ -775,7 +772,10 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     }
     if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     sum += std::pow(
-        std::max(0.0f, (static_cast<float>(edge.GetN()) + offset) / max_n),
+        std::max(0.0f,
+                 (max_n <= 0.0f
+                      ? edge.GetP()
+                      : ((static_cast<float>(edge.GetN()) + offset) / max_n))),
         1 / temperature);
     cumulative_sums.push_back(sum);
   }
@@ -1462,11 +1462,11 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
   }
 }
 
-void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
-                                         int collision_limit,
-                                         const std::vector<Move>& moves_to_base,
-                                         std::vector<NodeToProcess>* receiver,
-                                         TaskWorkspace* workspace) {
+void SearchWorker::PickNodesToExtendTask(
+    Node* node, int base_depth, int collision_limit,
+    const std::vector<Move>& moves_to_base,
+    std::vector<NodeToProcess>* receiver,
+    TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum

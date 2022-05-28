@@ -6,8 +6,9 @@ IF %PGO%==true msbuild "C:\projects\lc0\build\lc0.sln" /m /p:WholeProgramOptimiz
 IF ERRORLEVEL 1 EXIT
 cd build
 IF %NAME%==cpu-openblas copy C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
-IF %NAME%==cpu-dnnl copy C:\cache\dnnl_win_1.5.0_cpu_vcomp\bin\dnnl.dll
-IF %NAME%==onednn copy C:\cache\dnnl_win_1.8.0_cpu_vcomp\bin\dnnl.dll
+IF %NAME%==cpu-dnnl copy C:\cache\%DNNL_NAME%\bin\dnnl.dll
+IF %NAME%==onednn copy C:\cache\%DNNL_NAME%\bin\dnnl.dll
+IF %NAME%==onednn copy dnnl.dll ..
 copy "%MIMALLOC_PATH%"\out\msvc-x64\Release\mimalloc-override.dll
 copy "%MIMALLOC_PATH%"\out\msvc-x64\Release\mimalloc-redirect.dll
 IF %PGO%==true (
