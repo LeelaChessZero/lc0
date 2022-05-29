@@ -87,6 +87,10 @@ const OptionId SearchParams::kCpuctFactorId{
 const OptionId SearchParams::kCpuctFactorAtRootId{
     "cpuct-factor-at-root", "CPuctFactorAtRoot",
     "Multiplier for the cpuct growth formula at root."};
+const OptionId SearchParams::kCpuctTopTwoPercentageId{
+    "cpuct-top-two-percentage", "CpuctTopTwoPercentage",
+    "Probability with which the second best move is visited in the root "
+    "node. A value of 0 is equivalent to the usual Puct."};
 // Remove this option after 0.25 has been made mandatory in training and the
 // training server stops sending it.
 const OptionId SearchParams::kRootHasOwnCpuctParamsId{
@@ -328,6 +332,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctBaseAtRootId, 1.0f, 1000000000.0f) = 38739.0f;
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
+  options->Add<FloatOption>(kCpuctTopTwoPercentageId, 0.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
@@ -431,6 +436,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kCpuctFactorAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
                                                       : kCpuctFactorId)),
+      kCpuctTopTwoPercentage(options.Get<float>(kCpuctTopTwoPercentageId)),
       kTwoFoldDraws(options.Get<bool>(kTwoFoldDrawsId)),
       kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),
