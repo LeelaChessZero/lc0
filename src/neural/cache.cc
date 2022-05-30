@@ -172,7 +172,13 @@ float CachingComputation::GetMVal(int sample) const {
 uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) {
+    if (move_ct > static_cast<int>(item.probabilities_to_cache.size())) {
+      return 0;  // Hash collision.
+    }
     return item.probabilities_to_cache[move_ct];
+  }
+  if (move_ct > item.lock->p.size()) {
+    return 0;  // Hash collision.
   }
   return item.lock->p[move_ct];
 }
