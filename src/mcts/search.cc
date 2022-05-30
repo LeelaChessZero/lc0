@@ -1928,24 +1928,15 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
 }
 
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
-                                        int* transform_out) {
+bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
   // If already in cache, no need to do anything.
   if (add_if_cached) {
     if (computation_->AddInputByHash(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
       return true;
     }
   } else {
     if (search_->cache_->ContainsKey(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
       return true;
     }
   }
@@ -1974,7 +1965,6 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
   }
 
   computation_->AddInput(hash, std::move(planes), std::move(moves));
-  if (transform_out) *transform_out = transform;
   return false;
 }
 
@@ -2015,7 +2005,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false, nullptr)) {
+    if (AddNodeToComputation(node, false)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
