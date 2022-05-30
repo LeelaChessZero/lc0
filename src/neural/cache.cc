@@ -78,6 +78,7 @@ void CachingComputation::AddInput(uint64_t hash, InputPlanes&& input,
   int transform = TransformInputPlanes(input, input_format_);
 
   std::vector<uint16_t> probabilities_to_cache;
+  probabilities_to_cache.reserve(moves.size());
   for (auto iter = moves.begin(), end = moves.end(); iter != end; ++iter) {
     probabilities_to_cache.emplace_back(iter->as_nn_index(transform));
   }
