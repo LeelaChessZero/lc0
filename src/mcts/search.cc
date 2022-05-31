@@ -1906,27 +1906,6 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   node->CreateEdges(legal_moves);
 }
 
-void SearchWorker::ExtendNode(Node* node, int depth) {
-  std::vector<Move> to_add;
-  // Could instead reserve one more than the difference between history_.size()
-  // and history_.capacity().
-  to_add.reserve(60);
-  // Need a lock to walk parents of leaf in case MakeSolid is concurrently
-  // adjusting parent chain.
-  {
-    SharedMutex::SharedLock lock(search_->nodes_mutex_);
-    Node* cur = node;
-    while (cur != search_->root_node_) {
-      Node* prev = cur->GetParent();
-      to_add.push_back(prev->GetEdgeToNode(cur)->GetMove());
-      cur = prev;
-    }
-  }
-  std::reverse(to_add.begin(), to_add.end());
-
-  ExtendNode(node, depth, to_add, &history_);
-}
-
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
