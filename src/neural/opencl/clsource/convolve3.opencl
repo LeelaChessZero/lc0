@@ -171,6 +171,58 @@ __kernel void out_transform_fused_bn(__global const float * restrict M,
   }
 }
 
+__kernel void out_transform_fused_bn_mish(
+                                     __global const float * restrict M,
+                                     __global net_t * restrict Y,
+                                     const int K,
+                                     const int Kpad, const int Ppad,
+                                     const int relu,
+                                     __global const net_t * restrict residual,
+                                     __constant const net_t * restrict biases) {
+  const int W = 8;
+  const int H = 8;
+  const int WTILES = (W + 1) / 2;
+  const int P = WTILES * WTILES;
+
+  const int k = get_global_id(0);
+  const int block = get_global_id(1);
+  const int batch = get_global_id(2);
+
+  const int block_x = block % WTILES;
+  const int block_y = block / WTILES;
+
+  int x = 2*block_x;
+  int y = 2*block_y;
+  int a_ind = y * W + x;
+  if (k < K && block < P) {
+    const int kHW = batch * K * BOARD_SQUARES + k * BOARD_SQUARES;
+    float o[4];
+    __out_transform_eq(M, o, Kpad, Ppad, block, batch);
+
+    const float bias = vload_net_t(k, biases);
+
+    const bool pred[4] = { 1, x+1 < W, y+1 < H, x+1 < W & y+1 < H};
+
+    const int a[4] = {a_ind, a_ind+1, a_ind+W, a_ind+W+1};
+
+    for (int i = 0; i < 4; i++) {
+      if (pred[i]) {
+        o[i] = o[i] + bias;
+        if (residual) {
+          o[i] += vload_net_t(kHW + a[i], residual);
+        }
+        if (relu) {
+          const float e = exp(o[i]);
+          const float n = e * e + 2.0f * e;
+          const float d = o[i] / (n + 2.0f);
+          o[i] = o[i] <= -0.125f ? n * d : o[i] - 2.0f * d;
+        }
+        vstore_net_t(o[i], kHW + a[i], Y);
+      }
+    }
+  }
+}
+
 __kernel void out_transform_fused_bn_in(
                                         __global const float * restrict M,
                                         __global net_t * restrict Y,
@@ -245,6 +297,88 @@ __kernel void out_transform_fused_bn_in(
       }
     }
     
+    const int offset = k * Ppad + P * batch + block;
+    __in_transform_eq(xx, V, offset, CPpad);
+  }
+}
+
+__kernel void out_transform_fused_bn_in_mish(
+                                        __global const float * restrict M,
+                                        __global net_t * restrict Y,
+                                        __global net_t * restrict V,
+                                        const int K,
+                                        const int Kpad, const int Ppad, const int Cpad,
+                                        __global const net_t * restrict residual,
+                                        __constant const net_t * restrict biases,
+                                        __local float * ybuf) {
+  const int W = 8;
+  const int H = 8;
+  const int WTILES = (W + 1) / 2;
+  const int P = WTILES * WTILES;
+
+  const int k = get_global_id(0);
+  const int kg = get_local_id(0);
+  const int block = get_global_id(1);
+  const int batch = get_global_id(2);
+
+  const int block_x = block % WTILES;
+  const int block_y = block / WTILES;
+
+  const int yin = 2 * block_y - 1;
+  const int xin = 2 * block_x - 1;
+
+
+  const int x = 2*block_x;
+  const int y = 2*block_y;
+  int a_ind = y * W + x;
+
+
+  if (k < K && block < P) {
+    const int a[4] = {a_ind, a_ind+1, a_ind+W, a_ind+W+1};
+    const bool pred[4] = { 1, x+1 < W, y+1 < H, x+1 < W & y+1 < H};
+    const int kHW = batch * K * BOARD_SQUARES + k * BOARD_SQUARES;
+
+    float o[4];
+    __out_transform_eq(M, o, Kpad, Ppad, block, batch);
+
+    const float bias = vload_net_t(k, biases);
+
+    for (int i = 0; i < 4; i++) {
+      if (pred[i]) {
+        o[i] = o[i] + bias;
+        if (residual) {
+          o[i] += vload_net_t(kHW + a[i], residual);
+        }
+        const float e = exp(o[i]);
+        const float n = e * e + 2.0f * e;
+        const float d = o[i] / (n + 2.0f);
+        o[i] = o[i] <= -0.125f ? n * d : o[i] - 2.0f * d;
+        ybuf[kg * BOARD_SQUARES + a[i]] = o[i];
+        if (Y) {
+          vstore_net_t(o[i], kHW + a[i], Y);
+        }
+      }
+    }
+  }
+
+  barrier(CLK_LOCAL_MEM_FENCE);
+
+  if (block < P && k < K) {
+    const int CPpad = Ppad * Cpad;
+    // Cache input tile and handle zero padding
+    float xx[4][4];
+    for (int i = 0; i < 4; i++) {
+      int b = yin + i;
+      for (int j = 0; j < 4; j++) {
+        int a = xin + j;
+        if (b >= 0 && a >= 0 && b < H && a < W) {
+          xx[i][j] = ybuf[kg * BOARD_SQUARES + b * W + a];
+        } else {
+          xx[i][j] = 0.0f;
+        }
+      }
+    }
+
     const int offset = k * Ppad + P * batch + block;
     __in_transform_eq(xx, V, offset, CPpad);
   }
