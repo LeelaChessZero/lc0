@@ -544,11 +544,6 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
   }
-
-  // Use a 0 visit cancel score update to clear out any cached best edge, as
-  // at the next iteration remaining playouts may be different.
-  // TODO(crem) Is it really needed?
-  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
@@ -1077,7 +1072,7 @@ void SearchWorker::ExecuteOneIteration() {
   }
 
   // 2. Gather minibatch.
-  GatherMinibatch2();
+  GatherMinibatch();
   task_count_.store(-1, std::memory_order_release);
   search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
@@ -1161,7 +1156,7 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
 }
 }  // namespace
 
-void SearchWorker::GatherMinibatch2() {
+void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
   int cur_n = 0;
