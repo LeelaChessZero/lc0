@@ -271,8 +271,6 @@ class SearchWorker {
 
   // 2. Gather minibatch.
   void GatherMinibatch();
-  // Variant for multigather path.
-  void GatherMinibatch2();
 
   // 2b. Copy collisions into shared_collisions_.
   void CollectCollisions();
