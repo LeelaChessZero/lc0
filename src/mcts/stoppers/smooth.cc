@@ -519,12 +519,6 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
                                 const std::vector<uint32_t>& visits) {
   Mutex::Lock lock(mutex_);
   if (timestamp <= last_timestamp_) return;
-  if (cur_timestamp_ + nps_update_period_ >= timestamp) {
-    prev_timestamp_ = cur_timestamp_;
-    prev_visits_ = std::move(cur_visits_);
-    cur_visits_ = last_visits_;
-    cur_timestamp_ = last_timestamp_;
-  }
   if (prev_visits_.empty()) {
     prev_visits_ = visits;
     cur_visits_ = visits;
@@ -533,6 +527,12 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
   }
   last_timestamp_ = timestamp;
   last_visits_ = visits;
+  if (cur_timestamp_ + nps_update_period_ >= timestamp) {
+    prev_timestamp_ = cur_timestamp_;
+    prev_visits_ = std::move(cur_visits_);
+    cur_visits_ = last_visits_;
+    cur_timestamp_ = last_timestamp_;
+  }
 }
 
 bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
