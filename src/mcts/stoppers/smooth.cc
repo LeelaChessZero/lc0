@@ -164,9 +164,9 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
           params.GetOrDefault<float>("max-piggybank-moves", 36.5f)),
       trend_nps_update_period_ms_(
           params.GetOrDefault<int>("trend-nps-update-period-ms", 200)),
-      bestmove_optimism_(params.GetOrDefault<float>("bestmove-optimism", 0.5f)),
+      bestmove_optimism_(params.GetOrDefault<float>("bestmove-optimism", 0.2f)),
       overtaker_optimism_(
-          params.GetOrDefault<float>("overtaker-optimism", 2.0f)),
+          params.GetOrDefault<float>("overtaker-optimism", 4.0f)),
       force_piggybank_ms_(params.GetOrDefault<int>("force-piggybank-ms", 500)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
