@@ -572,7 +572,7 @@ bool SmoothStopper::ShouldStop(const IterationStats& stats,
   visits_trend_watcher_.Update(stats.time_since_movestart, stats.edge_n);
   const auto deadline_with_piggybank = deadline_ms_ + allowed_piggybank_use_ms_;
   const bool force_use_piggybank =
-      forced_piggybank_use_ms_ <= stats.time_since_first_batch;
+      stats.time_since_first_batch <= forced_piggybank_use_ms_;
   const bool use_piggybank =
       (stats.time_usage_hint_ == IterationStats::TimeUsageHint::kNeedMoreTime ||
        force_use_piggybank ||
