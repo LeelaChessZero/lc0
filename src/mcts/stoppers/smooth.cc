@@ -90,6 +90,9 @@ class Params {
   // How confident are we that the current bestmove nps will stay the same.
   float bestmove_nps_optimism() const { return bestmove_nps_optimism_; }
 
+  // Force a use of piggybank during the first few milliseconds of the move.
+  float force_piggybank_ms() const { return force_piggybank_ms_; }
+
   // Move overhead.
   int64_t move_overhead_ms() const { return move_overhead_ms_; }
   // Returns a function function that estimates remaining moves.
@@ -113,6 +116,7 @@ class Params {
   const float max_piggybank_moves_;
   const float trend_nps_decay_;
   const float bestmove_nps_optimism_;
+  const float force_piggybank_ms_;
   const MovesLeftEstimator moves_left_estimator_;
 };
 
@@ -156,6 +160,8 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       trend_nps_decay_(params.GetOrDefault<float>("trend-nps-decay", 0.5f)),
       bestmove_nps_optimism_(
           params.GetOrDefault<float>("bestmove-nps-optimism", 0.5f)),
+      force_piggybank_ms_(
+          params.GetOrDefault<float>("force-piggybank-ms", 500)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
 // Returns the updated value of @from, towards @to by the number of halves
@@ -234,7 +240,7 @@ class SmoothStopper : public SearchStopper {
  public:
   SmoothStopper(int64_t deadline_ms, int64_t allowed_piggybank_use_ms,
                 float nps_decay, float bestmove_optimism,
-                SmoothTimeManager* manager);
+                int64_t forces_piggybank_ms, SmoothTimeManager* manager);
 
  private:
   bool ShouldStop(const IterationStats& stats, StoppersHints* hints) override;
@@ -242,6 +248,7 @@ class SmoothStopper : public SearchStopper {
 
   const int64_t deadline_ms_;
   const int64_t allowed_piggybank_use_ms_;
+  const int64_t forced_piggybank_use_ms_;
 
   VisitsTrendWatcher visits_trend_watcher_;
   SmoothTimeManager* const manager_;
@@ -440,7 +447,8 @@ class SmoothTimeManager : public TimeManager {
 
     return std::make_unique<SmoothStopper>(
         move_allocated_time_ms_, allowed_piggybank_time_ms,
-        params_.trend_nps_decay(), params_.bestmove_nps_optimism(), this);
+        params_.trend_nps_decay(), params_.bestmove_nps_optimism(),
+        params_.force_piggybank_ms(), this);
   }
 
   void UpdateTreeReuseFactor(int64_t new_move_nodes) REQUIRES(mutex_) {
@@ -544,9 +552,11 @@ bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
 SmoothStopper::SmoothStopper(int64_t deadline_ms,
                              int64_t allowed_piggybank_use_ms, float nps_decay,
                              float bestmove_optimism,
+                             int64_t forced_piggybank_use_ms,
                              SmoothTimeManager* manager)
     : deadline_ms_(deadline_ms),
       allowed_piggybank_use_ms_(allowed_piggybank_use_ms),
+      forced_piggybank_use_ms_(forced_piggybank_use_ms),
       visits_trend_watcher_(nps_decay, bestmove_optimism),
       manager_(manager) {
   used_piggybank_.clear();
@@ -563,8 +573,11 @@ bool SmoothStopper::ShouldStop(const IterationStats& stats,
 
   visits_trend_watcher_.Update(stats.time_since_movestart, stats.edge_n);
   const auto deadline_with_piggybank = deadline_ms_ + allowed_piggybank_use_ms_;
+  const bool force_use_piggybank =
+      forced_piggybank_use_ms_ <= stats.time_since_first_batch;
   const bool use_piggybank =
       (stats.time_usage_hint_ == IterationStats::TimeUsageHint::kNeedMoreTime ||
+       force_use_piggybank ||
        visits_trend_watcher_.IsBestmoveBeingOvertaken(deadline_with_piggybank));
   const int64_t time_limit =
       use_piggybank ? deadline_with_piggybank : deadline_ms_;
@@ -580,11 +593,15 @@ bool SmoothStopper::ShouldStop(const IterationStats& stats,
               << (stats.time_usage_hint_ ==
                           IterationStats::TimeUsageHint::kNeedMoreTime
                       ? "requested by search."
+                  : force_use_piggybank
+                      ? "forced used in the beginning of the move."
                       : "bestmove can be overtaken.");
     }
   }
   if (stats.time_since_movestart >= time_limit) {
-    LOGFILE << "Stopping search: Ran out of time.";
+    LOGFILE << "Stopping search: Ran out of time. elapsed=" << std::fixed
+            << stats.time_since_movestart << " limit=" << time_limit
+            << " piggy=" << use_piggybank;
     return true;
   }
   return false;
