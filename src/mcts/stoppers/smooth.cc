@@ -304,19 +304,19 @@ class SmoothTimeManager : public TimeManager {
             : total_move_time / move_allocated_time_ms_;
     // Recompute expected move time for logging.
     const float expected_move_time = move_allocated_time_ms_ * timeuse_;
-    // If piggybank was used, cannot update timeuse_.
+
     int64_t piggybank_time_used = 0;
     if (used_piggybank) {
       piggybank_time_used = std::max(int64_t(), total_move_time - time_budget);
       piggybank_time_ -= piggybank_time_used;
-    } else {
-      timeuse_ =
-          ExponentialDecay(timeuse_, this_move_time_use,
-                           params_.smartpruning_timeuse_halfupdate_moves(),
-                           this_move_time_fraction);
-      if (timeuse_ < params_.min_smartpruning_timeuse()) {
-        timeuse_ = params_.min_smartpruning_timeuse();
-      }
+    }
+    // If piggybank was used, time use is 100%.
+    timeuse_ =
+        ExponentialDecay(timeuse_, used_piggybank ? 1.0f : this_move_time_use,
+                         params_.smartpruning_timeuse_halfupdate_moves(),
+                         this_move_time_fraction);
+    if (timeuse_ < params_.min_smartpruning_timeuse()) {
+      timeuse_ = params_.min_smartpruning_timeuse();
     }
     // Remember final number of nodes for tree reuse estimation.
     last_move_final_nodes_ = total_nodes;
