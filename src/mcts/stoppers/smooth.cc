@@ -575,7 +575,7 @@ bool SmoothStopper::ShouldStop(const IterationStats& stats,
     // It's not entirely correct as due to extended remaining time smart pruning
     // will trigger later and we spend more time than if use_piggyback was
     // false, even before reaching the deadline.
-    if (used_piggybank_.test_and_set()) {
+    if (!used_piggybank_.test_and_set()) {
       LOGFILE << "Entering piggybank, reason: "
               << (stats.time_usage_hint_ ==
                           IterationStats::TimeUsageHint::kNeedMoreTime
