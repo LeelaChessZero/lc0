@@ -497,7 +497,7 @@ class SmoothTimeManager : public TimeManager {
 
 void VisitsTrendWatcher::Update(uint64_t timestamp,
                                 const std::vector<uint32_t>& visits) {
-  std::lock_guard<Mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   if (timestamp <= last_timestamp_) return;
   nps_.resize(visits.size());
   if (visits.size() != last_visits_.size()) {
@@ -524,7 +524,7 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
 
 bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
     uint64_t by_which_time) const {
-  std::lock_guard<Mutex> lock(mutex_);
+  Mutex::Lock lock(mutex_);
   // If we don't have any stats yet, always tell that it can be overtaken.
   if (std::numeric_limits<size_t>::max() == largest_visits_idx_) return true;
   if (by_which_time <= last_timestamp_) return false;
