@@ -88,8 +88,11 @@ class Params {
     return trend_nps_update_period_ms_;
   }
 
-  // How confident are we that the current bestmove nps will stay the same.
-  float bestmove_nps_optimism() const { return bestmove_nps_optimism_; }
+  // Expected ration of the best move nps in future, to the current nps.
+  float bestmove_optimism() const { return bestmove_optimism_; }
+
+  // Expected ration of the non-best move nps in future, to the current nps.
+  float overtaker_optimism() const { return overtaker_optimism_; }
 
   // Force a use of piggybank during the first few milliseconds of the move.
   float force_piggybank_ms() const { return force_piggybank_ms_; }
@@ -116,7 +119,8 @@ class Params {
   const float max_piggybank_use_;
   const float max_piggybank_moves_;
   const float trend_nps_update_period_ms_;
-  const float bestmove_nps_optimism_;
+  const float bestmove_optimism_;
+  const float overtaker_optimism_;
   const float force_piggybank_ms_;
   const MovesLeftEstimator moves_left_estimator_;
 };
@@ -160,8 +164,9 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
           params.GetOrDefault<float>("max-piggybank-moves", 36.5f)),
       trend_nps_update_period_ms_(
           params.GetOrDefault<int>("trend-nps-update-period-ms", 200)),
-      bestmove_nps_optimism_(
-          params.GetOrDefault<float>("bestmove-nps-optimism", 0.5f)),
+      bestmove_optimism_(params.GetOrDefault<float>("bestmove-optimism", 0.5f)),
+      overtaker_optimism_(
+          params.GetOrDefault<float>("overtaker-optimism", 2.0f)),
       force_piggybank_ms_(params.GetOrDefault<int>("force-piggybank-ms", 500)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
@@ -219,9 +224,11 @@ class SmoothTimeManager;
 
 class VisitsTrendWatcher {
  public:
-  VisitsTrendWatcher(float nps_update_period, float bestmove_optimism)
+  VisitsTrendWatcher(float nps_update_period, float bestmove_optimism,
+                     float overtaker_optimism)
       : nps_update_period_(nps_update_period),
-        bestmove_optimism_(bestmove_optimism) {}
+        bestmove_optimism_(bestmove_optimism),
+        overtaker_optimism_(overtaker_optimism) {}
 
   void Update(uint64_t timestamp, const std::vector<uint32_t>& visits);
   bool IsBestmoveBeingOvertaken(uint64_t by_which_time) const;
@@ -229,6 +236,7 @@ class VisitsTrendWatcher {
  private:
   const float nps_update_period_;
   const float bestmove_optimism_;
+  const float overtaker_optimism_;
 
   mutable Mutex mutex_;
   uint64_t prev_timestamp_ GUARDED_BY(mutex_) = 0;
@@ -243,7 +251,8 @@ class SmoothStopper : public SearchStopper {
  public:
   SmoothStopper(int64_t deadline_ms, int64_t allowed_piggybank_use_ms,
                 float nps_update_period, float bestmove_optimism,
-                int64_t forces_piggybank_ms, SmoothTimeManager* manager);
+                float overtaker_optimism, int64_t forces_piggybank_ms,
+                SmoothTimeManager* manager);
 
  private:
   bool ShouldStop(const IterationStats& stats, StoppersHints* hints) override;
@@ -450,8 +459,8 @@ class SmoothTimeManager : public TimeManager {
 
     return std::make_unique<SmoothStopper>(
         move_allocated_time_ms_, allowed_piggybank_time_ms,
-        params_.trend_nps_update_period_ms(), params_.bestmove_nps_optimism(),
-        params_.force_piggybank_ms(), this);
+        params_.trend_nps_update_period_ms(), params_.bestmove_optimism(),
+        params_.overtaker_optimism(), params_.force_piggybank_ms(), this);
   }
 
   void UpdateTreeReuseFactor(int64_t new_move_nodes) REQUIRES(mutex_) {
@@ -541,7 +550,8 @@ bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
   for (size_t i = 0; i < last_visits_.size(); ++i) {
     if (i == bestmove_idx) continue;
     const auto planned_visits =
-        last_visits_[i] + npms[i] * (by_which_time - last_timestamp_);
+        last_visits_[i] +
+        overtaker_optimism_ * npms[i] * (by_which_time - last_timestamp_);
     if (planned_visits > planned_bestmove_visits) return true;
   }
   return false;
@@ -550,12 +560,14 @@ bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
 SmoothStopper::SmoothStopper(int64_t deadline_ms,
                              int64_t allowed_piggybank_use_ms,
                              float nps_update_period, float bestmove_optimism,
+                             float overtaker_optimism,
                              int64_t forced_piggybank_use_ms,
                              SmoothTimeManager* manager)
     : deadline_ms_(deadline_ms),
       allowed_piggybank_use_ms_(allowed_piggybank_use_ms),
       forced_piggybank_use_ms_(forced_piggybank_use_ms),
-      visits_trend_watcher_(nps_update_period, bestmove_optimism),
+      visits_trend_watcher_(nps_update_period, bestmove_optimism,
+                            overtaker_optimism),
       manager_(manager) {
   used_piggybank_.clear();
 }
