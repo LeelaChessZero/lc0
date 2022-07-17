@@ -84,8 +84,9 @@ class Params {
   // Max number of avg move times in piggybank.
   float max_piggybank_moves() const { return max_piggybank_moves_; }
 
-  // How fast does the nps decay (0=immidiately, 1=never).
-  float trend_nps_decay() const { return trend_nps_decay_; }
+  int64_t trend_nps_update_period_ms() const {
+    return trend_nps_update_period_ms_;
+  }
 
   // How confident are we that the current bestmove nps will stay the same.
   float bestmove_nps_optimism() const { return bestmove_nps_optimism_; }
@@ -114,7 +115,7 @@ class Params {
   const float per_move_piggybank_fraction_;
   const float max_piggybank_use_;
   const float max_piggybank_moves_;
-  const float trend_nps_decay_;
+  const float trend_nps_update_period_ms_;
   const float bestmove_nps_optimism_;
   const float force_piggybank_ms_;
   const MovesLeftEstimator moves_left_estimator_;
@@ -157,11 +158,11 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
           params.GetOrDefault<float>("max-piggybank-use", 0.94f)),
       max_piggybank_moves_(
           params.GetOrDefault<float>("max-piggybank-moves", 36.5f)),
-      trend_nps_decay_(params.GetOrDefault<float>("trend-nps-decay", 0.5f)),
+      trend_nps_update_period_ms_(
+          params.GetOrDefault<int>("trend-nps-update-period-ms", 200)),
       bestmove_nps_optimism_(
           params.GetOrDefault<float>("bestmove-nps-optimism", 0.5f)),
-      force_piggybank_ms_(
-          params.GetOrDefault<float>("force-piggybank-ms", 500)),
+      force_piggybank_ms_(params.GetOrDefault<int>("force-piggybank-ms", 500)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
 // Returns the updated value of @from, towards @to by the number of halves
@@ -218,28 +219,30 @@ class SmoothTimeManager;
 
 class VisitsTrendWatcher {
  public:
-  VisitsTrendWatcher(float nps_decay, float bestmove_optimism)
-      : nps_decay_(nps_decay), bestmove_optimism_(bestmove_optimism) {}
+  VisitsTrendWatcher(float nps_update_period, float bestmove_optimism)
+      : nps_update_period_(nps_update_period),
+        bestmove_optimism_(bestmove_optimism) {}
 
   void Update(uint64_t timestamp, const std::vector<uint32_t>& visits);
   bool IsBestmoveBeingOvertaken(uint64_t by_which_time) const;
 
  private:
-  const float nps_decay_;
+  const float nps_update_period_;
   const float bestmove_optimism_;
 
   mutable Mutex mutex_;
-  size_t largest_visits_idx_ GUARDED_BY(mutex_) =
-      std::numeric_limits<size_t>::max();
+  uint64_t prev_timestamp_ GUARDED_BY(mutex_) = 0;
+  std::vector<uint32_t> prev_visits_ GUARDED_BY(mutex_);
+  uint64_t cur_timestamp_ GUARDED_BY(mutex_) = 0;
+  std::vector<uint32_t> cur_visits_ GUARDED_BY(mutex_);
   uint64_t last_timestamp_ GUARDED_BY(mutex_) = 0;
   std::vector<uint32_t> last_visits_ GUARDED_BY(mutex_);
-  std::vector<uint32_t> nps_ GUARDED_BY(mutex_);
 };
 
 class SmoothStopper : public SearchStopper {
  public:
   SmoothStopper(int64_t deadline_ms, int64_t allowed_piggybank_use_ms,
-                float nps_decay, float bestmove_optimism,
+                float nps_update_period, float bestmove_optimism,
                 int64_t forces_piggybank_ms, SmoothTimeManager* manager);
 
  private:
@@ -447,7 +450,7 @@ class SmoothTimeManager : public TimeManager {
 
     return std::make_unique<SmoothStopper>(
         move_allocated_time_ms_, allowed_piggybank_time_ms,
-        params_.trend_nps_decay(), params_.bestmove_nps_optimism(),
+        params_.trend_nps_update_period_ms(), params_.bestmove_nps_optimism(),
         params_.force_piggybank_ms(), this);
   }
 
@@ -507,24 +510,11 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
                                 const std::vector<uint32_t>& visits) {
   Mutex::Lock lock(mutex_);
   if (timestamp <= last_timestamp_) return;
-  nps_.resize(visits.size());
-  if (visits.size() != last_visits_.size()) {
-    last_visits_ = visits;
-    last_timestamp_ = timestamp;
-  }
-
-  const auto delta = timestamp - last_timestamp_;
-  largest_visits_idx_ =
-      std::max_element(visits.begin(), visits.end()) - visits.begin();
-
-  for (size_t i = 0; i < visits.size(); ++i) {
-    const auto decayed_nps = nps_[i] * nps_decay_;
-    const auto new_nps = (visits[i] - last_visits_[i]) * 1000.0f / delta;
-    if (i == largest_visits_idx_) {
-      nps_[i] = std::min(decayed_nps, new_nps);
-    } else {
-      nps_[i] = std::max(decayed_nps, new_nps);
-    }
+  if (cur_timestamp_ + nps_update_period_ >= timestamp) {
+    prev_timestamp_ = cur_timestamp_;
+    prev_visits_ = std::move(cur_visits_);
+    cur_visits_ = last_visits_;
+    cur_timestamp_ = last_timestamp_;
   }
   last_timestamp_ = timestamp;
   last_visits_ = visits;
@@ -534,30 +524,38 @@ bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
     uint64_t by_which_time) const {
   Mutex::Lock lock(mutex_);
   // If we don't have any stats yet, always tell that it can be overtaken.
-  if (std::numeric_limits<size_t>::max() == largest_visits_idx_) return true;
+  if (prev_visits_.empty()) return true;
   if (by_which_time <= last_timestamp_) return false;
-  const auto planned_bestmove_visits =
-      last_visits_[largest_visits_idx_] +
-      bestmove_optimism_ * nps_[largest_visits_idx_] *
-          (by_which_time - last_timestamp_) / 1000;
+  std::vector<float> npms;
+  npms.reserve(last_visits_.size());
   for (size_t i = 0; i < last_visits_.size(); ++i) {
-    if (i == largest_visits_idx_) continue;
+    npms.push_back(static_cast<float>(last_visits_[i] - prev_visits_[i]) /
+                   (last_timestamp_ - prev_timestamp_));
+  }
+  const size_t bestmove_idx =
+      std::max_element(last_visits_.begin(), last_visits_.end()) -
+      last_visits_.begin();
+  const auto planned_bestmove_visits =
+      last_visits_[bestmove_idx] + bestmove_optimism_ * npms[bestmove_idx] *
+                                       (by_which_time - last_timestamp_);
+  for (size_t i = 0; i < last_visits_.size(); ++i) {
+    if (i == bestmove_idx) continue;
     const auto planned_visits =
-        last_visits_[i] + nps_[i] * (by_which_time - last_timestamp_) / 1000;
+        last_visits_[i] + npms[i] * (by_which_time - last_timestamp_);
     if (planned_visits > planned_bestmove_visits) return true;
   }
   return false;
 }
 
 SmoothStopper::SmoothStopper(int64_t deadline_ms,
-                             int64_t allowed_piggybank_use_ms, float nps_decay,
-                             float bestmove_optimism,
+                             int64_t allowed_piggybank_use_ms,
+                             float nps_update_period, float bestmove_optimism,
                              int64_t forced_piggybank_use_ms,
                              SmoothTimeManager* manager)
     : deadline_ms_(deadline_ms),
       allowed_piggybank_use_ms_(allowed_piggybank_use_ms),
       forced_piggybank_use_ms_(forced_piggybank_use_ms),
-      visits_trend_watcher_(nps_decay, bestmove_optimism),
+      visits_trend_watcher_(nps_update_period, bestmove_optimism),
       manager_(manager) {
   used_piggybank_.clear();
 }
