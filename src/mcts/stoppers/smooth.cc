@@ -163,11 +163,11 @@ Params::Params(const OptionsDict& params, int64_t move_overhead)
       max_piggybank_moves_(
           params.GetOrDefault<float>("max-piggybank-moves", 36.5f)),
       trend_nps_update_period_ms_(
-          params.GetOrDefault<int>("trend-nps-update-period-ms", 200)),
+          params.GetOrDefault<int>("trend-nps-update-period-ms", 3000)),
       bestmove_optimism_(params.GetOrDefault<float>("bestmove-optimism", 0.2f)),
       overtaker_optimism_(
           params.GetOrDefault<float>("overtaker-optimism", 4.0f)),
-      force_piggybank_ms_(params.GetOrDefault<int>("force-piggybank-ms", 500)),
+      force_piggybank_ms_(params.GetOrDefault<int>("force-piggybank-ms", 1000)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
 // Returns the updated value of @from, towards @to by the number of halves
@@ -525,6 +525,12 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
     cur_visits_ = last_visits_;
     cur_timestamp_ = last_timestamp_;
   }
+  if (prev_visits_.empty()) {
+    prev_visits_ = visits;
+    cur_visits_ = visits;
+    prev_timestamp_ = timestamp;
+    cur_timestamp_ = timestamp;
+  }
   last_timestamp_ = timestamp;
   last_visits_ = visits;
 }
@@ -532,8 +538,8 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
 bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
     uint64_t by_which_time) const {
   Mutex::Lock lock(mutex_);
-  // If we don't have any stats yet, always tell that it can be overtaken.
-  if (prev_visits_.empty()) return true;
+  // If we don't have any stats yet, we cannot stop the search.
+  if (prev_timestamp_ >= last_timestamp_) return false;
   if (by_which_time <= last_timestamp_) return false;
   std::vector<float> npms;
   npms.reserve(last_visits_.size());
