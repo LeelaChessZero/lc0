@@ -223,7 +223,8 @@ class VisitsTrendWatcher {
   const float bestmove_optimism_;
 
   mutable Mutex mutex_;
-  size_t largest_visits_idx_ GUARDED_BY(mutex_) = 0;
+  size_t largest_visits_idx_ GUARDED_BY(mutex_) =
+      std::numeric_limits<size_t>::max();
   uint64_t last_timestamp_ GUARDED_BY(mutex_) = 0;
   std::vector<uint32_t> last_visits_ GUARDED_BY(mutex_);
   std::vector<uint32_t> nps_ GUARDED_BY(mutex_);
@@ -524,6 +525,8 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
 bool VisitsTrendWatcher::IsBestmoveBeingOvertaken(
     uint64_t by_which_time) const {
   std::lock_guard<Mutex> lock(mutex_);
+  // If we don't have any stats yet, always tell that it can be overtaken.
+  if (std::numeric_limits<size_t>::max() == largest_visits_idx_) return true;
   if (by_which_time <= last_timestamp_) return false;
   const auto planned_bestmove_visits =
       last_visits_[largest_visits_idx_] +
