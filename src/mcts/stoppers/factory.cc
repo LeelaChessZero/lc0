@@ -31,6 +31,7 @@
 
 #include "factory.h"
 #include "mcts/stoppers/alphazero.h"
+#include "mcts/stoppers/simple.h"
 #include "mcts/stoppers/legacy.h"
 #include "mcts/stoppers/smooth.h"
 #include "mcts/stoppers/stoppers.h"
@@ -47,7 +48,7 @@ const OptionId kMoveOverheadId{
 const OptionId kTimeManagerId{
     "time-manager", "TimeManager",
     "Name and config of a time manager. "
-    "Possible names are 'legacy' (default), 'smooth' and 'alphazero'."
+    "Possible names are 'legacy' (default), 'smooth', 'alphazero', and simple."
     "See https://lc0.org/timemgr for configuration details."};
 }  // namespace
 
@@ -82,6 +83,9 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   } else if (managers[0] == "smooth") {
     time_manager =
         MakeSmoothTimeManager(move_overhead, tm_options.GetSubdict("smooth"));
+  } else if (managers[0] == "simple") {
+    time_manager =
+        MakeSimpleTimeManager(move_overhead, tm_options.GetSubdict("simple"));
   }
 
   if (!time_manager) {
