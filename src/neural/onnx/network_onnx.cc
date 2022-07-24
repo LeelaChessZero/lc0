@@ -46,7 +46,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA };
+enum class OnnxProvider { CPU, CUDA, TRT };
 
 class OnnxNetwork;
 
@@ -160,14 +160,24 @@ void OnnxComputation::ComputeBlocking() {
 
 Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
   Ort::SessionOptions options;
-  OrtCUDAProviderOptions cuda_options;
   // options.SetIntraOpNumThreads(1);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   switch (provider) {
-    case OnnxProvider::CUDA:
+    case OnnxProvider::TRT: {
+      OrtTensorRTProviderOptions trt_options;
+      trt_options.device_id = dict.GetOrDefault<int>("gpu", 0);
+      trt_options.trt_fp16_enable = dict.GetOrDefault<bool>("fp16", true);
+      trt_options.trt_int8_enable = dict.GetOrDefault<bool>("int8", false);
+      trt_options.trt_engine_cache_enable = 1;
+      options.AppendExecutionProvider_TensorRT(trt_options);
+      break;
+    }
+    case OnnxProvider::CUDA: {
+      OrtCUDAProviderOptions cuda_options;
       cuda_options.device_id = dict.GetOrDefault<int>("gpu", 0);
       options.AppendExecutionProvider_CUDA(cuda_options);
       break;
+    }
     case OnnxProvider::CPU:
       // Doesn't really work. :-( There are two execution providers (CUDA and
       // CPU) already added, don't know how to force it to use CPU.
@@ -269,6 +279,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   }
 }
 
+REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
