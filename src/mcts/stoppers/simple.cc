@@ -35,10 +35,10 @@ class SimpleTimeManager : public TimeManager {
  public:
   SimpleTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        basepct_(params.GetOrDefault<float>("base-pct", 2.4f)),
-        plypct_(params.GetOrDefault<float>("ply-pct", 0.0312f)),
-        timefactor_(params.GetOrDefault<float>("time-factor", 37.0f)),
-        opening_bonus_(params.GetOrDefault<float>("opening-bonus", 0.0f)) {
+        basepct_(params.GetOrDefault<float>("base-pct", 1.83f)),
+        plypct_(params.GetOrDefault<float>("ply-pct", 0.0454f)),
+        timefactor_(params.GetOrDefault<float>("time-factor", 33.4f)),
+        opening_bonus_(params.GetOrDefault<float>("opening-bonus", 82.5f)) {
     if (basepct_ <= 0.0f || basepct_ > 100.0f)
       throw Exception("base-pct value to be in range [0.0, 100.0]");
     if (plypct_ < 0.0f || plypct_ > 1.0f)
