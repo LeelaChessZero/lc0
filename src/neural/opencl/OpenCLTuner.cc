@@ -19,6 +19,8 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "neural/opencl/OpenCLTuner.h"
+
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -31,8 +33,6 @@
 
 #include "neural/opencl/OpenCL.h"
 #include "neural/opencl/OpenCLParams.h"
-#include "neural/opencl/OpenCLTuner.h"
-
 #include "utils/logging.h"
 
 constexpr auto MAX_ERROR = 1e-4f;
@@ -101,10 +101,8 @@ TuneParameters Tuner::get_parameters_by_int(
   TuneParameters param;
   std::vector<size_t> choices(opts.size());
 
-  auto cfgs = 1;
   for (auto c = size_t{0}; c < opts.size(); c++) {
     choices[c] = opts[c].second.size();
-    cfgs *= choices[c];
   }
   auto j = n;
 

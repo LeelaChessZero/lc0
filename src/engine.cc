@@ -96,7 +96,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
-  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
   SearchParams::Populate(options);
 
   options->Add<StringOption>(kSyzygyTablebaseId);

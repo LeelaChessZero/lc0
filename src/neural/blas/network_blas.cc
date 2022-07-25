@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018-2020 The LCZero Authors
+ Copyright (C) 2018-2022 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -30,10 +31,9 @@
 #include "neural/network.h"
 #include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
+#include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
-
-#include <Eigen/Core>
 
 #ifdef USE_DNNL
 #include <omp.h>
@@ -46,8 +46,9 @@ template <bool use_eigen>
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
-                  const bool wdl, const bool moves_left,
-                  const bool conv_policy);
+                  const bool wdl, const bool moves_left, const bool conv_policy,
+                  const ActivationFunction default_activation,
+                  const bool attn_policy);
 
   virtual ~BlasComputation() {}
 
@@ -113,6 +114,8 @@ class BlasComputation : public NetworkComputation {
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
+  ActivationFunction default_activation_;
+  bool attn_policy_;
 };
 
 template <bool use_eigen>
@@ -123,7 +126,8 @@ class BlasNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
-        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_);
+        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
+        default_activation_, attn_policy_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -140,23 +144,35 @@ class BlasNetwork : public Network {
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
+  ActivationFunction default_activation_;
+  bool attn_policy_;
 };
 
 template <bool use_eigen>
 BlasComputation<use_eigen>::BlasComputation(
     const LegacyWeights& weights, const size_t max_batch_size, const bool wdl,
-    const bool moves_left, const bool conv_policy)
+    const bool moves_left, const bool conv_policy,
+    const ActivationFunction default_activation, const bool attn_policy)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
       q_values_(0),
       wdl_(wdl),
       moves_left_(moves_left),
-      conv_policy_(conv_policy) {
+      conv_policy_(conv_policy),
+      default_activation_(default_activation),
+      attn_policy_(attn_policy) {
 #ifdef USE_DNNL
   omp_set_num_threads(1);
 #endif
 }
+
+template <typename T>
+using EigenMatrixMap =
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+template <typename T>
+using ConstEigenMatrixMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
 
 template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
@@ -213,6 +229,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   size_t max_head_planes =
       std::max(num_policy_input_planes,
                std::max(num_value_input_planes, num_moves_input_planes));
+  if (attn_policy_) {
+    max_head_planes = std::max(std::max(max_head_planes, size_t{67}),
+                               weights_.ip_pol_b.size());
+  }
   std::vector<float> head_buffer(largest_batch_size * max_head_planes *
                                  kSquares);
 
@@ -232,8 +252,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
     convolve3.Forward(batch_size, kInputPlanes, output_channels, conv_in,
                       weights_.input.weights.data(), conv_out);
 
-    BiasResidualRelu(batch_size, output_channels, conv_out,
-                     weights_.input.biases.data());
+    BiasActivate(batch_size, output_channels, conv_out,
+                 weights_.input.biases.data(), default_activation_);
 
     // Residual tower
 
@@ -247,8 +267,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       convolve3.Forward(batch_size, output_channels, output_channels, conv_in,
                         conv1.weights.data(), conv_out);
 
-      BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                       conv1.biases.data());
+      BiasActivate(batch_size, output_channels, &conv_out[0],
+                   conv1.biases.data(), default_activation_);
 
       std::swap(conv_in, res);
       std::swap(conv_out, conv_in);
@@ -257,37 +277,137 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                         conv2.weights.data(), conv_out);
 
       if (residual.has_se) {
-        // No relu if followed by SE-unit and residual is added later
-        BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                         conv2.biases.data(), nullptr, false);
-
+        // No relu if followed by SE-unit and residual/bias is added later
         std::swap(conv_out, conv_in);
 
         auto se_fc_outputs = se.b1.size();
         ApplySEUnit<use_eigen>(batch_size, output_channels, se_fc_outputs,
-                               conv_in, res, se.w1.data(), se.b1.data(),
-                               se.w2.data(), se.b2.data(), conv_out);
+                               conv_in, conv2.biases.data(), res, se.w1.data(),
+                               se.b1.data(), se.w2.data(), se.b2.data(),
+                               conv_out, default_activation_);
       } else {
-        BiasResidualRelu(batch_size, output_channels, &conv_out[0],
-                         conv2.biases.data(), res);
+        BiasResidual(batch_size, output_channels, &conv_out[0],
+                     conv2.biases.data(), res, default_activation_);
       }
     }
 
-    if (conv_policy_) {
-      // Need to preserve conv_out which is used for value head
+    // Need to preserve conv_out which is used for value and moves left heads.
+    if (attn_policy_) {
+      // NCHW to NHWC conversion.
+      for (auto batch = size_t{0}; batch < batch_size; batch++) {
+        for (auto i = 0; i < kSquares; i++) {
+          for (size_t j = 0; j < output_channels; j++) {
+            res[batch * kSquares * output_channels + i * output_channels + j] =
+                conv_out[batch * kSquares * output_channels + j * kSquares + i];
+          }
+        }
+      }
+      const size_t embedding_size = weights_.ip_pol_b.size();
+      // Embedding.
+      FullyConnectedLayer<use_eigen>::Forward1D(
+          batch_size * kSquares, output_channels, embedding_size, res,
+          weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
+          SELU,  // SELU activation for attention head.
+          head_buffer.data());
+
+      for (auto layer : weights_.pol_encoder) {
+        // TODO: support encoder heads.
+        throw Exception(
+            "Eigen/Blas backend doesn't support encoder heads yet.");
+      }
+      const size_t policy_d_model = weights_.ip2_pol_b.size();
+      std::vector<float> head_buffer2(largest_batch_size * policy_d_model *
+                                      kSquares);
+      std::vector<float> head_buffer3(largest_batch_size * policy_d_model *
+                                      kSquares);
+      // Q
+      FullyConnectedLayer<use_eigen>::Forward1D(
+          batch_size * kSquares, embedding_size, policy_d_model,
+          head_buffer.data(), weights_.ip2_pol_w.data(),
+          weights_.ip2_pol_b.data(), NONE, head_buffer2.data());
+      // K
+      FullyConnectedLayer<use_eigen>::Forward1D(
+          batch_size * kSquares, embedding_size, policy_d_model,
+          head_buffer.data(), weights_.ip3_pol_w.data(),
+          weights_.ip3_pol_b.data(), NONE, head_buffer3.data());
+      const float scaling = 1.0f / sqrtf(policy_d_model);
+      for (auto batch = size_t{0}; batch < batch_size; batch++) {
+        const float* A = &head_buffer2[batch * 64 * policy_d_model];
+        const float* B = &head_buffer3[batch * 64 * policy_d_model];
+        float* C = &head_buffer[batch * (64 * 64 + 8 * 24)];
+        if (use_eigen) {
+          auto C_mat = EigenMatrixMap<float>(C, kSquares, kSquares);
+          C_mat.noalias() =
+              scaling *
+              ConstEigenMatrixMap<float>(B, policy_d_model, kSquares)
+                  .transpose() *
+              ConstEigenMatrixMap<float>(A, policy_d_model, kSquares);
+        } else {
+#ifdef USE_BLAS
+          cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, kSquares,
+                      kSquares, policy_d_model, scaling, A, policy_d_model, B,
+                      policy_d_model, 0.0f, C, 64);
+#else
+          // Should never get here.
+          throw Exception("Blas backend internal error");
+#endif
+        }
+      }
+      // Promotion offset calculation.
+      for (auto batch = size_t{0}; batch < batch_size; batch++) {
+        float promotion_offsets[4][8];
+        // This is so small that SGEMM seems slower.
+        for (int i = 0; i < 4; i++) {
+          for (int j = 0; j < 8; j++) {
+            float sum = 0;
+            for (size_t k = 0; k < policy_d_model; k++) {
+              sum += head_buffer3.data()[batch * kSquares * policy_d_model +
+                                         (56 + j) * policy_d_model + k] *
+                     weights_.ip4_pol_w.data()[i * policy_d_model + k];
+            }
+            promotion_offsets[i][j] = sum;
+          }
+        }
+        for (int i = 0; i < 3; i++) {
+          for (int j = 0; j < 8; j++) {
+            promotion_offsets[i][j] += promotion_offsets[3][j];
+          }
+        }
+        for (int k = 0; k < 8; k++) {      // y in cuda
+          for (int j = 0; j < 8; j++) {    // w in cuda
+            for (int i = 0; i < 3; i++) {  // c in cuda
+              head_buffer.data()[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 * k +
+                                 3 * j + i] =
+                  head_buffer.data()[batch * (64 * 64 + 8 * 24) +
+                                     (48 + k) * 64 + 56 + j] +
+                  promotion_offsets[i][j];
+            }
+          }
+        }
+      }
+      // Mapping from attention policy to lc0 policy
+      for (auto batch = size_t{0}; batch < batch_size; batch++) {
+        for (auto i = 0; i < 64 * 64 + 8 * 24; i++) {
+          auto j = kAttnPolicyMap[i];
+          if (j >= 0) {
+            output_fc[batch * num_output_policy + j] =
+                head_buffer[batch * (64 * 64 + 8 * 24) + i];
+          }
+        }
+      }
+    } else if (conv_policy_) {
       convolve3.Forward(batch_size, output_channels, output_channels, conv_out,
                         weights_.policy1.weights.data(), res);
 
-      BiasResidualRelu(batch_size, output_channels, &res[0],
-                       weights_.policy1.biases.data());
+      BiasActivate(batch_size, output_channels, &res[0],
+                   weights_.policy1.biases.data(), default_activation_);
 
       convolve3.Forward(batch_size, output_channels, num_policy_input_planes,
                         res, weights_.policy.weights.data(),
                         head_buffer.data());
 
-      BiasResidualRelu(batch_size, num_policy_input_planes,
-                       &head_buffer.data()[0], weights_.policy.biases.data(),
-                       nullptr, false);
+      BiasActivate(batch_size, num_policy_input_planes, &head_buffer.data()[0],
+                   weights_.policy.biases.data(), NONE);
 
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -305,14 +425,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           batch_size, output_channels, num_policy_input_planes, conv_out,
           weights_.policy.weights.data(), head_buffer.data());
 
-      BiasResidualRelu(batch_size, num_policy_input_planes, &head_buffer[0],
-                       weights_.policy.biases.data());
+      BiasActivate(batch_size, num_policy_input_planes, &head_buffer[0],
+                   weights_.policy.biases.data(), default_activation_);
 
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_policy_input_planes * kSquares, num_output_policy,
           head_buffer.data(), weights_.ip_pol_w.data(),
           weights_.ip_pol_b.data(),
-          false,  // Relu Off
+          NONE,  // Activation Off
           output_fc.data());
     }
 
@@ -330,14 +450,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         batch_size, output_channels, num_value_input_planes, conv_out,
         weights_.value.weights.data(), head_buffer.data());
 
-    BiasResidualRelu(batch_size, num_value_input_planes, &head_buffer[0],
-                     weights_.value.biases.data());
+    BiasActivate(batch_size, num_value_input_planes, &head_buffer[0],
+                 weights_.value.biases.data(), default_activation_);
 
     FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size, num_value_input_planes * kSquares, num_value_channels,
         head_buffer.data(), weights_.ip1_val_w.data(),
         weights_.ip1_val_b.data(),
-        true,  // Relu On
+        default_activation_,  // Activation On
         output_fc.data());
 
     // Now get the score
@@ -346,7 +466,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_value_channels, 3, output_fc.data(),
           weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
-          false,  // Relu Off
+          NONE,  // Activation Off
           wdl.data());
 
       for (size_t j = 0; j < batch_size; j++) {
@@ -372,21 +492,21 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           batch_size, output_channels, num_moves_input_planes, conv_out,
           weights_.moves_left.weights.data(), head_buffer.data());
 
-      BiasResidualRelu(batch_size, num_moves_input_planes, &head_buffer[0],
-                       weights_.moves_left.biases.data());
+      BiasActivate(batch_size, num_moves_input_planes, &head_buffer[0],
+                   weights_.moves_left.biases.data(), default_activation_);
 
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_moves_input_planes * kSquares, num_moves_channels,
           head_buffer.data(), weights_.ip1_mov_w.data(),
           weights_.ip1_mov_b.data(),
-          true,  // Relu On
+          default_activation_,  // Activation On
           output_fc.data());
 
       std::vector<float> output_moves_left(batch_size);
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_moves_channels, 1, output_fc.data(),
           weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
-          true,  // Relu On
+          RELU,  // Specifically Relu
           output_moves_left.data());
 
       for (size_t j = 0; j < batch_size; j++) {
@@ -424,6 +544,14 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
   conv_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
+  attn_policy_ = file.format().network_format().policy() ==
+                 pblczero::NetworkFormat::POLICY_ATTENTION;
+
+  default_activation_ = file.format().network_format().default_activation() ==
+                                pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+                            ? MISH
+                            : RELU;
 
   if (max_batch_size_ > kHardMaxBatchSize) {
     max_batch_size_ = kHardMaxBatchSize;
@@ -507,17 +635,20 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-    throw Exception(
-        "Network format " +
-        std::to_string(weights.format().network_format().network()) +
-        " is not supported by BLAS backend.");
+    throw Exception("Network format " +
+                    pblczero::NetworkFormat::NetworkStructure_Name(
+                        weights.format().network_format().network()) +
+                    " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
-                    std::to_string(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(
+                        weights.format().network_format().policy()) +
                     " is not supported by BLAS backend.");
   }
   if (weights.format().network_format().value() !=
@@ -525,8 +656,19 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    std::to_string(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(
+                        weights.format().network_format().value()) +
                     " is not supported by BLAS backend.");
+  }
+  if (weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+      weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
+    throw Exception(
+        "Default activation " +
+        pblczero::NetworkFormat::DefaultActivation_Name(
+            weights.format().network_format().default_activation()) +
+        " is not supported by BLAS backend.");
   }
   return std::make_unique<BlasNetwork<use_eigen>>(weights, options);
 }

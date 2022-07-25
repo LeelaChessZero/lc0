@@ -154,10 +154,10 @@ InputPlanes EncodePositionForNN(
     switch (input_format) {
       case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE: {
         // "Legacy" input planes with:
-        // - Plane 104 (0-based) filled with 1 if white can castle queenside.
-        // - Plane 105 filled with ones if white can castle kingside.
-        // - Plane 106 filled with ones if black can castle queenside.
-        // - Plane 107 filled with ones if white can castle kingside.
+        // - Plane 104 (0-based) filled with 1 if we can castle queenside.
+        // - Plane 105 filled with ones if we can castle kingside.
+        // - Plane 106 filled with ones if they can castle queenside.
+        // - Plane 107 filled with ones if they can castle kingside.
         if (board.castlings().we_can_000()) result[kAuxPlaneBase + 0].SetAll();
         if (board.castlings().we_can_00()) result[kAuxPlaneBase + 1].SetAll();
         if (board.castlings().they_can_000()) {
