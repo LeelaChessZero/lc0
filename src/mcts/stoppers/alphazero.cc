@@ -42,7 +42,8 @@ class AlphazeroTimeManager : public TimeManager {
     if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f)
       throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
     if (alphazeroincrementpct_ < 0.0f || alphazeroincrementpct_ > 100.0f)
-      throw Exception("alphazero-increment-pct value to be in range [0.0, 100.0]");
+      throw Exception(
+          "alphazero-increment-pct value to be in range [0.0, 100.0]");
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
@@ -58,14 +59,16 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   const Position& position = tree.HeadPosition();
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
-  const std::optional<int64_t>& increment = (is_black ? params.binc : params.winc);
+  const std::optional<int64_t>& increment =
+      (is_black ? params.binc : params.winc);
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
   auto total_moves_time = *time - move_overhead_;
 
-  float this_move_time = std::max<int64_t>(0, total_moves_time - *increment) * (alphazerotimepct_ / 100.0f)
-                         + *increment * (alphazeroincrementpct_ / 100.0f);
+  float this_move_time = std::max<int64_t>(0, total_moves_time - *increment) *
+      (alphazerotimepct_ / 100.0f) + *increment *
+      (alphazeroincrementpct_ / 100.0f);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms."
           << " Remaining time " << *time << "ms (-" << move_overhead_
