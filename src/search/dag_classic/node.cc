@@ -399,10 +399,9 @@ void LowNode::ReleaseChildren(
 void LowNode::ReleaseChildrenExceptOne(
     Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
   // Stores node which will have to survive (or nullptr if it's not found).
-  std::unique_ptr<Node> saved_node;
+  atomic_unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
-  for (std::unique_ptr<Node>* node = &child_; *node;
-       node = (*node)->GetSibling()) {
+  for (auto node = &child_; *node; node = (*node)->GetSibling()) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
