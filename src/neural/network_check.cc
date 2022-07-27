@@ -114,7 +114,6 @@ class CheckComputation : public NetworkComputation {
   }
 
  private:
-  static constexpr int kNumOutputPolicies = 1858;
   const CheckParams& params_;
   std::vector<MoveList> moves_;
 
