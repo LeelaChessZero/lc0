@@ -160,7 +160,7 @@ static void GetConvTensorDesc(TensorDesc* out_desc, int N, int C,
   out_desc->PhysicalSizeInElements = N * C * H * W;
 }
 
-};  // namespace
+}  // namespace
 
 GemmMetaCommand::GemmMetaCommand(DxContext* dx_context, int rows, int cols, int K,
                                  int gemm_batch, bool fp16, bool a_transpose,
