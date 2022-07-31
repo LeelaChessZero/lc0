@@ -70,6 +70,12 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
       (alphazerotimepct_ / 100.0f) + *increment *
       (alphazeroincrementpct_ / 100.0f);
 
+  // If increment time is added only after a move has been made,
+  // this_move_time can become higher than total_moves_time.
+  if (this_move_time > total_moves_time) {
+    this_move_time = total_moves_time;
+  }
+
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms."
           << " Remaining time " << *time << "ms (-" << move_overhead_
           << "ms overhead).";
