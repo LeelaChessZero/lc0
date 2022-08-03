@@ -59,15 +59,15 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   const Position& position = tree.HeadPosition();
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
-  const std::optional<int64_t>& increment =
-      (is_black ? params.binc : params.winc);
+  const std::optional<int64_t>& inc = (is_black ? params.binc : params.winc);
+  const int increment = inc ? std::max(int64_t(0), *inc) : 0;
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
   auto total_moves_time = *time - move_overhead_;
 
-  float this_move_time = std::max<int64_t>(0, total_moves_time - *increment) *
-      (alphazerotimepct_ / 100.0f) + *increment *
+  float this_move_time = std::max<int64_t>(0, total_moves_time - increment) *
+      (alphazerotimepct_ / 100.0f) + increment *
       (alphazeroincrementpct_ / 100.0f);
 
   // If increment time is added only after a move has been made,
