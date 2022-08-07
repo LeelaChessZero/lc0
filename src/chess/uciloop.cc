@@ -139,6 +139,9 @@ void UciLoop::RunLoop() {
       // Ignore empty line.
       if (command.first.empty()) continue;
       if (!DispatchCommand(command.first, command.second)) break;
+      else {
+        SendResponse(std::string("executed ") + command.first);
+      }
     } catch (Exception& ex) {
       SendResponse(std::string("error ") + ex.what());
     }
