@@ -56,13 +56,7 @@ public:
 
     void* setSelectedOutputs(std::vector<void *> * outputs);
 
-    void forwardEval(float * inputs, int batchSize);
-
-    void copyResults(std::vector<float *> output_mems);
-
-    void forwardEvalAndCopyResults(float * inputs,
-                                   int batchSize,
-                                   std::vector<float *> output_mems);
+    void forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems);
 
     void saveVariables(std::vector<std::string> names);
 

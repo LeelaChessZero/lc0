@@ -127,27 +127,9 @@ void* MetalNetworkBuilder::setSelectedOutputs(std::vector<void *> * outputs) {
     return (void*) self;
 }
 
-void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize)
-{
-    NSArray<MPSGraphTensor *> * resultTensors = [(id)self runInferenceWithBatchSize:batchSize
-                                                                             inputs:inputs];
-}
-
-
-void MetalNetworkBuilder::copyResults(std::vector<float *> output_mems)
-{
-    [(id)self copyResultsToBuffers:&output_mems[0]];
-}
-
-void MetalNetworkBuilder::forwardEvalAndCopyResults(
-    float * inputs,
-    int batchSize,
-    std::vector<float *> output_mems)
-{
+void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems) {
     @autoreleasepool {
-        [(id)self runInferenceWithBatchSize:batchSize
-                                     inputs:inputs];
-
+        [(id)self runInferenceWithBatchSize:batchSize inputs:inputs];
         [(id)self copyResultsToBuffers:&output_mems[0]];
     }
 }
