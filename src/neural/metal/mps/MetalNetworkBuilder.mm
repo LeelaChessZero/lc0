@@ -139,6 +139,19 @@ void MetalNetworkBuilder::copyResults(std::vector<float *> output_mems)
     [(id)self copyResultsToBuffers:&output_mems[0]];
 }
 
+void MetalNetworkBuilder::forwardEvalAndCopyResults(
+    float * inputs,
+    int batchSize,
+    std::vector<float *> output_mems)
+{
+    @autoreleasepool {
+        [(id)self runInferenceWithBatchSize:batchSize
+                                     inputs:inputs];
+
+        [(id)self copyResultsToBuffers:&output_mems[0]];
+    }
+}
+
 void MetalNetworkBuilder::saveVariables(std::vector<std::string> names)
 {
     for (const std::string name : names) {

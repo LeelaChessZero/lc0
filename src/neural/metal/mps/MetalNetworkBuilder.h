@@ -60,6 +60,10 @@ public:
 
     void copyResults(std::vector<float *> output_mems);
 
+    void forwardEvalAndCopyResults(float * inputs,
+                                   int batchSize,
+                                   std::vector<float *> output_mems);
+
     void saveVariables(std::vector<std::string> names);
 
     void dumpVariables(std::vector<std::string> names, int batches);

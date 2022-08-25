@@ -100,6 +100,9 @@ static const NSUInteger kMaxInflightBuffers = 4;
     _resultDataDictionary = [_graph runWithFeeds:@{_inputTensor : _inputTensorData}
                                    targetTensors:_targetTensors
                                 targetOperations:nil];
+
+    [_inputTensorData release];
+
     return _resultTensors;
 }
 

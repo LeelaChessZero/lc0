@@ -251,12 +251,14 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
      */
 
     if (moves_left_) {
-      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
-      builder_->copyResults({io->op_policy_raw_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+      builder_->forwardEvalAndCopyResults(
+          io->input_val_mem_expanded_, batchSize,
+          {io->op_policy_raw_mem_, io->op_value_mem_, io->op_moves_left_mem_});
     }
     else {
-      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
-      builder_->copyResults({io->op_policy_raw_mem_, io->op_value_mem_});
+      builder_->forwardEvalAndCopyResults(
+          io->input_val_mem_expanded_, batchSize,
+          {io->op_policy_raw_mem_, io->op_value_mem_});
     }
 
     // Mapping from convolutional policy to lc0 policy
@@ -273,12 +275,14 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
   }
   else {
     if (moves_left_) {
-      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
-      builder_->copyResults({io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+      builder_->forwardEvalAndCopyResults(
+          io->input_val_mem_expanded_, batchSize,
+          {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
     }
     else {
-      builder_->forwardEval(io->input_val_mem_expanded_, batchSize);
-      builder_->copyResults({io->op_policy_mem_, io->op_value_mem_});
+      builder_->forwardEvalAndCopyResults(
+          io->input_val_mem_expanded_, batchSize,
+          {io->op_policy_mem_, io->op_value_mem_});
     }
   }
 
