@@ -211,7 +211,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
         options_.output_policy_head, flow,
         builder->AddInitializer("/const/mapping_table",
                                 Int32OnnxConst(MakePolicyMap(), {1858})),
-        {1});
+        1);
     builder->AddOutput(output, {-1, 1858}, GetDataType());
     onnx->set_output_policy(output);
   } else {
