@@ -34,7 +34,6 @@
 #include <vector>
 
 #include "MetaCommand.h"
-#include "comdef.h"
 #include "network_dx.h"
 #include "utils/exception.h"
 
