@@ -167,7 +167,7 @@ class Node {
   float GetQ(float draw_score, float DrawFactor, float WinFactor,
                   float LoseFactor) const {
     return std::pow(std::fmax(wl_ + std::fmax((1 - wl_ - d_) * 0.5f, 0), 0),
-                    WinFactor) -
+                    WinFactor + DrawFactor * d_) -
            std::pow(std::fmax((1 - wl_ - d_) * 0.5f, 0), LoseFactor);
   }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
