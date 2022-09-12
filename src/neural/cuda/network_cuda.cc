@@ -326,10 +326,10 @@ class CudaNetwork : public Network {
 
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
-        getMaxAttentionHeadSize(weights, max_batch_size_);
+        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
 
     const size_t attentionBodySize =
-        getMaxAttentionBodySize(weights, max_batch_size_);
+        getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
     scratch_size_ = std::max(scratch_size_,
                              std::max(attentionPolicySize, attentionBodySize));
 
