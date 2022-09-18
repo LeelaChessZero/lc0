@@ -598,6 +598,8 @@ if get_option('build_backends')
     ]
 
     has_backends = true
+    add_project_arguments('-fobjc-arc', language : 'objc')
+    add_project_arguments('-fobjc-arc', language : 'objcpp')
   endif
 
 

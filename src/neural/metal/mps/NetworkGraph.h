@@ -61,6 +61,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     NSMutableDictionary<NSString *, NSObject *> * _readVariables;
 }
 
++(Lc0NetworkGraph * _Nonnull)getGraphAt:(NSNumber * _Nonnull)index;
+
++(void)initWithDevice:(id<MTLDevice> __nonnull)device
+                index:(NSNumber * _Nonnull)index;
+
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
@@ -69,54 +74,37 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                         label:(NSString * __nullable)label;
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
-                                          inputChannels:(NSUInteger)inputChannels
-                                         outputChannels:(NSUInteger)outputChannels
-                                             kernelSize:(NSUInteger)kernelSize
-                                                weights:(float * __nonnull)weights
-                                                 biases:(float * __nonnull)biases
-                                                hasRelu:(BOOL)hasRelu
-                                                  label:(NSString * __nonnull)label;
+                                            inputChannels:(NSUInteger)inputChannels
+                                           outputChannels:(NSUInteger)outputChannels
+                                               kernelSize:(NSUInteger)kernelSize
+                                                  weights:(float * __nonnull)weights
+                                                   biases:(float * __nonnull)biases
+                                                  hasRelu:(BOOL)hasRelu
+                                                    label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) addResidualBlockWithParent:(MPSGraphTensor * __nonnull)parent
-                                       inputChannels:(NSUInteger)inputChannels
-                                      outputChannels:(NSUInteger)outputChannels
-                                          kernelSize:(NSUInteger)kernelSize
-                                            weights1:(float * __nonnull)weights1
-                                             biases1:(float * __nonnull)biases1
-                                            weights2:(float * __nonnull)weights2
-                                             biases2:(float * __nonnull)biases2
-                                               label:(NSString * __nonnull)label
-                                               hasSe:(BOOL)hasSe
-                                          seWeights1:(float * __nullable)seWeights1
-                                           seBiases1:(float * __nullable)seBiases1
-                                          seWeights2:(float * __nullable)seWeights2
-                                           seBiases2:(float * __nullable)seBiases2
-                                         seFcOutputs:(NSUInteger)seFcOutputs;
+                                         inputChannels:(NSUInteger)inputChannels
+                                        outputChannels:(NSUInteger)outputChannels
+                                            kernelSize:(NSUInteger)kernelSize
+                                              weights1:(float * __nonnull)weights1
+                                               biases1:(float * __nonnull)biases1
+                                              weights2:(float * __nonnull)weights2
+                                               biases2:(float * __nonnull)biases2
+                                                 label:(NSString * __nonnull)label
+                                                 hasSe:(BOOL)hasSe
+                                            seWeights1:(float * __nullable)seWeights1
+                                             seBiases1:(float * __nullable)seBiases1
+                                            seWeights2:(float * __nullable)seWeights2
+                                             seBiases2:(float * __nullable)seBiases2
+                                           seFcOutputs:(NSUInteger)seFcOutputs;
 
 -(nonnull MPSGraphTensor *) addFullyConnectedLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                             inputChannels:(NSUInteger)inputChannels
-                                            outputChannels:(NSUInteger)outputChannels
-                                                   weights:(float * __nonnull)weights
-                                                    biases:(float * __nonnull)biases
-                                                activation:(NSString * __nullable)activation
-                                                     label:(NSString * __nonnull)label;
-
--(nonnull MPSGraphTensor *) addSEUnitWithParent:(MPSGraphTensor * __nonnull)parent
-                                     skipNode:(MPSGraphTensor * __nonnull)skipNode
-                                inputChannels:(NSUInteger)inputChannels
-                               outputChannels:(NSUInteger)outputChannels
-                                  seFcOutputs:(NSUInteger)seFcOutputs
-                                     weights1:(float * __nonnull)weights1
-                                      biases1:(float * __nonnull)biases1
-                                     weights2:(float * __nonnull)weights2
-                                      biases2:(float * __nonnull)biases2
-                                        label:(NSString * __nonnull)label
-                                      hasRelu:(BOOL)hasRelu;
-
--(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                              policyMap:(short * __nonnull)policyMap
-                                        policyMapLength:(NSUInteger)policyMapLength
-                                                  label:(NSString *)label;
+                                               inputChannels:(NSUInteger)inputChannels
+                                              outputChannels:(NSUInteger)outputChannels
+                                                     weights:(float * __nonnull)weights
+                                                      biases:(float * __nonnull)biases
+                                                  activation:(NSString * __nullable)activation
+                                                       label:(NSString * __nonnull)label;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 
