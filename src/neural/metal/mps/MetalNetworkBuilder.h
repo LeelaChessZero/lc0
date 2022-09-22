@@ -39,22 +39,7 @@ public:
 
     std::string init(int gpu_id);
 
-    void* getInputPlaceholder(int width, int height, int channels, std::string label);
-
-    void* makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
-                               float * weights, float * biases, bool withRelu, std::string label);
-
-    void* makeResidualBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
-                            float * weights1, float * biases1, float * weights2, float * biases2,
-                            bool withRelu, std::string label, bool withSe, int seFcOutputs,
-                            float * seWeights1, float * seBiases1, float * seWeights2, float * seBiases2);
-
-    void* makeFullyConnectedLayer(void * previousLayer, int inputSize, int outputSize,
-                                  float * weights, float * biases, std::string activation, std::string label);
-
-    void* makePolicyMapLayer(void * previousLayer, uint32_t * policyMap, std::string label);
-
-    void* setSelectedOutputs(std::vector<void *> * outputs);
+    void build(int kInputPlanes, int channelSize, int kernelSize, LegacyWeights& weights, bool conv_policy, bool wdl, bool moves_left);
 
     void forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems);
 
@@ -63,7 +48,7 @@ public:
     void dumpVariables(std::vector<std::string> names, int batches);
 
 private:
-    void* self;
+    int gpu_id;
 };
 
 }  // namespace metal_backend

@@ -89,141 +89,14 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     steps_ = max_batch_size_ / batch_size_;
   }
 
-  // Pointer to last layer in MPS Graph.
-  void * layer;
+  wdl_ = file.format().network_format().value() == pblczero::NetworkFormat::VALUE_WDL;
 
-  // 0. Input placeholder.
-  layer = builder_->getInputPlaceholder(8, 8, kInputPlanes, "inputs");
-
-  // 1. Input layer
-  layer = builder_->makeConvolutionBlock(layer, kInputPlanes, channelSize, kernelSize,
-                                        &weights.input.weights[0],
-                                        &weights.input.biases[0],
-                                        true, "input/conv");
-
-  // 2. Residual blocks
-  for (size_t i = 0; i < weights.residual.size(); i++) {
-    layer = builder_->makeResidualBlock(layer, channelSize, channelSize, kernelSize,
-                                       &weights.residual[i].conv1.weights[0],
-                                       &weights.residual[i].conv1.biases[0],
-                                       &weights.residual[i].conv2.weights[0],
-                                       &weights.residual[i].conv2.biases[0],
-                                       true, "block_" + std::to_string(i),
-                                       weights.residual[i].has_se,
-                                       weights.residual[i].se.b1.size(),
-                                       &weights.residual[i].se.w1[0],
-                                       &weights.residual[i].se.b1[0],
-                                       &weights.residual[i].se.w2[0],
-                                       &weights.residual[i].se.b2[0]);
-  }
-
-  // 3. Policy head.
-  void * policy;
-  if (conv_policy_) {
-    policy = builder_->makeConvolutionBlock(layer, channelSize, channelSize, kernelSize,
-                                           &weights.policy1.weights[0],
-                                           &weights.policy1.biases[0],
-                                           true, "policy/conv1");
-
-    // No relu.
-    policy = builder_->makeConvolutionBlock(policy, channelSize, 80, kernelSize,
-                                           &weights.policy.weights[0],
-                                           &weights.policy.biases[0],
-                                           false, "policy/conv2");
-
-    /**
-     * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
-     * Implementation of policy map to be done in CPU for now.
-     *
-     * Reinstate this section when bug is fixed. See comments below.
-     *
-    // [1858 -> HWC or CHW]
-    const bool HWC = false;
-    std::vector<uint32_t> policy_map(1858);
-    for (const auto& mapping : kConvPolicyMap) {
-      if (mapping == -1) continue;
-      const auto index = &mapping - kConvPolicyMap;
-      const auto displacement = index / 64;
-      const auto square = index % 64;
-      const auto row = square / 8;
-      const auto col = square % 8;
-      if (HWC) {
-        policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
-      } else {
-        policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
-      }
-    }
-    policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
-    */
-  }
-  else {
-    const int policySize = weights.policy.biases.size();
-    policy = builder_->makeConvolutionBlock(layer, channelSize, policySize, 1,
-                                           &weights.policy.weights[0],
-                                           &weights.policy.biases[0],
-                                           true, "policy/conv");
-    policy = builder_->makeFullyConnectedLayer(policy, policySize * 8 * 8, 1858,
-                                              &weights.ip_pol_w[0],
-                                              &weights.ip_pol_b[0],
-                                              "", "policy/fc");
-  }
-
-  // 4. Value head.
-  void * value;
-  value = builder_->makeConvolutionBlock(layer, channelSize, 32, 1,
-                                        &weights.value.weights[0],
-                                        &weights.value.biases[0],
-                                        true, "value/conv");
-  value = builder_->makeFullyConnectedLayer(value, 32 * 8 * 8, 128,
-                                           &weights.ip1_val_w[0],
-                                           &weights.ip1_val_b[0],
-                                           "relu", "value/fc1");
-  wdl_ = file.format().network_format().value() ==
-         pblczero::NetworkFormat::VALUE_WDL;
-  if (wdl_) {
-    value = builder_->makeFullyConnectedLayer(value, 128, 3,
-                                             &weights.ip2_val_w[0],
-                                             &weights.ip2_val_b[0],
-                                             "softmax", "value/fc2");
-  }
-  else {
-    value = builder_->makeFullyConnectedLayer(value, 128, 1,
-                                             &weights.ip2_val_w[0],
-                                             &weights.ip2_val_b[0],
-                                             "tanh", "value/fc2");
-  }
-
-  // 5. Moves left head.
   moves_left_ = (file.format().network_format().moves_left() ==
                  pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
-  void * mlh;
-  if (moves_left_) {
-    const int mlhChannels = weights.moves_left.biases.size();
-    mlh = builder_->makeConvolutionBlock(layer, channelSize, mlhChannels, 1,
-                                        &weights.moves_left.weights[0],
-                                        &weights.moves_left.biases[0],
-                                        true, "mlh/conv");
-    mlh = builder_->makeFullyConnectedLayer(mlh, mlhChannels * 8 * 8, weights.ip1_mov_b.size(),
-                                           &weights.ip1_mov_w[0],
-                                           &weights.ip1_mov_b[0],
-                                           "relu", "mlh/fc1");
-    mlh = builder_->makeFullyConnectedLayer(mlh, weights.ip1_mov_b.size(), 1,
-                                           &weights.ip2_mov_w[0],
-                                           &weights.ip2_mov_b[0],
-                                           "relu", "mlh/fc2");
-  }
 
-  // Select the outputs to be run through the inference graph.
-  std::vector<void*> outputs;
-  if (moves_left_) {
-    outputs = {policy, value, mlh};
-  }
-  else {
-    outputs = {policy, value};
-  }
-
-  builder_->setSelectedOutputs(&outputs);
+  // Build MPS Graph.
+  builder_->build(kInputPlanes, channelSize, kernelSize, weights, conv_policy_, wdl_, moves_left_);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {

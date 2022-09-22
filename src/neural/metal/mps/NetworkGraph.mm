@@ -72,6 +72,43 @@ static const NSUInteger kMaxInflightBuffers = 4;
 
 @implementation Lc0NetworkGraph
 
+// This is the Lc0NetworkGraph dictionary getter method.
+// It is a singleton object that is used to store the Lc0NetworkGraph.
++(NSMutableDictionary * _Nonnull)getGraphs {
+    // This is the Lc0NetworkGraph dictionary.
+    static NSMutableDictionary * graphs = nil;
+
+    @synchronized (self) {
+        if (graphs == nil) {
+            graphs = [NSMutableDictionary dictionaryWithCapacity:1];
+        }
+    }
+
+    return graphs;
+}
+
+// This is the Lc0NetworkGraph getter method.
++(Lc0NetworkGraph * _Nonnull)getGraphAt:(NSNumber * _Nonnull)index {
+  NSMutableDictionary * graphs = [Lc0NetworkGraph getGraphs];
+
+  return graphs[index];
+}
+
+// This is the Lc0NetworkGraph factory method.
+// It is used to create a Lc0NetworkGraph object.
+// The Lc0NetworkGraph object is stored in the dictionary.
+// The Lc0NetworkGraph object is initialized with the Metal device.
++(void)initWithDevice:(id<MTLDevice> __nonnull)device
+                index:(NSNumber * _Nonnull)index {
+    NSMutableDictionary * graphs = [Lc0NetworkGraph getGraphs];
+
+    @synchronized (self) {
+        if (graphs[index] == nil) {
+            graphs[index] = [[Lc0NetworkGraph alloc] initWithDevice:device];
+        }
+    }
+}
+
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device
 {
     self = [super init];
@@ -101,7 +138,6 @@ static const NSUInteger kMaxInflightBuffers = 4;
                                    targetTensors:_targetTensors
                                 targetOperations:nil];
 
-    [_inputTensorData release];
 
     return _resultTensors;
 }

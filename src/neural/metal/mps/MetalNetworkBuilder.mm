@@ -25,18 +25,15 @@
     Program grant you additional permission to convey the resulting work.
  */
 
+#import "neural/network_legacy.h"
 #import "MetalNetworkBuilder.h"
 #import "NetworkGraph.h"
 
 namespace lczero {
 namespace metal_backend {
 
-MetalNetworkBuilder::MetalNetworkBuilder(void) : self(NULL) {}
-
-MetalNetworkBuilder::~MetalNetworkBuilder(void)
-{
-    [(id)self dealloc];
-}
+MetalNetworkBuilder::MetalNetworkBuilder(void){}
+MetalNetworkBuilder::~MetalNetworkBuilder(void){}
 
 //void MetalNetworkBuilder::init(void* weights, void* options)
 std::string MetalNetworkBuilder::init(int gpu_id)
@@ -51,100 +48,233 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     }
 
     // Initialize the metal MPS Graph executor with the selected device.
-    self = [[Lc0NetworkGraph alloc] initWithDevice:devices[gpu_id]];
+    [Lc0NetworkGraph initWithDevice:devices[gpu_id]
+                              index:[NSNumber numberWithInt:gpu_id]];
+
+    this->gpu_id = gpu_id;
 
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
-void* MetalNetworkBuilder::getInputPlaceholder(int width, int height, int channels, std::string label) {
-    return [(id)self inputPlaceholderWithInputChannels:channels
-                                                height:height
-                                                 width:width
-                                                 label:[NSString stringWithUTF8String:label.c_str()]];
-}
+void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSize, LegacyWeights& weights, bool conv_policy, bool wdl, bool moves_left) {
+    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
+    MPSGraphTensor * layer;
 
-void* MetalNetworkBuilder::makeConvolutionBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
-                                                float * weights, float * biases, bool withRelu, std::string label) {
-    return [(id)self addConvolutionBlockWithParent:(MPSGraphTensor *)previousLayer
-                                     inputChannels:inputSize
-                                    outputChannels:channelSize
-                                        kernelSize:kernelSize
-                                           weights:weights
-                                            biases:biases
-                                           hasRelu:(BOOL)withRelu
-                                             label:[NSString stringWithUTF8String:label.c_str()]];
-}
+    // 0. Input placeholder.
+    layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
+                                              height:8
+                                               width:8
+                                               label:@"inputs"];
 
-void* MetalNetworkBuilder::makeResidualBlock(void * previousLayer, int inputSize, int channelSize, int kernelSize,
-                                             float * weights1, float * biases1, float * weights2, float * biases2,
-                                             bool withRelu, std::string label, bool withSe, int seFcOutputs,
-                                             float * seWeights1, float * seBiases1, float * seWeights2, float * seBiases2) {
+    // 1. Input layer
+    layer = [graph addConvolutionBlockWithParent:layer
+                                   inputChannels:kInputPlanes
+                                  outputChannels:channelSize
+                                      kernelSize:kernelSize
+                                         weights:&weights.input.weights[0]
+                                          biases:&weights.input.biases[0]
+                                         hasRelu:(BOOL)true
+                                           label:@"input/conv"];
 
-    return [(id)self addResidualBlockWithParent:(MPSGraphTensor *)previousLayer
-                                  inputChannels:inputSize
-                                 outputChannels:channelSize
-                                     kernelSize:kernelSize
-                                       weights1:weights1
-                                        biases1:biases1
-                                       weights2:weights2
-                                        biases2:biases2
-                                          label:[NSString stringWithUTF8String:label.c_str()]
-                                          hasSe:withSe ? YES : NO
-                                     seWeights1:seWeights1
-                                      seBiases1:seBiases1
-                                     seWeights2:seWeights2
-                                      seBiases2:seBiases2
-                                    seFcOutputs:seFcOutputs];
-}
+    // 2. Residual blocks
+    for (size_t i = 0; i < weights.residual.size(); i++) {
+        layer = [graph addResidualBlockWithParent:layer
+                                    inputChannels:channelSize
+                                   outputChannels:channelSize
+                                       kernelSize:kernelSize
+                                         weights1:&weights.residual[i].conv1.weights[0]
+                                          biases1:&weights.residual[i].conv1.biases[0]
+                                         weights2:&weights.residual[i].conv2.weights[0]
+                                          biases2:&weights.residual[i].conv2.biases[0]
+                                            label:[NSString stringWithFormat:@"block_%zu", i]
+                                            hasSe:weights.residual[i].has_se ? YES : NO
+                                       seWeights1:&weights.residual[i].se.w1[0]
+                                        seBiases1:&weights.residual[i].se.b1[0]
+                                       seWeights2:&weights.residual[i].se.w2[0]
+                                        seBiases2:&weights.residual[i].se.b2[0]
+                                      seFcOutputs:weights.residual[i].se.b1.size()];
+    }
 
-void* MetalNetworkBuilder::makeFullyConnectedLayer(void * previousLayer, int inputSize, int outputSize,
-                                                   float * weights, float * biases,
-                                                   std::string activation, std::string label) {
+    // 3. Policy head.
+    MPSGraphTensor * policy;
+    if (conv_policy) {
+        policy = [graph addConvolutionBlockWithParent:layer
+                                        inputChannels:channelSize
+                                       outputChannels:channelSize
+                                           kernelSize:kernelSize
+                                              weights:&weights.policy1.weights[0]
+                                               biases:&weights.policy1.biases[0]
+                                              hasRelu:(BOOL)true
+                                                label:@"policy/conv1"];
 
-    return [(id)self addFullyConnectedLayerWithParent:(MPSGraphTensor *)previousLayer
-                                        inputChannels:inputSize
-                                       outputChannels:outputSize
-                                              weights:weights
-                                               biases:biases
-                                           activation:[NSString stringWithUTF8String:activation.c_str()]
-                                                label:[NSString stringWithUTF8String:label.c_str()]];
-}
+        // No relu.
+        policy = [graph addConvolutionBlockWithParent:policy
+                                        inputChannels:channelSize
+                                       outputChannels:80
+                                           kernelSize:kernelSize
+                                              weights:&weights.policy.weights[0]
+                                               biases:&weights.policy.biases[0]
+                                              hasRelu:(BOOL)false
+                                                label:@"policy/conv2"];
 
-void* MetalNetworkBuilder::makePolicyMapLayer(void * previousLayer, uint32_t * policyMap, std::string label) {
-    return [(id)self addPolicyMapLayerWithParent:(MPSGraphTensor *)previousLayer
-                                       policyMap:policyMap
-                                           label:[NSString stringWithUTF8String:label.c_str()]];
-}
 
-void* MetalNetworkBuilder::setSelectedOutputs(std::vector<void *> * outputs) {
+      /**
+       * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
+       * Implementation of policy map to be done in CPU for now.
+       *
+       * Reinstate this section when bug is fixed. See comments below.
+       *
+      // [1858 -> HWC or CHW]
+      const bool HWC = false;
+      std::vector<uint32_t> policy_map(1858);
+      for (const auto& mapping : kConvPolicyMap) {
+        if (mapping == -1) continue;
+        const auto index = &mapping - kConvPolicyMap;
+        const auto displacement = index / 64;
+        const auto square = index % 64;
+        const auto row = square / 8;
+        const auto col = square % 8;
+        if (HWC) {
+          policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
+        } else {
+          policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
+        }
+      }
+      policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
+      */
+    }
+    else {
+        const int policySize = weights.policy.biases.size();
+
+        policy = [graph addConvolutionBlockWithParent:layer
+                                        inputChannels:channelSize
+                                       outputChannels:policySize
+                                           kernelSize:1
+                                              weights:&weights.policy.weights[0]
+                                               biases:&weights.policy.biases[0]
+                                              hasRelu:(BOOL)true
+                                                label:@"policy/conv"];
+
+        policy = [graph addFullyConnectedLayerWithParent:policy
+                                           inputChannels:policySize * 8 * 8
+                                          outputChannels:1858
+                                                 weights:&weights.ip_pol_w[0]
+                                                  biases:&weights.ip_pol_b[0]
+                                              activation:@""
+                                                   label:@"policy/fc"];
+    }
+
+    // 4. Value head.
+    MPSGraphTensor * value;
+    value = [graph addConvolutionBlockWithParent:layer
+                                   inputChannels:channelSize
+                                  outputChannels:32
+                                      kernelSize:1
+                                         weights:&weights.value.weights[0]
+                                          biases:&weights.value.biases[0]
+                                         hasRelu:(BOOL)true
+                                           label:@"value/conv"];
+
+    value = [graph addFullyConnectedLayerWithParent:value
+                                       inputChannels:32 * 8 * 8
+                                      outputChannels:128
+                                             weights:&weights.ip1_val_w[0]
+                                              biases:&weights.ip1_val_b[0]
+                                          activation:@"relu"
+                                               label:@"value/fc1"];
+
+    if (wdl) {
+        value = [graph addFullyConnectedLayerWithParent:value
+                                          inputChannels:128
+                                         outputChannels:3
+                                                weights:&weights.ip2_val_w[0]
+                                                 biases:&weights.ip2_val_b[0]
+                                             activation:@"softmax"
+                                                  label:@"value/fc2"];
+    }
+    else {
+        value = [graph addFullyConnectedLayerWithParent:value
+                                          inputChannels:128
+                                         outputChannels:1
+                                                weights:&weights.ip2_val_w[0]
+                                                 biases:&weights.ip2_val_b[0]
+                                             activation:@"tanh"
+                                                  label:@"value/fc2"];
+    }
+
+    // 5. Moves left head.
+    MPSGraphTensor * mlh;
+    if (moves_left) {
+        const int mlhChannels = weights.moves_left.biases.size();
+
+        mlh = [graph addConvolutionBlockWithParent:layer
+                                     inputChannels:channelSize
+                                    outputChannels:mlhChannels
+                                        kernelSize:1
+                                           weights:&weights.moves_left.weights[0]
+                                            biases:&weights.moves_left.biases[0]
+                                           hasRelu:(BOOL)true
+                                             label:@"mlh/conv"];
+
+        mlh = [graph addFullyConnectedLayerWithParent:mlh
+                                          inputChannels:mlhChannels * 8 * 8
+                                         outputChannels:weights.ip1_mov_b.size()
+                                                weights:&weights.ip1_mov_w[0]
+                                                 biases:&weights.ip1_mov_b[0]
+                                             activation:@"relu"
+                                                  label:@"mlh/fc1"];
+
+        mlh = [graph addFullyConnectedLayerWithParent:mlh
+                                          inputChannels:weights.ip1_mov_b.size()
+                                         outputChannels:1
+                                                weights:&weights.ip2_mov_w[0]
+                                                 biases:&weights.ip2_mov_b[0]
+                                             activation:@"relu"
+                                                  label:@"mlh/fc2"];
+    }
+
+    // Select the outputs to be run through the inference graph.
+    std::vector<MPSGraphTensor*> outputs;
+    if (moves_left) {
+      outputs = {policy, value, mlh};
+    }
+    else {
+      outputs = {policy, value};
+    }
+
     NSArray<MPSGraphTensor *> * resultTensors = @[];
 
-    for (const auto& output : *outputs) {
-        resultTensors = [resultTensors arrayByAddingObject:(MPSGraphTensor *)output];
+    for (MPSGraphTensor * output : outputs) {
+        resultTensors = [resultTensors arrayByAddingObject:output];
     }
-    [(id)self setResultTensors:resultTensors];
 
-    return (void*) self;
+    [graph setResultTensors:resultTensors];
 }
 
 void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems) {
     @autoreleasepool {
-        [(id)self runInferenceWithBatchSize:batchSize inputs:inputs];
-        [(id)self copyResultsToBuffers:&output_mems[0]];
+        Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
+
+        [graph runInferenceWithBatchSize:batchSize inputs:inputs];
+        [graph copyResultsToBuffers:&output_mems[0]];
     }
 }
 
 void MetalNetworkBuilder::saveVariables(std::vector<std::string> names)
 {
+    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
+
     for (const std::string name : names) {
-        [(id)self trackVariable:[NSString stringWithUTF8String:name.c_str()]];
+        [graph trackVariable:[NSString stringWithUTF8String:name.c_str()]];
     }
 }
 
 void MetalNetworkBuilder::dumpVariables(std::vector<std::string> names, int batches)
 {
+    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
+
     for (const std::string name : names) {
-        [(id)self dumpVariable:[NSString stringWithUTF8String:name.c_str()] batches:batches];
+        [graph dumpVariable:[NSString stringWithUTF8String:name.c_str()] batches:batches];
     }
 }
 
