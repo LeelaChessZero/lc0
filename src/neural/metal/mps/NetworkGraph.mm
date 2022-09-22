@@ -127,28 +127,6 @@ static const NSInteger kMinSubBatchSize = 20;
     return self;
 }
 
-//-(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
-//                                                          inputs:(float * __nonnull)inputs
-//{
-//    // Create input data pointing to supplied location and run graph.
-//    _inputData = [NSData dataWithBytesNoCopy:inputs
-//                                      length:[_inputTensor sizeOfDimensions:@[@1, @2, @3]] * batchSize * sizeof(float)
-//                                freeWhenDone:NO];
-//
-//    _inputTensorData = [[MPSGraphTensorData alloc] initWithDevice:_device
-//                                                             data:_inputData
-//                                                            shape:@[@(batchSize), _inputTensor.shape[1], _inputTensor.shape[2], _inputTensor.shape[3]]
-//                                                         dataType:_inputTensor.dataType];
-//
-//    _resultDataDictionary = [_graph runWithFeeds:@{_inputTensor : _inputTensorData}
-//                                   targetTensors:_targetTensors
-//                                targetOperations:nil];
-//
-//    [_inputTensorData release];
-//
-//    return _resultTensors;
-//}
-
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
                                                          outputs:(float * __nonnull * __nonnull)outputBuffers
@@ -167,15 +145,13 @@ static const NSInteger kMinSubBatchSize = 20;
     for (subBatch = 0; subBatch < splits - 1; subBatch++) {
         commandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
                                   subBatch:subBatch
-                              subBatchSize:subBatchSize
-                                     outputs:outputBuffers];
+                              subBatchSize:subBatchSize];
     }
     // Last sub-batch may be smaller or larger than others.
     MPSCommandBuffer * latestCommandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
                                                                        subBatch:subBatch
-                                                                   subBatchSize:batchSize - subBatch * subBatchSize
-                                                                        outputs:outputBuffers];
-    
+                                                                   subBatchSize:batchSize - subBatch * subBatchSize];
+
     // Wait for the last batch to be processed.
     [latestCommandBuffer waitUntilCompleted];
     [commandBuffer waitUntilCompleted];
@@ -188,25 +164,24 @@ static const NSInteger kMinSubBatchSize = 20;
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
                                                   subBatch:(NSUInteger)subBatch
                                               subBatchSize:(NSUInteger)subBatchSize
-                                                   outputs:(float * __nonnull * __nonnull)outputBuffers
 {
     // Double buffering semaphore to correctly double buffer iterations.
     dispatch_semaphore_wait(_doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
-    
+
     // Create command buffer for this sub-batch.
     MPSCommandBuffer * commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:_queue];
-    
+
     MPSShape * shape = @[@(subBatchSize), _inputTensor.shape[1], _inputTensor.shape[2], _inputTensor.shape[3]];
-    
+
     NSData * inputData = [NSData dataWithBytesNoCopy:inputs
                                               length:subBatchSize * sizeof(float)
                                         freeWhenDone:NO];
-    
+
     MPSGraphTensorData * inputTensorData = [[MPSGraphTensorData alloc] initWithDevice:_device
                                                                                  data:inputData
                                                                                 shape:shape
                                                                              dataType:_inputTensor.dataType];
-    
+
     // Create execution descriptor with block to update results for each iteration.
     MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
     executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * error) {
@@ -215,7 +190,7 @@ static const NSInteger kMinSubBatchSize = 20;
         // Release double buffering semaphore for the next training iteration to be encoded.
         dispatch_semaphore_signal(_doubleBufferingSemaphore);
     };
-    
+
     [_graph encodeToCommandBuffer:commandBuffer
                             feeds:@{_inputTensor : inputTensorData}
                     targetTensors:_targetTensors

@@ -51,15 +51,13 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
     // Input tensor and tensor data placeholders.
     MPSGraphTensor * _inputTensor;
-    MPSGraphTensorData * _inputTensorData;
-    NSData * _inputData;
 
     // Variables to track results of graph inference.
     NSArray<MPSGraphTensor *> * _resultTensors;
     NSArray<MPSGraphTensor *> * _targetTensors;
     NSMutableDictionary<NSNumber *, MPSGraphTensorDataDictionary *> * _resultDataDicts;
     NSMutableDictionary<NSString *, NSObject *> * _readVariables;
-    
+
     // Variables for triple buffering
     dispatch_semaphore_t _doubleBufferingSemaphore;
 }
@@ -117,8 +115,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
                                                   subBatch:(NSUInteger)subBatch
-                                              subBatchSize:(NSUInteger)subBatchSize
-                                                   outputs:(float * __nonnull * __nonnull)outputBuffers;
+                                              subBatchSize:(NSUInteger)subBatchSize;
 
 -(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers
                 subBatchSize:(NSUInteger)subBatchSize;

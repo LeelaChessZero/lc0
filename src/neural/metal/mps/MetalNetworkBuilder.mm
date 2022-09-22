@@ -234,30 +234,18 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
     }
 
     // Select the outputs to be run through the inference graph.
-    std::vector<MPSGraphTensor*> outputs;
     if (moves_left) {
-      outputs = {policy, value, mlh};
-        //[graph setResultTensors:@[policy, value, mlh];
+        [graph setResultTensors:@[policy, value, mlh]];
     }
     else {
-      outputs = {policy, value};
-        //[graph setResultTensors:@[policy, value];
+        [graph setResultTensors:@[policy, value]];
     }
-
-    NSArray<MPSGraphTensor *> * resultTensors = @[];
-
-    for (MPSGraphTensor * output : outputs) {
-        resultTensors = [resultTensors arrayByAddingObject:output];
-    }
-
-    [graph setResultTensors:resultTensors];
 }
 
 void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems) {
     @autoreleasepool {
         Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
         [graph runInferenceWithBatchSize:batchSize inputs:inputs outputs:&output_mems[0]];
-        //[graph copyResultsToBuffers:&output_mems[0]];
     }
 }
 
