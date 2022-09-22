@@ -47,7 +47,11 @@ static MPSGraphPooling2DOpDescriptor * __nonnull averagePoolingDescriptor = [MPS
 
 static const NSUInteger kNumPolicyOutputs = 1858;
 
-static const NSUInteger kMaxInflightBuffers = 4;
+// Maximum number of metal command buffers that can run simultaneously.
+static const NSUInteger kMaxInflightBuffers = 2;
+
+// Minimum batch size below which parallel command buffers will not be used.
+static const NSInteger kMinSubBatchSize = 20;
 
 @implementation MPSGraphTensor(Lc0Extensions)
 
@@ -74,7 +78,7 @@ static const NSUInteger kMaxInflightBuffers = 4;
 
 // This is the Lc0NetworkGraph dictionary getter method.
 // It is a singleton object that is used to store the Lc0NetworkGraph.
-+(NSMutableDictionary * _Nonnull)getGraphs {
++(NSMutableDictionary * _Nonnull) getGraphs {
     // This is the Lc0NetworkGraph dictionary.
     static NSMutableDictionary * graphs = nil;
 
@@ -88,7 +92,7 @@ static const NSUInteger kMaxInflightBuffers = 4;
 }
 
 // This is the Lc0NetworkGraph getter method.
-+(Lc0NetworkGraph * _Nonnull)getGraphAt:(NSNumber * _Nonnull)index {
++(Lc0NetworkGraph * _Nonnull) getGraphAt:(NSNumber * _Nonnull)index {
   NSMutableDictionary * graphs = [Lc0NetworkGraph getGraphs];
 
   return graphs[index];
@@ -98,7 +102,7 @@ static const NSUInteger kMaxInflightBuffers = 4;
 // It is used to create a Lc0NetworkGraph object.
 // The Lc0NetworkGraph object is stored in the dictionary.
 // The Lc0NetworkGraph object is initialized with the Metal device.
-+(void)initWithDevice:(id<MTLDevice> __nonnull)device
++(void) graphWithDevice:(id<MTLDevice> __nonnull)device
                 index:(NSNumber * _Nonnull)index {
     NSMutableDictionary * graphs = [Lc0NetworkGraph getGraphs];
 
@@ -117,38 +121,123 @@ static const NSUInteger kMaxInflightBuffers = 4;
     _graph = [[MPSGraph alloc] init];
     _resultTensors = @[];
     _readVariables = [[NSMutableDictionary alloc] init];
+    _doubleBufferingSemaphore = dispatch_semaphore_create(kMaxInflightBuffers);
+    _resultDataDicts = [NSMutableDictionary dictionaryWithCapacity:kMaxInflightBuffers];
 
     return self;
 }
 
+//-(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
+//                                                          inputs:(float * __nonnull)inputs
+//{
+//    // Create input data pointing to supplied location and run graph.
+//    _inputData = [NSData dataWithBytesNoCopy:inputs
+//                                      length:[_inputTensor sizeOfDimensions:@[@1, @2, @3]] * batchSize * sizeof(float)
+//                                freeWhenDone:NO];
+//
+//    _inputTensorData = [[MPSGraphTensorData alloc] initWithDevice:_device
+//                                                             data:_inputData
+//                                                            shape:@[@(batchSize), _inputTensor.shape[1], _inputTensor.shape[2], _inputTensor.shape[3]]
+//                                                         dataType:_inputTensor.dataType];
+//
+//    _resultDataDictionary = [_graph runWithFeeds:@{_inputTensor : _inputTensorData}
+//                                   targetTensors:_targetTensors
+//                                targetOperations:nil];
+//
+//    [_inputTensorData release];
+//
+//    return _resultTensors;
+//}
+
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
+                                                         outputs:(float * __nonnull * __nonnull)outputBuffers
 {
-    // Create input data pointing to supplied location and run graph.
-    _inputData = [NSData dataWithBytesNoCopy:inputs
-                                      length:[_inputTensor sizeOfDimensions:@[@1, @2, @3]] * batchSize * sizeof(float)
-                                freeWhenDone:NO];
+    // Calculate number of sub-batches to split across GPU command buffers for parallel execution.
+    // Shouldn't be more than kMaxInflightBuffers and each sub-batch shouldn't be smaller than kMinSubBatchSize.
+    NSUInteger splits = (batchSize + kMinSubBatchSize + 1) / kMinSubBatchSize;
+    if (splits > kMaxInflightBuffers) splits = kMaxInflightBuffers;
+    NSUInteger subBatchSize = batchSize / splits;
+    NSUInteger inputDataLength = subBatchSize * [_inputTensor sizeOfDimensions:@[@1, @2, @3]];
 
-    _inputTensorData = [[MPSGraphTensorData alloc] initWithDevice:_device
-                                                             data:_inputData
-                                                            shape:@[@(batchSize), _inputTensor.shape[1], _inputTensor.shape[2], _inputTensor.shape[3]]
-                                                         dataType:_inputTensor.dataType];
 
-    _resultDataDictionary = [_graph runWithFeeds:@{_inputTensor : _inputTensorData}
-                                   targetTensors:_targetTensors
-                                targetOperations:nil];
+    // Split batchSize into smaller sub-batches and run using double-buffering.
+    NSUInteger subBatch = 0;
+    MPSCommandBuffer * commandBuffer;
+    for (subBatch = 0; subBatch < splits - 1; subBatch++) {
+        commandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
+                                  subBatch:subBatch
+                              subBatchSize:subBatchSize
+                                     outputs:outputBuffers];
+    }
+    // Last sub-batch may be smaller or larger than others.
+    MPSCommandBuffer * latestCommandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
+                                                                       subBatch:subBatch
+                                                                   subBatchSize:batchSize - subBatch * subBatchSize
+                                                                        outputs:outputBuffers];
+    
+    // Wait for the last batch to be processed.
+    [latestCommandBuffer waitUntilCompleted];
+    [commandBuffer waitUntilCompleted];
 
+    [self copyResultsToBuffers:outputBuffers subBatchSize:subBatchSize];
 
     return _resultTensors;
 }
 
+-(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
+                                                  subBatch:(NSUInteger)subBatch
+                                              subBatchSize:(NSUInteger)subBatchSize
+                                                   outputs:(float * __nonnull * __nonnull)outputBuffers
+{
+    // Double buffering semaphore to correctly double buffer iterations.
+    dispatch_semaphore_wait(_doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
+    
+    // Create command buffer for this sub-batch.
+    MPSCommandBuffer * commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:_queue];
+    
+    MPSShape * shape = @[@(subBatchSize), _inputTensor.shape[1], _inputTensor.shape[2], _inputTensor.shape[3]];
+    
+    NSData * inputData = [NSData dataWithBytesNoCopy:inputs
+                                              length:subBatchSize * sizeof(float)
+                                        freeWhenDone:NO];
+    
+    MPSGraphTensorData * inputTensorData = [[MPSGraphTensorData alloc] initWithDevice:_device
+                                                                                 data:inputData
+                                                                                shape:shape
+                                                                             dataType:_inputTensor.dataType];
+    
+    // Create execution descriptor with block to update results for each iteration.
+    MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
+    executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * error) {
+        _resultDataDicts[@(subBatch)] = resultDictionary;
+
+        // Release double buffering semaphore for the next training iteration to be encoded.
+        dispatch_semaphore_signal(_doubleBufferingSemaphore);
+    };
+    
+    [_graph encodeToCommandBuffer:commandBuffer
+                            feeds:@{_inputTensor : inputTensorData}
+                    targetTensors:_targetTensors
+                 targetOperations:nil
+              executionDescriptor:executionDescriptor];
+
+    // Commit the command buffer
+    [commandBuffer commit];
+    return commandBuffer;
+}
+
 
 -(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers
+                subBatchSize:(NSUInteger)subBatchSize
 {
     // Copy results for batch back into the output buffers.
     for (NSUInteger rsIdx = 0; rsIdx < [_resultTensors count]; rsIdx++) {
-        [[_resultDataDictionary[_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx]
-                                                                 strideBytes:nil];
+        NSUInteger outputDataLength = [_resultTensors[rsIdx] sizeOfDimensions:@[@1, @2, @3]] * subBatchSize;
+        for (NSUInteger subBatch = 0; subBatch < [_resultDataDicts count]; subBatch++) {
+            [[_resultDataDicts[@(subBatch)][_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] + subBatch * outputDataLength
+                                                                     strideBytes:nil];
+        }
     }
 }
 
@@ -533,14 +622,14 @@ static const NSUInteger kMaxInflightBuffers = 4;
 
     if (variable.dataType == MPSDataTypeUInt32) {
         uint32_t * dumpArray = (uint32_t *)malloc(size * sizeof(uint32_t));
-        [[_resultDataDictionary[_readVariables[name]] mpsndarray] readBytes:dumpArray strideBytes:nil];
+        [[_resultDataDicts[@0][_readVariables[name]] mpsndarray] readBytes:dumpArray strideBytes:nil];
         NSLog(@"Dumping: '%@', size: %i, type: %i", name, size, variable.dataType);
         for (NSUInteger i = 0; i < (size > 100 ? 100 : size); i++) {
             NSLog(@";%i;%i", i, dumpArray[i]);
         }
     } else {
         float * dumpArray = (float *)malloc(size * sizeof(float));
-        [[_resultDataDictionary[_readVariables[name]] mpsndarray] readBytes:dumpArray strideBytes:nil];
+        [[_resultDataDicts[@0][_readVariables[name]] mpsndarray] readBytes:dumpArray strideBytes:nil];
         NSLog(@"Dumping: '%@', size: %i, type: %i", name, size, variable.dataType);
         for (NSUInteger i = 0; i < (size > 100 ? 100 : size); i++) {
             NSLog(@";%i;%f", i, dumpArray[i]);
