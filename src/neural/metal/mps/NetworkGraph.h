@@ -57,13 +57,16 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     // Variables to track results of graph inference.
     NSArray<MPSGraphTensor *> * _resultTensors;
     NSArray<MPSGraphTensor *> * _targetTensors;
-    MPSGraphTensorDataDictionary * _resultDataDictionary;
+    NSMutableDictionary<NSNumber *, MPSGraphTensorDataDictionary *> * _resultDataDicts;
     NSMutableDictionary<NSString *, NSObject *> * _readVariables;
+    
+    // Variables for triple buffering
+    dispatch_semaphore_t _doubleBufferingSemaphore;
 }
 
-+(Lc0NetworkGraph * _Nonnull)getGraphAt:(NSNumber * _Nonnull)index;
++(Lc0NetworkGraph * _Nonnull) getGraphAt:(NSNumber * _Nonnull)index;
 
-+(void)initWithDevice:(id<MTLDevice> __nonnull)device
++(void) graphWithDevice:(id<MTLDevice> __nonnull)device
                 index:(NSNumber * _Nonnull)index;
 
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
@@ -109,9 +112,16 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
-                                                          inputs:(float * __nonnull)inputs;
+                                                          inputs:(float * __nonnull)inputs
+                                                         outputs:(float * __nonnull * __nonnull)outputBuffers;
 
--(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers;
+-(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
+                                                  subBatch:(NSUInteger)subBatch
+                                              subBatchSize:(NSUInteger)subBatchSize
+                                                   outputs:(float * __nonnull * __nonnull)outputBuffers;
+
+-(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers
+                subBatchSize:(NSUInteger)subBatchSize;
 
 -(void) setVariable:(NSString * __nonnull)name
              tensor:(MPSGraphTensor * __nonnull)tensor;

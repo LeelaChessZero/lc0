@@ -48,7 +48,7 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     }
 
     // Initialize the metal MPS Graph executor with the selected device.
-    [Lc0NetworkGraph initWithDevice:devices[gpu_id]
+    [Lc0NetworkGraph graphWithDevice:devices[gpu_id]
                               index:[NSNumber numberWithInt:gpu_id]];
 
     this->gpu_id = gpu_id;
@@ -73,7 +73,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                       kernelSize:kernelSize
                                          weights:&weights.input.weights[0]
                                           biases:&weights.input.biases[0]
-                                         hasRelu:(BOOL)true
+                                         hasRelu:YES
                                            label:@"input/conv"];
 
     // 2. Residual blocks
@@ -104,7 +104,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                            kernelSize:kernelSize
                                               weights:&weights.policy1.weights[0]
                                                biases:&weights.policy1.biases[0]
-                                              hasRelu:(BOOL)true
+                                              hasRelu:YES
                                                 label:@"policy/conv1"];
 
         // No relu.
@@ -114,7 +114,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                            kernelSize:kernelSize
                                               weights:&weights.policy.weights[0]
                                                biases:&weights.policy.biases[0]
-                                              hasRelu:(BOOL)false
+                                              hasRelu:NO
                                                 label:@"policy/conv2"];
 
 
@@ -152,7 +152,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                            kernelSize:1
                                               weights:&weights.policy.weights[0]
                                                biases:&weights.policy.biases[0]
-                                              hasRelu:(BOOL)true
+                                              hasRelu:YES
                                                 label:@"policy/conv"];
 
         policy = [graph addFullyConnectedLayerWithParent:policy
@@ -172,7 +172,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                       kernelSize:1
                                          weights:&weights.value.weights[0]
                                           biases:&weights.value.biases[0]
-                                         hasRelu:(BOOL)true
+                                         hasRelu:YES
                                            label:@"value/conv"];
 
     value = [graph addFullyConnectedLayerWithParent:value
@@ -213,7 +213,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                         kernelSize:1
                                            weights:&weights.moves_left.weights[0]
                                             biases:&weights.moves_left.biases[0]
-                                           hasRelu:(BOOL)true
+                                           hasRelu:YES
                                              label:@"mlh/conv"];
 
         mlh = [graph addFullyConnectedLayerWithParent:mlh
@@ -237,9 +237,11 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
     std::vector<MPSGraphTensor*> outputs;
     if (moves_left) {
       outputs = {policy, value, mlh};
+        //[graph setResultTensors:@[policy, value, mlh];
     }
     else {
       outputs = {policy, value};
+        //[graph setResultTensors:@[policy, value];
     }
 
     NSArray<MPSGraphTensor *> * resultTensors = @[];
@@ -254,9 +256,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems) {
     @autoreleasepool {
         Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-
-        [graph runInferenceWithBatchSize:batchSize inputs:inputs];
-        [graph copyResultsToBuffers:&output_mems[0]];
+        [graph runInferenceWithBatchSize:batchSize inputs:inputs outputs:&output_mems[0]];
+        //[graph copyResultsToBuffers:&output_mems[0]];
     }
 }
 
