@@ -101,7 +101,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
   // Expand encoded input into N x 112 x 8 x 8.
-  float * dptr = io->input_val_mem_expanded_;
+  float * dptr = &io->input_val_mem_expanded_[0];
   for (size_t i = 0; i < batchSize; i++) {
       for (size_t j = 0; j < kInputPlanes; j++) {
           const float value = io->input_val_mem_[j + i * kInputPlanes];
@@ -125,13 +125,13 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 
     if (moves_left_) {
       builder_->forwardEval(
-          io->input_val_mem_expanded_, batchSize,
-          {io->op_policy_raw_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+          &io->input_val_mem_expanded_[0], batchSize,
+          {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0], &io->op_moves_left_mem_[0]});
     }
     else {
       builder_->forwardEval(
-          io->input_val_mem_expanded_, batchSize,
-          {io->op_policy_raw_mem_, io->op_value_mem_});
+          &io->input_val_mem_expanded_[0], batchSize,
+          {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0]});
     }
 
     // Mapping from convolutional policy to lc0 policy
@@ -149,13 +149,13 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
   else {
     if (moves_left_) {
       builder_->forwardEval(
-          io->input_val_mem_expanded_, batchSize,
-          {io->op_policy_mem_, io->op_value_mem_, io->op_moves_left_mem_});
+          &io->input_val_mem_expanded_[0], batchSize,
+          {&io->op_policy_mem_[0], &io->op_value_mem_[0], &io->op_moves_left_mem_[0]});
     }
     else {
       builder_->forwardEval(
-          io->input_val_mem_expanded_, batchSize,
-          {io->op_policy_mem_, io->op_value_mem_});
+          &io->input_val_mem_expanded_[0], batchSize,
+          {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
     }
   }
 

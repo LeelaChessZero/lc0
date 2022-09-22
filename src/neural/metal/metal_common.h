@@ -25,6 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 #pragma once
+#include <vector>
 
 namespace lczero {
 namespace metal_backend {
@@ -34,20 +35,15 @@ static int kInputPlanes = 112;
 
 struct InputsOutputs {
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left, bool conv_policy) {
-    input_masks_mem_ = (uint64_t*)malloc(maxBatchSize * kInputPlanes * sizeof(uint64_t));
-
-    input_val_mem_ = (float*)malloc(maxBatchSize * kInputPlanes * sizeof(float));
-
-    input_val_mem_expanded_ = (float*)malloc(maxBatchSize * kInputPlanes * 64 * sizeof(float));
-
-    op_policy_mem_ = (float*)malloc(maxBatchSize * kNumOutputPolicy * sizeof(float));
-
-    op_value_mem_ = (float*)malloc(maxBatchSize * (wdl ? 3 : 1) * sizeof(float));
+    input_masks_mem_.reserve(maxBatchSize * kInputPlanes);
+    input_val_mem_.reserve(maxBatchSize * kInputPlanes);
+    input_val_mem_expanded_.reserve(maxBatchSize * kInputPlanes * 64);
+    op_policy_mem_.reserve(maxBatchSize * kNumOutputPolicy);
+    op_value_mem_.reserve(maxBatchSize * (wdl ? 3 : 1));
 
     if (moves_left) {
-      op_moves_left_mem_ = (float*)malloc(maxBatchSize * sizeof(float));
-    } else
-      op_moves_left_mem_ = nullptr;
+      op_moves_left_mem_.reserve(maxBatchSize);
+    };
 
     /**
      * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
@@ -56,32 +52,18 @@ struct InputsOutputs {
      * Remove this op_policy_raw_mem_ memory allocation when bug is fixed.
      */
     if (conv_policy) {
-      op_policy_raw_mem_ = (float*)malloc(maxBatchSize * 73 * 64 * sizeof(float));
-    }
-    else {
-      op_policy_raw_mem_ = nullptr;
+      op_policy_raw_mem_.reserve(maxBatchSize * 73 * 64);
     }
   }
-  ~InputsOutputs() {
-    free(input_masks_mem_);
-    free(input_val_mem_);
-    free(input_val_mem_expanded_);
-    free(op_policy_mem_);
-    free(op_value_mem_);
-    if (op_moves_left_mem_) {
-      free(op_moves_left_mem_);
-    }
-    if (op_policy_raw_mem_) {
-      free(op_policy_raw_mem_);
-    }
-  }
-  uint64_t* input_masks_mem_;
-  float* input_val_mem_;
-  float* input_val_mem_expanded_;
-  float* op_policy_mem_;
-  float* op_value_mem_;
-  float* op_moves_left_mem_;
-  float* op_policy_raw_mem_;
+  ~InputsOutputs() {}
+
+  std::vector<uint64_t> input_masks_mem_;
+  std::vector<float> input_val_mem_;
+  std::vector<float> input_val_mem_expanded_;
+  std::vector<float> op_policy_mem_;
+  std::vector<float> op_value_mem_;
+  std::vector<float> op_moves_left_mem_;
+  std::vector<float> op_policy_raw_mem_;
 };
 
 }  // namespace metal_backend
