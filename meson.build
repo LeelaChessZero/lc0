@@ -306,7 +306,7 @@ if get_option('build_backends')
 
     endif
 
-    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep'])
+    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep']).as_system()
 
     ispc = find_program('ispc', required: false)
     ispc_arch = 'x86-64'
@@ -683,7 +683,7 @@ endif
 if get_option('python_bindings')
   pymod = import('python')
   python = pymod.find_installation('python3')
-  if python.language_version() < '3.7'
+  if not python.language_version().version_compare('>3.7')
     error('You need python 3.7 or newer')
   endif
   py_bindings_generator = find_program('scripts/gen_py_bindings.py')

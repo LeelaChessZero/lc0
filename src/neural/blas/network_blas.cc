@@ -16,6 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -33,8 +34,6 @@
 #include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
-
-#include <Eigen/Core>
 
 #ifdef USE_DNNL
 #include <omp.h>
@@ -168,6 +167,13 @@ BlasComputation<use_eigen>::BlasComputation(
 #endif
 }
 
+template <typename T>
+using EigenMatrixMap =
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+template <typename T>
+using ConstEigenMatrixMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+
 template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
@@ -271,28 +277,26 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                         conv2.weights.data(), conv_out);
 
       if (residual.has_se) {
-        // No relu if followed by SE-unit and residual is added later
-        BiasActivate(batch_size, output_channels, &conv_out[0],
-                     conv2.biases.data(), NONE);
-
+        // No relu if followed by SE-unit and residual/bias is added later
         std::swap(conv_out, conv_in);
 
         auto se_fc_outputs = se.b1.size();
         ApplySEUnit<use_eigen>(batch_size, output_channels, se_fc_outputs,
-                               conv_in, res, se.w1.data(), se.b1.data(),
-                               se.w2.data(), se.b2.data(), conv_out,
-                               default_activation_);
+                               conv_in, conv2.biases.data(), res, se.w1.data(),
+                               se.b1.data(), se.w2.data(), se.b2.data(),
+                               conv_out, default_activation_);
       } else {
         BiasResidual(batch_size, output_channels, &conv_out[0],
                      conv2.biases.data(), res, default_activation_);
       }
     }
 
+    // Need to preserve conv_out which is used for value and moves left heads.
     if (attn_policy_) {
       // NCHW to NHWC conversion.
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
         for (auto i = 0; i < kSquares; i++) {
-          for (auto j = 0; j < output_channels; j++) {
+          for (size_t j = 0; j < output_channels; j++) {
             res[batch * kSquares * output_channels + i * output_channels + j] =
                 conv_out[batch * kSquares * output_channels + j * kSquares + i];
           }
@@ -307,7 +311,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           head_buffer.data());
 
       for (auto layer : weights_.pol_encoder) {
-        // TODO: support encoder heds.
+        // TODO: support encoder heads.
         throw Exception(
             "Eigen/Blas backend doesn't support encoder heads yet.");
       }
@@ -326,30 +330,37 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           batch_size * kSquares, embedding_size, policy_d_model,
           head_buffer.data(), weights_.ip3_pol_w.data(),
           weights_.ip3_pol_b.data(), NONE, head_buffer3.data());
-      // TODO: perform dotproduct with Eigen/Blas rather than handrolled?
-      const float scaling = sqrtf(policy_d_model);
+      const float scaling = 1.0f / sqrtf(policy_d_model);
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
-        for (auto i = 0; i < kSquares; i++) {
-          for (auto j = 0; j < kSquares; j++) {
-            float sum = 0.0f;
-            for (auto k = 0; k < policy_d_model; k++) {
-              sum += head_buffer2.data()[batch * 64 * policy_d_model +
-                                         i * policy_d_model + k] *
-                     head_buffer3.data()[batch * 64 * policy_d_model +
-                                         j * policy_d_model + k];
-            }
-            head_buffer.data()[batch * (64 * 64 + 8 * 24) + i * 64 + j] =
-                sum / scaling;
-          }
+        const float* A = &head_buffer2[batch * 64 * policy_d_model];
+        const float* B = &head_buffer3[batch * 64 * policy_d_model];
+        float* C = &head_buffer[batch * (64 * 64 + 8 * 24)];
+        if (use_eigen) {
+          auto C_mat = EigenMatrixMap<float>(C, kSquares, kSquares);
+          C_mat.noalias() =
+              scaling *
+              ConstEigenMatrixMap<float>(B, policy_d_model, kSquares)
+                  .transpose() *
+              ConstEigenMatrixMap<float>(A, policy_d_model, kSquares);
+        } else {
+#ifdef USE_BLAS
+          cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, kSquares,
+                      kSquares, policy_d_model, scaling, A, policy_d_model, B,
+                      policy_d_model, 0.0f, C, 64);
+#else
+          // Should never get here.
+          throw Exception("Blas backend internal error");
+#endif
         }
       }
       // Promotion offset calculation.
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
         float promotion_offsets[4][8];
+        // This is so small that SGEMM seems slower.
         for (int i = 0; i < 4; i++) {
           for (int j = 0; j < 8; j++) {
             float sum = 0;
-            for (int k = 0; k < policy_d_model; k++) {
+            for (size_t k = 0; k < policy_d_model; k++) {
               sum += head_buffer3.data()[batch * kSquares * policy_d_model +
                                          (56 + j) * policy_d_model + k] *
                      weights_.ip4_pol_w.data()[i * policy_d_model + k];
@@ -385,7 +396,6 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         }
       }
     } else if (conv_policy_) {
-      // Need to preserve conv_out which is used for value head
       convolve3.Forward(batch_size, output_channels, output_channels, conv_out,
                         weights_.policy1.weights.data(), res);
 
