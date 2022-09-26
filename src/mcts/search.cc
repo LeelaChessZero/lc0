@@ -1901,40 +1901,6 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   node->CreateEdges(legal_moves);
 }
 
-// Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node) {
-  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  if (search_->cache_->ContainsKey(hash)) {
-    return true;
-  }
-  int transform;
-  auto planes =
-      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
-
-  std::vector<uint16_t> moves;
-
-  if (node && node->HasChildren()) {
-    // Legal moves are known, use them.
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
-    }
-  } else {
-    // Cache pseudolegal moves. A bit of a waste, but faster.
-    const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
-    moves.reserve(pseudolegal_moves.size());
-    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
-  }
-
-  computation_->AddInput(hash, std::move(planes), std::move(moves));
-  return false;
-}
-
 // 2b. Copy collisions into shared collisions.
 void SearchWorker::CollectCollisions() {
   SharedMutex::Lock lock(search_->nodes_mutex_);
@@ -1972,13 +1938,29 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node)) {
+    const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
+    // Is node already in the cache?
+    if (search_->cache_->ContainsKey(hash)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
       // easy to find what to cache.
       return 1;
     }
+    int transform;
+    auto planes =
+        EncodePositionForNN(search_->network_->GetCapabilities().input_format,
+                            history_, 8, params_.GetHistoryFill(), &transform);
+    // Cache pseudolegal moves. A bit of a waste, but faster.
+    const auto& pseudolegal_moves =
+        history_.Last().GetBoard().GeneratePseudolegalMoves();
+    std::vector<uint16_t> moves;
+    moves.reserve(pseudolegal_moves.size());
+    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
+         iter != end; ++iter) {
+      moves.emplace_back(iter->as_nn_index(transform));
+    }
+    computation_->AddInput(hash, std::move(planes), std::move(moves));
     return 1;
   }
 
