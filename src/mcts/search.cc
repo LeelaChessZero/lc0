@@ -891,10 +891,6 @@ void Search::WatchdogThread() {
   StoppersHints hints;
   IterationStats stats;
   while (true) {
-    hints.Reset();
-    if (params_.GetNpsLimit() > 0) {
-      hints.UpdateEstimatedNps(params_.GetNpsLimit());
-    }
     PopulateCommonIterationStats(&stats);
     MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
