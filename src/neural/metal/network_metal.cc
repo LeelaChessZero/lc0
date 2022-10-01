@@ -133,6 +133,8 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
           &io->input_val_mem_expanded_[0], batchSize,
           {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0]});
     }
+    // The next thread can start using the GPU now.
+    lock_.unlock();
 
     // Mapping from convolutional policy to lc0 policy
     for (size_t batch = 0; batch < batchSize; batch++) {
@@ -157,10 +159,10 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
           &io->input_val_mem_expanded_[0], batchSize,
           {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
     }
-  }
 
-  // The next thread can start using the GPU now.
-  lock_.unlock();
+    // The next thread can start using the GPU now.
+    lock_.unlock();
+  }
 
 }
 
