@@ -127,7 +127,7 @@ to run latest releases of lc0 and the client inside a Docker container.
 
 ### Windows
 
-Here are the brief instructions for CUDA/CuDNN, for details and other options see `windows-build.md`.
+Here are the brief instructions for CUDA/CuDNN, for details and other options see `windows_build.md`.
 
 0. Install Microsoft Visual Studio (2017 or later)
 1. Install [CUDA](https://developer.nvidia.com/cuda-zone)
