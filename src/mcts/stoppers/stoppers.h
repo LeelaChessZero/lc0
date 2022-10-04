@@ -54,7 +54,7 @@ class ChainedSearchStopper : public SearchStopper {
 class VisitsStopper : public SearchStopper {
  public:
   VisitsStopper(int64_t limit, bool populate_remaining_playouts)
-    : nodes_limit_(limit ? limit : 4000000000ll),
+      : nodes_limit_(limit ? limit : 4000000000ll),
         populate_remaining_playouts_(populate_remaining_playouts) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
@@ -80,12 +80,19 @@ class PlayoutsStopper : public SearchStopper {
 
 // Computes tree size which may fit into the memory and limits by that tree
 // size.
-class MemoryWatchingStopper : public VisitsStopper {
+
+class MemoryWatchingStopper : public SearchStopper {
  public:
   // Must be in sync with description at kRamLimitMbId.
   static constexpr size_t kAvgMovesPerPosition = 30;
   MemoryWatchingStopper(int cache_size, int ram_limit_mb,
                         bool populate_remaining_playouts);
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
+
+ private:
+  const int64_t ram_limit_mb_;
+  const bool populate_remaining_playouts_;
+  VisitsStopper visits_stopper_;
 };
 
 // Stops after time budget is gone.
