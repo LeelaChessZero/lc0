@@ -94,8 +94,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
   policy_d_model_ = weights.ip2_pol_b.size();
 
-  attn_promo_weights_ = weights.ip4_pol_w;
-
   // Build MPS Graph.
   builder_->build(kInputPlanes, channelSize, kernelSize, weights, attn_policy_, conv_policy_, wdl_, moves_left_,
     file.format().network_format().default_activation() == pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH ? "mish" : "relu"
