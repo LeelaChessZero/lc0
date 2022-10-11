@@ -34,7 +34,7 @@ static int kNumOutputPolicy = 1858;
 static int kInputPlanes = 112;
 
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left, bool conv_policy) {
+  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left, bool conv_policy, bool attn_policy) {
     input_masks_mem_.reserve(maxBatchSize * kInputPlanes);
     input_val_mem_.reserve(maxBatchSize * kInputPlanes);
     input_val_mem_expanded_.reserve(maxBatchSize * kInputPlanes * 64);
@@ -51,7 +51,10 @@ struct InputsOutputs {
      *
      * Remove this op_policy_raw_mem_ memory allocation when bug is fixed.
      */
-    if (conv_policy) {
+    if (attn_policy) {
+      op_policy_raw_mem_.reserve(maxBatchSize * (64 * 64 + 8 * 24));
+    }
+    else if (conv_policy) {
       op_policy_raw_mem_.reserve(maxBatchSize * 73 * 64);
     }
   }

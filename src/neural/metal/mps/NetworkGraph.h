@@ -80,7 +80,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                kernelSize:(NSUInteger)kernelSize
                                                   weights:(float * __nonnull)weights
                                                    biases:(float * __nonnull)biases
-                                                  hasRelu:(BOOL)hasRelu
+                                               activation:(NSString * __nullable)activation
                                                     label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) addResidualBlockWithParent:(MPSGraphTensor * __nonnull)parent
@@ -97,7 +97,8 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                              seBiases1:(float * __nullable)seBiases1
                                             seWeights2:(float * __nullable)seWeights2
                                              seBiases2:(float * __nullable)seBiases2
-                                           seFcOutputs:(NSUInteger)seFcOutputs;
+                                           seFcOutputs:(NSUInteger)seFcOutputs
+                                            activation:(NSString * __nullable)activation;
 
 -(nonnull MPSGraphTensor *) addFullyConnectedLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                                inputChannels:(NSUInteger)inputChannels
@@ -106,6 +107,23 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                       biases:(float * __nonnull)biases
                                                   activation:(NSString * __nullable)activation
                                                        label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) scaledKQMatmulWithKeys:(MPSGraphTensor * __nonnull)keys
+                                       withQueries:(MPSGraphTensor * __nonnull)queries
+                                             scale:(float)scale
+                                             label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) attentionPolicyPromoMatmulConcatWithParent:(MPSGraphTensor * __nonnull)parent
+                                                              withKeys:(MPSGraphTensor * __nonnull)keys
+                                                               weights:(float * __nonnull)weights
+                                                             inputSize:(NSUInteger)inputSize
+                                                            outputSize:(NSUInteger)outputSize
+                                                             sliceFrom:(NSUInteger)sliceFrom
+                                                           channelSize:(NSUInteger)channelSize
+                                                                 label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) transposeChannelsWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                                  label:(NSString * __nonnull)label;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 

@@ -120,7 +120,7 @@ class MetalNetwork : public Network {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
-                                             moves_left_, conv_policy_);
+                                             moves_left_, conv_policy_, attn_policy_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -145,10 +145,12 @@ class MetalNetwork : public Network {
   };
   int max_batch_size_;
   int batch_size_;
-  int steps_;
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
+  bool attn_policy_;
+  int policy_d_model_;
+  std::vector<float> attn_promo_weights_;
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
   std::unique_ptr<MetalNetworkBuilder> builder_;

@@ -247,7 +247,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                kernelSize:(NSUInteger)kernelSize
                                                   weights:(float * __nonnull)weights
                                                    biases:(float * __nonnull)biases
-                                                  hasRelu:(BOOL)hasRelu
+                                               activation:(NSString * __nullable)activation
                                                     label:(NSString * __nonnull)label
 {
     NSData * weightsData = [NSData dataWithBytesNoCopy:weights
@@ -282,14 +282,9 @@ static const NSInteger kMinSubBatchSize = 20;
     [self setVariable:[NSString stringWithFormat:@"%@/conv", label] tensor:convTensor];
     [self setVariable:[NSString stringWithFormat:@"%@/bias_add", label] tensor:convBiasTensor];
 
-    if (hasRelu) {
-        MPSGraphTensor * reluTensor = [_graph reLUWithTensor:convBiasTensor name:[NSString stringWithFormat:@"%@/relu", label]];
-        [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
-        [self setVariable:label tensor:reluTensor];
-        return reluTensor;
-    }
-
+    convBiasTensor = [self applyActivationWithTensor:convBiasTensor activation:activation label:label];
     [self setVariable:label tensor:convBiasTensor];
+
     return convBiasTensor;
 }
 
@@ -308,6 +303,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                           seWeights2:(float * __nullable)seWeights2
                                            seBiases2:(float * __nullable)seBiases2
                                          seFcOutputs:(NSUInteger)seFcOutputs
+                                          activation:(NSString * __nullable)activation
 {
 
     MPSGraphTensor * conv1Tensor = [self addConvolutionBlockWithParent:parent
@@ -316,7 +312,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                             kernelSize:kernelSize
                                                                weights:weights1
                                                                 biases:biases1
-                                                               hasRelu:YES
+                                                            activation:activation
                                                                  label:[NSString stringWithFormat:@"%@/conv1", label]];
 
     MPSGraphTensor * conv2Tensor = [self addConvolutionBlockWithParent:conv1Tensor
@@ -325,7 +321,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                             kernelSize:kernelSize
                                                                weights:weights2
                                                                 biases:biases2
-                                                               hasRelu:NO
+                                                            activation:nil
                                                                  label:[NSString stringWithFormat:@"%@/conv2", label]];
 
     [self setVariable:[NSString stringWithFormat:@"%@/conv1", label] tensor:conv1Tensor];
@@ -342,8 +338,8 @@ static const NSInteger kMinSubBatchSize = 20;
                                                     biases1:seBiases1
                                                    weights2:seWeights2
                                                     biases2:seBiases2
-                                                      label:[NSString stringWithFormat:@"%@/se", label]
-                                                    hasRelu:YES];
+                                                 activation:activation
+                                                      label:[NSString stringWithFormat:@"%@/se", label]];
 
         [self setVariable:label tensor:seUnit];
         return seUnit;
@@ -353,12 +349,12 @@ static const NSInteger kMinSubBatchSize = 20;
                                                             secondaryTensor:conv2Tensor
                                                                        name:[NSString stringWithFormat:@"%@/add", label]];
 
-        MPSGraphTensor * reluTensor = [_graph reLUWithTensor:residualTensor
-                                                        name:[NSString stringWithFormat:@"%@/relu", label]];
+        MPSGraphTensor * activationTensor = [self applyActivationWithTensor:residualTensor
+                                                           activation:activation
+                                                                label:label];
         [self setVariable:[NSString stringWithFormat:@"%@/add", label] tensor:residualTensor];
-        [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
-        [self setVariable:label tensor:reluTensor];
-        return reluTensor;
+        [self setVariable:label tensor:activationTensor];
+        return activationTensor;
     }
 }
 
@@ -413,30 +409,7 @@ static const NSInteger kMinSubBatchSize = 20;
     [self setVariable:[NSString stringWithFormat:@"%@/biases", label] tensor:biasTensor];
     [self setVariable:[NSString stringWithFormat:@"%@/bias_add", label] tensor:addTensor];
 
-    if ([activation isEqual:@"relu"]) {
-        MPSGraphTensor * reluTensor = [_graph reLUWithTensor:addTensor name:[NSString stringWithFormat:@"%@/relu", label]];
-        [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
-        [self setVariable:label tensor:reluTensor];
-        return reluTensor;
-    }
-    else if ([activation isEqual:@"tanh"]) {
-        MPSGraphTensor * tanhTensor = [_graph tanhWithTensor:addTensor name:[NSString stringWithFormat:@"%@/tanh", label]];
-        [self setVariable:[NSString stringWithFormat:@"%@/tanh", label] tensor:tanhTensor];
-        [self setVariable:label tensor:tanhTensor];
-        return tanhTensor;
-    }
-    else if ([activation isEqual:@"sigmoid"]) {
-        MPSGraphTensor * sigmoidTensor = [_graph sigmoidWithTensor:addTensor name:[NSString stringWithFormat:@"%@/sigmoid", label]];
-        [self setVariable:[NSString stringWithFormat:@"%@/sigmoid", label] tensor:sigmoidTensor];
-        [self setVariable:label tensor:sigmoidTensor];
-        return sigmoidTensor;
-    }
-    else if ([activation isEqual:@"softmax"]) {
-        MPSGraphTensor * softmaxTensor = [_graph softMaxWithTensor:addTensor axis:1 name:[NSString stringWithFormat:@"%@/softmax", label]];
-        [self setVariable:[NSString stringWithFormat:@"%@/softmax", label] tensor:softmaxTensor];
-        [self setVariable:label tensor:softmaxTensor];
-        return softmaxTensor;
-    }
+    addTensor = [self applyActivationWithTensor:addTensor activation:activation label:label];
 
     [self setVariable:label tensor:addTensor];
     return addTensor;
@@ -451,8 +424,8 @@ static const NSInteger kMinSubBatchSize = 20;
                                         biases1:(float * __nonnull)biases1
                                        weights2:(float * __nonnull)weights2
                                         biases2:(float * __nonnull)biases2
+                                     activation:(NSString * __nullable) activation
                                           label:(NSString * __nonnull)label
-                                        hasRelu:(BOOL)hasRelu
 {
 
     // 1. Global Average Pooling 2D
@@ -466,7 +439,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                          outputChannels:seFcOutputs
                                                                 weights:weights1
                                                                  biases:biases1
-                                                             activation:@"relu"
+                                                             activation:activation
                                                                   label:[NSString stringWithFormat:@"%@/fc1", label]];
 
     // 3. FC Layer 2.
@@ -517,9 +490,10 @@ static const NSInteger kMinSubBatchSize = 20;
                                                     secondaryTensor:skipTensor
                                                                name:[NSString stringWithFormat:@"%@/add2", label]];
 
-    // 6. ReLU
-    MPSGraphTensor * reluTensor = [_graph reLUWithTensor:add2Tensor
-                                                    name:[NSString stringWithFormat:@"%@/relu", label]];
+    // 6. Default activation.
+    MPSGraphTensor * activationTensor = [self applyActivationWithTensor:add2Tensor
+                                                             activation:activation
+                                                                  label:label];
 
     // Add all the variables if specified.
     [self setVariable:[NSString stringWithFormat:@"%@/pool", label] tensor:poolTensor];
@@ -533,11 +507,10 @@ static const NSInteger kMinSubBatchSize = 20;
     [self setVariable:[NSString stringWithFormat:@"%@/multiply", label] tensor:multiplyTensor];
     [self setVariable:[NSString stringWithFormat:@"%@/add1", label] tensor:add1Tensor];
     [self setVariable:[NSString stringWithFormat:@"%@/add2", label] tensor:add2Tensor];
-    [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:reluTensor];
 
-    [self setVariable:label tensor:reluTensor];
+    [self setVariable:label tensor:activationTensor];
 
-    return reluTensor;
+    return activationTensor;
 }
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
@@ -570,6 +543,281 @@ static const NSInteger kMinSubBatchSize = 20;
     return policyTensor;
 }
 
+-(nonnull MPSGraphTensor *) transposeChannelsWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                               label:(NSString * __nonnull)label
+{
+    MPSGraphTensor * transposeTensor = [_graph transposeTensor:tensor
+                                                     dimension:1
+                                                 withDimension:2
+                                                          name:[NSString stringWithFormat:@"%@/weights_transpose_1", label]];
+    transposeTensor = [_graph transposeTensor:transposeTensor
+                                    dimension:2
+                                withDimension:3
+                                         name:[NSString stringWithFormat:@"%@/weights_transpose_2", label]];
+
+    return [_graph reshapeTensor:transposeTensor
+                       withShape:@[@(-1), [transposeTensor.shape lastObject]]
+                            name:[NSString stringWithFormat:@"%@/reshape", label]];
+}
+
+-(nonnull MPSGraphTensor *) scaledKQMatmulWithKeys:(MPSGraphTensor * __nonnull)keys
+                                       withQueries:(MPSGraphTensor * __nonnull)queries
+                                             scale:(float)scale
+                                             label:(NSString * __nonnull)label
+{
+    keys = [_graph reshapeTensor:keys withShape:@[@(-1), @64, [keys.shape lastObject]] name:[NSString stringWithFormat:@"%@/k_reshape", label]];
+    queries = [_graph reshapeTensor:queries withShape:@[@(-1), @64, [queries.shape lastObject]] name:[NSString stringWithFormat:@"%@/q_reshape", label]];
+
+    keys = [_graph transposeTensor:keys
+                            dimension:1
+                        withDimension:2
+                                 name:[NSString stringWithFormat:@"%@/transpose_k", label]];
+
+    MPSGraphTensor * kqMatmul = [_graph matrixMultiplicationWithPrimaryTensor:queries
+                                                              secondaryTensor:keys
+                                                                         name:[NSString stringWithFormat:@"%@/matmul", label]];
+
+    kqMatmul = [_graph multiplicationWithPrimaryTensor:kqMatmul
+                                       secondaryTensor:[_graph constantWithScalar:scale
+                                                                            shape:@[@1] dataType:kqMatmul.dataType]
+                                                  name:[NSString stringWithFormat:@"%@/scale", label]];
+    return kqMatmul;
+}
+
+-(nonnull MPSGraphTensor *) attentionPolicyPromoMatmulConcatWithParent:(MPSGraphTensor * __nonnull)parent
+                                                              withKeys:(MPSGraphTensor * __nonnull)keys
+                                                               weights:(float * __nonnull)weights
+                                                             inputSize:(NSUInteger)inputSize
+                                                            outputSize:(NSUInteger)outputSize
+                                                             sliceFrom:(NSUInteger)sliceFrom
+                                                           channelSize:(NSUInteger)channelSize
+                                                                 label:(NSString * __nonnull)label
+{
+    keys = [_graph reshapeTensor:keys withShape:@[@(-1), @64, @(channelSize)] name:[NSString stringWithFormat:@"%@/slice", label]];
+
+    keys = [_graph sliceTensor:keys dimension:1 start:sliceFrom length:inputSize name:[NSString stringWithFormat:@"%@/slice", label]];
+
+    NSData * weightData = [NSData dataWithBytesNoCopy:weights
+                                               length:outputSize * channelSize * sizeof(float)
+                                         freeWhenDone:NO];
+
+    MPSGraphTensor * weightTensor = [_graph variableWithData:weightData
+                                                       shape:@[@(outputSize), @(channelSize)]
+                                                    dataType:parent.dataType
+                                                        name:[NSString stringWithFormat:@"%@/weights", label]];
+
+    keys = [_graph transposeTensor:keys dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose", label]];
+
+    keys = [_graph matrixMultiplicationWithPrimaryTensor:weightTensor
+                                         secondaryTensor:keys
+                                                    name:[NSString stringWithFormat:@"%@/matmul", label]];
+
+    NSArray<MPSGraphTensor *> * offsets = [_graph splitTensor:keys
+                                                   splitSizes:@[@3, @1]
+                                                         axis:1
+                                                         name:[NSString stringWithFormat:@"%@/offset_split", label]];
+
+    MPSGraphTensor * promo = [_graph additionWithPrimaryTensor:offsets[0]
+                                                      secondaryTensor:offsets[1]
+                                                                 name:[NSString stringWithFormat:@"%@/offset_add", label]];
+
+    NSMutableArray<MPSGraphTensor *> * stack = [NSMutableArray arrayWithCapacity:inputSize];
+    for (NSUInteger i = 0; i < inputSize; i++) {
+        [stack addObject:promo];
+    }
+
+    promo = [_graph stackTensors:stack axis:3 name:[NSString stringWithFormat:@"%@/offset_broadcast", label]];
+
+    promo = [_graph transposeTensor:promo dimension:1 withDimension:3 name:[NSString stringWithFormat:@"%@/offset_transpose", label]];
+
+    promo = [_graph reshapeTensor:promo withShape:@[@(-1), @3, @64] name:[NSString stringWithFormat:@"%@/offset_reshape", label]];
+
+    parent = [_graph reshapeTensor:parent withShape:@[@(-1), @64, @64] name:[NSString stringWithFormat:@"%@/parent_reshape", label]];
+
+    return [_graph concatTensor:parent withTensor:promo dimension:1 name:[NSString stringWithFormat:@"%@/concat", label]];
+}
+
+-(nonnull MPSGraphTensor *) applyActivationWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                           activation:(NSString * __nullable)activation
+                                                label:(NSString * __nullable)label
+{
+    if ([activation isEqual:@"relu"]) {
+        tensor = [_graph reLUWithTensor:tensor name:[NSString stringWithFormat:@"%@/relu", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/relu", label] tensor:tensor];
+    }
+    else if ([activation isEqual:@"tanh"]) {
+        tensor = [_graph tanhWithTensor:tensor name:[NSString stringWithFormat:@"%@/tanh", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/tanh", label] tensor:tensor];
+    }
+    else if ([activation isEqual:@"sigmoid"]) {
+        tensor = [_graph sigmoidWithTensor:tensor name:[NSString stringWithFormat:@"%@/sigmoid", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/sigmoid", label] tensor:tensor];
+    }
+    else if ([activation isEqual:@"softmax"]) {
+        tensor = [_graph softMaxWithTensor:tensor axis:1 name:[NSString stringWithFormat:@"%@/softmax", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/softmax", label] tensor:tensor];
+    }
+    else if ([activation isEqual:@"selu"]) {
+        tensor = [self seluWithTensor:tensor label:[NSString stringWithFormat:@"%@/mish", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/selu", label] tensor:tensor];
+    }
+    else if ([activation isEqual:@"mish"]) {
+        tensor = [self mishWithTensor:tensor label:[NSString stringWithFormat:@"%@/mish", label]];
+        //tensor = [self fastMishWithTensor:tensor label:[NSString stringWithFormat:@"%@/mish", label]];
+        [self setVariable:[NSString stringWithFormat:@"%@/mish", label] tensor:tensor];
+    }
+
+    return tensor;
+}
+
+-(nonnull MPSGraphTensor *) mishWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                               label:(NSString * __nonnull)label
+{
+    // mish(x) = x * tanh(softplus(x)) = x * tanh(ln(1 + exp(x)))
+    MPSGraphTensor * mishTensor = [_graph exponentWithTensor:tensor
+                                                        name:[NSString stringWithFormat:@"%@/exp", label]];
+
+    MPSGraphTensor * oneTensor = [_graph constantWithScalar:1.0 shape:@[@1] dataType:mishTensor.dataType];
+    mishTensor = [_graph additionWithPrimaryTensor:mishTensor
+                                   secondaryTensor:oneTensor
+                                              name:[NSString stringWithFormat:@"%@/add", label]];
+
+    mishTensor = [_graph logarithmWithTensor:mishTensor name:[NSString stringWithFormat:@"%@/ln", label]];
+
+    mishTensor = [_graph tanhWithTensor:mishTensor name:[NSString stringWithFormat:@"%@/tanh", label]];
+
+    mishTensor = [_graph multiplicationWithPrimaryTensor:mishTensor
+                                         secondaryTensor:tensor
+                                                    name:[NSString stringWithFormat:@"%@/multiply", label]];
+
+    return mishTensor;
+}
+
+-(nonnull MPSGraphTensor *) fastMishWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                     label:(NSString * __nonnull)label
+{
+    // @todo: currently hangs for multiple resnet stacks.
+    // Faster mish implementation using approximate functions.
+    // __device__ __forceinline__ float mishActivate(float el) {
+    //     auto e = __expf(el);
+    //     auto n = e * e + 2 * e;
+    //     if (el <= -0.6f) {
+    //         return n * __fdividef(el, n + 2);
+    //     } else {
+    //         return el - 2 * __fdividef(el, n + 2);
+    //     }
+    // }
+    MPSGraphTensor * c_0_6 = [_graph constantWithScalar:-0.6 shape:@[@1] dataType:tensor.dataType];
+    MPSGraphTensor * c_2_0 = [_graph constantWithScalar:2.0 shape:@[@1] dataType:tensor.dataType];
+    MPSGraphTensor * exp = [_graph exponentWithTensor:tensor
+                                                 name:[NSString stringWithFormat:@"%@/exp", label]];
+    MPSGraphTensor * nExp = [_graph additionWithPrimaryTensor:exp
+                                              secondaryTensor:c_2_0
+                                                         name:[NSString stringWithFormat:@"%@/add", label]];
+    nExp = [_graph multiplicationWithPrimaryTensor:exp
+                                secondaryTensor:nExp
+                                           name:[NSString stringWithFormat:@"%@/multiply", label]];
+
+
+    MPSGraphTensor * lessOrEqual = [_graph lessThanOrEqualToWithPrimaryTensor:tensor
+                                                              secondaryTensor:c_0_6
+                                                                         name:[NSString stringWithFormat:@"%@/le", label]];
+    MPSGraphTensor * greater = [_graph greaterThanWithPrimaryTensor:tensor
+                                                    secondaryTensor:c_0_6
+                                                               name:[NSString stringWithFormat:@"%@/gt", label]];
+
+    MPSGraphTensor * fdiv = [_graph additionWithPrimaryTensor:nExp
+                                        secondaryTensor:c_2_0
+                                                   name:[NSString stringWithFormat:@"%@/fdiv_add", label]];
+    fdiv = [_graph divisionWithPrimaryTensor:tensor
+                             secondaryTensor:fdiv
+                                        name:[NSString stringWithFormat:@"%@/fdiv", label]];
+
+    lessOrEqual = [_graph multiplicationWithPrimaryTensor:lessOrEqual
+                                          secondaryTensor:nExp
+                                                     name:[NSString stringWithFormat:@"%@/le_multiply", label]];
+    lessOrEqual = [_graph multiplicationWithPrimaryTensor:lessOrEqual
+                                          secondaryTensor:fdiv
+                                                     name:[NSString stringWithFormat:@"%@/le_fdiv", label]];
+
+    MPSGraphTensor * fastMish = [_graph multiplicationWithPrimaryTensor:c_2_0
+                                                        secondaryTensor:fdiv
+                                                                   name:[NSString stringWithFormat:@"%@/fdiv_multiply", label]];
+    fastMish = [_graph subtractionWithPrimaryTensor:tensor
+                                    secondaryTensor:fastMish
+                                               name:[NSString stringWithFormat:@"%@/fdiv_subtract", label]];
+    
+    greater = [_graph multiplicationWithPrimaryTensor:greater
+                                      secondaryTensor:fastMish
+                                                 name:[NSString stringWithFormat:@"%@/gt_multiply", label]];
+
+    return [_graph additionWithPrimaryTensor:lessOrEqual
+                             secondaryTensor:greater
+                                        name:[NSString stringWithFormat:@"%@/condition_add", label]];
+
+}
+
+-(nonnull MPSGraphTensor *) seluWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                               label:(NSString * __nonnull)label
+{
+    // SELU:
+    // if x > 0: return scale * x
+    // if x < 0: return scale * alpha * (exp(x) - 1)
+    // alpha=1.67326324, scale=1.05070098
+    MPSGraphTensor * zero = [_graph constantWithScalar:0.0 shape:@[@1] dataType:tensor.dataType];
+    MPSGraphTensor * scale = [_graph constantWithScalar:1.05070098 shape:@[@1] dataType:tensor.dataType];
+    MPSGraphTensor * alpha = [_graph constantWithScalar:1.67326324 shape:@[@1] dataType:tensor.dataType];
+
+    MPSGraphTensor * lessThanZero = [_graph lessThanWithPrimaryTensor:tensor
+                                                      secondaryTensor:zero
+                                                                 name:[NSString stringWithFormat:@"%@/ltzero", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/ltzero", label] tensor:lessThanZero];
+
+    MPSGraphTensor * greaterThanZero = [_graph greaterThanOrEqualToWithPrimaryTensor:tensor
+                                                                     secondaryTensor:zero
+                                                                                name:[NSString stringWithFormat:@"%@/gtzero", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/gtzero", label] tensor:greaterThanZero];
+
+    MPSGraphTensor * scaled = [_graph multiplicationWithPrimaryTensor:tensor
+                                                      secondaryTensor:scale
+                                                                 name:[NSString stringWithFormat:@"%@/scale", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/scale", label] tensor:scaled];
+
+    scaled = [_graph multiplicationWithPrimaryTensor:scaled
+                                     secondaryTensor:greaterThanZero
+                                                name:[NSString stringWithFormat:@"%@/scale_mask", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/scale_mask", label] tensor:scaled];
+
+    MPSGraphTensor * exp = [_graph exponentWithTensor:tensor
+                                                 name:[NSString stringWithFormat:@"%@/exp", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/exp", label] tensor:exp];
+
+    MPSGraphTensor * one = [_graph constantWithScalar:1.0 shape:@[@1] dataType:tensor.dataType];
+    exp = [_graph subtractionWithPrimaryTensor:exp
+                               secondaryTensor:one
+                                          name:[NSString stringWithFormat:@"%@/exp_1", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/exp_1", label] tensor:exp];
+
+    exp = [_graph multiplicationWithPrimaryTensor:exp
+                                  secondaryTensor:alpha
+                                             name:[NSString stringWithFormat:@"%@/exp_alpha", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/exp_alpha", label] tensor:exp];
+
+    exp = [_graph multiplicationWithPrimaryTensor:exp
+                                  secondaryTensor:scale
+                                             name:[NSString stringWithFormat:@"%@/exp_scale", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/exp_scale", label] tensor:exp];
+
+    exp = [_graph multiplicationWithPrimaryTensor:exp
+                                  secondaryTensor:lessThanZero
+                                             name:[NSString stringWithFormat:@"%@/exp_mask", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/exp_mask", label] tensor:exp];
+
+    exp = [_graph additionWithPrimaryTensor:scaled secondaryTensor:exp name:[NSString stringWithFormat:@"%@/sum", label]];
+    [self setVariable:[NSString stringWithFormat:@"%@/sum", label] tensor:exp];
+
+    return exp;
+}
 
 -(void) setVariable:(NSString * __nonnull)name
              tensor:(MPSGraphTensor *)tensor

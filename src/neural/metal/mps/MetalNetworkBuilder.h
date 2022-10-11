@@ -39,7 +39,7 @@ public:
 
     std::string init(int gpu_id);
 
-    void build(int kInputPlanes, int channelSize, int kernelSize, LegacyWeights& weights, bool conv_policy, bool wdl, bool moves_left);
+    void build(int kInputPlanes, int channelSize, int kernelSize, LegacyWeights& weights, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, std::string default_activation);
 
     void forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems);
 
