@@ -515,7 +515,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                               policyMap:(uint32_t * __nonnull)policyMap
-                                                  label:(NSString *)label
+                                                  label:(NSString * __nonnull)label
 {
     NSData * policyMapData = [NSData dataWithBytesNoCopy:policyMap
                                                   length:kNumPolicyOutputs * sizeof(uint32_t)
@@ -543,6 +543,54 @@ static const NSInteger kMinSubBatchSize = 20;
     return policyTensor;
 }
 
+-(nonnull MPSGraphTensor *) addLayerNormalizationWithSkipParent:(MPSGraphTensor * __nonnull)parent
+                                                 secondaryInput:(MPSGraphTensor * __nonnull)secondary
+                                                         gammas:(float * __nonnull)gammas
+                                                          betas:(float * __nonnull)betas
+                                                      numGammas:(NSUInteger)numGammas
+                                                       numBetas:(NSUInteger)numBetas
+                                                        epsilon:(float)epsilon
+                                                          label:(NSString * __nonnull)label
+{
+    parent = [_graph additionWithPrimaryTensor:parent
+                               secondaryTensor:secondary
+                                          name:[NSString stringWithFormat:@"%@/add", label]];
+
+    MPSGraphTensor * means = [_graph meanOfTensor:parent
+                                      axes:@[@1]
+                                      name:[NSString stringWithFormat:@"%@/mean", label]];
+
+    MPSGraphTensor * variances = [_graph varianceOfTensor:parent
+                                      axes:@[@1]
+                                      name:[NSString stringWithFormat:@"%@/variance", label]];
+
+    NSData * gammaData = [NSData dataWithBytesNoCopy:gammas
+                                                  length:numGammas * sizeof(float)
+                                            freeWhenDone:NO];
+
+    MPSGraphTensor * gammaTensor = [_graph variableWithData:gammaData
+                                                        shape:@[@(numGammas)]
+                                                     dataType:MPSDataTypeFloat32
+                                                       name:[NSString stringWithFormat:@"%@/gamma", label]];
+
+    NSData * betaData = [NSData dataWithBytesNoCopy:betas
+                                              length:numBetas * sizeof(float)
+                                        freeWhenDone:NO];
+
+    MPSGraphTensor * betaTensor = [_graph variableWithData:betaData
+                                                        shape:@[@(numBetas)]
+                                                     dataType:MPSDataTypeFloat32
+                                                      name:[NSString stringWithFormat:@"%@/beta", label]];
+
+    return [_graph normalizationWithTensor:parent
+                                meanTensor:means
+                            varianceTensor:variances
+                               gammaTensor:gammaTensor
+                                betaTensor:betaTensor
+                                   epsilon:epsilon
+                                      name:[NSString stringWithFormat:@"%@/norm", label]];
+}
+
 -(nonnull MPSGraphTensor *) transposeChannelsWithTensor:(MPSGraphTensor * __nonnull)tensor
                                                label:(NSString * __nonnull)label
 {
@@ -560,28 +608,74 @@ static const NSInteger kMinSubBatchSize = 20;
                             name:[NSString stringWithFormat:@"%@/reshape", label]];
 }
 
--(nonnull MPSGraphTensor *) scaledKQMatmulWithKeys:(MPSGraphTensor * __nonnull)keys
-                                       withQueries:(MPSGraphTensor * __nonnull)queries
-                                             scale:(float)scale
-                                             label:(NSString * __nonnull)label
+-(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
+                                                         withKeys:(MPSGraphTensor * __nonnull)keys
+                                                       withValues:(MPSGraphTensor * __nonnull)values
+                                                            heads:(NSUInteger)heads
+                                                           dModel:(NSUInteger)dModel
+                                                            scale:(float)scale
+                                                            label:(NSString * __nonnull)label
 {
-    keys = [_graph reshapeTensor:keys withShape:@[@(-1), @64, [keys.shape lastObject]] name:[NSString stringWithFormat:@"%@/k_reshape", label]];
-    queries = [_graph reshapeTensor:queries withShape:@[@(-1), @64, [queries.shape lastObject]] name:[NSString stringWithFormat:@"%@/q_reshape", label]];
+    // Split heads.
+    const NSUInteger depth = dModel / heads;
+    queries = [_graph reshapeTensor:queries withShape:@[@(-1), @64, @(heads), @(depth)] name:[NSString stringWithFormat:@"%@/reshape_q", label]];
+    queries = [_graph transposeTensor:queries dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_q", label]];
+
+    keys = [_graph reshapeTensor:keys withShape:@[@(-1), @64, @(heads), @(depth)] name:[NSString stringWithFormat:@"%@/reshape_k", label]];
+    keys = [_graph transposeTensor:keys dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_k", label]];
+
+    values = [_graph reshapeTensor:values withShape:@[@(-1), @64, @(heads), @(depth)] name:[NSString stringWithFormat:@"%@/reshape_v", label]];
+    values = [_graph transposeTensor:values dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_v", label]];
+
+    // Scaled attention matmul.
+    keys = [_graph transposeTensor:keys dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_k_2", label]];
+    MPSGraphTensor * attn = [_graph matrixMultiplicationWithPrimaryTensor:queries
+                                                          secondaryTensor:keys
+                                                                     name:[NSString stringWithFormat:@"%@/matmul_qk", label]];
+    attn = [_graph multiplicationWithPrimaryTensor:attn
+                                   secondaryTensor:[_graph constantWithScalar:scale
+                                                                            shape:@[@1] dataType:attn.dataType]
+                                              name:[NSString stringWithFormat:@"%@/scale", label]];
+
+    attn = [self applyActivationWithTensor:attn activation:@"softmax" label:label];
+
+    // matmul(scaled_attention_weights, v).
+    attn = [_graph matrixMultiplicationWithPrimaryTensor:attn
+                                         secondaryTensor:values
+                                                    name:[NSString stringWithFormat:@"%@/matmul_v", label]];
+
+    attn = [_graph transposeTensor:attn dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_a", label]];
+
+    return [_graph reshapeTensor:attn withShape:@[@(-1), @(dModel)] name:[NSString stringWithFormat:@"%@/reshape_a", label]];
+}
+
+-(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
+                                             withKeys:(MPSGraphTensor * __nonnull)keys
+                                                scale:(float)scale
+                                                label:(NSString * __nonnull)label
+{
+    queries = [_graph reshapeTensor:queries
+                          withShape:@[@(-1), @64, [queries.shape lastObject]]
+                               name:[NSString stringWithFormat:@"%@/reshape_q", label]];
+
+    keys = [_graph reshapeTensor:keys
+                       withShape:@[@(-1), @64, [keys.shape lastObject]]
+                            name:[NSString stringWithFormat:@"%@/reshape_k", label]];
 
     keys = [_graph transposeTensor:keys
                             dimension:1
                         withDimension:2
                                  name:[NSString stringWithFormat:@"%@/transpose_k", label]];
 
-    MPSGraphTensor * kqMatmul = [_graph matrixMultiplicationWithPrimaryTensor:queries
+    MPSGraphTensor * qkMatmul = [_graph matrixMultiplicationWithPrimaryTensor:queries
                                                               secondaryTensor:keys
                                                                          name:[NSString stringWithFormat:@"%@/matmul", label]];
 
-    kqMatmul = [_graph multiplicationWithPrimaryTensor:kqMatmul
+    qkMatmul = [_graph multiplicationWithPrimaryTensor:qkMatmul
                                        secondaryTensor:[_graph constantWithScalar:scale
-                                                                            shape:@[@1] dataType:kqMatmul.dataType]
+                                                                            shape:@[@1] dataType:qkMatmul.dataType]
                                                   name:[NSString stringWithFormat:@"%@/scale", label]];
-    return kqMatmul;
+    return qkMatmul;
 }
 
 -(nonnull MPSGraphTensor *) attentionPolicyPromoMatmulConcatWithParent:(MPSGraphTensor * __nonnull)parent
@@ -654,7 +748,7 @@ static const NSInteger kMinSubBatchSize = 20;
         [self setVariable:[NSString stringWithFormat:@"%@/sigmoid", label] tensor:tensor];
     }
     else if ([activation isEqual:@"softmax"]) {
-        tensor = [_graph softMaxWithTensor:tensor axis:1 name:[NSString stringWithFormat:@"%@/softmax", label]];
+        tensor = [_graph softMaxWithTensor:tensor axis:([tensor.shape count] - 1) name:[NSString stringWithFormat:@"%@/softmax", label]];
         [self setVariable:[NSString stringWithFormat:@"%@/softmax", label] tensor:tensor];
     }
     else if ([activation isEqual:@"selu"]) {

@@ -108,10 +108,27 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                   activation:(NSString * __nullable)activation
                                                        label:(NSString * __nonnull)label;
 
--(nonnull MPSGraphTensor *) scaledKQMatmulWithKeys:(MPSGraphTensor * __nonnull)keys
-                                       withQueries:(MPSGraphTensor * __nonnull)queries
-                                             scale:(float)scale
-                                             label:(NSString * __nonnull)label;
+-(nonnull MPSGraphTensor *) addLayerNormalizationWithSkipParent:(MPSGraphTensor * __nonnull)parent
+                                                 secondaryInput:(MPSGraphTensor * __nonnull)secondary
+                                                         gammas:(float * __nonnull)gammas
+                                                          betas:(float * __nonnull)betas
+                                                      numGammas:(NSUInteger)numGammas
+                                                       numBetas:(NSUInteger)numBetas
+                                                        epsilon:(float)epsilon
+                                                          label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
+                                              withKeys:(MPSGraphTensor * __nonnull)keys
+                                            withValues:(MPSGraphTensor * __nonnull)values
+                                                 heads:(NSUInteger)heads
+                                                dModel:(NSUInteger)dModel
+                                                 scale:(float)scale
+                                                 label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
+                                             withKeys:(MPSGraphTensor * __nonnull)keys
+                                                scale:(float)scale
+                                                label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) attentionPolicyPromoMatmulConcatWithParent:(MPSGraphTensor * __nonnull)parent
                                                               withKeys:(MPSGraphTensor * __nonnull)keys

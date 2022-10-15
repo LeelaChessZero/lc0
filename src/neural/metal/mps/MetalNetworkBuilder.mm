@@ -116,10 +116,88 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                   label:@"policy/fc_embed"];
 
         // 3. Encoder layers
-        for (auto layer : weights.pol_encoder) {
-            // TODO: support encoder heads.
-            [NSException raise:@"Encoders not supported" format:@"Metal backend doesn't support encoder heads yet."];
-        }
+        MPSGraphTensor * mhaQ, * mhaK, * mhaV;
+        NSUInteger dModel;
+        for (NSUInteger i = 0; i < weights.pol_encoder.size(); i++) {
+            dModel = weights.pol_encoder[i].mha.q_b.size();
+            mhaQ = [graph addFullyConnectedLayerWithParent:policy
+                                               inputChannels:embeddingSize
+                                        outputChannels:weights.pol_encoder[i].mha.q_b.size()
+                                               weights:&weights.pol_encoder[i].mha.q_w[0]
+                                                biases:&weights.pol_encoder[i].mha.q_b[0]
+                                            activation:nil
+                                                 label:[NSString stringWithFormat:@"policy/encoder_%zu/mhaq/fc", i]];
+
+            mhaK = [graph addFullyConnectedLayerWithParent:policy
+                                             inputChannels:embeddingSize
+                                            outputChannels:weights.pol_encoder[i].mha.k_b.size()
+                                                   weights:&weights.pol_encoder[i].mha.k_w[0]
+                                                    biases:&weights.pol_encoder[i].mha.k_b[0]
+                                                activation:nil
+                                                     label:[NSString stringWithFormat:@"policy/encoder_%zu/mhak/fc", i]];
+
+            mhaV = [graph addFullyConnectedLayerWithParent:policy
+                                             inputChannels:embeddingSize
+                                            outputChannels:weights.pol_encoder[i].mha.v_b.size()
+                                                   weights:&weights.pol_encoder[i].mha.v_w[0]
+                                                    biases:&weights.pol_encoder[i].mha.v_b[0]
+                                                activation:nil
+                                                     label:[NSString stringWithFormat:@"policy/encoder_%zu/mhav/fc", i]];
+
+            MPSGraphTensor * mha = [graph scaledMHAMatmulWithQueries:mhaQ
+                                                            withKeys:mhaK
+                                                          withValues:mhaV
+                                                               heads:weights.pol_encoder_head_count
+                                                              dModel:dModel
+                                                               scale:1.0f / sqrt(dModel)
+                                                               label:[NSString stringWithFormat:@"policy/encoder_%zu/mha", i]];
+
+            // MHA final dense layer.
+            mha = [graph addFullyConnectedLayerWithParent:mha
+                                               inputChannels:dModel
+                                              outputChannels:embeddingSize
+                                                     weights:&weights.pol_encoder[i].mha.dense_w[0]
+                                                      biases:&weights.pol_encoder[i].mha.dense_b[0]
+                                                  activation:nil
+                                                       label:[NSString stringWithFormat:@"policy/encoder_%zu/mha/fc", i]];
+
+            // Skip connection + Layer Norm 1.
+            policy = [graph addLayerNormalizationWithSkipParent:policy
+                                                 secondaryInput:mha
+                                                         gammas:&weights.pol_encoder[i].ln1_gammas[0]
+                                                          betas:&weights.pol_encoder[i].ln1_betas[0]
+                                                      numGammas:weights.pol_encoder[i].ln1_gammas.size()
+                                                       numBetas:weights.pol_encoder[i].ln1_betas.size()
+                                                        epsilon:1e-6
+                                                          label:[NSString stringWithFormat:@"policy/encoder_%zu/ln1", i]];
+
+            // Feedforward network (FFN).
+            MPSGraphTensor * ffn = [graph addFullyConnectedLayerWithParent:policy
+                                            inputChannels:dModel
+                                           outputChannels:weights.pol_encoder[i].ffn.dense1_b.size()
+                                                  weights:&weights.pol_encoder[i].ffn.dense1_w[0]
+                                                   biases:&weights.pol_encoder[i].ffn.dense1_b[0]
+                                               activation:@"selu"
+                                                    label:[NSString stringWithFormat:@"policy/encoder_%zu/ffn1", i]];
+
+            ffn = [graph addFullyConnectedLayerWithParent:ffn
+                                            inputChannels:weights.pol_encoder[i].ffn.dense1_b.size()
+                                           outputChannels:weights.pol_encoder[i].ffn.dense2_b.size()
+                                                  weights:&weights.pol_encoder[i].ffn.dense2_w[0]
+                                                   biases:&weights.pol_encoder[i].ffn.dense2_b[0]
+                                               activation:nil
+                                                    label:[NSString stringWithFormat:@"policy/encoder_%zu/ffn2", i]];
+
+            // Skip connection + Layer Norm 2.
+            policy = [graph addLayerNormalizationWithSkipParent:policy
+                                                 secondaryInput:ffn
+                                                         gammas:&weights.pol_encoder[i].ln2_gammas[0]
+                                                          betas:&weights.pol_encoder[i].ln2_betas[0]
+                                                      numGammas:weights.pol_encoder[i].ln2_gammas.size()
+                                                       numBetas:weights.pol_encoder[i].ln2_betas.size()
+                                                        epsilon:1e-6
+                                                          label:[NSString stringWithFormat:@"policy/encoder_%zu/ln2", i]];
+        } // End of encoder layers.
 
         // 4. Self-attention q and k.
         MPSGraphTensor * queries = [graph addFullyConnectedLayerWithParent:policy
@@ -139,10 +217,10 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                                  label:@"policy/self_attention/k"];
 
         // 5. matmul(q,k) / sqrt(dk)
-        policy = [graph scaledKQMatmulWithKeys:keys
-                                   withQueries:queries
-                                         scale:1.0f / sqrt(policyDModel)
-                                         label:@"policy/self_attention/kq"];
+        policy = [graph scaledQKMatmulWithQueries:queries
+                                         withKeys:keys
+                                            scale:1.0f / sqrt(policyDModel)
+                                            label:@"policy/self_attention/kq"];
 
         [graph setVariable:@"policy/self_attention/kq" tensor:policy];
 
