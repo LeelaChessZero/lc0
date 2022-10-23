@@ -164,11 +164,17 @@ class Node {
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-  float GetQ(float draw_score, float DrawFactor, float WinFactor,
+  float GetQ(float draw_score, float DrawFactorW, float WinFactor, float DrawFactorL,
                   float LoseFactor) const {
-    return std::pow(std::fmax(wl_ + std::fmax((1 - wl_ - d_) * 0.5f, 0), 0),
-                    WinFactor + DrawFactor * d_) -
-           std::pow(std::fmax((1 - wl_ - d_) * 0.5f, 0), LoseFactor);
+    float L = std::fmax((1 - wl_ - d_) * 0.5f, 0);
+    float W = std::fmax(wl_ + L, 0);
+    return L != 0 ? std::pow(W, WinFactor + DrawFactorW * d_) -
+                        std::pow(L, LoseFactor + DrawFactorL * d_)
+                  : std::pow(W, WinFactor + DrawFactorW * d_);
+
+      //return std::pow(std::fmax(wl_ + std::fmax((1 - wl_ - d_) * 0.5f, 0), 0),
+      //              WinFactor + DrawFactorW * d_) -
+      //     std::pow(std::fmax((1 - wl_ - d_) * 0.5f, 0), LoseFactor + DrawFactorL * d_);
   }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -376,10 +382,10 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score, float DrawFactor,
-             float WinFactor, float LoseFactor) const {
+  float GetQ(float default_q, float draw_score, float DrawFactorW,
+             float WinFactor, float DrawFactorL, float LoseFactor) const {
     return (node_ && node_->GetN() > 0)
-               ? node_->GetQ(draw_score, DrawFactor, WinFactor, LoseFactor)
+               ? node_->GetQ(draw_score, DrawFactorW, WinFactor, DrawFactorL, LoseFactor)
                : default_q;
   }
   float GetWL(float default_wl) const {
