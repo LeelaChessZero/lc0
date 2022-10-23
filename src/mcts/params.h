@@ -138,7 +138,8 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
-  float GetDrawFactor() const { return kDrawFactor; }
+  float GetDrawFactorW() const { return kDrawFactorW; }
+  float GetDrawFactorL() const { return kDrawFactorL; }
   float GetWinFactor() const { return kWinFactor; }
   float GetLoseFactor() const { return kLoseFactor; }
 
@@ -204,7 +205,8 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
-  static const OptionId kDrawFactorId;
+  static const OptionId kDrawFactorWId;
+  static const OptionId kDrawFactorLId;
   static const OptionId kWinFactorId;
   static const OptionId kLoseFactorId;
 
@@ -263,7 +265,8 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
-  const float kDrawFactor;
+  const float kDrawFactorW;
+  const float kDrawFactorL;
   const float kWinFactor;
   const float kLoseFactor;
 };
