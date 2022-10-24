@@ -112,8 +112,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                  secondaryInput:(MPSGraphTensor * __nonnull)secondary
                                                          gammas:(float * __nonnull)gammas
                                                           betas:(float * __nonnull)betas
-                                                      numGammas:(NSUInteger)numGammas
-                                                       numBetas:(NSUInteger)numBetas
+                                                    channelSize:(NSUInteger)channelSize
                                                         epsilon:(float)epsilon
                                                           label:(NSString * __nonnull)label;
 

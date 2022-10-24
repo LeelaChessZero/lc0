@@ -547,8 +547,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                  secondaryInput:(MPSGraphTensor * __nonnull)secondary
                                                          gammas:(float * __nonnull)gammas
                                                           betas:(float * __nonnull)betas
-                                                      numGammas:(NSUInteger)numGammas
-                                                       numBetas:(NSUInteger)numBetas
+                                                    channelSize:(NSUInteger)channelSize
                                                         epsilon:(float)epsilon
                                                           label:(NSString * __nonnull)label
 {
@@ -565,20 +564,20 @@ static const NSInteger kMinSubBatchSize = 20;
                                       name:[NSString stringWithFormat:@"%@/variance", label]];
 
     NSData * gammaData = [NSData dataWithBytesNoCopy:gammas
-                                                  length:numGammas * sizeof(float)
+                                                  length:channelSize * sizeof(float)
                                             freeWhenDone:NO];
 
     MPSGraphTensor * gammaTensor = [_graph variableWithData:gammaData
-                                                        shape:@[@(numGammas)]
+                                                        shape:@[@(channelSize)]
                                                      dataType:MPSDataTypeFloat32
                                                        name:[NSString stringWithFormat:@"%@/gamma", label]];
 
     NSData * betaData = [NSData dataWithBytesNoCopy:betas
-                                              length:numBetas * sizeof(float)
+                                              length:channelSize * sizeof(float)
                                         freeWhenDone:NO];
 
     MPSGraphTensor * betaTensor = [_graph variableWithData:betaData
-                                                        shape:@[@(numBetas)]
+                                                        shape:@[@(channelSize)]
                                                      dataType:MPSDataTypeFloat32
                                                       name:[NSString stringWithFormat:@"%@/beta", label]];
 
