@@ -319,7 +319,6 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       std::vector<float> head_buffer4(largest_batch_size * policy_d_model *
                                       kSquares);
 
-      CERR << "Encoder layers: " << weights_.pol_encoder.size();
       for (auto layer : weights_.pol_encoder) {
         // Q
         FullyConnectedLayer<use_eigen>::Forward1D(
@@ -339,9 +338,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
         // MHA (Q, K, V)
         const int d_model = layer.mha.q_b.size();
-        const int depth = d_model / weights_.pol_encoder_head_count;
-        const float scaling = 1.0f / sqrtf(d_model);
         const int heads = weights_.pol_encoder_head_count;
+        const int depth = d_model / heads;
+        const float scaling = 1.0f / sqrtf(d_model);
 
         // MHA is done per batch since there's a fourth dimension introduced.
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -380,7 +379,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                             scaling, Q, K, QK, use_eigen);
 
           // Apply Softmax.
-          for (auto h = size_t{0}; h < weights_.pol_encoder_head_count * kSquares * kSquares; h += kSquares) {
+          for (auto h = size_t{0}; h < heads * kSquares * kSquares; h += kSquares) {
             SoftmaxActivation(kSquares, QK + h, QK + h);
           }
 
@@ -391,7 +390,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
           // Transpose back into N x 64 x H x D.
           for (auto j = size_t{0}; j < kSquares; j++) {
-            for (auto head = size_t{0}; head < weights_.pol_encoder_head_count; head++) {          
+            for (auto head = size_t{0}; head < heads; head++) {          
               auto transposeStart = batchStart + head * kSquares * depth + j * depth;
               std::copy(
                 head_buffer3.begin() + transposeStart,
@@ -400,7 +399,6 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
               );
             }
           }
-
         }
 
         // Fully connected final MHA layer.
