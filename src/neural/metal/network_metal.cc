@@ -138,9 +138,6 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     lock_.unlock();
 
     if (attn_policy_) {
-      for (auto i=0; i<64*768; i++) {
-        CERR << i << ";" << io->op_policy_raw_mem_[i];
-      }
       // Promotion offset calculation.
       for (size_t batch = 0; batch < batchSize; batch++) {
         for (int k = 0; k < 8; k++) {      // y in cuda

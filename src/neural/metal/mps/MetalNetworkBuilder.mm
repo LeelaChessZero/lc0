@@ -186,11 +186,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                    biases:&weights.pol_encoder[i].ffn.dense2_b[0]
                                                activation:nil
                                                     label:[NSString stringWithFormat:@"policy/encoder_%zu/ffn2", i]];
-            
-            policy = ffn;
-            
-            /*
-            
 
             // Skip connection + Layer Norm 2.
             policy = [graph addLayerNormalizationWithSkipParent:policy
@@ -199,9 +194,9 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                           betas:&weights.pol_encoder[i].ln2_betas[0]
                                                     channelSize:weights.pol_encoder[i].ln2_gammas.size()
                                                         epsilon:1e-6
-                                                          label:[NSString stringWithFormat:@"policy/encoder_%zu/ln2", i]]; */
+                                                          label:[NSString stringWithFormat:@"policy/encoder_%zu/ln2", i]];
         } // End of encoder layers.
-/*
+
         // 4. Self-attention q and k.
         MPSGraphTensor * queries = [graph addFullyConnectedLayerWithParent:policy
                                                             inputChannels:embeddingSize
@@ -235,7 +230,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                         outputSize:4
                                                          sliceFrom:56
                                                        channelSize:policyDModel
-                                                             label:@"policy/promo_logits"]; */
+                                                             label:@"policy/promo_logits"];
     }
     else if (conv_policy) {
         policy = [graph addConvolutionBlockWithParent:layer
