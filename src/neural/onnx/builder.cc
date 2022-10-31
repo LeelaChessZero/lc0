@@ -215,6 +215,18 @@ std::string OnnxBuilder::Gather(const std::string& name,
   return out;
 }
 
+std::string OnnxBuilder::Softplus(const std::string& name,
+                                  const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Softplus");
+}
+
+std::string OnnxBuilder::Identity(const std::string& name,
+                                  const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Identity");
+}
+
 std::pair<std::string, std::string> OnnxBuilder::Split(const std::string& name,
                                                        const std::string& input,
                                                        int axis) {

@@ -36,6 +36,7 @@
 #include "neural/network_legacy.h"
 #include "neural/onnx/adapters.h"
 #include "neural/onnx/builder.h"
+#include "neural/shared/activation.h"
 #include "neural/shared/policy_map.h"
 #include "proto/net.pb.h"
 #include "utils/exception.h"
@@ -47,7 +48,13 @@ class Converter {
  public:
   Converter(const pblczero::Net& net,
             const WeightsToOnnxConverterOptions& options)
-      : src_(net), options_(options) {}
+      : src_(net), options_(options) {
+    default_activation_ =
+        net.format().network_format().default_activation() ==
+                pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+            ? MISH
+            : RELU;
+  }
 
   void Convert(pblczero::Net* dst);
 
@@ -67,8 +74,8 @@ class Converter {
                             int output_channels, const std::string& input,
                             const std::string& name,
                             const LegacyWeights::SEunit* se_unit = nullptr,
-                            const std::string& mixin = "", bool relu = true,
-                            int filters = 3);
+                            const std::string& mixin = "",
+                            bool activation = true, int filters = 3);
 
   std::string MakeResidualBlock(OnnxBuilder* builder,
                                 const LegacyWeights::Residual&,
@@ -79,6 +86,13 @@ class Converter {
                                    const LegacyWeights::SEunit& se_unit,
                                    const std::string& input,
                                    const std::string& name);
+
+  std::string MakeMish(OnnxBuilder* builder, const std::string& input,
+                       const std::string& name);
+
+  std::string MakeActivation(OnnxBuilder* builder, const std::string& input,
+                             const std::string& name,
+                             ActivationFunction activation);
 
   void MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                       const std::string& input, const LegacyWeights& weights);
@@ -99,6 +113,7 @@ class Converter {
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
+  ActivationFunction default_activation_;
 };
 
 pblczero::TensorProto::DataType Converter::GetDataType() const {
@@ -122,6 +137,26 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
                   " is not supported in weights converter");
 }
 
+std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
+                                const std::string& name) {
+  auto flow = builder->Softplus(name + "/softplus", input);
+  flow = builder->Tanh(name + "/tanh", flow);
+  return builder->Mul(name, flow, input);
+}
+
+std::string Converter::MakeActivation(OnnxBuilder* builder,
+                                      const std::string& input,
+                                      const std::string& name,
+                                      ActivationFunction activation) {
+  if (activation == RELU) {
+    return builder->Relu(name + "/relu", input);
+  } else if (activation == MISH) {
+    return MakeMish(builder, input, name + "/mish");
+  } else {
+    throw Exception("Unsupposrted activation in " + name);
+  }
+}
+
 std::string Converter::MakeSqueezeAndExcite(
     OnnxBuilder* builder, const LegacyWeights::SEunit& se_unit,
     const std::string& input, const std::string& name) {
@@ -134,7 +169,7 @@ std::string Converter::MakeSqueezeAndExcite(
       *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
   flow = builder->Add(name + "/add1", flow,
                       *GetWeghtsConverter(se_unit.b1, {se_filters}));
-  flow = builder->Relu(name + "/relu", flow);
+  flow = MakeActivation(builder, flow, name, default_activation_);
   flow = builder->MatMul(
       name + "/matmul2", flow,
       *GetWeghtsConverter(se_unit.w2, {se_filters, 2 * NumFilters()}, {1, 0}));
@@ -145,7 +180,7 @@ std::string Converter::MakeSqueezeAndExcite(
   auto splits = builder->Split(name + "/split", flow, 1);
 
   flow = builder->Sigmoid(name + "/sigmoid", splits.first);
-  flow = builder->Mul(name + "/matmul3", flow, input);
+  flow = builder->Mul(name + "/mul", flow, input);
   return builder->Add(name + "/add3", flow, splits.second);
 }
 
@@ -153,7 +188,7 @@ std::string Converter::MakeConvBlock(
     OnnxBuilder* builder, const LegacyWeights::ConvBlock& weights,
     int input_channels, int output_channels, const std::string& input,
     const std::string& name, const LegacyWeights::SEunit* seunit,
-    const std::string& mixin, bool relu, int filters) {
+    const std::string& mixin, bool activation, int filters) {
   auto flow = builder->Conv(
       name, input,
       *GetWeghtsConverter(weights.weights,
@@ -163,7 +198,9 @@ std::string Converter::MakeConvBlock(
 
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
-  if (relu) flow = builder->Relu(name + "/relu", flow);
+  if (activation) {
+    flow = MakeActivation(builder, flow, name, default_activation_);
+  }
   return flow;
 }
 
@@ -250,7 +287,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
       *GetWeghtsConverter(weights.ip1_val_w, {32 * 8 * 8, 128}, {1, 0}));
   flow = builder->Add("/value/dense1/add", flow,
                       *GetWeghtsConverter(weights.ip1_val_b, {128}));
-  flow = builder->Relu("/value/dense1/relu", flow);
+  flow = MakeActivation(builder, flow, "/value/dense1", default_activation_);
 
   const bool wdl = src_.format().network_format().value() ==
                    pblczero::NetworkFormat::VALUE_WDL;
@@ -299,13 +336,14 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
   flow =
       builder->Add("/mlh/dense1/add", flow,
                    *GetWeghtsConverter(weights.ip1_mov_b, {mlh_fc1_outputs}));
-  flow = builder->Relu("/mlh/dense1/relu", flow);
+  flow = MakeActivation(builder, flow, "/mlh/dense1", default_activation_);
   flow = builder->MatMul(
       "/mlh/dense2/matmul", flow,
       *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}, {1, 0}));
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
-  auto output = builder->Relu(options_.output_mlh, flow);
+  flow = MakeActivation(builder, flow, "/mlh/dense2", default_activation_);
+  auto output = builder->Identity(options_.output_mlh, flow);
   builder->AddOutput(output, {-1, 1}, GetDataType());
   onnx->set_output_mlh(output);
 }
