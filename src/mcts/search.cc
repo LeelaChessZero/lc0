@@ -521,6 +521,9 @@ NNCacheLock Search::GetCachedNNEval(const Node* node) const {
 void Search::MaybeTriggerStop(const IterationStats& stats,
                               StoppersHints* hints) {
   hints->Reset();
+  if (params_.GetNpsLimit() > 0) {
+    hints->UpdateEstimatedNps(params_.GetNpsLimit());
+  }
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
   // Already responded bestmove, nothing to do here.
@@ -888,7 +891,6 @@ void Search::WatchdogThread() {
   StoppersHints hints;
   IterationStats stats;
   while (true) {
-    hints.Reset();
     PopulateCommonIterationStats(&stats);
     MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
