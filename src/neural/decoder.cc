@@ -305,8 +305,8 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
     // Only one king, so we can simply grab its current location directly.
     auto kingpos = SingleSquare(planes[11].mask);
     if (from.row() == kingpos.row() && to.row() == kingpos.row() &&
-        (from.col() < kingpos.col() && to.col() > kingpos.col() ||
-         from.col() > kingpos.col() && to.col() < kingpos.col())) {
+        ((from.col() < kingpos.col() && to.col() > kingpos.col()) ||
+         (from.col() > kingpos.col() && to.col() < kingpos.col()))) {
       // If the king hasn't moved, this could still be a chess 960 castling move
       // if the rook has passed through the king.
       // Destination of the castling move is where the rook started.

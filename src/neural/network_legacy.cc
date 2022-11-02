@@ -34,6 +34,11 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       policy(weights.policy()),
       ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
       ip_pol_b(LayerAdapter(weights.ip_pol_b()).as_vector()),
+      ip2_pol_w(LayerAdapter(weights.ip2_pol_w()).as_vector()),
+      ip2_pol_b(LayerAdapter(weights.ip2_pol_b()).as_vector()),
+      ip3_pol_w(LayerAdapter(weights.ip3_pol_w()).as_vector()),
+      ip3_pol_b(LayerAdapter(weights.ip3_pol_b()).as_vector()),
+      ip4_pol_w(LayerAdapter(weights.ip4_pol_w()).as_vector()),
       value(weights.value()),
       ip1_val_w(LayerAdapter(weights.ip1_val_w()).as_vector()),
       ip1_val_b(LayerAdapter(weights.ip1_val_b()).as_vector()),
@@ -46,6 +51,10 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
+  }
+  pol_encoder_head_count = weights.pol_headcount();
+  for (const auto& enc : weights.pol_encoder()) {
+    pol_encoder.emplace_back(enc);
   }
 }
 
@@ -117,4 +126,30 @@ LegacyWeights::ConvBlock::ConvBlock(const pblczero::Weights::ConvBlock& block)
   bn_betas.clear();
   bn_gammas.clear();
 }
+
+LegacyWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
+    : q_w(LayerAdapter(mha.q_w()).as_vector()),
+      q_b(LayerAdapter(mha.q_b()).as_vector()),
+      k_w(LayerAdapter(mha.k_w()).as_vector()),
+      k_b(LayerAdapter(mha.k_b()).as_vector()),
+      v_w(LayerAdapter(mha.v_w()).as_vector()),
+      v_b(LayerAdapter(mha.v_b()).as_vector()),
+      dense_w(LayerAdapter(mha.dense_w()).as_vector()),
+      dense_b(LayerAdapter(mha.dense_b()).as_vector()) {}
+
+LegacyWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
+    : dense1_w(LayerAdapter(ffn.dense1_w()).as_vector()),
+      dense1_b(LayerAdapter(ffn.dense1_b()).as_vector()),
+      dense2_w(LayerAdapter(ffn.dense2_w()).as_vector()),
+      dense2_b(LayerAdapter(ffn.dense2_b()).as_vector()) {}
+
+LegacyWeights::EncoderLayer::EncoderLayer(
+    const pblczero::Weights::EncoderLayer& encoder)
+    : mha(MHA(encoder.mha())),
+      ln1_gammas(LayerAdapter(encoder.ln1_gammas()).as_vector()),
+      ln1_betas(LayerAdapter(encoder.ln1_betas()).as_vector()),
+      ffn(FFN(encoder.ffn())),
+      ln2_gammas(LayerAdapter(encoder.ln2_gammas()).as_vector()),
+      ln2_betas(LayerAdapter(encoder.ln2_betas()).as_vector()) {}
+
 }  // namespace lczero

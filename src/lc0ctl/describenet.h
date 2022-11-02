@@ -25,38 +25,17 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
-
-#include "neural/network.h"
-#include "neural/writer.h"
+#include "proto/net.pb.h"
 
 namespace lczero {
 
-// Constructs InputPlanes from training data.
-//
-// NOTE: If the training data is a cannonical type, the canonicalization
-// transforms are reverted before returning, since it is assumed that the data
-// will be used with DecodeMoveFromInput or PopulateBoard which assume the
-// InputPlanes are not transformed.
-InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
-
-class TrainingDataReader {
- public:
-  // Opens the given file to read chunk data from.
-  TrainingDataReader(std::string filename);
-
-  ~TrainingDataReader();
-
-  // Reads a chunk. Returns true if a chunk was read.
-  bool ReadChunk(V6TrainingData* data);
-
-  // Gets full filename of the file being read.
-  std::string GetFileName() const { return filename_; }
-
- private:
-  std::string filename_;
-  gzFile fin_;
-  bool format_v6 = false;
-};
+void DescribeNetworkCmd();
+void ShowNetworkGenericInfo(const pblczero::Net& weights);
+void ShowNetworkFormatInfo(const pblczero::Net& weights);
+void ShowNetworkTrainingInfo(const pblczero::Net& weights);
+void ShowNetworkWeightsInfo(const pblczero::Net& weights);
+void ShowNetworkOnnxInfo(const pblczero::Net& weights,
+                         bool show_onnx_internals);
+void ShowAllNetworkInfo(const pblczero::Net& weights);
 
 }  // namespace lczero
