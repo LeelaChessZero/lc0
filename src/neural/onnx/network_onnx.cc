@@ -242,7 +242,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (w->format().network_format().policy() !=
             pblczero::NetworkFormat::POLICY_CLASSICAL &&
         w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+            pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+        w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_ATTENTION) {
       throw Exception("Policy format " +
                       pblczero::NetworkFormat::PolicyFormat_Name(
                           w->format().network_format().policy()) +

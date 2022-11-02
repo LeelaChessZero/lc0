@@ -27,6 +27,8 @@
 
 #include "neural/onnx/converter.h"
 
+#include <climits>
+#include <cmath>
 #include <cstddef>
 #include <initializer_list>
 #include <memory>
@@ -37,6 +39,7 @@
 #include "neural/onnx/adapters.h"
 #include "neural/onnx/builder.h"
 #include "neural/shared/activation.h"
+#include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "proto/net.pb.h"
 #include "utils/exception.h"
@@ -152,6 +155,8 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
     return builder->Relu(name + "/relu", input);
   } else if (activation == MISH) {
     return MakeMish(builder, input, name + "/mish");
+  } else if (activation == SELU) {
+    return builder->Selu(name + "/selu", input);
   } else {
     throw Exception("Unsupposrted activation in " + name);
   }
@@ -179,9 +184,9 @@ std::string Converter::MakeSqueezeAndExcite(
 
   auto splits = builder->Split(name + "/split", flow, 1);
 
-  flow = builder->Sigmoid(name + "/sigmoid", splits.first);
+  flow = builder->Sigmoid(name + "/sigmoid", splits[0]);
   flow = builder->Mul(name + "/mul", flow, input);
-  return builder->Add(name + "/add3", flow, splits.second);
+  return builder->Add(name + "/add3", flow, splits[1]);
 }
 
 std::string Converter::MakeConvBlock(
@@ -220,11 +225,11 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
 }
 
 namespace {
-std::vector<int> MakePolicyMap() {
+std::vector<int> MakePolicyMap(const short* map, int size) {
   std::vector<int> policy_map(1858);
   int idx = 0;
-  for (const auto& mapping : kConvPolicyMap) {
-    if (mapping > -1) policy_map[mapping] = idx;
+  for (int i = 0; i < size; i++) {
+    if (map[i] > -1) policy_map[map[i]] = idx;
     idx++;
   }
   return policy_map;
@@ -234,7 +239,124 @@ std::vector<int> MakePolicyMap() {
 void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                                const std::string& input,
                                const LegacyWeights& weights) {
-  if (!weights.policy1.weights.empty()) {
+  if (src_.format().network_format().policy() ==
+      pblczero::NetworkFormat::POLICY_ATTENTION) {
+    for (auto layer : weights.pol_encoder) {
+      // TODO: support encoder heads.
+      throw Exception(
+          "Encoder heads are not yet supported by the onnx backend.");
+    }
+    const int embedding_size = weights.ip_pol_b.size();
+    const int policy_d_model = weights.ip2_pol_b.size();
+    auto flow =
+        builder->Transpose("/policy/dense1/transpose", input, {0, 2, 3, 1});
+    flow = builder->Reshape(
+        "/policy/dense1/reshape", flow,
+        builder->AddInitializer("/const/policy_shape",
+                                Int64OnnxConst({-1, NumFilters()}, {2})));
+
+    flow = builder->MatMul(
+        "/policy/dense1/matmul", flow,
+        *GetWeghtsConverter(weights.ip_pol_w, {NumFilters(), embedding_size},
+                            {1, 0}));
+    flow =
+        builder->Add("/policy/dense1/add", flow,
+                     *GetWeghtsConverter(weights.ip_pol_b, {embedding_size}));
+    auto fc_out = MakeActivation(builder, flow, "/policy/dense1", SELU);
+
+    flow = builder->MatMul(
+        "/policy/Q/matmul", fc_out,
+        *GetWeghtsConverter(weights.ip2_pol_w, {embedding_size, policy_d_model},
+                            {1, 0}));
+
+    flow =
+        builder->Add("/policy/Q/add", flow,
+                     *GetWeghtsConverter(weights.ip2_pol_b, {policy_d_model}));
+
+    auto Q = builder->Reshape(
+        "/policy/Q/reshape", flow,
+        builder->AddInitializer("/const/QK_shape",
+                                Int64OnnxConst({-1, 64, policy_d_model}, {3})));
+
+    flow = builder->MatMul(
+        "/policy/K/matmul", fc_out,
+        *GetWeghtsConverter(weights.ip3_pol_w, {embedding_size, policy_d_model},
+                            {1, 0}));
+
+    flow =
+        builder->Add("/policy/K/add", flow,
+                     *GetWeghtsConverter(weights.ip3_pol_b, {policy_d_model}));
+
+    auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
+
+    flow = builder->Transpose("/policy/K/transpose", K, {0, 2, 1});
+
+    flow = builder->MatMul("/policy/matmul", Q, flow);
+
+    flow = builder->Mul("/policy/scale", flow,
+                        FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
+
+    auto prom = builder->Slice("policy/promotion/slice", K, {0, 56, 0},
+                               {INT_MAX, 64, policy_d_model});
+
+    prom = builder->MatMul(
+        "/policy/promotion/matmul", prom,
+        *GetWeghtsConverter(weights.ip4_pol_w, {policy_d_model, 4}, {1, 0}));
+
+    prom = builder->Transpose("/policy/promotion/transpose", prom, {0, 2, 1});
+
+    auto prom2 = builder->Split("/policy/promotion/split", prom, 1, {3, 1});
+
+    prom = builder->Add("/policy/promotion/add", prom2[0], prom2[1]);
+
+    prom = builder->Transpose("/policy/promotion/transpose2", prom, {0, 2, 1});
+
+    prom = builder->Reshape(
+        "/policy/promotion/reshape", prom,
+        builder->AddInitializer("/const/policy_promotion_shape",
+                                Int64OnnxConst({-1, 1, 24}, {3})));
+
+    auto sl = builder->Slice("policy/promotion/slice2", flow, {0, 48, 56},
+                             {INT_MAX, 56, 64});
+
+    sl = builder->Reshape(
+        "/policy/promotion/reshape2", sl,
+        builder->AddInitializer("/const/policy_promotion_shape2",
+                                Int64OnnxConst({-1, 64, 1}, {3})));
+
+    sl = builder->Concat("/policy/promotion/concat", {sl, sl, sl}, 2);
+
+    sl = builder->Reshape(
+        "/policy/promotion/reshape3", sl,
+        builder->AddInitializer("/const/policy_promotion_shape3",
+                                Int64OnnxConst({-1, 8, 24}, {3})));
+
+    prom = builder->Add("/policy/promotion/add2", sl, prom);
+
+    prom = builder->Reshape(
+        "/policy/promotion/reshape4", prom,
+        builder->AddInitializer("/const/policy_promotion_shape4",
+                                Int64OnnxConst({-1, 3, 64}, {3})));
+
+    flow = builder->Concat("/policy/concat", {flow, prom}, 1);
+
+    flow = builder->Reshape(
+        "/policy/reshape", flow,
+        builder->AddInitializer("/const/policy_out_shape",
+                                Int64OnnxConst({-1, 67 * 64}, {2})));
+
+    auto output = builder->Gather(
+        options_.output_policy_head, flow,
+        builder->AddInitializer(
+            "/const/mapping_table",
+            Int32OnnxConst(
+                MakePolicyMap(kAttnPolicyMap, std::size(kAttnPolicyMap)),
+                {1858})),
+        1);
+    builder->AddOutput(output, {-1, 1858}, GetDataType());
+    onnx->set_output_policy(output);
+
+  } else if (!weights.policy1.weights.empty()) {
     // Conv policy head.
     auto flow = MakeConvBlock(builder, weights.policy1, NumFilters(),
                               NumFilters(), input, "/policy/conv1");
@@ -246,8 +368,11 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                                 Int64OnnxConst({-1, 80 * 8 * 8}, {2})));
     auto output = builder->Gather(
         options_.output_policy_head, flow,
-        builder->AddInitializer("/const/mapping_table",
-                                Int32OnnxConst(MakePolicyMap(), {1858})),
+        builder->AddInitializer(
+            "/const/mapping_table",
+            Int32OnnxConst(
+                MakePolicyMap(kConvPolicyMap, std::size(kConvPolicyMap)),
+                {1858})),
         1);
     builder->AddOutput(output, {-1, 1858}, GetDataType());
     onnx->set_output_policy(output);
@@ -396,8 +521,9 @@ void Converter::CopyGenericFields(pblczero::Net* dst) {
 }
 
 void Converter::Convert(pblczero::Net* dst) {
-  if (src_.has_onnx_model() && src_.format().network_format().network() ==
-                                   pblczero::NetworkFormat::NETWORK_ONNX) {
+  if (src_.has_onnx_model() &&
+      src_.format().network_format().network() ==
+          pblczero::NetworkFormat::NETWORK_ONNX) {
     *dst = src_;
     return;
   }

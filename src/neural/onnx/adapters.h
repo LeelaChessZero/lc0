@@ -95,4 +95,15 @@ class Int64OnnxConst : public GenericOnnxConst<int64_t> {
   }
 };
 
+// GenericOnnxConst for float values.
+class FloatOnnxConst : public GenericOnnxConst<float> {
+ public:
+  using GenericOnnxConst<float>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::FLOAT;
+  }
+};
+
 }  // namespace lczero
