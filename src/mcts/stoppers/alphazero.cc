@@ -35,17 +35,18 @@ class AlphazeroTimeManager : public TimeManager {
  public:
   AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        alphazerotimepct_(params.GetOrDefault<float>("alphazero-time-pct", 5.0f)) {
-    if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f) 
+        alphazerotimepct_(
+            params.GetOrDefault<float>("alphazero-time-pct", 12.0f)) {
+    if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f)
       throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
-    }
+  }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
  private:
   const int64_t move_overhead_;
   const float alphazerotimepct_;
- };
+};
 
 std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
     const GoParams& params, const NodeTree& tree) {
@@ -56,20 +57,20 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
   if (params.infinite || params.ponder || !time) return nullptr;
 
   auto total_moves_time = *time - move_overhead_;
-  
+
   float this_move_time = total_moves_time * (alphazerotimepct_ / 100.0f);
 
   LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
-          << "Remaining time " << *time
-          << "ms(-" << move_overhead_ << "ms overhead)";
-  
+          << "Remaining time " << *time << "ms(-" << move_overhead_
+          << "ms overhead)";
+
   return std::make_unique<TimeLimitStopper>(this_move_time);
 }
 
 }  // namespace
 
-std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params) {
+std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
+    int64_t move_overhead, const OptionsDict& params) {
   return std::make_unique<AlphazeroTimeManager>(move_overhead, params);
 }
 }  // namespace lczero

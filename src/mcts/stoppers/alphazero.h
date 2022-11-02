@@ -31,7 +31,7 @@
 
 namespace lczero {
 
-std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params);
+std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
+    int64_t move_overhead, const OptionsDict& params);
 
 }  // namespace lczero
