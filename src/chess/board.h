@@ -136,6 +136,9 @@ class ChessBoard {
 
     void Mirror() { data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2); }
 
+    // Note: this is not a strict xfen compatible output. Without access to the
+    // board its not possible to know whether there is ambiguity so all cases
+    // with any non-standard rook positions are encoded in the x-fen format
     std::string as_string() const {
       if (data_ == 0) return "-";
       std::string result;

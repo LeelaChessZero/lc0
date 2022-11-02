@@ -116,54 +116,9 @@ class NodeGarbageCollector {
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
   std::thread gc_thread_;
-};  // namespace
+};
 
 NodeGarbageCollector gNodeGc;
-
-void DriftCorrect(float* q, float* d) {
-  // Training data doesn't have a high number of nodes, so there shouldn't be
-  // too much drift. Highest known value not caused by backend bug was 1.5e-7.
-  const float allowed_eps = 0.000001f;
-  if (*q > 1.0f) {
-    if (*q > 1.0f + allowed_eps) {
-      CERR << "Unexpectedly large drift in q " << *q;
-    }
-    *q = 1.0f;
-  }
-  if (*q < -1.0f) {
-    if (*q < -1.0f - allowed_eps) {
-      CERR << "Unexpectedly large drift in q " << *q;
-    }
-    *q = -1.0f;
-  }
-  if (*d > 1.0f) {
-    if (*d > 1.0f + allowed_eps) {
-      CERR << "Unexpectedly large drift in d " << *d;
-    }
-    *d = 1.0f;
-  }
-  if (*d < 0.0f) {
-    if (*d < 0.0f - allowed_eps) {
-      CERR << "Unexpectedly large drift in d " << *d;
-    }
-    *d = 0.0f;
-  }
-  float w = (1.0f - *d + *q) / 2.0f;
-  float l = w - *q;
-  // Assume q drift is rarer than d drift and apply all correction to d.
-  if (w < 0.0f || l < 0.0f) {
-    float drift = 2.0f * std::min(w, l);
-    if (drift < -allowed_eps) {
-      CERR << "Unexpectedly large drift correction for d based on q. " << drift;
-    }
-    *d += drift;
-    // Since q is in range -1 to 1 - this correction should never push d outside
-    // of range, but precision could be lost in calculations so just in case.
-    if (*d < 0.0f) {
-      *d = 0.0f;
-    }
-  }
-}
 }  // namespace
 
 /////////////////////////////////////////////////////////////////////////
@@ -266,7 +221,11 @@ Node::Iterator Node::Edges() {
   return {*this, !solid_children_ ? &child_ : nullptr};
 }
 
-float Node::GetVisitedPolicy() const { return visited_policy_; }
+float Node::GetVisitedPolicy() const {
+  float sum = 0.0f;
+  for (auto* node : VisitedNodes()) sum += GetEdgeToNode(node)->GetP();
+  return sum;
+}
 
 Edge* Node::GetEdgeToNode(const Node* node) const {
   assert(node->parent_ == this);
@@ -330,7 +289,6 @@ bool Node::MakeSolid() {
   }
   // This is a hack.
   child_ = std::unique_ptr<Node>(new_children);
-  best_child_cached_ = nullptr;
   solid_children_ = true;
   return true;
 }
@@ -405,7 +363,6 @@ bool Node::TryStartScoreUpdate() {
 
 void Node::CancelScoreUpdate(int multivisit) {
   n_in_flight_ -= multivisit;
-  best_child_cached_ = nullptr;
 }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
@@ -414,16 +371,10 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   d_ += multivisit * (d - d_) / (n_ + multivisit);
   m_ += multivisit * (m - m_) / (n_ + multivisit);
 
-  // If first visit, update parent's sum of policies visited at least once.
-  if (n_ == 0 && parent_ != nullptr) {
-    parent_->visited_policy_ += parent_->edges_[index_].GetP();
-  }
   // Increment N.
   n_ += multivisit;
   // Decrement virtual loss.
   n_in_flight_ -= multivisit;
-  // Best child is potentially no longer valid.
-  best_child_cached_ = nullptr;
 }
 
 void Node::RecalculateScore(float temperature, float draw_score) {
@@ -524,21 +475,12 @@ void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
   wl_ += multivisit * v / n_;
   d_ += multivisit * d / n_;
   m_ += multivisit * m / n_;
-  // Best child is potentially no longer valid. This shouldn't be needed since
-  // AdjustForTerminal is always called immediately after FinalizeScoreUpdate,
-  // but for safety in case that changes.
-  best_child_cached_ = nullptr;
 }
 
 void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
   // Compute new n_ first, as reducing a node to 0 visits is a special case.
   const int n_new = n_ - multivisit;
   if (n_new <= 0) {
-    if (parent_ != nullptr) {
-      // To keep consistency with FinalizeScoreUpdate() expanding a node again,
-      // we need to reduce the parent's visited policy.
-      parent_->visited_policy_ -= parent_->edges_[index_].GetP();
-    }
     // If n_new == 0, reset all relevant values to 0.
     wl_ = 0.0;
     d_ = 1.0;
@@ -552,18 +494,6 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
     // Decrement N.
     n_ -= multivisit;
   }
-  // Best child is potentially no longer valid.
-  best_child_cached_ = nullptr;
-}
-
-void Node::UpdateBestChild(const Iterator& best_edge, int visits_allowed) {
-  best_child_cached_ = best_edge.node();
-  // An edge can point to an unexpanded node with n==0. These nodes don't
-  // increment their n_in_flight_ the same way and thus are not safe to cache.
-  if (best_child_cached_ && best_child_cached_->GetN() == 0) {
-    best_child_cached_ = nullptr;
-  }
-  best_child_cache_in_flight_limit_ = visits_allowed + n_in_flight_;
 }
 
 void Node::UpdateChildrenParents() {
@@ -621,180 +551,6 @@ void Node::ReleaseChildrenExceptOne(Node* node_to_save) {
     num_edges_ = 0;
     edges_.reset();  // Clear edges list.
   }
-}
-
-V6TrainingData Node::GetV6TrainingData(
-    GameResult game_result, const PositionHistory& history,
-    FillEmptyHistory fill_empty_history,
-    pblczero::NetworkFormat::InputFormat input_format, Eval best_eval,
-    Eval played_eval, bool best_is_proven, Move best_move, Move played_move,
-    const NNCacheLock& nneval) const {
-  V6TrainingData result;
-
-  // Set version.
-  result.version = 6;
-  result.input_format = input_format;
-
-  // Populate planes.
-  int transform;
-  InputPlanes planes = EncodePositionForNN(input_format, history, 8,
-                                           fill_empty_history, &transform);
-  int plane_idx = 0;
-  for (auto& plane : result.planes) {
-    plane = ReverseBitsInBytes(planes[plane_idx++].mask);
-  }
-
-  // Populate probabilities.
-  auto total_n = GetChildrenVisits();
-  // Prevent garbage/invalid training data from being uploaded to server.
-  // It's possible to have N=0 when there is only one legal move in position
-  // (due to smart pruning).
-  if (total_n == 0 && GetNumEdges() != 1) {
-    throw Exception("Search generated invalid data!");
-  }
-  // Set illegal moves to have -1 probability.
-  std::fill(std::begin(result.probabilities), std::end(result.probabilities),
-            -1);
-  // Set moves probabilities according to their relative amount of visits.
-  // Compute Kullback-Leibler divergence in nats (between policy and visits).
-  float kld_sum = 0;
-  float max_p = -std::numeric_limits<float>::infinity();
-  std::vector<float> intermediate;
-  if (nneval) {
-    int last_idx = 0;
-    for (const auto& child : Edges()) {
-      auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
-      float p = 0;
-      for (int i = 0; i < nneval->p.size(); i++) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = nneval->p[last_idx++];
-        if (last_idx == nneval->p.size()) last_idx = 0;
-        if (move.first == nn_idx) {
-          p = move.second;
-          break;
-        }
-      }
-      intermediate.emplace_back(p);
-      max_p = std::max(max_p, p);
-    }
-  }
-  float total = 0.0;
-  auto it = intermediate.begin();
-  for (const auto& child : Edges()) {
-    auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
-    float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-    if (nneval) {
-      float P = std::exp(*it - max_p);
-      if (fracv > 0) {
-        kld_sum += fracv * std::log(fracv / P);
-      }
-      total += P;
-      it++;
-    }
-    result.probabilities[nn_idx] = fracv;
-  }
-  if (nneval) {
-    // Add small epsilon for backward compatibility with earlier value of 0.
-    auto epsilon = std::numeric_limits<float>::min();
-    kld_sum = std::max(kld_sum + std::log(total), 0.0f) + epsilon;
-  }
-  result.policy_kld = kld_sum;
-  // kld_sum needs to be assigned to a result field TODO
-  const auto& position = history.Last();
-  const auto& castlings = position.GetBoard().castlings();
-  // Populate castlings.
-  // For non-frc trained nets, just send 1 like we used to.
-  uint8_t queen_side = 1;
-  uint8_t king_side = 1;
-  // If frc trained, send the bit mask representing rook position.
-  if (Is960CastlingFormat(input_format)) {
-    queen_side <<= castlings.queenside_rook();
-    king_side <<= castlings.kingside_rook();
-  }
-
-  result.castling_us_ooo = castlings.we_can_000() ? queen_side : 0;
-  result.castling_us_oo = castlings.we_can_00() ? king_side : 0;
-  result.castling_them_ooo = castlings.they_can_000() ? queen_side : 0;
-  result.castling_them_oo = castlings.they_can_00() ? king_side : 0;
-
-  // Other params.
-  if (IsCanonicalFormat(input_format)) {
-    result.side_to_move_or_enpassant =
-        position.GetBoard().en_passant().as_int() >> 56;
-    if ((transform & FlipTransform) != 0) {
-      result.side_to_move_or_enpassant =
-          ReverseBitsInBytes(result.side_to_move_or_enpassant);
-    }
-    // Send transform in deprecated move count so rescorer can reverse it to
-    // calculate the actual move list from the input data.
-    result.invariance_info =
-        transform | (position.IsBlackToMove() ? (1u << 7) : 0u);
-  } else {
-    result.side_to_move_or_enpassant = position.IsBlackToMove() ? 1 : 0;
-    result.invariance_info = 0;
-  }
-  if (best_is_proven) {
-    result.invariance_info |= 1u << 3;  // Best node is proven best;
-  }
-  result.dummy = 0;
-  result.rule50_count = position.GetRule50Ply();
-
-  // Game result.
-  if (game_result == GameResult::WHITE_WON) {
-    result.result_q = position.IsBlackToMove() ? -1 : 1;
-    result.result_d = 0;
-  } else if (game_result == GameResult::BLACK_WON) {
-    result.result_q = position.IsBlackToMove() ? 1 : -1;
-    result.result_d = 0;
-  } else {
-    result.result_q = 0;
-    result.result_d = 1;
-  }
-
-  Eval orig_eval;
-  if (nneval) {
-    orig_eval.wl = nneval->q;
-    orig_eval.d = nneval->d;
-    orig_eval.ml = nneval->m;
-  } else {
-    orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
-    orig_eval.d = std::numeric_limits<float>::quiet_NaN();
-    orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
-  }
-
-  // Aggregate evaluation WL.
-  result.root_q = -GetWL();
-  result.best_q = best_eval.wl;
-  result.played_q = played_eval.wl;
-  result.orig_q = orig_eval.wl;
-
-  // Draw probability of WDL head.
-  result.root_d = GetD();
-  result.best_d = best_eval.d;
-  result.played_d = played_eval.d;
-  result.orig_d = orig_eval.d;
-
-  DriftCorrect(&result.best_q, &result.best_d);
-  DriftCorrect(&result.root_q, &result.root_d);
-  DriftCorrect(&result.played_q, &result.played_d);
-
-  result.root_m = GetM();
-  result.best_m = best_eval.ml;
-  result.played_m = played_eval.ml;
-  result.orig_m = orig_eval.ml;
-
-  result.visits = n_;
-  if (position.IsBlackToMove()) {
-    best_move.Mirror();
-    played_move.Mirror();
-  }
-  result.best_idx = best_move.as_nn_index(transform);
-  result.played_idx = played_move.as_nn_index(transform);
-  result.reserved = 0;
-
-  // Unknown here - will be filled in once the full data has been collected.
-  result.plies_left = 0;
-  return result;
 }
 
 /////////////////////////////////////////////////////////////////////////
