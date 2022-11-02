@@ -445,11 +445,12 @@ void Node::RecalculateScore(float temperature, float draw_score) {
   if (n_vanilla != n_ && n_ > 0 && !IsTerminal()) {
     n_ = n_vanilla;
     // If we have to correct n_, visited policy might also be off.
+    /* // Visited policy was simplified away.
     float visited_policy = 0.0f;
     for (const auto& child : Edges()) {
       if (child.GetN() > 0) visited_policy += child.GetP();
     }
-    visited_policy_ = visited_policy;
+    visited_policy_ = visited_policy; */
   }
 }
 
