@@ -36,9 +36,14 @@ namespace lczero {
 
 class LayerAdapter {
  public:
-  class Iterator
-      : public std::iterator<std::random_access_iterator_tag, float> {
+  class Iterator {
    public:
+    using iterator_category = std::random_access_iterator_tag;
+    using value_type = float;
+    using difference_type = std::ptrdiff_t;
+    using pointer = float*;
+    using reference = float&;
+
     Iterator() = default;
     Iterator(const Iterator& other) = default;
 
