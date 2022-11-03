@@ -4,8 +4,8 @@ pushd "$(dirname "$0")"
 
 set -e
 
-EXTRA="-Db_pgo=off -Db_lto=false"
-NET=
+EXTRA="-Db_pgo=off -Db_lto=true"
+PGO=
 
 case $1 in
   plain|debug|debugoptimized|release|minsize)
@@ -13,27 +13,14 @@ case $1 in
     shift
     ;;
   pgo)
-  # Search for the latest network file to use for the pgo run.
-    file -C -m scripts/magic
-    for f in * networks/*
-    do
-      if [ -f "$f" ] && [ "$NET" -ot "$f" ]
-      then
-        zcat -f "$f" | file -m scripts/magic - | grep -q LeelaChessZero && NET="$f"
-      fi
-    done
-    if [ ! -f "$NET" ]
-    then
-      echo No network file found!
-      exit 0
-    fi
     BUILDTYPE=release
     EXTRA="-Db_pgo=generate -Db_lto=true"
+    PGO=true
     shift
     ;;
-  lto)
+  fast)
     BUILDTYPE=release
-    EXTRA="-Db_pgo=off -Db_lto=true"
+    EXTRA="-Db_pgo=off -Db_lto=false"
     shift
     ;;
   *)
@@ -60,10 +47,10 @@ cd ${BUILDDIR}
 NINJA=$(awk '/ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
 
 # For a pgo run generate the profile data.
-if [ -f ../../"$NET" ]
+if [ -n "${PGO}" ]
 then
   ${NINJA}
-  ./lc0 benchmark --weights=../../"$NET" --movetime=30000
+  ./lc0 benchmark --backend=trivial --num-positions=1 --movetime=30000
   meson configure -Db_pgo=use
 fi
 
