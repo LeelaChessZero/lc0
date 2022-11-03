@@ -43,17 +43,15 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size, const size_t channel
                                    const float* betas, float epsilon)
 {
   for (size_t i = 0; i < batch_size; i++) {
-    // Sum in dimension C.
+    // Mean taken in dimension C.
     float mean = 0;
     for (size_t c = 0; c < channels; ++c) {
       data[i * channels + c] += skip[i * channels + c];
       mean += data[i * channels + c];
     }
-
-    // Mean.
     mean /= channels;
     
-    // Variance
+    // Variance.
     float var = 0;
     for (size_t c = 0; c < channels; ++c) {
       auto diff = data[i * channels + c] - mean;
@@ -71,12 +69,13 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size, const size_t channel
 
 }
 
+template <bool use_eigen>
 void AttentionMatmul2D(const bool transpose_a, const bool transpose_b,
                      const size_t batch_size, const size_t M,
                      const size_t N, const size_t K,
                      const float scaling,
                      const float* input1, const float* input2,
-                     float* output, bool use_eigen)
+                     float* output)
 {
   for (auto batch = size_t{0}; batch < batch_size; batch++) {
     const float* A = &input1[batch * M * K];

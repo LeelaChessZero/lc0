@@ -312,12 +312,18 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           head_buffer.data());
 
       const size_t policy_d_model = weights_.ip2_pol_b.size();
-      std::vector<float> head_buffer2(largest_batch_size * policy_d_model *
+      const size_t max_channel_size = weights_.pol_encoder.size() > 0
+                            ? weights_.pol_encoder[0].ffn.dense1_b.size() // DFF size
+                            : policy_d_model;
+      std::vector<float> head_buffer2(largest_batch_size * max_channel_size *
                                       kSquares);
-      std::vector<float> head_buffer3(largest_batch_size * policy_d_model *
+      std::vector<float> head_buffer3(largest_batch_size * max_channel_size *
                                       kSquares);
-      std::vector<float> head_buffer4(largest_batch_size * policy_d_model *
+      std::vector<float> head_buffer4(largest_batch_size * max_channel_size *
                                       kSquares);
+      std::vector<float> temp_buffer1(policy_d_model * kSquares);
+      std::vector<float> temp_buffer2(policy_d_model * kSquares);
+      std::vector<float> temp_buffer3(policy_d_model * kSquares);
 
       for (auto layer : weights_.pol_encoder) {
         // Q
@@ -347,9 +353,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           auto batchStart = batch * kSquares * d_model;
 
           // Reshape and transpose for each head.
-          const float * Q = &res_buffer1[0];
-          const float * K = &res_buffer2[0];
-          const float * V = &res_buffer3[0];
+          const float * Q = temp_buffer1.data();
+          const float * K = temp_buffer2.data();
+          const float * V = temp_buffer3.data();
           
           for (auto head = size_t{0}; head < heads; head++) {
             for (auto j = size_t{0}; j < kSquares; j++) {
@@ -358,25 +364,25 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
               std::copy(
                 head_buffer2.begin() + channelStart,
                 head_buffer2.begin() + channelStart + depth,
-                res_buffer1.begin() + transposeStart
+                temp_buffer1.begin() + transposeStart
               );
               std::copy(
                 head_buffer3.begin() + channelStart,
                 head_buffer3.begin() + channelStart + depth,
-                res_buffer2.begin() + transposeStart
+                temp_buffer2.begin() + transposeStart
               );
               std::copy(
                 head_buffer4.begin() + channelStart,
                 head_buffer4.begin() + channelStart + depth,
-                res_buffer3.begin() + transposeStart
+                temp_buffer3.begin() + transposeStart
               );
             }
           }
 
           // matmul(Q, K) for all heads per batch.
           float * QK = &head_buffer2[batchStart];
-          AttentionMatmul2D(false, true, heads, kSquares, kSquares, depth,
-                            scaling, Q, K, QK, use_eigen);
+          AttentionMatmul2D<use_eigen>(false, true, heads, kSquares, kSquares, depth,
+                            scaling, Q, K, QK);
 
           // Apply Softmax.
           for (auto h = size_t{0}; h < heads * kSquares * kSquares; h += kSquares) {
@@ -385,8 +391,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
           // matmul(softmax(QK), V) for all heads per batch.
           float * attn = &head_buffer3[batchStart];
-          AttentionMatmul2D(false, false, heads, kSquares, depth, kSquares,
-                            1.0, QK, V, attn, use_eigen);
+          AttentionMatmul2D<use_eigen>(false, false, heads, kSquares, depth, kSquares,
+                            1.0, QK, V, attn);
 
           // Transpose back into N x 64 x H x D.
           for (auto j = size_t{0}; j < kSquares; j++) {
@@ -408,9 +414,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           layer.mha.dense_b.data(), NONE, head_buffer3.data());
 
         // Layer Norm + skip connection.
-        LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size, head_buffer.data(),
-                                      head_buffer3.data(), layer.ln1_gammas.data(),
-                                      layer.ln1_betas.data(), 1e-6);
+        LayerNorm2DWithSkipConnection(
+          batch_size * kSquares, embedding_size, head_buffer.data(),
+          head_buffer3.data(), layer.ln1_gammas.data(),
+          layer.ln1_betas.data(), 1e-6);
 
         // FFN.
         const size_t dff_size = layer.ffn.dense1_b.size();
@@ -425,9 +432,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           layer.ffn.dense2_b.data(), NONE, head_buffer3.data());
 
         // Layer Norm + skip connection.
-        LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size, head_buffer.data(),
-                                      head_buffer3.data(), layer.ln2_gammas.data(),
-                                      layer.ln2_betas.data(), 1e-6);
+        LayerNorm2DWithSkipConnection(
+          batch_size * kSquares, embedding_size, head_buffer.data(),
+          head_buffer3.data(), layer.ln2_gammas.data(),
+          layer.ln2_betas.data(), 1e-6);
 
       }
 
