@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <cassert>
+#include <numeric>
 #include <vector>
 
 namespace lczero {
@@ -38,6 +40,8 @@ namespace lczero {
 template <class T>
 void TransposeTensor(const std::vector<int>& dims, std::vector<int> order,
                      const std::vector<T> from, T* to) {
+  assert(from.size() == std::accumulate(dims.begin(), dims.end(), 1u,
+                                        std::multiplies<size_t>()));
   if (order.empty()) {
     for (size_t i = 0; i < dims.size(); ++i)
       order.push_back(dims.size() - i - 1);

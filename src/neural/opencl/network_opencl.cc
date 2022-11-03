@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018-2020 The LCZero Authors
+ Copyright (C) 2018-2022 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@
 #include "neural/shared/winograd_filter.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
+#include "utils/filesystem.h"
 #include "utils/logging.h"
 #include "utils/weights_adapter.h"
 
@@ -245,14 +246,23 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    params_.tuner_file =
-        options.GetOrDefault<std::string>("tuner_file", "leelaz_opencl_tuning");
+    if (options.IsDefault<std::string>("tuner_file")) {
+      std::string user_cache_path = GetUserCacheDirectory();
+      if (!user_cache_path.empty()) {
+        user_cache_path += "lc0/";
+        CreateDirectory(user_cache_path);
+      }
+      params_.tuner_file = user_cache_path + "leelaz_opencl_tuning";
+    } else {
+      params_.tuner_file = options.Get<std::string>("tuner_file");
+    }
 
     wdl_ = file.format().network_format().output() ==
            pblczero::NetworkFormat::OUTPUT_WDL;
 
-    moves_left_ = file.format().network_format().moves_left() ==
-                  pblczero::NetworkFormat::MOVES_LEFT_V1;
+    moves_left_ = (file.format().network_format().moves_left() ==
+                   pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+                  options.GetOrDefault<bool>("mlh", true);
 
     auto max_batch_size_ =
         static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
@@ -428,17 +438,18 @@ std::unique_ptr<Network> MakeOpenCLNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-    throw Exception(
-        "Network format " +
-        std::to_string(weights.format().network_format().network()) +
-        " is not supported by OpenCL backend.");
+    throw Exception("Network format " +
+                    pblczero::NetworkFormat::NetworkStructure_Name(
+                        weights.format().network_format().network()) +
+                    " is not supported by OpenCL backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CONVOLUTION) {
     throw Exception("Policy format " +
-                    std::to_string(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(
+                        weights.format().network_format().policy()) +
                     " is not supported by OpenCL backend.");
   }
   if (weights.format().network_format().value() !=
@@ -446,8 +457,17 @@ std::unique_ptr<Network> MakeOpenCLNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    std::to_string(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(
+                        weights.format().network_format().value()) +
                     " is not supported by OpenCL backend.");
+  }
+  if (weights.format().network_format().default_activation() !=
+      pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+    throw Exception(
+        "Default activation " +
+        pblczero::NetworkFormat::DefaultActivation_Name(
+            weights.format().network_format().default_activation()) +
+        " is not supported by BLAS backend.");
   }
   return std::make_unique<OpenCLNetwork>(weights, options);
 }

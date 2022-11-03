@@ -1,4 +1,265 @@
-﻿v0.25.0 (2020-04-28)
+﻿v0.29.0-rc0 (2022-04-03)
+~~~~~~~
+* Initial support for attention policy, only cuda backend and partially in
+  blas/dnnl/eigen (good enough for T79).
+* Non multigather (legacy) search code and `--multigather` option are removed.
+* 15b default net is now 753723.
+* The onnx backend now allows selecting gpu to use.
+* Improved error messages for unsupported network files.
+* Some assorted fixes.
+
+v0.28.2 (2021-12-13)
+~~~~~~~
+* No changes from v0.28.1-rc1 as the v0.28.1 release was botched.
+
+v0.28.1 (2021-12-12)
+~~~~~~~
+* No changes from rc1.
+
+v0.28.1-rc1 (2021-12-05)
+~~~~~~~
+* Improved cuda performance for 512 filter networks on Amprere GPUs.
+* Several fixes for the onnx backend.
+* Command line options for network file conversion to/from onnx.
+* Documentation updates.
+* Correctness fixes for rescorer support functions.
+
+v0.28.0 (2021-08-25)
+~~~~~~~
+* Fixed an issue with small third-party nets on the cuda/cudnn backends.
+* Minor tweak to the default task-workers for the cpu packages.
+
+v0.28.0-rc2 (2021-08-20)
+~~~~~~~
+* The cuda backend option multi_stream is now off by default. You should
+  consider setting it to on if you have a recent gpu with a lot of vram.
+* The default time manager is back to "legacy".
+* Updated default parameters.
+* Newer and stronger nets are included in the release packages.
+* Added support for onnx network files and runtime with the "onnx" backend.
+* Several bug and stability fixes.
+
+v0.28.0-rc1 (2021-06-16)
+~~~~~~~
+* Multigather is now made the default (and also improved). Some search settings
+  have changed meaning, so if you have modified values please discard them.
+  Specifically, `max-collision-events`, `max-collision-visits` and
+ `max-out-of-order-evals-factor` have changed default values, but other options
+  also affect the search. Similarly, check that your gui is not caching the old
+  values.
+* Performance improvements for the cuda/cudnn backends.
+* Support for policy focus during training.
+* Larger/stronger 15b default net for all packages except android, blas and dnnl
+  that get a new 10b network.
+* The distributed binaries come with the mimalloc memory allocator for better
+  performance when a large tree has to be destroyed (e.g. after an unexpected
+  move).
+* The `legacy` time manager will use more time for the first move after a long
+  book line.
+* The `--preload` command line flag will initialize the backend and load the
+  network during startup.
+* A 'fen' command was added as a UCI extension to print the current position.
+* Experimental onednn backend for recent intel cpus and gpus.
+
+v0.27.0 (2021-02-21)
+~~~~~~~
+* A better value for the backendbench Clippy threshold.
+
+v0.27.0-rc2 (2021-02-18)
+~~~~~~~
+* Fix additional cases where 'invalid move' could be incorrectly reported.
+* Replace WDL softmax in cudnn backend with same implementation as cuda
+  backend. This fixes some inaccuracy issues that were causing training
+  data to be rejected at a fairly low frequency.
+* Ensure that training data Q/D pairs form valid WDL targets even if there
+  is accumulated drift in calculation.
+* Fix for the calculation of the 'best q is proven' bit in training data.
+* Multiple fixes for timelosses and infinite instamoving in smooth time
+  manager. Smooth time manager now made default after these fixes.
+
+v0.27.0-rc1 (2021-02-06)
+~~~~~~~
+* Fix a bug which meant `position ... moves ...` didn't work if the moves 
+  went off the end of the existing tree. 
+
+v0.27.0-rc0 (2021-02-06)
+~~~~~~~
+* Multigather search inspired by Ceres.
+* V6 training format with additional info for training experiments.
+* Updated default search parameters.
+* A better algorithm for the backendbench assistant.
+* Terminate search early if only 1 move isn't a proven loss.
+* Various build system changes.
+
+v0.26.3 (2020-10-10)
+~~~~~~~
+* Increased maximum value of TempDecayMoves.
+
+v0.26.3-rc2 (2020-10-03)
+~~~~~~~
+* Fix for uninitialized variable that led to crashes with the cudnn backend.
+* Correct windows support for systems with more than 64 threads.
+* A new package is built for the `cuda` backend with cuda 11.1. The old cuda
+  package is renamed to `cudnn`.
+
+v0.26.3-rc1 (2020-09-28)
+~~~~~~~
+* Residual block fusion optimization for cudnn backend, that depends on
+  `custom_winograd=true`. Enabled by default only for networks with up to 384
+  filters in fp16 mode and never in fp32 mode. Default can be overridden with
+  `--backend-opts=res_block_fusing=false` to disable (or `=true` to enable).
+* New experimental cuda backend without cudnn dependency (`cuda-auto`, `cuda`
+  and `cuda-fp16` are available).
+
+v0.26.2 (2020-08-31)
+~~~~~~~
+* No changes from rc1.
+
+v0.26.2-rc1 (2020-08-28)
+~~~~~~~~~~~
+* Repetitions in the search tree are marked as draws, to explore more promising
+  lines. Enabled by default (except in selfplay mode) use
+  `--two-fold-draws=false` to disable.
+* Syzygy tablebase files can now be used in selfplay. Still need to add
+  adjudication support before we can consider using this for training.
+* Default net updated to 703810.
+* Fix for book with CR/LF line endings.
+* Updated Eigen wrap to use new download link.
+
+v0.26.1 (2020-07-15)
+~~~~~~~
+* Fix a bug where invalid openings-pgn settings would result in the book
+  being ignored rather than used.
+* Add support for compressed book files.
+
+v0.26.0 (2020-07-03)
+~~~~~~~
+* No changes from rc1.
+
+v0.26.0-rc1 (2020-06-29)
+~~~~~~~~~~~
+
+* Verbose move stats now includes a line for the root node itself.
+* Added optional `alphazero` time manager type for fixed fraction of 
+  remaining time per move. 
+* The WL score is now tracked with double pecision to improve accuracy
+  during very long search.
+* Fix for a performance bug when playing from tablebase position with
+  tablebases enabled and the PV move was changing frequently.
+* Illegal searchmove restrictions will now be ignored rather than crash.
+* Policy is cleared for terminal losses to encourage better quality MLH
+  estimates by reducing how many visits a move that will not be selected
+  (unless all other options are equally bad) receives.
+* Smart pruning will now cause leela to play immediately once mate score has
+  been declared.
+* Fix an issue where sometimes the pv reported wouldn't match the move that
+  would be selected at that moment.
+* Improvement for logic for when to disable custom_winograd optimization to
+  avoid running out of video ram.
+* `--show-hidden` can now be specified after `--help` and still work.
+* Performance tuning for populating the policy into nodes after nn eval
+  completes.
+* Enable custom optimized SE paths for nets with 384 filters when using the
+  custom_winograd=false path.
+* Updates to zlib/gtest/eigen when included via meson wrap.
+* Added build option to build python bindings to the lc0 engine.
+* Only show the git hash in uci name if not a release tag build.
+* Add `--nps-limit` option to artificially reduce nps to make for easier
+  opponent or whatever other reason you want.
+* Fixed a bug where search tree shape could be affected even when the
+  `--smart-pruning-factor` setting was 0.
+* Changed the search logic to find the lc0.config file if left on the default
+  value.
+* Changed the search logic to find network files in autodiscover mode.
+* Changed the logic to determine the default location for training games
+  generated by selfplay in training mode.
+* Changed the logic to decide where to look for the opencl backend tuning
+  settings file.
+* Android binaries published by appveyor are now stripped.
+* Build can now use system installed eigen if available.
+* When nodes in the tree get proven terminal, parents are updated as if they
+  had always been terminal. This allows for faster convergence on more
+  accurate MLH estimates amongst other details.
+* Removed shortsightedness and logit-q options that have not found a reliable
+  use case.
+* Fixed a bug where m_effect calculated as part of S in verbose move stats was
+  not consistent with the value used in search itself.
+* Added 'pro' mode as an alternative to `--show-hidden` for UCI hosts that do
+  not support command line arguments. Simply rename the lc0 binary to include
+  'pro' in order to enable.
+* `backendbench` now has a `--clippy` option to try and auto suggest which
+  batch size is a good idea.
+* The demux backend now splits the batch into equal sizes based on the number
+  of threads that demux is using rather than number of backends. By default
+  this is no change as usually there is 1 thread per backend. But it allows
+  to more easily use demux against a blas backend sending one chunk per core.
+* Added support for new training input variants canonical_hectoplies and 
+  canonical_hectoplies_armageddon.
+* Fixed a bug where if the network search paths for autodiscover contain files
+  which lc0 cannot open it would error out rather than continuing on to other
+  files.
+* Blas backends no longer have a `blas_cores` option, as it never seemed useful
+  compared to running more threads at a higher level.
+* `--help-md` option removed as it was deemed not very useful.
+* Updated to the latest version of dnnl for the dnnl build.
+* Selfplay mode now supports per color settings in addition to per player
+  settings. Per player settings have higher priority if there is a conflict.
+  This will be used as part of armageddon training.
+* Added a new experimental backend type: `recordreplay`. This allows to
+  record the output of a backend under a particular search and then replay it
+  back again later. Theoretically this lets you simulate a CPU bottlenecked
+  environment but still use a search tree that is a match for what might be a
+  GPU bottlenecked environment. In practice there are a lot of corner cases
+  where replay is not reliable yet.  At a minimum you must disable prefetch.
+* During search the node tree is occasionally compacted to reduce cache misses
+  during the search tree walk. New option `--solid-tree-threshold` can be used
+  to adjust how aggressive this optimization is.  Note that very small values
+  can cause very large growth in ram usage and are not a good idea. The default
+  value is a little conservative, if you have plenty of spare ram it can be
+  good to decrease it a bit.
+* Small performance optimization for windows build with MLH enabled.
+* Meson configuration changed to build with LTO by default. Note that meson
+  does not always configure visual studio project files to apply this
+  correctly on windows.
+* The included net in appveyor builds is now 703350. This network supports MLH
+  although the default MLH parameters are still threshold 1.0 which means it
+  will not trigger without parameter adjustment.
+* New backend option to explicitly override the net details and force MLH
+  disabled. If you weren't going to use MLH anyway, this may give a tiny nps
+  increase.
+* New flag `--show-movesleft` (or `UCI_ShowMovesLeft` for UCI hosts that
+  support it) will cause movesleft (in moves) to be reported in the uci info
+  messages. Only works with networks that have MLH enabled.
+* More sensible default values for MLH are in. Note that threshold is still
+  1.0 by default, so that will still need to be configured to enable it.
+* The `smooth-experimental` time manager has been renamed `smooth` and support
+  added to increase search time whenever the best N does not correspond with
+  the move with best utility estimate. `legacy` remains the default for now
+  as `smooth` has only been tuned for short time controls and evidence suggests
+  it doesn't scale with these defaults.
+* Selfplay mode now supports a logfile parameter just like normal mode.
+* Reinstated the 4 billion visit limit on search to avoid overflowing counters
+  and causing very strange behavior to occur.
+* Performance optimization to make tree walk faster by ensuring that node
+  edges are always sorted by policy. This has some very small side effects to
+  do with tiebreaks in search no longer always being dominated by movegen
+  order.
+* Appveyor built blas and Android binaries now default to minibatch size 1
+  and prefetch 0, which should be much better than the normal GPU optimized
+  defaults. Note this *only* affects Appveyor built binaries.
+* The included client in Windows Appveyor releases is now v27 and is named
+  `lc0-training-client.exe` instead of `client.exe`.
+
+v0.25.1 (2020-04-30)
+~~~~~~~
+
+* Fixed some issues with cudnn backend on the 16xx GTX models and also for 
+  low memory devices with large network files where the new optimizations
+  could result in out of memory errors.
+* Added a workaround for a cutechess issue where reporting depth 0 during
+  instamoves causes it to ignore our info message.
+
+v0.25.0 (2020-04-28)
 ~~~~~~~
 
 * Relax strictness for complete standard fens in uci and opening books. Fen

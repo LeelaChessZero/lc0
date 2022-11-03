@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,43 +25,37 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/writer.h"
+#pragma once
 
-#include <iomanip>
-#include <sstream>
-#include "utils/commandline.h"
-#include "utils/exception.h"
-#include "utils/filesystem.h"
-#include "utils/random.h"
+#include "trainingdata/trainingdata.h"
 
 namespace lczero {
 
-TrainingDataWriter::TrainingDataWriter(int game_id) {
-  static std::string directory =
-      CommandLine::BinaryDirectory() + "/data-" + Random::Get().GetString(12);
-  // It's fine if it already exists.
-  CreateDirectory(directory.c_str());
+// Constructs InputPlanes from training data.
+//
+// NOTE: If the training data is a cannonical type, the canonicalization
+// transforms are reverted before returning, since it is assumed that the data
+// will be used with DecodeMoveFromInput or PopulateBoard which assume the
+// InputPlanes are not transformed.
+InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
 
-  std::ostringstream oss;
-  oss << directory << '/' << "game_" << std::setfill('0') << std::setw(6)
-      << game_id << ".gz";
+class TrainingDataReader {
+ public:
+  // Opens the given file to read chunk data from.
+  TrainingDataReader(std::string filename);
 
-  filename_ = oss.str();
-  fout_ = gzopen(filename_.c_str(), "wb");
-  if (!fout_) throw Exception("Cannot create gzip file " + filename_);
-}
+  ~TrainingDataReader();
 
-void TrainingDataWriter::WriteChunk(const V5TrainingData& data) {
-  auto bytes_written =
-      gzwrite(fout_, reinterpret_cast<const char*>(&data), sizeof(data));
-  if (bytes_written != sizeof(data)) {
-    throw Exception("Unable to write into " + filename_);
-  }
-}
+  // Reads a chunk. Returns true if a chunk was read.
+  bool ReadChunk(V6TrainingData* data);
 
-void TrainingDataWriter::Finalize() {
-  gzclose(fout_);
-  fout_ = nullptr;
-}
+  // Gets full filename of the file being read.
+  std::string GetFileName() const { return filename_; }
+
+ private:
+  std::string filename_;
+  gzFile fin_;
+  bool format_v6 = false;
+};
 
 }  // namespace lczero

@@ -652,7 +652,7 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Promotion.
-  if (move.promotion() != Move::Promotion::None) {
+  if (to_row == RANK_8 && pawns_.get(from)) {
     switch (move.promotion()) {
       case Move::Promotion::Rook:
         rooks_.set(to);
@@ -1030,6 +1030,9 @@ void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
       rooks_.set(row, col);
       bishops_.set(row, col);
     } else if (c == 'P' || c == 'p') {
+      if (row == 7 || row == 0) {
+        throw Exception("Bad fen string (pawn in first/last row): " + fen);
+      }
       pawns_.set(row, col);
     } else if (c == 'N' || c == 'n') {
       // Do nothing

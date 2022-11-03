@@ -59,8 +59,7 @@ void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
                                StoppersHints* hints) {
   if (populate_remaining_playouts_) {
-    hints->UpdateEstimatedRemainingRemainingPlayouts(nodes_limit_ -
-                                                     stats.total_nodes);
+    hints->UpdateEstimatedRemainingPlayouts(nodes_limit_ - stats.total_nodes);
   }
   if (stats.total_nodes >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached visits limit: " << stats.total_nodes
@@ -77,8 +76,8 @@ bool VisitsStopper::ShouldStop(const IterationStats& stats,
 bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
                                  StoppersHints* hints) {
   if (populate_remaining_playouts_) {
-    hints->UpdateEstimatedRemainingRemainingPlayouts(
-        nodes_limit_ - stats.nodes_since_movestart);
+    hints->UpdateEstimatedRemainingPlayouts(nodes_limit_ -
+                                            stats.nodes_since_movestart);
   }
   if (stats.nodes_since_movestart >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached playouts limit: "
@@ -196,6 +195,10 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     LOGFILE << "Only one possible move. Moving immediately.";
     return true;
   }
+  if (stats.edge_n.size() <= static_cast<size_t>(stats.num_losing_edges + 1)) {
+    LOGFILE << "At most one non losing move, stopping search.";
+    return true;
+  }
   if (stats.win_found) {
     LOGFILE << "Terminal win found, stopping search.";
     return true;
@@ -224,7 +227,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
 
   // May overflow if (nps/smart_pruning_factor) > 180 000 000, but that's not
   // very realistic.
-  hints->UpdateEstimatedRemainingRemainingPlayouts(remaining_playouts);
+  hints->UpdateEstimatedRemainingPlayouts(remaining_playouts);
   if (stats.batches_since_movestart < minimum_batches_) return false;
 
   uint32_t largest_n = 0;

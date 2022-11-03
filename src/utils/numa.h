@@ -24,10 +24,23 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+
 #pragma once
+
 namespace lczero {
 
-uint16_t FP32toFP16(float f32);
-float FP16toFP32(uint16_t f16);
+class Numa {
+ public:
+  Numa() = delete;
 
-};  // namespace lczero
+  // Initialize and display statistics about processor configuration.
+  static void Init();
+
+  // Bind thread to processor group.
+  static void BindThread(int id);
+
+ private:
+  static int threads_per_core_;
+};
+
+}  // namespace lczero
