@@ -365,7 +365,8 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       game_info.min_false_positive_threshold =
           game.GetWorstEvalForWinnerOrDraw();
     }
-    if (kTraining) {
+    if (kTraining &&
+        game_info.play_start_ply < static_cast<int>(game_info.moves.size())) {
       TrainingDataWriter writer(game_number);
       game.WriteTrainingData(&writer);
       writer.Finalize();
