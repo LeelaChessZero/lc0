@@ -61,9 +61,10 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
-const OptionId kOpeningStopProbId{"opening-stop-prob", "OpeningStopProb",
-                                  "For each move, check whether to terminate "
-                                  "early the opening with this probability."};
+const OptionId kOpeningStopProbId{
+    "opening-stop-prob", "OpeningStopProb",
+    "From each opening move, start a self-play game with probability max(p, "
+    "1/n), where p is the value given and n the opening moves remaining."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -99,9 +100,19 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
   int ply = 0;
   auto white_prob = white.uci_options->Get<float>(kOpeningStopProbId);
   auto black_prob = black.uci_options->Get<float>(kOpeningStopProbId);
+  if (white_prob != black_prob && white_prob * black_prob > 0.0f) {
+    throw Exception("Stop probabilities must be both equal or zero!");
+  }
+
   for (Move m : opening.moves) {
-    if (Random::Get().GetFloat(1.0f) < tree_[0]->IsBlackToMove() ? black_prob
-                                                                 : white_prob) {
+    auto exit_prob_now = tree_[0]->IsBlackToMove() ? black_prob : white_prob;
+    auto exit_prob_next = tree_[0]->IsBlackToMove() ? white_prob : black_prob;
+    int rem_moves = opening.moves.size() - ply;
+    if (exit_prob_now > 0.0f &&
+        Random::Get().GetFloat(1.0f) <
+            std::max(exit_prob_now,
+                     exit_prob_now / (exit_prob_now * ((rem_moves + 1) / 2) +
+                                      exit_prob_next * (rem_moves / 2)))) {
       break;
     }
     tree_[0]->MakeMove(m);
