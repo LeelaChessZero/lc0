@@ -1,5 +1,5 @@
 # This file is part of Leela Chess Zero.
-# Copyright (C) 2018-2020 The LCZero Authors
+# Copyright (C) 2018-2022 The LCZero Authors
 #
 # Leela Chess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -208,6 +208,7 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
+  'src/utils/fp16_utils.cc',
   'src/version.cc',
 ]
 includes += include_directories('src')
@@ -305,7 +306,7 @@ if get_option('build_backends')
 
     endif
 
-    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep'])
+    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep']).as_system()
 
     ispc = find_program('ispc', required: false)
     ispc_arch = 'x86-64'
@@ -375,6 +376,7 @@ if get_option('build_backends')
 
     if get_option('ispc') and ispc.found()
       files += iscp_gen.process('src/neural/blas/winograd_transform.ispc')
+      files += iscp_gen.process('src/neural/shared/activation.ispc')
       add_project_arguments('-DUSE_ISPC', language : 'cpp')
     endif
 
@@ -436,23 +438,9 @@ if get_option('build_backends')
   nvcc = find_program('nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
                       required: false)
 
-  #.cc files
-  cuda_files = [
-	 'src/neural/cuda/layers.cc',
-  ]
-
-  # .cu files compiled without any specific sm version
-  cuda_files_nvcc_common = [
-    'src/neural/cuda/common_kernels.cu',
-  ]
-
-  # .cu files compiled with sm_70 (volta+). Only used by cudnn-fp16
-  cuda_files_nvcc_fp16 = [
-    'src/neural/cuda/fp16_kernels.cu',
-  ]
-
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dart]
+    cuda_files = ['src/neural/cuda/layers.cc']
     if get_option('cudnn') and cu_dnn.found()
       deps += cu_dnn
       cuda_files += 'src/neural/cuda/network_cudnn.cc'
@@ -468,7 +456,7 @@ if get_option('build_backends')
     endforeach
     includes += include_directories('src/neural/cuda/')
 
-    cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
+    cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
@@ -499,12 +487,15 @@ if get_option('build_backends')
     else
       outputname = '@BASENAME@.o'
     endif
-    cuda_gen = generator(nvcc,
-        output: outputname,
-        arguments: cuda_arguments,
-      )
 	 files += cuda_files
-    files += cuda_gen.process(cuda_files_nvcc_common, extra_args: nvcc_extra_args)
+    files += custom_target('cuda fp32 code',
+      input : 'src/neural/cuda/common_kernels.cu',
+      output : outputname,
+      depend_files: 'src/neural/cuda/winograd_helper.inc',
+      command : [nvcc, nvcc_extra_args, cuda_arguments]
+    )
+
+    # Handling of fp16 cuda code.
     nvcc_arch = '-arch=compute_70'
     nvcc_sm_list = ['sm_80', 'sm_75', 'sm_86', 'sm_70']
     if host_machine.system() != 'windows'
@@ -527,7 +518,12 @@ if get_option('build_backends')
         endif
       endforeach
     endif
-    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
+    files += custom_target('cuda fp16 code',
+      input : 'src/neural/cuda/fp16_kernels.cu',
+      output : outputname,
+      depend_files: 'src/neural/cuda/winograd_helper.inc',
+      command : [nvcc, nvcc_extra_args, cuda_arguments]
+    )
     has_backends = true
   endif
 
@@ -544,7 +540,6 @@ if get_option('build_backends')
       'src/neural/dx/network_dx.cc',
       'src/neural/dx/shader_wrapper.cc',
       'src/neural/dx/layers_dx.cc',
-      'src/neural/dx/fp16_utils.cc',
     ]
     files += dx_files
     deps += [dx_d3d12, dx_dxgi]
@@ -688,7 +683,7 @@ endif
 if get_option('python_bindings')
   pymod = import('python')
   python = pymod.find_installation('python3')
-  if python.language_version() < '3.7'
+  if not python.language_version().version_compare('>3.7')
     error('You need python 3.7 or newer')
   endif
   py_bindings_generator = find_program('scripts/gen_py_bindings.py')

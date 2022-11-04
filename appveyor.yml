@@ -42,14 +42,15 @@ install:
 - cmd: IF %NAME%==onednn set ONEDNN=true
 - cmd: set NET=744204
 - cmd: set NET_HASH=0f2f738e314bf618384045d4320a55333375d273d093adb805a4268ee53b519c
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET=752187
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET_HASH=65d1d197e81e221552b0803dd3623c738887dcb132e084fbab20f93deb66a0c0
-- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.5.0_cpu_vcomp appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.5/dnnl_win_1.5.0_cpu_vcomp.zip
-- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\dnnl_win_1.5.0_cpu_vcomp 7z x dnnl_win_1.5.0_cpu_vcomp.zip -oC:\cache
+- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET=753723
+- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
+- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: set DNNL_NAME=dnnl_win_1.5.0_cpu_vcomp
-- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\dnnl_win_1.8.0_cpu_vcomp appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.8/dnnl_win_1.8.0_cpu_vcomp.zip
-- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\dnnl_win_1.8.0_cpu_vcomp 7z x dnnl_win_1.8.0_cpu_vcomp.zip -oC:\cache
-- cmd: IF %NAME%==onednn set DNNL_NAME=dnnl_win_1.8.0_cpu_vcomp
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.5/dnnl_win_1.5.0_cpu_vcomp.zip
+- cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_1.5.0_cpu_vcomp.zip -oC:\cache
+- cmd: IF %NAME%==onednn set DNNL_NAME=dnnl_win_2.6.0_cpu_vcomp_gpu_vcomp
+- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/borg323/oneDNN/releases/download/v2.6/dnnl_win_2.6.0_cpu_vcomp_gpu_vcomp.zip
+- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_2.6.0_cpu_vcomp_gpu_vcomp.zip -oC:\cache
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
@@ -71,7 +72,6 @@ install:
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
 - cmd: pip3 install --upgrade meson==0.55.3
-- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: set MIMALLOC_PATH=C:\cache\mimalloc-1.7.1
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" appveyor DownloadFile https://github.com/microsoft/mimalloc/archive/refs/tags/v1.7.1.zip
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" 7z x v1.7.1.zip -oC:\cache\
@@ -136,6 +136,8 @@ artifacts:
     name: lc0-debug-symbols
   - path: /lc0*.apk/
     name: lc0-$(APPVEYOR_REPO_TAG_NAME)-android-apk
+  - path: dnnl.dll
+    name: dnnl-dll
 deploy:
   - provider: GitHub
     artifact: /.*\.zip/
