@@ -107,12 +107,12 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
   for (Move m : opening.moves) {
     auto exit_prob_now = tree_[0]->IsBlackToMove() ? black_prob : white_prob;
     auto exit_prob_next = tree_[0]->IsBlackToMove() ? white_prob : black_prob;
-    int rem_moves = opening.moves.size() - ply + 1;
+    int positions = opening.moves.size() - ply + 1;
     if (exit_prob_now > 0.0f &&
         Random::Get().GetFloat(1.0f) <
             std::max(exit_prob_now,
-                     exit_prob_now / (exit_prob_now * ((rem_moves + 1) / 2) +
-                                      exit_prob_next * (rem_moves / 2)))) {
+                     exit_prob_now / (exit_prob_now * ((positions + 1) / 2) +
+                                      exit_prob_next * (positions / 2)))) {
       break;
     }
     tree_[0]->MakeMove(m);
