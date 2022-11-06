@@ -171,7 +171,7 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
           short j = kConvPolicyMap[i];
           if (j >= 0) {
             io->op_policy_mem_[batch * 1858 + j] =
-                io->op_policy_raw_mem_[batch * 32 * 64 + i];
+                io->op_policy_raw_mem_[batch * 80 * 64 + i];
           }
         }
       }
@@ -252,7 +252,7 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
   return std::make_unique<MetalNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("metal", MakeMetalNetwork, 95)
+REGISTER_NETWORK("metal", MakeMetalNetwork, 105)
 
 }  // namespace backend_metal
 }  // namespace lczero
