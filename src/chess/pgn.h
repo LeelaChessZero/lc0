@@ -66,7 +66,7 @@ inline bool GzGetLine(gzFile file, std::string& line) {
 
 class PgnReader {
  public:
-  void AddPgnFile(const std::string& filepath) {
+  void AddPgnFile(const std::string& filepath, int variation_history_len = 0) {
     const gzFile file = gzopen(filepath.c_str(), "r");
     if (!file) {
       throw Exception(errno == ENOENT ? "Opening book file not found."
@@ -128,14 +128,58 @@ class PgnReader {
           word.swap(tmp_word);
         }
         if (word[0] == '(') {
-          nesting_level_++;
+          if (cur_game_.size() == 0) {
+            CERR << "Variation with no move on line " << line_no_ << "!!";
+            throw Exception("Invalid variation.");
+          }
+          variation_stack_.push_back(cur_game_);
+          cur_game_.pop_back();
+          cur_board_.SetFromFen(cur_startpos_);
+          for (auto move : cur_game_) {
+            if (cur_board_.flipped()) {
+              move.Mirror();
+            }
+            cur_board_.ApplyMove(move);
+            cur_board_.Mirror();
+          }
           tmp_word = word.substr(1);
           continue;
         } else if (word[0] == ')') {
-          nesting_level_--;
-          if (nesting_level_ < 0) {
+          if (variation_stack_.size() == 0) {
             CERR << "Too many closing parentheses on line " << line_no_ << "!!";
             throw Exception("Invalid variation nesting.");
+          }
+          if (variation_history_len >= 0) {
+            int len =
+                variation_stack_.back().size() - 1 - variation_history_len;
+            if (len > 0) {
+              int rule50;
+              int moves;
+              cur_board_.SetFromFen(cur_startpos_, &rule50, &moves);
+              int game_ply = 2 * moves - (cur_board_.flipped() ? 1 : 2);
+              Position pos(cur_board_, rule50, game_ply);
+              for (int i = 0; i < len; i++) {
+                Move move = cur_game_[i];
+                if (pos.IsBlackToMove()) move.Mirror();
+                pos = Position(pos, move);
+              }
+              games_.push_back({GetFen(pos), MoveList(cur_game_.begin() + len,
+                                                      cur_game_.end()),
+                                GameResult::UNDECIDED});
+            } else {
+              games_.push_back(
+                  {cur_startpos_, cur_game_, GameResult::UNDECIDED});
+            }
+          }
+          cur_game_ = variation_stack_.back();
+          variation_stack_.pop_back();
+          cur_board_.SetFromFen(cur_startpos_);
+          for (auto move : cur_game_) {
+            if (cur_board_.flipped()) {
+              move.Mirror();
+            }
+            cur_board_.ApplyMove(move);
+            cur_board_.Mirror();
           }
           tmp_word = word.substr(1);
           continue;
@@ -168,8 +212,8 @@ class PgnReader {
         if (word.find_first_not_of("!?") == std::string::npos) continue;
         // Ignore "Numeric Annotation Glyph".
         if (word[0] == '$') continue;
-        // Ignore variations.
-        if (nesting_level_ > 0) continue;
+        // Ignore variations if variation_history_len < 0.
+        if (variation_history_len < 0 && variation_stack_.size() > 0) continue;
         // Must have result in order to be considered a game.
         if (word == "1/2-1/2" || word == "1-0" || word == "0-1" ||
             word == "*") {
@@ -202,7 +246,7 @@ class PgnReader {
 
  private:
   void Flush(std::string termination) {
-    if (nesting_level_ > 0) {
+    if (variation_stack_.size() > 0) {
       CERR << "Variation not terminated on line " << line_no_ << "!!";
       throw Exception("Invalid variation nesting.");
     }
@@ -366,7 +410,7 @@ class PgnReader {
   ChessBoard cur_board_{ChessBoard::kStartposFen};
   MoveList cur_game_;
   std::string cur_startpos_ = ChessBoard::kStartposFen;
-  int nesting_level_ = 0;
+  std::vector<MoveList> variation_stack_;
   std::vector<Opening> games_;
 };
 
