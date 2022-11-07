@@ -87,6 +87,11 @@ const OptionId kSyzygyTablebaseId{
 const OptionId kReplayFileId{
     "replay-pgn", "ReplayPgnFile",
     "A path name to a pgn file containing games to replay."};
+const OptionId kPGgnVariationPlyId{"pgn-variation-ply", "PgnVariationPly",
+                                   "Number of ply to keep from each pgn "
+                                   "variation. The default -1 disables pgn "
+                                   "variation handling and also disables pgn "
+                                   "syntax checking inside variations."};
 }  // namespace
 
 void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
@@ -124,6 +129,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<StringOption>(kReplayFileId) = "";
+  options->Add<IntOption>(kPGgnVariationPlyId, -1, 999999999) = -1;
   SelfPlayGame::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
@@ -167,7 +173,7 @@ SelfPlayTournament::SelfPlayTournament(
   std::string opening_book = options.Get<std::string>(kOpeningsFileId);
   if (!opening_book.empty()) {
     PgnReader book_reader;
-    book_reader.AddPgnFile(opening_book);
+    book_reader.AddPgnFile(opening_book, options.Get<int>(kPGgnVariationPlyId));
     openings_ = book_reader.ReleaseGames();
     if (options.Get<std::string>(kOpeningsModeId) == "shuffled") {
       Random::Get().Shuffle(openings_.begin(), openings_.end());
@@ -183,7 +189,7 @@ SelfPlayTournament::SelfPlayTournament(
       throw Exception("You cannot specify a number of games when replaying.");
     }
     PgnReader book_reader;
-    book_reader.AddPgnFile(replay_book);
+    book_reader.AddPgnFile(replay_book, options.Get<int>(kPGgnVariationPlyId));
     games_to_replay_ = book_reader.ReleaseGames();
   }
 
