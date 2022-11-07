@@ -79,7 +79,7 @@ class PgnReader {
       line_no_++;
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
-      if (line[0] == '[' && !in_comment) {
+      if ((line.empty() || line[0] == '[') && !in_comment) {
         if (started) {
           Flush("*");
           started = false;
@@ -214,7 +214,7 @@ class PgnReader {
         if (word[0] == '$') continue;
         // Ignore variations if variation_history_len < 0.
         if (variation_history_len < 0 && variation_stack_.size() > 0) continue;
-        // Must have result in order to be considered a game.
+        // Check for result.
         if (word == "1/2-1/2" || word == "1-0" || word == "0-1" ||
             word == "*") {
           Flush(word);
