@@ -72,6 +72,14 @@ void AddIntAttribute(pblczero::NodeProto* node, const std::string& name,
   attr->set_i(val);
 }
 
+void AddFloatAttribute(pblczero::NodeProto* node, const std::string& name,
+                       float val) {
+  auto* attr = node->add_attribute();
+  attr->set_name(name);
+  attr->set_type(pblczero::AttributeProto::FLOAT);
+  attr->set_f(val);
+}
+
 void AddIntsAttribute(pblczero::NodeProto* node, const std::string& name,
                       std::initializer_list<int> vals) {
   auto* attr = node->add_attribute();
@@ -209,9 +217,11 @@ std::string OnnxBuilder::Tanh(const std::string& name,
 }
 
 std::string OnnxBuilder::Softmax(const std::string& name,
-                                 const std::string& input) {
+                                 const std::string& input, int axis) {
   auto* node = model_.mutable_graph()->add_node();
-  return PopulateStdNodeFields(node, name, input, "Softmax");
+  auto out = PopulateStdNodeFields(node, name, input, "Softmax");
+  AddIntAttribute(node, "axis", axis);
+  return out;
 }
 
 std::string OnnxBuilder::Reshape(const std::string& name,
@@ -319,6 +329,20 @@ std::string OnnxBuilder::Sigmoid(const std::string& name,
                                  const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   return PopulateStdNodeFields(node, name, input, "Sigmoid");
+}
+
+std::string OnnxBuilder::LayerNormalization(const std::string& name,
+                                            const std::string& input,
+                                            const OnnxConst& scale,
+                                            const OnnxConst& bias, int axis,
+                                            float epsilon) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "LayerNormalization");
+  node->add_input(AddInitializer(name + "/w/scale", scale));
+  node->add_input(AddInitializer(name + "/w/bias", bias));
+  AddIntAttribute(node, "axis", axis);
+  AddFloatAttribute(node, "epsilon", epsilon);
+  return out;
 }
 
 }  // namespace lczero

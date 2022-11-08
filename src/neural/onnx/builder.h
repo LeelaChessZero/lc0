@@ -79,7 +79,8 @@ class OnnxBuilder {
                   const OnnxConst&);
   std::string Relu(const std::string& name, const std::string& input);
   std::string Tanh(const std::string& name, const std::string& input);
-  std::string Softmax(const std::string& name, const std::string& input);
+  std::string Softmax(const std::string& name, const std::string& input,
+                      int axis = 1);
   std::string AddInitializer(const std::string& name, const OnnxConst& weights);
   std::string Reshape(const std::string& name, const std::string& input,
                       const std::string& shape);
@@ -101,6 +102,10 @@ class OnnxBuilder {
                     std::initializer_list<int> ends);
   std::string Concat(const std::string& name,
                      const std::vector<std::string>& input, int axis);
+  std::string LayerNormalization(const std::string& name,
+                                 const std::string& input,
+                                 const OnnxConst& scale, const OnnxConst& bias,
+                                 int axis, float epsilon = 1e-6);
   // Returns ONNX model as protobuf.
   const pblczero::ModelProto& as_proto() const { return model_; }
   // Returns serialized model.
