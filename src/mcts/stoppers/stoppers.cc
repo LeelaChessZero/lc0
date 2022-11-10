@@ -196,7 +196,7 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     return true;
   }
   if (stats.edge_n.size() <= static_cast<size_t>(stats.num_losing_edges) +
-                                 (stats.can_resign ? 0 : 1)) {
+                                 (stats.may_resign ? 0 : 1)) {
     LOGFILE << "At most one non losing move, stopping search.";
     return true;
   }
