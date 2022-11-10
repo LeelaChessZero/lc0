@@ -53,6 +53,7 @@ class SearchParams {
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
+  float Pshape() const { return KPshape; }
   bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
@@ -140,6 +141,7 @@ class SearchParams {
   }
 
   // Search parameter IDs.
+  static const OptionId KPshapeId;
   static const OptionId kMiniBatchSizeId;
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
@@ -232,6 +234,7 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
+  const float KPshape;
   const float kMovesLeftMaxEffect;
   const float kMovesLeftThreshold;
   const float kMovesLeftSlope;

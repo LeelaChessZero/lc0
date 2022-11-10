@@ -56,6 +56,8 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
 }
 
 }  // namespace
+const OptionId SearchParams::KPshapeId{"P-shape", "P shape",
+                                       "Adjust P shape."};
 
 const OptionId SearchParams::kMiniBatchSizeId{
     "minibatch-size", "MinibatchSize",
@@ -320,6 +322,7 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
+  options->Add<FloatOption>(KPshapeId, 0.0001f, 10.0f) = 0.9f;
   options->Add<IntOption>(kMiniBatchSizeId, 1, 1024) = DEFAULT_MINIBATCH_SIZE;
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.745f;
@@ -419,6 +422,7 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : options_(options),
+    KPshape(options.Get<float>(KPshapeId)),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId

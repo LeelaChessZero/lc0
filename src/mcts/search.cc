@@ -2095,6 +2095,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // Intermediate array to store values when processing policy.
   // There are never more than 256 valid legal moves in any legal position.
   std::array<float, 256> intermediate;
+  float p_shape = params_.Pshape();
   int counter = 0;
   for (auto& edge : node->Edges()) {
     float p = computation.GetPVal(
@@ -2114,9 +2115,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   counter = 0;
   // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
   for (auto& edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
+    edge.edge()->SetP(powf(intermediate[counter++] / max_p, p_shape));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
