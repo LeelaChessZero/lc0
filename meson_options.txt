@@ -113,6 +113,11 @@ option('accelerate',
        value: true,
        description: 'Enable Accelerate BLAS support')
 
+option('metal',
+       type: 'feature',
+       value: 'auto',
+       description: 'Enable Metal backend')
+
 option('malloc',
        type : 'string',
        value: '',

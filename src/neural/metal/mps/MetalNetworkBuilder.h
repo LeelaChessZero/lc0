@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,29 +24,32 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
 
-#include "src/utils/weights_adapter.h"
+#include <string>
+#include <vector>
 
 namespace lczero {
-float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
-                                           const LayerAdapter* adapter) {
-  return *ptr / static_cast<float>(0xffff) * adapter->range_ + adapter->min_;
-}
+namespace metal_backend {
 
-LayerAdapter::LayerAdapter(const pblczero::Weights::Layer& layer)
-    : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
-      size_(layer.params().size() / sizeof(uint16_t)),
-      min_(layer.min_val()),
-      range_(layer.max_val() - min_) {}
+class MetalNetworkBuilder {
+public:
+    MetalNetworkBuilder(void);
+    ~MetalNetworkBuilder(void);
 
-std::vector<float> LayerAdapter::as_vector() const {
-  return std::vector<float>(begin(), end());
-}
-float LayerAdapter::Iterator::operator*() const {
-  return ExtractValue(data_, adapter_);
-}
-float LayerAdapter::Iterator::operator[](size_t idx) const {
-  return ExtractValue(data_ + idx, adapter_);
-}
+    std::string init(int gpu_id);
 
+    void build(int kInputPlanes, int channelSize, int kernelSize, LegacyWeights& weights, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, std::string default_activation);
+
+    void forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems);
+
+    void saveVariables(std::vector<std::string> names);
+
+    void dumpVariables(std::vector<std::string> names, int batches);
+
+private:
+    int gpu_id;
+};
+
+}  // namespace metal_backend
 }  // namespace lczero
