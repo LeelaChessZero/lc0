@@ -33,6 +33,11 @@
 #include <string>
 #include <vector>
 
+#if __has_include("dml_provider_factory.h")
+#include "dml_provider_factory.h"
+#define USE_DML
+#endif
+
 #include "cpu_provider_factory.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
@@ -46,7 +51,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA };
+enum class OnnxProvider { CPU, CUDA, DML };
 
 class OnnxNetwork;
 
@@ -179,6 +184,14 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
   // options.SetIntraOpNumThreads(1);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   switch (provider) {
+    case OnnxProvider::DML:
+#ifdef USE_DML
+      Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(
+          options, dict.GetOrDefault<int>("gpu", 0)));
+#else
+      throw Exception("ONNX backend internal error.");
+#endif
+      break;
     case OnnxProvider::CUDA:
       cuda_options.device_id = dict.GetOrDefault<int>("gpu", 0);
       options.AppendExecutionProvider_CUDA(cuda_options);
@@ -243,7 +256,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& opts) {
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
-  int batch_size = opts.GetOrDefault<int>("batch", -1);
+  int batch_size = opts.GetOrDefault<int>(
+      "batch", kProvider == OnnxProvider::DML ? 256 : -1);
   if (batch_size <= 0) batch_size = -1;  // Variable batch size.
 
   if (w->has_onnx_model()) {
@@ -291,6 +305,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   }
 }
 
+#ifdef USE_DML
+REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 60)
+#endif
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
