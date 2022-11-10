@@ -41,6 +41,7 @@ struct WeightsToOnnxConverterOptions {
   std::string output_wdl = "/output/wdl";
   std::string output_value = "/output/value";
   std::string output_mlh = "/output/mlh";
+  int batch_size = -1;
 };
 
 // Converts "classical" weights file to weights file with embedded ONNX model.

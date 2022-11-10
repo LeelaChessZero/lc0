@@ -53,9 +53,7 @@ class OnnxNetwork;
 class OnnxComputation : public NetworkComputation {
  public:
   OnnxComputation(OnnxNetwork* network) : network_(network) {}
-  void AddInput(InputPlanes&& input) override {
-    raw_input_.emplace_back(input);
-  }
+  void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override { return raw_input_.size(); }
   void ComputeBlocking() override;
   float GetQVal(int sample) const override;
@@ -75,7 +73,7 @@ class OnnxComputation : public NetworkComputation {
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider);
+              OnnxProvider provider, int batch_size);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<OnnxComputation>(this);
   }
@@ -98,7 +96,18 @@ class OnnxNetwork : public Network {
   int value_head_ = -1;
   int mlh_head_ = -1;
   NetworkCapabilities capabilities_;
+  // The batch size to use, or -1 for variable.
+  int batch_size_;
 };
+
+void OnnxComputation::AddInput(InputPlanes&& input) {
+  raw_input_.emplace_back(input);
+  size_t batch_size = network_->batch_size_;
+  if (raw_input_.size() > batch_size) {
+    throw Exception("NN input exceeds batch size of " +
+                    std::to_string(batch_size) + ".");
+  }
+}
 
 float OnnxComputation::GetQVal(int sample) const {
   if (network_->wdl_head_ != -1) {
@@ -131,7 +140,9 @@ float OnnxComputation::GetMVal(int sample) const {
 
 Ort::Value OnnxComputation::PrepareInput() {
   input_tensor_data_.clear();
-  input_tensor_data_.resize(raw_input_.size() * kInputPlanes * 8 * 8);
+  int batch_size = network_->batch_size_;
+  if (batch_size < 0) batch_size = raw_input_.size();
+  input_tensor_data_.resize(batch_size * kInputPlanes * 8 * 8);
   auto iter = input_tensor_data_.data();
   for (const auto& sample : raw_input_) {
     assert(sample.size() == kInputPlanes);
@@ -142,8 +153,12 @@ Ort::Value OnnxComputation::PrepareInput() {
       iter += 64;
     }
   }
-  int64_t dims[] = {static_cast<int64_t>(raw_input_.size()), kInputPlanes, 8,
-                    8};
+  for (int i = raw_input_.size() * kInputPlanes * 64;
+       i < batch_size * kInputPlanes * 64; i++) {
+    *iter++ = 0;
+  }
+
+  int64_t dims[] = {batch_size, kInputPlanes, 8, 8};
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
   // Hopefully having dims in a temporary variable is fine.
@@ -185,12 +200,13 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
 }
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& dict,
-                         OnnxProvider provider)
+                         OnnxProvider provider, int batch_size)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       session_(onnx_env_, file.onnx_model().model().data(),
                file.onnx_model().model().size(), GetOptions(provider, dict)),
       capabilities_{file.format().network_format().input(),
-                    file.format().network_format().moves_left()} {
+                    file.format().network_format().moves_left()},
+      batch_size_(batch_size) {
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
     throw Exception("NN doesn't have input planes defined.");
@@ -227,8 +243,11 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& opts) {
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
+  int batch_size = opts.GetOrDefault<int>("batch", -1);
+  if (batch_size <= 0) batch_size = -1;  // Variable batch size.
+
   if (w->has_onnx_model()) {
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, batch_size);
   } else {
     if (w->format().network_format().network() !=
             pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
@@ -264,8 +283,11 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                           w->format().network_format().default_activation()) +
                       " is not supported by the ONNX backend.");
     }
-    auto converted = ConvertWeightsToOnnx(*w, {});
-    return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
+    WeightsToOnnxConverterOptions converter_options;
+    converter_options.batch_size = batch_size;
+    auto converted = ConvertWeightsToOnnx(*w, converter_options);
+    return std::make_unique<OnnxNetwork>(converted, opts, kProvider,
+                                         batch_size);
   }
 }
 
