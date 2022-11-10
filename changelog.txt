@@ -1,4 +1,45 @@
-﻿v0.28.0-rc1 (2021-06-16)
+﻿v0.29.0-rc0 (2022-04-03)
+~~~~~~~
+* Initial support for attention policy, only cuda backend and partially in
+  blas/dnnl/eigen (good enough for T79).
+* Non multigather (legacy) search code and `--multigather` option are removed.
+* 15b default net is now 753723.
+* The onnx backend now allows selecting gpu to use.
+* Improved error messages for unsupported network files.
+* Some assorted fixes.
+
+v0.28.2 (2021-12-13)
+~~~~~~~
+* No changes from v0.28.1-rc1 as the v0.28.1 release was botched.
+
+v0.28.1 (2021-12-12)
+~~~~~~~
+* No changes from rc1.
+
+v0.28.1-rc1 (2021-12-05)
+~~~~~~~
+* Improved cuda performance for 512 filter networks on Amprere GPUs.
+* Several fixes for the onnx backend.
+* Command line options for network file conversion to/from onnx.
+* Documentation updates.
+* Correctness fixes for rescorer support functions.
+
+v0.28.0 (2021-08-25)
+~~~~~~~
+* Fixed an issue with small third-party nets on the cuda/cudnn backends.
+* Minor tweak to the default task-workers for the cpu packages.
+
+v0.28.0-rc2 (2021-08-20)
+~~~~~~~
+* The cuda backend option multi_stream is now off by default. You should
+  consider setting it to on if you have a recent gpu with a lot of vram.
+* The default time manager is back to "legacy".
+* Updated default parameters.
+* Newer and stronger nets are included in the release packages.
+* Added support for onnx network files and runtime with the "onnx" backend.
+* Several bug and stability fixes.
+
+v0.28.0-rc1 (2021-06-16)
 ~~~~~~~
 * Multigather is now made the default (and also improved). Some search settings
   have changed meaning, so if you have modified values please discard them.

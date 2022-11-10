@@ -11,6 +11,9 @@ jobs:
             git submodule init
             git submodule update --remote
       - run:
+          name: Update Meson
+          command: pip3 install --upgrade meson==0.58.1
+      - run:
           name: Create Meson build dirs
           command: mkdir build-gcc && mkdir build-clang
       - run:

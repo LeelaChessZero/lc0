@@ -158,13 +158,15 @@ void OnnxComputation::ComputeBlocking() {
       network_->outputs_cstr_.data(), network_->outputs_cstr_.size());
 }
 
-Ort::SessionOptions GetOptions(OnnxProvider provider) {
+Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
   Ort::SessionOptions options;
+  OrtCUDAProviderOptions cuda_options;
   // options.SetIntraOpNumThreads(1);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   switch (provider) {
     case OnnxProvider::CUDA:
-      options.AppendExecutionProvider_CUDA({});
+      cuda_options.device_id = dict.GetOrDefault<int>("gpu", 0);
+      options.AppendExecutionProvider_CUDA(cuda_options);
       break;
     case OnnxProvider::CPU:
       // Doesn't really work. :-( There are two execution providers (CUDA and
@@ -182,11 +184,11 @@ Ort::SessionOptions GetOptions(OnnxProvider provider) {
   return options;
 }
 
-OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
+OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& dict,
                          OnnxProvider provider)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       session_(onnx_env_, file.onnx_model().model().data(),
-               file.onnx_model().model().size(), GetOptions(provider)),
+               file.onnx_model().model().size(), GetOptions(provider, dict)),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()} {
   const auto& md = file.onnx_model();
@@ -228,6 +230,40 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
   } else {
+    if (w->format().network_format().network() !=
+            pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
+        w->format().network_format().network() !=
+            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+      throw Exception("Network format " +
+                      pblczero::NetworkFormat::NetworkStructure_Name(
+                          w->format().network_format().network()) +
+                      " is not supported by the ONNX backend.");
+    }
+    if (w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_CLASSICAL &&
+        w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+      throw Exception("Policy format " +
+                      pblczero::NetworkFormat::PolicyFormat_Name(
+                          w->format().network_format().policy()) +
+                      " is not supported by the ONNX backend.");
+    }
+    if (w->format().network_format().value() !=
+            pblczero::NetworkFormat::VALUE_CLASSICAL &&
+        w->format().network_format().value() !=
+            pblczero::NetworkFormat::VALUE_WDL) {
+      throw Exception("Value format " +
+                      pblczero::NetworkFormat::ValueFormat_Name(
+                          w->format().network_format().value()) +
+                      " is not supported by the ONNX backend.");
+    }
+    if (w->format().network_format().default_activation() !=
+        pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+      throw Exception("Default activation " +
+                      pblczero::NetworkFormat::DefaultActivation_Name(
+                          w->format().network_format().default_activation()) +
+                      " is not supported by the ONNX backend.");
+    }
     auto converted = ConvertWeightsToOnnx(*w, {});
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
   }

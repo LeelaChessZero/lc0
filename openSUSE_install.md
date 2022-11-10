@@ -84,7 +84,7 @@ Otherwise, if you skipped most of what is described above because you want to us
 
 The Install script automates practically everything needed for the lc0 Engine to run when hooked up to a graphical chessboard. The one thing missing that you, the User has to do on your own is to select a "Networks" file which contains the game data for its thinking. New data is generated continuously and players may want to try different files so this can't be automated. You need to select a file from the following page (usually under 50MBytes) and drop the file into the same folder as your lc0 binary.
 
-[http://lczero.org/networks](http://lczero.org/networks/)
+[https://lczero.org/play/networks/bestnets/](https://lczero.org/play/networks/bestnets/)
 
 ## An example setup with the Arena graphical chessboard
 
