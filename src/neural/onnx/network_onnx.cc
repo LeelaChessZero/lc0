@@ -103,6 +103,9 @@ class OnnxNetwork : public Network {
   NetworkCapabilities capabilities_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
+  // For conditional locking if running the DML provider.
+  OnnxProvider provider_;
+  std::mutex lock_;
 };
 
 void OnnxComputation::AddInput(InputPlanes&& input) {
@@ -173,9 +176,11 @@ Ort::Value OnnxComputation::PrepareInput() {
 
 void OnnxComputation::ComputeBlocking() {
   auto input_tensor = PrepareInput();
+  if (network_->provider_ == OnnxProvider::DML) network_->lock_.lock();
   output_tensors_ = network_->session_.Run(
       {}, network_->inputs_cstr_.data(), &input_tensor, 1,
       network_->outputs_cstr_.data(), network_->outputs_cstr_.size());
+  if (network_->provider_ == OnnxProvider::DML) network_->lock_.unlock();
 }
 
 Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
@@ -185,6 +190,8 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   switch (provider) {
     case OnnxProvider::DML:
+      options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+      options.DisableMemPattern();
 #ifdef USE_DML
       Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(
           options, dict.GetOrDefault<int>("gpu", 0)));
@@ -219,7 +226,8 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& dict,
                file.onnx_model().model().size(), GetOptions(provider, dict)),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
-      batch_size_(batch_size) {
+      batch_size_(batch_size),
+      provider_(provider) {
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
     throw Exception("NN doesn't have input planes defined.");
