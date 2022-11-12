@@ -2090,8 +2090,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto d = computation.GetDVal(idx_in_computation);
 
   if (true) {
-    auto w = (1 + q - d) / 2;
-    auto l = (1 - q - d) / 2;
+    auto w = (1 + v - d) / 2;
+    auto l = (1 - v - d) / 2;
     if (w > 0 && d > 0 && l > 0) {
       auto a = FastLog(1 / l - 1);
       auto b = FastLog(1 / w - 1);
