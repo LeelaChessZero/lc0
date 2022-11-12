@@ -2088,8 +2088,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
-
-  if (true) {
+  auto wdl_rescale_ratio = params_.GetWDLRescaleRatio();
+  auto wdl_rescale_diff = params_.GetWDLRescaleDiff();
+  if (wdl_rescale_ratio != 1.0f || wdl_rescale_diff != 0) {
     auto w = (1 + v - d) / 2;
     auto l = (1 - v - d) / 2;
     if (w > 0 && d > 0 && l > 0) {
@@ -2097,12 +2098,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
       auto b = FastLog(1 / w - 1);
       auto s = 2 / (a + b);
       auto mu = (a - b) / (a + b);
-      auto var_ratio = 2.0f;
-      auto acc_diff = 1.0f;
-      if (search_->played_history_.Last().IsBlackToMove() ^
-          (node_to_process->depth & 1)) {acc_diff = -acc_diff;}
-      auto s_new = s * std::sqrt(var_ratio);
-      auto mu_new = mu + std::pow(s * 3.14159265, 2) / 3 * acc_diff;
+      auto sign = (search_->played_history_.Last().IsBlackToMove() ^
+          (node_to_process->depth & 1)) ? 1.0f : -1.0f;
+      auto s_new = s * std::sqrt(wdl_rescale_ratio);
+      auto mu_new = mu + sign * std::pow(s * 3.14159265, 2) / 3 *
+                     wdl_rescale_diff;
       auto w_new = 1 / (1 + FastExp((mu_new - 1) / s));
       auto l_new = 1 / (1 + FastExp((mu_new + 1) / s));
       auto d_new = 1.0f - w_new - l_new;
