@@ -2086,8 +2086,36 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  node_to_process->v = -computation.GetQVal(idx_in_computation);
-  node_to_process->d = computation.GetDVal(idx_in_computation);
+  auto v = -computation.GetQVal(idx_in_computation);
+  auto d = computation.GetDVal(idx_in_computation);
+
+  if (true) {
+    auto w = (1 + q - d) / 2;
+    auto l = (1 - q - d) / 2;
+    if (w > 0 && d > 0 && l > 0) {
+      auto a = FastLog(1 / l - 1);
+      auto b = FastLog(1 / w - 1);
+      auto s = 2 / (a + b);
+      auto mu = (a - b) / (a + b);
+      auto var_ratio = 2.0f;
+      auto acc_diff = 1.0f;
+      if (search_->played_history_.Last().IsBlackToMove() ^
+          (node_to_process->depth & 1)) {acc_diff = -acc_diff;}
+      auto s_new = s * std::sqrt(var_ratio);
+      auto mu_new = mu + std::pow(s * std::numbers::pi, 2) / 3 * acc_diff;
+      auto w_new = 1 / (1 + FastExp((mu_new - 1) / s));
+      auto l_new = 1 / (1 + FastExp((mu_new + 1) / s));
+      auto d_new = 1.0f - w_new - l_new;
+      node_to_process->v = w_new - l_new;
+      node_to_process->d = d_new;
+    } else {
+      node_to_process->v = v;
+      node_to_process->d = d;
+    }
+  } else {
+    node_to_process->v = v;
+    node_to_process->d = d;
+  }
   node_to_process->m = computation.GetMVal(idx_in_computation);
   // ...and secondly, the policy data.
   // Calculate maximum first.
