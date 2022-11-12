@@ -269,10 +269,10 @@ const OptionId SearchParams::kDrawScoreWhiteId{
 const OptionId SearchParams::kDrawScoreBlackId{
     "draw-score-black", "DrawScoreBlack",
     "Adjustment, added to a draw score of a black player."};
-const OptionId SearchParams::kWDLRescaleRatio{
+const OptionId SearchParams::kWDLRescaleRatioId{
     "wdl-rescale-ratio", "WDLRescaleRatio",
     "Rescales the logistic WDL variance by the given ratio."};
-const OptionId SearchParams::kWDLRescaleDiff{
+const OptionId SearchParams::kWDLRescaleDiffId{
     "wdl-rescale-ratio", "WDLRescaleRatio",
     "Shifts the logistic WDL mean by diff in white's favor."};
 const OptionId SearchParams::kNpsLimitId{
