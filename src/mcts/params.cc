@@ -273,7 +273,7 @@ const OptionId SearchParams::kWDLRescaleRatioId{
     "wdl-rescale-ratio", "WDLRescaleRatio",
     "Rescales the logistic WDL variance by the given ratio."};
 const OptionId SearchParams::kWDLRescaleDiffId{
-    "wdl-rescale-ratio", "WDLRescaleRatio",
+    "wdl-rescale-diff", "WDLRescaleDiff",
     "Shifts the logistic WDL mean by diff in white's favor."};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
