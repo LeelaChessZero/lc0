@@ -2102,7 +2102,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
       if (search_->played_history_.Last().IsBlackToMove() ^
           (node_to_process->depth & 1)) {acc_diff = -acc_diff;}
       auto s_new = s * std::sqrt(var_ratio);
-      auto mu_new = mu + std::pow(s * std::numbers::pi, 2) / 3 * acc_diff;
+      auto mu_new = mu + std::pow(s * 3.14159265, 2) / 3 * acc_diff;
       auto w_new = 1 / (1 + FastExp((mu_new - 1) / s));
       auto l_new = 1 / (1 + FastExp((mu_new + 1) / s));
       auto d_new = 1.0f - w_new - l_new;
