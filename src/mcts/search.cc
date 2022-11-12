@@ -2090,7 +2090,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto d = computation.GetDVal(idx_in_computation);
   auto wdl_rescale_ratio = params_.GetWDLRescaleRatio();
   auto wdl_rescale_diff = params_.GetWDLRescaleDiff();
-  if (wdl_rescale_ratio != 1.0f || wdl_rescale_diff != 0) {
+  if (wdl_rescale_ratio != 1.0f || wdl_rescale_diff != 0.0f) {
     auto w = (1 + v - d) / 2;
     auto l = (1 - v - d) / 2;
     if (w > 0 && d > 0 && l > 0) {
@@ -2103,8 +2103,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
       auto s_new = s * std::sqrt(wdl_rescale_ratio);
       auto mu_new = mu + sign * std::pow(s * 3.14159265, 2) / 3 *
                      wdl_rescale_diff;
-      auto w_new = 1 / (1 + FastExp((mu_new - 1) / s));
-      auto l_new = 1 / (1 + FastExp((mu_new + 1) / s));
+      auto w_new = 1 / (1 + FastExp((1 - mu_new) / s));
+      auto l_new = 1 / (1 + FastExp((1 + mu_new) / s));
       auto d_new = 1.0f - w_new - l_new;
       node_to_process->v = w_new - l_new;
       node_to_process->d = d_new;
