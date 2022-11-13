@@ -105,6 +105,8 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return pblczero::TensorProto::FLOAT;
+    case WeightsToOnnxConverterOptions::DataType::kFloat16:
+      return pblczero::TensorProto::FLOAT16;
     default:
       return pblczero::TensorProto::UNDEFINED;
   }
@@ -116,6 +118,8 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
+    case WeightsToOnnxConverterOptions::DataType::kFloat16:
+      return std::make_unique<Float16OnnxWeightsAdapter>(weights, dims, order);
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
