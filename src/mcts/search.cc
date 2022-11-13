@@ -2103,8 +2103,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
       auto s_new = s * std::sqrt(wdl_rescale_ratio);
       auto mu_new = mu + sign * std::pow(s * 3.14159265, 2) / 3 *
                      wdl_rescale_diff;
-      auto w_new = 1 / (1 + FastExp((1 - mu_new) / s));
-      auto l_new = 1 / (1 + FastExp((1 + mu_new) / s));
+      auto w_new = 1 / (1 + FastExp((1 - mu_new) / s_new));
+      auto l_new = 1 / (1 + FastExp((1 + mu_new) / s_new));
       auto d_new = 1.0f - w_new - l_new;
       node_to_process->v = w_new - l_new;
       node_to_process->d = d_new;
