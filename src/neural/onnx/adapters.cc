@@ -27,6 +27,7 @@ Program grant you additional permission to convey the resulting work.
 
 #include "neural/onnx/adapters.h"
 
+#include "utils/fp16_utils.h"
 #include "utils/transpose.h"
 
 namespace lczero {
@@ -52,6 +53,32 @@ std::string FloatOnnxWeightsAdapter::GetRawData() const {
   } else {
     std::vector<float> dst(weights_.size());
     TransposeTensor(dims_, order_, weights_, &dst[0]);
+    return {reinterpret_cast<const char*>(dst.data()),
+            reinterpret_cast<const char*>(dst.data() + dst.size())};
+  }
+}
+
+Float16OnnxWeightsAdapter::Float16OnnxWeightsAdapter(
+    const std::vector<float>& weights, std::initializer_list<int> dims,
+    std::initializer_list<int> order)
+    : weights_(weights), dims_(dims), order_(order) {}
+
+pblczero::TensorProto::DataType Float16OnnxWeightsAdapter::GetDataType() const {
+  return pblczero::TensorProto::FLOAT16;
+}
+
+std::vector<int> Float16OnnxWeightsAdapter::GetDimensions() const {
+  return dims_;
+}
+std::string Float16OnnxWeightsAdapter::GetRawData() const {
+  std::vector<uint16_t> fp16(weights_.size());
+  std::transform(weights_.begin(), weights_.end(), fp16.begin(), FP32toFP16);
+  if (order_.empty()) {
+    return {reinterpret_cast<const char*>(fp16.data()),
+            reinterpret_cast<const char*>(fp16.data() + fp16.size())};
+  } else {
+    std::vector<uint16_t> dst(fp16.size());
+    TransposeTensor(dims_, order_, fp16, &dst[0]);
     return {reinterpret_cast<const char*>(dst.data()),
             reinterpret_cast<const char*>(dst.data() + dst.size())};
   }
