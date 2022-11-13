@@ -48,6 +48,8 @@ namespace lczero {
 namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
+unsigned long long int number_of_skipped_playouts = 0; // Used to calculate the beta_prior in move selection
+signed int this_edge_has_higher_expected_q_than_the_most_visited_child = -1; // explore this child of root more than PUCT would have done if a smart-pruning was rejected because this child was promising.
 
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
@@ -530,9 +532,17 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
   if (total_playouts_ + initial_visits_ == 0) return;
-
+  hints->UpdateIndexOfBestEdge(-1);
   if (!stop_.load(std::memory_order_acquire)) {
-    if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
+    if(stopper_->ShouldStop(stats, hints)){
+      number_of_skipped_playouts = hints->GetEstimatedRemainingPlayouts();
+      FireStopInternal();
+    } else {
+      // If ShouldStop was rejected due to the most visted move not having the best expected Q, then improve search by boosting exploration of edge of root with the highest expected Q.
+      if(hints->GetIndexOfBestEdge() > -1){
+	this_edge_has_higher_expected_q_than_the_most_visited_child = hints->GetIndexOfBestEdge();
+      }
+    }
   }
 
   // If we are the first to see that stop is needed.
@@ -546,6 +556,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
+    this_edge_has_higher_expected_q_than_the_most_visited_child = -1;
   }
 }
 
@@ -636,6 +647,9 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   if (parent->GetN() == 0) return {};
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
+  const bool select_move_by_q = params_.GetQBasedMoveSelection();
+  const float beta_prior = pow(parent->GetN() + number_of_skipped_playouts, params_.GetMoveSelectionVisitsScalingPower());
+  number_of_skipped_playouts = 0; // if search runs out of time, this is the correct number, and if search is stopped early this value will be overwritten.
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
@@ -656,7 +670,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                           : edges.end();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [draw_score](const auto& a, const auto& b) {
+      [draw_score, beta_prior, select_move_by_q](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
@@ -701,6 +715,27 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
+
+	  if(select_move_by_q){
+	    // the beta_prior is constant and equals:
+	    // pow(parent->GetN(), params_.GetMoveSelectionVisitsScalingPower());
+	    float alpha_prior = 0.0f;
+
+	    float winrate_a = (a.GetQ(0.0f, draw_score) + 1) * 0.5;
+	    int visits_a = a.GetN();
+	    float alpha_a = winrate_a * visits_a + alpha_prior;
+	    float beta_a = visits_a - alpha_a + beta_prior;
+	    float E_a = alpha_a / (alpha_a + beta_a);
+
+	    float winrate_b = (b.GetQ(0.0f, draw_score) + 1) * 0.5;
+	    int visits_b = b.GetN();
+	    float alpha_b = winrate_b * visits_b + alpha_prior;
+	    float beta_b = visits_b - alpha_b + beta_prior;
+	    float E_b = alpha_b / (alpha_b + beta_b);
+
+	    if (E_a != E_b) return(E_a > E_b);
+	  }
+
           // Prefer largest playouts then eval then prior.
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
           // Default doesn't matter here so long as they are the same as either
@@ -843,8 +878,11 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->batches_since_movestart = total_batches_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
+  stats->q.clear();
   stats->win_found = false;
   stats->num_losing_edges = 0;
+  stats->move_selection_visits_scaling_power = params_.GetMoveSelectionVisitsScalingPower();
+  stats->override_PUCT_node_budget_threshold = params_.GetOverridePUCTNodeBudgetThreshold();
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
 
   // If root node hasn't finished first visit, none of this code is safe.
@@ -863,6 +901,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       const auto q = edge.GetQ(fpu, draw_score);
       const auto m = m_evaluator.GetM(edge, q);
       const auto q_plus_m = q + m;
+      stats->q.push_back(q);
       stats->edge_n.push_back(n);
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
         stats->win_found = true;
@@ -1633,12 +1672,13 @@ void SearchWorker::PickNodesToExtendTask(
             cache_filled_idx++;
           }
           if (is_root_node) {
-            // If there's no chance to catch up to the current best node with
+	    // If params_.GetQBasedMoveSelection() is false and 
+            // there's no chance to catch up to the current best node with
             // remaining playouts, don't consider it.
             // best_move_node_ could have changed since best_node_n was
             // retrieved. To ensure we have at least one node to expand, always
             // include current best node.
-            if (cur_iters[idx] != search_->current_best_edge_ &&
+            if (!params_.GetQBasedMoveSelection() && cur_iters[idx] != search_->current_best_edge_ &&
                 latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
                     best_node_n - cur_iters[idx].GetN()) {
               continue;
@@ -1663,6 +1703,7 @@ void SearchWorker::PickNodesToExtendTask(
             second_best = score;
             second_best_edge = cur_iters[idx];
           }
+
           if (can_exit) break;
           if (nstarted == 0) {
             // One more loop will get 2 unvisited nodes, which is sufficient to
@@ -1671,8 +1712,19 @@ void SearchWorker::PickNodesToExtendTask(
             can_exit = true;
           }
         }
+
+	// Hack the scores if the child with highest expected Q does not have most visits, ie boost exploration of that child.
+	if(is_root_node && params_.GetQBasedMoveSelection() &&
+	   this_edge_has_higher_expected_q_than_the_most_visited_child > -1){
+	  if(this_edge_has_higher_expected_q_than_the_most_visited_child != best_idx){
+	    best_idx = this_edge_has_higher_expected_q_than_the_most_visited_child;
+	    best_edge = cur_iters[best_idx];
+	  }
+	}
+
         int new_visits = 0;
-        if (second_best_edge) {
+	// easiest is to give the promising node all visits
+        if (second_best_edge && (this_edge_has_higher_expected_q_than_the_most_visited_child == -1)) {
           int estimated_visits_to_change_best = std::numeric_limits<int>::max();
           if (best_without_u < second_best) {
             const auto n1 = current_nstarted[best_idx] + 1;

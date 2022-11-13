@@ -33,6 +33,13 @@ namespace lczero {
 
 StoppersHints::StoppersHints() { Reset(); }
 
+void StoppersHints::UpdateIndexOfBestEdge(int64_t v) {
+  index_of_best_edge_ = v;
+}
+int64_t StoppersHints::GetIndexOfBestEdge() const {
+  return index_of_best_edge_;
+}
+
 void StoppersHints::UpdateEstimatedRemainingTimeMs(int64_t v) {
   if (v < remaining_time_ms_) remaining_time_ms_ = v;
 }

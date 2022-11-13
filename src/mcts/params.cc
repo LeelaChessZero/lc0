@@ -316,6 +316,21 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
 const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
     "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
     "Power to apply to the interpolation between 1 and max to make it curved."};
+const OptionId SearchParams::kQBasedMoveSelectionId{
+    "q-based-move-selection", "QBasedMoveSelection",
+    "Play the move with best expected Q."};
+const OptionId SearchParams::kOverridePUCTNodeBudgetThresholdId{
+    "override-puct-node-budget-threshold", "OverridePUCTNodeBudgetThreshold",
+    "When the proportion of evaluated nodes over the nodes budgeted for "
+    "the move is above this threshold, and there is a move with higher "
+    "Expected Q than the most visited move, give the promising move all "
+    "visits as long as its Expected Q does not fall below the Expected Q "
+    "of the most visisted move. Must useful in combination with "
+    "QBasedMoveSelection but can be used with n-based move selection too."};
+const OptionId SearchParams::kMoveSelectionVisitsScalingPowerId{
+    "move-selection-visits-scaling-power", "MoveSelectionVisitsScalingPower",
+    "Power to apply to the total number of visits to get the beta prior used "
+    "in move selection."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -350,6 +365,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.359f;
+  options->Add<BoolOption>(kQBasedMoveSelectionId) = false;
+  options->Add<FloatOption>(kOverridePUCTNodeBudgetThresholdId, 0.0f, 1.0f) =
+      1.0;
+  options->Add<FloatOption>(kMoveSelectionVisitsScalingPowerId, 0.01, 100) =
+      0.4;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 917;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 100000000) = 80000;
   options->Add<IntOption>(kMaxCollisionVisitsScalingStartId, 1, 100000) = 28;
@@ -481,6 +501,12 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
       kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
+      kQBasedMoveSelection(
+          options.Get<bool>(kQBasedMoveSelectionId)),
+      kOverridePUCTNodeBudgetThreshold(
+	  options.Get<float>(kOverridePUCTNodeBudgetThresholdId)),
+      kMoveSelectionVisitsScalingPower(
+          options.Get<float>(kMoveSelectionVisitsScalingPowerId)),
       kMaxCollisionVisitsScalingStart(
           options.Get<int>(kMaxCollisionVisitsScalingStartId)),
       kMaxCollisionVisitsScalingEnd(

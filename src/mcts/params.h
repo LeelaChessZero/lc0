@@ -129,6 +129,15 @@ class SearchParams {
   }
   int GetIdlingMinimumWork() const { return kIdlingMinimumWork; }
   int GetThreadIdlingThreshold() const { return kThreadIdlingThreshold; }
+  float GetMoveSelectionVisitsScalingPower() const {
+    return kMoveSelectionVisitsScalingPower;
+  }
+  float GetOverridePUCTNodeBudgetThreshold() const {
+    return kOverridePUCTNodeBudgetThreshold;
+  }
+  bool GetQBasedMoveSelection() const {
+    return kQBasedMoveSelection;
+  }
   int GetMaxCollisionVisitsScalingStart() const {
     return kMaxCollisionVisitsScalingStart;
   }
@@ -201,8 +210,11 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
+  static const OptionId kMoveSelectionVisitsScalingPowerId;
+  static const OptionId kOverridePUCTNodeBudgetThresholdId;
+  static const OptionId kQBasedMoveSelectionId;
 
- private:
+private:
   const OptionsDict& options_;
   // Cached parameter values. Values have to be cached if either:
   // 1. Parameter is accessed often and has to be cached for performance
@@ -254,9 +266,13 @@ class SearchParams {
   const int kMinimumWorkPerTaskForProcessing;
   const int kIdlingMinimumWork;
   const int kThreadIdlingThreshold;
+  const bool kQBasedMoveSelection;
+  const float kOverridePUCTNodeBudgetThreshold;
+  const float kMoveSelectionVisitsScalingPower;
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
+
 };
 
 }  // namespace lczero

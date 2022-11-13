@@ -47,7 +47,10 @@ struct IterationStats {
   int64_t nodes_since_movestart = 0;
   int64_t batches_since_movestart = 0;
   int average_depth = 0;
+  float move_selection_visits_scaling_power = 0.0f;
+  float override_PUCT_node_budget_threshold = 0.0f;  
   std::vector<uint32_t> edge_n;
+  std::vector<float> q;
 
   // TODO: remove this in favor of time_usage_hint_=kImmediateMove when
   // smooth time manager is the default.
@@ -67,6 +70,8 @@ class StoppersHints {
  public:
   StoppersHints();
   void Reset();
+  void UpdateIndexOfBestEdge(int64_t v);
+  int64_t GetIndexOfBestEdge() const;
   void UpdateEstimatedRemainingTimeMs(int64_t v);
   int64_t GetEstimatedRemainingTimeMs() const;
   void UpdateEstimatedRemainingPlayouts(int64_t v);
@@ -75,6 +80,7 @@ class StoppersHints {
   std::optional<float> GetEstimatedNps() const;
 
  private:
+  int64_t index_of_best_edge_;
   int64_t remaining_time_ms_;
   int64_t remaining_playouts_;
   std::optional<float> estimated_nps_;
