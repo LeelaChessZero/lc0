@@ -59,7 +59,7 @@ class OnnxNetwork;
 template <typename DataType>
 class OnnxComputation : public NetworkComputation {
  public:
-  OnnxComputation(OnnxNetwork* network) : network_(network) {}
+  OnnxComputation(OnnxNetwork* network);
   void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override { return raw_input_.size(); }
   void ComputeBlocking() override;
@@ -69,12 +69,15 @@ class OnnxComputation : public NetworkComputation {
   float GetMVal(int sample) const override;
 
  private:
-  Ort::Value PrepareInput();
+  Ort::Value PrepareInputs(int start, int batch_size);
 
   OnnxNetwork* network_;
   std::vector<InputPlanes> raw_input_;
   std::vector<DataType> input_tensor_data_;
   std::vector<Ort::Value> output_tensors_;
+  std::vector<std::vector<DataType>> output_tensors_data_;
+  std::vector<size_t> output_tensors_step_;
+  static constexpr size_t max_batch_size = 1024;
 };
 
 class OnnxNetwork : public Network {
@@ -116,20 +119,43 @@ class OnnxNetwork : public Network {
 };
 
 template <typename DataType>
+OnnxComputation<DataType>::OnnxComputation(OnnxNetwork* network)
+    : network_(network) {
+  output_tensors_data_.resize(network_->outputs_.size());
+  output_tensors_step_.resize(network_->outputs_.size());
+  output_tensors_step_[network_->policy_head_] = 1858;
+  output_tensors_data_[network_->policy_head_] =
+      std::vector<DataType>(1858 * max_batch_size);
+  if (network_->wdl_head_ != -1) {
+    output_tensors_step_[network_->wdl_head_] = 3;
+    output_tensors_data_[network_->wdl_head_] =
+        std::vector<DataType>(3 * max_batch_size);
+  }
+  if (network_->value_head_ != -1) {
+    output_tensors_step_[network_->value_head_] = 1;
+    output_tensors_data_[network_->value_head_] =
+        std::vector<DataType>(max_batch_size);
+  }
+  if (network_->mlh_head_ != -1) {
+    output_tensors_step_[network_->mlh_head_] = 1;
+    output_tensors_data_[network_->mlh_head_] =
+        std::vector<DataType>(max_batch_size);
+  }
+}
+
+template <typename DataType>
 void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
   raw_input_.emplace_back(input);
-  size_t batch_size = network_->batch_size_;
-  if (raw_input_.size() > batch_size) {
-    throw Exception("NN input exceeds batch size of " +
-                    std::to_string(batch_size) + ".");
+  if (raw_input_.size() > max_batch_size) {
+    throw Exception("NN input exceeds max batch size of " +
+                    std::to_string(max_batch_size) + ".");
   }
 }
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
   if (network_->wdl_head_ != -1) {
-    const auto& data =
-        output_tensors_[network_->wdl_head_].GetTensorData<DataType>();
+    const auto& data = output_tensors_data_[network_->wdl_head_];
     if (std::is_same<Ort::Float16_t, DataType>::value) {
       return FP16toFP32(data[sample * 3 + 0]) -
              FP16toFP32(data[sample * 3 + 2]);
@@ -137,8 +163,7 @@ float OnnxComputation<DataType>::GetQVal(int sample) const {
       return data[sample * 3 + 0] - data[sample * 3 + 2];
     }
   } else {
-    const auto& data =
-        output_tensors_[network_->value_head_].GetTensorData<DataType>();
+    const auto& data = output_tensors_data_[network_->value_head_];
     if (std::is_same<Ort::Float16_t, DataType>::value) {
       return FP16toFP32(data[sample]);
     } else {
@@ -150,8 +175,7 @@ float OnnxComputation<DataType>::GetQVal(int sample) const {
 template <typename DataType>
 float OnnxComputation<DataType>::GetDVal(int sample) const {
   if (network_->wdl_head_ == -1) return 0.0f;
-  const auto& data =
-      output_tensors_[network_->wdl_head_].GetTensorData<DataType>();
+  const auto& data = output_tensors_data_[network_->wdl_head_];
   if (std::is_same<Ort::Float16_t, DataType>::value) {
     return FP16toFP32(data[sample * 3 + 1]);
   } else {
@@ -161,8 +185,7 @@ float OnnxComputation<DataType>::GetDVal(int sample) const {
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetPVal(int sample, int move_id) const {
-  const auto& data =
-      output_tensors_[network_->policy_head_].GetTensorData<DataType>();
+  const auto& data = output_tensors_data_[network_->policy_head_];
   if (std::is_same<Ort::Float16_t, DataType>::value) {
     return FP16toFP32(data[sample * 1858 + move_id]);
   } else {
@@ -173,8 +196,7 @@ float OnnxComputation<DataType>::GetPVal(int sample, int move_id) const {
 template <typename DataType>
 float OnnxComputation<DataType>::GetMVal(int sample) const {
   if (network_->mlh_head_ == -1) return 0.0f;
-  const auto& data =
-      output_tensors_[network_->mlh_head_].GetTensorData<DataType>();
+  const auto& data = output_tensors_data_[network_->mlh_head_];
   if (std::is_same<Ort::Float16_t, DataType>::value) {
     return FP16toFP32(data[sample]);
   } else {
@@ -183,15 +205,13 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
 }
 
 template <typename DataType>
-Ort::Value OnnxComputation<DataType>::PrepareInput() {
+Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   input_tensor_data_.clear();
-  int batch_size = network_->batch_size_;
-  if (batch_size < 0) batch_size = raw_input_.size();
   input_tensor_data_.resize(batch_size * kInputPlanes * 8 * 8);
   auto iter = input_tensor_data_.data();
-  for (const auto& sample : raw_input_) {
-    assert(sample.size() == kInputPlanes);
-    for (const auto& plane : sample) {
+  int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
+  for (int i = start; i < end; i++) {
+    for (const auto& plane : raw_input_[i]) {
       for (auto bit : IterateBits(plane.mask)) {
         if (std::is_same<Ort::Float16_t, DataType>::value) {
           *(iter + bit) = FP32toFP16(plane.value);
@@ -202,15 +222,25 @@ Ort::Value OnnxComputation<DataType>::PrepareInput() {
       iter += 64;
     }
   }
-  for (int i = raw_input_.size() * kInputPlanes * 64;
-       i < batch_size * kInputPlanes * 64; i++) {
-    *iter++ = 0;
+  for (int i = end; i < start + batch_size; i++) {
+    for (int j = 0; j < kInputPlanes * 64; j++) {
+      *iter++ = 0;
+    }
+  }
+
+  auto memory_info =
+      Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+
+  output_tensors_.clear();
+  for (size_t i = 0; i < output_tensors_step_.size(); i++) {
+    int size = output_tensors_step_[i];
+    int64_t dims[] = {batch_size, size};
+    output_tensors_.emplace_back(Ort::Value::CreateTensor<DataType>(
+        memory_info, output_tensors_data_[i].data() + start * size,
+        size * batch_size, dims, 2));
   }
 
   int64_t dims[] = {batch_size, kInputPlanes, 8, 8};
-  auto memory_info =
-      Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-  // Hopefully having dims in a temporary variable is fine.
   return Ort::Value::CreateTensor<DataType>(memory_info,
                                             input_tensor_data_.data(),
                                             input_tensor_data_.size(), dims, 4);
@@ -218,12 +248,16 @@ Ort::Value OnnxComputation<DataType>::PrepareInput() {
 
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
-  auto input_tensor = PrepareInput();
-  if (network_->provider_ == OnnxProvider::DML) network_->lock_.lock();
-  output_tensors_ = network_->session_.Run(
-      {}, network_->inputs_cstr_.data(), &input_tensor, 1,
-      network_->outputs_cstr_.data(), network_->outputs_cstr_.size());
-  if (network_->provider_ == OnnxProvider::DML) network_->lock_.unlock();
+  int batch_size = network_->batch_size_;
+  if (batch_size < 0) batch_size = raw_input_.size();
+  for (size_t i = 0; i < raw_input_.size(); i += batch_size) {
+    auto input_tensor = PrepareInputs(i, batch_size);
+    if (network_->provider_ == OnnxProvider::DML) network_->lock_.lock();
+    network_->session_.Run({}, network_->inputs_cstr_.data(), &input_tensor, 1,
+                           network_->outputs_cstr_.data(),
+                           output_tensors_.data(), output_tensors_.size());
+    if (network_->provider_ == OnnxProvider::DML) network_->lock_.unlock();
+  }
 }
 
 Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
