@@ -2102,7 +2102,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
       bool root_stm = params_.GetPerspective() == "auto" ? true :
             (params_.GetPerspective() == "white" ^
              search_->played_history_.Last().IsBlackToMove());
-      auto sign = (root_stm ^ (node_to_process->depth & 1)) ? -1.0f : 1.0f;
+      auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
       auto s_new = s * std::sqrt(wdl_rescale_ratio);
       auto mu_new = mu + sign * std::pow(s * 3.14159265, 2) / 3 *
                      wdl_rescale_diff;
