@@ -87,8 +87,8 @@ inline float FastExp(const float a) { return FastExp2(1.442695040f * a); }
 
 // Safeguarded fast logistic function, based on FastExp().
 inline float FastLogistic(const float a) {
-  if (a > 20.0f) {return 1.0f};
-  if (a < -20.0f) {return 0.0f};
+  if (a > 20.0f) {return 1.0f;}
+  if (a < -20.0f) {return 0.0f;}
   return 1.0f / (1.0f + FastExp(-a));
 }
 
