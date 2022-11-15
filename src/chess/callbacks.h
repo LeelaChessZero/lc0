@@ -106,8 +106,10 @@ struct GameInfo {
   std::string training_filename;
   // Initial fen of the game.
   std::string initial_fen;
-  // Game moves.
+  // Played game moves.
   std::vector<Move> moves;
+  // Best game moves.
+  std::vector<Move> best_moves;
   // Ply within moves that the game actually started.
   int play_start_ply;
   // Index of the game in the tournament (0-based).

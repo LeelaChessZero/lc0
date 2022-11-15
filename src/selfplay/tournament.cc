@@ -362,6 +362,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.game_id = game_number;
     game_info.initial_fen = opening.start_fen;
     game_info.moves = game.GetMoves();
+    game_info.best_moves = game.GetBestMoves();
     game_info.play_start_ply = opening.moves.size();
     if (!enable_resign) {
       game_info.min_false_positive_threshold =
