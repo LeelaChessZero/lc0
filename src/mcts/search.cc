@@ -2099,7 +2099,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
       auto s = 2 / (a + b);
       auto mu = (a - b) / (a + b);
       // Check whether root moves are from the set perspective.
-      auto root_stm = (params_.GetPerspective() == "auto" ||
+      bool root_stm = params_.GetPerspective() == "auto" ? true :
             (params_.GetPerspective() == "black" ^
              search_->played_history_.Last().IsBlackToMove()));
       auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
