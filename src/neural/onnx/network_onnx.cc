@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -98,12 +99,24 @@ class OnnxNetwork : public Network {
   int value_head_ = -1;
   int mlh_head_ = -1;
   NetworkCapabilities capabilities_;
+  bool tf_model_;
 };
 
 float OnnxComputation::GetQVal(int sample) const {
   if (network_->wdl_head_ != -1) {
     const auto& data =
         output_tensors_[network_->wdl_head_].GetTensorData<float>();
+    if (network_->tf_model_) {
+      float w = data[sample * 3 + 0];
+      float d = data[sample * 3 + 1];
+      float l = data[sample * 3 + 2];
+      float m = std::max({w, d, l});
+      w = std::exp(w - m);
+      d = std::exp(d - m);
+      l = std::exp(l - m);
+      float sum = w + d + l;
+      return (w - l) / sum;
+    }
     return data[sample * 3 + 0] - data[sample * 3 + 2];
   } else {
     const auto& data =
@@ -115,6 +128,17 @@ float OnnxComputation::GetDVal(int sample) const {
   if (network_->wdl_head_ == -1) return 0.0f;
   const auto& data =
       output_tensors_[network_->wdl_head_].GetTensorData<float>();
+  if (network_->tf_model_) {
+    float w = data[sample * 3 + 0];
+    float d = data[sample * 3 + 1];
+    float l = data[sample * 3 + 2];
+    float m = std::max({w, d, l});
+    w = std::exp(w - m);
+    d = std::exp(d - m);
+    l = std::exp(l - m);
+    float sum = w + d + l;
+    return d / sum;
+  }
   return data[sample * 3 + 1];
 }
 float OnnxComputation::GetPVal(int sample, int move_id) const {
@@ -135,10 +159,15 @@ Ort::Value OnnxComputation::PrepareInput() {
   auto iter = input_tensor_data_.data();
   for (const auto& sample : raw_input_) {
     assert(sample.size() == kInputPlanes);
+    int idx = 0;
     for (const auto& plane : sample) {
       for (auto bit : IterateBits(plane.mask)) {
-        *(iter + bit) = plane.value;
+        if (idx == 109 && network_->tf_model_)
+          *(iter + bit) = plane.value / 99;
+        else
+          *(iter + bit) = plane.value;
       }
+      idx++;
       iter += 64;
     }
   }
@@ -190,7 +219,8 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& dict,
       session_(onnx_env_, file.onnx_model().model().data(),
                file.onnx_model().model().size(), GetOptions(provider, dict)),
       capabilities_{file.format().network_format().input(),
-                    file.format().network_format().moves_left()} {
+                    file.format().network_format().moves_left()},
+      tf_model_(dict.GetOrDefault<bool>("tf", false)) {
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
     throw Exception("NN doesn't have input planes defined.");
