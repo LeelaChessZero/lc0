@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -39,14 +39,18 @@ class SimpleTimeManager : public TimeManager {
         plypct_(params.GetOrDefault<float>("ply-pct", 0.0454f)),
         timefactor_(params.GetOrDefault<float>("time-factor", 33.4f)),
         opening_bonus_(params.GetOrDefault<float>("opening-bonus", 82.5f)) {
-    if (basepct_ <= 0.0f || basepct_ > 100.0f)
+    if (basepct_ <= 0.0f || basepct_ > 100.0f) {
       throw Exception("base-pct value to be in range [0.0, 100.0]");
-    if (plypct_ < 0.0f || plypct_ > 1.0f)
+    }
+    if (plypct_ < 0.0f || plypct_ > 1.0f) {
       throw Exception("ply-pct value to be in range [0.0, 1.0]");
-    if (timefactor_ < 0.0f || timefactor_ > 100.0f)
+    }
+    if (timefactor_ < 0.0f || timefactor_ > 100.0f) {
       throw Exception("time-factor value to be in range [0.0, 100.0]");
-    if (opening_bonus_ < 0.0f || opening_bonus_ > 1000.0f)
+    }
+    if (opening_bonus_ < 0.0f || opening_bonus_ > 1000.0f) {
       throw Exception("opening-bonus value to be in range [0.0, 1000.0]");
+    }
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
