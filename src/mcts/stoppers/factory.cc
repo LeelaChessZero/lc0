@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2019 The LCZero Authors
+  Copyright (C) 2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,8 +31,8 @@
 
 #include "factory.h"
 #include "mcts/stoppers/alphazero.h"
-#include "mcts/stoppers/simple.h"
 #include "mcts/stoppers/legacy.h"
+#include "mcts/stoppers/simple.h"
 #include "mcts/stoppers/smooth.h"
 #include "mcts/stoppers/stoppers.h"
 #include "utils/exception.h"
