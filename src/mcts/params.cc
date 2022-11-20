@@ -385,7 +385,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0345f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.0027f;
+  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.00f;
   options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftScaledFactorId, -2.0f, 2.0f) = 1.6521f;
   options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) =
