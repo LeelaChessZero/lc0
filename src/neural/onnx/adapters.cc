@@ -58,18 +58,10 @@ std::string FloatOnnxWeightsAdapter::GetRawData() const {
   }
 }
 
-Float16OnnxWeightsAdapter::Float16OnnxWeightsAdapter(
-    const std::vector<float>& weights, std::initializer_list<int> dims,
-    std::initializer_list<int> order)
-    : weights_(weights), dims_(dims), order_(order) {}
-
 pblczero::TensorProto::DataType Float16OnnxWeightsAdapter::GetDataType() const {
   return pblczero::TensorProto::FLOAT16;
 }
 
-std::vector<int> Float16OnnxWeightsAdapter::GetDimensions() const {
-  return dims_;
-}
 std::string Float16OnnxWeightsAdapter::GetRawData() const {
   std::vector<uint16_t> fp16(weights_.size());
   std::transform(weights_.begin(), weights_.end(), fp16.begin(), FP32toFP16);
