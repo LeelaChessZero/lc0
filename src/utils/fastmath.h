@@ -109,6 +109,11 @@ inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
+  }
+}
+
+inline void WDLInvertRescale() {
+
 }
 
 inline float FastSign(const float a) {
