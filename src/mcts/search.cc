@@ -2088,8 +2088,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
-  auto wdl_rescale_ratio = ;
-  auto wdl_rescale_diff = ;
   // Check whether root moves are from the set perspective.
   bool root_stm = params_.GetPerspective() == "auto" ? true :
             (params_.GetPerspective() == "white" ^
