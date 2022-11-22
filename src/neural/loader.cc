@@ -154,12 +154,15 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   FixOlderWeightsFile(&net);
 
   // Weights files with this signature are also compatible.
-  if (net_ver != 0x5c99973 && net_ver > lc0_ver)
+  if (net_ver != 0x5c99973 && net_ver > lc0_ver) {
     throw Exception("Invalid weight file: lc0 version >= " + min_version +
                     " required.");
+  }
 
-  if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
+  if (net.has_weights() &&
+      net.format().weights_encoding() != pblczero::Format::LINEAR16) {
     throw Exception("Invalid weight file: unsupported encoding.");
+  }
 
   return net;
 }
@@ -170,14 +173,17 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
-  if (buffer.size() < 2)
+  if (buffer.size() < 2) {
     throw Exception("Invalid weight file: too small.");
-  else if (buffer[0] == '1' && buffer[1] == '\n')
+  }
+  if (buffer[0] == '1' && buffer[1] == '\n') {
     throw Exception("Invalid weight file: no longer supported.");
-  else if (buffer[0] == '2' && buffer[1] == '\n')
+  }
+  if (buffer[0] == '2' && buffer[1] == '\n') {
     throw Exception(
         "Text format weights files are no longer supported. Use a command line "
         "tool to convert it to the new format.");
+  }
 
   return ParseWeightsProto(buffer);
 }

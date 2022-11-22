@@ -2,5 +2,5 @@
 Language: Cpp
 BasedOnStyle: Google
 DerivePointerAlignment: false
-...
-
+---
+Language: Proto

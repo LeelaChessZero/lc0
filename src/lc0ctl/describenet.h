@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,10 +24,18 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-#pragma once
+
+#include "proto/net.pb.h"
+
 namespace lczero {
 
-uint16_t FP32toFP16(float f32);
-float FP16toFP32(uint16_t f16);
+void DescribeNetworkCmd();
+void ShowNetworkGenericInfo(const pblczero::Net& weights);
+void ShowNetworkFormatInfo(const pblczero::Net& weights);
+void ShowNetworkTrainingInfo(const pblczero::Net& weights);
+void ShowNetworkWeightsInfo(const pblczero::Net& weights);
+void ShowNetworkOnnxInfo(const pblczero::Net& weights,
+                         bool show_onnx_internals);
+void ShowAllNetworkInfo(const pblczero::Net& weights);
 
-};  // namespace lczero
+}  // namespace lczero

@@ -1,5 +1,5 @@
 # This file is part of Leela Chess Zero.
-# Copyright (C) 2018-2020 The LCZero Authors
+# Copyright (C) 2018-2022 The LCZero Authors
 #
 # Leela Chess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -139,25 +139,37 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
+# ONNX protobufs.
+gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
+  arguments : [
+    '--proto_path=@CURRENT_SOURCE_DIR@/src',
+    '--cpp_out=@BUILD_DIR@',
+    '@INPUT@'])
+
+files += gen_proto_src.process('src/neural/onnx/onnx.proto',
+  preserve_path_from : meson.current_source_dir() + '/src/')
+
 #############################################################################
 ## Main files
 #############################################################################
 files += [
-  'src/engine.cc',
-  'src/version.cc',
   'src/benchmark/backendbench.cc',
   'src/benchmark/benchmark.cc',
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
+  'src/engine.cc',
+  'src/lc0ctl/describenet.cc',
+  'src/lc0ctl/leela2onnx.cc',
+  'src/lc0ctl/onnx2leela.cc',  
   'src/mcts/node.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
+  'src/mcts/stoppers/alphazero.cc',
   'src/mcts/stoppers/common.cc',
   'src/mcts/stoppers/factory.cc',
   'src/mcts/stoppers/legacy.cc',
-  'src/mcts/stoppers/alphazero.cc',
   'src/mcts/stoppers/smooth.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
@@ -173,6 +185,10 @@ files += [
   'src/neural/network_random.cc',
   'src/neural/network_record.cc',
   'src/neural/network_rr.cc',
+  'src/neural/network_trivial.cc',
+  'src/neural/onnx/adapters.cc',
+  'src/neural/onnx/builder.cc',
+  'src/neural/onnx/converter.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',
@@ -183,6 +199,7 @@ files += [
   'src/utils/commandline.cc',
   'src/utils/configfile.cc',
   'src/utils/esc_codes.cc',
+  'src/utils/files.cc',
   'src/utils/histogram.cc',
   'src/utils/logging.cc',
   'src/utils/numa.cc',
@@ -191,6 +208,8 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
+  'src/utils/fp16_utils.cc',
+  'src/version.cc',
 ]
 includes += include_directories('src')
 
@@ -287,7 +306,7 @@ if get_option('build_backends')
 
     endif
 
-    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep'])
+    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep']).as_system()
 
     ispc = find_program('ispc', required: false)
     ispc_arch = 'x86-64'
@@ -357,6 +376,7 @@ if get_option('build_backends')
 
     if get_option('ispc') and ispc.found()
       files += iscp_gen.process('src/neural/blas/winograd_transform.ispc')
+      files += iscp_gen.process('src/neural/shared/activation.ispc')
       add_project_arguments('-DUSE_ISPC', language : 'cpp')
     endif
 
@@ -418,23 +438,9 @@ if get_option('build_backends')
   nvcc = find_program('nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
                       required: false)
 
-  #.cc files
-  cuda_files = [
-	 'src/neural/cuda/layers.cc',
-  ]
-
-  # .cu files compiled without any specific sm version
-  cuda_files_nvcc_common = [
-    'src/neural/cuda/common_kernels.cu',
-  ]
-
-  # .cu files compiled with sm_70 (volta+). Only used by cudnn-fp16
-  cuda_files_nvcc_fp16 = [
-    'src/neural/cuda/fp16_kernels.cu',
-  ]
-
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dart]
+    cuda_files = ['src/neural/cuda/layers.cc']
     if get_option('cudnn') and cu_dnn.found()
       deps += cu_dnn
       cuda_files += 'src/neural/cuda/network_cudnn.cc'
@@ -450,7 +456,7 @@ if get_option('build_backends')
     endforeach
     includes += include_directories('src/neural/cuda/')
 
-    cuda_arguments = ['@EXTRA_ARGS@', '-c', '@INPUT@', '-o', '@OUTPUT@',
+    cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
@@ -481,12 +487,15 @@ if get_option('build_backends')
     else
       outputname = '@BASENAME@.o'
     endif
-    cuda_gen = generator(nvcc,
-        output: outputname,
-        arguments: cuda_arguments,
-      )
 	 files += cuda_files
-    files += cuda_gen.process(cuda_files_nvcc_common, extra_args: nvcc_extra_args)
+    files += custom_target('cuda fp32 code',
+      input : 'src/neural/cuda/common_kernels.cu',
+      output : outputname,
+      depend_files: 'src/neural/cuda/winograd_helper.inc',
+      command : [nvcc, nvcc_extra_args, cuda_arguments]
+    )
+
+    # Handling of fp16 cuda code.
     nvcc_arch = '-arch=compute_70'
     nvcc_sm_list = ['sm_80', 'sm_75', 'sm_86', 'sm_70']
     if host_machine.system() != 'windows'
@@ -509,7 +518,12 @@ if get_option('build_backends')
         endif
       endforeach
     endif
-    files += cuda_gen.process(cuda_files_nvcc_fp16, extra_args: nvcc_extra_args)
+    files += custom_target('cuda fp16 code',
+      input : 'src/neural/cuda/fp16_kernels.cu',
+      output : outputname,
+      depend_files: 'src/neural/cuda/winograd_helper.inc',
+      command : [nvcc, nvcc_extra_args, cuda_arguments]
+    )
     has_backends = true
   endif
 
@@ -526,7 +540,6 @@ if get_option('build_backends')
       'src/neural/dx/network_dx.cc',
       'src/neural/dx/shader_wrapper.cc',
       'src/neural/dx/layers_dx.cc',
-      'src/neural/dx/fp16_utils.cc',
     ]
     files += dx_files
     deps += [dx_d3d12, dx_dxgi]
@@ -550,7 +563,7 @@ if get_option('build_backends')
   ## ONNX
   ## ~~~~~~~~~~
   if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
-    onnx_lib = cc.find_library('libonnxruntime',
+    onnx_lib = cc.find_library('onnxruntime',
                                dirs: get_option('onnx_libdir'),
                                required: true)
     includes += include_directories(get_option('onnx_include'), is_system: true)
@@ -559,25 +572,37 @@ if get_option('build_backends')
                   args: '-I' + get_option('onnx_include'))
     deps += [onnx_lib]
 
-
-    gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
-      arguments : [
-        '--proto_path=@CURRENT_SOURCE_DIR@/src',
-        '--cpp_out=@BUILD_DIR@',
-        '@INPUT@'])    
-
     files += [
-      'src/neural/onnx/adapters.cc',
-      'src/neural/onnx/builder.cc',
-      'src/neural/onnx/converter.cc',
       'src/neural/onnx/network_onnx.cc',
     ]
 
-    files +=   gen_proto_src.process('src/neural/onnx/onnx.proto',
-      preserve_path_from : meson.current_source_dir() + '/src/')
-
     has_backends = true
   endif
+
+  ## ~~~~~~~~
+  ## Metal
+  ## ~~~~~~~~
+  # Metal backend only available on MacOS.
+  # Check for required frameworks - Foundation, Metal and MPS.
+  metal_frameworks = dependency('appleframeworks',
+                                modules : ['Foundation', 'Metal', 'MetalPerformanceShaders', 'MetalPerformanceShadersGraph'],
+                                required: get_option('metal'))
+
+  if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
+    deps += metal_frameworks
+
+    files += [
+      'src/neural/metal/network_metal.cc',
+      'src/neural/metal/mps/NetworkGraph.mm',
+      'src/neural/metal/mps/MetalNetworkBuilder.mm',
+    ]
+
+    has_backends = true
+    add_project_arguments('-fobjc-arc', language : 'objc')
+    add_project_arguments('-fobjc-arc', language : 'objcpp')
+  endif
+
+
 
 endif # if get_option('build_backends')
 
@@ -633,7 +658,7 @@ if get_option('embed')
 endif
 
 executable('lc0', 'src/main.cc',
-  files, include_directories: includes, dependencies: deps, install: true)
+       files, include_directories: includes, dependencies: deps, install: true)
 
 #############################################################################
 ## Tests
@@ -683,7 +708,7 @@ endif
 if get_option('python_bindings')
   pymod = import('python')
   python = pymod.find_installation('python3')
-  if python.language_version() < '3.7'
+  if not python.language_version().version_compare('>3.7')
     error('You need python 3.7 or newer')
   endif
   py_bindings_generator = find_program('scripts/gen_py_bindings.py')
