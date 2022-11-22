@@ -93,8 +93,8 @@ inline float FastLogistic(const float a) {
 }
 
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float &v, float &d, float ratio, float diff,
-                       float sign) {
+inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
+                       float wdl_rescale_diff, float sign) {
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
   if (w > 0 && d > 0 && l > 0) {
@@ -109,6 +109,10 @@ inline void WDLRescale(float &v, float &d, float ratio, float diff,
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
+}
+
+inline void WDLInvertRescale() {
+
 }
 
 inline float FastSign(const float a) {
