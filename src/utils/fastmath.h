@@ -92,6 +92,30 @@ inline float FastLogistic(const float a) {
   return 1.0f / (1.0f + FastExp(-a));
 }
 
+// WDL conversion formula based on random walk model.
+inline void WDLRescale(float &v, float &d, float ratio, float diff,
+                       float sign) {
+  auto w = (1 + v - d) / 2;
+  auto l = (1 - v - d) / 2;
+  if (w > 0 && d > 0 && l > 0) {
+    auto a = FastLog(1 / l - 1);
+    auto b = FastLog(1 / w - 1);
+    auto s = 2 / (a + b);
+    auto mu = (a - b) / (a + b);
+    // Check whether root moves are from the set perspective.
+    bool root_stm = params_.GetPerspective() == "auto" ? true :
+            (params_.GetPerspective() == "white" ^
+             search_->played_history_.Last().IsBlackToMove());
+    auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
+    auto s_new = s * std::sqrt(wdl_rescale_ratio);
+    auto mu_new = mu + sign * std::pow(s * 3.14159265, 2) / 3 *
+                   wdl_rescale_diff;
+    auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
+    auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
+    v = w_new - l_new;
+    d = std::max(0.0f, 1.0f - w_new - l_new);
+}
+
 inline float FastSign(const float a) {
   // Microsoft compiler does not have a builtin for copysign and emits a
   // library call which is too expensive for hot paths.
