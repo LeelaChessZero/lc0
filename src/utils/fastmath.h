@@ -111,10 +111,6 @@ inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
     d = std::max(0.0f, 1.0f - w_new - l_new);
 }
 
-inline void WDLInvertRescale() {
-
-}
-
 inline float FastSign(const float a) {
   // Microsoft compiler does not have a builtin for copysign and emits a
   // library call which is too expensive for hot paths.
