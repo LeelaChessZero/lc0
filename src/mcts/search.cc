@@ -2093,7 +2093,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
             (params_.GetPerspective() == "white" ^
              search_->played_history_.Last().IsBlackToMove());
   auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-  if (wdl_rescale_ratio != 1.0f || wdl_rescale_diff != 0.0f) {
+  if (params_.GetWDLRescaleRatio() != 1.0f ||
+      params_.GetWDLRescaleDiff() != 0.0f) {
     WDLRescale(v, d, params_.GetWDLRescaleRatio(),
                params_.GetWDLRescaleDiff(), sign);
   }
