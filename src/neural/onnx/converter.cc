@@ -97,6 +97,12 @@ class Converter {
                              const std::string& name,
                              ActivationFunction activation);
 
+  std::string MakeEncoderLayer(OnnxBuilder* builder,
+                               const LegacyWeights::EncoderLayer& layer,
+                               int embedding_size, int heads,
+                               const std::string& encoder_in,
+                               const std::string& name);
+
   void MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                       const std::string& input, const LegacyWeights& weights);
 
@@ -224,6 +230,111 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
                           Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
 }
 
+std::string Converter::MakeEncoderLayer(
+    OnnxBuilder* builder, const LegacyWeights::EncoderLayer& layer,
+    int embedding_size, int heads, const std::string& encoder_in,
+    const std::string& name) {
+  const int d_model = layer.mha.q_b.size();
+  const int depth = d_model / heads;
+
+  auto mha_shape =
+      builder->AddInitializer("/const" + name + "/mha/shape",
+                              Int64OnnxConst({-1, 64, heads, depth}, {4}));
+
+  auto flow = builder->MatMul(
+      name + "/mha/Q/w", encoder_in,
+      *GetWeghtsConverter(layer.mha.q_w, {embedding_size, d_model}, {1, 0}));
+  flow = builder->Add(name + "/mha/Q/b", flow,
+                      *GetWeghtsConverter(layer.mha.q_b, {d_model}));
+
+  flow = builder->Reshape(name + "/mha/Q/reshape", flow, mha_shape);
+
+  auto Q = builder->Transpose(name + "/mha/Q/transpose", flow, {0, 2, 1, 3});
+
+  flow = builder->MatMul(
+      name + "/mha/K/w", encoder_in,
+      *GetWeghtsConverter(layer.mha.k_w, {embedding_size, d_model}, {1, 0}));
+  flow = builder->Add(name + "/mha/K/b", flow,
+                      *GetWeghtsConverter(layer.mha.k_b, {d_model}));
+
+  flow = builder->Reshape(name + "/mha/K/reshape", flow, mha_shape);
+
+  auto K = builder->Transpose(name + "/mha/K/transpose", flow, {0, 2, 3, 1});
+
+  flow = builder->MatMul(
+      name + "/mha/V/w", encoder_in,
+      *GetWeghtsConverter(layer.mha.v_w, {embedding_size, d_model}, {1, 0}));
+  flow = builder->Add(name + "/mha/V/b", flow,
+                      *GetWeghtsConverter(layer.mha.v_b, {d_model}));
+
+  flow = builder->Reshape(name + "/mha/V/reshape", flow, mha_shape);
+
+  auto V = builder->Transpose(name + "/mha/V/transpose", flow, {0, 2, 1, 3});
+
+  flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
+
+  flow = builder->Mul(name + "/mha/QK/scale", flow,
+                      FloatOnnxConst({1.0f / sqrtf(d_model)}, {1}));
+
+  flow = builder->Softmax(name + "/mha/QK/softmax", flow, 3);
+
+  flow = builder->MatMul(name + "/mha/QKV/matmul", flow, V);
+
+  if (heads > 1) {
+    flow = builder->Transpose(name + "/mha/out/transpose", flow, {0, 2, 1, 3});
+  }
+
+  flow = builder->Reshape(
+      name + "/mha/out/reshape", flow,
+      builder->AddInitializer("/const" + name + "/mha/out/shape",
+                              Int64OnnxConst({-1, d_model}, {2})));
+
+  flow =
+      builder->MatMul(name + "/mha/out/dense/w", flow,
+                      *GetWeghtsConverter(layer.mha.dense_w,
+                                          {d_model, embedding_size}, {1, 0}));
+
+  flow = builder->Add(name + "/mha/out/dense/b", flow,
+                      *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
+
+  flow = builder->Add(name + "/mha/out/skip", flow, encoder_in);
+
+  auto ffn_in = builder->LayerNormalization(
+      name + "/ln1", flow,
+      *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
+      *GetWeghtsConverter(layer.ln1_betas, {embedding_size}), 1);
+
+  const int dff_size = layer.ffn.dense1_b.size();
+
+  flow =
+      builder->MatMul(name + "/ffn/dense1/w", ffn_in,
+                      *GetWeghtsConverter(layer.ffn.dense1_w,
+                                          {embedding_size, dff_size}, {1, 0}));
+
+  flow = builder->Add(name + "/ffn/dense1/b", flow,
+                      *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
+
+  flow = MakeActivation(builder, flow, name + "/ffn/dense1", SELU);
+
+  flow =
+      builder->MatMul(name + "/ffn/dense2/w", flow,
+                      *GetWeghtsConverter(layer.ffn.dense2_w,
+                                          {dff_size, embedding_size}, {1, 0}));
+
+  flow =
+      builder->Add(name + "/ffn/dense2/b", flow,
+                   *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
+
+  flow = builder->Add(name + "/ffn/skip", flow, ffn_in);
+
+  flow = builder->LayerNormalization(
+      name + "/ln2", flow,
+      *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
+      *GetWeghtsConverter(layer.ln2_betas, {embedding_size}), 1);
+
+  return flow;
+}
+
 namespace {
 std::vector<int> MakePolicyMap(const short* map, int size) {
   std::vector<int> policy_map(1858);
@@ -260,117 +371,10 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     flow = MakeActivation(builder, flow, "/policy/dense1", SELU);
 
     for (size_t i = 0; i < weights.pol_encoder.size(); i++) {
-      std::string name = "/policy/pol_encoder_" + std::to_string(i);
+      std::string name = "/policy/enc_layer_" + std::to_string(i);
 
-      auto layer = weights.pol_encoder[i];
-      const int d_model = layer.mha.q_b.size();
-      const int heads = weights.pol_encoder_head_count;
-      const int depth = d_model / heads;
-
-      auto mha_shape =
-          builder->AddInitializer("/const" + name + "/mha/shape",
-                                  Int64OnnxConst({-1, 64, heads, depth}, {4}));
-
-      auto encoder_in = flow;
-
-      flow = builder->MatMul(
-          name + "/mha/Q/w", encoder_in,
-          *GetWeghtsConverter(layer.mha.q_w, {embedding_size, d_model},
-                              {1, 0}));
-      flow = builder->Add(name + "/mha/Q/b", flow,
-                          *GetWeghtsConverter(layer.mha.q_b, {d_model}));
-
-      flow = builder->Reshape(name + "/mha/Q/reshape", flow, mha_shape);
-
-      auto Q =
-          builder->Transpose(name + "/mha/Q/transpose", flow, {0, 2, 1, 3});
-
-      flow = builder->MatMul(
-          name + "/mha/K/w", encoder_in,
-          *GetWeghtsConverter(layer.mha.k_w, {embedding_size, d_model},
-                              {1, 0}));
-      flow = builder->Add(name + "/mha/K/b", flow,
-                          *GetWeghtsConverter(layer.mha.k_b, {d_model}));
-
-      flow = builder->Reshape(name + "/mha/K/reshape", flow, mha_shape);
-
-      auto K =
-          builder->Transpose(name + "/mha/K/transpose", flow, {0, 2, 3, 1});
-
-      flow = builder->MatMul(
-          name + "/mha/V/w", encoder_in,
-          *GetWeghtsConverter(layer.mha.v_w, {embedding_size, d_model},
-                              {1, 0}));
-      flow = builder->Add(name + "/mha/V/b", flow,
-                          *GetWeghtsConverter(layer.mha.v_b, {d_model}));
-
-      flow = builder->Reshape(name + "/mha/V/reshape", flow, mha_shape);
-
-      auto V =
-          builder->Transpose(name + "/mha/V/transpose", flow, {0, 2, 1, 3});
-
-      flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
-
-      flow = builder->Mul(name + "/mha/QK/scale", flow,
-                          FloatOnnxConst({1.0f / sqrtf(d_model)}, {1}));
-
-      flow = builder->Softmax(name + "/mha/QK/softmax", flow, 3);
-
-      flow = builder->MatMul(name + "/mha/QKV/matmul", flow, V);
-
-      if (heads > 1) {
-        flow =
-            builder->Transpose(name + "/mha/out/transpose", flow, {0, 2, 1, 3});
-      }
-
-      flow = builder->Reshape(
-          name + "/mha/out/reshape", flow,
-          builder->AddInitializer("/const" + name + "/mha/out/shape",
-                                  Int64OnnxConst({-1, d_model}, {2})));
-
-      flow = builder->MatMul(
-          name + "/mha/out/dense/w", flow,
-          *GetWeghtsConverter(layer.mha.dense_w, {d_model, embedding_size},
-                              {1, 0}));
-
-      flow = builder->Add(
-          name + "/mha/out/dense/b", flow,
-          *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
-
-      flow = builder->Add(name + "/mha/out/skip", flow, encoder_in);
-
-      auto ffn_in = builder->LayerNormalization(
-          name + "/ln1", flow,
-          *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
-          *GetWeghtsConverter(layer.ln1_betas, {embedding_size}), 1);
-
-      const int dff_size = layer.ffn.dense1_b.size();
-
-      flow = builder->MatMul(
-          name + "/ffn/dense1/w", ffn_in,
-          *GetWeghtsConverter(layer.ffn.dense1_w, {embedding_size, dff_size},
-                              {1, 0}));
-
-      flow = builder->Add(name + "/ffn/dense1/b", flow,
-                          *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
-
-      flow = MakeActivation(builder, flow, name + "/ffn/dense1", SELU);
-
-      flow = builder->MatMul(
-          name + "/ffn/dense2/w", flow,
-          *GetWeghtsConverter(layer.ffn.dense2_w, {dff_size, embedding_size},
-                              {1, 0}));
-
-      flow = builder->Add(
-          name + "/ffn/dense2/b", flow,
-          *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
-
-      flow = builder->Add(name + "/ffn/skip", flow, ffn_in);
-
-      flow = builder->LayerNormalization(
-          name + "/ln2", flow,
-          *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
-          *GetWeghtsConverter(layer.ln2_betas, {embedding_size}), 1);
+      flow = MakeEncoderLayer(builder, weights.pol_encoder[i], embedding_size,
+                              weights.pol_encoder_head_count, flow, name);
     }
 
     auto encoder_out = flow;
