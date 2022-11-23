@@ -154,23 +154,17 @@ void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
   }
 }
 
+float AsFloat(float x) { return x; }
+float AsFloat(Ort::Float16_t x) { return FP16toFP32(x); }
+
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
   if (network_->wdl_head_ != -1) {
     const auto& data = output_tensors_data_[network_->wdl_head_];
-    if (std::is_same<Ort::Float16_t, DataType>::value) {
-      return FP16toFP32(data[sample * 3 + 0]) -
-             FP16toFP32(data[sample * 3 + 2]);
-    } else {
-      return data[sample * 3 + 0] - data[sample * 3 + 2];
-    }
+    return AsFloat(data[sample * 3 + 0]) - AsFloat(data[sample * 3 + 2]);
   } else {
     const auto& data = output_tensors_data_[network_->value_head_];
-    if (std::is_same<Ort::Float16_t, DataType>::value) {
-      return FP16toFP32(data[sample]);
-    } else {
-      return data[sample];
-    }
+    return AsFloat(data[sample]);
   }
 }
 
@@ -178,32 +172,20 @@ template <typename DataType>
 float OnnxComputation<DataType>::GetDVal(int sample) const {
   if (network_->wdl_head_ == -1) return 0.0f;
   const auto& data = output_tensors_data_[network_->wdl_head_];
-  if (std::is_same<Ort::Float16_t, DataType>::value) {
-    return FP16toFP32(data[sample * 3 + 1]);
-  } else {
-    return data[sample * 3 + 1];
-  }
+  return AsFloat(data[sample * 3 + 1]);
 }
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetPVal(int sample, int move_id) const {
   const auto& data = output_tensors_data_[network_->policy_head_];
-  if (std::is_same<Ort::Float16_t, DataType>::value) {
-    return FP16toFP32(data[sample * 1858 + move_id]);
-  } else {
-    return data[sample * 1858 + move_id];
-  }
+  return AsFloat(data[sample * 1858 + move_id]);
 }
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetMVal(int sample) const {
   if (network_->mlh_head_ == -1) return 0.0f;
   const auto& data = output_tensors_data_[network_->mlh_head_];
-  if (std::is_same<Ort::Float16_t, DataType>::value) {
-    return FP16toFP32(data[sample]);
-  } else {
-    return data[sample];
-  }
+  return AsFloat(data[sample]);
 }
 
 template <typename DataType>
