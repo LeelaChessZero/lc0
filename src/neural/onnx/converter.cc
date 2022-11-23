@@ -157,14 +157,15 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
                                       const std::string& input,
                                       const std::string& name,
                                       ActivationFunction activation) {
-  if (activation == RELU) {
-    return builder->Relu(name + "/relu", input);
-  } else if (activation == MISH) {
-    return MakeMish(builder, input, name + "/mish");
-  } else if (activation == SELU) {
-    return builder->Selu(name + "/selu", input);
-  } else {
-    throw Exception("Unsupposrted activation in " + name);
+  switch (activation) {
+    case RELU:
+      return builder->Relu(name + "/relu", input);
+    case MISH:
+      return MakeMish(builder, input, name + "/mish");
+    case SELU:
+      return builder->Selu(name + "/selu", input);
+    default:
+      throw Exception("Unsupposrted activation in " + name);
   }
 }
 
