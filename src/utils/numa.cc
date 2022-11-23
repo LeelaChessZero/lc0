@@ -39,7 +39,7 @@ namespace lczero {
 int Numa::threads_per_core_ = 1;
 
 void Numa::Init() {
-#if defined(_WIN64) && _WIN32_WINNT >= 0x0601
+#if defined(USE_BLAS) && defined(_WIN64) && _WIN32_WINNT >= 0x0601
   SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* buffer;
   DWORD len;
   GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
@@ -65,7 +65,7 @@ void Numa::Init() {
 }
 
 void Numa::BindThread(int id) {
-#if defined(_WIN64) && _WIN32_WINNT >= 0x0601
+#if defined(USE_BLAS) && defined(_WIN64) && _WIN32_WINNT >= 0x0601
   int group_count = GetActiveProcessorGroupCount();
   int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
   int core_count = thread_count / threads_per_core_;
