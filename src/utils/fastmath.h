@@ -112,7 +112,23 @@ inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
   }
 }
 
-inline void WDLInvertRescale() {
+inline void WDLInvertRescale(float &v, float &d, float wdl_rescale_ratio,
+                       float wdl_rescale_diff, float sign) {
+  auto w = (1 + v - d) / 2;
+  auto l = (1 - v - d) / 2;
+  if (w > 0 && d > 0 && l > 0) {
+    auto a = FastLog(1 / l - 1);
+    auto b = FastLog(1 / w - 1);
+    auto s = 2 / (a + b);
+    auto mu = (a - b) / (a + b);
+    auto s_new = s / std::sqrt(wdl_rescale_ratio);
+    auto mu_new = mu - sign * std::pow(s_new * 3.14159265, 2) / 3 *
+                   wdl_rescale_diff;
+    auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
+    auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
+    v = w_new - l_new;
+    d = std::max(0.0f, 1.0f - w_new - l_new);
+  }
 
 }
 

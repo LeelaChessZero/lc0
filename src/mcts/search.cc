@@ -235,8 +235,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto wl = edge.GetWL(default_wl);
-    const auto floatD = edge.GetD(default_d);
+    auto wl = edge.GetWL(default_wl);
+    auto floatD = edge.GetD(default_d);
+    auto sign = (params_.GetPerspective() == "auto" ||
+                 (params_.GetPerspective() == "white" ^
+                  search_->played_history_.Last().IsBlackToMove())) ? 1.0f : -1.0f;
+    WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
+                     params_.GetWDLRescaleRatio(), sign)
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
