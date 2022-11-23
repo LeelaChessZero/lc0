@@ -239,7 +239,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto floatD = edge.GetD(default_d);
     auto sign = (params_.GetPerspective() == "auto" ||
                  (params_.GetPerspective() == "white" ^
-                  played_history_.IsBlackToMove())) ? 1.0f : -1.0f;
+                  played_history_.IsBlackToMove())) ? -1.0f : 1.0f;
     WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
                      params_.GetWDLRescaleRatio(), sign);
     const auto q = edge.GetQ(default_q, draw_score);
