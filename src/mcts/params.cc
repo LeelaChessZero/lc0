@@ -401,7 +401,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
   options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
-  options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
       DEFAULT_TASK_WORKERS;
