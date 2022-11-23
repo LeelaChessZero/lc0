@@ -70,10 +70,14 @@ class PgnReader {
       throw Exception(errno == ENOENT ? "Opening book file not found."
                                       : "Error opening opening book file.");
     }
+
     std::string line;
     bool in_comment = false;
     bool started = false;
     while (GzGetLine(file, line)) {
+      // Check if we have a UTF-8 BOM. If so, just ignore it.
+      // Only supposed to exist in the first line, but should not matter.
+      if (line.substr(0,3) == "\xEF\xBB\xBF") line = line.substr(3);
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
       if (line.empty() || line[0] == '[') {
