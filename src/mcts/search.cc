@@ -240,6 +240,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto sign = (params_.GetPerspective() == "auto" ||
                  (params_.GetPerspective() == "white" ^
                   played_history_.IsBlackToMove())) ? -1.0f : 1.0f;
+    auto wl_internal = wl;
+    auto d_internal = floatD;
     WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
                      params_.GetWDLRescaleRatio(), sign);
     const auto q = edge.GetQ(default_q, draw_score);
@@ -264,9 +266,11 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     }
 
     auto w =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl_internal -
+                                                         d_internal))));
     auto l =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl_internal -
+                                                         d_internal))));
     // Using 1000-w-l so that W+D+L add up to 1000.0.
     auto d = 1000 - w - l;
     if (d < 0) {
