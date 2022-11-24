@@ -237,13 +237,16 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto& uci_info = uci_infos.back();
     auto wl = edge.GetWL(default_wl);
     auto floatD = edge.GetD(default_d);
-    auto sign = ((params_.GetPerspective() == "auto") ||
-                 ((params_.GetPerspective() == "white") ^
-                  played_history_.IsBlackToMove())) ? 1.0f : -1.0f;
     auto wl_internal = wl;
     auto d_internal = floatD;
-    WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
-                     params_.GetWDLRescaleDiff(), sign);
+    // Only the diff effect is inverted, so we only need to call if diff != 0.
+    if (params_.GetWDLRescaleDiff() != 0) {
+      auto sign = ((params_.GetPerspective() == "auto") ||
+                   ((params_.GetPerspective() == "white") ^
+                    played_history_.IsBlackToMove())) ? 1.0f : -1.0f;
+      WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
+                       params_.GetWDLRescaleDiff(), sign);
+    }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
