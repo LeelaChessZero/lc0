@@ -237,9 +237,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto& uci_info = uci_infos.back();
     auto wl = edge.GetWL(default_wl);
     auto floatD = edge.GetD(default_d);
-    auto sign = (params_.GetPerspective() == "auto" ||
-                 (params_.GetPerspective() == "white" ^
-                  played_history_.IsBlackToMove())) ? -1.0f : 1.0f;
+    auto sign = ((params_.GetPerspective() == "auto") ||
+                 ((params_.GetPerspective() == "white") ^
+                  played_history_.IsBlackToMove())) ? 1.0f : -1.0f;
     auto wl_internal = wl;
     auto d_internal = floatD;
     WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
@@ -2098,8 +2098,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
   // Check whether root moves are from the set perspective.
-  bool root_stm = params_.GetPerspective() == "auto" ? true :
-            (params_.GetPerspective() == "white" ^
+  bool root_stm = (params_.GetPerspective() == "auto") ? true :
+            ((params_.GetPerspective() == "white") ^
              search_->played_history_.Last().IsBlackToMove());
   auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
   if (params_.GetWDLRescaleRatio() != 1.0f ||
