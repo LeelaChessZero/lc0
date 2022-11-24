@@ -105,6 +105,8 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return pblczero::TensorProto::FLOAT;
+    case WeightsToOnnxConverterOptions::DataType::kFloat16:
+      return pblczero::TensorProto::FLOAT16;
     default:
       return pblczero::TensorProto::UNDEFINED;
   }
@@ -116,6 +118,8 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
   switch (options_.data_type_) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
+    case WeightsToOnnxConverterOptions::DataType::kFloat16:
+      return std::make_unique<Float16OnnxWeightsAdapter>(weights, dims, order);
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
@@ -212,7 +216,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
         builder->AddInitializer("/const/mapping_table",
                                 Int32OnnxConst(MakePolicyMap(), {1858})),
         1);
-    builder->AddOutput(output, {-1, 1858}, GetDataType());
+    builder->AddOutput(output, {options_.batch_size, 1858}, GetDataType());
     onnx->set_output_policy(output);
   } else {
     // Dense policy head.
@@ -231,7 +235,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                             {1, 0}));
     auto output = builder->Add(options_.output_policy_head, flow,
                                *GetWeghtsConverter(weights.ip_pol_b, {1858}));
-    builder->AddOutput(output, {-1, 1858}, GetDataType());
+    builder->AddOutput(output, {options_.batch_size, 1858}, GetDataType());
     onnx->set_output_policy(output);
   }
 }
@@ -261,7 +265,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     flow = builder->Add("/value/dense2/add", flow,
                         *GetWeghtsConverter(weights.ip2_val_b, {3}));
     auto output = builder->Softmax(options_.output_wdl, flow);
-    builder->AddOutput(output, {-1, 3}, GetDataType());
+    builder->AddOutput(output, {options_.batch_size, 3}, GetDataType());
     onnx->set_output_wdl(output);
   } else {
     flow = builder->MatMul(
@@ -270,7 +274,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     flow = builder->Add("/value/dense2/add", flow,
                         *GetWeghtsConverter(weights.ip2_val_b, {1}));
     auto output = builder->Tanh(options_.output_value, flow);
-    builder->AddOutput(output, {-1, 1}, GetDataType());
+    builder->AddOutput(output, {options_.batch_size, 1}, GetDataType());
     onnx->set_output_value(output);
   }
 }
@@ -306,7 +310,7 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
   auto output = builder->Relu(options_.output_mlh, flow);
-  builder->AddOutput(output, {-1, 1}, GetDataType());
+  builder->AddOutput(output, {options_.batch_size, 1}, GetDataType());
   onnx->set_output_mlh(output);
 }
 
@@ -317,8 +321,8 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   AddStdInitializers(&builder);
 
   onnx->set_input_planes(options_.input_planes_name);
-  builder.AddInput(options_.input_planes_name, {-1, 112, 8, 8}, GetDataType());
-
+  builder.AddInput(options_.input_planes_name, {options_.batch_size, 112, 8, 8},
+                   GetDataType());
   // Input convolution.
   auto flow = MakeConvBlock(&builder, weights.input, kInputPlanes, NumFilters(),
                             options_.input_planes_name, "/inputconv");
