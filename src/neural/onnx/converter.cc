@@ -43,6 +43,7 @@
 #include "neural/shared/policy_map.h"
 #include "proto/net.pb.h"
 #include "utils/exception.h"
+#include "utils/fp16_utils.h"
 
 namespace lczero {
 namespace {
@@ -278,8 +279,12 @@ std::string Converter::MakeEncoderLayer(
 
   flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
 
-  flow = builder->Mul(name + "/mha/QK/scale", flow,
-                      FloatOnnxConst({1.0f / sqrtf(d_model)}, {1}));
+  const OnnxConst& scale = GetDataType() == pblczero::TensorProto::FLOAT16
+                               ? static_cast<const OnnxConst&>(Float16OnnxConst(
+                                     {FP32toFP16(1.0f / sqrtf(d_model))}, {1}))
+                               : static_cast<const OnnxConst&>(FloatOnnxConst(
+                                     {1.0f / sqrtf(d_model)}, {1}));
+  flow = builder->Mul(name + "/mha/QK/scale", flow, scale);
 
   flow = builder->Softmax(name + "/mha/QK/softmax", flow, 3);
 
@@ -413,8 +418,13 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
 
     flow = builder->MatMul("/policy/matmul", Q, flow);
 
-    flow = builder->Mul("/policy/scale", flow,
-                        FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
+    const OnnxConst& scale =
+        GetDataType() == pblczero::TensorProto::FLOAT16
+            ? static_cast<const OnnxConst&>(Float16OnnxConst(
+                  {FP32toFP16(1.0f / sqrtf(policy_d_model))}, {1}))
+            : static_cast<const OnnxConst&>(
+                  FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
+    flow = builder->Mul("/policy/scale", flow, scale);
 
     auto prom = builder->Slice("policy/promotion/slice", K, {0, 56, 0},
                                {INT_MAX, 64, policy_d_model});
