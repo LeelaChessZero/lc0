@@ -243,7 +243,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto wl_internal = wl;
     auto d_internal = floatD;
     WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
-                     params_.GetWDLRescaleRatio(), sign);
+                     params_.GetWDLRescaleDiff(), sign);
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
