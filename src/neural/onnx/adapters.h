@@ -49,9 +49,22 @@ class FloatOnnxWeightsAdapter : public OnnxConst {
   std::vector<int> GetDimensions() const override;
   std::string GetRawData() const override;
 
+ protected:
   const std::vector<float>& weights_;
   std::vector<int> dims_;
   std::vector<int> order_;
+};
+
+class Float16OnnxWeightsAdapter : public FloatOnnxWeightsAdapter {
+ public:
+  Float16OnnxWeightsAdapter(const std::vector<float>& weights,
+                            std::initializer_list<int> dims,
+                            std::initializer_list<int> order = {})
+      : FloatOnnxWeightsAdapter(weights, dims, order) {}
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override;
+  std::string GetRawData() const override;
 };
 
 // GenericOnnxConst takes inline constant (usually short and known at compile
