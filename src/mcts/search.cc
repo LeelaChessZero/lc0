@@ -210,10 +210,11 @@ inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
     auto s = 2 / (a + b);
     auto mu = (a - b) / (a + b);
     auto s_new = s * std::sqrt(wdl_rescale_ratio);
-    auto mu_new = mu + sign * std::pow((invert ? s_new : s) * 3.14159265, 2) /
-                                       3 * wdl_rescale_diff;
-    auto w_new = FastLogistic((-1.0f + mu_new) / (invert ? s : s_new));
-    auto l_new = FastLogistic((-1.0f - mu_new) / (invert ? s : s_new));
+    if (invert) std::swap(s, s_new);
+    // Numerical constant is pi^2 / 3 = 3.29.
+    auto mu_new = mu + sign * s * s * 3.29f * wdl_rescale_diff;
+    auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
+    auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
   }
