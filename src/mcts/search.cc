@@ -194,6 +194,33 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }
 }  // namespace
 
+namespace {
+// WDL conversion formula based on random walk model.
+inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
+                       float wdl_rescale_diff, float sign, bool invert) {
+  if (invert) {
+    wdl_rescale_diff = -wdl_rescale_diff;
+    wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
+  }
+  auto w = (1 + v - d) / 2;
+  auto l = (1 - v - d) / 2;
+  if (w > 0 && d > 0 && l > 0) {
+    auto a = FastLog(1 / l - 1);
+    auto b = FastLog(1 / w - 1);
+    auto s = 2 / (a + b);
+    auto mu = (a - b) / (a + b);
+    auto s_new = s * std::sqrt(wdl_rescale_ratio);
+    auto mu_new = mu + sign * std::pow((invert ? s_new : s) * 3.14159265, 2) /
+                                       3 * wdl_rescale_diff;
+    auto w_new = FastLogistic((-1.0f + mu_new) / (invert ? s : s_new));
+    auto l_new = FastLogistic((-1.0f - mu_new) / (invert ? s : s_new));
+    v = w_new - l_new;
+    d = std::max(0.0f, 1.0f - w_new - l_new);
+  }
+}
+}  // namespace
+
+
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
@@ -244,8 +271,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       auto sign = ((params_.GetPerspective() == "auto") ||
                    ((params_.GetPerspective() == "white") ^
                     played_history_.IsBlackToMove())) ? 1.0f : -1.0f;
-      WDLInvertRescale(wl, floatD, params_.GetWDLRescaleRatio(),
-                       params_.GetWDLRescaleDiff(), sign);
+      WDLRescale(wl, floatD, params_.GetWDLRescaleRatio(),
+                       params_.GetWDLRescaleDiff(), sign, true);
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -2108,7 +2135,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       params_.GetWDLRescaleDiff() != 0.0f) {
     WDLRescale(v, d, params_.GetWDLRescaleRatio(),
-               params_.GetWDLRescaleDiff(), sign);
+               params_.GetWDLRescaleDiff(), sign, false);
   }
   node_to_process->v = v;
   node_to_process->d = d;

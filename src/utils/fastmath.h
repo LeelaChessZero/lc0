@@ -92,7 +92,7 @@ inline float FastLogistic(const float a) {
   return 1.0f / (1.0f + FastExp(-a));
 }
 
-// WDL conversion formula based on random walk model.
+/* // WDL conversion formula based on random walk model.
 inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
                        float wdl_rescale_diff, float sign) {
   auto w = (1 + v - d) / 2;
@@ -126,12 +126,12 @@ inline void WDLInvertRescale(float &v, float &d, float wdl_rescale_ratio,
                    wdl_rescale_diff;
     auto w_new = FastLogistic((-1.0f + mu_new) / s);
     auto l_new = FastLogistic((-1.0f - mu_new) / s);
-/*    auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
-    auto l_new = FastLogistic((-1.0f - mu_new) / s_new);*/
+    // auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
+    // auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
   }
-}
+} */
 
 inline float FastSign(const float a) {
   // Microsoft compiler does not have a builtin for copysign and emits a
