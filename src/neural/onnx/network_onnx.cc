@@ -396,11 +396,12 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   if (batch_size <= 0) batch_size = -1;  // Variable batch size.
 
   bool fp16 = opts.GetOrDefault<bool>(
-      "fp16", kProvider == OnnxProvider::CPU ? false : true);
+      "fp16",
+      (kProvider == OnnxProvider::CPU || w->has_onnx_model()) ? false : true);
 
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(
-        *w, opts, kProvider, gpu, false, batch_size, steps,
+        *w, opts, kProvider, gpu, fp16, batch_size, steps,
         opts.GetOrDefault<bool>("adjust_rule50", false),
         opts.GetOrDefault<bool>("add_wdl_softmax", false));
   } else {
