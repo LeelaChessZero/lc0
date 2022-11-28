@@ -104,6 +104,10 @@ class Converter {
                                const std::string& encoder_in,
                                const std::string& name);
 
+  std::string MakeAttentionPolicy(OnnxBuilder* builder,
+                                  const std::string& input,
+                                  const LegacyWeights& weights);
+
   void MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                       const std::string& input, const LegacyWeights& weights);
 
@@ -246,102 +250,77 @@ std::string Converter::MakeEncoderLayer(
   auto mha_shape =
       builder->AddInitializer("/const" + name + "/mha/shape",
                               Int64OnnxConst({-1, 64, heads, depth}, {4}));
-
   auto flow = builder->MatMul(
       name + "/mha/Q/w", encoder_in,
       *GetWeghtsConverter(layer.mha.q_w, {embedding_size, d_model}, {1, 0}));
   flow = builder->Add(name + "/mha/Q/b", flow,
                       *GetWeghtsConverter(layer.mha.q_b, {d_model}));
-
   flow = builder->Reshape(name + "/mha/Q/reshape", flow, mha_shape);
-
   auto Q = builder->Transpose(name + "/mha/Q/transpose", flow, {0, 2, 1, 3});
-
   flow = builder->MatMul(
       name + "/mha/K/w", encoder_in,
       *GetWeghtsConverter(layer.mha.k_w, {embedding_size, d_model}, {1, 0}));
   flow = builder->Add(name + "/mha/K/b", flow,
                       *GetWeghtsConverter(layer.mha.k_b, {d_model}));
-
   flow = builder->Reshape(name + "/mha/K/reshape", flow, mha_shape);
-
   auto K = builder->Transpose(name + "/mha/K/transpose", flow, {0, 2, 3, 1});
-
   flow = builder->MatMul(
       name + "/mha/V/w", encoder_in,
       *GetWeghtsConverter(layer.mha.v_w, {embedding_size, d_model}, {1, 0}));
   flow = builder->Add(name + "/mha/V/b", flow,
                       *GetWeghtsConverter(layer.mha.v_b, {d_model}));
-
   flow = builder->Reshape(name + "/mha/V/reshape", flow, mha_shape);
-
   auto V = builder->Transpose(name + "/mha/V/transpose", flow, {0, 2, 1, 3});
-
   flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
-
-  const OnnxConst& scale = GetDataType() == pblczero::TensorProto::FLOAT16
-                               ? static_cast<const OnnxConst&>(Float16OnnxConst(
-                                     {FP32toFP16(1.0f / sqrtf(d_model))}, {1}))
-                               : static_cast<const OnnxConst&>(FloatOnnxConst(
-                                     {1.0f / sqrtf(d_model)}, {1}));
-  flow = builder->Mul(name + "/mha/QK/scale", flow, scale);
-
+  std::unique_ptr<OnnxConst> scale;
+  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
+    scale = std::make_unique<Float16OnnxConst>(
+        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(d_model))}, {1}));
+  } else {
+    scale = std::make_unique<FloatOnnxConst>(
+        FloatOnnxConst({1.0f / sqrtf(d_model)}, {1}));
+  }
+  flow = builder->Mul(name + "/mha/QK/scale", flow, *scale);
   flow = builder->Softmax(name + "/mha/QK/softmax", flow, 3);
-
   flow = builder->MatMul(name + "/mha/QKV/matmul", flow, V);
-
   if (heads > 1) {
     flow = builder->Transpose(name + "/mha/out/transpose", flow, {0, 2, 1, 3});
   }
-
   flow = builder->Reshape(
       name + "/mha/out/reshape", flow,
       builder->AddInitializer("/const" + name + "/mha/out/shape",
                               Int64OnnxConst({-1, d_model}, {2})));
-
   flow =
       builder->MatMul(name + "/mha/out/dense/w", flow,
                       *GetWeghtsConverter(layer.mha.dense_w,
                                           {d_model, embedding_size}, {1, 0}));
-
   flow = builder->Add(name + "/mha/out/dense/b", flow,
                       *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
-
   flow = builder->Add(name + "/mha/out/skip", flow, encoder_in);
-
   auto ffn_in = builder->LayerNormalization(
       name + "/ln1", flow,
       *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
       *GetWeghtsConverter(layer.ln1_betas, {embedding_size}), 1);
-
   const int dff_size = layer.ffn.dense1_b.size();
-
   flow =
       builder->MatMul(name + "/ffn/dense1/w", ffn_in,
                       *GetWeghtsConverter(layer.ffn.dense1_w,
                                           {embedding_size, dff_size}, {1, 0}));
-
   flow = builder->Add(name + "/ffn/dense1/b", flow,
                       *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
-
   flow = MakeActivation(builder, flow, name + "/ffn/dense1", SELU);
-
   flow =
       builder->MatMul(name + "/ffn/dense2/w", flow,
                       *GetWeghtsConverter(layer.ffn.dense2_w,
                                           {dff_size, embedding_size}, {1, 0}));
-
   flow =
       builder->Add(name + "/ffn/dense2/b", flow,
                    *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
-
   flow = builder->Add(name + "/ffn/skip", flow, ffn_in);
-
   flow = builder->LayerNormalization(
       name + "/ln2", flow,
       *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
       *GetWeghtsConverter(layer.ln2_betas, {embedding_size}), 1);
-
   return flow;
 }
 
@@ -357,135 +336,111 @@ std::vector<int> MakePolicyMap(const short* map, int size) {
 }
 }  // namespace
 
+std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
+                                           const std::string& input,
+                                           const LegacyWeights& weights) {
+  const int embedding_size = weights.ip_pol_b.size();
+  const int policy_d_model = weights.ip2_pol_b.size();
+  auto flow =
+      builder->Transpose("/policy/dense1/transpose", input, {0, 2, 3, 1});
+  flow = builder->Reshape(
+      "/policy/dense1/reshape", flow,
+      builder->AddInitializer("/const/policy_shape",
+                              Int64OnnxConst({-1, NumFilters()}, {2})));
+  flow = builder->MatMul(
+      "/policy/dense1/matmul", flow,
+      *GetWeghtsConverter(weights.ip_pol_w, {NumFilters(), embedding_size},
+                          {1, 0}));
+  flow = builder->Add("/policy/dense1/add", flow,
+                      *GetWeghtsConverter(weights.ip_pol_b, {embedding_size}));
+  flow = MakeActivation(builder, flow, "/policy/dense1", SELU);
+  for (size_t i = 0; i < weights.pol_encoder.size(); i++) {
+    std::string name = "/policy/enc_layer_" + std::to_string(i);
+
+    flow = MakeEncoderLayer(builder, weights.pol_encoder[i], embedding_size,
+                            weights.pol_encoder_head_count, flow, name);
+  }
+  auto encoder_out = flow;
+  flow = builder->MatMul(
+      "/policy/Q/matmul", encoder_out,
+      *GetWeghtsConverter(weights.ip2_pol_w, {embedding_size, policy_d_model},
+                          {1, 0}));
+  flow = builder->Add("/policy/Q/add", flow,
+                      *GetWeghtsConverter(weights.ip2_pol_b, {policy_d_model}));
+  auto Q = builder->Reshape(
+      "/policy/Q/reshape", flow,
+      builder->AddInitializer("/const/QK_shape",
+                              Int64OnnxConst({-1, 64, policy_d_model}, {3})));
+  flow = builder->MatMul(
+      "/policy/K/matmul", encoder_out,
+      *GetWeghtsConverter(weights.ip3_pol_w, {embedding_size, policy_d_model},
+                          {1, 0}));
+  flow = builder->Add("/policy/K/add", flow,
+                      *GetWeghtsConverter(weights.ip3_pol_b, {policy_d_model}));
+  auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
+  flow = builder->Transpose("/policy/K/transpose", K, {0, 2, 1});
+  flow = builder->MatMul("/policy/matmul", Q, flow);
+  std::unique_ptr<OnnxConst> scale;
+  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
+    scale = std::make_unique<Float16OnnxConst>(
+        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(policy_d_model))}, {1}));
+  } else {
+    scale = std::make_unique<FloatOnnxConst>(
+        FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
+  }
+  flow = builder->Mul("/policy/scale", flow, *scale);
+  auto prom = builder->Slice("policy/promotion/slice", K, {0, 56, 0},
+                             {INT_MAX, 64, policy_d_model});
+  prom = builder->MatMul(
+      "/policy/promotion/matmul", prom,
+      *GetWeghtsConverter(weights.ip4_pol_w, {policy_d_model, 4}, {1, 0}));
+  prom = builder->Transpose("/policy/promotion/transpose", prom, {0, 2, 1});
+  auto prom2 = builder->Split("/policy/promotion/split", prom, 1, {3, 1});
+  prom = builder->Add("/policy/promotion/add", prom2[0], prom2[1]);
+  prom = builder->Transpose("/policy/promotion/transpose2", prom, {0, 2, 1});
+  prom = builder->Reshape(
+      "/policy/promotion/reshape", prom,
+      builder->AddInitializer("/const/policy_promotion_shape",
+                              Int64OnnxConst({-1, 1, 24}, {3})));
+  auto sl = builder->Slice("policy/promotion/slice2", flow, {0, 48, 56},
+                           {INT_MAX, 56, 64});
+  sl = builder->Reshape(
+      "/policy/promotion/reshape2", sl,
+      builder->AddInitializer("/const/policy_promotion_shape2",
+                              Int64OnnxConst({-1, 64, 1}, {3})));
+  sl = builder->Concat("/policy/promotion/concat", {sl, sl, sl}, 2);
+  sl = builder->Reshape(
+      "/policy/promotion/reshape3", sl,
+      builder->AddInitializer("/const/policy_promotion_shape3",
+                              Int64OnnxConst({-1, 8, 24}, {3})));
+  prom = builder->Add("/policy/promotion/add2", sl, prom);
+  prom = builder->Reshape(
+      "/policy/promotion/reshape4", prom,
+      builder->AddInitializer("/const/policy_promotion_shape4",
+                              Int64OnnxConst({-1, 3, 64}, {3})));
+  flow = builder->Concat("/policy/concat", {flow, prom}, 1);
+  flow = builder->Reshape(
+      "/policy/reshape", flow,
+      builder->AddInitializer("/const/policy_out_shape",
+                              Int64OnnxConst({-1, 67 * 64}, {2})));
+  return builder->Gather(
+      options_.output_policy_head, flow,
+      builder->AddInitializer(
+          "/const/mapping_table",
+          Int32OnnxConst(
+              MakePolicyMap(kAttnPolicyMap, std::size(kAttnPolicyMap)),
+              {1858})),
+      1);
+}
+
 void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                                const std::string& input,
                                const LegacyWeights& weights) {
   if (src_.format().network_format().policy() ==
       pblczero::NetworkFormat::POLICY_ATTENTION) {
-    const int embedding_size = weights.ip_pol_b.size();
-    const int policy_d_model = weights.ip2_pol_b.size();
-    auto flow =
-        builder->Transpose("/policy/dense1/transpose", input, {0, 2, 3, 1});
-    flow = builder->Reshape(
-        "/policy/dense1/reshape", flow,
-        builder->AddInitializer("/const/policy_shape",
-                                Int64OnnxConst({-1, NumFilters()}, {2})));
-
-    flow = builder->MatMul(
-        "/policy/dense1/matmul", flow,
-        *GetWeghtsConverter(weights.ip_pol_w, {NumFilters(), embedding_size},
-                            {1, 0}));
-    flow =
-        builder->Add("/policy/dense1/add", flow,
-                     *GetWeghtsConverter(weights.ip_pol_b, {embedding_size}));
-    flow = MakeActivation(builder, flow, "/policy/dense1", SELU);
-
-    for (size_t i = 0; i < weights.pol_encoder.size(); i++) {
-      std::string name = "/policy/enc_layer_" + std::to_string(i);
-
-      flow = MakeEncoderLayer(builder, weights.pol_encoder[i], embedding_size,
-                              weights.pol_encoder_head_count, flow, name);
-    }
-
-    auto encoder_out = flow;
-
-    flow = builder->MatMul(
-        "/policy/Q/matmul", encoder_out,
-        *GetWeghtsConverter(weights.ip2_pol_w, {embedding_size, policy_d_model},
-                            {1, 0}));
-
-    flow =
-        builder->Add("/policy/Q/add", flow,
-                     *GetWeghtsConverter(weights.ip2_pol_b, {policy_d_model}));
-
-    auto Q = builder->Reshape(
-        "/policy/Q/reshape", flow,
-        builder->AddInitializer("/const/QK_shape",
-                                Int64OnnxConst({-1, 64, policy_d_model}, {3})));
-
-    flow = builder->MatMul(
-        "/policy/K/matmul", encoder_out,
-        *GetWeghtsConverter(weights.ip3_pol_w, {embedding_size, policy_d_model},
-                            {1, 0}));
-
-    flow =
-        builder->Add("/policy/K/add", flow,
-                     *GetWeghtsConverter(weights.ip3_pol_b, {policy_d_model}));
-
-    auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
-
-    flow = builder->Transpose("/policy/K/transpose", K, {0, 2, 1});
-
-    flow = builder->MatMul("/policy/matmul", Q, flow);
-
-    const OnnxConst& scale =
-        GetDataType() == pblczero::TensorProto::FLOAT16
-            ? static_cast<const OnnxConst&>(Float16OnnxConst(
-                  {FP32toFP16(1.0f / sqrtf(policy_d_model))}, {1}))
-            : static_cast<const OnnxConst&>(
-                  FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
-    flow = builder->Mul("/policy/scale", flow, scale);
-
-    auto prom = builder->Slice("policy/promotion/slice", K, {0, 56, 0},
-                               {INT_MAX, 64, policy_d_model});
-
-    prom = builder->MatMul(
-        "/policy/promotion/matmul", prom,
-        *GetWeghtsConverter(weights.ip4_pol_w, {policy_d_model, 4}, {1, 0}));
-
-    prom = builder->Transpose("/policy/promotion/transpose", prom, {0, 2, 1});
-
-    auto prom2 = builder->Split("/policy/promotion/split", prom, 1, {3, 1});
-
-    prom = builder->Add("/policy/promotion/add", prom2[0], prom2[1]);
-
-    prom = builder->Transpose("/policy/promotion/transpose2", prom, {0, 2, 1});
-
-    prom = builder->Reshape(
-        "/policy/promotion/reshape", prom,
-        builder->AddInitializer("/const/policy_promotion_shape",
-                                Int64OnnxConst({-1, 1, 24}, {3})));
-
-    auto sl = builder->Slice("policy/promotion/slice2", flow, {0, 48, 56},
-                             {INT_MAX, 56, 64});
-
-    sl = builder->Reshape(
-        "/policy/promotion/reshape2", sl,
-        builder->AddInitializer("/const/policy_promotion_shape2",
-                                Int64OnnxConst({-1, 64, 1}, {3})));
-
-    sl = builder->Concat("/policy/promotion/concat", {sl, sl, sl}, 2);
-
-    sl = builder->Reshape(
-        "/policy/promotion/reshape3", sl,
-        builder->AddInitializer("/const/policy_promotion_shape3",
-                                Int64OnnxConst({-1, 8, 24}, {3})));
-
-    prom = builder->Add("/policy/promotion/add2", sl, prom);
-
-    prom = builder->Reshape(
-        "/policy/promotion/reshape4", prom,
-        builder->AddInitializer("/const/policy_promotion_shape4",
-                                Int64OnnxConst({-1, 3, 64}, {3})));
-
-    flow = builder->Concat("/policy/concat", {flow, prom}, 1);
-
-    flow = builder->Reshape(
-        "/policy/reshape", flow,
-        builder->AddInitializer("/const/policy_out_shape",
-                                Int64OnnxConst({-1, 67 * 64}, {2})));
-
-    auto output = builder->Gather(
-        options_.output_policy_head, flow,
-        builder->AddInitializer(
-            "/const/mapping_table",
-            Int32OnnxConst(
-                MakePolicyMap(kAttnPolicyMap, std::size(kAttnPolicyMap)),
-                {1858})),
-        1);
+    auto output = MakeAttentionPolicy(builder, input, weights);
     builder->AddOutput(output, {-1, 1858}, GetDataType());
     onnx->set_output_policy(output);
-
   } else if (!weights.policy1.weights.empty()) {
     // Conv policy head.
     auto flow = MakeConvBlock(builder, weights.policy1, NumFilters(),
