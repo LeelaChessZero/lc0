@@ -382,7 +382,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (w->format().network_format().policy() !=
             pblczero::NetworkFormat::POLICY_CLASSICAL &&
         w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+            pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+        w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_ATTENTION) {
       throw Exception("Policy format " +
                       pblczero::NetworkFormat::PolicyFormat_Name(
                           w->format().network_format().policy()) +
@@ -398,7 +400,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                       " is not supported by the ONNX backend.");
     }
     if (w->format().network_format().default_activation() !=
-        pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+            pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+        w->format().network_format().default_activation() !=
+            pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
       throw Exception("Default activation " +
                       pblczero::NetworkFormat::DefaultActivation_Name(
                           w->format().network_format().default_activation()) +
