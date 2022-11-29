@@ -100,7 +100,7 @@ class BitBoard {
 
   // Counts the number of set bits in the BitBoard.
   int count() const {
-#if defined(NO_POPCNT)
+#if defined(NO_POPCNT) || defined(_M_ARM) || defined(_M_ARM64)
     std::uint64_t x = board_;
     x -= (x >> 1) & 0x5555555555555555;
     x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333);

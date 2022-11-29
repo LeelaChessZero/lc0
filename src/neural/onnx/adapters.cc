@@ -27,6 +27,8 @@ Program grant you additional permission to convey the resulting work.
 
 #include "neural/onnx/adapters.h"
 
+#include <algorithm>
+
 #include "utils/fp16_utils.h"
 #include "utils/transpose.h"
 
