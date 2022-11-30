@@ -100,11 +100,16 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
   int ply = 0;
   auto white_prob = white.uci_options->Get<float>(kOpeningStopProbId);
   auto black_prob = black.uci_options->Get<float>(kOpeningStopProbId);
-  if (white_prob != black_prob && white_prob * black_prob > 0.0f) {
+  if (white_prob != black_prob && white_prob != 0 && black_prob != 0) {
     throw Exception("Stop probabilities must be both equal or zero!");
   }
 
   for (Move m : opening.moves) {
+    // For early exit from the opening, we support two cases: a) where both
+    // sides have the same exit probability and b) where one side's exit
+    // probability is zero. In the following formula, `positions` is the number
+    // of possible exit points remaining, used for adjusting the exit
+    // probability (to avoid favoring the last position).
     auto exit_prob_now = tree_[0]->IsBlackToMove() ? black_prob : white_prob;
     auto exit_prob_next = tree_[0]->IsBlackToMove() ? white_prob : black_prob;
     int positions = opening.moves.size() - ply + 1;
