@@ -117,12 +117,11 @@ class ChessBoard {
   class Castlings {
    public:
     Castlings()
-        : our_queenside_rook_(0),
-          their_queenside_rook_(0),
-          our_kingside_rook_(7),
-          their_kingside_rook_(7) {
-      data_ = 0;
-    }
+        : our_queenside_rook_(FILE_A),
+          their_queenside_rook_(FILE_A),
+          our_kingside_rook_(FILE_H),
+          their_kingside_rook_(FILE_H),
+          data_(0) {}
 
     void set_we_can_00() { data_ |= 1; }
     void set_we_can_000() { data_ |= 2; }
@@ -141,12 +140,8 @@ class ChessBoard {
     bool no_legal_castle() const { return data_ == 0; }
 
     void Mirror() {
-      uint8_t tmp = our_queenside_rook_;
-      our_queenside_rook_ = their_queenside_rook_;
-      their_queenside_rook_ = tmp;
-      tmp = our_kingside_rook_;
-      our_kingside_rook_ = their_kingside_rook_;
-      their_kingside_rook_ = tmp;
+      std::swap(our_queenside_rook_, their_queenside_rook_);
+      std::swap(our_kingside_rook_, their_kingside_rook_);
       data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2);
     }
 
@@ -201,8 +196,8 @@ class ChessBoard {
     uint8_t our_kingside_rook() const { return our_kingside_rook_; }
     uint8_t their_queenside_rook() const { return their_queenside_rook_; }
     uint8_t their_kingside_rook() const { return their_kingside_rook_; }
-    void SetRookPositions(std::uint8_t our_left, std::uint8_t our_right,
-                          std::uint8_t their_left, std::uint8_t their_right) {
+    void SetRookPositions(uint8_t our_left, uint8_t our_right,
+                          uint8_t their_left, uint8_t their_right) {
       our_queenside_rook_ = our_left;
       our_kingside_rook_ = our_right;
       their_queenside_rook_ = their_left;
@@ -211,17 +206,17 @@ class ChessBoard {
 
    private:
     // Position of "left" (queenside) rook in starting game position.
-    std::uint8_t our_queenside_rook_ : 3;
-    std::uint8_t their_queenside_rook_ : 3;
+    uint8_t our_queenside_rook_;
+    uint8_t their_queenside_rook_;
     // Position of "right" (kingside) rook in starting position.
-    std::uint8_t our_kingside_rook_ : 3;
-    std::uint8_t their_kingside_rook_ : 3;
+    uint8_t our_kingside_rook_;
+    uint8_t their_kingside_rook_;
 
     // - Bit 0 -- "our" side's kingside castle.
     // - Bit 1 -- "our" side's queenside castle.
     // - Bit 2 -- opponent's side's kingside castle.
     // - Bit 3 -- opponent's side's queenside castle.
-    std::uint8_t data_ : 4;
+    uint8_t data_;
   };
 
   std::string DebugString() const;

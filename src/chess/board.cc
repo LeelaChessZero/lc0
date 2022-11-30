@@ -623,10 +623,10 @@ bool ChessBoard::ApplyMove(Move move) {
   rooks_.reset(to);
   bishops_.reset(to);
   pawns_.reset(to);
-  if (to.as_int() == 56 + castlings_.their_kingside_rook()) {
+  if (to.as_int() == A8 + castlings_.their_kingside_rook()) {
     castlings_.reset_they_can_00();
   }
-  if (to.as_int() == 56 + castlings_.their_queenside_rook()) {
+  if (to.as_int() == A8 + castlings_.their_queenside_rook()) {
     castlings_.reset_they_can_000();
   }
 
@@ -670,10 +670,12 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Reset castling rights.
   if (from_row == RANK_1 && rooks_.get(from)) {
-    if (from_col == castlings_.our_queenside_rook())
+    if (from_col == castlings_.our_queenside_rook()) {
       castlings_.reset_we_can_000();
-    if (from_col == castlings_.our_kingside_rook())
+    }
+    if (from_col == castlings_.our_kingside_rook()) {
       castlings_.reset_we_can_00();
+    }
   }
 
   // Ordinary move.
@@ -1052,25 +1054,24 @@ void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
       const int king_col = (is_black ? their_king_ : our_king_).col();
       const auto rooks =
           (is_black ? their_pieces_ : our_pieces_) & ChessBoard::rooks();
+      auto find_rook = [rooks, king_col, fen](bool forward, uint8_t rank) {
+        uint8_t rook;
+        for (rook = forward ? FILE_A : FILE_H; rook != king_col;
+             rook += 2 * forward - 1) {
+          if (rooks.get(rank, rook)) break;
+        }
+        if (rook == king_col) {
+          throw Exception("Bad fen string (missing rook): " + fen);
+        }
+        return rook;
+      };
       if (c == 'K') {
         // Finding rightmost rook.
-        for (our_right_rook = FILE_H; our_right_rook > king_col;
-             --our_right_rook) {
-          if (rooks.get(RANK_1, our_right_rook)) break;
-        }
-        if (our_right_rook == king_col) {
-          throw Exception("Bad fen string (no kingside rook): " + fen);
-        }
+        our_right_rook = find_rook(false, RANK_1);
         castlings_.set_we_can_00();
       } else if (c == 'Q') {
         // Finding leftmost rook.
-        for (our_left_rook = FILE_A; our_left_rook < king_col;
-             ++our_left_rook) {
-          if (rooks.get(RANK_1, our_left_rook)) break;
-        }
-        if (our_left_rook == king_col) {
-          throw Exception("Bad fen string (no queenside rook): " + fen);
-        }
+        our_left_rook = find_rook(true, RANK_1);
         castlings_.set_we_can_000();
       } else if (c >= 'A' && c <= 'H') {
         int rook_col = c - 'A';
@@ -1083,23 +1084,11 @@ void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
         }
       } else if (c == 'k') {
         // Finding rightmost rook.
-        for (their_right_rook = FILE_H; their_right_rook > king_col;
-             --their_right_rook) {
-          if (rooks.get(RANK_8, their_right_rook)) break;
-        }
-        if (their_right_rook == king_col) {
-          throw Exception("Bad fen string (no kingside rook): " + fen);
-        }
+        their_right_rook = find_rook(false, RANK_8);
         castlings_.set_they_can_00();
       } else if (c == 'q') {
         // Finding leftmost rook.
-        for (their_left_rook = FILE_A; their_left_rook < king_col;
-             ++their_left_rook) {
-          if (rooks.get(RANK_8, their_left_rook)) break;
-        }
-        if (their_left_rook == king_col) {
-          throw Exception("Bad fen string (no queenside rook): " + fen);
-        }
+        their_left_rook = find_rook(true, RANK_8);
         castlings_.set_they_can_000();
       } else if (c >= 'a' && c <= 'h') {
         int rook_col = c - 'a';

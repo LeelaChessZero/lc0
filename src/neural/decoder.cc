@@ -95,10 +95,10 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2:
     case pblczero::NetworkFormat::
         INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON: {
-      auto our_queenside = 0;
-      auto their_queenside = 0;
-      auto our_kingside = 7;
-      auto their_kingside = 7;
+      int our_queenside = ChessBoard::FILE_A;
+      int their_queenside = ChessBoard::FILE_A;
+      int our_kingside = ChessBoard::FILE_H;
+      int their_kingside = ChessBoard::FILE_H;
       if (planes[kAuxPlaneBase + 0].mask != 0) {
         auto mask = planes[kAuxPlaneBase + 0].mask;
         if ((mask & 0xFFLL) != 0) {
