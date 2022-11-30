@@ -24,6 +24,7 @@
 
 #include "neural/blas/blas.h"
 #include "neural/blas/convolution1.h"
+#include "neural/blas/encoder.h"
 #include "neural/blas/fully_connected_layer.h"
 #include "neural/blas/se_unit.h"
 #include "neural/blas/winograd_convolution3.h"
@@ -310,16 +311,131 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           SELU,  // SELU activation for attention head.
           head_buffer.data());
 
-      for (auto layer : weights_.pol_encoder) {
-        // TODO: support encoder heads.
-        throw Exception(
-            "Eigen/Blas backend doesn't support encoder heads yet.");
-      }
       const size_t policy_d_model = weights_.ip2_pol_b.size();
-      std::vector<float> head_buffer2(largest_batch_size * policy_d_model *
+      const size_t max_channel_size =
+          weights_.pol_encoder.size() > 0
+              ? weights_.pol_encoder[0].ffn.dense1_b.size()  // DFF size
+              : policy_d_model;
+      std::vector<float> head_buffer2(largest_batch_size * max_channel_size *
                                       kSquares);
-      std::vector<float> head_buffer3(largest_batch_size * policy_d_model *
+      std::vector<float> head_buffer3(largest_batch_size * max_channel_size *
                                       kSquares);
+
+      if (weights_.pol_encoder.size() > 0) {
+        std::vector<float> head_buffer4(largest_batch_size * max_channel_size *
+                                        kSquares);
+        std::vector<float> temp_buffer1(policy_d_model * kSquares);
+        std::vector<float> temp_buffer2(policy_d_model * kSquares);
+        std::vector<float> temp_buffer3(policy_d_model * kSquares);
+
+        for (auto layer : weights_.pol_encoder) {
+          // Q
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, embedding_size, layer.mha.q_b.size(),
+              head_buffer.data(), layer.mha.q_w.data(), layer.mha.q_b.data(),
+              NONE, head_buffer2.data());
+          // K
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, embedding_size, layer.mha.k_b.size(),
+              head_buffer.data(), layer.mha.k_w.data(), layer.mha.k_b.data(),
+              NONE, head_buffer3.data());
+          // V
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, embedding_size, layer.mha.v_b.size(),
+              head_buffer.data(), layer.mha.v_w.data(), layer.mha.v_b.data(),
+              NONE, head_buffer4.data());
+
+          // MHA (Q, K, V)
+          const int d_model = layer.mha.q_b.size();
+          const int heads = weights_.pol_encoder_head_count;
+          const int depth = d_model / heads;
+          const float scaling = 1.0f / sqrtf(d_model);
+
+          // MHA is done per batch since there's a fourth dimension introduced.
+          for (auto batch = size_t{0}; batch < batch_size; batch++) {
+            auto batchStart = batch * kSquares * d_model;
+
+            // Reshape and transpose for each head.
+            const float* Q = temp_buffer1.data();
+            const float* K = temp_buffer2.data();
+            const float* V = temp_buffer3.data();
+
+            for (int head = 0; head < heads; head++) {
+              for (int j = 0; j < kSquares; j++) {
+                auto channelStart = batchStart + j * d_model + head * depth;
+                auto transposeStart = head * kSquares * depth + j * depth;
+                std::copy(head_buffer2.begin() + channelStart,
+                          head_buffer2.begin() + channelStart + depth,
+                          temp_buffer1.begin() + transposeStart);
+                std::copy(head_buffer3.begin() + channelStart,
+                          head_buffer3.begin() + channelStart + depth,
+                          temp_buffer2.begin() + transposeStart);
+                std::copy(head_buffer4.begin() + channelStart,
+                          head_buffer4.begin() + channelStart + depth,
+                          temp_buffer3.begin() + transposeStart);
+              }
+            }
+
+            // matmul(Q, K) for all heads per batch.
+            float* QK = &head_buffer2[batchStart];
+            AttentionMatmul2D<use_eigen>(false, true, heads, kSquares, kSquares,
+                                         depth, scaling, Q, K, QK);
+
+            // Apply Softmax.
+            for (int h = 0; h < heads * kSquares * kSquares; h += kSquares) {
+              SoftmaxActivation(kSquares, QK + h, QK + h);
+            }
+
+            // matmul(softmax(QK), V) for all heads per batch.
+            float* attn = &head_buffer3[batchStart];
+            AttentionMatmul2D<use_eigen>(false, false, heads, kSquares, depth,
+                                         kSquares, 1.0, QK, V, attn);
+
+            // Transpose back into N x 64 x H x D.
+            for (int j = 0; j < kSquares; j++) {
+              for (int head = 0; head < heads; head++) {
+                auto transposeStart =
+                    batchStart + head * kSquares * depth + j * depth;
+                std::copy(head_buffer3.begin() + transposeStart,
+                          head_buffer3.begin() + transposeStart + depth,
+                          head_buffer2.begin() + batchStart + j * d_model +
+                              head * depth);
+              }
+            }
+          }
+
+          // Fully connected final MHA layer.
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, d_model, embedding_size,
+              head_buffer2.data(), layer.mha.dense_w.data(),
+              layer.mha.dense_b.data(), NONE, head_buffer3.data());
+
+          // Layer Norm + skip connection.
+          LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
+                                        head_buffer.data(), head_buffer3.data(),
+                                        layer.ln1_gammas.data(),
+                                        layer.ln1_betas.data(), 1e-6);
+
+          // FFN.
+          const size_t dff_size = layer.ffn.dense1_b.size();
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, embedding_size, dff_size,
+              head_buffer.data(), layer.ffn.dense1_w.data(),
+              layer.ffn.dense1_b.data(), SELU, head_buffer2.data());
+
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
+              head_buffer2.data(), layer.ffn.dense2_w.data(),
+              layer.ffn.dense2_b.data(), NONE, head_buffer3.data());
+
+          // Layer Norm + skip connection.
+          LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
+                                        head_buffer.data(), head_buffer3.data(),
+                                        layer.ln2_gammas.data(),
+                                        layer.ln2_betas.data(), 1e-6);
+        }
+      }
+
       // Q
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, embedding_size, policy_d_model,
