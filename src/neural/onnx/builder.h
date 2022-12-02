@@ -71,20 +71,41 @@ class OnnxBuilder {
   std::string Squeeze(const std::string& name, const std::string& input);
   std::string MatMul(const std::string& name, const std::string& input1,
                      const OnnxConst& input2);
+  std::string MatMul(const std::string& name, const std::string& input1,
+                     const std::string& input2);
   std::string Mul(const std::string& name, const std::string& input1,
                   const std::string& input2);
+  std::string Mul(const std::string& name, const std::string& input1,
+                  const OnnxConst&);
   std::string Relu(const std::string& name, const std::string& input);
   std::string Tanh(const std::string& name, const std::string& input);
-  std::string Softmax(const std::string& name, const std::string& input);
+  std::string Softmax(const std::string& name, const std::string& input,
+                      int axis = 1);
   std::string AddInitializer(const std::string& name, const OnnxConst& weights);
   std::string Reshape(const std::string& name, const std::string& input,
                       const std::string& shape);
-  std::pair<std::string, std::string> Split(const std::string& name,
-                                            const std::string& input, int axis);
+  std::vector<std::string> Split(const std::string& name,
+                                 const std::string& input, int axis,
+                                 std::initializer_list<int> split = {});
   std::string Sigmoid(const std::string& name, const std::string& input);
   std::string Gather(const std::string& name, const std::string& input1,
                      const std::string& input2, int axis);
-
+  std::string Softplus(const std::string& name, const std::string& input);
+  std::string Identity(const std::string& name, const std::string& input);
+  std::string Transpose(const std::string& name, const std::string& input,
+                        std::initializer_list<int> perm = {});
+  std::string Pad(const std::string& name, const std::string& input,
+                  std::initializer_list<int> pads);
+  std::string Selu(const std::string& name, const std::string& input);
+  std::string Slice(const std::string& name, const std::string& input,
+                    std::initializer_list<int> starts,
+                    std::initializer_list<int> ends);
+  std::string Concat(const std::string& name,
+                     const std::vector<std::string>& input, int axis);
+  std::string LayerNormalization(const std::string& name,
+                                 const std::string& input,
+                                 const OnnxConst& scale, const OnnxConst& bias,
+                                 int axis, float epsilon = 1e-6);
   // Returns ONNX model as protobuf.
   const pblczero::ModelProto& as_proto() const { return model_; }
   // Returns serialized model.
