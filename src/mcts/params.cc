@@ -538,7 +538,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                         (1.0f - options.Get<float>(kWDLDrawRateReferenceId)));
     kWDLRescaleRatio = scale_target / scale_reference;
     kWDLRescaleDiff =
-        scale_target / (scale_reference * scale_reference) *
+        scale_target / (scale_reference * scale_reference) /
         (1.0f /
              std::pow(
                  std::cosh(0.5f * (1 - options.Get<float>(kWDLBookExitBiasId)) /
