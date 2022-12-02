@@ -527,8 +527,9 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
   // Calculate ratio and diff for WDL conversion from the contempt settings,
   // unless they are changed from their default values explicitly.
-  if (options.Get<float>(kWDLRescaleRatioId) == 1.0 &&
-      options.Get<float>(kWDLRescaleDiffId) == 0.0) {
+  kWDLRescaleRatio = options.Get<float>(kWDLRescaleRatioId);
+  kWDLRescaleDiff = options.Get<float>(kWDLRescaleDiffId);
+  if (kWDLRescaleRatio == 1.0 && kWDLRescaleDiff == 0.0) {
     float scale_target =
         1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateTargetId)) /
                         (1.0f - options.Get<float>(kWDLDrawRateTargetId)));
@@ -548,10 +549,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                  std::cosh(0.5f * (1 + options.Get<float>(kWDLBookExitBiasId)) /
                            scale_target),
                  2)) *
-        FastLog(10) / 200 * options.Get<float>(kWDLContemptId);
-  } else {
-    kWDLRescaleRatio = options.Get<float>(kWDLRescaleRatioId);
-    kWDLRescaleDiff = options.Get<float>(kWDLRescaleDiffId);
+        std::log(10) / 200 * options.Get<float>(kWDLContemptId);
   }
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
