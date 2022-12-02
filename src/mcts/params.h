@@ -196,6 +196,10 @@ class SearchParams {
   static const OptionId kDrawScoreBlackId;
   static const OptionId kWDLRescaleRatioId;
   static const OptionId kWDLRescaleDiffId;
+  static const OptionId kWDLContemptId;
+  static const OptionId kWDLDrawRateTargetId;
+  static const OptionId kWDLDrawRateReferenceId;
+  static const OptionId kWDLBookExitBiasId;
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;

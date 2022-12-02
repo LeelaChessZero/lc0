@@ -279,6 +279,23 @@ const OptionId SearchParams::kWDLRescaleRatioId{
 const OptionId SearchParams::kWDLRescaleDiffId{
     "wdl-rescale-diff", "WDLRescaleDiff",
     "Shifts the logistic WDL mean by diff in white's favor."};
+const OptionId SearchParams::kWDLContemptId{
+    "wdl-contempt", "WDLContempt",
+    "The simulated rating advantage for the WDL conversion."};
+const OptionId SearchParams::kWDLDrawRateTargetId{
+    "wdl-draw-rate-target", "WDLDrawRateTarget",
+    "To define the accuracy of play, the target draw rate in equal "
+    "positions is used as a proxy."};
+const OptionId SearchParams::kWDLDrawRateReferenceId{
+    "wdl-draw-rate-reference", "WDLDrawRateReference",
+    "Set this to the draw rate predicted by the used neural network at "
+    "default settings. The accuracy rescaling is done relative to the "
+    "reference draw rate."};
+const OptionId SearchParams::kWDLBookExitBiasId{
+    "wdl-book-exit-bias", "WDLBookExitBias",
+    "The book exit bias used when measuring engine Elo. Value of startpos is "
+    "around 0.2, value of 50% white win is 1. Only relevant if target draw "
+    "rate is above 80%."};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
@@ -400,6 +417,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
   options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
+  options->Add<FloatOption>(kWDLContemptId, -1000.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
+  options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
+  options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
@@ -504,6 +525,19 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
+  // Calculate ratio and diff for WDL conversion from the contempt settings,
+  // unless they are changed from their default values explicitly.
+  if (kWDLRescaleRatio == 1.0 && kWDLRescaleDiff == 0.0) {
+    float scale_target = 1.0f / std::log((1.0f + kWDLDrawRateTargetId) /
+                                         (1.0f - kWDLDrawRateTargetId));
+    float scale_reference = 1.0f / std::log((1.0f + kWDLDrawRateReferenceId) /
+                                         (1.0f - kWDLDrawRateReferenceId));
+    kWDLRescaleRatio = scale_target / scale_reference;
+    kWDLRescaleDiff = scale_target / (scale_reference * scale_reference) *
+                      (1.0f / std::pow(std::cosh(0.5f * (1 - kWDLBookExitBiasId) / scale_target), 2) +
+                       1.0f / std::pow(std::cosh(0.5f * (1 - kWDLBookExitBiasId) / scale_target), 2)) *
+                       std::log(10) / 200 * kWDLContemptId;
+  }
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {
