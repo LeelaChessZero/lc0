@@ -4,9 +4,12 @@ Lc0 is a UCI-compliant chess engine designed to play chess via
 neural network, specifically those of the LeelaChessZero project
 (https://lczero.org).
 
-To run this version you will need the onnxruntime, that you can
-download from <https://github.com/microsoft/onnxruntime/releases>.
-This release was made using onnxruntime-win-x64-gpu-1.11.1.zip.
+To run this version you will most likely need a very recent DirectML dll.
+You can download the currently latest nuget installer package from
+<https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.10.0>.
+If you don't know how to use nuget installer packages, you can change the
+extension to .zip and open it as a normal zip file, the dll you need is
+`/bin/x64-win/DirectML.dll`.
 
 License
 
