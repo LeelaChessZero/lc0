@@ -28,6 +28,7 @@
 #include "mcts/params.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "utils/exception.h"
 
@@ -547,7 +548,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                  std::cosh(0.5f * (1 + options.Get<float>(kWDLBookExitBiasId)) /
                            scale_target),
                  2)) *
-        std::log(10) / 200 * options.Get<float>(kWDLContemptId);
+        FastLog(10) / 200 * options.Get<float>(kWDLContemptId);
   } else {
     kWDLRescaleRatio = options.Get<float>(kWDLRescaleRatioId);
     kWDLRescaleDiff = options.Get<float>(kWDLRescaleDiffId);
