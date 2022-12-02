@@ -257,8 +257,6 @@ class SearchParams {
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
-  const float kWDLRescaleRatio;
-  const float kWDLRescaleDiff;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
