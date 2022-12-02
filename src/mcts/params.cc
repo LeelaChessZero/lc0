@@ -506,7 +506,8 @@ SearchParams::SearchParams(const OptionsDict& options)
                               options.Get<int>(kMiniBatchSizeId)))),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
-      kTaskWorkersPerSearchWorker(options.Get<int>(kTaskWorkersPerSearchWorkerId)),
+      kTaskWorkersPerSearchWorker(
+          options.Get<int>(kTaskWorkersPerSearchWorkerId)),
       kMinimumWorkSizeForProcessing(
           options.Get<int>(kMinimumWorkSizeForProcessingId)),
       kMinimumWorkSizeForPicking(
@@ -525,16 +526,28 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
   // Calculate ratio and diff for WDL conversion from the contempt settings,
   // unless they are changed from their default values explicitly.
-  if (options.Get<float>(kWDLRescaleRatioId) == 1.0 && options.Get<float>(kWDLRescaleDiffId) == 0.0) {
-    float scale_target = 1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateTargetId)) /
-                                         (1.0f - options.Get<float>(kWDLDrawRateTargetId)));
-    float scale_reference = 1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateReferenceId)) /
-                                         (1.0f - options.Get<float>(kWDLDrawRateReferenceId)));
+  if (options.Get<float>(kWDLRescaleRatioId) == 1.0 &&
+      options.Get<float>(kWDLRescaleDiffId) == 0.0) {
+    float scale_target =
+        1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateTargetId)) /
+                        (1.0f - options.Get<float>(kWDLDrawRateTargetId)));
+    float scale_reference =
+        1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateReferenceId)) /
+                        (1.0f - options.Get<float>(kWDLDrawRateReferenceId)));
     kWDLRescaleRatio = scale_target / scale_reference;
-    kWDLRescaleDiff = scale_target / (scale_reference * scale_reference) *
-                      (1.0f / std::pow(std::cosh(0.5f * (1 - options.Get<float>(kWDLBookExitBiasId)) / scale_target), 2) +
-                       1.0f / std::pow(std::cosh(0.5f * (1 + options.Get<float>(kWDLBookExitBiasId)) / scale_target), 2)) *
-                       std::log(10) / 200 * options.Get<float>(kWDLContemptId);
+    kWDLRescaleDiff =
+        scale_target / (scale_reference * scale_reference) *
+        (1.0f /
+             std::pow(
+                 std::cosh(0.5f * (1 - options.Get<float>(kWDLBookExitBiasId)) /
+                           scale_target),
+                 2) +
+         1.0f /
+             std::pow(
+                 std::cosh(0.5f * (1 + options.Get<float>(kWDLBookExitBiasId)) /
+                           scale_target),
+                 2)) *
+        std::log(10) / 200 * options.Get<float>(kWDLContemptId);
   } else {
     kWDLRescaleRatio = options.Get<float>(kWDLRescaleRatioId);
     kWDLRescaleDiff = options.Get<float>(kWDLRescaleDiffId);
