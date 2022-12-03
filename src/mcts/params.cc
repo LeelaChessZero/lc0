@@ -455,7 +455,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kWDLRescaleDiffId);
   options->HideOption(kWDLDrawRateReferenceId);
   options->HideOption(kWDLBookExitBiasId);
-
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
