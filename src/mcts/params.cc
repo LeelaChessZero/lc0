@@ -406,7 +406,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
   options->Add<FloatOption>(kDrawFactorWId, 0.0f, 2.0f) = 0.0f;
-  options->Add<FloatOption>(kDrawFactorLId, -1.0f, 2.0f) = 0.0f;
+  options->Add<FloatOption>(kDrawFactorLId, 0.0f, 2.0f) = 0.0f;
   options->Add<FloatOption>(kWinFactorId, 0.0f, 2.0f) = 1.0f;
   options->Add<FloatOption>(kLoseFactorId, 0.0f, 2.0f) = 1.0f;
 

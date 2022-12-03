@@ -168,9 +168,8 @@ class Node {
                   float LoseFactor) const {
     float L = std::fmax((1 - wl_ - d_) * 0.5f, 0);
     float W = std::fmax(wl_ + L, 0);
-    return L != 0 ? std::pow(W, WinFactor + DrawFactorW * d_) -
-                        std::pow(L, LoseFactor + DrawFactorL * d_)
-                  : std::pow(W, WinFactor + DrawFactorW * d_);
+    return std::pow(W, WinFactor + DrawFactorW * d_) -
+                        std::pow(L, LoseFactor + DrawFactorL * d_);
 
       //return std::pow(std::fmax(wl_ + std::fmax((1 - wl_ - d_) * 0.5f, 0), 0),
       //              WinFactor + DrawFactorW * d_) -
