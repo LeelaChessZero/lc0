@@ -453,6 +453,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kWDLRescaleRatioId);
   options->HideOption(kWDLRescaleDiffId);
+  options->HideOption(kWDLDrawRateReferenceId);
   options->HideOption(kWDLBookExitBiasId);
 
 }
