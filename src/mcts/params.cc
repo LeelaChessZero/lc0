@@ -451,6 +451,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureEndgameId);
   options->HideOption(kTemperatureWinpctCutoffId);
   options->HideOption(kTemperatureVisitOffsetId);
+  options->HideOption(kWDLRescaleRatioId);
+  options->HideOption(kWDLRescaleDiffId);
+  options->HideOption(kWDLBookExitBiasId);
+
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
