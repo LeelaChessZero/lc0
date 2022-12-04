@@ -409,6 +409,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                       " is not supported by the ONNX backend.");
     }
     WeightsToOnnxConverterOptions converter_options;
+    converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;

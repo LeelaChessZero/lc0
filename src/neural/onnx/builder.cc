@@ -29,6 +29,7 @@
 
 #include <initializer_list>
 
+#include "neural/onnx/adapters.h"
 #include "neural/onnx/onnx.pb.h"
 #include "utils/exception.h"
 #include "utils/random.h"
@@ -36,12 +37,15 @@
 
 namespace lczero {
 
-OnnxBuilder::OnnxBuilder() {
+OnnxBuilder::OnnxBuilder(int opset) : opset_(opset) {
+  if (opset < 7 || opset > 17) {
+    throw Exception("Only ONNX opsets between 7 and 17 are supported.");
+  }
   model_.set_ir_version(4);
   model_.set_domain("org.lczero.models.*");
   model_.set_producer_name("Lc0");
   model_.set_producer_version(GetVersionStr());
-  model_.add_opset_import()->set_version(9);
+  model_.add_opset_import()->set_version(opset);
   model_.mutable_graph()->set_name("org.lczero/converted/" +
                                    Random::Get().GetString(16));
 }
@@ -166,7 +170,12 @@ std::string OnnxBuilder::Squeeze(const std::string& name,
                                  const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Squeeze");
-  AddIntsAttribute(node, "axes", {2, 3});
+  if (opset_ < 13) {
+    AddIntsAttribute(node, "axes", {2, 3});
+  } else {
+    node->add_input(
+        AddInitializer(name + "/axes", Int64OnnxConst({2, 3}, {2})));
+  }
   return out;
 }
 
@@ -287,7 +296,14 @@ std::vector<std::string> OnnxBuilder::Split(const std::string& name,
   node->add_input(input);
   AddIntAttribute(node, "axis", axis);
   if (split.size() > 0) {
-    AddIntsAttribute(node, "split", split);
+    if (opset_ < 13) {
+      AddIntsAttribute(node, "split", split);
+    } else {
+      node->add_input(AddInitializer(
+          name + "/split",
+          Int64OnnxConst(std::vector<int64_t>(begin(split), end(split)),
+                         {static_cast<int>(split.size())})));
+    }
     std::vector<std::string> out;
     for (size_t i = 1; i <= split.size(); i++) {
       out.push_back(name + "/out" + std::to_string(i));
@@ -306,8 +322,17 @@ std::string OnnxBuilder::Slice(const std::string& name,
                                std::initializer_list<int> ends) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Slice");
-  AddIntsAttribute(node, "starts", starts);
-  AddIntsAttribute(node, "ends", ends);
+  if (opset_ < 10) {
+    AddIntsAttribute(node, "starts", starts);
+    AddIntsAttribute(node, "ends", ends);
+  } else {
+    node->add_input(AddInitializer(
+        name + "/starts", Int32OnnxConst(std::vector<int>(starts),
+                                         {static_cast<int>(starts.size())})));
+    node->add_input(AddInitializer(
+        name + "/ends", Int32OnnxConst(std::vector<int>(ends),
+                                       {static_cast<int>(ends.size())})));
+  }
   return out;
 }
 
@@ -331,6 +356,7 @@ std::string OnnxBuilder::Sigmoid(const std::string& name,
   return PopulateStdNodeFields(node, name, input, "Sigmoid");
 }
 
+// This is only defined in opset 17 but onnxruntime supports it from 1.
 std::string OnnxBuilder::LayerNormalization(const std::string& name,
                                             const std::string& input,
                                             const OnnxConst& scale,
