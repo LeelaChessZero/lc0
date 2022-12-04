@@ -30,6 +30,8 @@
 #import <Metal/Metal.h>
 #import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
+#import "neural/network_legacy.h"
+
 @interface MPSGraphTensor(Lc0Extensions)
 
 -(NSUInteger) size;
@@ -107,6 +109,12 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                       biases:(float * __nonnull)biases
                                                   activation:(NSString * __nullable)activation
                                                        label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) addEncoderLayerWithParent:parent
+                                        legacyWeights:(lczero::LegacyWeights::EncoderLayer &)weights
+                                                heads:(NSUInteger)heads
+                                        embeddingSize:(NSUInteger)embeddingSize
+                                                label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) addLayerNormalizationWithSkipParent:(MPSGraphTensor * __nonnull)parent
                                                  secondaryInput:(MPSGraphTensor * __nonnull)secondary

@@ -25,8 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#import "neural/network_legacy.h"
 #import "NetworkGraph.h"
-
 #import <vector>
 
 static MPSGraphConvolution2DOpDescriptor * __nonnull convolution2DDescriptor = [MPSGraphConvolution2DOpDescriptor descriptorWithStrideInX:1
@@ -541,6 +541,90 @@ static const NSInteger kMinSubBatchSize = 20;
     [self setVariable:label tensor:policyTensor];
 
     return policyTensor;
+}
+
+-(nonnull MPSGraphTensor *) addEncoderLayerWithParent:parent
+                                        legacyWeights:(lczero::LegacyWeights::EncoderLayer &)encoder
+                                                heads:(NSUInteger)heads
+                                        embeddingSize:(NSUInteger)embeddingSize
+                                                label:(NSString * __nonnull)label
+{
+    NSUInteger dModel = encoder.mha.q_b.size();
+    MPSGraphTensor * mhaQ = [self addFullyConnectedLayerWithParent:parent
+                                                     inputChannels:embeddingSize
+                                                    outputChannels:encoder.mha.q_b.size()
+                                                           weights:&encoder.mha.q_w[0]
+                                                            biases:&encoder.mha.q_b[0]
+                                                        activation:nil
+                                                             label:[NSString stringWithFormat:@"%@/mhaq/fc", label]];
+
+    MPSGraphTensor * mhaK = [self addFullyConnectedLayerWithParent:parent
+                                                     inputChannels:embeddingSize
+                                                    outputChannels:encoder.mha.k_b.size()
+                                                           weights:&encoder.mha.k_w[0]
+                                                            biases:&encoder.mha.k_b[0]
+                                                        activation:nil
+                                                             label:[NSString stringWithFormat:@"%@/mhak/fc", label]];
+
+    MPSGraphTensor * mhaV = [self addFullyConnectedLayerWithParent:parent
+                                                     inputChannels:embeddingSize
+                                                    outputChannels:encoder.mha.v_b.size()
+                                                           weights:&encoder.mha.v_w[0]
+                                                            biases:&encoder.mha.v_b[0]
+                                                        activation:nil
+                                                             label:[NSString stringWithFormat:@"%@/mhav/fc", label]];
+
+    MPSGraphTensor * mha = [self scaledMHAMatmulWithQueries:mhaQ
+                                                   withKeys:mhaK
+                                                 withValues:mhaV
+                                                      heads:heads
+                                                     dModel:dModel
+                                                      scale:1.0f / sqrt(dModel)
+                                                      label:[NSString stringWithFormat:@"%@/mha", label]];
+
+    // MHA final dense layer.
+    mha = [self addFullyConnectedLayerWithParent:mha
+                                   inputChannels:dModel
+                                  outputChannels:embeddingSize
+                                         weights:&encoder.mha.dense_w[0]
+                                          biases:&encoder.mha.dense_b[0]
+                                      activation:nil
+                                           label:[NSString stringWithFormat:@"%@/mha/fc", label]];
+
+    // Skip connection + Layer Norm 1.
+    MPSGraphTensor * enc = [self addLayerNormalizationWithSkipParent:parent
+                                                      secondaryInput:mha
+                                                              gammas:&encoder.ln1_gammas[0]
+                                                               betas:&encoder.ln1_betas[0]
+                                                         channelSize:encoder.ln1_gammas.size()
+                                                             epsilon:1e-6
+                                                               label:[NSString stringWithFormat:@"%@/ln1", label]];
+
+    // Feedforward network (FFN).
+    MPSGraphTensor * ffn = [self addFullyConnectedLayerWithParent:enc
+                                                    inputChannels:dModel
+                                                   outputChannels:encoder.ffn.dense1_b.size()
+                                                          weights:&encoder.ffn.dense1_w[0]
+                                                           biases:&encoder.ffn.dense1_b[0]
+                                                       activation:@"selu"
+                                                            label:[NSString stringWithFormat:@"%@/ffn1", label]];
+
+    ffn = [self addFullyConnectedLayerWithParent:ffn
+                                   inputChannels:encoder.ffn.dense1_b.size()
+                                  outputChannels:encoder.ffn.dense2_b.size()
+                                         weights:&encoder.ffn.dense2_w[0]
+                                          biases:&encoder.ffn.dense2_b[0]
+                                      activation:nil
+                                           label:[NSString stringWithFormat:@"%@/ffn2", label]];
+
+    // Skip connection + Layer Norm 2.
+    return [self addLayerNormalizationWithSkipParent:enc
+                                      secondaryInput:ffn
+                                              gammas:&encoder.ln2_gammas[0]
+                                               betas:&encoder.ln2_betas[0]
+                                         channelSize:encoder.ln2_gammas.size()
+                                             epsilon:1e-6
+                                               label:[NSString stringWithFormat:@"%@/ln2", label]];
 }
 
 -(nonnull MPSGraphTensor *) addLayerNormalizationWithSkipParent:(MPSGraphTensor * __nonnull)parent
