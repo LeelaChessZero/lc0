@@ -463,21 +463,19 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
       // For castlings we don't check destination king square for checks, it
       // will be done in legal move check phase.
       if (castlings_.we_can_000()) {
-        const uint8_t qrook = castlings_.queenside_rook();
+        const uint8_t qrook = castlings_.our_queenside_rook();
         if (walk_free(std::min(static_cast<uint8_t>(C1), qrook),
                       std::max(static_cast<uint8_t>(D1), king), qrook, king) &&
             !range_attacked(king, C1)) {
-          result.emplace_back(source,
-                              BoardSquare(RANK_1, castlings_.queenside_rook()));
+          result.emplace_back(source, BoardSquare(RANK_1, qrook));
         }
       }
       if (castlings_.we_can_00()) {
-        const uint8_t krook = castlings_.kingside_rook();
+        const uint8_t krook = castlings_.our_kingside_rook();
         if (walk_free(std::min(static_cast<uint8_t>(F1), king),
                       std::max(static_cast<uint8_t>(G1), krook), krook, king) &&
             !range_attacked(king, G1)) {
-          result.emplace_back(source,
-                              BoardSquare(RANK_1, castlings_.kingside_rook()));
+          result.emplace_back(source, BoardSquare(RANK_1, krook));
         }
       }
       continue;
@@ -625,10 +623,10 @@ bool ChessBoard::ApplyMove(Move move) {
   rooks_.reset(to);
   bishops_.reset(to);
   pawns_.reset(to);
-  if (to.as_int() == 56 + castlings_.kingside_rook()) {
+  if (to.as_int() == A8 + castlings_.their_kingside_rook()) {
     castlings_.reset_they_can_00();
   }
-  if (to.as_int() == 56 + castlings_.queenside_rook()) {
+  if (to.as_int() == A8 + castlings_.their_queenside_rook()) {
     castlings_.reset_they_can_000();
   }
 
@@ -672,8 +670,12 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Reset castling rights.
   if (from_row == RANK_1 && rooks_.get(from)) {
-    if (from_col == castlings_.queenside_rook()) castlings_.reset_we_can_000();
-    if (from_col == castlings_.kingside_rook()) castlings_.reset_we_can_00();
+    if (from_col == castlings_.our_queenside_rook()) {
+      castlings_.reset_we_can_000();
+    }
+    if (from_col == castlings_.our_kingside_rook()) {
+      castlings_.reset_we_can_00();
+    }
   }
 
   // Ordinary move.
@@ -1043,62 +1045,66 @@ void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
   }
 
   if (castlings != "-") {
-    uint8_t left_rook = FILE_A;
-    uint8_t right_rook = FILE_H;
+    uint8_t our_left_rook = FILE_A;
+    uint8_t our_right_rook = FILE_H;
+    uint8_t their_left_rook = FILE_A;
+    uint8_t their_right_rook = FILE_H;
     for (char c : castlings) {
       const bool is_black = std::islower(c);
       const int king_col = (is_black ? their_king_ : our_king_).col();
-      if (!is_black) c = std::tolower(c);
       const auto rooks =
           (is_black ? their_pieces_ : our_pieces_) & ChessBoard::rooks();
-      if (c == 'k') {
+      auto find_rook = [rooks, king_col, fen](bool forward, uint8_t rank) {
+        uint8_t rook;
+        for (rook = forward ? FILE_A : FILE_H; rook != king_col;
+             rook += 2 * forward - 1) {
+          if (rooks.get(rank, rook)) break;
+        }
+        if (rook == king_col) {
+          throw Exception("Bad fen string (missing rook): " + fen);
+        }
+        return rook;
+      };
+      if (c == 'K') {
         // Finding rightmost rook.
-        for (right_rook = FILE_H; right_rook > king_col; --right_rook) {
-          if (rooks.get(is_black ? RANK_8 : RANK_1, right_rook)) break;
-        }
-        if (right_rook == king_col) {
-          throw Exception("Bad fen string (no kingside rook): " + fen);
-        }
-        if (is_black) {
-          castlings_.set_they_can_00();
+        our_right_rook = find_rook(false, RANK_1);
+        castlings_.set_we_can_00();
+      } else if (c == 'Q') {
+        // Finding leftmost rook.
+        our_left_rook = find_rook(true, RANK_1);
+        castlings_.set_we_can_000();
+      } else if (c >= 'A' && c <= 'H') {
+        int rook_col = c - 'A';
+        if (rook_col < king_col) {
+          our_left_rook = rook_col;
+          castlings_.set_we_can_000();
         } else {
+          our_right_rook = rook_col;
           castlings_.set_we_can_00();
         }
+      } else if (c == 'k') {
+        // Finding rightmost rook.
+        their_right_rook = find_rook(false, RANK_8);
+        castlings_.set_they_can_00();
       } else if (c == 'q') {
         // Finding leftmost rook.
-        for (left_rook = FILE_A; left_rook < king_col; ++left_rook) {
-          if (rooks.get(is_black ? RANK_8 : RANK_1, left_rook)) break;
-        }
-        if (left_rook == king_col) {
-          throw Exception("Bad fen string (no queenside rook): " + fen);
-        }
-        if (is_black) {
-          castlings_.set_they_can_000();
-        } else {
-          castlings_.set_we_can_000();
-        }
+        their_left_rook = find_rook(true, RANK_8);
+        castlings_.set_they_can_000();
       } else if (c >= 'a' && c <= 'h') {
         int rook_col = c - 'a';
         if (rook_col < king_col) {
-          left_rook = rook_col;
-          if (is_black) {
-            castlings_.set_they_can_000();
-          } else {
-            castlings_.set_we_can_000();
-          }
+          their_left_rook = rook_col;
+          castlings_.set_they_can_000();
         } else {
-          right_rook = rook_col;
-          if (is_black) {
-            castlings_.set_they_can_00();
-          } else {
-            castlings_.set_we_can_00();
-          }
+          their_right_rook = rook_col;
+          castlings_.set_they_can_00();
         }
       } else {
         throw Exception("Bad fen string (unexpected casting symbol): " + fen);
       }
     }
-    castlings_.SetRookPositions(left_rook, right_rook);
+    castlings_.SetRookPositions(our_left_rook, our_right_rook, their_left_rook,
+                                their_right_rook);
   }
 
   if (en_passant != "-") {

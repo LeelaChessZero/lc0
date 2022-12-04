@@ -116,7 +116,12 @@ class ChessBoard {
 
   class Castlings {
    public:
-    Castlings() : queenside_rook_(0), kingside_rook_(7) {}
+    Castlings()
+        : our_queenside_rook_(FILE_A),
+          their_queenside_rook_(FILE_A),
+          our_kingside_rook_(FILE_H),
+          their_kingside_rook_(FILE_H),
+          data_(0) {}
 
     void set_we_can_00() { data_ |= 1; }
     void set_we_can_000() { data_ |= 2; }
@@ -134,7 +139,11 @@ class ChessBoard {
     bool they_can_000() const { return data_ & 8; }
     bool no_legal_castle() const { return data_ == 0; }
 
-    void Mirror() { data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2); }
+    void Mirror() {
+      std::swap(our_queenside_rook_, their_queenside_rook_);
+      std::swap(our_kingside_rook_, their_kingside_rook_);
+      data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2);
+    }
 
     // Note: this is not a strict xfen compatible output. Without access to the
     // board its not possible to know whether there is ambiguity so all cases
@@ -142,16 +151,17 @@ class ChessBoard {
     std::string as_string() const {
       if (data_ == 0) return "-";
       std::string result;
-      if (queenside_rook() == FILE_A && kingside_rook() == FILE_H) {
+      if (our_queenside_rook() == FILE_A && our_kingside_rook() == FILE_H &&
+          their_queenside_rook() == FILE_A && their_kingside_rook() == FILE_H) {
         if (we_can_00()) result += 'K';
         if (we_can_000()) result += 'Q';
         if (they_can_00()) result += 'k';
         if (they_can_000()) result += 'q';
       } else {
-        if (we_can_00()) result += 'A' + kingside_rook();
-        if (we_can_000()) result += 'A' + queenside_rook();
-        if (they_can_00()) result += 'a' + kingside_rook();
-        if (they_can_000()) result += 'a' + queenside_rook();
+        if (we_can_00()) result += 'A' + our_kingside_rook();
+        if (we_can_000()) result += 'A' + our_queenside_rook();
+        if (they_can_00()) result += 'a' + their_kingside_rook();
+        if (they_can_000()) result += 'a' + their_queenside_rook();
       }
       return result;
     }
@@ -164,8 +174,10 @@ class ChessBoard {
       if (they_can_00()) result += 'k';
       if (they_can_000()) result += 'q';
       result += '[';
-      result += 'a' + queenside_rook();
-      result += 'a' + kingside_rook();
+      result += 'A' + our_queenside_rook();
+      result += 'A' + our_kingside_rook();
+      result += 'a' + their_queenside_rook();
+      result += 'a' + their_kingside_rook();
       result += ']';
       return result;
     }
@@ -173,29 +185,38 @@ class ChessBoard {
     uint8_t as_int() const { return data_; }
 
     bool operator==(const Castlings& other) const {
-      assert(queenside_rook_ == other.queenside_rook_ &&
-             kingside_rook_ == other.kingside_rook_);
+      assert(our_queenside_rook_ == other.our_queenside_rook_ &&
+             our_kingside_rook_ == other.our_kingside_rook_ &&
+             their_queenside_rook_ == other.their_queenside_rook_ &&
+             their_kingside_rook_ == other.their_kingside_rook_);
       return data_ == other.data_;
     }
 
-    uint8_t queenside_rook() const { return queenside_rook_; }
-    uint8_t kingside_rook() const { return kingside_rook_; }
-    void SetRookPositions(std::uint8_t left, std::uint8_t right) {
-      queenside_rook_ = left;
-      kingside_rook_ = right;
+    uint8_t our_queenside_rook() const { return our_queenside_rook_; }
+    uint8_t our_kingside_rook() const { return our_kingside_rook_; }
+    uint8_t their_queenside_rook() const { return their_queenside_rook_; }
+    uint8_t their_kingside_rook() const { return their_kingside_rook_; }
+    void SetRookPositions(uint8_t our_left, uint8_t our_right,
+                          uint8_t their_left, uint8_t their_right) {
+      our_queenside_rook_ = our_left;
+      our_kingside_rook_ = our_right;
+      their_queenside_rook_ = their_left;
+      their_kingside_rook_ = their_right;
     }
 
    private:
     // Position of "left" (queenside) rook in starting game position.
-    std::uint8_t queenside_rook_ : 3;
+    uint8_t our_queenside_rook_;
+    uint8_t their_queenside_rook_;
     // Position of "right" (kingside) rook in starting position.
-    std::uint8_t kingside_rook_ : 3;
+    uint8_t our_kingside_rook_;
+    uint8_t their_kingside_rook_;
 
     // - Bit 0 -- "our" side's kingside castle.
     // - Bit 1 -- "our" side's queenside castle.
     // - Bit 2 -- opponent's side's kingside castle.
     // - Bit 3 -- opponent's side's queenside castle.
-    std::uint8_t data_ = 0;
+    uint8_t data_;
   };
 
   std::string DebugString() const;
