@@ -45,7 +45,7 @@ class OnnxConst {
 // Builds Onnx::ModelProto.
 class OnnxBuilder {
  public:
-  OnnxBuilder();
+  OnnxBuilder(int opset);
   void AddInput(const std::string& name, std::initializer_list<int> dims,
                 pblczero::TensorProto::DataType datatype);
   void AddOutput(const std::string& name, std::initializer_list<int> dims,
@@ -112,6 +112,7 @@ class OnnxBuilder {
   std::string OutputAsString() const { return model_.OutputAsString(); }
 
  private:
+  const int opset_;
   pblczero::ModelProto model_;
 };
 
