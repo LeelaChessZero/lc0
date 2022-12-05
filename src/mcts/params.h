@@ -197,6 +197,7 @@ class SearchParams {
   static const OptionId kWDLRescaleRatioId;
   static const OptionId kWDLRescaleDiffId;
   static const OptionId kWDLContemptId;
+  static const OptionId kWDLContemptAttenuationId;
   static const OptionId kWDLDrawRateTargetId;
   static const OptionId kWDLDrawRateReferenceId;
   static const OptionId kWDLBookExitBiasId;

@@ -267,9 +267,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto wl_internal = wl;
     auto d_internal = floatD;
     // Only the diff effect is inverted, so we only need to call if diff != 0.
-    if (params_.GetWDLRescaleDiff() != 0) {
+    if (params_.GetPerspective() != "none" && params_.GetWDLRescaleDiff() != 0)
+    {
       auto sign = ((params_.GetPerspective() == "auto") ||
-                   ((params_.GetPerspective() == "white") ^
+                   ((params_.GetPerspective() == "black") ==
                     played_history_.IsBlackToMove())) ? 1.0f : -1.0f;
       WDLRescale(wl, floatD, params_.GetWDLRescaleRatio(),
                        params_.GetWDLRescaleDiff(), sign, true);
@@ -2128,14 +2129,16 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
   // Check whether root moves are from the set perspective.
-  bool root_stm = (params_.GetPerspective() == "auto") ? true :
-            ((params_.GetPerspective() == "white") ^
-             search_->played_history_.Last().IsBlackToMove());
-  auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-  if (params_.GetWDLRescaleRatio() != 1.0f ||
-      params_.GetWDLRescaleDiff() != 0.0f) {
-    WDLRescale(v, d, params_.GetWDLRescaleRatio(),
-               params_.GetWDLRescaleDiff(), sign, false);
+  if (params_.GetPerspective() != "none") {
+    bool root_stm = (params_.GetPerspective() == "auto") ? true :
+              ((params_.GetPerspective() == "black") ==
+               search_->played_history_.Last().IsBlackToMove());
+    auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
+    if (params_.GetWDLRescaleRatio() != 1.0f ||
+        params_.GetWDLRescaleDiff() != 0.0f) {
+      WDLRescale(v, d, params_.GetWDLRescaleRatio(),
+                 params_.GetWDLRescaleDiff(), sign, false);
+    }
   }
   node_to_process->v = v;
   node_to_process->d = d;

@@ -260,8 +260,9 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "at once."};
 const OptionId SearchParams::kPerspectiveId{
     "perspective", "Perspective",
-    "Affects the way asymmetric parameters are applied. Default is 'auto' for "
-    "matches, use 'white' and 'black' for analysis."};
+    "Affects the way asymmetric WDL parameters are applied. Default is 'auto' "
+    "for matches, use 'white' and 'black' for analysis. Use 'none' to "
+    "deactivate the WDL conversion."};
 const OptionId SearchParams::kDrawScoreSidetomoveId{
     "draw-score-sidetomove", "DrawScoreSideToMove",
     "Score of a drawn game, as seen by a player making the move."};
@@ -283,6 +284,9 @@ const OptionId SearchParams::kWDLRescaleDiffId{
 const OptionId SearchParams::kWDLContemptId{
     "wdl-contempt", "WDLContempt",
     "The simulated rating advantage for the WDL conversion."};
+const OptionId SearchParams::kWDLContemptAttenuationId{
+    "wdl-contempt-attenuation", "WDLContemptAttenuation",
+    "This scales the given Elo advantage used for contempt."};
 const OptionId SearchParams::kWDLDrawRateTargetId{
     "wdl-draw-rate-target", "WDLDrawRateTarget",
     "To define the accuracy of play, the target draw rate in equal "
@@ -410,7 +414,7 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  std::vector<std::string> perspective = {"auto", "white", "black"};
+  std::vector<std::string> perspective = {"auto", "white", "black", "none"};
   options->Add<ChoiceOption>(kPerspectiveId, perspective) = "auto";
   options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
@@ -419,6 +423,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
   options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptId, -1000.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
   options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
@@ -453,6 +458,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kWDLRescaleRatioId);
   options->HideOption(kWDLRescaleDiffId);
+  options->HideOption(kWDLContemptAttenuationId);
   options->HideOption(kWDLDrawRateReferenceId);
   options->HideOption(kWDLBookExitBiasId);
 }
@@ -553,7 +559,8 @@ SearchParams::SearchParams(const OptionsDict& options)
                  std::cosh(0.5f * (1 + options.Get<float>(kWDLBookExitBiasId)) /
                            scale_target),
                  2)) *
-        std::log(10) / 200 * options.Get<float>(kWDLContemptId);
+        std::log(10) / 200 * options.Get<float>(kWDLContemptId) *
+        options.Get<float>(kWDLContemptAttenuationId);
   }
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
