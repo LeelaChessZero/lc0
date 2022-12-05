@@ -196,7 +196,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
+inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
                        float wdl_rescale_diff, float sign, bool invert) {
   if (invert) {
     wdl_rescale_diff = -wdl_rescale_diff;
@@ -219,7 +219,6 @@ inline void WDLRescale(float &v, float &d, float wdl_rescale_ratio,
   }
 }
 }  // namespace
-
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
@@ -267,13 +266,15 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto wl_internal = wl;
     auto d_internal = floatD;
     // Only the diff effect is inverted, so we only need to call if diff != 0.
-    if (params_.GetPerspective() != "none" && params_.GetWDLRescaleDiff() != 0)
-    {
+    if (params_.GetPerspective() != "none" &&
+        params_.GetWDLRescaleDiff() != 0) {
       auto sign = ((params_.GetPerspective() == "auto") ||
                    ((params_.GetPerspective() == "black") ==
-                    played_history_.IsBlackToMove())) ? 1.0f : -1.0f;
+                    played_history_.IsBlackToMove()))
+                      ? 1.0f
+                      : -1.0f;
       WDLRescale(wl, floatD, params_.GetWDLRescaleRatio(),
-                       params_.GetWDLRescaleDiff(), sign, true);
+                 params_.GetWDLRescaleDiff(), sign, true);
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -296,12 +297,12 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       uci_info.score = wl * 10000;
     }
 
-    auto w =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl_internal -
-                                                         d_internal))));
-    auto l =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl_internal -
-                                                         d_internal))));
+    auto w = std::max(
+        0,
+        static_cast<int>(std::round(500.0 * (1.0 + wl_internal - d_internal))));
+    auto l = std::max(
+        0,
+        static_cast<int>(std::round(500.0 * (1.0 - wl_internal - d_internal))));
     // Using 1000-w-l so that W+D+L add up to 1000.0.
     auto d = 1000 - w - l;
     if (d < 0) {
@@ -476,10 +477,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         up = -up;
         std::swap(lo, up);
       }
-      *oss << (lo == up                                                ? "(T) "
-               : lo == GameResult::DRAW && up == GameResult::WHITE_WON ? "(W) "
-               : lo == GameResult::BLACK_WON && up == GameResult::DRAW ? "(L) "
-                                                                       : "");
+      *oss << (lo == up
+                   ? "(T) "
+                   : lo == GameResult::DRAW && up == GameResult::WHITE_WON
+                         ? "(W) "
+                         : lo == GameResult::BLACK_WON && up == GameResult::DRAW
+                               ? "(L) "
+                               : "");
     }
   };
 
@@ -2136,9 +2140,10 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto d = computation.GetDVal(idx_in_computation);
   // Check whether root moves are from the set perspective.
   if (params_.GetPerspective() != "none") {
-    bool root_stm = (params_.GetPerspective() == "auto") ? true :
-              ((params_.GetPerspective() == "black") ==
-               search_->played_history_.Last().IsBlackToMove());
+    bool root_stm = (params_.GetPerspective() == "auto")
+                        ? true
+                        : ((params_.GetPerspective() == "black") ==
+                           search_->played_history_.Last().IsBlackToMove());
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
     if (params_.GetWDLRescaleRatio() != 1.0f ||
         params_.GetWDLRescaleDiff() != 0.0f) {
