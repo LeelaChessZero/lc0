@@ -74,9 +74,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     throw Exception("There was an error initializing the GPU device.");
   }
 
-  const int channelSize = weights.input.weights.size() / kInputPlanes / 9;
-  const int kernelSize = 3;
-
   max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
   batch_size_ = options.GetOrDefault<int>("batch", 64);
 
@@ -95,7 +92,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   policy_d_model_ = weights.ip2_pol_b.size();
 
   // Build MPS Graph.
-  builder_->build(kInputPlanes, channelSize, kernelSize, weights, attn_policy_, conv_policy_, wdl_, moves_left_,
+  builder_->build(kInputPlanes, weights, attn_policy_, conv_policy_, wdl_, moves_left_,
     file.format().network_format().default_activation() == pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH ? "mish" : "relu"
   );
 }

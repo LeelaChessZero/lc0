@@ -30,6 +30,8 @@ static constexpr float kEpsilon = 1e-5f;
 
 LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
     : input(weights.input()),
+      ip_emb_w(LayerAdapter(weights.ip_emb_w()).as_vector()),
+      ip_emb_b(LayerAdapter(weights.ip_emb_b()).as_vector()),
       policy1(weights.policy1()),
       policy(weights.policy()),
       ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
@@ -40,17 +42,25 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip3_pol_b(LayerAdapter(weights.ip3_pol_b()).as_vector()),
       ip4_pol_w(LayerAdapter(weights.ip4_pol_w()).as_vector()),
       value(weights.value()),
+      ip_val_w(LayerAdapter(weights.ip_val_w()).as_vector()),
+      ip_val_b(LayerAdapter(weights.ip_val_b()).as_vector()),
       ip1_val_w(LayerAdapter(weights.ip1_val_w()).as_vector()),
       ip1_val_b(LayerAdapter(weights.ip1_val_b()).as_vector()),
       ip2_val_w(LayerAdapter(weights.ip2_val_w()).as_vector()),
       ip2_val_b(LayerAdapter(weights.ip2_val_b()).as_vector()),
       moves_left(weights.moves_left()),
+      ip_mov_w(LayerAdapter(weights.ip_mov_w()).as_vector()),
+      ip_mov_b(LayerAdapter(weights.ip_mov_b()).as_vector()),
       ip1_mov_w(LayerAdapter(weights.ip1_mov_w()).as_vector()),
       ip1_mov_b(LayerAdapter(weights.ip1_mov_b()).as_vector()),
       ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
       ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
+  }
+  encoder_head_count = weights.headcount();
+  for (const auto& enc : weights.encoder()) {
+    encoder.emplace_back(enc);
   }
   pol_encoder_head_count = weights.pol_headcount();
   for (const auto& enc : weights.pol_encoder()) {

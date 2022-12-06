@@ -114,6 +114,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                         legacyWeights:(lczero::LegacyWeights::EncoderLayer &)weights
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
+                                                alpha:(float)alpha
                                                 label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) addLayerNormalizationWithSkipParent:(MPSGraphTensor * __nonnull)parent
@@ -148,6 +149,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(nonnull MPSGraphTensor *) transposeChannelsWithTensor:(MPSGraphTensor * __nonnull)tensor
                                                   label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) positionEncodingWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                               weights:(const float * __nonnull)encodings
+                                                  type:(NSString * __nullable)type
+                                                 label:(NSString * __nonnull)label;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 

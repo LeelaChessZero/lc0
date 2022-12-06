@@ -26,6 +26,7 @@
  */
 
 #import "neural/network_legacy.h"
+#import "neural/shared/position_encoding.h"
 #import "MetalNetworkBuilder.h"
 #import "NetworkGraph.h"
 
@@ -56,63 +57,117 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
-void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSize, LegacyWeights& weights, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, std::string default_activation)
+void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, std::string default_activation)
 {
     Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-    MPSGraphTensor * layer;
     NSString * defaultActivation = [NSString stringWithUTF8String:default_activation.c_str()];
 
     // 0. Input placeholder.
-    layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
-                                              height:8
-                                               width:8
-                                               label:@"inputs"];
+    // @todo - placeholder can be made directly as NHWC to avoid transposes.
+    MPSGraphTensor * layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
+                                                               height:8
+                                                                width:8
+                                                                label:@"inputs"];
+    
+    const NSUInteger kernelSize = 3;
 
-    // 1. Input layer
-    layer = [graph addConvolutionBlockWithParent:layer
-                                   inputChannels:kInputPlanes
-                                  outputChannels:channelSize
-                                      kernelSize:kernelSize
-                                         weights:&weights.input.weights[0]
-                                          biases:&weights.input.biases[0]
-                                         activation:defaultActivation
-                                           label:@"input/conv"];
+    // Input conv layer only when there are residual blocks.
+    if (weights.residual.size() > 0) {
 
-    // 2. Residual blocks
-    for (size_t i = 0; i < weights.residual.size(); i++) {
-        layer = [graph addResidualBlockWithParent:layer
-                                    inputChannels:channelSize
-                                   outputChannels:channelSize
-                                       kernelSize:kernelSize
-                                         weights1:&weights.residual[i].conv1.weights[0]
-                                          biases1:&weights.residual[i].conv1.biases[0]
-                                         weights2:&weights.residual[i].conv2.weights[0]
-                                          biases2:&weights.residual[i].conv2.biases[0]
-                                            label:[NSString stringWithFormat:@"block_%zu", i]
-                                            hasSe:weights.residual[i].has_se ? YES : NO
-                                       seWeights1:&weights.residual[i].se.w1[0]
-                                        seBiases1:&weights.residual[i].se.b1[0]
-                                       seWeights2:&weights.residual[i].se.w2[0]
-                                        seBiases2:&weights.residual[i].se.b2[0]
-                                      seFcOutputs:weights.residual[i].se.b1.size()
-                                       activation:defaultActivation];
+        const NSUInteger channelSize = weights.input.weights.size() / (kInputPlanes * kernelSize * kernelSize);
+
+        // 1. Input layer
+        layer = [graph addConvolutionBlockWithParent:layer
+                                       inputChannels:kInputPlanes
+                                      outputChannels:channelSize
+                                          kernelSize:kernelSize
+                                             weights:&weights.input.weights[0]
+                                              biases:&weights.input.biases[0]
+                                             activation:defaultActivation
+                                               label:@"input/conv"];
+
+        // 2. Residual blocks
+        for (size_t i = 0; i < weights.residual.size(); i++) {
+            layer = [graph addResidualBlockWithParent:layer
+                                        inputChannels:channelSize
+                                       outputChannels:channelSize
+                                           kernelSize:kernelSize
+                                             weights1:&weights.residual[i].conv1.weights[0]
+                                              biases1:&weights.residual[i].conv1.biases[0]
+                                             weights2:&weights.residual[i].conv2.weights[0]
+                                              biases2:&weights.residual[i].conv2.biases[0]
+                                                label:[NSString stringWithFormat:@"block_%zu", i]
+                                                hasSe:weights.residual[i].has_se ? YES : NO
+                                           seWeights1:&weights.residual[i].se.w1[0]
+                                            seBiases1:&weights.residual[i].se.b1[0]
+                                           seWeights2:&weights.residual[i].se.w2[0]
+                                            seBiases2:&weights.residual[i].se.b2[0]
+                                          seFcOutputs:weights.residual[i].se.b1.size()
+                                           activation:defaultActivation];
+        }
+
+    }
+
+    // Attention body.
+    bool attn_body = weights.encoder.size() > 0;
+    if (attn_body) {
+
+        assert(weights.ip_emb_b.size() > 0);
+
+        // NCHW -> NHWC
+        // @todo if input placeholder is NHWC, then this is not needed for attn_body, but kPosEncoding has to be reordered.
+        layer = [graph transposeChannelsWithTensor:layer label:@"input/nchw_nhwc"];
+
+        if (weights.residual.size() == 0) {
+            // No residual means pure transformer, so process input position encoding.
+            layer = [graph positionEncodingWithTensor:layer
+                                              weights:&kPosEncoding[0][0]
+                                                 type:nil
+                                                label:@"input/position_encoding"];
+        }
+
+            
+        // Input embedding for attention body.
+        layer = [graph addFullyConnectedLayerWithParent:layer
+                                           inputChannels:[[layer.shape lastObject] intValue]
+                                          outputChannels:weights.ip_emb_b.size()
+                                                 weights:&weights.ip_emb_w[0]
+                                                  biases:&weights.ip_emb_b[0]
+                                              activation:defaultActivation
+                                                   label:@"input/embedding"];
+        
+        // 2b. Attention body encoder layers.
+        float alpha = (float) pow(2.0 * weights.encoder.size(), 0.25);
+        for (size_t i = 0; i < weights.encoder.size(); i++) {
+            layer = [graph addEncoderLayerWithParent:layer
+                                       legacyWeights:weights.encoder[i]
+                                               heads:weights.encoder_head_count
+                                       embeddingSize:weights.ip_emb_b.size()
+                                               alpha:alpha
+                                               label:[NSString stringWithFormat:@"encoder_%zu", i]];
+        }
     }
 
     // 3. Policy head.
     MPSGraphTensor * policy;
     if (attn_policy) {
-        // 1. NCHW -> NHWC
-        policy = [graph transposeChannelsWithTensor:layer label:@"policy/nchw_nhwc"];
+        if (!attn_body) {
+            // 1. NCHW -> NHWC
+            policy = [graph transposeChannelsWithTensor:layer label:@"policy/nchw_nhwc"];
+        }
+        else {
+            policy = layer;
+        }
+
+        // 2. Square Embedding: Dense with default activation (or SELU for old ap-mish nets).
         NSUInteger embeddingSize = weights.ip_pol_b.size();
         NSUInteger policyDModel = weights.ip2_pol_b.size();
-
-        // 2. Square Embedding: Dense with SELU
         policy = [graph addFullyConnectedLayerWithParent:policy
-                                          inputChannels:channelSize
+                                          inputChannels:[[policy.shape lastObject] intValue]
                                          outputChannels:embeddingSize
                                                 weights:&weights.ip_pol_w[0]
                                                  biases:&weights.ip_pol_b[0]
-                                             activation:@"selu"
+                                             activation:attn_body ? defaultActivation : @"selu" // ap-mish uses hardcoded SELU
                                                   label:@"policy/fc_embed"];
 
         // 3. Encoder layers
@@ -121,6 +176,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                         legacyWeights:weights.pol_encoder[i]
                                                 heads:weights.pol_encoder_head_count
                                         embeddingSize:embeddingSize
+                                                alpha:1.0
                                                 label:[NSString stringWithFormat:@"policy/encoder_%zu", i]];
         }
 
@@ -160,9 +216,10 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                              label:@"policy/promo_logits"];
     }
     else if (conv_policy) {
+        assert(!attn_body);
         policy = [graph addConvolutionBlockWithParent:layer
-                                        inputChannels:channelSize
-                                       outputChannels:channelSize
+                                        inputChannels:[layer.shape[1] intValue]
+                                       outputChannels:weights.policy1.biases.size()
                                            kernelSize:kernelSize
                                               weights:&weights.policy1.weights[0]
                                                biases:&weights.policy1.biases[0]
@@ -171,8 +228,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
         // No activation.
         policy = [graph addConvolutionBlockWithParent:policy
-                                        inputChannels:channelSize
-                                       outputChannels:80
+                                        inputChannels:[policy.shape[1] intValue]
+                                       outputChannels:weights.policy.biases.size()
                                            kernelSize:kernelSize
                                               weights:&weights.policy.weights[0]
                                                biases:&weights.policy.biases[0]
@@ -206,10 +263,12 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
       */
     }
     else {
+        assert(!attn_body);
+
         const int policySize = weights.policy.biases.size();
 
         policy = [graph addConvolutionBlockWithParent:layer
-                                        inputChannels:channelSize
+                                        inputChannels:[layer.shape[1] intValue]
                                        outputChannels:policySize
                                            kernelSize:1
                                               weights:&weights.policy.weights[0]
@@ -219,7 +278,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
         policy = [graph addFullyConnectedLayerWithParent:policy
                                            inputChannels:policySize * 8 * 8
-                                          outputChannels:1858
+                                          outputChannels:weights.ip_pol_b.size()
                                                  weights:&weights.ip_pol_w[0]
                                                   biases:&weights.ip_pol_b[0]
                                               activation:nil
@@ -228,18 +287,32 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
     // 4. Value head.
     MPSGraphTensor * value;
-    value = [graph addConvolutionBlockWithParent:layer
-                                   inputChannels:channelSize
-                                  outputChannels:32
-                                      kernelSize:1
-                                         weights:&weights.value.weights[0]
-                                          biases:&weights.value.biases[0]
-                                      activation:defaultActivation
-                                           label:@"value/conv"];
+    NSUInteger valueChannels;
+    if (attn_body) {
+        value = [graph addFullyConnectedLayerWithParent:layer
+                                          inputChannels:[[layer.shape lastObject] intValue]
+                                         outputChannels:weights.ip_val_b.size()
+                                                weights:&weights.ip_val_w[0]
+                                                 biases:&weights.ip_val_b[0]
+                                             activation:defaultActivation
+                                                  label:@"value/embedding"];
+        valueChannels = weights.ip_val_b.size();
+    }
+    else {
+        value = [graph addConvolutionBlockWithParent:layer
+                                       inputChannels:[layer.shape[1] intValue]
+                                      outputChannels:weights.value.biases.size()
+                                          kernelSize:1
+                                             weights:&weights.value.weights[0]
+                                              biases:&weights.value.biases[0]
+                                          activation:defaultActivation
+                                               label:@"value/conv"];
+        valueChannels = weights.value.biases.size() * 8 * 8;
+    }
 
     value = [graph addFullyConnectedLayerWithParent:value
-                                       inputChannels:32 * 8 * 8
-                                      outputChannels:128
+                                       inputChannels:valueChannels
+                                      outputChannels:weights.ip1_val_b.size()
                                              weights:&weights.ip1_val_w[0]
                                               biases:&weights.ip1_val_b[0]
                                          activation:defaultActivation
@@ -247,8 +320,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
     if (wdl) {
         value = [graph addFullyConnectedLayerWithParent:value
-                                          inputChannels:128
-                                         outputChannels:3
+                                          inputChannels:weights.ip1_val_b.size()
+                                         outputChannels:weights.ip2_val_b.size()
                                                 weights:&weights.ip2_val_w[0]
                                                  biases:&weights.ip2_val_b[0]
                                              activation:@"softmax"
@@ -256,8 +329,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
     }
     else {
         value = [graph addFullyConnectedLayerWithParent:value
-                                          inputChannels:128
-                                         outputChannels:1
+                                          inputChannels:weights.ip1_val_b.size()
+                                         outputChannels:weights.ip2_val_b.size()
                                                 weights:&weights.ip2_val_w[0]
                                                  biases:&weights.ip2_val_b[0]
                                              activation:@"tanh"
@@ -267,19 +340,31 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
     // 5. Moves left head.
     MPSGraphTensor * mlh;
     if (moves_left) {
-        const int mlhChannels = weights.moves_left.biases.size();
-
-        mlh = [graph addConvolutionBlockWithParent:layer
-                                     inputChannels:channelSize
-                                    outputChannels:mlhChannels
-                                        kernelSize:1
-                                           weights:&weights.moves_left.weights[0]
-                                            biases:&weights.moves_left.biases[0]
-                                        activation:defaultActivation
-                                             label:@"mlh/conv"];
-
+        NSUInteger mlhChannels;
+        if (attn_body) {
+            mlh = [graph addFullyConnectedLayerWithParent:layer
+                                            inputChannels:[[layer.shape lastObject] intValue]
+                                           outputChannels:weights.ip_mov_b.size()
+                                                  weights:&weights.ip_mov_w[0]
+                                                   biases:&weights.ip_mov_b[0]
+                                               activation:defaultActivation
+                                                    label:@"mlh/embedding"];
+            mlhChannels = weights.ip_mov_b.size();
+        }
+        else {
+            mlh = [graph addConvolutionBlockWithParent:layer
+                                         inputChannels:[layer.shape[1] intValue]
+                                        outputChannels:weights.moves_left.biases.size()
+                                            kernelSize:1
+                                               weights:&weights.moves_left.weights[0]
+                                                biases:&weights.moves_left.biases[0]
+                                            activation:defaultActivation
+                                                 label:@"mlh/conv"];
+            mlhChannels = weights.moves_left.biases.size() * 8 * 8;
+        }
+        NSLog(@"mlh tensor: %@, size: %u, attn_body: %i", mlh.shape, mlhChannels, attn_body);
         mlh = [graph addFullyConnectedLayerWithParent:mlh
-                                          inputChannels:mlhChannels * 8 * 8
+                                          inputChannels:mlhChannels
                                          outputChannels:weights.ip1_mov_b.size()
                                                 weights:&weights.ip1_mov_w[0]
                                                  biases:&weights.ip1_mov_b[0]
@@ -288,7 +373,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
         mlh = [graph addFullyConnectedLayerWithParent:mlh
                                           inputChannels:weights.ip1_mov_b.size()
-                                         outputChannels:1
+                                         outputChannels:weights.ip2_mov_b.size()
                                                 weights:&weights.ip2_mov_w[0]
                                                  biases:&weights.ip2_mov_b[0]
                                              activation:@"relu"

@@ -547,6 +547,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                         legacyWeights:(lczero::LegacyWeights::EncoderLayer &)encoder
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
+                                                alpha:(float)alpha
                                                 label:(NSString * __nonnull)label
 {
     NSUInteger dModel = encoder.mha.q_b.size();
@@ -596,6 +597,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                       secondaryInput:mha
                                                               gammas:&encoder.ln1_gammas[0]
                                                                betas:&encoder.ln1_betas[0]
+                                                               alpha:alpha
                                                          channelSize:encoder.ln1_gammas.size()
                                                              epsilon:1e-6
                                                                label:[NSString stringWithFormat:@"%@/ln1", label]];
@@ -622,6 +624,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                       secondaryInput:ffn
                                               gammas:&encoder.ln2_gammas[0]
                                                betas:&encoder.ln2_betas[0]
+                                               alpha:alpha
                                          channelSize:encoder.ln2_gammas.size()
                                              epsilon:1e-6
                                                label:[NSString stringWithFormat:@"%@/ln2", label]];
@@ -631,10 +634,18 @@ static const NSInteger kMinSubBatchSize = 20;
                                                  secondaryInput:(MPSGraphTensor * __nonnull)secondary
                                                          gammas:(float * __nonnull)gammas
                                                           betas:(float * __nonnull)betas
+                                                          alpha:(float)alpha
                                                     channelSize:(NSUInteger)channelSize
                                                         epsilon:(float)epsilon
                                                           label:(NSString * __nonnull)label
 {
+    if (alpha != 1.0) {
+        MPSGraphTensor * alphaTensor = [_graph constantWithScalar:alpha shape:@[@1] dataType:parent.dataType];
+        parent = [_graph multiplicationWithPrimaryTensor:parent
+                                         secondaryTensor:alphaTensor
+                                                    name:[NSString stringWithFormat:@"%@/multiply", label]];
+    }
+    
     parent = [_graph additionWithPrimaryTensor:parent
                                secondaryTensor:secondary
                                           name:[NSString stringWithFormat:@"%@/add", label]];
@@ -812,6 +823,34 @@ static const NSInteger kMinSubBatchSize = 20;
     parent = [_graph reshapeTensor:parent withShape:@[@(-1), @64, @64] name:[NSString stringWithFormat:@"%@/parent_reshape", label]];
 
     return [_graph concatTensor:parent withTensor:promo dimension:1 name:[NSString stringWithFormat:@"%@/concat", label]];
+}
+
+-(nonnull MPSGraphTensor *) positionEncodingWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                               weights:(const float * __nonnull)encodings
+                                                  type:(NSString * __nullable)type
+                                                 label:(NSString * __nonnull)label
+{
+    NSData * encodingData = [NSData dataWithBytesNoCopy:(void *)encodings
+                                               length:64 * 64 * sizeof(float)
+                                         freeWhenDone:NO];
+    
+    MPSGraphTensor * encodingTensor = [_graph variableWithData:encodingData
+                                                       shape:@[@64, @64]
+                                                    dataType:MPSDataTypeFloat32
+                                                        name:[NSString stringWithFormat:@"%@/weights", label]];
+    
+//    NSMutableArray<MPSGraphTensor *> * stack = [NSMutableArray arrayWithCapacity:inputSize];
+//    for (NSUInteger i = 0; i < inputSize; i++) {
+//        [stack addObject:promo];
+//    }
+//    promo = [_graph stackTensors:stack axis:3 name:[NSString stringWithFormat:@"%@/offset_broadcast", label]];
+    
+    // # add positional encoding for each square to the input
+    // positional_encoding = tf.broadcast_to(tf.convert_to_tensor(self.POS_ENC, dtype=self.model_dtype),
+    //        [tf.shape(flow)[0], 64, tf.shape(self.POS_ENC)[2]])
+    // flow = tf.concat([flow, positional_encoding], axis=2)
+    
+    return [_graph concatTensor:tensor withTensor:encodingTensor dimension:1 name:[NSString stringWithFormat:@"%@/concat", label]];
 }
 
 -(nonnull MPSGraphTensor *) applyActivationWithTensor:(MPSGraphTensor * __nonnull)tensor
