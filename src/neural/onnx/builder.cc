@@ -345,4 +345,19 @@ std::string OnnxBuilder::LayerNormalization(const std::string& name,
   return out;
 }
 
+std::string OnnxBuilder::Expand(const std::string& name,
+                                const std::string& input,
+                                const std::string& shape) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Expand");
+  node->add_input(shape);
+  return out;
+}
+
+std::string OnnxBuilder::Shape(const std::string& name,
+                               const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Shape");
+}
+
 }  // namespace lczero

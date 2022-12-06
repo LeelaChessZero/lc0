@@ -88,6 +88,15 @@ struct LegacyWeights {
   // Input convnet.
   ConvBlock input;
 
+  // Embedding layer
+  Vec ip_emb_w;
+  Vec ip_emb_b;
+
+  // Encoder stack.
+  std::vector<EncoderLayer> encoder;
+  int encoder_head_count;
+
+
   // Residual tower.
   std::vector<Residual> residual;
 
@@ -109,6 +118,8 @@ struct LegacyWeights {
 
   // Value head
   ConvBlock value;
+  Vec ip_val_w;
+  Vec ip_val_b;
   Vec ip1_val_w;
   Vec ip1_val_b;
   Vec ip2_val_w;
@@ -116,6 +127,8 @@ struct LegacyWeights {
 
   // Moves left head
   ConvBlock moves_left;
+  Vec ip_mov_w;
+  Vec ip_mov_b;
   Vec ip1_mov_w;
   Vec ip1_mov_b;
   Vec ip2_mov_w;
