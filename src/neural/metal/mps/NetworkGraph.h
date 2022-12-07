@@ -120,8 +120,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                               withKeys:(MPSGraphTensor * __nonnull)keys
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
-                                                dModel:(NSUInteger)dModel
-                                                 scale:(float)scale
                                                  label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries

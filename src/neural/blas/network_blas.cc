@@ -352,7 +352,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           const int d_model = layer.mha.q_b.size();
           const int heads = weights_.pol_encoder_head_count;
           const int depth = d_model / heads;
-          const float scaling = 1.0f / sqrtf(d_model);
+          const float scaling = 1.0f / sqrtf(depth);
 
           // MHA is done per batch since there's a fourth dimension introduced.
           for (auto batch = size_t{0}; batch < batch_size; batch++) {
