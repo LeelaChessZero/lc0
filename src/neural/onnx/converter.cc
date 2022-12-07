@@ -691,7 +691,7 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
 
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   LegacyWeights weights(src_.weights());
-  OnnxBuilder builder;
+  OnnxBuilder builder(options_.opset);
 
   AddStdInitializers(&builder);
 

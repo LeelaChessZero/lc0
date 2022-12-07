@@ -35,6 +35,7 @@
 #include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"
+#include "utils/numa.h"
 
 #ifdef USE_DNNL
 #include <omp.h>
@@ -134,6 +135,8 @@ class BlasNetwork : public Network {
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
+
+  void InitThread(int id) override { Numa::BindThread(id); }
 
  private:
   // A cap on the max batch size since it consumes a lot of memory
@@ -349,7 +352,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           const int d_model = layer.mha.q_b.size();
           const int heads = weights_.pol_encoder_head_count;
           const int depth = d_model / heads;
-          const float scaling = 1.0f / sqrtf(d_model);
+          const float scaling = 1.0f / sqrtf(depth);
 
           // MHA is done per batch since there's a fourth dimension introduced.
           for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -648,6 +651,8 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
       weights_(file.weights()) {
+    Numa::Init();
+
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
