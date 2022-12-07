@@ -287,6 +287,11 @@ const OptionId SearchParams::kWDLContemptId{
 const OptionId SearchParams::kWDLContemptAttenuationId{
     "wdl-contempt-attenuation", "WDLContemptAttenuation",
     "This scales the given Elo advantage used for contempt."};
+const OptionId SearchParams::kWDLEvalObjectivityId{
+    "wdl-eval-objectivity", "WDLEvalObjectivity",
+    "When calculating the centipawn eval output, decides how objective/"
+    "contempt influenced the reported eval should be. Value 0.0 reports the "
+    "internally used WDL values, 1.0 attempts an objective eval."};
 const OptionId SearchParams::kWDLDrawRateTargetId{
     "wdl-draw-rate-target", "WDLDrawRateTarget",
     "To define the accuracy of play, the target draw rate in equal "
@@ -424,6 +429,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptId, -1000.0f, 1000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
+  options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
@@ -459,6 +465,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kWDLRescaleRatioId);
   options->HideOption(kWDLRescaleDiffId);
   options->HideOption(kWDLContemptAttenuationId);
+  options->HideOption(kWDLEvalObjectivityId);
   options->HideOption(kWDLDrawRateReferenceId);
   options->HideOption(kWDLBookExitBiasId);
 }
@@ -512,6 +519,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
+      kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),

@@ -274,7 +274,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                       ? 1.0f
                       : -1.0f;
       WDLRescale(wl, floatD, params_.GetWDLRescaleRatio(),
-                 params_.GetWDLRescaleDiff(), sign, true);
+                 params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
+                 sign, true);
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {

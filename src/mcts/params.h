@@ -113,6 +113,7 @@ class SearchParams {
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
   float GetWDLRescaleRatio() const { return kWDLRescaleRatio; }
   float GetWDLRescaleDiff() const { return kWDLRescaleDiff; }
+  float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
@@ -198,6 +199,7 @@ class SearchParams {
   static const OptionId kWDLRescaleDiffId;
   static const OptionId kWDLContemptId;
   static const OptionId kWDLContemptAttenuationId;
+  static const OptionId kWDLEvalObjectivityId;
   static const OptionId kWDLDrawRateTargetId;
   static const OptionId kWDLDrawRateReferenceId;
   static const OptionId kWDLBookExitBiasId;
@@ -260,6 +262,7 @@ class SearchParams {
   const float kDrawScoreBlack;
   float kWDLRescaleRatio;
   float kWDLRescaleDiff;
+  const float kWDLEvalObjectivity;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
