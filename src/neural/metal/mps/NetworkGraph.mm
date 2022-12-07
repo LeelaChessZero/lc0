@@ -611,12 +611,12 @@ static const NSInteger kMinSubBatchSize = 20;
                                                          withKeys:(MPSGraphTensor * __nonnull)keys
                                                        withValues:(MPSGraphTensor * __nonnull)values
                                                             heads:(NSUInteger)heads
-                                                           dModel:(NSUInteger)dModel
-                                                            scale:(float)scale
                                                             label:(NSString * __nonnull)label
 {
     // Split heads.
-    const NSUInteger depth = dModel / heads;
+    const NSUInteger dmodel = [[queries.shape lastObject] intValue];
+    const NSUInteger depth = dmodel / heads;
+
     queries = [_graph reshapeTensor:queries withShape:@[@(-1), @64, @(heads), @(depth)] name:[NSString stringWithFormat:@"%@/reshape_q", label]];
     queries = [_graph transposeTensor:queries dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_q", label]];
 
@@ -631,10 +631,11 @@ static const NSInteger kMinSubBatchSize = 20;
     MPSGraphTensor * attn = [_graph matrixMultiplicationWithPrimaryTensor:queries
                                                           secondaryTensor:keys
                                                                      name:[NSString stringWithFormat:@"%@/matmul_qk", label]];
-    attn = [_graph multiplicationWithPrimaryTensor:attn
-                                   secondaryTensor:[_graph constantWithScalar:scale
-                                                                            shape:@[@1] dataType:attn.dataType]
-                                              name:[NSString stringWithFormat:@"%@/scale", label]];
+    attn = [_graph divisionWithPrimaryTensor:attn
+                             secondaryTensor:[_graph constantWithScalar:sqrt(depth)
+                                                                  shape:@[@1]
+                                                               dataType:attn.dataType]
+                                        name:[NSString stringWithFormat:@"%@/scale", label]];
 
     attn = [self applyActivationWithTensor:attn activation:@"softmax" label:label];
 
@@ -645,7 +646,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
     attn = [_graph transposeTensor:attn dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_a", label]];
 
-    return [_graph reshapeTensor:attn withShape:@[@(-1), @(dModel)] name:[NSString stringWithFormat:@"%@/reshape_a", label]];
+    return [_graph reshapeTensor:attn withShape:@[@(-1), @(dmodel)] name:[NSString stringWithFormat:@"%@/reshape_a", label]];
 }
 
 -(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries

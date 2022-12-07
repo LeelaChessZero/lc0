@@ -148,8 +148,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                             withKeys:mhaK
                                                           withValues:mhaV
                                                                heads:weights.pol_encoder_head_count
-                                                              dModel:dModel
-                                                               scale:1.0f / sqrt(dModel)
                                                                label:[NSString stringWithFormat:@"policy/encoder_%zu/mha", i]];
 
             // MHA final dense layer.
