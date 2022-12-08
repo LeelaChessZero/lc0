@@ -80,10 +80,10 @@ const OptionId kOpeningsMirroredId{
 const OptionId kOpeningsModeId{"openings-mode", "OpeningsMode",
                                "A choice of sequential, shuffled, or random."};
 const OptionId kSyzygyTablebaseId{
-	"syzygy-paths", "SyzygyPath",
-	"List of Syzygy tablebase directories, list entries separated by system "
-	"separator (\";\" for Windows, \":\" for Linux).",
-	's' };
+    "syzygy-paths", "SyzygyPath",
+    "List of Syzygy tablebase directories, list entries separated by system "
+    "separator (\";\" for Windows, \":\" for Linux).",
+    's'};
 
 }  // namespace
 
@@ -100,7 +100,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
+  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
   SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
@@ -218,17 +218,15 @@ SelfPlayTournament::SelfPlayTournament(
   }
 
   // Take syzygy tablebases from options.
-  std::string tb_paths =
-	  options.Get<std::string>(kSyzygyTablebaseId);
+  std::string tb_paths = options.Get<std::string>(kSyzygyTablebaseId);
   if (!tb_paths.empty()) {
-	  syzygy_tb_ = std::make_unique<SyzygyTablebase>();
-	  CERR << "Loading Syzygy tablebases from " << tb_paths;
-	  if (!syzygy_tb_->init(tb_paths)) {
-		  CERR << "Failed to load Syzygy tablebases!";
-		  syzygy_tb_ = nullptr;
-	  }
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
+    if (!syzygy_tb_->init(tb_paths)) {
+      CERR << "Failed to load Syzygy tablebases!";
+      syzygy_tb_ = nullptr;
+    }
   }
-
 }
 
 void SelfPlayTournament::PlayOneGame(int game_number) {
@@ -352,7 +350,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
             enable_resign);
-  
+
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {
     // Game callback.
@@ -362,12 +360,13 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.game_id = game_number;
     game_info.initial_fen = opening.start_fen;
     game_info.moves = game.GetMoves();
-    game_info.play_start_ply = opening.moves.size();
+    game_info.play_start_ply = game.GetStartPly();
     if (!enable_resign) {
       game_info.min_false_positive_threshold =
           game.GetWorstEvalForWinnerOrDraw();
     }
-    if (kTraining) {
+    if (kTraining &&
+        game_info.play_start_ply < static_cast<int>(game_info.moves.size())) {
       TrainingDataWriter writer(game_number);
       game.WriteTrainingData(&writer);
       writer.Finalize();

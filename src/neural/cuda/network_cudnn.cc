@@ -37,6 +37,7 @@
 #include "layers.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
@@ -79,6 +80,40 @@ void dumpTensor(void *memory, int elements, const char *message, bool fp16 = fal
 
 template <typename DataType>
 class CudnnNetwork;
+
+static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
+  const size_t embedding_op_size = weights.ip_pol_b.size();
+  const size_t policy_d_model = weights.ip2_pol_b.size();
+  assert(policy_d_model == weights.ip3_pol_b.size());
+
+  size_t encoder_d_model = 0;
+  size_t encoder_dff = 0;
+
+  if (weights.pol_encoder.size() > 0) {
+    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
+
+    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
+  }
+
+  const size_t encoder_heads = weights.pol_encoder_head_count;
+
+  size_t size = N * 64 * std::max(std::max(embedding_op_size, encoder_dff),
+                                  policy_d_model);
+
+  // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
+  const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
+  const size_t output_size = N * (64 * 64 + 8 * 24);
+  size = std::max(size, std::max(matmul_qk_size, output_size));
+
+  size_t qkv_size = N * 64 * encoder_d_model;
+  // We store qkv in single allocation, and other intermediate tensors are
+  // sometimes stored by splitting an allocation into two halves.
+  size = std::max(2 * size, 3 * qkv_size);
+  return size;
+}
 
 template <typename DataType>
 class CudnnNetworkComputation : public NetworkComputation {
@@ -158,6 +193,9 @@ class CudnnNetwork : public Network {
 
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
+
+    attn_policy_ = file.format().network_format().policy() ==
+                   pblczero::NetworkFormat::POLICY_ATTENTION;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
@@ -379,6 +417,11 @@ class CudnnNetwork : public Network {
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
+    // Attention policy head may need more memory
+    const size_t attentionSize =
+        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
+    scratch_size_ = std::max(scratch_size_, attentionSize);
+
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
 #ifdef DEBUG_RAW_NPS
     CERR << "allocated " << scratch_size_ << " bytes for scratch memory";
@@ -490,7 +533,16 @@ class CudnnNetwork : public Network {
     resi_last_ = getLastLayer();
 
     // Policy head.
-    if (conv_policy_) {
+    if (attn_policy_) {
+      auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
+          getLastLayer(), weights, scratch_mem_);
+      network_.emplace_back(std::move(AttentionPolicy));
+
+      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+          getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true);
+      policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
+      network_.emplace_back(std::move(policymap));
+    } else if (conv_policy_) {
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
           resi_last_, kNumFilters, 8, 8, 3, kNumFilters, mish_net ? MISH : RELU,
           true);
@@ -601,6 +653,10 @@ class CudnnNetwork : public Network {
     if (use_res_block_winograd_fuse_opt_ && transformed_tensor_size > maxSize)
       maxSize = transformed_tensor_size;
 
+    if (attn_policy_ && scratch_size_ > maxSize) {
+      maxSize = scratch_size_;
+    }
+
     for (auto& mem : tensor_mem_) {
       ReportCUDAErrors(cudaMalloc(&mem, maxSize));
       ReportCUDAErrors(cudaMemset(mem, 0, maxSize));
@@ -696,7 +752,26 @@ class CudnnNetwork : public Network {
     }
 
     // Policy head.
-    if (conv_policy_) {
+    if (attn_policy_) {
+      network_[l++]->Eval(
+          batchSize, tensor_mem_[0], tensor_mem_[2], tensor_mem_[1],
+          scratch_mem_, scratch_size_, nullptr, cublas_,
+          stream);  // Entire Attention policy head except for the policy map
+      if (fp16) {
+        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
+                            scratch_mem_, scratch_size_, nullptr, cublas_,
+                            stream);  // policy map layer
+        copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
+                          batchSize * kNumOutputPolicy,
+                          stream);  // POLICY output
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0],
+                            nullptr, scratch_mem_, scratch_size_, nullptr,
+                            cublas_, stream);  // policy map layer
+                                               // POLICY output
+      }
+
+    } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
                           stream);  // policy conv1
@@ -907,6 +982,7 @@ class CudnnNetwork : public Network {
   int numBlocks_;
   bool has_se_;
   bool conv_policy_;
+  bool attn_policy_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
@@ -1026,7 +1102,9 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
                     pblczero::NetworkFormat::PolicyFormat_Name(
                         weights.format().network_format().policy()) +

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,28 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "src/utils/weights_adapter.h"
+#pragma once
+
+#include "utils/optionsdict.h"
 
 namespace lczero {
-float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
-                                           const LayerAdapter* adapter) {
-  return *ptr / static_cast<float>(0xffff) * adapter->range_ + adapter->min_;
-}
 
-LayerAdapter::LayerAdapter(const pblczero::Weights::Layer& layer)
-    : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
-      size_(layer.params().size() / sizeof(uint16_t)),
-      min_(layer.min_val()),
-      range_(layer.max_val() - min_) {}
-
-std::vector<float> LayerAdapter::as_vector() const {
-  return std::vector<float>(begin(), end());
-}
-float LayerAdapter::Iterator::operator*() const {
-  return ExtractValue(data_, adapter_);
-}
-float LayerAdapter::Iterator::operator[](size_t idx) const {
-  return ExtractValue(data_ + idx, adapter_);
-}
+std::unique_ptr<TimeManager> MakeSimpleTimeManager(
+    int64_t move_overhead, const OptionsDict& params);
 
 }  // namespace lczero

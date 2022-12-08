@@ -207,7 +207,7 @@ class SearchParams {
   // Cached parameter values. Values have to be cached if either:
   // 1. Parameter is accessed often and has to be cached for performance
   // reasons.
-  // 2. Parameter has to stay the say during the search.
+  // 2. Parameter has to stay the same during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimizations.
   const float kCpuct;
