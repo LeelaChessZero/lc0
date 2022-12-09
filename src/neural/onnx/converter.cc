@@ -275,10 +275,10 @@ std::string Converter::MakeEncoderLayer(
   std::unique_ptr<OnnxConst> scale;
   if (GetDataType() == pblczero::TensorProto::FLOAT16) {
     scale = std::make_unique<Float16OnnxConst>(
-        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(d_model))}, {1}));
+        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(depth))}, {1}));
   } else {
     scale = std::make_unique<FloatOnnxConst>(
-        FloatOnnxConst({1.0f / sqrtf(d_model)}, {1}));
+        FloatOnnxConst({1.0f / sqrtf(depth)}, {1}));
   }
   flow = builder->Mul(name + "/mha/QK/scale", flow, *scale);
   flow = builder->Softmax(name + "/mha/QK/softmax", flow, 3);
