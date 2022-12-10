@@ -42,14 +42,11 @@
 
 static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
 
-@interface Lc0NetworkGraph : NSObject {
+@interface Lc0NetworkGraph : MPSGraph {
   @public
     // Keep the device and command queue objects around for ease of use.
     MPSGraphDevice * _device;
     id<MTLCommandQueue> _queue;
-
-    // MPSGraph implementation.
-    MPSGraph * _graph;
 
     // Input tensor and tensor data placeholders.
     MPSGraphTensor * _inputTensor;
@@ -103,7 +100,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                             activation:(NSString * __nullable)activation;
 
 -(nonnull MPSGraphTensor *) addFullyConnectedLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                               inputChannels:(NSUInteger)inputChannels
                                               outputChannels:(NSUInteger)outputChannels
                                                      weights:(float * __nonnull)weights
                                                       biases:(float * __nonnull)biases
@@ -114,6 +110,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                         legacyWeights:(lczero::LegacyWeights::EncoderLayer &)weights
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
+                                    defaultActivation:(NSString * __nonnull)defaultActivation
                                                 alpha:(float)alpha
                                                 label:(NSString * __nonnull)label;
 
@@ -121,7 +118,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                  secondaryInput:(MPSGraphTensor * __nonnull)secondary
                                                          gammas:(float * __nonnull)gammas
                                                           betas:(float * __nonnull)betas
-                                                    channelSize:(NSUInteger)channelSize
                                                         epsilon:(float)epsilon
                                                           label:(NSString * __nonnull)label;
 
@@ -129,8 +125,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                               withKeys:(MPSGraphTensor * __nonnull)keys
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
-                                                dModel:(NSUInteger)dModel
-                                                 scale:(float)scale
                                                  label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
@@ -148,9 +142,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                                  label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) transposeChannelsWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                              withShape:(MPSShape * __nonnull)withShape
                                                   label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) positionEncodingWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                             withShape:(MPSShape * __nonnull)shape
                                                weights:(const float * __nonnull)encodings
                                                   type:(NSString * __nullable)type
                                                  label:(NSString * __nonnull)label;
