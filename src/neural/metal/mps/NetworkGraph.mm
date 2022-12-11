@@ -673,9 +673,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                           secondaryTensor:keys
                                                                      name:[NSString stringWithFormat:@"%@/matmul_qk", label]];
     attn = [self divisionWithPrimaryTensor:attn
-                             secondaryTensor:[self constantWithScalar:sqrt(depth)
-                                                                        shape:@[@1]
-                                                                     dataType:attn.dataType]
+                           secondaryTensor:[self constantWithScalar:sqrt(depth)
+                                                              shape:@[@1]
+                                                           dataType:attn.dataType]
                                         name:[NSString stringWithFormat:@"%@/scale", label]];
 
     attn = [self applyActivationWithTensor:attn activation:@"softmax" label:label];
