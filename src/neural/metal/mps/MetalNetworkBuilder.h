@@ -43,10 +43,6 @@ public:
 
     void forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems);
 
-    void saveVariables(std::vector<std::string> names);
-
-    void dumpVariables(std::vector<std::string> names, int batches);
-
 private:
     int gpu_id;
 };

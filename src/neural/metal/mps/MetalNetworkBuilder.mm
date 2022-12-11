@@ -78,7 +78,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
 
         // 1. Input layer
         layer = [graph addConvolutionBlockWithParent:layer
-                                       inputChannels:kInputPlanes
                                       outputChannels:channelSize
                                           kernelSize:kernelSize
                                              weights:&weights.input.weights[0]
@@ -89,7 +88,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
         // 2. Residual blocks
         for (size_t i = 0; i < weights.residual.size(); i++) {
             layer = [graph addResidualBlockWithParent:layer
-                                        inputChannels:channelSize
                                        outputChannels:channelSize
                                            kernelSize:kernelSize
                                              weights1:&weights.residual[i].conv1.weights[0]
@@ -126,7 +124,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                                  type:nil
                                                 label:@"input/position_encoding"];
         }
-            
+
         // Input embedding for attention body.
         layer = [graph addFullyConnectedLayerWithParent:layer
                                           outputChannels:weights.ip_emb_b.size()
@@ -218,7 +216,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                         format:@"Convolutional policy not supported with attention body."];
         }
         policy = [graph addConvolutionBlockWithParent:layer
-                                        inputChannels:[layer.shape[1] intValue]
                                        outputChannels:weights.policy1.biases.size()
                                            kernelSize:kernelSize
                                               weights:&weights.policy1.weights[0]
@@ -228,7 +225,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
 
         // No activation.
         policy = [graph addConvolutionBlockWithParent:policy
-                                        inputChannels:[policy.shape[1] intValue]
                                        outputChannels:weights.policy.biases.size()
                                            kernelSize:kernelSize
                                               weights:&weights.policy.weights[0]
@@ -271,7 +267,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
         const int policySize = weights.policy.biases.size();
 
         policy = [graph addConvolutionBlockWithParent:layer
-                                        inputChannels:[layer.shape[1] intValue]
                                        outputChannels:policySize
                                            kernelSize:1
                                               weights:&weights.policy.weights[0]
@@ -279,9 +274,9 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                            activation:defaultActivation
                                                 label:@"policy/conv"];
 
-        policy = [graph reshapeTensor:policy
-                            withShape:@[@(-1), @(policySize * 8 * 8)]
-                                 name:@"policy/conv/reshape"];
+        policy = [graph flatten2DTensor:policy
+                                   axis:1
+                                   name:@"policy/conv/flatten"];
 
         policy = [graph addFullyConnectedLayerWithParent:policy
                                           outputChannels:weights.ip_pol_b.size()
@@ -300,22 +295,20 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                                  biases:&weights.ip_val_b[0]
                                              activation:defaultActivation
                                                   label:@"value/embedding"];
-        value = [graph transposeTensor:value
-                             dimension:1
-                         withDimension:2
-                                  name:@"value/embedding/transpose"];
     }
     else {
         value = [graph addConvolutionBlockWithParent:layer
-                                       inputChannels:[layer.shape[1] intValue]
                                       outputChannels:weights.value.biases.size()
                                           kernelSize:1
                                              weights:&weights.value.weights[0]
                                               biases:&weights.value.biases[0]
                                           activation:defaultActivation
                                                label:@"value/conv"];
-        value = [graph reshapeTensor:value withShape:@[@(-1), @(32 * 8 * 8)] name:@"value/conv/reshape"];
     }
+
+    value = [graph flatten2DTensor:value
+                              axis:1
+                              name:@"value/flatten"];
 
     value = [graph addFullyConnectedLayerWithParent:value
                                       outputChannels:weights.ip1_val_b.size()
@@ -350,33 +343,35 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                                   weights:&weights.ip_mov_w[0]
                                                    biases:&weights.ip_mov_b[0]
                                                activation:defaultActivation
-                                                    label:@"mlh/embedding"];
+                                                    label:@"moves_left/embedding"];
         }
         else {
             mlh = [graph addConvolutionBlockWithParent:layer
-                                         inputChannels:[layer.shape[1] intValue]
                                         outputChannels:weights.moves_left.biases.size()
                                             kernelSize:1
                                                weights:&weights.moves_left.weights[0]
                                                 biases:&weights.moves_left.biases[0]
                                             activation:defaultActivation
-                                                 label:@"mlh/conv"];
-            mlh = [graph reshapeTensor:mlh withShape:@[@(-1), @(weights.moves_left.biases.size() * 8 * 8)] name:@"mlh/conv/reshape"];
+                                                 label:@"moves_left/conv"];
         }
+
+        mlh = [graph flatten2DTensor:mlh
+                                axis:1
+                                name:@"moves_left/flatten"];
 
         mlh = [graph addFullyConnectedLayerWithParent:mlh
                                          outputChannels:weights.ip1_mov_b.size()
                                                 weights:&weights.ip1_mov_w[0]
                                                  biases:&weights.ip1_mov_b[0]
                                            activation:defaultActivation
-                                                  label:@"mlh/fc1"];
-        //policy = mlh;
+                                                  label:@"moves_left/fc1"];
+
         mlh = [graph addFullyConnectedLayerWithParent:mlh
                                          outputChannels:weights.ip2_mov_b.size()
                                                 weights:&weights.ip2_mov_w[0]
                                                  biases:&weights.ip2_mov_b[0]
                                              activation:@"relu"
-                                                  label:@"mlh/fc2"];
+                                                  label:@"moves_left/fc2"];
     }
 
     // Select the outputs to be run through the inference graph.
@@ -393,24 +388,6 @@ void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector
     @autoreleasepool {
         Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
         [graph runInferenceWithBatchSize:batchSize inputs:inputs outputs:&output_mems[0]];
-    }
-}
-
-void MetalNetworkBuilder::saveVariables(std::vector<std::string> names)
-{
-    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-
-    for (const std::string name : names) {
-        [graph trackVariable:[NSString stringWithUTF8String:name.c_str()]];
-    }
-}
-
-void MetalNetworkBuilder::dumpVariables(std::vector<std::string> names, int batches)
-{
-    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-
-    for (const std::string name : names) {
-        [graph dumpVariable:[NSString stringWithUTF8String:name.c_str()] batches:batches];
     }
 }
 

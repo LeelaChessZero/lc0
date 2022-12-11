@@ -74,7 +74,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                         label:(NSString * __nullable)label;
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
-                                            inputChannels:(NSUInteger)inputChannels
                                            outputChannels:(NSUInteger)outputChannels
                                                kernelSize:(NSUInteger)kernelSize
                                                   weights:(float * __nonnull)weights
@@ -83,7 +82,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                     label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) addResidualBlockWithParent:(MPSGraphTensor * __nonnull)parent
-                                         inputChannels:(NSUInteger)inputChannels
                                         outputChannels:(NSUInteger)outputChannels
                                             kernelSize:(NSUInteger)kernelSize
                                               weights1:(float * __nonnull)weights1
@@ -163,13 +161,5 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers
                 subBatchSize:(NSUInteger)subBatchSize;
-
--(void) setVariable:(NSString * __nonnull)name
-             tensor:(MPSGraphTensor * __nonnull)tensor;
-
--(void) trackVariable:(NSString * __nonnull)name;
-
--(void) dumpVariable:(NSString * __nonnull)name
-             batches:(NSUInteger)batches;
 
 @end
