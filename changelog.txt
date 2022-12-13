@@ -1,4 +1,8 @@
-﻿v0.29.0-rc1 (2022-12-09)
+﻿v0.29.0 (2022-12-13)
+~~~~~~~
+* Updated onednn version to the latest one.
+
+v0.29.0-rc1 (2022-12-09)
 ~~~~~~~
 * New metal backend for apple systems. This is now the default backend for
   macos builds.
