@@ -59,6 +59,9 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
     // Variables for triple buffering
     dispatch_semaphore_t _doubleBufferingSemaphore;
+
+    // Global smolgen weights.
+    float * __nullable _globalSmolgenWeights;
 }
 
 +(Lc0NetworkGraph * _Nonnull) getGraphAt:(NSNumber * _Nonnull)index;
@@ -100,7 +103,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(nonnull MPSGraphTensor *) addFullyConnectedLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                               outputChannels:(NSUInteger)outputChannels
                                                      weights:(float * __nonnull)weights
-                                                      biases:(float * __nonnull)biases
+                                                      biases:(float * __nullable)biases
                                                   activation:(NSString * __nullable)activation
                                                        label:(NSString * __nonnull)label;
 
@@ -112,17 +115,20 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 alpha:(float)alpha
                                                 label:(NSString * __nonnull)label;
 
--(nonnull MPSGraphTensor *) addLayerNormalizationWithSkipParent:(MPSGraphTensor * __nonnull)parent
-                                                 secondaryInput:(MPSGraphTensor * __nonnull)secondary
-                                                         gammas:(float * __nonnull)gammas
-                                                          betas:(float * __nonnull)betas
-                                                        epsilon:(float)epsilon
-                                                          label:(NSString * __nonnull)label;
+-(nonnull MPSGraphTensor *) addLayerNormalizationWithParent:(MPSGraphTensor * __nonnull)parent
+                                      scaledSecondaryTensor:(MPSGraphTensor * __nullable)secondary
+                                                     gammas:(float * __nonnull)gammas
+                                                      betas:(float * __nonnull)betas
+                                                      alpha:(float)alpha
+                                                    epsilon:(float)epsilon
+                                                      label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
                                               withKeys:(MPSGraphTensor * __nonnull)keys
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
+                                                parent:(MPSGraphTensor * __nonnull)parent
+                                               smolgen:(lczero::LegacyWeights::Smolgen * __nullable)smolgen
                                                  label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
@@ -148,6 +154,13 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                weights:(const float * __nonnull)encodings
                                                   type:(NSString * __nullable)type
                                                  label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) addGatingLayerWithParent:(MPSGraphTensor * __nonnull)parent
+                                             weights:(const float * __nonnull)weights
+                                       withOperation:(NSString * __nonnull)op
+                                               label:(NSString * __nonnull)label;
+
+-(void) setGlobalSmolgenWeights:(float * __nonnull)weights;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results;
 

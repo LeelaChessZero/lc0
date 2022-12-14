@@ -32,6 +32,8 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
     : input(weights.input()),
       ip_emb_w(LayerAdapter(weights.ip_emb_w()).as_vector()),
       ip_emb_b(LayerAdapter(weights.ip_emb_b()).as_vector()),
+      ip_mult_gate(LayerAdapter(weights.ip_mult_gate()).as_vector()),
+      ip_add_gate(LayerAdapter(weights.ip_add_gate()).as_vector()),
       policy1(weights.policy1()),
       policy(weights.policy()),
       ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
@@ -54,7 +56,9 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip1_mov_w(LayerAdapter(weights.ip1_mov_w()).as_vector()),
       ip1_mov_b(LayerAdapter(weights.ip1_mov_b()).as_vector()),
       ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
-      ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()) {
+      ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()),
+      smolgen_w(LayerAdapter(weights.smolgen_w()).as_vector()),
+      has_smolgen(weights.has_smolgen_w()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
@@ -145,7 +149,9 @@ LegacyWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
       v_w(LayerAdapter(mha.v_w()).as_vector()),
       v_b(LayerAdapter(mha.v_b()).as_vector()),
       dense_w(LayerAdapter(mha.dense_w()).as_vector()),
-      dense_b(LayerAdapter(mha.dense_b()).as_vector()) {}
+      dense_b(LayerAdapter(mha.dense_b()).as_vector()),
+      smolgen(Smolgen(mha.smolgen())),
+      has_smolgen(mha.has_smolgen()) {}
 
 LegacyWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
     : dense1_w(LayerAdapter(ffn.dense1_w()).as_vector()),
@@ -161,5 +167,17 @@ LegacyWeights::EncoderLayer::EncoderLayer(
       ffn(FFN(encoder.ffn())),
       ln2_gammas(LayerAdapter(encoder.ln2_gammas()).as_vector()),
       ln2_betas(LayerAdapter(encoder.ln2_betas()).as_vector()) {}
+
+LegacyWeights::Smolgen::Smolgen(
+    const pblczero::Weights::Smolgen& smolgen)
+    : compress(LayerAdapter(smolgen.compress()).as_vector()),
+      dense1_w(LayerAdapter(smolgen.dense1_w()).as_vector()),
+      dense1_b(LayerAdapter(smolgen.dense1_b()).as_vector()),
+      ln1_gammas(LayerAdapter(smolgen.ln1_gammas()).as_vector()),
+      ln1_betas(LayerAdapter(smolgen.ln1_betas()).as_vector()),
+      dense2_w(LayerAdapter(smolgen.dense2_w()).as_vector()),
+      dense2_b(LayerAdapter(smolgen.dense2_b()).as_vector()),
+      ln2_gammas(LayerAdapter(smolgen.ln2_gammas()).as_vector()),
+      ln2_betas(LayerAdapter(smolgen.ln2_betas()).as_vector()) {}
 
 }  // namespace lczero

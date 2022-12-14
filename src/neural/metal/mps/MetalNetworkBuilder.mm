@@ -71,6 +71,11 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
     
     const NSUInteger kernelSize = 3;
 
+    // Initialize global smolgen weights.
+    if (weights.has_smolgen) {
+        [graph setGlobalSmolgenWeights:&weights.smolgen_w[0]];
+    }
+
     // Input conv layer only when there are residual blocks.
     if (weights.residual.size() > 0) {
 
@@ -112,7 +117,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
 
         assert(weights.ip_emb_b.size() > 0);
 
-        // NCHW -> NHWC
+        // 1. NCHW -> NHWC
         // @todo if input placeholder is NHWC, then this is not needed for attn_body, but kPosEncoding has to be reordered.
         layer = [graph transposeChannelsWithTensor:layer withShape:@[@(-1), @64, layer.shape[1]] label:@"input/nchw_nhwc"];
 
@@ -125,7 +130,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                                 label:@"input/position_encoding"];
         }
 
-        // Input embedding for attention body.
+        // 2a. Input embedding for attention body.
+        // if self.arc_encoding: @todo needs to be implemented
         layer = [graph addFullyConnectedLayerWithParent:layer
                                           outputChannels:weights.ip_emb_b.size()
                                                  weights:&weights.ip_emb_w[0]
@@ -133,6 +139,24 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                               activation:defaultActivation
                                                    label:@"input/embedding"];
 
+        // # !!! input gate
+        // flow = ma_gating(flow, name=name+'embedding')
+        // def ma_gating(inputs, name):
+        //     out = Gating(name=name+'/mult_gate', additive=False)(inputs)
+        //     out = Gating(name=name+'/add_gate', additive=True)(out)
+        if (weights.ip_mult_gate.size() > 0) {
+
+            layer = [graph addGatingLayerWithParent:layer
+                                            weights:&weights.ip_mult_gate[0]
+                                      withOperation:@"mult"
+                                              label:@"input/mult_gate"];
+        }
+        if (weights.ip_add_gate.size() > 0) {
+            layer = [graph addGatingLayerWithParent:layer
+                                            weights:&weights.ip_add_gate[0]
+                                      withOperation:@"add"
+                                              label:@"input/add_gate"];
+        }
         // 2b. Attention body encoder layers.
         float alpha = (float) pow(2.0 * weights.encoder.size(), 0.25);
         for (size_t i = 0; i < weights.encoder.size(); i++) {
@@ -149,8 +173,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
     // 3. Policy head.
     MPSGraphTensor * policy;
     if (attn_policy) {
+        // 1. NCHW -> NHWC
         if (!attn_body) {
-            // 1. NCHW -> NHWC
             policy = [graph transposeChannelsWithTensor:layer withShape:@[@(-1), @64, layer.shape[1]] label:@"policy/nchw_nhwc"];
         }
         else {
