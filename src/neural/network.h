@@ -107,6 +107,7 @@ class Network {
  public:
   virtual const NetworkCapabilities& GetCapabilities() const = 0;
   virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
+  virtual void InitThread(int /*id*/) {}
   virtual ~Network() = default;
 };
 

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2019 The LCZero Authors
+  Copyright (C) 2018-2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -67,8 +67,8 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
 
   const size_t encoder_heads = weights.pol_encoder_head_count;
 
-  size_t size = N * 64 *
-      std::max(std::max(embedding_op_size, encoder_dff), policy_d_model);
+  size_t size = N * 64 * std::max(std::max(embedding_op_size, encoder_dff),
+                                  policy_d_model);
 
   // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
   const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
@@ -283,8 +283,10 @@ class CudaNetwork : public Network {
     // Disable res block fusing for fp32 for now (not worth it)
     // TODO: make it work for filters not a multiple of 32.
     // Note that when used with SE, the optimization
-    // works only when filter count is <= 384 (pre-Ampere), or less than 512 (Ampere)
-    // It turns dynamically off based on filter count (see ResidualBlock<DataType>::Eval)
+    // works only when filter count is <= 384 (pre-Ampere), or less than 512
+    // (Ampere)
+    // It turns dynamically off based on filter count (see
+    // ResidualBlock<DataType>::Eval)
     if (kNumFilters % 32 == 0 && std::is_same<half, DataType>::value) {
       use_res_block_winograd_fuse_opt_ = true;
     } else {
@@ -975,10 +977,10 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-    throw Exception(
-        "Network format " +
-        std::to_string(weights.format().network_format().network()) +
-        " is not supported by the CUDA backend.");
+    throw Exception("Network format " +
+                    pblczero::NetworkFormat::NetworkStructure_Name(
+                        weights.format().network_format().network()) +
+                    " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
@@ -987,7 +989,8 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
-                    std::to_string(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(
+                        weights.format().network_format().policy()) +
                     " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().value() !=
@@ -995,17 +998,18 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    std::to_string(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(
+                        weights.format().network_format().value()) +
                     " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().moves_left() !=
           pblczero::NetworkFormat::MOVES_LEFT_NONE &&
       weights.format().network_format().moves_left() !=
           pblczero::NetworkFormat::MOVES_LEFT_V1) {
-    throw Exception(
-        "Movest left head format " +
-        std::to_string(weights.format().network_format().moves_left()) +
-        " is not supported by the CUDA backend.");
+    throw Exception("Moves left head format " +
+                    pblczero::NetworkFormat::MovesLeftFormat_Name(
+                        weights.format().network_format().moves_left()) +
+                    " is not supported by the CUDA backend.");
   }
   if (weights.format().network_format().default_activation() !=
           pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
@@ -1013,7 +1017,8 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
     throw Exception(
         "Default activation " +
-        std::to_string(weights.format().network_format().default_activation()) +
+        pblczero::NetworkFormat::DefaultActivation_Name(
+            weights.format().network_format().default_activation()) +
         " is not supported by the CUDA backend.");
   }
   return std::make_unique<CudaNetwork<DataType>>(weights, options);

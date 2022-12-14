@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2021-2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@
 #include "layers.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
@@ -158,6 +159,15 @@ class OnednnNetwork : public Network {
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
 
+    attn_policy_ = file.format().network_format().policy() ==
+                   pblczero::NetworkFormat::POLICY_ATTENTION;
+
+    default_activation_ =
+        file.format().network_format().default_activation() ==
+                pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+            ? MISH
+            : RELU;
+
 #if DNNL_VERSION_MAJOR * 100 + DNNL_VERSION_MINOR >= 105
     dnnl::set_primitive_cache_capacity(
         options.GetOrDefault<int>("jit_cache", 1024));
@@ -186,14 +196,21 @@ class OnednnNetwork : public Network {
       }
     }
 
+    // Unfortunately current oneDNN versions get this wrong, selecting Winograd
+    // on gpu and not on cpu (last tested with version 2.6.0). So for the time
+    // being this will be overriden in every case.
     auto convolution_type = dnnl::algorithm::convolution_auto;
     if (!options.IsDefault<bool>("winograd")) {
       if (options.Get<bool>("winograd")) {
-        if (eng_.get_kind() == dnnl::engine::kind::cpu) {
-          convolution_type = dnnl::algorithm::convolution_winograd;
-        } else {
-          CERR << "Winograd convolution not supported on GPU.";
-        }
+        convolution_type = dnnl::algorithm::convolution_winograd;
+      } else {
+        convolution_type = dnnl::algorithm::convolution_direct;
+      }
+    } else {
+      // Heuristic: only use Winograd convolution on cpu newer than avx2.
+      if (eng_.get_kind() == dnnl::engine::kind::cpu &&
+          dnnl::get_effective_cpu_isa() > dnnl::cpu_isa::avx2) {
+        convolution_type = dnnl::algorithm::convolution_winograd;
       } else {
         convolution_type = dnnl::algorithm::convolution_direct;
       }
@@ -229,8 +246,8 @@ class OnednnNetwork : public Network {
     for (int idx = 0; idx < steps_; idx++) {
       // Input.
       {
-        auto inputConv = std::make_unique<ConvLayer>(nullptr, numFilters_, 8, 8,
-                                                     3, kInputPlanes, true);
+        auto inputConv = std::make_unique<ConvLayer>(
+            nullptr, numFilters_, 8, 8, 3, kInputPlanes, default_activation_);
         // Set the data type first, the following layers will pick it up.
         inputConv->SetDataType(data_type);
         inputConv->SetConvolutionType(convolution_type);
@@ -248,8 +265,9 @@ class OnednnNetwork : public Network {
 
       // Residual block.
       for (size_t block = 0; block < weights.residual.size(); block++) {
-        auto conv1 = std::make_unique<ConvLayer>(getLastLayer(idx), numFilters_,
-                                                 8, 8, 3, numFilters_, true);
+        auto conv1 =
+            std::make_unique<ConvLayer>(getLastLayer(idx), numFilters_, 8, 8, 3,
+                                        numFilters_, default_activation_);
         auto w_md = dnnl::memory::desc({numFilters_, numFilters_, 3, 3},
                                        dnnl::memory::data_type::f32,
                                        dnnl::memory::format_tag::oihw);
@@ -263,12 +281,13 @@ class OnednnNetwork : public Network {
         conv1->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
         layers_[idx].emplace_back(std::move(conv1));
 
-        // Relu of second convolution and skip connection is handled by SELayer.
+        // Activation of second convolution and skip connection is handled by
+        // SELayer.
         bool has_se = weights.residual[block].has_se;
 
-        auto conv2 =
-            std::make_unique<ConvLayer>(getLastLayer(idx), numFilters_, 8, 8, 3,
-                                        numFilters_, !has_se, !has_se);
+        auto conv2 = std::make_unique<ConvLayer>(
+            getLastLayer(idx), numFilters_, 8, 8, 3, numFilters_,
+            has_se ? NONE : default_activation_, !has_se);
         w_mem = dnnl::memory(w_md, cpu_eng_,
                              &weights.residual[block].conv2.weights[0]);
         b_mem = dnnl::memory(b_md, cpu_eng_,
@@ -279,7 +298,8 @@ class OnednnNetwork : public Network {
         if (has_se) {
           int numFCOut = (int)weights.residual[block].se.b1.size();
 
-          auto se = std::make_unique<SELayer>(getLastLayer(idx), numFCOut);
+          auto se = std::make_unique<SELayer>(getLastLayer(idx), numFCOut,
+                                              default_activation_);
           w_md = dnnl::memory::desc({numFCOut, numFilters_},
                                     dnnl::memory::data_type::f32,
                                     dnnl::memory::format_tag::ab);
@@ -307,9 +327,52 @@ class OnednnNetwork : public Network {
       BaseLayer* resi_last = getLastLayer(idx);
 
       // Policy head.
-      if (conv_policy_) {
-        auto conv1 = std::make_unique<ConvLayer>(resi_last, numFilters_, 8, 8,
-                                                 3, numFilters_, true);
+      if (attn_policy_) {
+        for (auto layer : weights.pol_encoder) {
+          // TODO: support encoder heads.
+          throw Exception(
+              "Encoder heads are not yet supported by the oneDNN backend.");
+        }
+        const int embedding_size = weights.ip_pol_b.size();
+        const int policy_d_model = weights.ip2_pol_b.size();
+
+        auto attn = std::make_unique<AttentionPolicyHead>(
+            resi_last, embedding_size, policy_d_model);
+        auto ip_w_md = dnnl::memory::desc({numFilters_, embedding_size},
+                                          dnnl::memory::data_type::f32,
+                                          dnnl::memory::format_tag::ab);
+        auto ip_w_mem =
+            dnnl::memory(ip_w_md, cpu_eng_, weights.ip_pol_w.data());
+        auto ip_b_md =
+            dnnl::memory::desc({embedding_size}, dnnl::memory::data_type::f32,
+                               dnnl::memory::format_tag::a);
+        auto ip_b_mem =
+            dnnl::memory(ip_b_md, cpu_eng_, weights.ip_pol_b.data());
+        auto ip23_w_md = dnnl::memory::desc({embedding_size, policy_d_model},
+                                            dnnl::memory::data_type::f32,
+                                            dnnl::memory::format_tag::ab);
+        auto ip2_w_mem =
+            dnnl::memory(ip23_w_md, cpu_eng_, weights.ip2_pol_w.data());
+        auto ip23_b_md =
+            dnnl::memory::desc({policy_d_model}, dnnl::memory::data_type::f32,
+                               dnnl::memory::format_tag::a);
+        auto ip2_b_mem =
+            dnnl::memory(ip23_b_md, cpu_eng_, weights.ip2_pol_b.data());
+        auto ip3_w_mem =
+            dnnl::memory(ip23_w_md, cpu_eng_, weights.ip3_pol_w.data());
+        auto ip3_b_mem =
+            dnnl::memory(ip23_b_md, cpu_eng_, weights.ip3_pol_b.data());
+        auto ip4_w_md = dnnl::memory::desc({1, 4, policy_d_model},
+                                           dnnl::memory::data_type::f32,
+                                           dnnl::memory::format_tag::abc);
+        auto ip4_w_mem =
+            dnnl::memory(ip4_w_md, cpu_eng_, weights.ip4_pol_w.data());
+        attn->LoadWeights(ip_w_mem, ip_b_mem, ip2_w_mem, ip2_b_mem, ip3_w_mem,
+                          ip3_b_mem, ip4_w_mem, eng_, eng_stream_);
+        layers_[idx].emplace_back(std::move(attn));
+      } else if (conv_policy_) {
+        auto conv1 = std::make_unique<ConvLayer>(
+            resi_last, numFilters_, 8, 8, 3, numFilters_, default_activation_);
         auto w_md = dnnl::memory::desc({numFilters_, numFilters_, 3, 3},
                                        dnnl::memory::data_type::f32,
                                        dnnl::memory::format_tag::oihw);
@@ -321,9 +384,9 @@ class OnednnNetwork : public Network {
         conv1->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
         layers_[idx].emplace_back(std::move(conv1));
 
-        // No relu
+        // No Activation
         auto conv2 = std::make_unique<ConvLayer>(
-            getLastLayer(idx), pol_channels_, 8, 8, 3, numFilters_, false);
+            getLastLayer(idx), pol_channels_, 8, 8, 3, numFilters_, NONE);
         w_md = dnnl::memory::desc({pol_channels_, numFilters_, 3, 3},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::oihw);
@@ -334,8 +397,9 @@ class OnednnNetwork : public Network {
         conv2->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
         layers_[idx].emplace_back(std::move(conv2));
       } else {
-        auto convPol = std::make_unique<ConvLayer>(resi_last, pol_channels_, 8,
-                                                   8, 1, numFilters_, true);
+        auto convPol =
+            std::make_unique<ConvLayer>(resi_last, pol_channels_, 8, 8, 1,
+                                        numFilters_, default_activation_);
         auto w_md = dnnl::memory::desc({pol_channels_, numFilters_, 1, 1},
                                        dnnl::memory::data_type::f32,
                                        dnnl::memory::format_tag::oihw);
@@ -348,7 +412,7 @@ class OnednnNetwork : public Network {
         layers_[idx].emplace_back(std::move(convPol));
 
         auto FCPol = std::make_unique<FCLayer>(getLastLayer(idx),
-                                               kNumOutputPolicy, 1, 1, false);
+                                               kNumOutputPolicy, 1, 1, NONE);
         w_md = dnnl::memory::desc({kNumOutputPolicy, pol_channels_, 8, 8},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::abcd);
@@ -366,8 +430,9 @@ class OnednnNetwork : public Network {
         value_channels_ = weights.ip1_val_b.size();
         value_input_planes_ = weights.value.biases.size();
 
-        auto convVal = std::make_unique<ConvLayer>(
-            resi_last, value_input_planes_, 8, 8, 1, numFilters_, true);
+        auto convVal =
+            std::make_unique<ConvLayer>(resi_last, value_input_planes_, 8, 8, 1,
+                                        numFilters_, default_activation_);
         auto w_md = dnnl::memory::desc({value_input_planes_, numFilters_, 1, 1},
                                        dnnl::memory::data_type::f32,
                                        dnnl::memory::format_tag::oihw);
@@ -379,8 +444,8 @@ class OnednnNetwork : public Network {
         convVal->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
         layers_[idx].emplace_back(std::move(convVal));
 
-        auto FCVal1 = std::make_unique<FCLayer>(getLastLayer(idx),
-                                                value_channels_, 1, 1, true);
+        auto FCVal1 = std::make_unique<FCLayer>(
+            getLastLayer(idx), value_channels_, 1, 1, default_activation_);
         w_md = dnnl::memory::desc({value_channels_, value_input_planes_, 8, 8},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::abcd);
@@ -397,7 +462,7 @@ class OnednnNetwork : public Network {
         auto fc2_tanh = !wdl_;
 
         auto FCVal2 = std::make_unique<FCLayer>(getLastLayer(idx), wdl_ ? 3 : 1,
-                                                1, 1, false, fc2_tanh);
+                                                1, 1, fc2_tanh ? TANH : NONE);
         w_md = dnnl::memory::desc({wdl_ ? 3 : 1, value_channels_, 1, 1},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::abcd);
@@ -417,8 +482,9 @@ class OnednnNetwork : public Network {
         moves_channels_ = weights.ip1_mov_b.size();
         moves_input_planes_ = weights.moves_left.biases.size();
 
-        auto convMov = std::make_unique<ConvLayer>(
-            resi_last, moves_input_planes_, 8, 8, 1, numFilters_, true);
+        auto convMov =
+            std::make_unique<ConvLayer>(resi_last, moves_input_planes_, 8, 8, 1,
+                                        numFilters_, default_activation_);
         auto w_md = dnnl::memory::desc({moves_input_planes_, numFilters_, 1, 1},
                                        dnnl::memory::data_type::f32,
                                        dnnl::memory::format_tag::oihw);
@@ -433,8 +499,8 @@ class OnednnNetwork : public Network {
         convMov->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
         layers_[idx].emplace_back(std::move(convMov));
 
-        auto FCMov1 = std::make_unique<FCLayer>(getLastLayer(idx),
-                                                moves_channels_, 1, 1, true);
+        auto FCMov1 = std::make_unique<FCLayer>(
+            getLastLayer(idx), moves_channels_, 1, 1, default_activation_);
         w_md = dnnl::memory::desc({moves_channels_, moves_input_planes_, 8, 8},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::abcd);
@@ -446,8 +512,8 @@ class OnednnNetwork : public Network {
         FCMov1->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
         layers_[idx].emplace_back(std::move(FCMov1));
 
-        auto FCMov2 =
-            std::make_unique<FCLayer>(getLastLayer(idx), 1, 1, 1, true);
+        auto FCMov2 = std::make_unique<FCLayer>(getLastLayer(idx), 1, 1, 1,
+                                                default_activation_);
         w_md = dnnl::memory::desc({1, moves_channels_, 1, 1},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::abcd);
@@ -520,7 +586,11 @@ class OnednnNetwork : public Network {
 
       // Output descriptors.
       dnnl::memory::desc opPol_desc;
-      if (conv_policy_) {
+      if (attn_policy_) {
+        opPol_desc = dnnl::memory::desc({batchSize, 67, 8, 8},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      } else if (conv_policy_) {
         opPol_desc = dnnl::memory::desc({batchSize, pol_channels_, 8, 8},
                                         dnnl::memory::data_type::f32,
                                         dnnl::memory::format_tag::nchw);
@@ -570,7 +640,10 @@ class OnednnNetwork : public Network {
       }
 
       // Policy head.
-      if (conv_policy_) {
+      if (attn_policy_) {
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[2], eng_,
+                                eng_stream_);  // attention head
+      } else if (conv_policy_) {
         layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], eng_,
                                 eng_stream_);  // policy conv1
 
@@ -639,6 +712,8 @@ class OnednnNetwork : public Network {
         opMov_mem = tmp;
       }
 
+      eng_stream_.wait();
+
       // Copy memory to output buffers and do final transformations.
       if (wdl_) {
         // Value softmax done cpu side.
@@ -663,8 +738,40 @@ class OnednnNetwork : public Network {
         memcpy(io->op_value_mem_ + start, opVal_mem.get_data_handle(),
                currentBatchSize * sizeof(float));
       }
-
-      if (conv_policy_) {
+      if (attn_policy_) {
+        float* opPol = (float*)opPol_mem.get_data_handle();
+        // The promotion offsets are extracted from the output tensor.
+        float promotion_offsets[3][8];
+        for (int batch = 0; batch < currentBatchSize; batch++) {
+          for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 8; j++) {
+              promotion_offsets[i][j] =
+                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + i * 8 + j] +
+                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j];
+            }
+          }
+          for (int x = 0; x < 64 * 64; x++) {
+            auto y = kAttnPolicyMap[x];
+            if (y >= 0) {
+              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                  opPol[batch * (64 * 64 + 8 * 24) + x];
+            }
+          }
+          for (int k = 0; k < 8; k++) {
+            for (int j = 0; j < 8; j++) {
+              for (int i = 0; i < 3; i++) {
+                auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
+                if (y >= 0) {
+                  io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                      opPol[batch * (64 * 64 + 8 * 24) + (48 + k) * 64 + 56 +
+                            j] +
+                      promotion_offsets[i][j];
+                }
+              }
+            }
+          }
+        }
+      } else if (conv_policy_) {
         float* opPol = (float*)opPol_mem.get_data_handle();
         for (int batch = 0; batch < currentBatchSize; batch++) {
           for (int i = 0; i < 73 * 8 * 8; i++) {
@@ -737,6 +844,9 @@ class OnednnNetwork : public Network {
 
   bool has_se_;
   bool conv_policy_;
+  bool attn_policy_;
+  ActivationFunction default_activation_;
+
   std::vector<std::vector<std::unique_ptr<BaseLayer>>> layers_;
   BaseLayer* getLastLayer(int idx) { return layers_[idx].back().get(); }
 
@@ -769,17 +879,20 @@ std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-    throw Exception(
-        "Network format " +
-        std::to_string(weights.format().network_format().network()) +
-        " is not supported by the oneDNN backend.");
+    throw Exception("Network format " +
+                    pblczero::NetworkFormat::NetworkStructure_Name(
+                        weights.format().network_format().network()) +
+                    " is not supported by the oneDNN backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
       weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+      weights.format().network_format().policy() !=
+          pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
-                    std::to_string(weights.format().network_format().policy()) +
+                    pblczero::NetworkFormat::PolicyFormat_Name(
+                        weights.format().network_format().policy()) +
                     " is not supported by the oneDNN backend.");
   }
   if (weights.format().network_format().value() !=
@@ -787,23 +900,27 @@ std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
       weights.format().network_format().value() !=
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
-                    std::to_string(weights.format().network_format().value()) +
+                    pblczero::NetworkFormat::ValueFormat_Name(
+                        weights.format().network_format().value()) +
                     " is not supported by the oneDNN backend.");
   }
   if (weights.format().network_format().moves_left() !=
           pblczero::NetworkFormat::MOVES_LEFT_NONE &&
       weights.format().network_format().moves_left() !=
           pblczero::NetworkFormat::MOVES_LEFT_V1) {
-    throw Exception(
-        "Movest left head format " +
-        std::to_string(weights.format().network_format().moves_left()) +
-        " is not supported by the oneDNN backend.");
+    throw Exception("Moves left head format " +
+                    pblczero::NetworkFormat::MovesLeftFormat_Name(
+                        weights.format().network_format().moves_left()) +
+                    " is not supported by the oneDNN backend.");
   }
   if (weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+      weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
     throw Exception(
         "Default activation " +
-        std::to_string(weights.format().network_format().default_activation()) +
+        pblczero::NetworkFormat::DefaultActivation_Name(
+            weights.format().network_format().default_activation()) +
         " is not supported by the oneDNN backend.");
   }
   return std::make_unique<OnednnNetwork>(weights, options);

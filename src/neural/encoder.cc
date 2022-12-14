@@ -182,13 +182,23 @@ InputPlanes EncodePositionForNN(
         // h-side (kingside) castling right.
         const auto& cast = board.castlings();
         result[kAuxPlaneBase + 0].mask =
-            ((cast.we_can_000() ? BoardSquare(ChessBoard::A1).as_board() : 0) |
-             (cast.they_can_000() ? BoardSquare(ChessBoard::A8).as_board() : 0))
-            << cast.queenside_rook();
+            (cast.we_can_000()
+                 ? BoardSquare(ChessBoard::A1 + cast.our_queenside_rook())
+                       .as_board()
+                 : 0) |
+            (cast.they_can_000()
+                 ? BoardSquare(ChessBoard::A8 + cast.their_queenside_rook())
+                       .as_board()
+                 : 0);
         result[kAuxPlaneBase + 1].mask =
-            ((cast.we_can_00() ? BoardSquare(ChessBoard::A1).as_board() : 0) |
-             (cast.they_can_00() ? BoardSquare(ChessBoard::A8).as_board() : 0))
-            << cast.kingside_rook();
+            (cast.we_can_00()
+                 ? BoardSquare(ChessBoard::A1 + cast.our_kingside_rook())
+                       .as_board()
+                 : 0) |
+            (cast.they_can_00()
+                 ? BoardSquare(ChessBoard::A8 + cast.their_kingside_rook())
+                       .as_board()
+                 : 0);
         break;
       }
       default:
