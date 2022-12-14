@@ -98,9 +98,17 @@ class Converter {
   std::string MakeMish(OnnxBuilder* builder, const std::string& input,
                        const std::string& name);
 
+  std::string MakeSwish(OnnxBuilder* builder, const std::string& input,
+                        const std::string& name);
+
   std::string MakeActivation(OnnxBuilder* builder, const std::string& input,
                              const std::string& name,
                              ActivationFunction activation);
+
+  std::string MakeSmolgen(OnnxBuilder* builder,
+                          const LegacyWeights::EncoderLayer& layer, int d_model,
+                          int heads, const std::string& encoder_in,
+                          const std::string& name);
 
   std::string MakeEncoderLayer(OnnxBuilder* builder,
                                const LegacyWeights::EncoderLayer& layer,
@@ -168,6 +176,12 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
   return builder->Mul(name, flow, input);
 }
 
+std::string Converter::MakeSwish(OnnxBuilder* builder, const std::string& input,
+                                 const std::string& name) {
+  auto flow = builder->Sigmoid(name + "/sigmoid", input);
+  return builder->Mul(name, flow, input);
+}
+
 std::string Converter::MakeActivation(OnnxBuilder* builder,
                                       const std::string& input,
                                       const std::string& name,
@@ -179,6 +193,8 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       return MakeMish(builder, input, name + "/mish");
     case SELU:
       return builder->Selu(name + "/selu", input);
+    case SWISH:
+      return MakeSwish(builder, input, name + "/swish");
     default:
       throw Exception("Unsupposrted activation in " + name);
   }
@@ -246,6 +262,67 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
                           Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
 }
 
+std::string Converter::MakeSmolgen(OnnxBuilder* builder,
+                                   const LegacyWeights::EncoderLayer& layer,
+                                   int d_model, int heads,
+                                   const std::string& encoder_in,
+                                   const std::string& name) {
+  const int smolgen_hidden_channels =
+      layer.mha.smolgen.compress.size() / d_model;
+  const int smolgen_hidden_sz = layer.mha.smolgen.dense1_b.size();
+  const int smolgen_gen_sz = layer.mha.smolgen.dense2_b.size() / heads;
+  auto flow = builder->MatMul(
+      name + "/smolgen/compress", encoder_in,
+      *GetWeghtsConverter(layer.mha.smolgen.compress,
+                          {d_model, smolgen_hidden_channels}, {1, 0}));
+  flow = builder->Reshape(
+      name + "/smolgen/compress/reshape", flow,
+      builder->AddInitializer(
+          "/const" + name + "/smolgen/compress/shape",
+          Int64OnnxConst({-1, 64 * smolgen_hidden_channels}, {2})));
+  flow = builder->MatMul(
+      name + "/smolgen/dense1/w", flow,
+      *GetWeghtsConverter(layer.mha.smolgen.dense1_w,
+                          {64 * smolgen_hidden_channels, smolgen_hidden_sz},
+                          {1, 0}));
+  flow = builder->Add(
+      name + "/smolgen/dense1/b", flow,
+      *GetWeghtsConverter(layer.mha.smolgen.dense1_b, {smolgen_hidden_sz}));
+  flow = MakeActivation(builder, flow, name + "/smolgen/dense1", SWISH);
+  flow = builder->LayerNormalization(
+      name + "/smolgen/ln1", flow,
+      *GetWeghtsConverter(layer.mha.smolgen.ln1_gammas, {smolgen_hidden_sz}),
+      *GetWeghtsConverter(layer.mha.smolgen.ln1_betas, {smolgen_hidden_sz}), 1,
+      1e-3);
+  flow = builder->MatMul(
+      name + "/smolgen/dense2/w", flow,
+      *GetWeghtsConverter(layer.mha.smolgen.dense2_w,
+                          {smolgen_hidden_sz, smolgen_gen_sz * heads}, {1, 0}));
+  flow = builder->Add(name + "/smolgen/dense2/b", flow,
+                      *GetWeghtsConverter(layer.mha.smolgen.dense2_b,
+                                          {smolgen_gen_sz * heads}));
+  flow = MakeActivation(builder, flow, name + "/smolgen/dense2", SWISH);
+  flow = builder->LayerNormalization(
+      name + "/smolgen/ln2", flow,
+      *GetWeghtsConverter(layer.mha.smolgen.ln2_gammas,
+                          {smolgen_gen_sz * heads}),
+      *GetWeghtsConverter(layer.mha.smolgen.ln2_betas,
+                          {smolgen_gen_sz * heads}),
+      1, 1e-3);
+  flow =
+      builder->Reshape(name + "/smolgen/gen_from/reshape", flow,
+                       builder->AddInitializer(
+                           "/const" + name + "/smolgen/gen_from/shape",
+                           Int64OnnxConst({-1, heads, smolgen_gen_sz}, {3})));
+  flow = builder->MatMul(name + "/smolgen/smol_weight_gen", flow,
+                         "/const/smolgen_w");
+  flow = builder->Reshape(
+      name + "/smolgen/out/reshape", flow,
+      builder->AddInitializer("/const" + name + "/smolgen/out/shape",
+                              Int64OnnxConst({-1, heads, 64, 64}, {4})));
+  return flow;
+}
+
 std::string Converter::MakeEncoderLayer(
     OnnxBuilder* builder, const LegacyWeights::EncoderLayer& layer,
     int embedding_size, int heads, const std::string& encoder_in,
@@ -287,6 +364,11 @@ std::string Converter::MakeEncoderLayer(
         FloatOnnxConst({1.0f / sqrtf(depth)}, {1}));
   }
   flow = builder->Mul(name + "/mha/QK/scale", flow, *scale);
+  if (layer.mha.has_smolgen) {
+    auto smolgen_weights =
+        MakeSmolgen(builder, layer, d_model, heads, encoder_in, name);
+    flow = builder->Add(name + "/smolgen_weights", flow, smolgen_weights);
+  }
   flow = builder->Softmax(name + "/mha/QK/softmax", flow, 3);
   flow = builder->MatMul(name + "/mha/QKV/matmul", flow, V);
   if (heads > 1) {
@@ -329,7 +411,13 @@ std::string Converter::MakeEncoderLayer(
                                           {embedding_size, dff_size}, {1, 0}));
   flow = builder->Add(name + "/ffn/dense1/b", flow,
                       *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
-  flow = MakeActivation(builder, flow, name + "/ffn/dense1", activation);
+  if (layer.mha.has_smolgen) {
+    flow =
+        MakeActivation(builder, flow, name + "/ffn/dense1/sqrrelu/relu", RELU);
+    flow = builder->Mul(name + "/ffn/dense1/sqrrelu/sqr", flow, flow);
+  } else {
+    flow = MakeActivation(builder, flow, name + "/ffn/dense1", activation);
+  }
   flow =
       builder->MatMul(name + "/ffn/dense2/w", flow,
                       *GetWeghtsConverter(layer.ffn.dense2_w,
@@ -354,6 +442,14 @@ std::string Converter::MakeEncoderLayer(
 std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                          const std::string& input,
                                          const LegacyWeights& weights) {
+  if (weights.has_smolgen) {
+    builder->AddInitializer(
+        "/const/smolgen_w",
+        *GetWeghtsConverter(
+            weights.smolgen_w,
+            {static_cast<int>(weights.smolgen_w.size() / 4096), 4096}, {1, 0}));
+  }
+
   auto flow = builder->Transpose("/attn_body/transpose", input, {0, 2, 3, 1});
 
   if (NumResBlocks() > 0) {
@@ -404,6 +500,27 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
   flow = builder->Add("/attn_body/add", flow,
                       *GetWeghtsConverter(weights.ip_emb_b, {embedding_size}));
   flow = MakeActivation(builder, flow, "/attn_body", default_activation_);
+
+  if (weights.ip_mult_gate.size() > 0 || weights.ip_add_gate.size() > 0) {
+    flow = builder->Reshape(
+        "/attn_body/ma_gating/rehape1", flow,
+        builder->AddInitializer("/const/ma_gating/shape1",
+                                Int64OnnxConst({-1, 64, embedding_size}, {3})));
+    if (weights.ip_mult_gate.size() > 0) {
+      flow = builder->Mul("/ip_mul_gate", flow,
+                          *GetWeghtsConverter(weights.ip_mult_gate,
+                                              {64, embedding_size}, {1, 0}));
+    }
+    if (weights.ip_add_gate.size() > 0) {
+      flow = builder->Add("/ip_add_gate", flow,
+                          *GetWeghtsConverter(weights.ip_add_gate,
+                                              {64, embedding_size}, {1, 0}));
+    }
+    flow = builder->Reshape(
+        "/attn_body/ma_gating/rehape2", flow,
+        builder->AddInitializer("/const/ma_gating/shape2",
+                                Int64OnnxConst({-1, embedding_size}, {2})));
+  }
 
   float alpha = std::pow(2.0f * NumEncBlocks(), 0.25f);
   for (size_t i = 0; i < NumEncBlocks(); i++) {
