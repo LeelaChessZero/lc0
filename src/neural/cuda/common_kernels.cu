@@ -156,6 +156,9 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
       addBiasBatched_kernel<T, RELU>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
       break;
+    case SWISH:
+      addBiasBatched_kernel<T, SWISH>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
     default:
       throw Exception(
           "unsupported activation in addBiasBatched. Add in switch-case here");
@@ -1027,6 +1030,26 @@ void inputPreprocessForAttentionBody(T* output, const T* input, int N,
       <<<gridSize, blockSize, 0, stream>>>(output, input);
 }
 
+template <typename T>
+__global__ void input_gating_kernel(T* output, const T* input, const T* mult, const T* add) {
+  int n = blockIdx.x * blockDim.x * blockDim.y;
+  int idx = threadIdx.y * blockDim.x + threadIdx.x; // index in input
+  int idxT = threadIdx.x * blockDim.y + threadIdx.y; // index in transposed weights arrays mult and add.
+
+  // Combine multiply gating, add gating and weights transpose.
+  output[n + idx] = input[n + idx] * mult[idxT] + add[idxT];
+}
+
+template <typename T>
+void applyInputGating(T* output, const T* input, const T* mult, const T* add,
+                                int N, int HW, int C, cudaStream_t stream) {
+  // N blocks,
+  // (C * output_size) threads
+  // Each thread computes a single output element
+  dim3 gridSize = dim3(N, 1);
+  dim3 blockSize = dim3(C, HW);
+  input_gating_kernel<T> <<<gridSize, blockSize, 0, stream>>>(output, input, mult, add);
+}
 
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
@@ -1257,5 +1280,12 @@ template void inputPreprocessForAttentionBody<half>(half* output,
 template void inputPreprocessForAttentionBody<float>(float* output,
                                                      const float* input, int N,
                                                      cudaStream_t stream);
+
+template void applyInputGating<half>(half* output, const half* input, const half* mult, const half* add,
+                                     int N, int C, int output_size, cudaStream_t stream);
+
+template void applyInputGating<float>(float* output, const float* input, const float* mult, const float* add,
+                                      int N, int C, int output_size, cudaStream_t stream);
+
 }  // namespace cudnn_backend
 }  // namespace lczero

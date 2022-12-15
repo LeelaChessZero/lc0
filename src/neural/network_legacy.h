@@ -55,6 +55,19 @@ struct LegacyWeights {
     bool has_se;
   };
 
+  struct Smolgen {
+    explicit Smolgen(const pblczero::Weights::Smolgen& smolgen);
+    Vec compress;
+    Vec dense1_w;
+    Vec dense1_b;
+    Vec ln1_gammas;
+    Vec ln1_betas;
+    Vec dense2_w;
+    Vec dense2_b;
+    Vec ln2_gammas;
+    Vec ln2_betas;
+  };
+
   struct MHA {
     explicit MHA(const pblczero::Weights::MHA& mha);
     Vec q_w;
@@ -65,6 +78,8 @@ struct LegacyWeights {
     Vec v_b;
     Vec dense_w;
     Vec dense_b;
+    Smolgen smolgen;
+    bool has_smolgen;
   };
 
   struct FFN {
@@ -91,6 +106,10 @@ struct LegacyWeights {
   // Embedding layer
   Vec ip_emb_w;
   Vec ip_emb_b;
+
+  // Input gating
+  Vec ip_mult_gate;
+  Vec ip_add_gate;
 
   // Encoder stack.
   std::vector<EncoderLayer> encoder;
@@ -133,6 +152,11 @@ struct LegacyWeights {
   Vec ip1_mov_b;
   Vec ip2_mov_w;
   Vec ip2_mov_b;
+
+  // Smolgen global weights
+  Vec smolgen_w;
+  Vec smolgen_b;
+  bool has_smolgen;
 };
 
 }  // namespace lczero

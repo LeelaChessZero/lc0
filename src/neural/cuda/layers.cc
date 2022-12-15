@@ -38,7 +38,7 @@
 
 namespace lczero {
 
-#if 0
+#if 1
 // debug code to dump allocation in GPU memory
 template <typename T>
 void dumpTensor(T* memory, int elements, const char* message) {
@@ -1815,10 +1815,16 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
       num_resi_blocks_(num_res_blocks),
       default_act_(default_act),
       input_c_(input_c),
+      has_gating_(weights.ip_mult_gate.size() > 0 && weights.ip_add_gate.size() > 0),
       BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr) {
 
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
+
+  if (has_gating_) {
+    allocAndUpload<DataType>(&ip_mult_gate_, weights.ip_mult_gate, scratch);
+    allocAndUpload<DataType>(&ip_add_gate_, weights.ip_add_gate, scratch);
+  }
 
   int num_encoders = weights.encoder.size();
   float alpha = (float) pow(2.0 * num_encoders, 0.25);
@@ -1884,6 +1890,13 @@ void AttentionBody<DataType>::Eval(
                           num_outputs);
     addBiasBatched(embedding, embedding, ip_emb_b_, 1, batch,
                    num_outputs, default_act_, stream);
+  }
+
+  // Input gating
+  if (has_gating_) {
+    applyInputGating<DataType>(embedding, embedding, ip_mult_gate_, ip_add_gate_,
+                                N, 64, embedding_op_size_, stream);
+    dumpTensor(embedding, 64 * embedding_op_size_, "input gating outputs");
   }
 
   // 2. Encoder layers

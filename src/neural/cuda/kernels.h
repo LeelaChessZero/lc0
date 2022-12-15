@@ -133,5 +133,10 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input, int N,
                                      cudaStream_t stream);
+
+template <typename T>
+void applyInputGating(T* output, const T* input, const T* mult, const T* add,
+                                int N, int HW, int C, cudaStream_t stream);
+                                     
 }  // namespace cudnn_backend
 }  // namespace lczero

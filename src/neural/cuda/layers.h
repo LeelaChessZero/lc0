@@ -458,12 +458,14 @@ class AttentionBody : public BaseLayer<DataType> {
  private:
   // GPU allocations to hold various weights used by the attention policy head
   DataType *ip_emb_w_, *ip_emb_b_;    // "embedding" layer in net body
+  DataType *ip_mult_gate_, *ip_add_gate_; // input gating
   int embedding_op_size_;
   int encoder_head_count_;
   std::vector<EncoderBlock<DataType>*> encoder_weights_;
   ActivationFunction default_act_;
   int num_resi_blocks_;
   int input_c_;
+  const bool has_gating_;
 };
 
 
