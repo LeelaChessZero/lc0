@@ -1031,24 +1031,35 @@ void inputPreprocessForAttentionBody(T* output, const T* input, int N,
 }
 
 template <typename T>
-__global__ void input_gating_kernel(T* output, const T* input, const T* mult, const T* add) {
-  int n = blockIdx.x * blockDim.x * blockDim.y;
-  int idx = threadIdx.y * blockDim.x + threadIdx.x; // index in input
-  int idxT = threadIdx.x * blockDim.y + threadIdx.y; // index in transposed weights arrays mult and add.
+__global__ void input_gating_kernel(T* output, const T* input, const T* mult, const T* add, int HW, int C) {
+  int n_offset = blockIdx.z * HW * C;
+  int idx = threadIdx.y * C + blockIdx.x * blockDim.x + threadIdx.x; // index in input
+  int idxT = (blockIdx.x * blockDim.x + threadIdx.x) * HW + threadIdx.y; // index in transposed weights arrays mult and add.
 
-  // Combine multiply gating, add gating and weights transpose.
-  output[n + idx] = input[n + idx] * mult[idxT] + add[idxT];
+  if (idx < HW * C) {
+    // Combine multiply gating, add gating and weights transpose.
+    float op = (float) input[n_offset + idx] * (float) mult[idxT] + (float) add[idxT];
+    output[n_offset + idx] = (T) op;
+  }
 }
 
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                                 int N, int HW, int C, cudaStream_t stream) {
-  // N blocks,
-  // (C * output_size) threads
+  // Multiple blocks to fit into each input area / volume
+  // Block x position indicates horizontal section of area
+  // Block y position indicates batch
   // Each thread computes a single output element
-  dim3 gridSize = dim3(N, 1);
-  dim3 blockSize = dim3(C, HW);
-  input_gating_kernel<T> <<<gridSize, blockSize, 0, stream>>>(output, input, mult, add);
+  dim3 blockSize, gridSize;
+  blockSize.x = DivUp(1024, HW);
+  blockSize.y = HW;
+  blockSize.z = 1;
+  gridSize.x = DivUp(C, blockSize.x);
+  gridSize.y = 1;
+  gridSize.z = N;
+  input_gating_kernel<T><<<gridSize, blockSize, 0, stream>>>(output, input, mult, add, HW, C);
+
+  ReportCUDAErrors(cudaGetLastError());
 }
 
 // Template instantiation.

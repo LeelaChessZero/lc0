@@ -62,8 +62,9 @@ void dumpTensor(T* memory, int elements, const char* message) {
             float *arr = (float *)temp;
             val = arr[i];
         }
-        printf("%8.4f ", val);
-        if ((i % 8) == 7) printf("\n");
+        // printf("%8.4f ", val);
+        // if ((i % 8) == 7) printf("\n");
+        printf("%i;%8.4f\n", i, val);
     }
     free(temp);
     printf("\n");
@@ -1896,7 +1897,6 @@ void AttentionBody<DataType>::Eval(
   if (has_gating_) {
     applyInputGating<DataType>(embedding, embedding, ip_mult_gate_, ip_add_gate_,
                                 N, 64, embedding_op_size_, stream);
-    dumpTensor(embedding, 64 * embedding_op_size_, "input gating outputs");
   }
 
   // 2. Encoder layers
