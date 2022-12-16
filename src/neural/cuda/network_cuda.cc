@@ -545,7 +545,7 @@ class CudaNetwork : public Network {
     DataType* skip_connection =
         use_res_block_winograd_fuse_opt_ ? tensor_mem[1] : tensor_mem[2];
 
-#if CUDART_VERSION >= 1100
+#if CUDART_VERSION >= 11000
     const int pre_transform_tensor_size =
         batchSize * numFilters_ * 8 * 8 * sizeof(DataType);
     const int transformed_tensor_size = pre_transform_tensor_size * 36 / 16;
@@ -596,7 +596,7 @@ class CudaNetwork : public Network {
       }
     }
 
-#if CUDART_VERSION >= 1100
+#if CUDART_VERSION >= 11000
     if (enableCacheOpt) {
       // reset the cache settings
       stream_attribute.accessPolicyWindow.num_bytes = 0;
