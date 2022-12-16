@@ -78,6 +78,8 @@ float Activate(const float val, const ActivationFunction activation) {
       return 1.0f / (1.0f + expf(-val));
     case SELU:
       return selu(val);
+    case SWISH:
+      return val / (1.0f + expf(-val));
     case NONE:
       // Nothing to do.
       break;
