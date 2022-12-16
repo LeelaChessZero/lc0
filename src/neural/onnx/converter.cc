@@ -412,8 +412,7 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Add(name + "/ffn/dense1/b", flow,
                       *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
   if (layer.mha.has_smolgen) {
-    flow =
-        MakeActivation(builder, flow, name + "/ffn/dense1/sqrrelu/relu", RELU);
+    flow = MakeActivation(builder, flow, name + "/ffn/dense1/sqrrelu", RELU);
     flow = builder->Mul(name + "/ffn/dense1/sqrrelu/sqr", flow, flow);
   } else {
     flow = MakeActivation(builder, flow, name + "/ffn/dense1", activation);
@@ -709,27 +708,28 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                               const std::string& input,
                               const LegacyWeights& weights) {
   std::string flow;
+  const int val_channels = NumEncBlocks() > 0 ? weights.ip_val_b.size() : 32;
   if (NumEncBlocks() > 0) {
     int embedding_size = weights.ip_emb_b.size();
-    int out_size = weights.ip_val_b.size();
     flow = builder->MatMul(
         "/value/embed/matmul", input,
-        *GetWeghtsConverter(weights.ip_val_w, {embedding_size, out_size},
+        *GetWeghtsConverter(weights.ip_val_w, {embedding_size, val_channels},
                             {1, 0}));
     flow = builder->Add("/value/embed/add", flow,
-                        *GetWeghtsConverter(weights.ip_val_b, {out_size}));
+                        *GetWeghtsConverter(weights.ip_val_b, {val_channels}));
     flow = MakeActivation(builder, flow, "/value/embed", default_activation_);
   } else {
-    flow = MakeConvBlock(builder, weights.value, NumFilters(), 32, input,
-                         "/value/conv", nullptr, "", true, 1);
+    flow = MakeConvBlock(builder, weights.value, NumFilters(), val_channels,
+                         input, "/value/conv", nullptr, "", true, 1);
   }
   flow = builder->Reshape(
       "/value/reshape", flow,
       builder->AddInitializer("/const/value_shape",
-                              Int64OnnxConst({-1, 32 * 8 * 8}, {2})));
-  flow = builder->MatMul(
-      "/value/dense1/matmul", flow,
-      *GetWeghtsConverter(weights.ip1_val_w, {32 * 8 * 8, 128}, {1, 0}));
+                              Int64OnnxConst({-1, val_channels * 8 * 8}, {2})));
+  flow =
+      builder->MatMul("/value/dense1/matmul", flow,
+                      *GetWeghtsConverter(weights.ip1_val_w,
+                                          {val_channels * 8 * 8, 128}, {1, 0}));
   flow = builder->Add("/value/dense1/add", flow,
                       *GetWeghtsConverter(weights.ip1_val_b, {128}));
   flow = MakeActivation(builder, flow, "/value/dense1", default_activation_);
