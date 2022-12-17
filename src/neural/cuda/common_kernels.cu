@@ -30,6 +30,13 @@
 #include "cuda_common.h"
 #include "winograd_helper.inc"
 
+#ifdef USE_CUTLASS
+#include "cutlass/cutlass.h"
+#include "cutlass/layout/matrix.h"
+#include "cutlass/gemm/device/gemm_array.h"
+#include "cutlass/gemm/device/gemm_batched.h"
+#endif
+
 namespace lczero {
 namespace cudnn_backend {
 namespace {
@@ -983,6 +990,68 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
   promotion_logits_kernel<T>
       <<<N, blockDim, 0, stream>>>(C, output, keys, ppo, policy_attn_logits);
 }
+
+#ifdef USE_CUTLASS
+void cutlassRowMajorMatrixMul(const half* A, const half* B, half* Out, int M,
+                              int N, int K, int batchSize) {
+  using ElementAccumulator = cutlass::half_t;  // <- data type of accumulator
+  using ElementComputeEpilogue =
+      ElementAccumulator;  // <- data type of epilogue operations
+  using ElementInputA =
+      cutlass::half_t;  // <- data type of elements in input matrix A
+  using ElementInputB =
+      cutlass::half_t;  // <- data type of elements in input matrix B
+  using ElementOutput =
+      cutlass::half_t;  // <- data type of elements in output matrix
+  using LayoutInputA = cutlass::layout::RowMajor;
+  using LayoutInputB = cutlass::layout::RowMajor;
+  using LayoutOutput = cutlass::layout::RowMajor;
+  using MMAOp = cutlass::arch::OpClassTensorOp;
+
+  // This code section describes CUDA SM architecture number
+  using SmArch = cutlass::arch::Sm80;
+
+  using ShapeMMAThreadBlock =
+      cutlass::gemm::GemmShape<128, 128, 32>;  // <- threadblock tile
+  using ShapeMMAWarp =
+      cutlass::gemm::GemmShape<32, 64, 32>;  // <- warp tile
+  using ShapeMMAOp = cutlass::gemm::GemmShape<16, 8, 16>;  // <- MMA Op tile
+
+  // This code section describes how threadblocks are scheduled on GPU
+  using SwizzleThreadBlock =
+      cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle;  // <-
+                                                                          // ??
+
+  // This code section describes epilogue of the kernel (can probably add fused stuff here)
+  using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+      ElementOutput,  // <- data type of output matrix
+      128 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,  // <- data type of accumulator
+      float>;  // <- data type for alpha/beta in linear combination function
+
+  constexpr int NumStages = 3;  // stages == 2/4 is also good sometimes
+
+  using Gemm = cutlass::gemm::device::GemmBatched<
+      ElementInputA, LayoutInputA, ElementInputB, LayoutInputB, ElementOutput,
+      LayoutOutput, ElementAccumulator, MMAOp, SmArch, ShapeMMAThreadBlock,
+      ShapeMMAWarp, ShapeMMAOp, EpilogueOp, SwizzleThreadBlock, NumStages>;
+
+  Gemm gemm_op;
+  half halfOne = (half)1.0f;
+  half halfZero = (half)0.0f;
+  cutlass::Status status = gemm_op({{M, N, K},
+                                    {(cutlass::half_t const*)A, K},
+                                    K * M,
+                                    {(cutlass::half_t const*)B, N},
+                                    N * K,
+                                    {(cutlass::half_t const*)Out, N},
+                                    N * M,
+                                    {(cutlass::half_t*)Out, N},
+                                    N * M,
+                                    {halfOne, halfZero},
+                                    batchSize});
+}
+#endif
 
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,

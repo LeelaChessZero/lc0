@@ -130,5 +130,12 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
                             const T* ppo, const T* policy_attn_logits,
                             cudaStream_t stream);
 
+#ifdef USE_CUTLASS
+// streamA and streamB are cache hints
+// We want to use streaming loads for weights to avoid it pollute the L2 cache
+// The hope is to make the inputs/output fit in cache.
+void cutlassRowMajorMatrixMul(const half* A, const half* B, half* Out, int M,
+                              int N, int K, int batchSize);
+#endif
 }  // namespace cudnn_backend
 }  // namespace lczero
