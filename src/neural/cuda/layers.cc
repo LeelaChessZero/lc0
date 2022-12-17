@@ -1204,6 +1204,12 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
   DataType* transformed_output =
       transformed_input + scratch_size / (2 * sizeof(DataType));
 
+  // caller wants us to sub-allocate all memory we need from "output" tensor
+  if (!scratch) {
+    transformed_input = output; // this is true in normal cases too!
+    transformed_output = transformed_input + (N * C * 8 * 8 * 36 / 16);
+  }
+
   if (first_block_) {
     InputTransform<DataType, true>(N, c_input_, transformed_input, input,
                                    stream);
