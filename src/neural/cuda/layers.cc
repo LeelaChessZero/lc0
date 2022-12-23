@@ -1340,8 +1340,10 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
 template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
                                                    const LegacyWeights& weights,
-                                                   void* scratch)
-    : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip) {
+                                                   void* scratch,
+                                                   bool use_gemm_ex)
+    : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip, ip->isNHWC(),
+                          use_gemm_ex) {
   embedding_op_size_ = weights.ip_pol_b.size();
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
@@ -1465,32 +1467,36 @@ static void cublasXgemm(cublasHandle_t handle, cublasOperation_t transa,
   }
 }
 
-template <typename DataType>
-static void cublasXGemmStridedBatched(
+template <>
+void AttentionPolicyHead<half>::cublasXGemmStridedBatched(
     cublasHandle_t handle, cublasOperation_t transa, cublasOperation_t transb,
     int m, int n, int k, float alpha, const void* A, int lda,
     long long int strideA, const void* B, int ldb, long long int strideB,
     float beta, void* C, int ldc, long long int strideC, int batchCount) {
-  const bool fp16 = std::is_same<half, DataType>::value;
-  if (fp16) {
-    unsigned short alpha_h = FP32toFP16(alpha);
-    unsigned short beta_h = FP32toFP16(beta);
-    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
-        handle, transa, transb, m, n, k, &alpha_h, A, CUDA_R_16F, lda, strideA,
-        B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
-        batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
-  } else {
-#if __CUDA_ARCH__ >= 500
+  unsigned short alpha_h = FP32toFP16(alpha);
+  unsigned short beta_h = FP32toFP16(beta);
+  ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+      handle, transa, transb, m, n, k, &alpha_h, A, CUDA_R_16F, lda, strideA, B,
+      CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
+      batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
+}
+
+template <>
+void AttentionPolicyHead<float>::cublasXGemmStridedBatched(
+    cublasHandle_t handle, cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k, float alpha, const void* A, int lda,
+    long long int strideA, const void* B, int ldb, long long int strideB,
+    float beta, void* C, int ldc, long long int strideC, int batchCount) {
+  if (use_gemm_ex_) {
     ReportCUBLASErrors(cublasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha, A, CUDA_R_32F, lda, strideA, B,
         CUDA_R_32F, ldb, strideB, &beta, C, CUDA_R_32F, ldc, strideC,
         batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
-#else
+  } else {
     ReportCUBLASErrors(cublasSgemmStridedBatched(
         handle, transa, transb, m, n, k, &alpha, (const float*)A, lda, strideA,
         (const float*)B, ldb, strideB, &beta, (float*)C, ldc, strideC,
         batchCount));
-#endif
   }
 }
 
@@ -1541,11 +1547,11 @@ void AttentionPolicyHead<DataType>::Eval(
       mha_k = mha_q + num_outputs * batch;
       mha_v = mha_k + num_outputs * batch;
 
-      cublasXGemmStridedBatched<DataType>(
-          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
-          1.0f, enc.mha_qkv_w, num_inputs, num_inputs * num_outputs,
-          pol_embedding, num_inputs, 0, 0.0f, mha_q, num_outputs,
-          num_outputs * batch, 3);
+      cublasXGemmStridedBatched(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                                batch, num_inputs, 1.0f, enc.mha_qkv_w,
+                                num_inputs, num_inputs * num_outputs,
+                                pol_embedding, num_inputs, 0, 0.0f, mha_q,
+                                num_outputs, num_outputs * batch, 3);
       addBiasBatched<DataType>(mha_q, mha_q, enc.mha_qkv_b, 3, batch,
                                num_outputs, NONE, stream);
     }
@@ -1574,7 +1580,7 @@ void AttentionPolicyHead<DataType>::Eval(
       int offset = i * depth;
       // layout of the output: encoder_heads_ * Batch * 64 * 64
       int outOffset = i * N * 64 * 64;
-      cublasXGemmStridedBatched<DataType>(
+      cublasXGemmStridedBatched(
           cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
           depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
                         // transform
@@ -1600,7 +1606,7 @@ void AttentionPolicyHead<DataType>::Eval(
       int offset = i * depth;  // for output and "v" matrix
       // layout: encoder_heads_ * Batch*64*64
       int weightsOffset = i * N * 64 * 64;
-      cublasXGemmStridedBatched<DataType>(
+      cublasXGemmStridedBatched(
           cublas, CUBLAS_OP_N, CUBLAS_OP_N, depth /*M*/, 64 /*N*/, 64 /*K*/,
           1.0f, mha_v + offset /*A*/,  // "v" matrix
           d_model /*LDA*/,  // to skip over other "depth" slices / heads
@@ -1669,10 +1675,10 @@ void AttentionPolicyHead<DataType>::Eval(
     wq = scratch0;
     wk = wq + num_outputs * batch;
 
-    cublasXGemmStridedBatched<DataType>(
-        cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
-        wqk_w_, num_inputs, num_inputs * num_outputs, scratch1, num_inputs, 0,
-        0.0f, wq, num_outputs, num_outputs * batch, 2);
+    cublasXGemmStridedBatched(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                              batch, num_inputs, 1.0f, wqk_w_, num_inputs,
+                              num_inputs * num_outputs, scratch1, num_inputs, 0,
+                              0.0f, wq, num_outputs, num_outputs * batch, 2);
 
     addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs, NONE,
                              stream);
@@ -1688,7 +1694,7 @@ void AttentionPolicyHead<DataType>::Eval(
     // A/B, and M/N are swapped for row-major to col-major transform
     // leave 8*24 after each batch to interleave promotion_logits (computed
     // later below)
-    cublasXGemmStridedBatched<DataType>(
+    cublasXGemmStridedBatched(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
         policy_d_model_ /*K*/,
         factor,  // to handle "/ tf.math.sqrt(dk)"

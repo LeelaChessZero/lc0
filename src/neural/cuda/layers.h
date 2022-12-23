@@ -346,7 +346,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
 
  public:
   AttentionPolicyHead(BaseLayer<DataType>* ip, const LegacyWeights& weights,
-                      void* scratch);
+                      void* scratch, bool use_gemm_ex);
   ~AttentionPolicyHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -397,6 +397,12 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   int policy_d_model_;
 
   std::vector<EncoderWeights*> encoder_weights_;
+
+  void cublasXGemmStridedBatched(
+      cublasHandle_t handle, cublasOperation_t transa, cublasOperation_t transb,
+      int m, int n, int k, float alpha, const void* A, int lda,
+      long long int strideA, const void* B, int ldb, long long int strideB,
+      float beta, void* C, int ldc, long long int strideC, int batchCount);
 };
 
 }  // namespace cudnn_backend
