@@ -31,7 +31,6 @@
 
 #include "neural/factory.h"
 #include "utils/exception.h"
-#include "utils/numa.h"
 
 namespace lczero {
 namespace {
@@ -126,7 +125,7 @@ class MuxingNetwork : public Network {
 
     for (int i = 0; i < nn_threads; ++i) {
       threads_.emplace_back(
-          [this, net, max_batch, i]() { Worker(net, max_batch, i); });
+          [this, net, max_batch]() { Worker(net, max_batch); });
     }
   }
 
@@ -154,9 +153,7 @@ class MuxingNetwork : public Network {
     }
   }
 
-  void Worker(Network* network, const int max_batch, int id) {
-    // Add one to the id in order to leave space for an active search thread.
-    Numa::BindThread(id + 1);
+  void Worker(Network* network, const int max_batch) {
     // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       std::vector<MuxingComputation*> children;

@@ -33,6 +33,11 @@
 #include <string>
 #include <vector>
 
+#if __has_include("dml_provider_factory.h")
+#include "dml_provider_factory.h"
+#define USE_DML
+#endif
+
 #include "cpu_provider_factory.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
@@ -41,21 +46,21 @@
 #include "onnxruntime_cxx_api.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
+#include "utils/fp16_utils.h"
 #include "utils/logging.h"
 
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA };
+enum class OnnxProvider { CPU, CUDA, DML };
 
 class OnnxNetwork;
 
+template <typename DataType>
 class OnnxComputation : public NetworkComputation {
  public:
-  OnnxComputation(OnnxNetwork* network) : network_(network) {}
-  void AddInput(InputPlanes&& input) override {
-    raw_input_.emplace_back(input);
-  }
+  OnnxComputation(OnnxNetwork* network);
+  void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override { return raw_input_.size(); }
   void ComputeBlocking() override;
   float GetQVal(int sample) const override;
@@ -64,28 +69,36 @@ class OnnxComputation : public NetworkComputation {
   float GetMVal(int sample) const override;
 
  private:
-  Ort::Value PrepareInput();
+  Ort::Value PrepareInputs(int start, int batch_size);
 
   OnnxNetwork* network_;
   std::vector<InputPlanes> raw_input_;
-  std::vector<float> input_tensor_data_;
+  std::vector<DataType> input_tensor_data_;
   std::vector<Ort::Value> output_tensors_;
+  std::vector<std::vector<DataType>> output_tensors_data_;
+  std::vector<size_t> output_tensors_step_;
 };
 
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider);
+              OnnxProvider provider, int gpu, bool fp16, int batch_size,
+              int steps);
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<OnnxComputation>(this);
+    if (fp16_) {
+      return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
+    } else {
+      return std::make_unique<OnnxComputation<float>>(this);
+    }
   }
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
 
   Ort::Env onnx_env_;
-  Ort::SessionOptions session_options_;
-  Ort::Session session_;
+  // Prepare sessions for this many multiples of the batch size;
+  int steps_;
+  std::vector<Ort::Session> session_;
   std::vector<std::string> inputs_;
   // Points to strings in inputs_.
   std::vector<const char*> inputs_cstr_;
@@ -98,74 +111,173 @@ class OnnxNetwork : public Network {
   int value_head_ = -1;
   int mlh_head_ = -1;
   NetworkCapabilities capabilities_;
+  bool fp16_;
+  // The batch size to use, or -1 for variable.
+  int batch_size_;
+  static constexpr int max_batch_size_ = 1024;
+  // For conditional locking if running the DML provider.
+  OnnxProvider provider_;
+  std::mutex lock_;
 };
 
-float OnnxComputation::GetQVal(int sample) const {
+template <typename DataType>
+OnnxComputation<DataType>::OnnxComputation(OnnxNetwork* network)
+    : network_(network) {
+  output_tensors_data_.resize(network_->outputs_.size());
+  output_tensors_step_.resize(network_->outputs_.size());
+  output_tensors_step_[network_->policy_head_] = 1858;
+  output_tensors_data_[network_->policy_head_] =
+      std::vector<DataType>(1858 * network_->max_batch_size_);
   if (network_->wdl_head_ != -1) {
-    const auto& data =
-        output_tensors_[network_->wdl_head_].GetTensorData<float>();
-    return data[sample * 3 + 0] - data[sample * 3 + 2];
-  } else {
-    const auto& data =
-        output_tensors_[network_->value_head_].GetTensorData<float>();
-    return data[sample];
+    output_tensors_step_[network_->wdl_head_] = 3;
+    output_tensors_data_[network_->wdl_head_] =
+        std::vector<DataType>(3 * network_->max_batch_size_);
+  }
+  if (network_->value_head_ != -1) {
+    output_tensors_step_[network_->value_head_] = 1;
+    output_tensors_data_[network_->value_head_] =
+        std::vector<DataType>(network_->max_batch_size_);
+  }
+  if (network_->mlh_head_ != -1) {
+    output_tensors_step_[network_->mlh_head_] = 1;
+    output_tensors_data_[network_->mlh_head_] =
+        std::vector<DataType>(network_->max_batch_size_);
   }
 }
-float OnnxComputation::GetDVal(int sample) const {
-  if (network_->wdl_head_ == -1) return 0.0f;
-  const auto& data =
-      output_tensors_[network_->wdl_head_].GetTensorData<float>();
-  return data[sample * 3 + 1];
-}
-float OnnxComputation::GetPVal(int sample, int move_id) const {
-  const auto& data =
-      output_tensors_[network_->policy_head_].GetTensorData<float>();
-  return data[sample * 1858 + move_id];
-}
-float OnnxComputation::GetMVal(int sample) const {
-  if (network_->mlh_head_ == -1) return 0.0f;
-  const auto& data =
-      output_tensors_[network_->mlh_head_].GetTensorData<float>();
-  return data[sample];
+
+template <typename DataType>
+void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
+  raw_input_.emplace_back(input);
+  if (raw_input_.size() > network_->max_batch_size_) {
+    throw Exception("NN input exceeds max batch size of " +
+                    std::to_string(network_->max_batch_size_) + ".");
+  }
 }
 
-Ort::Value OnnxComputation::PrepareInput() {
+float AsFloat(float x) { return x; }
+float AsFloat(Ort::Float16_t x) { return FP16toFP32(x); }
+
+template <typename DataType>
+float OnnxComputation<DataType>::GetQVal(int sample) const {
+  if (network_->wdl_head_ != -1) {
+    const auto& data = output_tensors_data_[network_->wdl_head_];
+    return AsFloat(data[sample * 3 + 0]) - AsFloat(data[sample * 3 + 2]);
+  } else {
+    const auto& data = output_tensors_data_[network_->value_head_];
+    return AsFloat(data[sample]);
+  }
+}
+
+template <typename DataType>
+float OnnxComputation<DataType>::GetDVal(int sample) const {
+  if (network_->wdl_head_ == -1) return 0.0f;
+  const auto& data = output_tensors_data_[network_->wdl_head_];
+  return AsFloat(data[sample * 3 + 1]);
+}
+
+template <typename DataType>
+float OnnxComputation<DataType>::GetPVal(int sample, int move_id) const {
+  const auto& data = output_tensors_data_[network_->policy_head_];
+  return AsFloat(data[sample * 1858 + move_id]);
+}
+
+template <typename DataType>
+float OnnxComputation<DataType>::GetMVal(int sample) const {
+  if (network_->mlh_head_ == -1) return 0.0f;
+  const auto& data = output_tensors_data_[network_->mlh_head_];
+  return AsFloat(data[sample]);
+}
+
+template <typename DataType>
+Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   input_tensor_data_.clear();
-  input_tensor_data_.resize(raw_input_.size() * kInputPlanes * 8 * 8);
+  input_tensor_data_.resize(batch_size * kInputPlanes * 8 * 8);
   auto iter = input_tensor_data_.data();
-  for (const auto& sample : raw_input_) {
-    assert(sample.size() == kInputPlanes);
-    for (const auto& plane : sample) {
+  int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
+  for (int i = start; i < end; i++) {
+    for (const auto& plane : raw_input_[i]) {
       for (auto bit : IterateBits(plane.mask)) {
-        *(iter + bit) = plane.value;
+        if (std::is_same<Ort::Float16_t, DataType>::value) {
+          *(iter + bit) = FP32toFP16(plane.value);
+        } else {
+          *(iter + bit) = plane.value;
+        }
       }
       iter += 64;
     }
   }
-  int64_t dims[] = {static_cast<int64_t>(raw_input_.size()), kInputPlanes, 8,
-                    8};
+  for (int i = end; i < start + batch_size; i++) {
+    for (int j = 0; j < kInputPlanes * 64; j++) {
+      *iter++ = 0;
+    }
+  }
+
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-  // Hopefully having dims in a temporary variable is fine.
-  return Ort::Value::CreateTensor<float>(memory_info, input_tensor_data_.data(),
-                                         input_tensor_data_.size(), dims, 4);
+
+  output_tensors_.clear();
+  for (size_t i = 0; i < output_tensors_step_.size(); i++) {
+    int size = output_tensors_step_[i];
+    int64_t dims[] = {batch_size, size};
+    output_tensors_.emplace_back(Ort::Value::CreateTensor<DataType>(
+        memory_info, output_tensors_data_[i].data() + start * size,
+        size * batch_size, dims, 2));
+  }
+
+  int64_t dims[] = {batch_size, kInputPlanes, 8, 8};
+  return Ort::Value::CreateTensor<DataType>(memory_info,
+                                            input_tensor_data_.data(),
+                                            input_tensor_data_.size(), dims, 4);
 }
 
-void OnnxComputation::ComputeBlocking() {
-  auto input_tensor = PrepareInput();
-  output_tensors_ = network_->session_.Run(
-      {}, network_->inputs_cstr_.data(), &input_tensor, 1,
-      network_->outputs_cstr_.data(), network_->outputs_cstr_.size());
+template <typename DataType>
+void OnnxComputation<DataType>::ComputeBlocking() {
+  int batch_size = network_->batch_size_;
+  if (batch_size < 0) batch_size = raw_input_.size();
+
+  for (size_t i = 0; i < raw_input_.size();) {
+    int step = (raw_input_.size() - i + batch_size - 1) / batch_size;
+    if (step > network_->steps_) step = network_->steps_;
+    int batch = batch_size * step;
+
+    auto input_tensor = PrepareInputs(i, batch);
+    if (network_->provider_ == OnnxProvider::DML) network_->lock_.lock();
+    network_->session_[step - 1].Run(
+        {}, network_->inputs_cstr_.data(), &input_tensor, 1,
+        network_->outputs_cstr_.data(), output_tensors_.data(),
+        output_tensors_.size());
+    if (network_->provider_ == OnnxProvider::DML) network_->lock_.unlock();
+    i += batch;
+  }
 }
 
-Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
+Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int batch_size) {
   Ort::SessionOptions options;
   OrtCUDAProviderOptions cuda_options;
   // options.SetIntraOpNumThreads(1);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+  if (batch_size > 0) {
+    // Override the default (variable) batch size.
+    Ort::ThrowOnError(
+        OrtGetApiBase()
+            ->GetApi(ORT_API_VERSION)
+            ->AddFreeDimensionOverrideByName(options, "batch", batch_size));
+  }
+
   switch (provider) {
+    case OnnxProvider::DML:
+      options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+      options.DisableMemPattern();
+#ifdef USE_DML
+      Ort::ThrowOnError(
+          OrtSessionOptionsAppendExecutionProvider_DML(options, gpu));
+#else
+      throw Exception("ONNX backend internal error.");
+#endif
+      break;
     case OnnxProvider::CUDA:
-      cuda_options.device_id = dict.GetOrDefault<int>("gpu", 0);
+      cuda_options.device_id = gpu;
       options.AppendExecutionProvider_CUDA(cuda_options);
       break;
     case OnnxProvider::CPU:
@@ -184,13 +296,27 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, const OptionsDict& dict) {
   return options;
 }
 
-OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& dict,
-                         OnnxProvider provider)
+OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
+                         OnnxProvider provider, int gpu, bool fp16,
+                         int batch_size, int steps)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
-      session_(onnx_env_, file.onnx_model().model().data(),
-               file.onnx_model().model().size(), GetOptions(provider, dict)),
+      steps_(steps),
       capabilities_{file.format().network_format().input(),
-                    file.format().network_format().moves_left()} {
+                    file.format().network_format().moves_left()},
+      fp16_(fp16),
+      batch_size_(batch_size),
+      provider_(provider) {
+  // Sanity checks.
+  if (batch_size_ < 0) steps_ = 1;
+  if (batch_size_ * steps > max_batch_size_) {
+    batch_size_ = max_batch_size_ / steps_;
+  }
+
+  for (int step = 1; step <= steps_; step++)
+    session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
+                          file.onnx_model().model().size(),
+                          GetOptions(provider, gpu, batch_size_ * step));
+
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
     throw Exception("NN doesn't have input planes defined.");
@@ -227,8 +353,22 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& opts) {
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
+  int gpu = opts.GetOrDefault<int>("gpu", 0);
+
+  int batch_size =
+      opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML ? 16 : -1);
+
+  int steps =
+      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 8 : 1);
+
+  if (batch_size <= 0) batch_size = -1;  // Variable batch size.
+
+  bool fp16 = opts.GetOrDefault<bool>(
+      "fp16", kProvider == OnnxProvider::CPU ? false : true);
+
   if (w->has_onnx_model()) {
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, false,
+                                         batch_size, steps);
   } else {
     if (w->format().network_format().network() !=
             pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
@@ -242,7 +382,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (w->format().network_format().policy() !=
             pblczero::NetworkFormat::POLICY_CLASSICAL &&
         w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+            pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+        w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_ATTENTION) {
       throw Exception("Policy format " +
                       pblczero::NetworkFormat::PolicyFormat_Name(
                           w->format().network_format().policy()) +
@@ -258,17 +400,28 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                       " is not supported by the ONNX backend.");
     }
     if (w->format().network_format().default_activation() !=
-        pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+            pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+        w->format().network_format().default_activation() !=
+            pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
       throw Exception("Default activation " +
                       pblczero::NetworkFormat::DefaultActivation_Name(
                           w->format().network_format().default_activation()) +
                       " is not supported by the ONNX backend.");
     }
-    auto converted = ConvertWeightsToOnnx(*w, {});
-    return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
+    WeightsToOnnxConverterOptions converter_options;
+    converter_options.opset = opts.GetOrDefault<int>("opset", 17);
+    converter_options.data_type_ =
+        fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
+             : WeightsToOnnxConverterOptions::DataType::kFloat32;
+    auto converted = ConvertWeightsToOnnx(*w, converter_options);
+    return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu, fp16,
+                                         batch_size, steps);
   }
 }
 
+#ifdef USE_DML
+REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
+#endif
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 

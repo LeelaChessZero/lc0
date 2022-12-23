@@ -29,18 +29,23 @@
 
 #include <initializer_list>
 
+#include "neural/onnx/adapters.h"
 #include "neural/onnx/onnx.pb.h"
+#include "utils/exception.h"
 #include "utils/random.h"
 #include "version.h"
 
 namespace lczero {
 
-OnnxBuilder::OnnxBuilder() {
+OnnxBuilder::OnnxBuilder(int opset) : opset_(opset) {
+  if (opset < 7 || opset > 17) {
+    throw Exception("Only ONNX opsets between 7 and 17 are supported.");
+  }
   model_.set_ir_version(4);
   model_.set_domain("org.lczero.models.*");
   model_.set_producer_name("Lc0");
   model_.set_producer_version(GetVersionStr());
-  model_.add_opset_import()->set_version(9);
+  model_.add_opset_import()->set_version(opset);
   model_.mutable_graph()->set_name("org.lczero/converted/" +
                                    Random::Get().GetString(16));
 }
@@ -69,6 +74,14 @@ void AddIntAttribute(pblczero::NodeProto* node, const std::string& name,
   attr->set_name(name);
   attr->set_type(pblczero::AttributeProto::INT);
   attr->set_i(val);
+}
+
+void AddFloatAttribute(pblczero::NodeProto* node, const std::string& name,
+                       float val) {
+  auto* attr = node->add_attribute();
+  attr->set_name(name);
+  attr->set_type(pblczero::AttributeProto::FLOAT);
+  attr->set_f(val);
 }
 
 void AddIntsAttribute(pblczero::NodeProto* node, const std::string& name,
@@ -157,7 +170,12 @@ std::string OnnxBuilder::Squeeze(const std::string& name,
                                  const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Squeeze");
-  AddIntsAttribute(node, "axes", {2, 3});
+  if (opset_ < 13) {
+    AddIntsAttribute(node, "axes", {2, 3});
+  } else {
+    node->add_input(
+        AddInitializer(name + "/axes", Int64OnnxConst({2, 3}, {2})));
+  }
   return out;
 }
 
@@ -169,12 +187,29 @@ std::string OnnxBuilder::Mul(const std::string& name, const std::string& input1,
   return out;
 }
 
+std::string OnnxBuilder::Mul(const std::string& name, const std::string& input1,
+                             const OnnxConst& input2) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "Mul");
+  node->add_input(AddInitializer(name + "/w", input2));
+  return out;
+}
+
 std::string OnnxBuilder::MatMul(const std::string& name,
                                 const std::string& input1,
                                 const OnnxConst& input2) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "MatMul");
   node->add_input(AddInitializer(name + "/w", input2));
+  return out;
+}
+
+std::string OnnxBuilder::MatMul(const std::string& name,
+                                const std::string& input1,
+                                const std::string& input2) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "MatMul");
+  node->add_input(input2);
   return out;
 }
 
@@ -191,9 +226,11 @@ std::string OnnxBuilder::Tanh(const std::string& name,
 }
 
 std::string OnnxBuilder::Softmax(const std::string& name,
-                                 const std::string& input) {
+                                 const std::string& input, int axis) {
   auto* node = model_.mutable_graph()->add_node();
-  return PopulateStdNodeFields(node, name, input, "Softmax");
+  auto out = PopulateStdNodeFields(node, name, input, "Softmax");
+  AddIntAttribute(node, "axis", axis);
+  return out;
 }
 
 std::string OnnxBuilder::Reshape(const std::string& name,
@@ -202,6 +239,23 @@ std::string OnnxBuilder::Reshape(const std::string& name,
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Reshape");
   node->add_input(shape);
+  return out;
+}
+
+std::string OnnxBuilder::Transpose(const std::string& name,
+                                   const std::string& input,
+                                   std::initializer_list<int> perm) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Transpose");
+  AddIntsAttribute(node, "perm", perm);
+  return out;
+}
+
+std::string OnnxBuilder::Pad(const std::string& name, const std::string& input,
+                             std::initializer_list<int> pads) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Pad");
+  AddIntsAttribute(node, "pads", pads);
   return out;
 }
 
@@ -215,23 +269,106 @@ std::string OnnxBuilder::Gather(const std::string& name,
   return out;
 }
 
-std::pair<std::string, std::string> OnnxBuilder::Split(const std::string& name,
-                                                       const std::string& input,
-                                                       int axis) {
+std::string OnnxBuilder::Softplus(const std::string& name,
+                                  const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Softplus");
+}
+
+std::string OnnxBuilder::Identity(const std::string& name,
+                                  const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Identity");
+}
+
+std::string OnnxBuilder::Selu(const std::string& name,
+                              const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Selu");
+}
+
+std::vector<std::string> OnnxBuilder::Split(const std::string& name,
+                                            const std::string& input, int axis,
+                                            std::initializer_list<int> split) {
   auto* node = model_.mutable_graph()->add_node();
   node->set_name(name);
   node->set_op_type("Split");
   node->add_input(input);
+  AddIntAttribute(node, "axis", axis);
+  if (split.size() > 0) {
+    if (opset_ < 13) {
+      AddIntsAttribute(node, "split", split);
+    } else {
+      node->add_input(AddInitializer(
+          name + "/split",
+          Int64OnnxConst(std::vector<int64_t>(begin(split), end(split)),
+                         {static_cast<int>(split.size())})));
+    }
+    std::vector<std::string> out;
+    for (size_t i = 1; i <= split.size(); i++) {
+      out.push_back(name + "/out" + std::to_string(i));
+      node->add_output(out.back());
+    }
+    return out;
+  }
   node->add_output(name + "/out1");
   node->add_output(name + "/out2");
-  AddIntAttribute(node, "axis", axis);
   return {name + "/out1", name + "/out2"};
+}
+
+std::string OnnxBuilder::Slice(const std::string& name,
+                               const std::string& input,
+                               std::initializer_list<int> starts,
+                               std::initializer_list<int> ends) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Slice");
+  if (opset_ < 10) {
+    AddIntsAttribute(node, "starts", starts);
+    AddIntsAttribute(node, "ends", ends);
+  } else {
+    node->add_input(AddInitializer(
+        name + "/starts", Int32OnnxConst(std::vector<int>(starts),
+                                         {static_cast<int>(starts.size())})));
+    node->add_input(AddInitializer(
+        name + "/ends", Int32OnnxConst(std::vector<int>(ends),
+                                       {static_cast<int>(ends.size())})));
+  }
+  return out;
+}
+
+std::string OnnxBuilder::Concat(const std::string& name,
+                                const std::vector<std::string>& input,
+                                int axis) {
+  auto* node = model_.mutable_graph()->add_node();
+  node->set_name(name);
+  node->set_op_type("Concat");
+  for (const auto& in : input) {
+    node->add_input(in);
+  }
+  node->add_output(name);
+  AddIntAttribute(node, "axis", axis);
+  return name;
 }
 
 std::string OnnxBuilder::Sigmoid(const std::string& name,
                                  const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   return PopulateStdNodeFields(node, name, input, "Sigmoid");
+}
+
+// This is only defined in opset 17 but onnxruntime supports it from 1.
+std::string OnnxBuilder::LayerNormalization(const std::string& name,
+                                            const std::string& input,
+                                            const OnnxConst& scale,
+                                            const OnnxConst& bias, int axis,
+                                            float epsilon) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "LayerNormalization");
+  node->add_input(AddInitializer(name + "/w/scale", scale));
+  node->add_input(AddInitializer(name + "/w/bias", bias));
+  AddIntAttribute(node, "axis", axis);
+  AddFloatAttribute(node, "epsilon", epsilon);
+  return out;
 }
 
 }  // namespace lczero
