@@ -335,12 +335,14 @@ class ResidualBlock : public BaseLayer<DataType> {
 template <typename DataType>
 class EncoderBlock {
  public:
-  EncoderBlock(const LegacyWeights::EncoderLayer& cpu_weights, void* scratch, int heads, int size, float alpha);
+  EncoderBlock(const LegacyWeights::EncoderLayer& cpu_weights, void* scratch,
+               int heads, int size, float alpha, DataType* smolgen_global_scratch,
+               int smolgen_global_size);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas,
-            cudaStream_t stream, ActivationFunction act) const;
+            cudaStream_t stream, ActivationFunction act, int layer_id = 0) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
@@ -356,6 +358,13 @@ class EncoderBlock {
 
   DataType *ln2_gammas, *ln2_betas;
 
+  DataType *smol_compress;
+  DataType *smol_dense1_w, *smol_dense1_b;
+  DataType *smol_dense2_w, *smol_dense2_b;
+  DataType *smol_ln1_gammas, *smol_ln1_betas;
+  DataType *smol_ln2_gammas, *smol_ln2_betas;
+  DataType *smol_global;
+
   int mha_q_size_;
   int mha_k_size_;
   int mha_v_size_;
@@ -368,6 +377,14 @@ class EncoderBlock {
   int encoder_heads_;
 
   float alpha_; // scale to apply to skip connection add
+
+  const bool has_smolgen_;
+
+  // Output sizes for smolgen layers.
+  int smol_compress_size_;
+  int smol_dense_1_size_;
+  int smol_dense_2_size_;
+  int smol_global_size_;
 };
 
 // The Attention policy head implementation
@@ -459,13 +476,16 @@ class AttentionBody : public BaseLayer<DataType> {
   // GPU allocations to hold various weights used by the attention policy head
   DataType *ip_emb_w_, *ip_emb_b_;    // "embedding" layer in net body
   DataType *ip_mult_gate_, *ip_add_gate_; // input gating
+  DataType *smolgen_global_; // global smolgen weights for all encoder layers
   int embedding_op_size_;
   int encoder_head_count_;
   std::vector<EncoderBlock<DataType>*> encoder_weights_;
   ActivationFunction default_act_;
   int num_resi_blocks_;
   int input_c_;
+  int smolgen_global_size_;
   const bool has_gating_;
+  const bool has_smolgen_;
 };
 
 

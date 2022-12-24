@@ -64,7 +64,7 @@ void dumpTensor(T* memory, int elements, const char* message) {
         }
         // printf("%8.4f ", val);
         // if ((i % 8) == 7) printf("\n");
-        printf("%i;%8.4f\n", i, val);
+        printf("%i;%.6f\n", i, val);
     }
     free(temp);
     printf("\n");
@@ -1412,7 +1412,8 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
-        enc, scratch, encoder_heads_, embedding_op_size_, 1.0f);    // using alpha = 1 for now (TODO: may change?)
+        enc, scratch, encoder_heads_, embedding_op_size_, 1.0f,
+        nullptr, 0);    // using alpha = 1 for now (TODO: may change?)
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1420,8 +1421,9 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 template <typename DataType>
 EncoderBlock<DataType>::EncoderBlock(
     const LegacyWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
-    int size, float alpha)
-    : encoder_heads_(heads), embedding_op_size_(size), alpha_(alpha) {
+    int size, float alpha, DataType* smolgen_global_scratch, int smolgen_global_size)
+    : encoder_heads_(heads), embedding_op_size_(size), alpha_(alpha),
+      has_smolgen_(cpu_weights.mha.has_smolgen) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1475,6 +1477,29 @@ EncoderBlock<DataType>::EncoderBlock(
 
   allocAndUpload<DataType>(&ln2_gammas, cpu_weights.ln2_gammas, scratch);
   allocAndUpload<DataType>(&ln2_betas, cpu_weights.ln2_betas, scratch);
+
+  // Smolgen weights.
+  if (has_smolgen_) {
+    smol_compress_size_ = cpu_weights.mha.smolgen.compress.size() / mha_q_size_;
+    smol_dense_1_size_ = cpu_weights.mha.smolgen.dense1_b.size();
+    smol_dense_2_size_ = cpu_weights.mha.smolgen.dense2_b.size();
+    smol_global_size_ = smolgen_global_size;
+
+    allocAndUpload<DataType>(&smol_compress, cpu_weights.mha.smolgen.compress, scratch);
+    allocAndUpload<DataType>(&smol_dense1_w, cpu_weights.mha.smolgen.dense1_w, scratch);
+    allocAndUpload<DataType>(&smol_dense1_b, cpu_weights.mha.smolgen.dense1_b, scratch);
+    allocAndUpload<DataType>(&smol_dense2_w, cpu_weights.mha.smolgen.dense2_w, scratch);
+    allocAndUpload<DataType>(&smol_dense2_b, cpu_weights.mha.smolgen.dense2_b, scratch);
+
+    allocAndUpload<DataType>(&smol_ln1_gammas, cpu_weights.mha.smolgen.ln1_gammas, scratch);
+    allocAndUpload<DataType>(&smol_ln1_betas, cpu_weights.mha.smolgen.ln1_betas, scratch);
+    allocAndUpload<DataType>(&smol_ln2_gammas, cpu_weights.mha.smolgen.ln2_gammas, scratch);
+    allocAndUpload<DataType>(&smol_ln2_betas, cpu_weights.mha.smolgen.ln2_betas, scratch);
+
+    // GPU memory already allocated in AttentionBody.
+    smol_global = smolgen_global_scratch;
+  }
+
 }
 
 template <typename DataType>
@@ -1525,9 +1550,134 @@ template <typename DataType>
 void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                                   DataType* scratch2, DataType* scratch3,
                                   cublasHandle_t cublas, cudaStream_t stream,
-                                  ActivationFunction act) const {
+                                  ActivationFunction act, int layer_id) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
+
+  char desc [40];
+  snprintf (desc, 40, "Encoder layer #%d input", layer_id);
+  dumpTensor(scratch1, 10, desc);
+  const int layer_to_print = 2;
+
+  // Calculate smolgen weights. Do this first so we can make use of
+  // scratch2 and scratch3.
+  if (has_smolgen_) {
+    {
+      // Compress.
+      // input shape: N, 64, d_model
+      // output shape: N, 64, hidden_channels
+      const int num_inputs = d_model;
+      const int num_outputs = smol_compress_size_;
+      const int batch = N * 64;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)smol_compress, num_inputs,
+                  scratch1, num_inputs, 0.0f, scratch0, num_outputs);
+  if (layer_id == layer_to_print) dumpTensor(scratch0, 10, "smol compress");
+
+    }
+
+    {
+      // Hidden 1 dense.
+      // input shape: N, 64 * hidden_channels
+      // output shape: N, hidden_sz
+      const int num_inputs = 64 * smol_compress_size_;
+      const int num_outputs = smol_dense_1_size_;
+      const int batch = N;
+      cublasXGemmStridedBatched<DataType>(
+          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs /*M*/,
+          batch /*N*/, num_inputs /*K*/, 1.0f,
+          smol_dense1_w /*A*/,  // "smol_weight_gen" weights
+          num_inputs /*LDA*/,
+          0, /*strideA*/
+          scratch0 /*B*/,
+          num_inputs /*LDB*/,
+          num_inputs, /*strideB*/
+          0.0f,
+          scratch2 /*C*/,  // output goes to scratch3
+          num_outputs /*LDC*/, num_outputs /*strideC*/, batch);
+      // dumpTensor(scratch2, 100, "Batch 1");
+      // dumpTensor(scratch2 + 256, 100, "Batch 2");
+      // return;
+  if (layer_id == layer_to_print) dumpTensor(smol_dense1_w, 1000, "smol_dense1_w");
+
+  if (layer_id == layer_to_print) dumpTensor(scratch2, 10, "smol hidden1");
+
+      LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense1_b,
+                          scratch2, smol_ln1_gammas, smol_ln1_betas, 1e-6,
+                          0.0, /* alpha = 0 since we don't need skip */ SWISH, stream);
+  if (layer_id == layer_to_print) dumpTensor(scratch0, 10, "smol hidden1 ln");
+
+      // dumpTensor(scratch0, 100, "Batch 1");
+      // dumpTensor(scratch0 + 256, 100, "Batch 2");
+      // return;
+    }
+
+    {
+      // Hidden 2 dense (gen_from)
+      // input shape: N, hidden_sz
+      // output shape: N, heads * gen_sz
+      const int num_inputs = smol_dense_1_size_;
+      const int num_outputs = smol_dense_2_size_;
+      const int batch = N;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)smol_dense2_w, num_inputs,
+                  scratch0, num_inputs, 0.0f, scratch2, num_outputs);
+
+      LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense2_b,
+                          scratch2, smol_ln2_gammas, smol_ln2_betas, 1e-6,
+                          0.0, /* alpha = 0 since we don't need skip */ SWISH, stream);
+  if (layer_id == layer_to_print) dumpTensor(scratch0, 10, "smol gen_from");
+
+      // dumpTensor(scratch0, 100, "Batch 1");
+      // dumpTensor(scratch0 + num_outputs, 100, "Batch 2");
+      // return;
+      // Smolgen global 'smol_weight_gen'
+      // input shape: N, heads, gen_sz
+      // output shape: heads, N, 64 * 64
+      // transpose: heads, N, 64, 64 to match scaled attention weights
+
+    }
+
+    {
+      // Final smolgen weights generation.
+      /*
+        gen_from = tf.reshape(gen_from, [-1, heads, gen_sz])
+        out = self.smol_weight_gen_dense(gen_from)
+      */
+      const int num_inputs = smol_dense_2_size_ / encoder_heads_; /* num_inputs == gen_sz == 256 */
+      const int num_outputs = smol_global_size_; /* hwhw: 64 * 64 */
+      const int batch = N;
+      for (int i = 0; i < encoder_heads_; i++) {
+        int inputOffset = i * num_inputs;
+        // int inputOffset = 1 * num_inputs;
+        int outputOffset = i * batch * num_outputs;
+        // int outputOffset = 1 * batch * num_outputs;
+        cublasXGemmStridedBatched<DataType>(
+            cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs /*M*/,
+            batch /*N*/, num_inputs /*K*/, 1.0f,
+            smol_global /*A*/,  // "smol_weight_gen" weights
+            num_inputs /*LDA*/,
+            0, /*strideA*/
+            scratch0 + inputOffset /*B*/,
+            num_inputs * encoder_heads_ /*LDB*/,
+            num_inputs * encoder_heads_, /*strideB*/
+            0.0f,
+            scratch3 + outputOffset /*C*/,  // output goes to scratch1
+            num_outputs /*LDC*/, num_outputs /*strideC*/, batch);
+      }
+      // for (int b = 0; b < N; b++) {
+      //   for (int h = 0; h < encoder_heads_; h++) {
+      //     // int start = (b * 12 + h) * 4096;
+      //     int start = (h * N + b) * 4096;
+      //     char desc [40];
+      //     snprintf (desc, 40, "batch %d head %d", b, h);
+      //     dumpTensor(scratch3 + start, 50, desc);
+      //   }
+      // }
+      // return;
+    }
+
+  }
 
   DataType* mha_q;
   DataType* mha_k;
@@ -1565,6 +1715,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
       output = tf.matmul(attention_weights, v)
   */
+  if (layer_id == layer_to_print) dumpTensor(scratch3, 10, "smolgen before");
 
   // shape(k)[-1] = depth
   float factor = 1.0f / sqrt((float)depth);
@@ -1590,7 +1741,29 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
         scratch2 + outOffset /*C*/,  // output (matmul_qk) goes to scratch2
         64 /*LDC*/, 64 * 64 /*strideC*/, N);
   }
+  // dumpTensor(scratch2, 64*64*12*2, "softmax after attention weights");
+  if (layer_id == layer_to_print) dumpTensor(scratch2, 10, "attn");
 
+  // Add smolgen weights to the scaled matmul_qk attention logits.
+  if (has_smolgen_) {
+    int size = N * encoder_heads_ * 64 * 64;
+    addVectors<DataType>(scratch2, scratch2, scratch3, size, size, size, NONE, stream);
+  }
+  if (layer_id == layer_to_print) {
+    dumpTensor(scratch3, 10, "smolgen");
+    dumpTensor(scratch2, 10, "attn + smolgen");
+  }
+
+  // for (int b = 0; b < N; b++) {
+  //   for (int h = 0; h < encoder_heads_; h++) {
+  //     // int start = (b * 12 + h) * 4096;
+  //     int start = (h * N + b) * 4096;
+  //     char desc [40];
+  //     snprintf (desc, 40, "batch %d head %d", b, h);
+  //     dumpTensor(scratch2 + start, 50, desc);
+  //   }
+  // }
+  // return;
   // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
   // attention_weights -> scratch2
   Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, stream);
@@ -1609,7 +1782,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
         0.0f, scratch3 + offset /*C*/,  // output goes to scratch3
         d_model /*LDC*/, 64 * d_model /*strideC*/, N);
   }
-
+  // dumpTensor(scratch2, 200, "softmax after attention weights");
   // #final dense layer (mha_dense), scratch3 -> scratch2
   {
     const int num_inputs = d_model;
@@ -1624,7 +1797,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   // scratch2/scratch1 -> scratch0
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch0, scratch2,
                       mha_dense_b, scratch1, ln1_gammas, ln1_betas, 1e-6,
-                      alpha_, stream);
+                      alpha_, NONE, stream);
 
   // #FFN dense 1, scratch0 -> scratch1
   const int encoder_dff = ffn_dense1_size_;
@@ -1636,9 +1809,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                 num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                 scratch0, num_inputs, 0.0f, scratch1, num_outputs);
     addBiasBatched(scratch1, scratch1, ffn_dense1_b, 1, batch, num_outputs,
-                   act, stream);
+                   has_smolgen_ ? RELU_2 : act, stream); // @todo sqr relu to have its own flag
   }
-
+if (layer_id == layer_to_print) dumpTensor(scratch1, 10, "ffn2");
   // #FFN dense 2, scratch1 -> scratch2
   {
     const int num_inputs = encoder_dff;
@@ -1648,12 +1821,19 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                 num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
                 scratch1, num_inputs, 0.0f, scratch2, num_outputs);
   }
-
+  
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
   // scratch2/scratch0 -> scratch1
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
                       ffn_dense2_b, scratch0, ln2_gammas, ln2_betas, 1e-6,
-                      alpha_, stream);
+                      alpha_, NONE, stream);
+  // dumpTensor(scratch1, 40, "layernorm 2");
+  // for (int b = 0; b < N; b++) {
+  //   int start = b * embedding_op_size_ * 64;
+  //   char desc [40];
+  //   snprintf (desc, 40, "batch %d", b);
+  //   dumpTensor(scratch1 + start, 50, desc);
+  // }
 }
 
 template <typename DataType>
@@ -1770,6 +1950,15 @@ EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(ffn_dense2_b));
   ReportCUDAErrors(cudaFree(ln2_gammas));
   ReportCUDAErrors(cudaFree(ln2_betas));
+  ReportCUDAErrors(cudaFree(smol_compress));
+  ReportCUDAErrors(cudaFree(smol_dense1_w));
+  ReportCUDAErrors(cudaFree(smol_dense1_b));
+  ReportCUDAErrors(cudaFree(smol_dense2_w));
+  ReportCUDAErrors(cudaFree(smol_dense2_b));
+  ReportCUDAErrors(cudaFree(smol_ln1_gammas));
+  ReportCUDAErrors(cudaFree(smol_ln1_betas));
+  ReportCUDAErrors(cudaFree(smol_ln2_gammas));
+  ReportCUDAErrors(cudaFree(smol_ln2_betas));
 }
 
 
@@ -1817,6 +2006,7 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
       default_act_(default_act),
       input_c_(input_c),
       has_gating_(weights.ip_mult_gate.size() > 0 && weights.ip_add_gate.size() > 0),
+      has_smolgen_(weights.has_smolgen),
       BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr) {
 
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
@@ -1827,11 +2017,17 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
     allocAndUpload<DataType>(&ip_add_gate_, weights.ip_add_gate, scratch);
   }
 
+  if (has_smolgen_) {
+    allocAndUpload<DataType>(&smolgen_global_, weights.smolgen_w, scratch);
+    smolgen_global_size_ = 64 * 64;
+  }
+
   int num_encoders = weights.encoder.size();
   float alpha = (float) pow(2.0 * num_encoders, 0.25);
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
-        enc, scratch, encoder_head_count_, embedding_op_size_, alpha);
+        enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
+        smolgen_global_, smolgen_global_size_);
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1840,6 +2036,9 @@ template <typename DataType>
 AttentionBody<DataType>::~AttentionBody() {
   ReportCUDAErrors(cudaFree(ip_emb_w_));
   ReportCUDAErrors(cudaFree(ip_emb_b_));
+  ReportCUDAErrors(cudaFree(ip_mult_gate_));
+  ReportCUDAErrors(cudaFree(ip_add_gate_));
+  ReportCUDAErrors(cudaFree(smolgen_global_));
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
@@ -1900,11 +2099,14 @@ void AttentionBody<DataType>::Eval(
   }
 
   // 2. Encoder layers
+  int i = 0;
   for (const auto pEnc : encoder_weights_) {
     pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream,
-               default_act_);
-  }  // End of encoder blocks
+               default_act_, i++);
+    if (i == 3) break;
 
+  }  // End of encoder blocks
+dumpTensor(scratch1, 50, "Attention body output");
 }
 
 

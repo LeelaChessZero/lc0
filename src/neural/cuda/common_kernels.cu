@@ -159,6 +159,11 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
     case SWISH:
       addBiasBatched_kernel<T, SWISH>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
+    case RELU_2: // square relu
+      addBiasBatched_kernel<T, RELU_2>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
     default:
       throw Exception(
           "unsupported activation in addBiasBatched. Add in switch-case here");
@@ -797,7 +802,7 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 template <typename T>
 __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const T* bias,
                                   const T* skip, const T* gammas,
-                                  const T* betas, float ep, float alpha) {
+                                  const T* betas, float ep, float alpha, ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
   if (n >= N) return;
   int c = (threadIdx.y * 32 + threadIdx.x) * 4;
@@ -840,7 +845,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
   float s = 0;
   if (!oobThread)
     for (int i = 0; i < 4; i++) {
-      val[i] += b[i] + sk[i] * alpha;
+      val[i] = activate(val[i] + b[i], act) + sk[i] * alpha;
       s += val[i];
     }
   
@@ -883,7 +888,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep, float alpha,
-               cudaStream_t stream) {
+               ActivationFunction act, cudaStream_t stream) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 4 != 0) throw Exception("unsupported filter size");
   if (C > 4096) throw Exception("unsupported filter size");
@@ -898,7 +903,7 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
   gridDim.z = 1;
 
   layer_norm_kernel<T><<<gridDim, blockDim, 0, stream>>>(
-      N, C, output, input, bias, skip, gammas, betas, ep, alpha);
+      N, C, output, input, bias, skip, gammas, betas, ep, alpha, act);
 
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -1059,6 +1064,25 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   gridSize.z = N;
   input_gating_kernel<T><<<gridSize, blockSize, 0, stream>>>(output, input, mult, add, HW, C);
 
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T>
+__global__ void mask_layer_kernel(T* output, const T* input, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  
+  //printf("idx %i", idx);
+  if (idx >= size) return;
+  if (idx >= 2048) output[idx] = 0.0;
+  // if (idx > 2048) output[idx] = input[idx];
+  // else output[idx] = 0.0;
+}
+
+template<typename T>
+void maskLayer(T* output, const T* input, int size, cudaStream_t stream) {
+  int blockSize = min(1024, size);
+  dim3 gridSize = size / blockSize;
+  mask_layer_kernel<T><<<gridSize, blockSize, 0, stream>>>(output, input, size);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -1256,11 +1280,13 @@ template void Softmax<float>(int N, int C, float* output, const float* input,
 template void LayerNorm<half>(int N, int C, half* output, const half* input,
                               const half* bias, const half* skip,
                               const half* gammas, const half* betas, float ep,
-                              float alpha, cudaStream_t stream);
+                              float alpha, ActivationFunction act,
+                              cudaStream_t stream);
 template void LayerNorm<float>(int N, int C, float* output, const float* input,
                                const float* bias, const float* skip,
                                const float* gammas, const float* betas,
-                               float ep, float alpha, cudaStream_t stream);
+                               float ep, float alpha, ActivationFunction act,
+                               cudaStream_t stream);
 
 template void ComputePromotionLogits<half>(int N, int C, half* output,
                                            const half* keys, const half* ppo,
@@ -1298,5 +1324,7 @@ template void applyInputGating<half>(half* output, const half* input, const half
 template void applyInputGating<float>(float* output, const float* input, const float* mult, const float* add,
                                       int N, int C, int output_size, cudaStream_t stream);
 
+template void maskLayer<half>(half* output, const half* input, int size, cudaStream_t);
+template void maskLayer<float>(float* output, const float* input, int size, cudaStream_t);
 }  // namespace cudnn_backend
 }  // namespace lczero

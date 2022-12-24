@@ -44,6 +44,10 @@ __device__ __forceinline__ float activate(float cVal,
     case RELU:
       if (cVal < 0) cVal = 0;
       break;
+    case RELU_2:
+      if (cVal < 0) cVal = 0;
+      cVal *= cVal;
+      break;
     case TANH:
       cVal = tanh(cVal);
       break;
@@ -60,6 +64,9 @@ __device__ __forceinline__ float activate(float cVal,
     }
     case MISH:
       cVal = mishActivate(cVal);
+      break;
+    case SWISH:
+      cVal /= (1.0f + __expf(-cVal));
       break;
   }
   return cVal;

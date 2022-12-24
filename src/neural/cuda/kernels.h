@@ -123,7 +123,7 @@ void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream);
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep,
-               float alpha, cudaStream_t stream);
+               float alpha, ActivationFunction act, cudaStream_t stream);
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,
@@ -137,6 +137,8 @@ void inputPreprocessForAttentionBody(T* output, const T* input, int N,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                                 int N, int HW, int C, cudaStream_t stream);
-                                     
+
+template<typename T>
+void maskLayer(T* output, const T* input, int size, cudaStream_t);                    
 }  // namespace cudnn_backend
 }  // namespace lczero
