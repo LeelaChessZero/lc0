@@ -592,7 +592,6 @@ class CudaNetwork : public Network {
       stream = 0;  // default stream
       cublas = cublas_;
     }
-    printf("\n multistream: %i", multi_stream_);
 
     bool fp16 = std::is_same<half, DataType>::value;
     if (fp16) {
