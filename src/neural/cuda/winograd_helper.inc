@@ -431,7 +431,7 @@ __device__ __forceinline__ float warpMax(float x) {
 // atomic max implementation for floats
 __device__ __forceinline__ float atomicMaxFloat (float * addr, float val) {
     float max;
-    max = (val >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(val))) :
+    max = !signbit(val) ? __int_as_float(atomicMax((int *)addr, __float_as_int(val))) :
          __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(val)));
 
     return max;
