@@ -73,6 +73,34 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename T>
+__global__ void addVectorsHNC_NHC_kernel(T* a, T* b, int N, int H, int C) {
+  int i = threadIdx.x + blockDim.x * blockIdx.x;
+  if (i < N * H * C) {
+    int orig_i = i;
+    int c = i % C;
+    i /= C;
+    int n = i % N;
+    i /= N;
+    int h = i;
+    float aVal = (float)a[orig_i];
+    float bVal = (float)b[n * H * C + h * C + c];
+
+    float cVal = aVal + bVal;
+
+    a[orig_i] = (T)cVal;
+  }
+}
+
+template <typename T>
+void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C, cudaStream_t stream) {
+  const int kBlockSize = 256;
+  int blocks = DivUp(N * H * C, kBlockSize);
+  addVectorsHNC_NHC_kernel<<<blocks, kBlockSize, 0, stream>>>(a, b, N, H, C);
+
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 template <typename T, ActivationFunction act>
 __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
                                       int N, int C) {
@@ -1126,6 +1154,11 @@ template void addVectors<float>(float* c, float* a, float* b, int size,
 template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                int bsize, ActivationFunction act,
                                cudaStream_t stream);
+
+template void addVectorsHNC_NHC<float>(float* a, float* b, int N, int H, int C,
+                                       cudaStream_t stream);
+template void addVectorsHNC_NHC<half>(half* a, half* b, int N, int H, int C,
+                                      cudaStream_t stream);
 
 template void addBiasBatched<float>(float* output, const float* input,
                                     const float* bias, int Batch, int N, int C,

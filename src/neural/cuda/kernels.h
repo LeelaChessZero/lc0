@@ -36,6 +36,12 @@ template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
                 ActivationFunction activation, cudaStream_t stream);
 
+// Adds two vectors of equal size overwriting the first with the sum.
+// This specialisation performs a transposition of the first 2 indexes
+// of the second while performing the addition.
+template <typename T>
+void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C, cudaStream_t stream);
+
 // Optimized kernel to add bias to innermost dimension
 // and perform optional activation (to be used with GEMMs/fully connected)
 template <typename T>

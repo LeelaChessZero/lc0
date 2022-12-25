@@ -1583,7 +1583,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   // const int layer_to_print = 1;
 
   // Calculate smolgen weights. Do this first so we can make use of
-  // scratch2 and scratch3.
+  // scratch0, scratch2 and scratch3.
   if (has_smolgen_) {
     {
       // Compress.
@@ -1609,18 +1609,10 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       const int num_inputs = 64 * smol_compress_size_;
       const int num_outputs = smol_dense_1_size_;
       const int batch = N;
-      cublasXGemmStridedBatched<DataType>(
-          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs /*M*/,
-          batch /*N*/, num_inputs /*K*/, 1.0f,
-          smol_dense1_w /*A*/,  // "smol_weight_gen" weights
-          num_inputs /*LDA*/,
-          0, /*strideA*/
-          scratch0 /*B*/,
-          num_inputs /*LDB*/,
-          num_inputs, /*strideB*/
-          0.0f,
-          scratch2 /*C*/,  // output goes to scratch3
-          num_outputs /*LDC*/, num_outputs /*strideC*/, batch);
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)smol_dense1_w, num_inputs,
+                  scratch0, num_inputs, 0.0f, scratch2, num_outputs);
+
       // dumpTensor(scratch2, 100, "Batch 1");
       // dumpTensor(scratch2 + 256, 100, "Batch 2");
       // return;
@@ -1678,25 +1670,10 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       */
       const int num_inputs = smol_dense_2_size_ / encoder_heads_; /* num_inputs == gen_sz == 256 */
       const int num_outputs = smol_global_size_; /* hwhw: 64 * 64 */
-      const int batch = N;
-      for (int i = 0; i < encoder_heads_; i++) {
-        int inputOffset = i * num_inputs;
-        // int inputOffset = 1 * num_inputs;
-        int outputOffset = i * batch * num_outputs;
-        // int outputOffset = 1 * batch * num_outputs;
-        cublasXGemmStridedBatched<DataType>(
-            cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs /*M*/,
-            batch /*N*/, num_inputs /*K*/, 1.0f,
-            smol_global /*A*/,  // "smol_weight_gen" weights
-            num_inputs /*LDA*/,
-            0, /*strideA*/
-            scratch0 + inputOffset /*B*/,
-            num_inputs * encoder_heads_ /*LDB*/,
-            num_inputs * encoder_heads_ /*strideB*/,
-            0.0f,
-            scratch3 + outputOffset /*C*/,  // output goes to scratch1
-            num_outputs /*LDC*/, num_outputs /*strideC*/, batch);
-      }
+      const int batch = N*encoder_heads_;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)smol_global, num_inputs,
+                  scratch0, num_inputs, 0.0f, scratch3, num_outputs);
       // dumpTensor(scratch3, num_outputs * batch, "smol gen weights", true);
       // for (int b = 0; b < N; b++) {
       //   for (int h = 0; h < encoder_heads_; h++) {
@@ -1779,9 +1756,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   // dumpTensor(scratch2, N * encoder_heads_ * 64 * 64, "attn", true);
 
   // Add smolgen weights to the scaled matmul_qk attention logits.
+  // smolgen weights need to be transposed first, kernel handles that.
   if (has_smolgen_) {
-    int size = N * encoder_heads_ * 64 * 64;
-    addVectors<DataType>(scratch2, scratch2, scratch3, size, size, size, NONE, stream);
+    addVectorsHNC_NHC<DataType>(scratch2, scratch3, N, encoder_heads_, 64 * 64, stream);
   }
   // dumpTensor(scratch2, N * encoder_heads_ * 64 * 64, "attn + smolgen weights", true);
 
