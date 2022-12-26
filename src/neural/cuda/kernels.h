@@ -143,8 +143,5 @@ void inputPreprocessForAttentionBody(T* output, const T* input, int N,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                                 int N, int HW, int C, cudaStream_t stream);
-
-template<typename T>
-void maskLayer(T* output, const T* input, int size, cudaStream_t);                    
 }  // namespace cudnn_backend
 }  // namespace lczero

@@ -1110,25 +1110,6 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T>
-__global__ void mask_layer_kernel(T* output, const T* input, int size) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  
-  //printf("idx %i", idx);
-  if (idx >= size) return;
-  if (idx >= 2048) output[idx] = 0.0;
-  // if (idx > 2048) output[idx] = input[idx];
-  // else output[idx] = 0.0;
-}
-
-template<typename T>
-void maskLayer(T* output, const T* input, int size, cudaStream_t stream) {
-  int blockSize = min(1024, size);
-  dim3 gridSize = size / blockSize;
-  mask_layer_kernel<T><<<gridSize, blockSize, 0, stream>>>(output, input, size);
-  ReportCUDAErrors(cudaGetLastError());
-}
-
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
                                              cudaStream_t stream);
@@ -1371,8 +1352,5 @@ template void applyInputGating<half>(half* output, const half* input, const half
 
 template void applyInputGating<float>(float* output, const float* input, const float* mult, const float* add,
                                       int N, int C, int output_size, cudaStream_t stream);
-
-template void maskLayer<half>(half* output, const half* input, int size, cudaStream_t);
-template void maskLayer<float>(float* output, const float* input, int size, cudaStream_t);
 }  // namespace cudnn_backend
 }  // namespace lczero

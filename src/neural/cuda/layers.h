@@ -342,7 +342,7 @@ class EncoderBlock {
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas,
-            cudaStream_t stream, ActivationFunction act, int layer_id = 0) const;
+            cudaStream_t stream, ActivationFunction act) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
