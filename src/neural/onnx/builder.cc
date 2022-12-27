@@ -167,14 +167,17 @@ std::string OnnxBuilder::GlobalAveragePool(const std::string& name,
 }
 
 std::string OnnxBuilder::Squeeze(const std::string& name,
-                                 const std::string& input) {
+                                 const std::string& input,
+                                 std::initializer_list<int> axes) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "Squeeze");
   if (opset_ < 13) {
-    AddIntsAttribute(node, "axes", {2, 3});
+    AddIntsAttribute(node, "axes", axes);
   } else {
-    node->add_input(
-        AddInitializer(name + "/axes", Int64OnnxConst({2, 3}, {2})));
+    node->add_input(AddInitializer(
+        name + "/axes",
+        Int64OnnxConst(std::vector<int64_t>(begin(axes), end(axes)),
+                       {static_cast<int>(axes.size())})));
   }
   return out;
 }

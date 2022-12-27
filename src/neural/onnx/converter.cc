@@ -184,7 +184,7 @@ std::string Converter::MakeSqueezeAndExcite(
   const int se_filters = se_unit.b1.size();
 
   auto flow = builder->GlobalAveragePool(name + "/pooled", input);
-  flow = builder->Squeeze(name + "/squeeze", flow);
+  flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
   flow = builder->MatMul(
       name + "/matmul1", flow,
       *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
