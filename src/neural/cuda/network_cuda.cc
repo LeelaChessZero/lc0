@@ -415,7 +415,7 @@ class CudaNetwork : public Network {
     if (attn_body_) {
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, act, numBlocks_,
-          numBlocks_ > 0 ? kNumFilters : kInputPlanes);
+          numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -424,7 +424,7 @@ class CudaNetwork : public Network {
     // Policy head.
     if (attn_policy_) {
       auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
-          getLastLayer(), weights, scratch_mem_, attn_body_, act);
+          getLastLayer(), weights, scratch_mem_, attn_body_, act, max_batch_size_);
       network_.emplace_back(std::move(AttentionPolicy));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(

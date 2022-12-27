@@ -200,6 +200,105 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename T, ActivationFunction act>
+__global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
+                                      int N, int C, int Nstride) {
+  int batch = blockIdx.y;
+  int n = blockIdx.x * blockDim.y + threadIdx.y;
+  if (n >= N) return;
+  int c = threadIdx.x * 4;
+
+  int biasIndex = batch * C + c;
+  int tensorIndex = batch * Nstride * C + n * C + c;
+
+  float val[4];
+  float b[4];
+
+  // Load from memory
+  const bool fp16 = std::is_same<half, T>::value;
+  if (fp16) {
+    half inp[4];
+    copyAs<uint2>(&inp[0], &input[tensorIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
+
+    copyAs<uint2>(&inp[0], &bias[biasIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
+  } else {
+    copyAs<uint4>(&val[0], &input[tensorIndex]);
+    copyAs<uint4>(&b[0], &bias[biasIndex]);
+  }
+
+  // Perform bias add and activation
+#pragma unroll
+  for (int i = 0; i < 4; i++) {
+    float x = val[i] + b[i];
+    x = activate(x, act);
+    val[i] = x;
+  }
+
+  // write to memory
+  if (fp16) {
+    half op[4];
+#pragma unroll
+    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+    copyAs<uint2>(&output[tensorIndex], &op[0]);
+  } else {
+    copyAs<uint4>(&output[tensorIndex], &val[0]);
+  }
+}
+
+// Input/output tensors are Batch * N * C
+// bias tensor is N * C (i.e, different bias for each Batch dimension)
+template <typename T>
+void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+                    int C, int Nstride, ActivationFunction activation, cudaStream_t stream) {
+  // process 4 elements per thread to achieve close to peak memory bandwidth
+  if (C % 4 != 0) throw Exception("unsupported filter size");
+  if (C > 4096) throw Exception("unsupported filter size");
+
+  dim3 blockDim, gridDim;
+  blockDim.x = C / 4;
+  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int) N);
+  blockDim.z = 1;
+  gridDim.x = DivUp(N, blockDim.y);
+  gridDim.y = Batch;
+  gridDim.z = 1;
+
+  switch (activation) {
+    case NONE:
+      addBiasBatched_kernel<T, NONE><<<gridDim, blockDim, 0, stream>>>(
+          output, input, bias, N, C, Nstride);
+      break;
+    case SELU:
+      addBiasBatched_kernel<T, SELU><<<gridDim, blockDim, 0, stream>>>(
+          output, input, bias, N, C, Nstride);
+      break;
+    case MISH:
+      addBiasBatched_kernel<T, MISH>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+      break;
+    case RELU:
+      addBiasBatched_kernel<T, RELU>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+      break;
+    case SWISH:
+      addBiasBatched_kernel<T, SWISH>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+      break;
+    case RELU_2: // square relu
+      addBiasBatched_kernel<T, RELU_2>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+      break;
+    default:
+      throw Exception(
+          "unsupported activation in addBiasBatched. Add in switch-case here");
+  }
+
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 template <typename T>
 __global__ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
                                     int W, ActivationFunction activation) {
@@ -1147,6 +1246,15 @@ template void addBiasBatched<float>(float* output, const float* input,
                                     cudaStream_t stream);
 template void addBiasBatched<half>(half* output, const half* input,
                                    const half* bias, int Batch, int N, int C,
+                                   ActivationFunction activation,
+                                   cudaStream_t stream);
+
+template void addBiasBatched<float>(float* output, const float* input,
+                                    const float* bias, int Batch, int N, int C, int Nstride,
+                                    ActivationFunction activation,
+                                    cudaStream_t stream);
+template void addBiasBatched<half>(half* output, const half* input,
+                                   const half* bias, int Batch, int N, int C, int Nstride,
                                    ActivationFunction activation,
                                    cudaStream_t stream);
 

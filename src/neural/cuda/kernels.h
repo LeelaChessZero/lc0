@@ -48,6 +48,12 @@ template <typename T>
 void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
                     int C, ActivationFunction activation, cudaStream_t stream);
 
+// Optimized kernel to add bias to innermost dimension
+// and perform optional activation (to be used with GEMMs/fully connected)
+template <typename T>
+void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+                    int C, int Nstride, ActivationFunction activation, cudaStream_t stream);
+
 // Add bias to convolution's output.
 template <typename T>
 void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,

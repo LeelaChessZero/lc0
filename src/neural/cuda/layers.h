@@ -337,7 +337,7 @@ class EncoderBlock {
  public:
   EncoderBlock(const LegacyWeights::EncoderLayer& cpu_weights, void* scratch,
                int heads, int size, float alpha, DataType* smolgen_global_scratch,
-               int smolgen_global_size);
+               int smolgen_global_size, int max_batch_size);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -385,6 +385,10 @@ class EncoderBlock {
   int smol_dense_1_size_;
   int smol_dense_2_size_;
   int smol_global_size_;
+
+  const int max_batch_size_;
+  mutable DataType** scratch_rel_ptrs_;
+  mutable DataType* last_known_scratch_;
 };
 
 // The Attention policy head implementation
@@ -401,7 +405,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
 
  public:
   AttentionPolicyHead(BaseLayer<DataType>* ip, const LegacyWeights& weights,
-                      void* scratch, bool attention_body, ActivationFunction act);
+                      void* scratch, bool attention_body, ActivationFunction act, int max_batch_size);
   ~AttentionPolicyHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -465,7 +469,7 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const LegacyWeights& weights, void* scratch,
                 ActivationFunction default_act, int num_res_blocks,
-                int input_c);
+                int input_c, int max_batch_size);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
