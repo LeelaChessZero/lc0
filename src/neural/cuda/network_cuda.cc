@@ -213,7 +213,7 @@ class CudaNetwork : public Network {
 
     l2_cache_size_ = deviceProp.l2CacheSize;
 
-    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", true);
+    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
 
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));

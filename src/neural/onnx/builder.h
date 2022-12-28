@@ -68,7 +68,8 @@ class OnnxBuilder {
                   const OnnxConst&);
   std::string GlobalAveragePool(const std::string& name,
                                 const std::string& input);
-  std::string Squeeze(const std::string& name, const std::string& input);
+  std::string Squeeze(const std::string& name, const std::string& input,
+                      std::initializer_list<int> axes);
   std::string MatMul(const std::string& name, const std::string& input1,
                      const OnnxConst& input2);
   std::string MatMul(const std::string& name, const std::string& input1,
