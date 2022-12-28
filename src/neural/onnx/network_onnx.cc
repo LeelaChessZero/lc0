@@ -196,12 +196,11 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
   for (int i = start; i < end; i++) {
     for (const auto& plane : raw_input_[i]) {
+      DataType value = std::is_same<Ort::Float16_t, DataType>::value
+                           ? FP32toFP16(plane.value)
+                           : plane.value;
       for (auto bit : IterateBits(plane.mask)) {
-        if (std::is_same<Ort::Float16_t, DataType>::value) {
-          *(iter + bit) = FP32toFP16(plane.value);
-        } else {
-          *(iter + bit) = plane.value;
-        }
+        *(iter + bit) = value;
       }
       iter += 64;
     }
