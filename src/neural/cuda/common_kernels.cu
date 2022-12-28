@@ -808,12 +808,12 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
 // each thread processes two elements. Each warp computes a sum (over 64
 // elements)
 template <typename T>
-__global__ void softmax_opt_64_kernel(T* output, const T* input, int N) {
+__global__ void softmax_opt_64_kernel(T* output, const T* input, const T* input2, int N) {
 
   int index = blockDim.x * blockIdx.x + threadIdx.x;
   if (index >= N) return;
 
-  float x[2];
+  float x[4];
   float ex[2];
 
   // Load from memory
@@ -823,10 +823,22 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input, int N) {
     copyAs<int>(&inp[0], &input[index * 2]);
     x[0] = (float)inp[0];
     x[1] = (float)inp[1];
+    if (input2 != nullptr) {
+      copyAs<int>(&inp[0], &input2[index * 2]);
+      x[2] = (float)inp[0];
+      x[3] = (float)inp[1];
+    }
   } else {
     copyAs<uint2>(&x[0], &input[index * 2]);
+    if (input2 != nullptr) {
+      copyAs<uint2>(&x[2], &input2[index * 2]);
+    }
   }
 
+  if (input2 != nullptr) {
+    x[0] += x[2];
+    x[1] += x[3];
+  }
   float threadMax = max(x[0], x[1]);
   float maxval = warpMax(threadMax);
   maxval = __shfl_sync(0xFFFFFFFF, maxval, 0);
@@ -859,7 +871,7 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input, int N) {
 // Sums are computed in shared memory
 // C threads per block, N blocks
 template <typename T>
-__global__ void softmax_kernel(T* output, const T* input) {
+__global__ void softmax_kernel(T* output, const T* input, const T* input2) {
   int n = blockIdx.x;
   int c = threadIdx.x;
   int C = blockDim.x;
@@ -868,6 +880,7 @@ __global__ void softmax_kernel(T* output, const T* input) {
   // softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
 
   float x = (float)input[index];
+  if (input2 != nullptr) x += (float)input2[index];
 
   __shared__ float sum, maxval;
   if (c == 0) {
@@ -899,14 +912,14 @@ __global__ void softmax_kernel(T* output, const T* input) {
 }
 
 template <typename T>
-void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream) {
+void Softmax(int N, int C, T* output, const T* input, const T* input2, cudaStream_t stream) {
   if (C == 64) {
     int size = N * 32;              // Total no of threads needed
     const int kBlockSize = 256;
     int blocks = DivUp(size, kBlockSize);
-    softmax_opt_64_kernel<T><<<blocks, kBlockSize, 0, stream>>>(output, input, size);
+    softmax_opt_64_kernel<T><<<blocks, kBlockSize, 0, stream>>>(output, input, input2, size);
   } else {
-    softmax_kernel<T><<<N, C, 0, stream>>>(output, input);
+    softmax_kernel<T><<<N, C, 0, stream>>>(output, input, input2);
   }
 
   ReportCUDAErrors(cudaGetLastError());
@@ -1409,9 +1422,9 @@ template void OutputInputTransform<float, false, MISH, true, false>(
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
 
-template void Softmax<half>(int N, int C, half* output, const half* input,
+template void Softmax<half>(int N, int C, half* output, const half* input, const half* input2,
                             cudaStream_t stream);
-template void Softmax<float>(int N, int C, float* output, const float* input,
+template void Softmax<float>(int N, int C, float* output, const float* input, const float* input2,
                              cudaStream_t stream);
 
 template void LayerNorm<half>(int N, int C, half* output, const half* input,

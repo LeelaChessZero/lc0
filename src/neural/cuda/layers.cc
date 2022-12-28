@@ -1763,16 +1763,14 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
         N * encoder_heads_);
    }
 
-  // Add smolgen weights to the scaled matmul_qk attention logits.
-  // smolgen weights need to be transposed first, kernel handles that.
-  if (has_smolgen_) {
-    const int size = N * encoder_heads_ * 64 * 64;
-    addVectors<DataType>(scratch2, scratch2, scratch3, size, size, size, NONE, stream);
-  }
-
   // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
   // attention_weights -> scratch2
-  Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, stream);
+  if (has_smolgen_) {
+  // Add smolgen weights to the scaled matmul_qk attention logits before softmax.
+    Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, scratch3, stream);
+  } else {
+    Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, (const DataType*)nullptr, stream);
+  }
 
   {
     cublasXGemmBatched<DataType>(
