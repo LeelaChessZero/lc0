@@ -136,6 +136,11 @@ template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep,
                float alpha, ActivationFunction act, cudaStream_t stream);
+			   
+template <typename T>
+void LayerNorm2(int N, int C, T* output, const T* input, const T* bias,
+               const T* skip, const T* gammas, const T* betas, float ep,
+               float alpha, ActivationFunction act, cudaStream_t stream);
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,

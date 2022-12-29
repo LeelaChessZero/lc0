@@ -1050,6 +1050,120 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+// Each thread processes 4 elements
+// 1. Perform Bias add, and skip add
+// 2. Perform layer norm (normalize across C dimension)
+template <typename T>
+__global__ void layer_norm_kernel2(int N, int C, T* output, const T* input, const T* bias,
+                                  const T* skip, const T* gammas,
+                                  const T* betas, float ep, float alpha, ActivationFunction act) {
+  int n = blockIdx.x * blockDim.z + threadIdx.z;
+  if (n >= N) return;
+  int c = (threadIdx.y * 32 + threadIdx.x) * 8;
+  bool oobThread = c >= C;
+
+  int biasIndex = c;
+  int tensorIndex = n * C + c;
+
+  float val[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float b[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float sk[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float bts[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float gms[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+  const bool fp16 = std::is_same<half, T>::value;
+  if (!oobThread) {
+	  // Load from memory
+	  if (fp16) {
+		half inp[8];
+		copyAs<uint4>(&inp[0], &input[tensorIndex]);
+		for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
+		copyAs<uint4>(&inp[0], &skip[tensorIndex]);
+		for (int i = 0; i < 8; i++) sk[i] = (float)inp[i];
+		copyAs<uint2>(&inp[0], &bias[biasIndex]);
+		for (int i = 0; i < 8; i++) b[i] = (float)inp[i];
+		copyAs<uint2>(&inp[0], &betas[biasIndex]);
+		for (int i = 0; i < 8; i++) bts[i] = (float)inp[i];
+		copyAs<uint2>(&inp[0], &gammas[biasIndex]);
+		for (int i = 0; i < 8; i++) gms[i] = (float)inp[i];
+	  } else {
+		copyAs<int4>(&val[0], &input[tensorIndex]);
+		copyAs<int4>(&sk[0], &skip[tensorIndex]);
+		copyAs<int2>(&b[0], &bias[biasIndex]);
+		copyAs<int2>(&bts[0], &betas[biasIndex]);
+		copyAs<int2>(&gms[0], &gammas[biasIndex]);
+	  }
+}
+
+
+  // 1. Compute mean
+	float s = 0;
+	if (!oobThread)
+	  for (int i = 0; i < 8; i++) {
+		val[i] = activate(val[i] + b[i], act) + sk[i] * alpha;
+		s += val[i];
+	  }
+
+	s = shared_sum_for_layer_norm(s);
+	float mean = s / C;
+
+	// 2. Compute varience
+	s = 0;
+	if (!oobThread)
+	  for (int i = 0; i < 8; i++) {
+		float d = val[i] - mean;
+		float d_sq = d * d;
+		s += d_sq;
+	  }
+	s = shared_sum_for_layer_norm(s);
+	float var = s / C;
+
+	// 3. Normalize
+	for (int i = 0; i < 8; i++) {
+	  float d = val[i] - mean;
+	  float norm = d / sqrt(var + ep);
+	  float op = norm * gms[i] + bts[i];
+	  val[i] = op;
+	}
+
+	// Write to memory
+	if (!oobThread) {
+	  if (fp16) {
+		half op[8];
+		for (int i = 0; i < 8; i++) op[i] = (half)val[i];
+		copyAs<uint4>(&output[tensorIndex], &op[0]);
+	  } else {
+		copyAs<int4>(&output[tensorIndex], &val[0]);
+	  }
+	}
+
+}
+
+// add (optional) skip connection to input, and then perform Layer normalization
+// normalization is done across C dimension (i.e, sums and std deviations taken over elements in C dim)
+template <typename T>
+void LayerNorm2(int N, int C, T* output, const T* input, const T* bias,
+               const T* skip, const T* gammas, const T* betas, float ep, float alpha,
+               ActivationFunction act, cudaStream_t stream) {
+  // process 8 elements per thread to achieve close to peak memory bandwidth
+  if (C % 8 != 0) throw Exception("unsupported filter size");
+  if (C > 4096) throw Exception("unsupported filter size");
+
+  dim3 blockDim, gridDim;
+  blockDim.x = 32;
+  blockDim.y = DivUp(C / 8, 32);
+  blockDim.z =
+      std::min(std::max(512 / (blockDim.x * blockDim.y), 1u), (unsigned int)N);
+  gridDim.x = DivUp(N, blockDim.z);
+  gridDim.y = 1;
+  gridDim.z = 1;
+
+  layer_norm_kernel2<T><<<gridDim, blockDim, 0, stream>>>(
+      N, C, output, input, bias, skip, gammas, betas, ep, alpha, act);
+
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 // Compute promotion logits in a single kernel
 // keys matrix is of N * 64 * C (but we use only last 8 from the 'rows'
 // dimension, so N * 8 * C)
@@ -1424,6 +1538,17 @@ template void LayerNorm<float>(int N, int C, float* output, const float* input,
                                const float* gammas, const float* betas,
                                float ep, float alpha, ActivationFunction act,
                                cudaStream_t stream);
+							   
+template void LayerNorm2<half>(int N, int C, half* output, const half* input,
+                              const half* bias, const half* skip,
+                              const half* gammas, const half* betas, float ep,
+                              float alpha, ActivationFunction act,
+                              cudaStream_t stream);
+template void LayerNorm2<float>(int N, int C, float* output, const float* input,
+                               const float* bias, const float* skip,
+                               const float* gammas, const float* betas,
+                               float ep, float alpha, ActivationFunction act,
+                               cudaStream_t stream);							   
 
 template void ComputePromotionLogits<half>(int N, int C, half* output,
                                            const half* keys, const half* ppo,
