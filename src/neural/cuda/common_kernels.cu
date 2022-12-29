@@ -948,35 +948,41 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
                                   const T* betas, float ep, float alpha, ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
   if (n >= N) return;
-  int c = (threadIdx.y * 32 + threadIdx.x) * 8;
+  const int num_element = 16;
+  int c = (threadIdx.y * 32 + threadIdx.x) * num_element;
   bool oobThread = c >= C;
 
   int biasIndex = c;
   int tensorIndex = n * C + c;
 
-  float val[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  float b[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  float sk[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  float bts[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  float gms[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float val[num_element] = {0};
+  float b[num_element] = {0};
+  float sk[num_element] = {0};
+  float bts[num_element] = {0};
+  float gms[num_element] = {0};
 
   const bool fp16 = std::is_same<half, T>::value;
   if (!oobThread) {
 	  // Load from memory
 	  if (fp16) {
-      half inp[8];
-      copyAs<uint4>(&inp[0], &input[tensorIndex]);
-      for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &skip[tensorIndex]);
-      for (int i = 0; i < 8; i++) sk[i] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &bias[biasIndex]);
-      for (int i = 0; i < 8; i++) b[i] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &betas[biasIndex]);
-      for (int i = 0; i < 8; i++) bts[i] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &gammas[biasIndex]);
-      for (int i = 0; i < 8; i++) gms[i] = (float)inp[i];
+      half inp[num_element];
+      for(int i = 0; i < num_element/8; i++) 
+        copyAs<uint4>(&inp[i*4], &input[tensorIndex+i*4]);
+      for (int i = 0; i < num_element; i++) val[i] = (float)inp[i];
+      for(int i = 0; i < num_element/8; i++)
+        copyAs<uint4>(&inp[i*4], &skip[tensorIndex+i*4]);
+      for (int i = 0; i < num_element; i++) sk[i] = (float)inp[i];
+      for(int i = 0; i < num_element/8; i++)
+        copyAs<uint4>(&inp[i*4], &bias[biasIndex+i*4]);
+      for (int i = 0; i < num_element; i++) b[i] = (float)inp[i];
+      for(int i = 0; i < num_element/8; i++)
+        copyAs<uint4>(&inp[i*4], &betas[biasIndex+i*4]);
+      for (int i = 0; i < num_element; i++) bts[i] = (float)inp[i];
+      for(int i = 0; i < num_element/8; i++)
+        copyAs<uint4>(&inp[i*4], &gammas[biasIndex+i*4]);
+      for (int i = 0; i < num_element; i++) gms[i] = (float)inp[i];
 	  } else {
-      for(int i = 0; i < 2; i++) {
+      for(int i = 0; i < num_element/4; i++) {
         copyAs<uint4>(&val[i*4], &input[tensorIndex + i*4]);
         copyAs<uint4>(&sk[i*4], &skip[tensorIndex + i*4]);
         copyAs<uint4>(&b[i*4], &bias[biasIndex + i*4]);
@@ -990,7 +996,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
   // 1. Compute mean
 	float s = 0;
 	if (!oobThread)
-	  for (int i = 0; i < 8; i++) {
+	  for (int i = 0; i < num_element; i++) {
       val[i] = activate(val[i] + b[i], act) + sk[i] * alpha;
       s += val[i];
 	  }
@@ -1001,7 +1007,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
 	// 2. Compute varience
 	s = 0;
 	if (!oobThread)
-	  for (int i = 0; i < 8; i++) {
+	  for (int i = 0; i < num_element; i++) {
       float d = val[i] - mean;
       float d_sq = d * d;
       s += d_sq;
@@ -1010,7 +1016,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
 	float var = s / C;
 
 	// 3. Normalize
-	for (int i = 0; i < 8; i++) {
+	for (int i = 0; i < num_element; i++) {
 	  float d = val[i] - mean;
 	  float norm = d / sqrt(var + ep);
 	  float op = norm * gms[i] + bts[i];
@@ -1019,12 +1025,13 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
 
 	// Write to memory
 	if (!oobThread) {
+    half op[num_element];
 	  if (fp16) {
-      half op[8];
-      for (int i = 0; i < 8; i++) op[i] = (half)val[i];
-      copyAs<uint4>(&output[tensorIndex], &op[0]);
+      for (int i = 0; i < num_element; i++) op[i] = (half)val[i];
+      for(int i = 0; i < num_element/8; i++)
+        copyAs<uint4>(&output[tensorIndex+i*4], &op[i*4]);
 	  } else {
-      for(int i = 0; i < 2; i++) {
+      for(int i = 0; i < num_element/4; i++) {
         copyAs<uint4>(&output[tensorIndex+i*4], &val[i*4]);
       }
 	  }
@@ -1038,13 +1045,13 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep, float alpha,
                ActivationFunction act, cudaStream_t stream) {
   // process 8 elements per thread to achieve close to peak memory bandwidth
-  
-  if (C % 8 != 0) throw Exception("unsupported filter size");
-  if (C > 1024*8) throw Exception("unsupported filter size");
+  const int num_element = 16;
+  if (C % num_element != 0) throw Exception("unsupported filter size");
+  if (C > 1024*num_element) throw Exception("unsupported filter size");
   
   dim3 blockDim, gridDim;
   blockDim.x = 32;
-  blockDim.y = DivUp(C / 8, 32);
+  blockDim.y = DivUp(C / num_element, 32);
   blockDim.z =
       std::min(std::max(512 / (blockDim.x * blockDim.y), 1u), (unsigned int)N);
   gridDim.x = DivUp(N, blockDim.z);
