@@ -1649,7 +1649,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                   num_inputs, 1.0f, (const DataType*)smol_dense2_w, num_inputs,
                   scratch0, num_inputs, 0.0f, scratch2, num_outputs);
 
-      LayerNorm2<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense2_b,
+      LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense2_b,
                           scratch2, smol_ln2_gammas, smol_ln2_betas, 1e-6,
                           0.0, /* alpha = 0 since we don't need skip */ SWISH, stream);
     }
