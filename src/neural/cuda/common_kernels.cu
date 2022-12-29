@@ -1050,7 +1050,7 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-// Each thread processes 4 elements
+// Each thread processes 8 elements
 // 1. Perform Bias add, and skip add
 // 2. Perform layer norm (normalize across C dimension)
 template <typename T>
@@ -1080,18 +1080,18 @@ __global__ void layer_norm_kernel2(int N, int C, T* output, const T* input, cons
 		for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
 		copyAs<uint4>(&inp[0], &skip[tensorIndex]);
 		for (int i = 0; i < 8; i++) sk[i] = (float)inp[i];
-		copyAs<uint2>(&inp[0], &bias[biasIndex]);
+		copyAs<uint4>(&inp[0], &bias[biasIndex]);
 		for (int i = 0; i < 8; i++) b[i] = (float)inp[i];
-		copyAs<uint2>(&inp[0], &betas[biasIndex]);
+		copyAs<uint4>(&inp[0], &betas[biasIndex]);
 		for (int i = 0; i < 8; i++) bts[i] = (float)inp[i];
-		copyAs<uint2>(&inp[0], &gammas[biasIndex]);
+		copyAs<uint4>(&inp[0], &gammas[biasIndex]);
 		for (int i = 0; i < 8; i++) gms[i] = (float)inp[i];
 	  } else {
-		copyAs<int4>(&val[0], &input[tensorIndex]);
-		copyAs<int4>(&sk[0], &skip[tensorIndex]);
-		copyAs<int2>(&b[0], &bias[biasIndex]);
-		copyAs<int2>(&bts[0], &betas[biasIndex]);
-		copyAs<int2>(&gms[0], &gammas[biasIndex]);
+		copyAs<int8_t>(&val[0], &input[tensorIndex]);
+		copyAs<int8_t>(&sk[0], &skip[tensorIndex]);
+		copyAs<int8_t>(&b[0], &bias[biasIndex]);
+		copyAs<int8_t>(&bts[0], &betas[biasIndex]);
+		copyAs<int8_t>(&gms[0], &gammas[biasIndex]);
 	  }
 }
 
@@ -1133,7 +1133,7 @@ __global__ void layer_norm_kernel2(int N, int C, T* output, const T* input, cons
 		for (int i = 0; i < 8; i++) op[i] = (half)val[i];
 		copyAs<uint4>(&output[tensorIndex], &op[0]);
 	  } else {
-		copyAs<int4>(&output[tensorIndex], &val[0]);
+		copyAs<int8_t>(&output[tensorIndex], &val[0]);
 	  }
 	}
 
