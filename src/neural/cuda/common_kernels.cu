@@ -976,11 +976,13 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
       copyAs<uint4>(&inp[0], &gammas[biasIndex]);
       for (int i = 0; i < 8; i++) gms[i] = (float)inp[i];
 	  } else {
-      copyAs<uint8_t>(&val[0], &input[tensorIndex]);
-      copyAs<uint8_t>(&sk[0], &skip[tensorIndex]);
-      copyAs<uint8_t>(&b[0], &bias[biasIndex]);
-      copyAs<uint8_t>(&bts[0], &betas[biasIndex]);
-      copyAs<uint8_t>(&gms[0], &gammas[biasIndex]);
+      for(int i = 0; i < 2; i++) {
+        copyAs<uint4>(&val[i*4], &input[tensorIndex + i*4]);
+        copyAs<uint4>(&sk[i*4], &skip[tensorIndex + i*4]);
+        copyAs<uint4>(&b[i*4], &bias[biasIndex + i*4]);
+        copyAs<uint4>(&bts[i*4], &betas[biasIndex + i*4]);
+        copyAs<uint4>(&gms[i*4], &gammas[biasIndex + i*4]);	  
+      }
 	  }
   }
 
@@ -1020,9 +1022,11 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
 	  if (fp16) {
       half op[8];
       for (int i = 0; i < 8; i++) op[i] = (half)val[i];
-        copyAs<uint4>(&output[tensorIndex], &op[0]);
+      copyAs<uint4>(&output[tensorIndex], &op[0]);
 	  } else {
-      copyAs<uint8_t>(&output[tensorIndex], &val[0]);
+      for(int i = 0; i < 2; i++) {
+        copyAs<uint4>(&output[tensorIndex+i*4], &val[i*4]);
+      }
 	  }
 	}
 }
