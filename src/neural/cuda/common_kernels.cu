@@ -948,7 +948,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
                                   const T* betas, float ep, float alpha, ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
   if (n >= N) return;
-  const int num_element = 16;
+  const int num_element = 8;
   int c = (threadIdx.y * 32 + threadIdx.x) * num_element;
   bool oobThread = c >= C;
 
@@ -1045,7 +1045,7 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep, float alpha,
                ActivationFunction act, cudaStream_t stream) {
   // process 8 elements per thread to achieve close to peak memory bandwidth
-  const int num_element = 16;
+  const int num_element = 8;
   if (C % num_element != 0) throw Exception("unsupported filter size");
   if (C > 1024*num_element) throw Exception("unsupported filter size");
   
