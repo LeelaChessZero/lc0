@@ -707,7 +707,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                      activation:@"swish"
                                                           label:[NSString stringWithFormat:@"%@/smolgen/dense_1", label]];
 
-        smolgenWeights = [self addLayerNormalizationWithParent:smolgenWeights // alpha = 0.0, so will be ignored. @todo refactor
+        smolgenWeights = [self addLayerNormalizationWithParent:smolgenWeights
                                          scaledSecondaryTensor:nil
                                                         gammas:&smolgen->ln1_gammas[0]
                                                          betas:&smolgen->ln1_betas[0]
@@ -723,7 +723,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                      activation:@"swish"
                                                           label:[NSString stringWithFormat:@"%@/smolgen/dense_2", label]];
 
-        smolgenWeights = [self addLayerNormalizationWithParent:smolgenWeights // alpha = 0.0, so will be ignored. @todo refactor
+        smolgenWeights = [self addLayerNormalizationWithParent:smolgenWeights
                                          scaledSecondaryTensor:nil
                                                         gammas:&smolgen->ln2_gammas[0]
                                                          betas:&smolgen->ln2_betas[0]

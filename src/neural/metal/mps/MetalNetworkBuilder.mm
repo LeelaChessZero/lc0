@@ -145,7 +145,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
         //     out = Gating(name=name+'/mult_gate', additive=False)(inputs)
         //     out = Gating(name=name+'/add_gate', additive=True)(out)
         if (weights.ip_mult_gate.size() > 0) {
-
             layer = [graph addGatingLayerWithParent:layer
                                             weights:&weights.ip_mult_gate[0]
                                       withOperation:@"mult"
