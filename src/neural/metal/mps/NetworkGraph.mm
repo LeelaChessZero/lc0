@@ -714,7 +714,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
     MPSGraphTensor * offset2 = [_graph  sliceTensor:keys
                                           dimension:1
-                                              start:2
+                                              start:3
                                              length:1
                                                name:[NSString stringWithFormat:@"%@/offset_slice_2", label]];
 
