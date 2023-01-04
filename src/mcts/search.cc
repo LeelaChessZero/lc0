@@ -871,6 +871,13 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) < 0.0f) {
         stats->num_losing_edges += 1;
       }
+      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) != 0.0f &&
+          !edge.IsTbTerminal()) {
+        stats->mate_depth =
+            std::min(stats->mate_depth,
+                     static_cast<int>(std::round(edge.GetM(0.0f))) / 2 + 1);
+      }
+
       // If game is resignable, no need for moving quicker. This allows
       // proving mate when losing anyway for better score output.
       // Hardcoded resign threshold, because there is no available parameter.
