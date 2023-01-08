@@ -1825,7 +1825,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                 num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
                 scratch1, num_inputs, 0.0f, scratch2, num_outputs);
   }
-  
+
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
   // scratch2/scratch0 -> scratch1
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
@@ -1947,15 +1947,17 @@ EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(ffn_dense2_b));
   ReportCUDAErrors(cudaFree(ln2_gammas));
   ReportCUDAErrors(cudaFree(ln2_betas));
-  ReportCUDAErrors(cudaFree(smol_compress));
-  ReportCUDAErrors(cudaFree(smol_dense1_w));
-  ReportCUDAErrors(cudaFree(smol_dense1_b));
-  ReportCUDAErrors(cudaFree(smol_dense2_w));
-  ReportCUDAErrors(cudaFree(smol_dense2_b));
-  ReportCUDAErrors(cudaFree(smol_ln1_gammas));
-  ReportCUDAErrors(cudaFree(smol_ln1_betas));
-  ReportCUDAErrors(cudaFree(smol_ln2_gammas));
-  ReportCUDAErrors(cudaFree(smol_ln2_betas));
+  if (has_smolgen_) {
+    ReportCUDAErrors(cudaFree(smol_compress));
+    ReportCUDAErrors(cudaFree(smol_dense1_w));
+    ReportCUDAErrors(cudaFree(smol_dense1_b));
+    ReportCUDAErrors(cudaFree(smol_dense2_w));
+    ReportCUDAErrors(cudaFree(smol_dense2_b));
+    ReportCUDAErrors(cudaFree(smol_ln1_gammas));
+    ReportCUDAErrors(cudaFree(smol_ln1_betas));
+    ReportCUDAErrors(cudaFree(smol_ln2_gammas));
+    ReportCUDAErrors(cudaFree(smol_ln2_betas));
+  }
 }
 
 
@@ -2033,9 +2035,13 @@ template <typename DataType>
 AttentionBody<DataType>::~AttentionBody() {
   ReportCUDAErrors(cudaFree(ip_emb_w_));
   ReportCUDAErrors(cudaFree(ip_emb_b_));
-  ReportCUDAErrors(cudaFree(ip_mult_gate_));
-  ReportCUDAErrors(cudaFree(ip_add_gate_));
-  ReportCUDAErrors(cudaFree(smolgen_global_));
+  if (has_gating_) {
+    ReportCUDAErrors(cudaFree(ip_mult_gate_));
+    ReportCUDAErrors(cudaFree(ip_add_gate_));
+  }
+  if (has_smolgen_) {
+    ReportCUDAErrors(cudaFree(smolgen_global_));
+  }
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
