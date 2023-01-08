@@ -52,7 +52,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA, DML };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM };
 
 class OnnxNetwork;
 
@@ -252,7 +252,6 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 
 Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int batch_size) {
   Ort::SessionOptions options;
-  OrtCUDAProviderOptions cuda_options;
   // options.SetIntraOpNumThreads(1);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
@@ -275,10 +274,18 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int batch_size) {
       throw Exception("ONNX backend internal error.");
 #endif
       break;
-    case OnnxProvider::CUDA:
+    case OnnxProvider::ROCM: {
+      OrtROCMProviderOptions rocm_options;
+      rocm_options.device_id = gpu;
+      options.AppendExecutionProvider_ROCM(rocm_options);
+      break;
+    }
+    case OnnxProvider::CUDA: {
+      OrtCUDAProviderOptions cuda_options;
       cuda_options.device_id = gpu;
       options.AppendExecutionProvider_CUDA(cuda_options);
       break;
+    }
     case OnnxProvider::CPU:
       // Doesn't really work. :-( There are two execution providers (CUDA and
       // CPU) already added, don't know how to force it to use CPU.
@@ -418,6 +425,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   }
 }
 
+#ifdef USE_ROCM
+REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
+#endif
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif

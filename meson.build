@@ -576,6 +576,11 @@ if get_option('build_backends')
       'src/neural/onnx/network_onnx.cc',
     ]
 
+    if cc.find_library('onnxruntime_providers_rocm',
+                       dirs: get_option('onnx_libdir'), required: false).found()
+      add_project_arguments('-DUSE_ROCM', language : 'cpp')
+    endif
+
     has_backends = true
   endif
 
