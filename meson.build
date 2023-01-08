@@ -496,13 +496,13 @@ if get_option('build_backends')
     )
 
     # Handling of fp16 cuda code.
-    nvcc_sm_list = ['80', '75', '86', '70', '90']
+    nvcc_sm_list = ['80', '75', '86', '70', '89', '90']
     if host_machine.system() != 'windows'
       nvcc_sm_list += ['60']
       if ['arm', 'aarch64'].contains(host_machine.cpu_family())
         # Add Jetson versions to the list.
         message('Jetson support enabled.')
-        nvcc_sm_list += ['72', '62', '53']
+        nvcc_sm_list += ['72', '62', '53', '87']
       endif
     endif
     # Ignore the given CC for fp16 when it is not in the supported list.
