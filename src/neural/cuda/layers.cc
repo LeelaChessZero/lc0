@@ -1713,36 +1713,22 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
 
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
-    if (scratch0 != last_known_scratch_) {
+    if (scratch0 != offset_scratches_[stream]) {
       std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_*5);
       for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
         int h = i % encoder_heads_;
         int n = i / encoder_heads_;
         offsets[i] = mha_k + h * depth + 64 * d_model * n;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
         offsets[i + encoder_heads_ * max_batch_size_] = mha_q + h * depth + 64 * d_model * n;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
         offsets[i + 2 * encoder_heads_ * max_batch_size_] = scratch2 + i * 64 * 64;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
         offsets[i + 3 * encoder_heads_ * max_batch_size_] = mha_v + h * depth + 64 * d_model * n;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
         offsets[i + 4 * encoder_heads_ * max_batch_size_] = scratch3 + h*depth + 64*d_model*n;
       }
       ReportCUDAErrors(cudaMalloc((void**)&scratch_rel_ptrs_, encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
       ReportCUDAErrors(
         cudaMemcpy(scratch_rel_ptrs_, offsets.data(), encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
           cudaMemcpyHostToDevice));
-      last_known_scratch_ = scratch0;
+      offset_scratches_[stream] = scratch0;
     }
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,

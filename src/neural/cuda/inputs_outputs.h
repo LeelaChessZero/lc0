@@ -127,9 +127,9 @@ struct InputsOutputs {
 
   // cuda stream used to run the network
   cudaStream_t stream_;
-  cublasHandle_t cublas_;
 
   // cublas handle used to run the network
+  cublasHandle_t cublas_;
 
 };
 
