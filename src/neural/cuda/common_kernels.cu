@@ -682,8 +682,12 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input, int N) {
     copyAs<uint2>(&x[0], &input[index * 2]);
   }
 
-  ex[0] = exp(x[0]);
-  ex[1] = exp(x[1]);
+  float threadMax = max(x[0], x[1]);
+  float maxval = warpMax(threadMax);
+  maxval = __shfl_sync(0xFFFFFFFF, maxval, 0);
+
+  ex[0] = exp(x[0] - maxval);
+  ex[1] = exp(x[1] - maxval);
 
   float threadSum = ex[0] + ex[1];
   float Sum = warpReduce(threadSum);
@@ -716,14 +720,25 @@ __global__ void softmax_kernel(T* output, const T* input) {
   int C = blockDim.x;
   int index = n * C + c;
 
-  __shared__ float sum;
-  if (c == 0) sum = 0;
-  __syncthreads();
-
   // softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
 
   float x = (float)input[index];
-  float ex = exp(x);
+
+  __shared__ float sum, maxval;
+  if (c == 0) {
+    sum = 0;
+    maxval = x;
+  }
+
+  __syncthreads();
+
+  // Get max across warp first, and then update across C dimension
+  float warpmax = warpMax(x);
+  if ((c & 0x1F) == 0) atomicMaxFloat(&maxval, warpmax);
+
+  __syncthreads();
+
+  float ex = exp(x - maxval);
 
   // compute warp wide sums first
   float val = warpReduce(ex);

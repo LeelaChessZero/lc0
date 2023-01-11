@@ -184,7 +184,7 @@ std::string Converter::MakeSqueezeAndExcite(
   const int se_filters = se_unit.b1.size();
 
   auto flow = builder->GlobalAveragePool(name + "/pooled", input);
-  flow = builder->Squeeze(name + "/squeeze", flow);
+  flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
   flow = builder->MatMul(
       name + "/matmul1", flow,
       *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
@@ -552,7 +552,8 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
       *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}, {1, 0}));
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
-  auto output = builder->Relu(options_.output_mlh, flow);
+  flow = MakeActivation(builder, flow, "/mlh/dense2", default_activation_);
+  auto output = builder->Identity(options_.output_mlh, flow);
   builder->AddOutput(output, {options_.batch_size, 1}, GetDataType());
   onnx->set_output_mlh(output);
 }
