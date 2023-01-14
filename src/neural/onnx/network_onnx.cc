@@ -414,6 +414,27 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
+
+    // Hack for old encoding compatibility. REMOVE BEFORE MERGING.
+    if (w->format().network_format().network() ==
+            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+        w->weights().encoder().size() > 0) {
+      CERR << "Attention body detected, hacking network format.";
+      WeightsFile x = *w;
+      x.mutable_format()->mutable_network_format()->set_network(
+          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+      if (w->weights().has_smolgen_w()) {
+        CERR << "BT2 detected, hacking activations.";
+        x.mutable_format()->mutable_network_format()->set_ffn_activation(
+            pblczero::NetworkFormat::FFN_ACTIVATION_RELU_2);
+        x.mutable_format()->mutable_network_format()->set_smolgen_activation(
+            pblczero::NetworkFormat::SMOLGEN_ACTIVATION_SWISH);
+      }
+      auto converted = ConvertWeightsToOnnx(x, converter_options);
+      return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
+                                           fp16, batch_size, steps);
+    }
+
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu, fp16,
                                          batch_size, steps);
