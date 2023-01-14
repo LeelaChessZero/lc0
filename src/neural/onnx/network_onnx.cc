@@ -372,7 +372,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (w->format().network_format().network() !=
             pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
         w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+        w->format().network_format().network() !=
+            pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
       throw Exception("Network format " +
                       pblczero::NetworkFormat::NetworkStructure_Name(
                           w->format().network_format().network()) +

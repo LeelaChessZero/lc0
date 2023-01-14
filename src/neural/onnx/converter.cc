@@ -115,7 +115,7 @@ class Converter {
                                int embedding_size, int heads,
                                const std::string& encoder_in,
                                const std::string& name,
-                               ActivationFunction activation = SELU,
+                               ActivationFunction activation,
                                float alpha = 1.0f);
 
   std::string MakeAttentionPolicy(OnnxBuilder* builder,
@@ -195,6 +195,10 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       return builder->Selu(name + "/selu", input);
     case SWISH:
       return MakeSwish(builder, input, name + "/swish");
+    case RELU_2: {
+      auto flow = MakeActivation(builder, input, name + "/sqrrelu/relu", RELU);
+      return builder->Mul(name + "/sqrrelu/sqr", flow, flow);
+    }
     default:
       throw Exception("Unsupposrted activation in " + name);
   }
@@ -267,6 +271,12 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
                                    int d_model, int heads,
                                    const std::string& encoder_in,
                                    const std::string& name) {
+  const auto smolgen_activation =
+      src_.format().network_format().smolgen_activation();
+  const auto activation =
+      smolgen_activation == pblczero::NetworkFormat::SMOLGEN_ACTIVATION_INHERIT
+          ? default_activation_
+          : static_cast<ActivationFunction>(smolgen_activation);
   const int smolgen_hidden_channels =
       layer.mha.smolgen.compress.size() / d_model;
   const int smolgen_hidden_sz = layer.mha.smolgen.dense1_b.size();
@@ -288,7 +298,7 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
   flow = builder->Add(
       name + "/smolgen/dense1/b", flow,
       *GetWeghtsConverter(layer.mha.smolgen.dense1_b, {smolgen_hidden_sz}));
-  flow = MakeActivation(builder, flow, name + "/smolgen/dense1", SWISH);
+  flow = MakeActivation(builder, flow, name + "/smolgen/dense1", activation);
   flow = builder->LayerNormalization(
       name + "/smolgen/ln1", flow,
       *GetWeghtsConverter(layer.mha.smolgen.ln1_gammas, {smolgen_hidden_sz}),
@@ -301,7 +311,7 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
   flow = builder->Add(name + "/smolgen/dense2/b", flow,
                       *GetWeghtsConverter(layer.mha.smolgen.dense2_b,
                                           {smolgen_gen_sz * heads}));
-  flow = MakeActivation(builder, flow, name + "/smolgen/dense2", SWISH);
+  flow = MakeActivation(builder, flow, name + "/smolgen/dense2", activation);
   flow = builder->LayerNormalization(
       name + "/smolgen/ln2", flow,
       *GetWeghtsConverter(layer.mha.smolgen.ln2_gammas,
@@ -411,12 +421,12 @@ std::string Converter::MakeEncoderLayer(
                                           {embedding_size, dff_size}, {1, 0}));
   flow = builder->Add(name + "/ffn/dense1/b", flow,
                       *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
-  if (layer.mha.has_smolgen) {
-    flow = MakeActivation(builder, flow, name + "/ffn/dense1/sqrrelu", RELU);
-    flow = builder->Mul(name + "/ffn/dense1/sqrrelu/sqr", flow, flow);
-  } else {
-    flow = MakeActivation(builder, flow, name + "/ffn/dense1", activation);
+
+  const auto ffn_activation = src_.format().network_format().ffn_activation();
+  if (ffn_activation != pblczero::NetworkFormat::FFN_ACTIVATION_INHERIT) {
+    activation = static_cast<ActivationFunction>(ffn_activation);
   }
+  flow = MakeActivation(builder, flow, name + "/ffn/dense1", activation);
   flow =
       builder->MatMul(name + "/ffn/dense2/w", flow,
                       *GetWeghtsConverter(layer.ffn.dense2_w,
@@ -548,7 +558,11 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
   const int embedding_size = weights.ip_pol_b.size();
   const int policy_d_model = weights.ip2_pol_b.size();
   auto flow = input;
-  auto activation = NumEncBlocks() > 0 ? default_activation_ : SELU;
+  auto activation =
+      src_.format().network_format().network() >=
+              pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT
+          ? default_activation_
+          : SELU;
   if (NumEncBlocks() == 0) {
     flow = builder->Transpose("/policy/dense1/transpose", flow, {0, 2, 3, 1});
 

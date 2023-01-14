@@ -21,17 +21,29 @@
 #include <cstddef>
 #include <vector>
 
+#include "proto/net.pb.h"
+
 namespace lczero {
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH, SWISH };
+enum ActivationFunction {
+  NONE = pblczero::NetworkFormat::ActivationFunction::NONE,
+  RELU = pblczero::NetworkFormat::ActivationFunction::RELU,
+  TANH = pblczero::NetworkFormat::ActivationFunction::TANH,
+  SIGMOID = pblczero::NetworkFormat::ActivationFunction::SIGMOID,
+  SELU = pblczero::NetworkFormat::ActivationFunction::SELU,
+  MISH = pblczero::NetworkFormat::ActivationFunction::MISH,
+  SWISH = pblczero::NetworkFormat::ActivationFunction::SWISH,
+  RELU_2 = pblczero::NetworkFormat::ActivationFunction::RELU_2,
+  SOFTMAX = pblczero::NetworkFormat::ActivationFunction::SOFTMAX
+};
 
 // Softmax activation
 void SoftmaxActivation(const size_t size, const float* input, float* output);
 
-void BiasResidual(const size_t batch_size, const size_t channels, float * data,
+void BiasResidual(const size_t batch_size, const size_t channels, float* data,
                   const float* biases, const float* eltwise,
                   const ActivationFunction activation = RELU);
 
-void BiasActivate(const size_t batch_size, const size_t channels, float * data,
+void BiasActivate(const size_t batch_size, const size_t channels, float* data,
                   const float* biases,
                   const ActivationFunction activation = RELU);
 
