@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "utils/exception.h"
+
 #ifdef USE_ISPC
 #include "activation_ispc.h"
 #endif
@@ -83,6 +85,8 @@ float Activate(const float val, const ActivationFunction activation) {
     case NONE:
       // Nothing to do.
       break;
+    default:
+      throw Exception("unsupported activation function");
   }
   return val;
 }
