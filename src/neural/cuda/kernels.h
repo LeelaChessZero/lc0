@@ -36,11 +36,23 @@ template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
                 ActivationFunction activation, cudaStream_t stream);
 
+// Adds two vectors of equal size overwriting the first with the sum.
+// This specialisation performs a transposition of the first 2 indexes
+// of the second while performing the addition.
+template <typename T>
+void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C, cudaStream_t stream);
+
 // Optimized kernel to add bias to innermost dimension
 // and perform optional activation (to be used with GEMMs/fully connected)
 template <typename T>
 void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
                     int C, ActivationFunction activation, cudaStream_t stream);
+
+// Optimized kernel to add bias to innermost dimension
+// and perform optional activation (to be used with GEMMs/fully connected)
+template <typename T>
+void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+                    int C, int Nstride, ActivationFunction activation, cudaStream_t stream);
 
 // Add bias to convolution's output.
 template <typename T>
@@ -118,17 +130,24 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           cudaStream_t stream);
 
 template <typename T>
-void Softmax(int N, int C, T* output, const T* input, cudaStream_t stream);
+void Softmax(int N, int C, T* output, const T* input, const T* input2, cudaStream_t stream);
 
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep,
-               cudaStream_t stream);
+               float alpha, ActivationFunction act, cudaStream_t stream);
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,
                             const T* ppo, const T* policy_attn_logits,
                             cudaStream_t stream);
 
+template <typename T>
+void inputPreprocessForAttentionBody(T* output, const T* input, int N,
+                                     cudaStream_t stream);
+
+template <typename T>
+void applyInputGating(T* output, const T* input, const T* mult, const T* add,
+                                int N, int HW, int C, cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero

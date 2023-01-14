@@ -55,6 +55,19 @@ struct LegacyWeights {
     bool has_se;
   };
 
+  struct Smolgen {
+    explicit Smolgen(const pblczero::Weights::Smolgen& smolgen);
+    Vec compress;
+    Vec dense1_w;
+    Vec dense1_b;
+    Vec ln1_gammas;
+    Vec ln1_betas;
+    Vec dense2_w;
+    Vec dense2_b;
+    Vec ln2_gammas;
+    Vec ln2_betas;
+  };
+
   struct MHA {
     explicit MHA(const pblczero::Weights::MHA& mha);
     Vec q_w;
@@ -65,6 +78,8 @@ struct LegacyWeights {
     Vec v_b;
     Vec dense_w;
     Vec dense_b;
+    Smolgen smolgen;
+    bool has_smolgen;
   };
 
   struct FFN {
@@ -88,6 +103,19 @@ struct LegacyWeights {
   // Input convnet.
   ConvBlock input;
 
+  // Embedding layer
+  Vec ip_emb_w;
+  Vec ip_emb_b;
+
+  // Input gating
+  Vec ip_mult_gate;
+  Vec ip_add_gate;
+
+  // Encoder stack.
+  std::vector<EncoderLayer> encoder;
+  int encoder_head_count;
+
+
   // Residual tower.
   std::vector<Residual> residual;
 
@@ -109,6 +137,8 @@ struct LegacyWeights {
 
   // Value head
   ConvBlock value;
+  Vec ip_val_w;
+  Vec ip_val_b;
   Vec ip1_val_w;
   Vec ip1_val_b;
   Vec ip2_val_w;
@@ -116,10 +146,17 @@ struct LegacyWeights {
 
   // Moves left head
   ConvBlock moves_left;
+  Vec ip_mov_w;
+  Vec ip_mov_b;
   Vec ip1_mov_w;
   Vec ip1_mov_b;
   Vec ip2_mov_w;
   Vec ip2_mov_b;
+
+  // Smolgen global weights
+  Vec smolgen_w;
+  Vec smolgen_b;
+  bool has_smolgen;
 };
 
 }  // namespace lczero

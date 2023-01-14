@@ -22,7 +22,7 @@
 #include <vector>
 
 namespace lczero {
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH };
+enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH, SWISH, RELU_2 };
 
 // Softmax activation
 void SoftmaxActivation(const size_t size, const float* input, float* output);

@@ -47,37 +47,6 @@
 namespace lczero {
 using namespace cudnn_backend;
 
-#if 0
-// debug code to dump allocation in GPU memory
-void dumpTensor(void *memory, int elements, const char *message, bool fp16 = false)
-{
-    printf("\n%s\n", message);
-    int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
-    int bytes = elements * elementSize;
-    void *temp = malloc(bytes);
-    cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
-
-    for (int i = 0; i < elements; i++)
-    {
-        float val;
-        if (fp16) 
-        {
-            half *arr = (half*)temp;
-            val = (float)arr[i];
-        }
-        else
-        {
-            float *arr = (float *)temp;
-            val = arr[i];
-        }
-        printf("%8.4f ", val);
-        if ((i % 8) == 7) printf("\n");
-    }
-    free(temp);
-    printf("\n");
-}
-#endif
-
 template <typename DataType>
 class CudnnNetwork;
 
@@ -535,7 +504,7 @@ class CudnnNetwork : public Network {
     // Policy head.
     if (attn_policy_) {
       auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
-          getLastLayer(), weights, scratch_mem_);
+          getLastLayer(), weights, scratch_mem_, false, SELU, max_batch_size_);
       network_.emplace_back(std::move(AttentionPolicy));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
