@@ -204,7 +204,9 @@ inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
   }
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
-  if (w > 0 && d > 0 && l > 0) {
+  const float zero = 0.00001f;
+  const float one = 0.99999f;
+  if (w > zero && d > zero && l > zero && w < one && d < one && l < one) {
     auto a = FastLog(1 / l - 1);
     auto b = FastLog(1 / w - 1);
     auto s = 2 / (a + b);
