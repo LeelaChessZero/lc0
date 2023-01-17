@@ -1713,7 +1713,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
 
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
-    if (scratch0 != offset_scratches_[stream]) {
+    if (scratch0 != known_offset_scratches_[stream]) {
       std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_*5);
       for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
         int h = i % encoder_heads_;
@@ -1722,28 +1722,28 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
         offsets[i + encoder_heads_ * max_batch_size_] = mha_q + h * depth + 64 * d_model * n;
         offsets[i + 2 * encoder_heads_ * max_batch_size_] = scratch2 + i * 64 * 64;
         offsets[i + 3 * encoder_heads_ * max_batch_size_] = mha_v + h * depth + 64 * d_model * n;
-        offsets[i + 4 * encoder_heads_ * max_batch_size_] = scratch3 + h*depth + 64*d_model*n;
+        offsets[i + 4 * encoder_heads_ * max_batch_size_] = scratch3 + h * depth + 64 * d_model * n;
       }
-      ReportCUDAErrors(cudaMalloc((void**)&scratch_rel_ptrs_, encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
+      ReportCUDAErrors(cudaMalloc((void**)&offset_pointers_[stream], encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
       ReportCUDAErrors(
-        cudaMemcpy(scratch_rel_ptrs_, offsets.data(), encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
+        cudaMemcpy(offset_pointers_[stream], offsets.data(), encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
           cudaMemcpyHostToDevice));
-      offset_scratches_[stream] = scratch0;
+      known_offset_scratches_[stream] = scratch0;
     }
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
         depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
                       // transform
         factor,       // to handle "/ tf.math.sqrt(dk)"
-        scratch_rel_ptrs_,// mha_k + offset /*A*/,
+        offset_pointers_[stream],// mha_k + offset /*A*/,
         d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
                           // other "depth" slices / heads
         //64 * d_model,     /*strideA*/
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_,//mha_q + offset /*B*/,
+        offset_pointers_[stream] + encoder_heads_ * max_batch_size_,//mha_q + offset /*B*/,
         d_model /*LDB*/,  // to skip over other other "depth" slices / heads
         //64 * d_model,     /*strideB*/
         0.0f,
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 2, //scratch2 + outOffset /*C*/,  // output (matmul_qk) goes to scratch2
+        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 2, //scratch2 + outOffset /*C*/,  // output (matmul_qk) goes to scratch2
         64 /*LDC*/,
         //64 * 64 /*strideC*/,
         N * encoder_heads_);
@@ -1752,7 +1752,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
   // attention_weights -> scratch2
   if (has_smolgen_) {
-  // Add smolgen weights to the scaled matmul_qk attention logits before softmax.
+    // Add smolgen weights to the scaled matmul_qk attention logits before softmax.
     Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, scratch3, stream);
   } else {
     Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, (const DataType*)nullptr, stream);
@@ -1761,13 +1761,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   {
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_N, CUBLAS_OP_N, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 3, //mha_v + offset /*A*/,  // "v" matrix
+        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 3, //mha_v + offset /*A*/,  // "v" matrix
         d_model /*LDA*/,       // to skip over other "depth" slices / heads
         //64 * d_model,          /*strideA*/
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 2, //scratch2 + weightsOffset /*B*/,
+        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 2, //scratch2 + weightsOffset /*B*/,
         64 /*LDB*/, //64 * 64, /*strideB*/
         0.0f,
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 4, //scratch3 + offset /*C*/,  // output goes to scratch3
+        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 4, //scratch3 + offset /*C*/,  // output goes to scratch3
         d_model /*LDC*/,
         //64 * d_model /*strideC*/,
         N * encoder_heads_);
@@ -1944,6 +1944,9 @@ EncoderBlock<DataType>::~EncoderBlock() {
     ReportCUDAErrors(cudaFree(smol_ln2_gammas));
     ReportCUDAErrors(cudaFree(smol_ln2_betas));
   }
+  for (const auto offset : offset_pointers_) {
+    ReportCUDAErrors(cudaFree(offset.second));
+  }
 }
 
 
@@ -2088,12 +2091,10 @@ void AttentionBody<DataType>::Eval(
   }
 
   // 2. Encoder layers
-  int i = 0;
   for (const auto pEnc : encoder_weights_) {
     pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream,
                default_act_);
   }  // End of encoder blocks
-  // dumpTensor(scratch1, N * 64 * embedding_op_size_, "Outputs");
 }
 
 
