@@ -1443,8 +1443,8 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
-        enc, scratch, encoder_heads_, embedding_op_size_, 1.0f,
-        nullptr, 0, max_batch_size);    // using alpha = 1 for now (TODO: may change?)
+        enc, scratch, encoder_heads_, embedding_op_size_, 1.0f, // using alpha = 1 for now (TODO: may change?)
+        nullptr, 0, max_batch_size, SWISH, act_); // smolgen weights not implemented in policy encoder heads yet.
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1452,9 +1452,11 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 template <typename DataType>
 EncoderBlock<DataType>::EncoderBlock(
     const LegacyWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
-    int size, float alpha, DataType* smolgen_global_scratch, int smolgen_global_size, int max_batch_size)
+    int size, float alpha, DataType* smolgen_global_scratch, int smolgen_global_size,
+    int max_batch_size, ActivationFunction smolgen_act, ActivationFunction ffn_act)
     : encoder_heads_(heads), embedding_op_size_(size), alpha_(alpha),
-      has_smolgen_(cpu_weights.mha.has_smolgen), max_batch_size_(max_batch_size) {
+      has_smolgen_(cpu_weights.mha.has_smolgen), max_batch_size_(max_batch_size),
+      smolgen_activation_(smolgen_act), ffn_activation_(ffn_act) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1602,8 +1604,7 @@ static void cublasXGemmBatched(
 template <typename DataType>
 void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                                   DataType* scratch2, DataType* scratch3,
-                                  cublasHandle_t cublas, cudaStream_t stream,
-                                  Activations acts) const {
+                                  cublasHandle_t cublas, cudaStream_t stream) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
@@ -1636,7 +1637,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense1_b,
                           scratch2, smol_ln1_gammas, smol_ln1_betas, 1e-6,
                           0.0, /* alpha = 0 since we don't need skip */
-                          acts.smolgen_activation, stream);
+                          smolgen_activation_, stream);
     }
 
     {
@@ -1653,7 +1654,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense2_b,
                           scratch2, smol_ln2_gammas, smol_ln2_betas, 1e-6,
                           0.0, /* alpha = 0 since we don't need skip */
-                          acts.smolgen_activation, stream);
+                          smolgen_activation_, stream);
     }
 
     {
@@ -1801,7 +1802,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                 num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                 scratch0, num_inputs, 0.0f, scratch1, num_outputs);
     addBiasBatched(scratch1, scratch1, ffn_dense1_b, 1, batch, num_outputs,
-                   acts.ffn_activation, stream);
+                   ffn_activation_, stream);
   }
 
   // #FFN dense 2, scratch1 -> scratch2
@@ -1851,12 +1852,8 @@ void AttentionPolicyHead<DataType>::Eval(
   }
 
   // 2. Encoder layers
-  Activations activations;
-  activations.default_activation = act_;
-  activations.smolgen_activation = act_;
-  activations.ffn_activation = act_;
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, activations);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream);
   }  // End of encoder blocks
 
   DataType* wq;
@@ -2021,7 +2018,8 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
-        smolgen_global_, smolgen_global_size_, max_batch_size);
+        smolgen_global_, smolgen_global_size_, max_batch_size,
+        activations_.smolgen_activation, activations_.ffn_activation);
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -2096,10 +2094,9 @@ void AttentionBody<DataType>::Eval(
                                 N, 64, embedding_op_size_, stream);
   }
 
-  // 2. Encoder layers
+  // 2. Encoder blocks
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream,
-               activations_);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream);
   }  // End of encoder blocks
 }
 

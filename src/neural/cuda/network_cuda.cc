@@ -1086,7 +1086,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
         " is not supported by the CUDA backend.");
   }
 
-  // Hack for old encoding compatibility. REMOVE BEFORE MERGING.
+  // @todo Hack for old encoding compatibility. REMOVE BEFORE MERGING.
   if (w->format().network_format().network() ==
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
       w->weights().encoder().size() > 0) {

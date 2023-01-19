@@ -337,12 +337,13 @@ class EncoderBlock {
  public:
   EncoderBlock(const LegacyWeights::EncoderLayer& cpu_weights, void* scratch,
                int heads, int size, float alpha, DataType* smolgen_global_scratch,
-               int smolgen_global_size, int max_batch_size);
+               int smolgen_global_size, int max_batch_size,
+               ActivationFunction smolgen_act, ActivationFunction ffn_act);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas,
-            cudaStream_t stream, Activations acts) const;
+            cudaStream_t stream) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
@@ -379,6 +380,8 @@ class EncoderBlock {
   float alpha_; // scale to apply to skip connection add
 
   const bool has_smolgen_;
+  const ActivationFunction smolgen_activation_;
+  const ActivationFunction ffn_activation_;
 
   // Output sizes for smolgen layers.
   int smol_compress_size_;
