@@ -197,6 +197,9 @@ class CudaNetwork : public Network {
     attn_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_ATTENTION;
 
+    attn_body_ = file.format().network_format().network() ==
+                 pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
+
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
     showInfo();
@@ -265,7 +268,6 @@ class CudaNetwork : public Network {
     numFilters_ = kNumFilters;
 
     num_encoder_blocks_ = (int) weights.encoder.size();
-    attn_body_ = (num_encoder_blocks_ > 0);
     if (attn_body_) {
       assert(weights.ip_emb_b.size() > 0);
     }
@@ -413,8 +415,17 @@ class CudaNetwork : public Network {
     }
 
     if (attn_body_) {
+      Activations activations;
+      const auto smolgen_activation = file.format().network_format().smolgen_activation();
+      activations.smolgen_activation = smolgen_activation == pblczero::NetworkFormat::SMOLGEN_ACTIVATION_INHERIT
+                                ? act : static_cast<ActivationFunction>(smolgen_activation);
+      const auto ffn_activation = file.format().network_format().ffn_activation();
+      activations.ffn_activation = ffn_activation == pblczero::NetworkFormat::FFN_ACTIVATION_INHERIT
+                            ? act : static_cast<ActivationFunction>(ffn_activation);
+      activations.default_activation = act;
+
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
-          weights, scratch_mem_, act, numBlocks_,
+          weights, scratch_mem_, activations, numBlocks_,
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_);
       network_.emplace_back(std::move(attention_body));
 
@@ -1074,6 +1085,25 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
             weights.format().network_format().default_activation()) +
         " is not supported by the CUDA backend.");
   }
+
+  // Hack for old encoding compatibility. REMOVE BEFORE MERGING.
+  if (w->format().network_format().network() ==
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+      w->weights().encoder().size() > 0) {
+    CERR << "Attention body detected, hacking network format.";
+    WeightsFile x = *w;
+    x.mutable_format()->mutable_network_format()->set_network(
+        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+    if (w->weights().has_smolgen_w()) {
+      CERR << "BT2 detected, hacking activations.";
+      x.mutable_format()->mutable_network_format()->set_ffn_activation(
+          pblczero::NetworkFormat::FFN_ACTIVATION_RELU_2);
+      x.mutable_format()->mutable_network_format()->set_smolgen_activation(
+          pblczero::NetworkFormat::SMOLGEN_ACTIVATION_SWISH);
+    }
+    return std::make_unique<CudaNetwork<DataType>>(x, options);
+  }
+
   return std::make_unique<CudaNetwork<DataType>>(weights, options);
 }
 

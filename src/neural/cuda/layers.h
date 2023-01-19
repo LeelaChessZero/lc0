@@ -342,7 +342,7 @@ class EncoderBlock {
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas,
-            cudaStream_t stream, ActivationFunction act) const;
+            cudaStream_t stream, Activations acts) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
@@ -468,7 +468,7 @@ class AttentionBody : public BaseLayer<DataType> {
 
  public:
   AttentionBody(const LegacyWeights& weights, void* scratch,
-                ActivationFunction default_act, int num_res_blocks,
+                Activations activations, int num_res_blocks,
                 int input_c, int max_batch_size);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
@@ -484,7 +484,7 @@ class AttentionBody : public BaseLayer<DataType> {
   int embedding_op_size_;
   int encoder_head_count_;
   std::vector<EncoderBlock<DataType>*> encoder_weights_;
-  ActivationFunction default_act_;
+  Activations activations_;
   int num_resi_blocks_;
   int input_c_;
   int smolgen_global_size_;

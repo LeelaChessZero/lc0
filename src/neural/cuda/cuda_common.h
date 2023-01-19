@@ -30,6 +30,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
+// #include "proto/net.pb.h"
 #include "utils/exception.h"
 
 #ifdef USE_CUDNN
@@ -74,7 +75,23 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH, SWISH, RELU_2 };
+enum ActivationFunction {
+    MISH = 1, // pblczero::NetworkFormat::ActivationFunction::MISH,
+    RELU = 2, // pblczero::NetworkFormat::ActivationFunction::RELU,
+    NONE = 3, // pblczero::NetworkFormat::ActivationFunction::NONE,
+    TANH = 4, // pblczero::NetworkFormat::ActivationFunction::TANH,
+    SIGMOID = 5, // pblczero::NetworkFormat::ActivationFunction::SIGMOID,
+    SELU = 6, // pblczero::NetworkFormat::ActivationFunction::SELU,
+    SWISH = 7, // pblczero::NetworkFormat::ActivationFunction::SWISH,
+    RELU_2 = 8, // pblczero::NetworkFormat::ActivationFunction::RELU_2,
+    SOFTMAX = 9, // pblczero::NetworkFormat::ActivationFunction::SOFTMAX
+};
+
+struct Activations {
+    ActivationFunction default_activation = RELU;
+    ActivationFunction smolgen_activation = SWISH;
+    ActivationFunction ffn_activation = RELU_2;
+};
 
 }  // namespace cudnn_backend
 }  // namespace lczero

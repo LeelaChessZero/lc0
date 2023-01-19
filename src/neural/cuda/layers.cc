@@ -1603,7 +1603,7 @@ template <typename DataType>
 void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                                   DataType* scratch2, DataType* scratch3,
                                   cublasHandle_t cublas, cudaStream_t stream,
-                                  ActivationFunction act) const {
+                                  Activations acts) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
@@ -1635,7 +1635,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
 
       LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense1_b,
                           scratch2, smol_ln1_gammas, smol_ln1_betas, 1e-6,
-                          0.0, /* alpha = 0 since we don't need skip */ SWISH, stream);
+                          0.0, /* alpha = 0 since we don't need skip */
+                          acts.smolgen_activation, stream);
     }
 
     {
@@ -1651,7 +1652,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
 
       LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense2_b,
                           scratch2, smol_ln2_gammas, smol_ln2_betas, 1e-6,
-                          0.0, /* alpha = 0 since we don't need skip */ SWISH, stream);
+                          0.0, /* alpha = 0 since we don't need skip */
+                          acts.smolgen_activation, stream);
     }
 
     {
@@ -1799,7 +1801,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                 num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                 scratch0, num_inputs, 0.0f, scratch1, num_outputs);
     addBiasBatched(scratch1, scratch1, ffn_dense1_b, 1, batch, num_outputs,
-                   has_smolgen_ ? RELU_2 : act, stream); // @todo sqr relu to have its own flag
+                   acts.ffn_activation, stream);
   }
 
   // #FFN dense 2, scratch1 -> scratch2
@@ -1849,8 +1851,12 @@ void AttentionPolicyHead<DataType>::Eval(
   }
 
   // 2. Encoder layers
+  Activations activations;
+  activations.default_activation = act_;
+  activations.smolgen_activation = act_;
+  activations.ffn_activation = act_;
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, act_);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, activations);
   }  // End of encoder blocks
 
   DataType* wq;
@@ -1986,12 +1992,12 @@ void EmbeddingLayer<DataType>::Eval(
 template <typename DataType>
 AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
                                        void* scratch,
-                                       ActivationFunction default_act,
+                                       Activations activations,
                                        int num_res_blocks, int input_c, int max_batch_size)
     : embedding_op_size_(weights.ip_emb_b.size()),
       encoder_head_count_(weights.encoder_head_count),
       num_resi_blocks_(num_res_blocks),
-      default_act_(default_act),
+      activations_(activations),
       input_c_(input_c),
       has_gating_(weights.ip_mult_gate.size() > 0 && weights.ip_add_gate.size() > 0),
       has_smolgen_(weights.has_smolgen),
@@ -2081,7 +2087,7 @@ void AttentionBody<DataType>::Eval(
                           num_inputs, scratch0, num_inputs, 0.0f, embedding,
                           num_outputs);
     addBiasBatched(embedding, embedding, ip_emb_b_, 1, batch,
-                   num_outputs, default_act_, stream);
+                   num_outputs, activations_.default_activation, stream);
   }
 
   // Input gating
@@ -2093,7 +2099,7 @@ void AttentionBody<DataType>::Eval(
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
     pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream,
-               default_act_);
+               activations_);
   }  // End of encoder blocks
 }
 
