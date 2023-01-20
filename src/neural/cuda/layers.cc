@@ -1713,36 +1713,22 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
 
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
-    if (scratch0 != last_known_scratch_) {
+    if (scratch0 != offset_scratches_[stream]) {
       std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_*5);
       for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
         int h = i % encoder_heads_;
         int n = i / encoder_heads_;
         offsets[i] = mha_k + h * depth + 64 * d_model * n;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
         offsets[i + encoder_heads_ * max_batch_size_] = mha_q + h * depth + 64 * d_model * n;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
         offsets[i + 2 * encoder_heads_ * max_batch_size_] = scratch2 + i * 64 * 64;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
         offsets[i + 3 * encoder_heads_ * max_batch_size_] = mha_v + h * depth + 64 * d_model * n;
-      }
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
         offsets[i + 4 * encoder_heads_ * max_batch_size_] = scratch3 + h*depth + 64*d_model*n;
       }
       ReportCUDAErrors(cudaMalloc((void**)&scratch_rel_ptrs_, encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
       ReportCUDAErrors(
         cudaMemcpy(scratch_rel_ptrs_, offsets.data(), encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
           cudaMemcpyHostToDevice));
-      last_known_scratch_ = scratch0;
+      offset_scratches_[stream] = scratch0;
     }
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
@@ -1825,7 +1811,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                 num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
                 scratch1, num_inputs, 0.0f, scratch2, num_outputs);
   }
-  
+
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
   // scratch2/scratch0 -> scratch1
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
@@ -1947,15 +1933,17 @@ EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(ffn_dense2_b));
   ReportCUDAErrors(cudaFree(ln2_gammas));
   ReportCUDAErrors(cudaFree(ln2_betas));
-  ReportCUDAErrors(cudaFree(smol_compress));
-  ReportCUDAErrors(cudaFree(smol_dense1_w));
-  ReportCUDAErrors(cudaFree(smol_dense1_b));
-  ReportCUDAErrors(cudaFree(smol_dense2_w));
-  ReportCUDAErrors(cudaFree(smol_dense2_b));
-  ReportCUDAErrors(cudaFree(smol_ln1_gammas));
-  ReportCUDAErrors(cudaFree(smol_ln1_betas));
-  ReportCUDAErrors(cudaFree(smol_ln2_gammas));
-  ReportCUDAErrors(cudaFree(smol_ln2_betas));
+  if (has_smolgen_) {
+    ReportCUDAErrors(cudaFree(smol_compress));
+    ReportCUDAErrors(cudaFree(smol_dense1_w));
+    ReportCUDAErrors(cudaFree(smol_dense1_b));
+    ReportCUDAErrors(cudaFree(smol_dense2_w));
+    ReportCUDAErrors(cudaFree(smol_dense2_b));
+    ReportCUDAErrors(cudaFree(smol_ln1_gammas));
+    ReportCUDAErrors(cudaFree(smol_ln1_betas));
+    ReportCUDAErrors(cudaFree(smol_ln2_gammas));
+    ReportCUDAErrors(cudaFree(smol_ln2_betas));
+  }
 }
 
 
@@ -2033,9 +2021,13 @@ template <typename DataType>
 AttentionBody<DataType>::~AttentionBody() {
   ReportCUDAErrors(cudaFree(ip_emb_w_));
   ReportCUDAErrors(cudaFree(ip_emb_b_));
-  ReportCUDAErrors(cudaFree(ip_mult_gate_));
-  ReportCUDAErrors(cudaFree(ip_add_gate_));
-  ReportCUDAErrors(cudaFree(smolgen_global_));
+  if (has_gating_) {
+    ReportCUDAErrors(cudaFree(ip_mult_gate_));
+    ReportCUDAErrors(cudaFree(ip_add_gate_));
+  }
+  if (has_smolgen_) {
+    ReportCUDAErrors(cudaFree(smolgen_global_));
+  }
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 

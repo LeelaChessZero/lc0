@@ -388,7 +388,7 @@ class EncoderBlock {
 
   const int max_batch_size_;
   mutable DataType** scratch_rel_ptrs_;
-  mutable DataType* last_known_scratch_;
+  mutable std::unordered_map<void*, DataType*> offset_scratches_;
 };
 
 // The Attention policy head implementation

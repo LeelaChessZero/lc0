@@ -13,7 +13,7 @@ set EIGEN=false
 set TEST=false
 
 rem 2. Edit the paths for the build dependencies.
-set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0
+set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0
 set CUDNN_PATH=%CUDA_PATH%
 set OPENBLAS_PATH=C:\OpenBLAS
 set MKL_PATH=C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl

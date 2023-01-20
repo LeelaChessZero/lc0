@@ -213,7 +213,7 @@ class CudaNetwork : public Network {
 
     l2_cache_size_ = deviceProp.l2CacheSize;
 
-    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", true);
+    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
 
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
@@ -1027,7 +1027,9 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
   if (weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
     throw Exception("Network format " +
                     pblczero::NetworkFormat::NetworkStructure_Name(
                         weights.format().network_format().network()) +
