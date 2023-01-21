@@ -500,7 +500,8 @@ static const NSInteger kMinSubBatchSize = 20;
                                         legacyWeights:(lczero::LegacyWeights::EncoderLayer &)encoder
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
-                                    defaultActivation:(NSString * __nonnull)defaultActivation
+                                    smolgenActivation:(NSString * __nullable)smolgenActivation
+                                        ffnActivation:(NSString * __nonnull)ffnActivation
                                                 alpha:(float)alpha
                                                 label:(NSString * __nonnull)label
 {
@@ -532,6 +533,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                       heads:heads
                                                      parent:parent
                                                     smolgen:encoder.mha.has_smolgen ? &encoder.mha.smolgen : nil
+                                          smolgenActivation:smolgenActivation
                                                       label:[NSString stringWithFormat:@"%@/mha", label]];
 
     // MHA final dense layer.
@@ -556,7 +558,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                    outputChannels:encoder.ffn.dense1_b.size()
                                                           weights:&encoder.ffn.dense1_w[0]
                                                            biases:&encoder.ffn.dense1_b[0]
-                                                       activation:encoder.mha.has_smolgen ? @"relu_2" : defaultActivation
+                                                       activation:ffnActivation
                                                             label:[NSString stringWithFormat:@"%@/ffn1", label]];
 
     ffn = [self addFullyConnectedLayerWithParent:ffn
@@ -659,6 +661,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
                                                smolgen:(lczero::LegacyWeights::Smolgen * __nullable)smolgen
+                                     smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label
 {
     // Split heads.
@@ -704,7 +707,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                  outputChannels:smolgen->dense1_b.size()
                                                         weights:&smolgen->dense1_w[0]
                                                          biases:&smolgen->dense1_b[0]
-                                                     activation:@"swish"
+                                                     activation:smolgenActivation
                                                           label:[NSString stringWithFormat:@"%@/smolgen/dense_1", label]];
 
         smolgenWeights = [self addLayerNormalizationWithParent:smolgenWeights
@@ -720,7 +723,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                  outputChannels:smolgen->dense2_b.size()
                                                         weights:&smolgen->dense2_w[0]
                                                          biases:&smolgen->dense2_b[0]
-                                                     activation:@"swish"
+                                                     activation:smolgenActivation
                                                           label:[NSString stringWithFormat:@"%@/smolgen/dense_2", label]];
 
         smolgenWeights = [self addLayerNormalizationWithParent:smolgenWeights

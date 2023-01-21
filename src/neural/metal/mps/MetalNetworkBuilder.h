@@ -32,6 +32,12 @@
 namespace lczero {
 namespace metal_backend {
 
+struct Activations {
+    std::string default_activation = "relu";
+    std::string smolgen_activation = "swish";
+    std::string ffn_activation = "relu_2";
+};
+
 class MetalNetworkBuilder {
 public:
     MetalNetworkBuilder(void);
@@ -39,7 +45,7 @@ public:
 
     std::string init(int gpu_id);
 
-    void build(int kInputPlanes, LegacyWeights& weights, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, std::string default_activation);
+    void build(int kInputPlanes, LegacyWeights& weights, bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, Activations activations);
 
     void forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems);
 

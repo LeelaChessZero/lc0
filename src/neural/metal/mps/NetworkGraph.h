@@ -111,7 +111,8 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                         legacyWeights:(lczero::LegacyWeights::EncoderLayer &)weights
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
-                                    defaultActivation:(NSString * __nonnull)defaultActivation
+                                    smolgenActivation:(NSString * __nullable)smolgenActivation
+                                        ffnActivation:(NSString * __nonnull)ffnActivation
                                                 alpha:(float)alpha
                                                 label:(NSString * __nonnull)label;
 
@@ -129,6 +130,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
                                                smolgen:(lczero::LegacyWeights::Smolgen * __nullable)smolgen
+                                     smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries

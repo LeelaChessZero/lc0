@@ -57,10 +57,12 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
-void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, std::string default_activation)
+void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, Activations activations)
 {
     Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-    NSString * defaultActivation = [NSString stringWithUTF8String:default_activation.c_str()];
+    NSString * defaultActivation = [NSString stringWithUTF8String:activations.default_activation.c_str()];
+    NSString * smolgenActivation = [NSString stringWithUTF8String:activations.smolgen_activation.c_str()];
+    NSString * ffnActivation = [NSString stringWithUTF8String:activations.ffn_activation.c_str()];
 
     // 0. Input placeholder.
     // @todo - placeholder can be made directly as NHWC to avoid transposes.
@@ -112,7 +114,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
     }
 
     // Attention body.
-    bool attn_body = weights.encoder.size() > 0;
     if (attn_body) {
 
         assert(weights.ip_emb_b.size() > 0);
@@ -163,7 +164,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                        legacyWeights:weights.encoder[i]
                                                heads:weights.encoder_head_count
                                        embeddingSize:weights.ip_emb_b.size()
-                                   defaultActivation:defaultActivation
+                                   smolgenActivation:smolgenActivation
+                                       ffnActivation:ffnActivation
                                                alpha:alpha
                                                label:[NSString stringWithFormat:@"encoder_%zu", i]];
         }
@@ -183,12 +185,12 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
         // 2. Square Embedding: Dense with default activation (or SELU for old ap-mish nets).
         NSUInteger embeddingSize = weights.ip_pol_b.size();
         NSUInteger policyDModel = weights.ip2_pol_b.size();
-        NSString * activation = attn_body ? defaultActivation : @"selu";  // ap-mish uses hardcoded SELU
+        // ap-mish uses hardcoded SELU
         policy = [graph addFullyConnectedLayerWithParent:policy
                                          outputChannels:embeddingSize
                                                 weights:&weights.ip_pol_w[0]
                                                  biases:&weights.ip_pol_b[0]
-                                             activation:activation
+                                             activation:attn_body ? defaultActivation : @"selu"
                                                   label:@"policy/fc_embed"];
 
         // 3. Encoder layers
@@ -197,7 +199,8 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool a
                                         legacyWeights:weights.pol_encoder[i]
                                                 heads:weights.pol_encoder_head_count
                                         embeddingSize:embeddingSize
-                                    defaultActivation:activation
+                                    smolgenActivation:attn_body ? smolgenActivation : nil
+                                        ffnActivation:attn_body ? ffnActivation : @"selu"
                                                 alpha:1.0
                                                 label:[NSString stringWithFormat:@"policy/encoder_%zu", i]];
         }
