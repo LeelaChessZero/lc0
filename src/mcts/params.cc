@@ -284,6 +284,9 @@ const OptionId SearchParams::kWDLRescaleDiffId{
 const OptionId SearchParams::kWDLContemptId{
     "wdl-contempt", "WDLContempt",
     "The simulated rating advantage for the WDL conversion."};
+const OptionId SearchParams::kWDLContemptMaxValueId{
+    "wdl-contempt-max-value", "WDLContemptMaxValue",
+    "The maximum value of contempt used. Higher values will be capped."};
 const OptionId SearchParams::kWDLContemptAttenuationId{
     "wdl-contempt-attenuation", "WDLContemptAttenuation",
     "This scales the given Elo advantage used for contempt."};
@@ -427,7 +430,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
   options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
-  options->Add<FloatOption>(kWDLContemptId, -1000.0f, 1000.0f) = 0.0f;
+  options->Add<FloatOption>(kWDLContemptId, -10000.0f, 10000.0f) = 0.0f;
+  options->Add<FloatOption>(kWDLContemptMaxValueId, 0, 1000.0f) = 420.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
@@ -464,6 +468,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kWDLRescaleRatioId);
   options->HideOption(kWDLRescaleDiffId);
+  options->HideOption(kWDLContemptMaxValueId);
   options->HideOption(kWDLContemptAttenuationId);
   options->HideOption(kWDLEvalObjectivityId);
   options->HideOption(kWDLDrawRateReferenceId);
@@ -567,7 +572,9 @@ SearchParams::SearchParams(const OptionsDict& options)
                  std::cosh(0.5f * (1 + options.Get<float>(kWDLBookExitBiasId)) /
                            scale_target),
                  2)) *
-        std::log(10) / 200 * options.Get<float>(kWDLContemptId) *
+        std::log(10) / 200 * std::clamp(options.Get<float>(kWDLContemptId),
+                                        -options.Get<float>(kWDLContemptMaxValueId),
+                                        options.Get<float>(kWDLContemptMaxValueId)) *
         options.Get<float>(kWDLContemptAttenuationId);
   }
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
