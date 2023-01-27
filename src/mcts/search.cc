@@ -206,8 +206,8 @@ inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
   auto l = (1 - v - d) / 2;
   // While this was supposed to only safeguard against numerical issues, it is
   // also necessary to safeguard against imprecise NN evals.
-  const float zero = 0.01f;
-  const float one = 0.98f;
+  const float zero = 0.001f;
+  const float one = 0.998f;
   if (w > zero && d > zero && l > zero && w < one && d < one && l < one) {
     auto a = FastLog(1 / l - 1);
     auto b = FastLog(1 / w - 1);
