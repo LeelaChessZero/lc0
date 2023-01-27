@@ -391,12 +391,13 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     game_info.game_id = game_number;
     game_info.initial_fen = opening.start_fen;
     game_info.moves = game.GetMoves();
-    game_info.play_start_ply = opening.moves.size();
+    game_info.play_start_ply = game.GetStartPly();
     if (!enable_resign) {
       game_info.min_false_positive_threshold =
           game.GetWorstEvalForWinnerOrDraw();
     }
-    if (kTraining) {
+    if (kTraining &&
+        game_info.play_start_ply < static_cast<int>(game_info.moves.size())) {
       TrainingDataWriter writer(game_number);
       game.WriteTrainingData(&writer);
       writer.Finalize();

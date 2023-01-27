@@ -178,6 +178,10 @@ class CudaNetwork : public Network {
     cudaGetDeviceProperties(&deviceProp, gpu_id_);
     showDeviceInfo(deviceProp);
 
+    l2_cache_size_ = deviceProp.l2CacheSize;
+
+    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
+
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
 
@@ -225,6 +229,7 @@ class CudaNetwork : public Network {
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = (int)weights.input.biases.size();
     numBlocks_ = (int)weights.residual.size();
+    numFilters_ = kNumFilters;
 
     // Warn if the memory required for storing transformed weights is
     // going to exceed 40% of total video memory, force custom_winograd off
@@ -285,7 +290,7 @@ class CudaNetwork : public Network {
 
     // Attention policy head may need more memory
     const size_t attentionSize =
-        getMaxAttentionHeadSize(weights, max_batch_size_);
+        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
     scratch_size_ = std::max(scratch_size_, attentionSize);
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
@@ -533,19 +538,52 @@ class CudaNetwork : public Network {
     float* opVal = io->op_value_mem_gpu_;
     float* opMov = io->op_moves_left_mem_gpu_;
 
+
+    // Figure out if the memory requirment for running the res block would fit
+    // in the L2 cache.
+    bool enableCacheOpt = false;
+    DataType* skip_connection =
+        use_res_block_winograd_fuse_opt_ ? tensor_mem[1] : tensor_mem[2];
+
+#if CUDART_VERSION >= 11000
+    const int pre_transform_tensor_size =
+        batchSize * numFilters_ * 8 * 8 * sizeof(DataType);
+    const int transformed_tensor_size = pre_transform_tensor_size * 36 / 16;
+    const int res_block_mem =
+        transformed_tensor_size * 2 + pre_transform_tensor_size;
+
+    cudaStreamAttrValue stream_attribute = {};
+    stream_attribute.accessPolicyWindow.base_ptr = tensor_mem[2];
+    stream_attribute.accessPolicyWindow.num_bytes = res_block_mem;
+    stream_attribute.accessPolicyWindow.hitRatio = 1.0f;
+    stream_attribute.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;
+    stream_attribute.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
+
+    if (allow_cache_opt_ && use_res_block_winograd_fuse_opt_ &&
+        (res_block_mem <= scratch_size_) && (res_block_mem <= l2_cache_size_)) {
+      // we can use a single alloc to hold all the required tensors, and enable
+      // persistent L2 caching on it
+      ReportCUDAErrors(cudaStreamSetAttribute(
+          stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute));
+
+      enableCacheOpt = true;
+      skip_connection =
+          tensor_mem[2] + 2 * transformed_tensor_size / sizeof(DataType);
+    }
+#endif
+
     int l = 0;
     // Input.
-    network_[l++]->Eval(
-        batchSize,
-        use_res_block_winograd_fuse_opt_ ? tensor_mem[1] : tensor_mem[2],
-        tensor_mem[0], nullptr, scratch_mem, scratch_size_, nullptr, cublas,
-        stream);  // input conv
+    network_[l++]->Eval(batchSize, skip_connection, tensor_mem[0], nullptr,
+                        scratch_mem, scratch_size_, nullptr, cublas,
+                        stream);  // input conv
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
       if (use_res_block_winograd_fuse_opt_) {
-        network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1], nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
+        network_[l++]->Eval(batchSize, tensor_mem[2], skip_connection, nullptr,
+                            enableCacheOpt ? nullptr : scratch_mem,
+                            scratch_size_, nullptr, cublas,
                             stream);  // block
       } else {
         network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
@@ -557,6 +595,16 @@ class CudaNetwork : public Network {
                             cublas, stream);  // conv2
       }
     }
+
+#if CUDART_VERSION >= 11000
+    if (enableCacheOpt) {
+      // reset the cache settings
+      stream_attribute.accessPolicyWindow.num_bytes = 0;
+      cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow,
+                             &stream_attribute);
+      cudaCtxResetPersistingL2Cache();
+    }
+#endif
 
     // Policy head.
     if (attn_policy_) {
@@ -761,18 +809,21 @@ class CudaNetwork : public Network {
  private:
   const NetworkCapabilities capabilities_;
   int gpu_id_;
+  int l2_cache_size_;
   int max_batch_size_;
   bool wdl_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
                                           // tower
   bool multi_stream_;                     // run multiple parallel network evals
+  bool allow_cache_opt_;                  // try to fit residual block activations in L2 cache
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
   mutable std::mutex lock_;
 
   int numBlocks_;
+  int numFilters_;
   bool has_se_;
   bool conv_policy_;
   bool attn_policy_;
@@ -840,7 +891,7 @@ class CudaNetwork : public Network {
     CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
     CERR << "GPU compute capability: " << deviceProp.major << "."
          << deviceProp.minor;
-
+    CERR << "L2 cache capacity: " << deviceProp.l2CacheSize;
     if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
       CERR << "WARNING: you will probably get better performance from the "
               "cuda-fp16 backend.";
