@@ -214,9 +214,7 @@ inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
     auto s = 2 / (a + b);
     auto mu = (a - b) / (a + b);
     auto s_new = s * wdl_rescale_ratio;
-    if (invert) std::swap(s, s_new);
-    auto mu_new = mu + sign * s * s * wdl_rescale_diff;
-    if (invert) std::swap(s, s_new);
+    auto mu_new = mu + sign * (invert ? s_new * s_new : s * s) * wdl_rescale_diff;
     auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
