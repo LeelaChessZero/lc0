@@ -706,14 +706,21 @@ static const NSInteger kMinSubBatchSize = 20;
                                          secondaryTensor:keys
                                                     name:[NSString stringWithFormat:@"%@/matmul", label]];
 
-    NSArray<MPSGraphTensor *> * offsets = [_graph splitTensor:keys
-                                                   splitSizes:@[@3, @1]
-                                                         axis:1
-                                                         name:[NSString stringWithFormat:@"%@/offset_split", label]];
+    MPSGraphTensor * offset1 = [_graph  sliceTensor:keys
+                                          dimension:1
+                                              start:0
+                                             length:3
+                                               name:[NSString stringWithFormat:@"%@/offset_slice_1", label]];
 
-    MPSGraphTensor * promo = [_graph additionWithPrimaryTensor:offsets[0]
-                                                      secondaryTensor:offsets[1]
-                                                                 name:[NSString stringWithFormat:@"%@/offset_add", label]];
+    MPSGraphTensor * offset2 = [_graph  sliceTensor:keys
+                                          dimension:1
+                                              start:3
+                                             length:1
+                                               name:[NSString stringWithFormat:@"%@/offset_slice_2", label]];
+
+    MPSGraphTensor * promo = [_graph additionWithPrimaryTensor:offset1
+                                               secondaryTensor:offset2
+                                                          name:[NSString stringWithFormat:@"%@/offset_add", label]];
 
     NSMutableArray<MPSGraphTensor *> * stack = [NSMutableArray arrayWithCapacity:inputSize];
     for (NSUInteger i = 0; i < inputSize; i++) {
