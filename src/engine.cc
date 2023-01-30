@@ -132,9 +132,8 @@ void EngineController::UpdateFromUciOptions() {
     if (!syzygy_tb_->init(tb_paths)) {
       CERR << "Failed to load Syzygy tablebases!";
       syzygy_tb_ = nullptr;
-    } else {
-      tb_paths_ = tb_paths;
     }
+    tb_paths_ = tb_paths;
   }
 
   // Network.
