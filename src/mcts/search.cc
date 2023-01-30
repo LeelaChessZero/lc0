@@ -204,17 +204,20 @@ inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
   }
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
-  // While this was supposed to only safeguard against numerical issues, it is
-  // also necessary to safeguard against imprecise NN evals.
-  const float zero = 0.001f;
-  const float one = 0.998f;
+  // Safeguard against numerical issues; skip WDL transformation if WDL is too
+  // extreme.
+  const float zero = 0.0001f;
+  const float one = 0.9999f;
   if (w > zero && d > zero && l > zero && w < one && d < one && l < one) {
     auto a = FastLog(1 / l - 1);
     auto b = FastLog(1 / w - 1);
-    auto s = 2 / (a + b);
+    // Safeguard against unrealistically broad WDL distributions coming from
+    // the NN. Could be made into a parameter, but probably unnecessary.
+    auto s = std::min(1.4f, 2 / (a + b));
     auto mu = (a - b) / (a + b);
     auto s_new = s * wdl_rescale_ratio;
-    auto mu_new = mu + sign * (invert ? s_new * s_new : s * s) * wdl_rescale_diff;
+    if (invert) std::swap(s, s_new);
+    auto mu_new = mu + sign * s * s * wdl_rescale_diff;
     auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
