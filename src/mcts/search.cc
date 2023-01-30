@@ -211,9 +211,10 @@ inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
   if (w > zero && d > zero && l > zero && w < one && d < one && l < one) {
     auto a = FastLog(1 / l - 1);
     auto b = FastLog(1 / w - 1);
+    auto s = 2 / (a + b);
     // Safeguard against unrealistically broad WDL distributions coming from
     // the NN. Could be made into a parameter, but probably unnecessary.
-    auto s = std::min(1.4f, 2 / (a + b));
+    if (!invert) s = std::min(1.4f, s);
     auto mu = (a - b) / (a + b);
     auto s_new = s * wdl_rescale_ratio;
     if (invert) std::swap(s, s_new);
