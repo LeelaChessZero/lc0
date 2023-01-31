@@ -134,6 +134,9 @@ void EngineController::UpdateFromUciOptions() {
       syzygy_tb_ = nullptr;
     }
     tb_paths_ = tb_paths;
+  } else if (tb_paths.empty() && syzygy_tb_) {
+    syzygy_tb_ = nullptr;
+    tb_paths_.clear();
   }
 
   // Network.
