@@ -287,6 +287,9 @@ const OptionId SearchParams::kWDLContemptId{
 const OptionId SearchParams::kWDLContemptMaxValueId{
     "wdl-contempt-max-value", "WDLContemptMaxValue",
     "The maximum value of contempt used. Higher values will be capped."};
+const OptionId SearchParams::kWDLCalibrationEloId{
+    "wdl-calibration-elo", "WDLCalibrationElo",
+    "Elo of the active side, adjusted for time control relative to rapid."};
 const OptionId SearchParams::kWDLContemptAttenuationId{
     "wdl-contempt-attenuation", "WDLContemptAttenuation",
     "This scales the given Elo advantage used for contempt."};
@@ -431,7 +434,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
   options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptId, -10000.0f, 10000.0f) = 0.0f;
-  options->Add<FloatOption>(kWDLContemptMaxValueId, 0, 1000.0f) = 420.0f;
+  options->Add<FloatOption>(kWDLContemptMaxValueId, 0, 10000.0f) = 420.0f;
+  options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
@@ -469,6 +473,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kWDLRescaleRatioId);
   options->HideOption(kWDLRescaleDiffId);
   options->HideOption(kWDLContemptMaxValueId);
+  options->HideOption(kWDLCalibrationEloId);
   options->HideOption(kWDLContemptAttenuationId);
   options->HideOption(kWDLEvalObjectivityId);
   options->HideOption(kWDLDrawRateReferenceId);
@@ -553,29 +558,68 @@ SearchParams::SearchParams(const OptionsDict& options)
   kWDLRescaleRatio = options.Get<float>(kWDLRescaleRatioId);
   kWDLRescaleDiff = options.Get<float>(kWDLRescaleDiffId);
   if (kWDLRescaleRatio == 1.0 && kWDLRescaleDiff == 0.0) {
-    float scale_target =
-        1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateTargetId)) /
-                        (1.0f - options.Get<float>(kWDLDrawRateTargetId)));
-    float scale_reference =
-        1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateReferenceId)) /
-                        (1.0f - options.Get<float>(kWDLDrawRateReferenceId)));
-    kWDLRescaleRatio = scale_target / scale_reference;
-    kWDLRescaleDiff =
-        scale_target / (scale_reference * scale_reference) /
-        (1.0f /
-             std::pow(
-                 std::cosh(0.5f * (1 - options.Get<float>(kWDLBookExitBiasId)) /
-                           scale_target),
-                 2) +
-         1.0f /
-             std::pow(
-                 std::cosh(0.5f * (1 + options.Get<float>(kWDLBookExitBiasId)) /
-                           scale_target),
-                 2)) *
-        std::log(10) / 200 * std::clamp(options.Get<float>(kWDLContemptId),
-                                        -options.Get<float>(kWDLContemptMaxValueId),
-                                        options.Get<float>(kWDLContemptMaxValueId)) *
-        options.Get<float>(kWDLContemptAttenuationId);
+    if (options.Get<float>(kWDLCalibrationEloId) == 0) {
+      // More accurate model, allowing book bias dependent Elo calculation.
+      // Doesn't take lower accuracy of opponent into account and needs
+      // clamping.
+      float scale_target =
+          1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateTargetId)) /
+                          (1.0f - options.Get<float>(kWDLDrawRateTargetId)));
+      float scale_reference =
+          1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateReferenceId)) /
+                          (1.0f - options.Get<float>(kWDLDrawRateReferenceId)));
+      kWDLRescaleRatio = scale_target / scale_reference;
+      kWDLRescaleDiff =
+          scale_target / (scale_reference * scale_reference) /
+          (1.0f /
+               std::pow(std::cosh(0.5f *
+                                  (1 - options.Get<float>(kWDLBookExitBiasId)) /
+                                  scale_target),
+                        2) +
+           1.0f /
+               std::pow(std::cosh(0.5f *
+                                  (1 + options.Get<float>(kWDLBookExitBiasId)) /
+                                  scale_target),
+                        2)) *
+          std::log(10) / 200 *
+          std::clamp(options.Get<float>(kWDLContemptId),
+                     -options.Get<float>(kWDLContemptMaxValueId),
+                     options.Get<float>(kWDLContemptMaxValueId)) *
+          options.Get<float>(kWDLContemptAttenuationId);
+    } else {
+      // Less accurate Elo model, but automatically chooses draw rate and
+      // accuracy based on the absolute Elo of both sides. Doesn't require
+      // clamping, but still uses the parameter.
+      // Parameters for the Elo dependent draw rate and scaling:
+      const float scale_zero = 15.0f;
+      const float elo_slope = 425.0f;
+      const float offset = 6.75f;
+
+      float scale_reference =
+          1.0f / std::log((1.0f + options.Get<float>(kWDLDrawRateReferenceId)) /
+                          (1.0f - options.Get<float>(kWDLDrawRateReferenceId)));
+      float elo_active = options.Get<float>(kWDLCalibrationEloId);
+      float elo_opp =
+          elo_active - std::clamp(options.Get<float>(kWDLContemptId),
+                                  -options.Get<float>(kWDLContemptMaxValueId),
+                                  options.Get<float>(kWDLContemptMaxValueId));
+      float scale_active = 1.0f / (1.0f / scale_zero +
+                                   std::exp(elo_active / elo_slope - offset));
+      float scale_opp =
+          1.0f / (1.0f / scale_zero + std::exp(elo_opp / elo_slope - offset));
+      float scale_target = std::sqrt(
+          (scale_active * scale_active + scale_opp * scale_opp) / 2.0f);
+      kWDLRescaleRatio = scale_target / scale_reference;
+      float mu_active =
+          -std::log(10) / 200 * scale_zero * elo_slope *
+          std::log(1.0f +
+                   std::exp(-elo_active / elo_slope + offset) / scale_zero);
+      float mu_opp =
+          -std::log(10) / 200 * scale_zero * elo_slope *
+          std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
+      kWDLRescaleDiff =
+          (mu_active - mu_opp) * options.Get<float>(kWDLContemptAttenuationId);
+    }
   }
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
