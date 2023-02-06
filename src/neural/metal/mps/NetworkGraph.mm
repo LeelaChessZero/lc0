@@ -611,12 +611,12 @@ static const NSInteger kMinSubBatchSize = 20;
                                                          withKeys:(MPSGraphTensor * __nonnull)keys
                                                        withValues:(MPSGraphTensor * __nonnull)values
                                                             heads:(NSUInteger)heads
-                                                           dModel:(NSUInteger)dModel
-                                                            scale:(float)scale
                                                             label:(NSString * __nonnull)label
 {
     // Split heads.
-    const NSUInteger depth = dModel / heads;
+    const NSUInteger dmodel = [[queries.shape lastObject] intValue];
+    const NSUInteger depth = dmodel / heads;
+
     queries = [_graph reshapeTensor:queries withShape:@[@(-1), @64, @(heads), @(depth)] name:[NSString stringWithFormat:@"%@/reshape_q", label]];
     queries = [_graph transposeTensor:queries dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_q", label]];
 
@@ -631,10 +631,11 @@ static const NSInteger kMinSubBatchSize = 20;
     MPSGraphTensor * attn = [_graph matrixMultiplicationWithPrimaryTensor:queries
                                                           secondaryTensor:keys
                                                                      name:[NSString stringWithFormat:@"%@/matmul_qk", label]];
-    attn = [_graph multiplicationWithPrimaryTensor:attn
-                                   secondaryTensor:[_graph constantWithScalar:scale
-                                                                            shape:@[@1] dataType:attn.dataType]
-                                              name:[NSString stringWithFormat:@"%@/scale", label]];
+    attn = [_graph divisionWithPrimaryTensor:attn
+                             secondaryTensor:[_graph constantWithScalar:sqrt(depth)
+                                                                  shape:@[@1]
+                                                               dataType:attn.dataType]
+                                        name:[NSString stringWithFormat:@"%@/scale", label]];
 
     attn = [self applyActivationWithTensor:attn activation:@"softmax" label:label];
 
@@ -645,7 +646,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
     attn = [_graph transposeTensor:attn dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_a", label]];
 
-    return [_graph reshapeTensor:attn withShape:@[@(-1), @(dModel)] name:[NSString stringWithFormat:@"%@/reshape_a", label]];
+    return [_graph reshapeTensor:attn withShape:@[@(-1), @(dmodel)] name:[NSString stringWithFormat:@"%@/reshape_a", label]];
 }
 
 -(nonnull MPSGraphTensor *) scaledQKMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
@@ -705,14 +706,21 @@ static const NSInteger kMinSubBatchSize = 20;
                                          secondaryTensor:keys
                                                     name:[NSString stringWithFormat:@"%@/matmul", label]];
 
-    NSArray<MPSGraphTensor *> * offsets = [_graph splitTensor:keys
-                                                   splitSizes:@[@3, @1]
-                                                         axis:1
-                                                         name:[NSString stringWithFormat:@"%@/offset_split", label]];
+    MPSGraphTensor * offset1 = [_graph  sliceTensor:keys
+                                          dimension:1
+                                              start:0
+                                             length:3
+                                               name:[NSString stringWithFormat:@"%@/offset_slice_1", label]];
 
-    MPSGraphTensor * promo = [_graph additionWithPrimaryTensor:offsets[0]
-                                                      secondaryTensor:offsets[1]
-                                                                 name:[NSString stringWithFormat:@"%@/offset_add", label]];
+    MPSGraphTensor * offset2 = [_graph  sliceTensor:keys
+                                          dimension:1
+                                              start:3
+                                             length:1
+                                               name:[NSString stringWithFormat:@"%@/offset_slice_2", label]];
+
+    MPSGraphTensor * promo = [_graph additionWithPrimaryTensor:offset1
+                                               secondaryTensor:offset2
+                                                          name:[NSString stringWithFormat:@"%@/offset_add", label]];
 
     NSMutableArray<MPSGraphTensor *> * stack = [NSMutableArray arrayWithCapacity:inputSize];
     for (NSUInteger i = 0; i < inputSize; i++) {

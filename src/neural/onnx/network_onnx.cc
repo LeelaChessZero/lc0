@@ -222,14 +222,13 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
   for (int i = start; i < end; i++) {
     for (const auto& plane : raw_input_[i]) {
-      float value = (idx == 109 && network_->adjust_rule50_) ? plane.value / 99
+      float adj_v = (idx == 109 && network_->adjust_rule50_) ? plane.value / 99
                                                              : plane.value;
+      DataType value = std::is_same<Ort::Float16_t, DataType>::value
+                           ? FP32toFP16(adj_v)
+                           : adj_v;
       for (auto bit : IterateBits(plane.mask)) {
-        if (std::is_same<Ort::Float16_t, DataType>::value) {
-          *(iter + bit) = FP32toFP16(value);
-        } else {
-          *(iter + bit) = value;
-        }
+        *(iter + bit) = value;
       }
       idx++;
       iter += 64;
@@ -417,7 +416,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (w->format().network_format().policy() !=
             pblczero::NetworkFormat::POLICY_CLASSICAL &&
         w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CONVOLUTION) {
+            pblczero::NetworkFormat::POLICY_CONVOLUTION &&
+        w->format().network_format().policy() !=
+            pblczero::NetworkFormat::POLICY_ATTENTION) {
       throw Exception("Policy format " +
                       pblczero::NetworkFormat::PolicyFormat_Name(
                           w->format().network_format().policy()) +
@@ -433,13 +434,16 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                       " is not supported by the ONNX backend.");
     }
     if (w->format().network_format().default_activation() !=
-        pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+            pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+        w->format().network_format().default_activation() !=
+            pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
       throw Exception("Default activation " +
                       pblczero::NetworkFormat::DefaultActivation_Name(
                           w->format().network_format().default_activation()) +
                       " is not supported by the ONNX backend.");
     }
     WeightsToOnnxConverterOptions converter_options;
+    converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
@@ -450,7 +454,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 }
 
 #ifdef USE_DML
-REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 60)
+REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
