@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2018-2019 The LCZero Authors
+ Copyright (C) 2022-2023 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -25,6 +25,10 @@
 #include "neural/shared/activation.h"
 #include "utils/exception.h"
 
+#ifdef USE_ISPC
+#include "layer_norm_ispc.h"
+#endif
+
 namespace lczero {
 
 namespace {
@@ -44,6 +48,7 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size,
                                    const float* skip, const float* gammas,
                                    const float* betas, float epsilon) {
   for (size_t i = 0; i < batch_size; i++) {
+#ifndef USE_ISPC
     // Mean taken in dimension C.
     float mean = 0;
     for (size_t c = 0; c < channels; ++c) {
@@ -61,11 +66,16 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size,
     var /= channels;
 
     // Norm.
+    float den = 1.0f / std::sqrt(var + epsilon);
     for (size_t c = 0; c < channels; ++c) {
-      data[i * channels + c] = betas[c] + gammas[c] *
-                                              (data[i * channels + c] - mean) /
-                                              std::sqrt(var + epsilon);
+      data[i * channels + c] =
+          betas[c] + gammas[c] * (data[i * channels + c] - mean) * den;
     }
+#else
+    ispc::LayerNorm2DWithSkipConnection(channels, data + i * channels,
+                                        skip + i * channels, gammas, betas,
+                                        epsilon);
+#endif
   }
 }
 

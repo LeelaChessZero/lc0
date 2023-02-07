@@ -105,6 +105,15 @@ void Activate(const size_t len, const float* data, const float* bias,
 #else
     ispc::ActivateMish(len, 1.0f, data, bias, 0.0f, output);
 #endif
+  } else if (activation == SELU) {
+#ifndef USE_ISPC
+    for (size_t b = 0; b < len; b++) {
+      float val = data[b] + bias[b];
+      output[b] = selu(val);
+    }
+#else
+    ispc::ActivateSelu(len, 1.0f, data, bias, 0.0f, output);
+#endif
   } else {
     for (size_t b = 0; b < len; b++) {
       float val = data[b] + bias[b];
