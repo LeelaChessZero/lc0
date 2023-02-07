@@ -376,6 +376,7 @@ if get_option('build_backends')
 
     if get_option('ispc') and ispc.found()
       files += iscp_gen.process('src/neural/blas/winograd_transform.ispc')
+      files += iscp_gen.process('src/neural/blas/layer_norm.ispc')
       files += iscp_gen.process('src/neural/shared/activation.ispc')
       add_project_arguments('-DUSE_ISPC', language : 'cpp')
     endif

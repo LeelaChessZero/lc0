@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2022 The LCZero Authors
+ Copyright (C) 2022-2023 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -33,5 +33,23 @@ export void ActivateMish(uniform const size_t len, uniform float gamma,
   foreach (b = 0 ... len) {
     float val = gamma * data[b] + bias[b] + beta;
     output[b] = mish(val);
+  }
+}
+
+static inline float selu(float val) {
+  float alpha = 1.67326324f, scale = 1.05070098f;
+  if (val > 0) {
+    return scale * val;
+  } else {
+    return scale * alpha * (exp(val) - 1.0f);
+  }
+}
+
+export void ActivateSelu(uniform const size_t len, uniform float gamma,
+                         const uniform float data[], const uniform float bias[],
+                         uniform float beta, uniform float output[]) {
+  foreach (b = 0 ... len) {
+    float val = gamma * data[b] + bias[b] + beta;
+    output[b] = selu(val);
   }
 }
