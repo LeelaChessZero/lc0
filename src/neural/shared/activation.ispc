@@ -53,3 +53,25 @@ export void ActivateSelu(uniform const size_t len, uniform float gamma,
     output[b] = selu(val);
   }
 }
+
+export void SoftmaxActivation(uniform const size_t size,
+                              const uniform float input[],
+                              uniform float output[]) {
+  float vmax = -3.4e38f;
+  foreach (c = 0 ... size) {
+    if (input[c] > vmax) vmax = input[c];
+  }
+  uniform float alpha = reduce_max(vmax);
+
+  float t = 0.0f;
+  foreach (c = 0 ... size) {
+    float val = exp(input[c] - alpha);
+    output[c] = val;
+    t += val;
+  }
+  uniform float denom = 1.0f / reduce_add(t);
+
+  foreach (c = 0 ... size) {
+    output[c] *= denom;
+  }
+}
