@@ -41,6 +41,10 @@
 #include <omp.h>
 #endif
 
+#ifdef USE_ISPC
+#include "activation_ispc.h"
+#endif
+
 namespace lczero {
 namespace {
 
@@ -398,7 +402,11 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
             }
             // Apply Softmax.
             for (int h = 0; h < heads * kSquares * kSquares; h += kSquares) {
+#ifdef USE_ISPC
               SoftmaxActivation(kSquares, QK + h, QK + h);
+#else
+              ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
+#endif
             }
 
             // matmul(softmax(QK), V) for all heads per batch.
