@@ -342,7 +342,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         std::vector<float> temp_buffer(weights_.pol_encoder_head_count *
                                        kSquares * kSquares);
 
-        for (auto layer : weights_.pol_encoder) {
+        for (auto& layer : weights_.pol_encoder) {
           // Q
           FullyConnectedLayer<use_eigen>::Forward1D(
               batch_size * kSquares, embedding_size, layer.mha.q_b.size(),
