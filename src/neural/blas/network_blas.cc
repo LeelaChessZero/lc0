@@ -102,6 +102,12 @@ class BlasComputation : public NetworkComputation {
 
  private:
   void EncodePlanes(const InputPlanes& sample, float* buffer);
+  void MakeEncoderLayer(std::vector<float>& head_buffer,
+                        std::vector<float>& head_buffer2,
+                        std::vector<float>& head_buffer3, size_t batch_size,
+                        const LegacyWeights::EncoderLayer& layer,
+                        int embedding_size, int heads,
+                        ActivationFunction activation, float alpha = 1.0f);
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
@@ -189,6 +195,146 @@ template <typename T>
 using ConstEigenStridedMatrixMap =
     Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>, 0,
                Eigen::OuterStride<>>;
+
+template <bool use_eigen>
+void BlasComputation<use_eigen>::MakeEncoderLayer(
+    std::vector<float>& head_buffer, std::vector<float>& head_buffer2,
+    std::vector<float>& head_buffer3, size_t batch_size,
+    const LegacyWeights::EncoderLayer& layer, int embedding_size, int heads,
+    ActivationFunction activation, float alpha) {
+  const int d_model = layer.mha.q_b.size();
+  static std::vector<float> head_buffer4;
+  head_buffer4.clear();
+  head_buffer4.resize(batch_size * d_model * kSquares);
+  static std::vector<float> temp_buffer;
+  temp_buffer.clear();
+  temp_buffer.resize(heads * kSquares * kSquares);
+  // Q
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
+      layer.mha.q_w.data(), layer.mha.q_b.data(), NONE, head_buffer2.data());
+  // K
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
+      layer.mha.k_w.data(), layer.mha.k_b.data(), NONE, head_buffer3.data());
+  // V
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
+      layer.mha.v_w.data(), layer.mha.v_b.data(), NONE, head_buffer4.data());
+
+  // MHA (Q, K, V)
+  const int depth = d_model / heads;
+  const float scaling = 1.0f / sqrtf(depth);
+
+  // MHA is done per batch since there's a fourth dimension introduced.
+  for (auto batch = size_t{0}; batch < batch_size; batch++) {
+    auto batchStart = batch * kSquares * d_model;
+
+    const float* Q = &head_buffer2[batchStart];
+    const float* K = &head_buffer3[batchStart];
+    const float* V = &head_buffer4[batchStart];
+
+    // matmul(Q, K) for all heads per batch.
+    float* QK = temp_buffer.data();
+    for (auto h = 0; h < heads; h++) {
+      const float* A = &Q[h * depth];
+      const float* B = &K[h * depth];
+      float* C = &QK[h * kSquares * kSquares];
+      if (use_eigen) {
+        auto C_mat = EigenMatrixMap<float>(C, kSquares, kSquares);
+        C_mat.noalias() =
+            scaling *
+            ConstEigenStridedMatrixMap<float>(
+                B, depth, kSquares, Eigen::OuterStride<>(heads * depth))
+                .transpose() *
+            ConstEigenStridedMatrixMap<float>(
+                A, depth, kSquares, Eigen::OuterStride<>(heads * depth));
+      } else {
+#ifdef USE_BLAS
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, kSquares, kSquares,
+                    depth, scaling, A, heads * depth, B, heads * depth, 0.0f, C,
+                    kSquares);
+#else
+        // Should never get here.
+        throw Exception("Blas backend internal error");
+#endif
+      }
+    }
+    // Apply Softmax.
+    for (int h = 0; h < heads * kSquares * kSquares; h += kSquares) {
+#ifndef USE_ISPC
+      SoftmaxActivation(kSquares, QK + h, QK + h);
+#else
+      ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
+#endif
+    }
+
+    // matmul(softmax(QK), V) for all heads per batch.
+    float* attn = &head_buffer2[batchStart];
+    for (auto h = 0; h < heads; h++) {
+      const float* A = &QK[h * kSquares * kSquares];
+      const float* B = &V[h * depth];
+      float* C = &attn[h * depth];
+      if (use_eigen) {
+        auto C_mat = EigenStridedMatrixMap<float>(
+            C, depth, kSquares, Eigen::OuterStride<>(heads * depth));
+        C_mat.noalias() =
+            ConstEigenStridedMatrixMap<float>(
+                B, depth, kSquares, Eigen::OuterStride<>(heads * depth)) *
+            ConstEigenMatrixMap<float>(A, kSquares, kSquares);
+      } else {
+#ifdef USE_BLAS
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, kSquares, depth,
+                    kSquares, 1.0f, A, kSquares, B, heads * depth, 0.0f, C,
+                    heads * depth);
+#endif
+      }
+    }
+  }
+
+  // Fully connected final MHA layer.
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size * kSquares, d_model, embedding_size, head_buffer2.data(),
+      layer.mha.dense_w.data(), layer.mha.dense_b.data(), NONE,
+      head_buffer3.data());
+
+  if (alpha != 1.0f) {
+    for (size_t i = 0; i < batch_size * kSquares * embedding_size; i++) {
+      head_buffer[i] *= alpha;
+    }
+  }
+
+  // Layer Norm + skip connection.
+  LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
+                                head_buffer.data(), head_buffer3.data(),
+                                layer.ln1_gammas.data(), layer.ln1_betas.data(),
+                                1e-6);
+
+  // FFN.
+  const size_t dff_size = layer.ffn.dense1_b.size();
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size * kSquares, embedding_size, dff_size, head_buffer.data(),
+      layer.ffn.dense1_w.data(), layer.ffn.dense1_b.data(), activation,
+      head_buffer2.data());
+
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
+      head_buffer2.data(), layer.ffn.dense2_w.data(), layer.ffn.dense2_b.data(),
+      NONE, head_buffer3.data());
+
+  if (alpha != 1.0f) {
+    for (size_t i = 0; i < batch_size * kSquares * layer.ffn.dense2_b.size();
+         i++) {
+      head_buffer[i] *= alpha;
+    }
+  }
+
+  // Layer Norm + skip connection.
+  LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
+                                head_buffer.data(), head_buffer3.data(),
+                                layer.ln2_gammas.data(), layer.ln2_betas.data(),
+                                1e-6);
+}
 
 template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
@@ -336,133 +482,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       std::vector<float> head_buffer3(largest_batch_size * max_channel_size *
                                       kSquares);
 
-      if (weights_.pol_encoder.size() > 0) {
-        std::vector<float> head_buffer4(largest_batch_size * max_channel_size *
-                                        kSquares);
-        std::vector<float> temp_buffer(weights_.pol_encoder_head_count *
-                                       kSquares * kSquares);
-
-        for (auto layer : weights_.pol_encoder) {
-          // Q
-          FullyConnectedLayer<use_eigen>::Forward1D(
-              batch_size * kSquares, embedding_size, layer.mha.q_b.size(),
-              head_buffer.data(), layer.mha.q_w.data(), layer.mha.q_b.data(),
-              NONE, head_buffer2.data());
-          // K
-          FullyConnectedLayer<use_eigen>::Forward1D(
-              batch_size * kSquares, embedding_size, layer.mha.k_b.size(),
-              head_buffer.data(), layer.mha.k_w.data(), layer.mha.k_b.data(),
-              NONE, head_buffer3.data());
-          // V
-          FullyConnectedLayer<use_eigen>::Forward1D(
-              batch_size * kSquares, embedding_size, layer.mha.v_b.size(),
-              head_buffer.data(), layer.mha.v_w.data(), layer.mha.v_b.data(),
-              NONE, head_buffer4.data());
-
-          // MHA (Q, K, V)
-          const int d_model = layer.mha.q_b.size();
-          const int heads = weights_.pol_encoder_head_count;
-          const int depth = d_model / heads;
-          const float scaling = 1.0f / sqrtf(depth);
-
-          // MHA is done per batch since there's a fourth dimension introduced.
-          for (auto batch = size_t{0}; batch < batch_size; batch++) {
-            auto batchStart = batch * kSquares * d_model;
-
-            const float* Q = &head_buffer2[batchStart];
-            const float* K = &head_buffer3[batchStart];
-            const float* V = &head_buffer4[batchStart];
-
-            // matmul(Q, K) for all heads per batch.
-            float* QK = temp_buffer.data();
-            for (auto h = 0; h < heads; h++) {
-              const float* A = &Q[h * depth];
-              const float* B = &K[h * depth];
-              float* C = &QK[h * kSquares * kSquares];
-              if (use_eigen) {
-                auto C_mat = EigenMatrixMap<float>(C, kSquares, kSquares);
-                C_mat.noalias() =
-                    scaling *
-                    ConstEigenStridedMatrixMap<float>(
-                        B, depth, kSquares, Eigen::OuterStride<>(heads * depth))
-                        .transpose() *
-                    ConstEigenStridedMatrixMap<float>(
-                        A, depth, kSquares,
-                        Eigen::OuterStride<>(heads * depth));
-              } else {
-#ifdef USE_BLAS
-                cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, kSquares,
-                            kSquares, depth, scaling, A, heads * depth, B,
-                            heads * depth, 0.0f, C, kSquares);
-#else
-                // Should never get here.
-                throw Exception("Blas backend internal error");
-#endif
-              }
-            }
-            // Apply Softmax.
-            for (int h = 0; h < heads * kSquares * kSquares; h += kSquares) {
-#ifndef USE_ISPC
-              SoftmaxActivation(kSquares, QK + h, QK + h);
-#else
-              ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
-#endif
-            }
-
-            // matmul(softmax(QK), V) for all heads per batch.
-            float* attn = &head_buffer2[batchStart];
-            for (auto h = 0; h < heads; h++) {
-              const float* A = &QK[h * kSquares * kSquares];
-              const float* B = &V[h * depth];
-              float* C = &attn[h * depth];
-              if (use_eigen) {
-                auto C_mat = EigenStridedMatrixMap<float>(
-                    C, depth, kSquares, Eigen::OuterStride<>(heads * depth));
-                C_mat.noalias() =
-                    ConstEigenStridedMatrixMap<float>(
-                        B, depth, kSquares,
-                        Eigen::OuterStride<>(heads * depth)) *
-                    ConstEigenMatrixMap<float>(A, kSquares, kSquares);
-              } else {
-#ifdef USE_BLAS
-                cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, kSquares,
-                            depth, kSquares, 1.0f, A, kSquares, B,
-                            heads * depth, 0.0f, C, heads * depth);
-#endif
-              }
-            }
-          }
-
-          // Fully connected final MHA layer.
-          FullyConnectedLayer<use_eigen>::Forward1D(
-              batch_size * kSquares, d_model, embedding_size,
-              head_buffer2.data(), layer.mha.dense_w.data(),
-              layer.mha.dense_b.data(), NONE, head_buffer3.data());
-
-          // Layer Norm + skip connection.
-          LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                        head_buffer.data(), head_buffer3.data(),
-                                        layer.ln1_gammas.data(),
-                                        layer.ln1_betas.data(), 1e-6);
-
-          // FFN.
-          const size_t dff_size = layer.ffn.dense1_b.size();
-          FullyConnectedLayer<use_eigen>::Forward1D(
-              batch_size * kSquares, embedding_size, dff_size,
-              head_buffer.data(), layer.ffn.dense1_w.data(),
-              layer.ffn.dense1_b.data(), SELU, head_buffer2.data());
-
-          FullyConnectedLayer<use_eigen>::Forward1D(
-              batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
-              head_buffer2.data(), layer.ffn.dense2_w.data(),
-              layer.ffn.dense2_b.data(), NONE, head_buffer3.data());
-
-          // Layer Norm + skip connection.
-          LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                        head_buffer.data(), head_buffer3.data(),
-                                        layer.ln2_gammas.data(),
-                                        layer.ln2_betas.data(), 1e-6);
-        }
+      for (auto layer : weights_.pol_encoder) {
+        MakeEncoderLayer(head_buffer, head_buffer2, head_buffer3, batch_size,
+                         layer, embedding_size, weights_.pol_encoder_head_count,
+                         SELU);
       }
 
       // Q
