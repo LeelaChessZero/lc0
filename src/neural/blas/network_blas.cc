@@ -482,7 +482,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       std::vector<float> head_buffer3(largest_batch_size * max_channel_size *
                                       kSquares);
 
-      for (auto layer : weights_.pol_encoder) {
+      for (auto& layer : weights_.pol_encoder) {
         MakeEncoderLayer(head_buffer, head_buffer2, head_buffer3, batch_size,
                          layer, embedding_size, weights_.pol_encoder_head_count,
                          SELU);
