@@ -157,6 +157,7 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
+  if (options_.opset >= 18) return builder->Mish(name, input);
   auto flow = builder->Softplus(name + "/softplus", input);
   flow = builder->Tanh(name + "/tanh", flow);
   return builder->Mul(name, flow, input);
