@@ -107,6 +107,7 @@ class OnnxBuilder {
                                  const std::string& input,
                                  const OnnxConst& scale, const OnnxConst& bias,
                                  int axis, float epsilon = 1e-6);
+  std::string Mish(const std::string& name, const std::string& input);
   // Returns ONNX model as protobuf.
   const pblczero::ModelProto& as_proto() const { return model_; }
   // Returns serialized model.
