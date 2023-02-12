@@ -160,6 +160,7 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
   if (!options_.alt_mish || options_.opset < 9 ||
       options_.data_type_ !=
           WeightsToOnnxConverterOptions::DataType::kFloat32) {
+    if (options_.opset >= 18) return builder->Mish(name, input);
     auto flow = builder->Softplus(name + "/softplus", input);
     flow = builder->Tanh(name + "/tanh", flow);
     return builder->Mul(name, flow, input);

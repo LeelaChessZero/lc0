@@ -119,6 +119,7 @@ class OnnxBuilder {
                       const OnnxConst&);
   std::string Where(const std::string& name, const std::string& input1,
                     const std::string& input2, const std::string& input3);
+  std::string Mish(const std::string& name, const std::string& input);
   // Returns ONNX model as protobuf.
   const pblczero::ModelProto& as_proto() const { return model_; }
   // Returns serialized model.
