@@ -657,6 +657,10 @@ if not get_option('popcnt')
   add_project_arguments('-DNO_POPCNT', language : 'cpp')
 endif
 
+if not get_option('f16c')
+  add_project_arguments('-DNO_F16C', language : 'cpp')
+endif
+
 if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
