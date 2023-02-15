@@ -1,6 +1,6 @@
 /*
  This file is part of Leela Chess Zero.
- Copyright (C) 2022 The LCZero Authors
+ Copyright (C) 2022-2023 The LCZero Authors
 
  Leela Chess is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -33,5 +33,45 @@ export void ActivateMish(uniform const size_t len, uniform float gamma,
   foreach (b = 0 ... len) {
     float val = gamma * data[b] + bias[b] + beta;
     output[b] = mish(val);
+  }
+}
+
+static inline float selu(float val) {
+  float alpha = 1.67326324f, scale = 1.05070098f;
+  if (val > 0) {
+    return scale * val;
+  } else {
+    return scale * alpha * (exp(val) - 1.0f);
+  }
+}
+
+export void ActivateSelu(uniform const size_t len, uniform float gamma,
+                         const uniform float data[], const uniform float bias[],
+                         uniform float beta, uniform float output[]) {
+  foreach (b = 0 ... len) {
+    float val = gamma * data[b] + bias[b] + beta;
+    output[b] = selu(val);
+  }
+}
+
+export void SoftmaxActivation(uniform const size_t size,
+                              const uniform float input[],
+                              uniform float output[]) {
+  float vmax = -3.4e38f;
+  foreach (c = 0 ... size) {
+    if (input[c] > vmax) vmax = input[c];
+  }
+  uniform float alpha = reduce_max(vmax);
+
+  float t = 0.0f;
+  foreach (c = 0 ... size) {
+    float val = exp(input[c] - alpha);
+    output[c] = val;
+    t += val;
+  }
+  uniform float denom = 1.0f / reduce_add(t);
+
+  foreach (c = 0 ... size) {
+    output[c] *= denom;
   }
 }
