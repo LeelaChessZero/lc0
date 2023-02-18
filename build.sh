@@ -30,7 +30,7 @@ fi
 
 cd ${BUILDDIR}
 
-NINJA=$(awk '/ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
+NINJA=$(awk '/Found.*ninja/ {ninja=$4} END {print ninja}' meson-logs/meson-log.txt)
 
 if [ -n "${INSTALL_PREFIX}" ]
 then
