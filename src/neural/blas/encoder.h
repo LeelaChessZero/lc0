@@ -36,9 +36,16 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size,
 #ifndef USE_ISPC
     // Mean taken in dimension C.
     float mean = 0;
-    for (size_t c = 0; c < channels; ++c) {
-      data[i * channels + c] += skip[i * channels + c];
-      mean += data[i * channels + c];
+    if (skip != nullptr) {
+      for (size_t c = 0; c < channels; ++c) {
+        data[i * channels + c] += skip[i * channels + c];
+        mean += data[i * channels + c];
+      }
+    }
+    else {
+      for (size_t c = 0; c < channels; ++c) {
+        mean += data[i * channels + c];
+      }
     }
     mean /= channels;
 
