@@ -575,7 +575,6 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                          smolgen_activation_, ffn_activation_, alpha);
       }
 
-      // for (auto i=0; i<embedding_size * batch_size * 64; i++) CERR << i << ";" << res_buffer1[i];
       res = res_buffer1.data();
       conv_in = res_buffer2.data();
       conv_out = res_buffer3.data();
