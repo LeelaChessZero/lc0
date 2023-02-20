@@ -3,7 +3,7 @@
 set -e
 
 # Move to this script's directory.
-cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+CDPATH= cd -- "$(dirname -- "$0")"
 
 case $1 in
   plain|debug|debugoptimized|release|minsize)
