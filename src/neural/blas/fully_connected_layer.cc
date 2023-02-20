@@ -103,7 +103,9 @@ void FullyConnectedLayer<false>::Forward1D(
                 outputs,            // C
                 (int)output_size);  // ldc, leading rank of C
   }
-  ApplyBias(batch_size, output_size, biases, activation, outputs);
+  if (biases != nullptr) {
+    ApplyBias(batch_size, output_size, biases, activation, outputs);
+  }
 }
 
 template <>
