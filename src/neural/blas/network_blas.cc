@@ -568,7 +568,6 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       }
 
       // Attention body encoders.
-
       float alpha = (float) pow(2.0 * weights_.encoder.size(), 0.25);
       for (auto& layer : weights_.encoder) {
         MakeEncoderLayer(res_buffer1, res_buffer2, res_buffer3, batch_size,
