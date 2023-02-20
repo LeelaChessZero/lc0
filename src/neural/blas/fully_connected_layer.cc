@@ -136,7 +136,9 @@ void FullyConnectedLayer<true>::Forward1D(
             .transpose() *
         ConstEigenMatrixMap<float>(inputs, input_size, batch_size);
   }
-  ApplyBias(batch_size, output_size, biases, activation, outputs);
+  if (biases != nullptr) {
+    ApplyBias(batch_size, output_size, biases, activation, outputs);
+  }
 }
 
 template <>
