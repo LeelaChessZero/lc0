@@ -56,12 +56,7 @@ class BlasComputation : public NetworkComputation {
                   const ActivationFunction default_activation,
                   const ActivationFunction smolgen_activation,
                   const ActivationFunction ffn_activation,
-<<<<<<< HEAD
-                  const bool attn_policy,
-                  const bool attn_body);
-=======
                   const bool attn_policy, const bool attn_body);
->>>>>>> borg/blas_ab
 
   virtual ~BlasComputation() {}
 
@@ -151,12 +146,8 @@ class BlasNetwork : public Network {
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
         weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
-<<<<<<< HEAD
-        default_activation_, smolgen_activation_, ffn_activation_, attn_policy_, attn_body_);
-=======
         default_activation_, smolgen_activation_, ffn_activation_, attn_policy_,
         attn_body_);
->>>>>>> borg/blas_ab
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -188,12 +179,7 @@ BlasComputation<use_eigen>::BlasComputation(
     const bool moves_left, const bool conv_policy,
     const ActivationFunction default_activation,
     const ActivationFunction smolgen_activation,
-<<<<<<< HEAD
-    const ActivationFunction ffn_activation, 
-    const bool attn_policy,
-=======
     const ActivationFunction ffn_activation, const bool attn_policy,
->>>>>>> borg/blas_ab
     const bool attn_body)
     : weights_(weights),
       max_batch_size_(max_batch_size),
