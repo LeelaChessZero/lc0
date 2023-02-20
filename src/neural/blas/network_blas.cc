@@ -316,7 +316,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
                                     layer.mha.smolgen.ln2_betas.data(),
                                     1e-6);
 
-      // Global smolgen weights (use bias to add already calculated attention weights).
+      // Global smolgen weights.
       FullyConnectedLayer<use_eigen>::Forward1D(
           heads, gen_sz_outputs / heads, 64 * 64, temp1,
           weights_.smolgen_w.data(), (const float*)nullptr, NONE, temp2);
