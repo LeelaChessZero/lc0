@@ -223,14 +223,8 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
     float alpha) {
   const int d_model = layer.mha.q_b.size();
   const int dff_size = layer.ffn.dense1_b.size();
-
-  static std::vector<float> head_buffer4;
-  head_buffer4.clear();
-  head_buffer4.resize(batch_size * std::max(d_model, dff_size) * kSquares);
-
-  static std::vector<float> temp_buffer;
-  temp_buffer.clear();
-  temp_buffer.resize(heads * kSquares * kSquares);
+  std::vector<float> head_buffer4(batch_size * std::max(d_model, dff_size) * kSquares);
+  std::vector<float> temp_buffer(heads * kSquares * kSquares);
   // Q
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
@@ -303,7 +297,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
           temp1, layer.mha.smolgen.dense1_w.data(),
           layer.mha.smolgen.dense1_b.data(), smolgen_activation, temp2);
       // Layer Norm + skip connection.
-      LayerNorm2DWithSkipConnection(batch_size, hidden_sz,
+      LayerNorm2DWithSkipConnection(1, hidden_sz,
                                     temp2, (const float*)nullptr,
                                     layer.mha.smolgen.ln1_gammas.data(),
                                     layer.mha.smolgen.ln1_betas.data(),
@@ -316,7 +310,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
           layer.mha.smolgen.dense2_w.data(),
           layer.mha.smolgen.dense2_b.data(), smolgen_activation, temp1);
       // Layer Norm + skip connection.
-      LayerNorm2DWithSkipConnection(batch_size, gen_sz_outputs,
+      LayerNorm2DWithSkipConnection(1, gen_sz_outputs,
                                     temp1, (const float*)nullptr,
                                     layer.mha.smolgen.ln2_gammas.data(),
                                     layer.mha.smolgen.ln2_betas.data(),

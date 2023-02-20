@@ -27,7 +27,7 @@ export void LayerNorm2DWithSkipConnection(uniform const size_t channels,
     // One pass mean and variance taken in dimension C. Uses shifted variance calculation.
     float imean = 0;
     float ivar = 0;
-    if (skip != nullptr) {
+    if (skip != NULL) {
       float k = data[0] + skip[0];
       foreach (c = 0 ... channels) {
         float t = data[c] + skip[c];
@@ -51,7 +51,7 @@ export void LayerNorm2DWithSkipConnection(uniform const size_t channels,
 #else
   // Mean taken in dimension C.
   float imean = 0;
-  if (skip != nullptr) {
+  if (skip != NULL) {
     foreach (c = 0 ... channels) {
       data[c] += skip[c];
       imean += data[c];
