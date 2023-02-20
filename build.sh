@@ -17,7 +17,7 @@ esac
 
 BUILDDIR=build/${BUILDTYPE}
 
-MESON=$(PATH="${PATH}:${HOME}/.local/bin" command -v meson || true)
+MESON=$(PATH="${PATH}:${HOME}/.local/bin" command -v meson || :)
 MESON=${MESON:?"Could not find meson. Is it installed and in PATH?"}
 
 if [ -f "${BUILDDIR}/build.ninja" ]
