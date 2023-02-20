@@ -56,8 +56,7 @@ class BlasComputation : public NetworkComputation {
                   const ActivationFunction default_activation,
                   const ActivationFunction smolgen_activation,
                   const ActivationFunction ffn_activation,
-                  const bool attn_policy,
-                  const bool attn_body);
+                  const bool attn_policy, const bool attn_body);
 
   virtual ~BlasComputation() {}
 
@@ -147,7 +146,8 @@ class BlasNetwork : public Network {
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
         weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
-        default_activation_, smolgen_activation_, ffn_activation_, attn_policy_, attn_body_);
+        default_activation_, smolgen_activation_, ffn_activation_, attn_policy_,
+        attn_body_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -179,8 +179,7 @@ BlasComputation<use_eigen>::BlasComputation(
     const bool moves_left, const bool conv_policy,
     const ActivationFunction default_activation,
     const ActivationFunction smolgen_activation,
-    const ActivationFunction ffn_activation, 
-    const bool attn_policy,
+    const ActivationFunction ffn_activation, const bool attn_policy,
     const bool attn_body)
     : weights_(weights),
       max_batch_size_(max_batch_size),
@@ -223,7 +222,8 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
     float alpha) {
   const int d_model = layer.mha.q_b.size();
   const int dff_size = layer.ffn.dense1_b.size();
-  std::vector<float> head_buffer4(batch_size * std::max(d_model, dff_size) * kSquares);
+  std::vector<float> head_buffer4(batch_size * std::max(d_model, dff_size) *
+                                  kSquares);
   std::vector<float> temp_buffer(heads * kSquares * kSquares);
   // Q
   FullyConnectedLayer<use_eigen>::Forward1D(
@@ -286,35 +286,32 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
       // Compress.
       const auto hidden_channels = layer.mha.smolgen.compress.size() / d_model;
       FullyConnectedLayer<use_eigen>::Forward1D(
-          kSquares, d_model, hidden_channels,
-          input, layer.mha.smolgen.compress.data(),
-          (const float*)nullptr, NONE, temp1);
+          kSquares, d_model, hidden_channels, input,
+          layer.mha.smolgen.compress.data(), (const float*)nullptr, NONE,
+          temp1);
 
       // Dense 1.
       const auto hidden_sz = layer.mha.smolgen.dense1_b.size();
       FullyConnectedLayer<use_eigen>::Forward1D(
-          1, kSquares * hidden_channels, hidden_sz,
-          temp1, layer.mha.smolgen.dense1_w.data(),
-          layer.mha.smolgen.dense1_b.data(), smolgen_activation, temp2);
+          1, kSquares * hidden_channels, hidden_sz, temp1,
+          layer.mha.smolgen.dense1_w.data(), layer.mha.smolgen.dense1_b.data(),
+          smolgen_activation, temp2);
       // Layer Norm + skip connection.
-      LayerNorm2DWithSkipConnection(1, hidden_sz,
-                                    temp2, (const float*)nullptr,
+      LayerNorm2DWithSkipConnection(1, hidden_sz, temp2, (const float*)nullptr,
                                     layer.mha.smolgen.ln1_gammas.data(),
-                                    layer.mha.smolgen.ln1_betas.data(),
-                                    1e-6);
+                                    layer.mha.smolgen.ln1_betas.data(), 1e-6);
 
       // Dense 2.
       const auto gen_sz_outputs = layer.mha.smolgen.dense2_b.size();
       FullyConnectedLayer<use_eigen>::Forward1D(
           1, hidden_sz, gen_sz_outputs, temp2,
-          layer.mha.smolgen.dense2_w.data(),
-          layer.mha.smolgen.dense2_b.data(), smolgen_activation, temp1);
+          layer.mha.smolgen.dense2_w.data(), layer.mha.smolgen.dense2_b.data(),
+          smolgen_activation, temp1);
       // Layer Norm + skip connection.
-      LayerNorm2DWithSkipConnection(1, gen_sz_outputs,
-                                    temp1, (const float*)nullptr,
+      LayerNorm2DWithSkipConnection(1, gen_sz_outputs, temp1,
+                                    (const float*)nullptr,
                                     layer.mha.smolgen.ln2_gammas.data(),
-                                    layer.mha.smolgen.ln2_betas.data(),
-                                    1e-6);
+                                    layer.mha.smolgen.ln2_betas.data(), 1e-6);
 
       // Global smolgen weights.
       FullyConnectedLayer<use_eigen>::Forward1D(
@@ -407,21 +404,22 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = weights_.ip1_val_b.size();
   const auto num_moves_channels = weights_.ip1_mov_b.size();
-  const auto num_value_input_planes = attn_body_ ? weights_.ip_val_b.size()
-                                     : weights_.value.biases.size();
+  const auto num_value_input_planes =
+      attn_body_ ? weights_.ip_val_b.size() : weights_.value.biases.size();
   const auto num_policy_input_planes = weights_.policy.biases.size();
-  const auto num_moves_input_planes = attn_body_ ? weights_.ip_mov_b.size()
-                                     : weights_.moves_left.biases.size();
+  const auto num_moves_input_planes =
+      attn_body_ ? weights_.ip_mov_b.size() : weights_.moves_left.biases.size();
   const auto num_output_policy = static_cast<size_t>(kPolicyOutputs);
-  const auto output_channels = attn_body_ ? weights_.ip_emb_b.size()
-                               : weights_.input.biases.size();
+  const auto output_channels =
+      attn_body_ ? weights_.ip_emb_b.size() : weights_.input.biases.size();
   const auto num_res_blocks = weights_.residual.size();
 
   // max_channels is the maximum number of input channels of any
   // convolution.
   // Residual blocks are identical, but the first convolution might be bigger
   // when the network has very few filters
-  const auto input_channels = static_cast<size_t>(kInputPlanes + (attn_body_ ? kNumPosEncodingChannels : 0));
+  const auto input_channels = static_cast<size_t>(
+      kInputPlanes + (attn_body_ ? kNumPosEncodingChannels : 0));
   const auto max_channels = std::max(output_channels, input_channels);
 
   // The policy head may increase convolution max output size.
@@ -484,7 +482,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                         weights_.input.weights.data(), conv_out);
 
       BiasActivate(batch_size, output_channels, conv_out,
-                  weights_.input.biases.data(), default_activation_);
+                   weights_.input.biases.data(), default_activation_);
 
       // Residual tower
 
@@ -499,7 +497,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                           conv1.weights.data(), conv_out);
 
         BiasActivate(batch_size, output_channels, &conv_out[0],
-                    conv1.biases.data(), default_activation_);
+                     conv1.biases.data(), default_activation_);
 
         std::swap(conv_in, res);
         std::swap(conv_out, conv_in);
@@ -513,12 +511,12 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
           auto se_fc_outputs = se.b1.size();
           ApplySEUnit<use_eigen>(batch_size, output_channels, se_fc_outputs,
-                                conv_in, conv2.biases.data(), res, se.w1.data(),
-                                se.b1.data(), se.w2.data(), se.b2.data(),
-                                conv_out, default_activation_);
+                                 conv_in, conv2.biases.data(), res,
+                                 se.w1.data(), se.b1.data(), se.w2.data(),
+                                 se.b2.data(), conv_out, default_activation_);
         } else {
           BiasResidual(batch_size, output_channels, &conv_out[0],
-                      conv2.biases.data(), res, default_activation_);
+                       conv2.biases.data(), res, default_activation_);
         }
       }
     }
@@ -526,10 +524,12 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
     if (attn_body_) {
       const auto embedding_size = weights_.ip_emb_b.size();
       assert(embedding_size > 0);
-      const auto input_size = num_res_blocks == 0 ? input_channels : weights_.input.biases.size();
+      const auto input_size =
+          num_res_blocks == 0 ? input_channels : weights_.input.biases.size();
 
       if (num_res_blocks == 0) {
-        // No residual means pure transformer, so process input position encoding.
+        // No residual means pure transformer, so process input position
+        // encoding.
         // Preprocess for attention body.
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
@@ -549,9 +549,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
       // Input embedding.
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, input_size, embedding_size,
-          res_buffer3.data(), weights_.ip_emb_w.data(),
-          weights_.ip_emb_b.data(), default_activation_, res_buffer1.data());
+          batch_size * kSquares, input_size, embedding_size, res_buffer3.data(),
+          weights_.ip_emb_w.data(), weights_.ip_emb_b.data(),
+          default_activation_, res_buffer1.data());
 
       // Input gating
       if (weights_.ip_mult_gate.size() > 0 && weights_.ip_add_gate.size() > 0) {
@@ -560,15 +560,16 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           for (auto i = 0; i < kSquares; i++) {
             for (auto j = 0; j < embedding_size; j++) {
               idx = batch * kSquares * embedding_size + i * embedding_size + j;
-              res_buffer1[idx] = res_buffer1[idx] * weights_.ip_mult_gate[j * kSquares + i]
-                                 + weights_.ip_add_gate[j * kSquares + i];
+              res_buffer1[idx] =
+                  res_buffer1[idx] * weights_.ip_mult_gate[j * kSquares + i] +
+                  weights_.ip_add_gate[j * kSquares + i];
             }
           }
         };
       }
 
       // Attention body encoders.
-      float alpha = (float) pow(2.0 * weights_.encoder.size(), 0.25);
+      float alpha = (float)pow(2.0 * weights_.encoder.size(), 0.25);
       for (auto& layer : weights_.encoder) {
         MakeEncoderLayer(res_buffer1, res_buffer2, res_buffer3, batch_size,
                          layer, embedding_size, weights_.encoder_head_count,
@@ -587,8 +588,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
             for (size_t j = 0; j < output_channels; j++) {
-              res[batch * kSquares * output_channels + i * output_channels + j] =
-                  conv_out[batch * kSquares * output_channels + j * kSquares + i];
+              res[batch * kSquares * output_channels + i * output_channels +
+                  j] = conv_out[batch * kSquares * output_channels +
+                                j * kSquares + i];
             }
           }
         }
@@ -598,7 +600,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, output_channels, policy_embedding_size, res,
           weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
-          attn_body_ ? default_activation_ : SELU,  // SELU activation hardcoded for apmish nets.
+          attn_body_ ? default_activation_
+                     : SELU,  // SELU activation hardcoded for apmish nets.
           head_buffer.data());
 
       const size_t policy_d_model = weights_.ip2_pol_b.size();
@@ -613,10 +616,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
       for (auto& layer : weights_.pol_encoder) {
         MakeEncoderLayer(head_buffer, head_buffer2, head_buffer3, batch_size,
-                         layer, policy_embedding_size, weights_.pol_encoder_head_count,
+                         layer, policy_embedding_size,
+                         weights_.pol_encoder_head_count,
                          attn_body_ ? smolgen_activation_ : NONE,
-                         attn_body_ ? ffn_activation_ : SELU,
-                         1.0f);
+                         attn_body_ ? ffn_activation_ : SELU, 1.0f);
       }
 
       // Q
@@ -749,19 +752,16 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
     // Value head
     if (attn_body_) {
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, weights_.ip_emb_b.size(), num_value_input_planes,
-          res, weights_.ip_val_w.data(),
-          weights_.ip_val_b.data(),
-          default_activation_,
-          head_buffer.data());
-    }
-    else {
+          batch_size * kSquares, weights_.ip_emb_b.size(),
+          num_value_input_planes, res, weights_.ip_val_w.data(),
+          weights_.ip_val_b.data(), default_activation_, head_buffer.data());
+    } else {
       Convolution1<use_eigen>::Forward(
           batch_size, output_channels, num_value_input_planes, conv_out,
           weights_.value.weights.data(), head_buffer.data());
 
       BiasActivate(batch_size, num_value_input_planes, &head_buffer[0],
-                  weights_.value.biases.data(), default_activation_);
+                   weights_.value.biases.data(), default_activation_);
     }
 
     FullyConnectedLayer<use_eigen>::Forward1D(
@@ -801,19 +801,16 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
     if (moves_left_) {
       if (attn_body_) {
         FullyConnectedLayer<use_eigen>::Forward1D(
-            batch_size * kSquares, weights_.ip_emb_b.size(), num_moves_input_planes,
-            res, weights_.ip_mov_w.data(),
-            weights_.ip_mov_b.data(),
-            default_activation_,
-            head_buffer.data());
-      }
-      else {
+            batch_size * kSquares, weights_.ip_emb_b.size(),
+            num_moves_input_planes, res, weights_.ip_mov_w.data(),
+            weights_.ip_mov_b.data(), default_activation_, head_buffer.data());
+      } else {
         Convolution1<use_eigen>::Forward(
             batch_size, output_channels, num_moves_input_planes, conv_out,
             weights_.moves_left.weights.data(), head_buffer.data());
 
         BiasActivate(batch_size, num_moves_input_planes, &head_buffer[0],
-                    weights_.moves_left.biases.data(), default_activation_);
+                     weights_.moves_left.biases.data(), default_activation_);
       }
 
       FullyConnectedLayer<use_eigen>::Forward1D(
@@ -872,7 +869,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
                  pblczero::NetworkFormat::POLICY_ATTENTION;
 
   attn_body_ = file.format().network_format().network() ==
-                 pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
+               pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
 
   default_activation_ = file.format().network_format().default_activation() ==
                                 pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
@@ -881,11 +878,14 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
   if (attn_body_) {
     const auto smol_act = file.format().network_format().smolgen_activation();
-    smolgen_activation_ = smol_act == pblczero::NetworkFormat::SMOLGEN_ACTIVATION_INHERIT
-                                ? default_activation_ : static_cast<ActivationFunction>(smol_act);
+    smolgen_activation_ =
+        smol_act == pblczero::NetworkFormat::SMOLGEN_ACTIVATION_INHERIT
+            ? default_activation_
+            : static_cast<ActivationFunction>(smol_act);
     const auto ffn_act = file.format().network_format().ffn_activation();
     ffn_activation_ = ffn_act == pblczero::NetworkFormat::FFN_ACTIVATION_INHERIT
-                            ? default_activation_ : static_cast<ActivationFunction>(ffn_act);
+                          ? default_activation_
+                          : static_cast<ActivationFunction>(ffn_act);
   }
 
   if (max_batch_size_ > kHardMaxBatchSize) {
