@@ -2,6 +2,9 @@
 
 set -e
 
+# Move to this script's directory.
+cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
 case $1 in
   plain|debug|debugoptimized|release|minsize)
     BUILDTYPE=$1
