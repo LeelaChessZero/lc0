@@ -554,7 +554,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           weights_.ip_emb_b.data(), default_activation_, res_buffer1.data());
 
       // Input gating
-      if (weights_.ip_mult_gate.size() > 0) {
+      if (weights_.ip_mult_gate.size() > 0 && weights_.ip_add_gate.size() > 0) {
         int idx;
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
