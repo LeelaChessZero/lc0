@@ -1,4 +1,35 @@
-﻿v0.29.0-rc0 (2022-04-03)
+﻿v0.29.0 (2022-12-13)
+~~~~~~~
+* Updated onednn version to the latest one.
+
+v0.29.0-rc1 (2022-12-09)
+~~~~~~~
+* New metal backend for apple systems. This is now the default backend for
+  macos builds.
+* New onnx-dml backend to use DirectML under windows, has better net
+  compatibility than dx12 and is faster than opencl. See the README for use
+  instructions, a separate download of the DirectML dll is required.
+* Full attention policy support in cuda, cudnn, metal, onnx, blas, dnnl, and
+  eigen backends.
+* Partial attention policy support in onednn backend (good enough for T79).
+* Now the onnx backends can use fp16 when running with a network file (not with
+  .onnx model files). This is the default for onnx-cuda and onnx-dml, can be
+  switched on or off with by setting the `fp16` backend option to `true` or
+  `false` respectively.
+* The onednn package comes with a dnnl compiled to allow running on an intel gpu
+  by adding `gpu=0` to the backend options.
+* The default net is now 791556 for most backends except opencl and dx12 that
+  get 753723 (as they lack attention policy support).
+* Support for using pgn book with long lines in training: selfplay can start at
+  a random point in the book.
+* New "simple" time manager.
+* Support for double Fischer random chess (dfrc).
+* Added TC-dependent output to the backendbench assistant.
+* Starting with this version, the check backend compares policy for valid moves
+  after softmax.
+* Some assorted fixes and code cleanups.
+
+v0.29.0-rc0 (2022-04-03)
 ~~~~~~~
 * Initial support for attention policy, only cuda backend and partially in
   blas/dnnl/eigen (good enough for T79).
