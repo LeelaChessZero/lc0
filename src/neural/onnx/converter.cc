@@ -157,9 +157,29 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
-  auto flow = builder->Softplus(name + "/softplus", input);
-  flow = builder->Tanh(name + "/tanh", flow);
-  return builder->Mul(name, flow, input);
+  if (!options_.alt_mish || options_.opset < 9 ||
+      options_.data_type_ !=
+          WeightsToOnnxConverterOptions::DataType::kFloat32) {
+    if (options_.opset >= 18) return builder->Mish(name, input);
+    auto flow = builder->Softplus(name + "/softplus", input);
+    flow = builder->Tanh(name + "/tanh", flow);
+    return builder->Mul(name, flow, input);
+  } else {
+    const OnnxConst& two =
+        static_cast<const OnnxConst&>(FloatOnnxConst({2.0f}, {1}));
+    const OnnxConst& zero =
+        static_cast<const OnnxConst&>(FloatOnnxConst({0.0f}, {1}));
+    auto e = builder->Exp(name + "/exp", input);
+    auto flow = builder->Add(name + "/e+2", e, two);
+    auto n = builder->Mul(name + "/n", e, flow);
+    flow = builder->Add(name + "/n+2", n, two);
+    auto d = builder->Div(name + "/d", input, flow);
+    auto f = builder->Mul(name + "/n*d", n, d);
+    flow = builder->Mul(name + "/2*d", d, two);
+    auto t = builder->Sub(name + "/in-2*d", input, flow);
+    flow = builder->Greater(name + "/compare", input, zero);
+    return builder->Where(name, flow, t, f);
+  }
 }
 
 std::string Converter::MakeActivation(OnnxBuilder* builder,
@@ -184,7 +204,7 @@ std::string Converter::MakeSqueezeAndExcite(
   const int se_filters = se_unit.b1.size();
 
   auto flow = builder->GlobalAveragePool(name + "/pooled", input);
-  flow = builder->Squeeze(name + "/squeeze", flow);
+  flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
   flow = builder->MatMul(
       name + "/matmul1", flow,
       *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
@@ -552,7 +572,8 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
       *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}, {1, 0}));
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
-  auto output = builder->Relu(options_.output_mlh, flow);
+  flow = MakeActivation(builder, flow, "/mlh/dense2", default_activation_);
+  auto output = builder->Identity(options_.output_mlh, flow);
   builder->AddOutput(output, {options_.batch_size, 1}, GetDataType());
   onnx->set_output_mlh(output);
 }
