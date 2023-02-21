@@ -224,7 +224,52 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   const int dff_size = layer.ffn.dense1_b.size();
   std::vector<float> head_buffer4(batch_size * std::max(d_model, dff_size) *
                                   kSquares);
-  std::vector<float> temp_buffer(heads * kSquares * kSquares);
+
+  // Smolgen.
+  if (layer.mha.has_smolgen) {
+    float* input = &head_buffer[0];
+    float* QK = &head_buffer4[0];
+    // Compress.
+    const auto hidden_channels =
+        layer.mha.smolgen.compress.size() / embedding_size;
+    std::vector<float> temp1(batch_size * kSquares * hidden_channels);
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size * kSquares, embedding_size, hidden_channels, input,
+        layer.mha.smolgen.compress.data(), (const float*)nullptr, NONE,
+        temp1.data());
+
+    // Dense 1.
+    const auto hidden_sz = layer.mha.smolgen.dense1_b.size();
+    std::vector<float> temp2(batch_size * hidden_sz);
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size, kSquares * hidden_channels, hidden_sz, &temp1[0],
+        layer.mha.smolgen.dense1_w.data(), layer.mha.smolgen.dense1_b.data(),
+        smolgen_activation, temp2.data());
+    // Layer Norm + skip connection.
+    LayerNorm2DWithSkipConnection(batch_size, hidden_sz, temp2.data(),
+                                  (const float*)nullptr,
+                                  layer.mha.smolgen.ln1_gammas.data(),
+                                  layer.mha.smolgen.ln1_betas.data(), 1e-3);
+
+    // Dense 2.
+    const auto gen_sz_outputs = layer.mha.smolgen.dense2_b.size();
+    std::vector<float> temp3(batch_size * gen_sz_outputs);
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size, hidden_sz, gen_sz_outputs, &temp2[0],
+        layer.mha.smolgen.dense2_w.data(), layer.mha.smolgen.dense2_b.data(),
+        smolgen_activation, temp3.data());
+    // Layer Norm + skip connection.
+    LayerNorm2DWithSkipConnection(batch_size, gen_sz_outputs, temp3.data(),
+                                  (const float*)nullptr,
+                                  layer.mha.smolgen.ln2_gammas.data(),
+                                  layer.mha.smolgen.ln2_betas.data(), 1e-3);
+
+    // Global smolgen weights.
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size * heads, gen_sz_outputs / heads, 64 * 64, temp3.data(),
+        weights_.smolgen_w.data(), (const float*)nullptr, NONE, &QK[0]);
+  }
+
   // Q
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
@@ -233,10 +278,6 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
       layer.mha.k_w.data(), layer.mha.k_b.data(), NONE, head_buffer3.data());
-  // V
-  FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
-      layer.mha.v_w.data(), layer.mha.v_b.data(), NONE, head_buffer4.data());
 
   // MHA (Q, K, V)
   const int depth = d_model / heads;
@@ -246,89 +287,36 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   for (auto batch = size_t{0}; batch < batch_size; batch++) {
     auto batchStart = batch * kSquares * d_model;
 
+    float* QK = &head_buffer4[batch * kSquares * kSquares * heads];
+
     const float* Q = &head_buffer2[batchStart];
     const float* K = &head_buffer3[batchStart];
-    const float* V = &head_buffer4[batchStart];
 
     // matmul(Q, K) for all heads per batch.
-    float* QK = temp_buffer.data();
+
     for (auto h = 0; h < heads; h++) {
       const float* A = &Q[h * depth];
       const float* B = &K[h * depth];
       float* C = &QK[h * kSquares * kSquares];
+      const float beta = layer.mha.has_smolgen ? 1.0f : 0.0f;
       if (use_eigen) {
         auto C_mat = EigenMatrixMap<float>(C, kSquares, kSquares);
         C_mat.noalias() =
+            beta * C_mat +
             scaling *
-            ConstEigenStridedMatrixMap<float>(
-                B, depth, kSquares, Eigen::OuterStride<>(heads * depth))
-                .transpose() *
-            ConstEigenStridedMatrixMap<float>(
-                A, depth, kSquares, Eigen::OuterStride<>(heads * depth));
+                ConstEigenStridedMatrixMap<float>(
+                    B, depth, kSquares, Eigen::OuterStride<>(heads * depth))
+                    .transpose() *
+                ConstEigenStridedMatrixMap<float>(
+                    A, depth, kSquares, Eigen::OuterStride<>(heads * depth));
       } else {
 #ifdef USE_BLAS
         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, kSquares, kSquares,
-                    depth, scaling, A, heads * depth, B, heads * depth, 0.0f, C,
+                    depth, scaling, A, heads * depth, B, heads * depth, beta, C,
                     kSquares);
 #else
         // Should never get here.
         throw Exception("Blas backend internal error");
-#endif
-      }
-    }
-
-    // Smolgen.
-    if (layer.mha.has_smolgen) {
-      float* input = &head_buffer[batch * kSquares * embedding_size];
-      float* temp1 = &head_buffer2[batchStart];
-      float* temp2 = &head_buffer3[batchStart];
-
-      // Compress.
-      const auto hidden_channels =
-          layer.mha.smolgen.compress.size() / embedding_size;
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          kSquares, embedding_size, hidden_channels, input,
-          layer.mha.smolgen.compress.data(), (const float*)nullptr, NONE,
-          temp1);
-
-      // Dense 1.
-      const auto hidden_sz = layer.mha.smolgen.dense1_b.size();
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          1, kSquares * hidden_channels, hidden_sz, temp1,
-          layer.mha.smolgen.dense1_w.data(), layer.mha.smolgen.dense1_b.data(),
-          smolgen_activation, temp2);
-      // Layer Norm + skip connection.
-      LayerNorm2DWithSkipConnection(1, hidden_sz, temp2, (const float*)nullptr,
-                                    layer.mha.smolgen.ln1_gammas.data(),
-                                    layer.mha.smolgen.ln1_betas.data(), 1e-3);
-
-      // Dense 2.
-      const auto gen_sz_outputs = layer.mha.smolgen.dense2_b.size();
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          1, hidden_sz, gen_sz_outputs, temp2,
-          layer.mha.smolgen.dense2_w.data(), layer.mha.smolgen.dense2_b.data(),
-          smolgen_activation, temp1);
-      // Layer Norm + skip connection.
-      LayerNorm2DWithSkipConnection(1, gen_sz_outputs, temp1,
-                                    (const float*)nullptr,
-                                    layer.mha.smolgen.ln2_gammas.data(),
-                                    layer.mha.smolgen.ln2_betas.data(), 1e-3);
-
-      // Global smolgen weights.
-      const float* A = temp1;
-      const float* B = weights_.smolgen_w.data();
-      float* C = QK;
-      if (use_eigen) {
-        auto C_mat = EigenMatrixMap<float>(C, 64 * 64, heads);
-        C_mat.noalias() +=
-            ConstEigenMatrixMap<float>(B, gen_sz_outputs / heads, 64 * 64)
-                .transpose() *
-            ConstEigenMatrixMap<float>(A, gen_sz_outputs / heads, heads);
-      } else {
-#ifdef USE_BLAS
-        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, heads, 64 * 64,
-                    gen_sz_outputs / heads, 1.0f, A, gen_sz_outputs / heads, B,
-                    gen_sz_outputs / heads, 1.0f, C, 64 * 64);
 #endif
       }
     }
@@ -343,9 +331,19 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 #endif
       SoftmaxActivation(kSquares, QK + h, QK + h);
     }
+  }
 
+  // V
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
+      layer.mha.v_w.data(), layer.mha.v_b.data(), NONE, head_buffer3.data());
+
+  for (auto batch = size_t{0}; batch < batch_size; batch++) {
+    auto batchStart = batch * kSquares * d_model;
     // matmul(softmax(QK), V) for all heads per batch.
     float* attn = &head_buffer2[batchStart];
+    const float* V = &head_buffer3[batchStart];
+    const float* QK = &head_buffer4[batch * kSquares * kSquares * heads];
     for (auto h = 0; h < heads; h++) {
       const float* A = &QK[h * kSquares * kSquares];
       const float* B = &V[h * depth];

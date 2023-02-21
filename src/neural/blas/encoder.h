@@ -41,8 +41,7 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size,
         data[i * channels + c] += skip[i * channels + c];
         mean += data[i * channels + c];
       }
-    }
-    else {
+    } else {
       for (size_t c = 0; c < channels; ++c) {
         mean += data[i * channels + c];
       }
@@ -64,9 +63,15 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size,
           betas[c] + gammas[c] * (data[i * channels + c] - mean) * den;
     }
 #else
-    ispc::LayerNorm2DWithSkipConnection(channels, data + i * channels,
-                                        skip + i * channels, gammas, betas,
-                                        epsilon);
+    if (skip != nullptr) {
+      ispc::LayerNorm2DWithSkipConnection(channels, data + i * channels,
+                                          skip + i * channels, gammas, betas,
+                                          epsilon);
+    } else {
+      ispc::LayerNorm2DWithSkipConnection(channels, data + i * channels,
+                                          nullptr, gammas, betas, epsilon);
+    }
+
 #endif
   }
 }
