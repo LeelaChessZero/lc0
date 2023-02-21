@@ -299,7 +299,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
       // Layer Norm + skip connection.
       LayerNorm2DWithSkipConnection(1, hidden_sz, temp2, (const float*)nullptr,
                                     layer.mha.smolgen.ln1_gammas.data(),
-                                    layer.mha.smolgen.ln1_betas.data(), 1e-6);
+                                    layer.mha.smolgen.ln1_betas.data(), 1e-3);
 
       // Dense 2.
       const auto gen_sz_outputs = layer.mha.smolgen.dense2_b.size();
@@ -311,7 +311,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
       LayerNorm2DWithSkipConnection(1, gen_sz_outputs, temp1,
                                     (const float*)nullptr,
                                     layer.mha.smolgen.ln2_gammas.data(),
-                                    layer.mha.smolgen.ln2_betas.data(), 1e-6);
+                                    layer.mha.smolgen.ln2_betas.data(), 1e-3);
 
       // Global smolgen weights.
       FullyConnectedLayer<use_eigen>::Forward1D(
@@ -326,11 +326,13 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
     // Apply Softmax.
     for (int h = 0; h < heads * kSquares * kSquares; h += kSquares) {
-#ifndef USE_ISPC
-      SoftmaxActivation(kSquares, QK + h, QK + h);
-#else
-      ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
+#if defined(USE_ISPC)
+      if (!use_eigen) {
+        ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
+        continue;
+      }
 #endif
+      SoftmaxActivation(kSquares, QK + h, QK + h);
     }
 
     // matmul(softmax(QK), V) for all heads per batch.
@@ -558,7 +560,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         int idx;
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
-            for (auto j = 0; j < embedding_size; j++) {
+            for (size_t j = 0; j < embedding_size; j++) {
               idx = batch * kSquares * embedding_size + i * embedding_size + j;
               res_buffer1[idx] =
                   res_buffer1[idx] * weights_.ip_mult_gate[j * kSquares + i] +
