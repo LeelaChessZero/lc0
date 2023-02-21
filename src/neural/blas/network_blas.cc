@@ -590,9 +590,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
             for (size_t j = 0; j < output_channels; j++) {
-              res[batch * kSquares * output_channels + i * output_channels +
-                  j] = conv_out[batch * kSquares * output_channels +
-                                j * kSquares + i];
+              res[batch * kSquares * output_channels + i * output_channels + j] =
+                  conv_out[batch * kSquares * output_channels + j * kSquares + i];
             }
           }
         }
