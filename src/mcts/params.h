@@ -218,6 +218,8 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
+  static const OptionId kUCIOpponentId;
+  static const OptionId kUCIRatingAdvId;
 
  private:
   const OptionsDict& options_;
