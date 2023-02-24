@@ -41,6 +41,10 @@
 #include <omp.h>
 #endif
 
+#ifdef USE_ISPC
+#include "activation_ispc.h"
+#endif
+
 namespace lczero {
 namespace {
 
@@ -177,6 +181,14 @@ using EigenMatrixMap =
 template <typename T>
 using ConstEigenMatrixMap =
     Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>>;
+template <typename T>
+using EigenStridedMatrixMap =
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>, 0,
+               Eigen::OuterStride<>>;
+template <typename T>
+using ConstEigenStridedMatrixMap =
+    Eigen::Map<const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>, 0,
+               Eigen::OuterStride<>>;
 
 template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
@@ -327,11 +339,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       if (weights_.pol_encoder.size() > 0) {
         std::vector<float> head_buffer4(largest_batch_size * max_channel_size *
                                         kSquares);
-        std::vector<float> temp_buffer1(policy_d_model * kSquares);
-        std::vector<float> temp_buffer2(policy_d_model * kSquares);
-        std::vector<float> temp_buffer3(policy_d_model * kSquares);
+        std::vector<float> temp_buffer(weights_.pol_encoder_head_count *
+                                       kSquares * kSquares);
 
-        for (auto layer : weights_.pol_encoder) {
+        for (auto& layer : weights_.pol_encoder) {
           // Q
           FullyConnectedLayer<use_eigen>::Forward1D(
               batch_size * kSquares, embedding_size, layer.mha.q_b.size(),
@@ -358,51 +369,66 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           for (auto batch = size_t{0}; batch < batch_size; batch++) {
             auto batchStart = batch * kSquares * d_model;
 
-            // Reshape and transpose for each head.
-            const float* Q = temp_buffer1.data();
-            const float* K = temp_buffer2.data();
-            const float* V = temp_buffer3.data();
-
-            for (int head = 0; head < heads; head++) {
-              for (int j = 0; j < kSquares; j++) {
-                auto channelStart = batchStart + j * d_model + head * depth;
-                auto transposeStart = head * kSquares * depth + j * depth;
-                std::copy(head_buffer2.begin() + channelStart,
-                          head_buffer2.begin() + channelStart + depth,
-                          temp_buffer1.begin() + transposeStart);
-                std::copy(head_buffer3.begin() + channelStart,
-                          head_buffer3.begin() + channelStart + depth,
-                          temp_buffer2.begin() + transposeStart);
-                std::copy(head_buffer4.begin() + channelStart,
-                          head_buffer4.begin() + channelStart + depth,
-                          temp_buffer3.begin() + transposeStart);
-              }
-            }
+            const float* Q = &head_buffer2[batchStart];
+            const float* K = &head_buffer3[batchStart];
+            const float* V = &head_buffer4[batchStart];
 
             // matmul(Q, K) for all heads per batch.
-            float* QK = &head_buffer2[batchStart];
-            AttentionMatmul2D<use_eigen>(false, true, heads, kSquares, kSquares,
-                                         depth, scaling, Q, K, QK);
-
+            float* QK = temp_buffer.data();
+            for (auto h = 0; h < heads; h++) {
+              const float* A = &Q[h * depth];
+              const float* B = &K[h * depth];
+              float* C = &QK[h * kSquares * kSquares];
+              if (use_eigen) {
+                auto C_mat = EigenMatrixMap<float>(C, kSquares, kSquares);
+                C_mat.noalias() =
+                    scaling *
+                    ConstEigenStridedMatrixMap<float>(
+                        B, depth, kSquares, Eigen::OuterStride<>(heads * depth))
+                        .transpose() *
+                    ConstEigenStridedMatrixMap<float>(
+                        A, depth, kSquares,
+                        Eigen::OuterStride<>(heads * depth));
+              } else {
+#ifdef USE_BLAS
+                cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, kSquares,
+                            kSquares, depth, scaling, A, heads * depth, B,
+                            heads * depth, 0.0f, C, kSquares);
+#else
+                // Should never get here.
+                throw Exception("Blas backend internal error");
+#endif
+              }
+            }
             // Apply Softmax.
             for (int h = 0; h < heads * kSquares * kSquares; h += kSquares) {
+#ifndef USE_ISPC
               SoftmaxActivation(kSquares, QK + h, QK + h);
+#else
+              ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
+#endif
             }
 
             // matmul(softmax(QK), V) for all heads per batch.
-            float* attn = &head_buffer3[batchStart];
-            AttentionMatmul2D<use_eigen>(false, false, heads, kSquares, depth,
-                                         kSquares, 1.0, QK, V, attn);
-
-            // Transpose back into N x 64 x H x D.
-            for (int j = 0; j < kSquares; j++) {
-              for (int head = 0; head < heads; head++) {
-                auto transposeStart =
-                    batchStart + head * kSquares * depth + j * depth;
-                std::copy(head_buffer3.begin() + transposeStart,
-                          head_buffer3.begin() + transposeStart + depth,
-                          head_buffer2.begin() + batchStart + j * d_model +
-                              head * depth);
+            float* attn = &head_buffer2[batchStart];
+            for (auto h = 0; h < heads; h++) {
+              const float* A = &QK[h * kSquares * kSquares];
+              const float* B = &V[h * depth];
+              float* C = &attn[h * depth];
+              if (use_eigen) {
+                auto C_mat = EigenStridedMatrixMap<float>(
+                    C, depth, kSquares, Eigen::OuterStride<>(heads * depth));
+                C_mat.noalias() =
+                    ConstEigenStridedMatrixMap<float>(
+                        B, depth, kSquares,
+                        Eigen::OuterStride<>(heads * depth)) *
+                    ConstEigenMatrixMap<float>(A, kSquares, kSquares);
+              } else {
+#ifdef USE_BLAS
+                cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, kSquares,
+                            depth, kSquares, 1.0f, A, kSquares, B,
+                            heads * depth, 0.0f, C, heads * depth);
+#endif
               }
             }
           }
@@ -651,7 +677,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
       weights_(file.weights()) {
-    Numa::Init();
+  Numa::Init();
 
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
