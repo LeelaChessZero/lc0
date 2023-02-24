@@ -104,8 +104,8 @@ class SearchParams {
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
-  std::string GetPerspective() const {
-    return options_.Get<std::string>(kPerspectiveId);
+  std::string GetContemptPerspective() const {
+    return options_.Get<std::string>(kContemptPerspectiveId);
   }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
@@ -190,15 +190,15 @@ class SearchParams {
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
-  static const OptionId kPerspectiveId;
+  static const OptionId kContemptPerspectiveId;
   static const OptionId kDrawScoreSidetomoveId;
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
   static const OptionId kWDLRescaleRatioId;
   static const OptionId kWDLRescaleDiffId;
-  static const OptionId kWDLContemptId;
-  static const OptionId kWDLContemptMaxValueId;
+  static const OptionId kContemptId;
+  static const OptionId kContemptMaxValueId;
   static const OptionId kWDLCalibrationEloId;
   static const OptionId kWDLContemptAttenuationId;
   static const OptionId kWDLEvalObjectivityId;
@@ -259,7 +259,7 @@ class SearchParams {
   const float kMovesLeftQuadraticFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
-  const std::string kPerspective;
+  const std::string kContemptPerspective;
   const float kDrawScoreSidetomove;
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;

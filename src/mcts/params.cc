@@ -260,11 +260,11 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
     "at once."};
-const OptionId SearchParams::kPerspectiveId{
-    "perspective", "Perspective",
-    "Affects the way asymmetric WDL parameters are applied. Default is 'auto' "
-    "for matches, use 'white' and 'black' for analysis. Use 'none' to "
-    "deactivate the WDL conversion."};
+const OptionId SearchParams::kContemptPerspectiveId{
+    "contempt-perspective", "ContemptPerspective",
+    "Affects the way asymmetric WDL parameters are applied. Default is "
+    "'sidetomove' for matches, use 'white' and 'black' for analysis. Use "
+    "'none' to deactivate contempt and the WDL conversion."};
 const OptionId SearchParams::kDrawScoreSidetomoveId{
     "draw-score-sidetomove", "DrawScoreSideToMove",
     "Score of a drawn game, as seen by a player making the move."};
@@ -283,22 +283,23 @@ const OptionId SearchParams::kWDLRescaleRatioId{
 const OptionId SearchParams::kWDLRescaleDiffId{
     "wdl-rescale-diff", "WDLRescaleDiff",
     "Shifts the logistic WDL mean by diff in white's favor."};
-const OptionId SearchParams::kWDLContemptId{
+const OptionId SearchParams::kContemptId{
     "contempt", "Contempt",
     "The simulated rating advantage for the WDL conversion. Comma separated "
     "list in the form [name=]value, where the name is compared with the "
     "`UCI_Opponent` value to find the appropriate contempt value. The default "
     "value is taken from `UCI_RatingAdv` and will be overridden if either a "
     "value without name is given, or if a name match is found."};
-const OptionId SearchParams::kWDLContemptMaxValueId{
-    "wdl-contempt-max-value", "WDLContemptMaxValue",
+const OptionId SearchParams::kContemptMaxValueId{
+    "contempt-max-value", "ContemptMaxValue",
     "The maximum value of contempt used. Higher values will be capped."};
 const OptionId SearchParams::kWDLCalibrationEloId{
     "wdl-calibration-elo", "WDLCalibrationElo",
     "Elo of the active side, adjusted for time control relative to rapid."};
 const OptionId SearchParams::kWDLContemptAttenuationId{
     "wdl-contempt-attenuation", "WDLContemptAttenuation",
-    "This scales the given Elo advantage used for contempt."};
+    "Scales how Elo advantage is applied for contempt. Use 1.0 for realistic "
+    "analysis, and 0.5-0.6 for optimal match performance."};
 const OptionId SearchParams::kWDLEvalObjectivityId{
     "wdl-eval-objectivity", "WDLEvalObjectivity",
     "When calculating the centipawn eval output, decides how objective/"
@@ -439,7 +440,7 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  std::vector<std::string> perspective = {"auto", "white", "black", "none"};
+  std::vector<std::string> perspective = {"sidetomove", "white", "black", "none"};
   options->Add<ChoiceOption>(kPerspectiveId, perspective) = "auto";
   options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
@@ -447,8 +448,8 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
   options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
   options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
-  options->Add<StringOption>(kWDLContemptId) = "";
-  options->Add<FloatOption>(kWDLContemptMaxValueId, 0, 10000.0f) = 420.0f;
+  options->Add<StringOption>(kContemptId) = "";
+  options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
   options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
@@ -488,7 +489,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kWDLRescaleRatioId);
   options->HideOption(kWDLRescaleDiffId);
-  options->HideOption(kWDLContemptMaxValueId);
+  options->HideOption(kContemptMaxValueId);
   options->HideOption(kWDLCalibrationEloId);
   options->HideOption(kWDLContemptAttenuationId);
   options->HideOption(kWDLEvalObjectivityId);
@@ -578,10 +579,10 @@ SearchParams::SearchParams(const OptionsDict& options)
     // taken from kUCIRatingAdvId. Adding any value (without name) in the comma
     // separated kWDLContemptId list will override this.
     float contempt = options.Get<float>(kUCIRatingAdvId);
-    if (!options.IsDefault<std::string>(kWDLContemptId)) {
+    if (!options.IsDefault<std::string>(kContemptId)) {
       auto name = options.Get<std::string>(kUCIOpponentId);
       for (auto& entry :
-           StrSplit(options.Get<std::string>(kWDLContemptId), ",")) {
+           StrSplit(options.Get<std::string>(kContemptId), ",")) {
         auto parts = StrSplit(entry, "=");
         if (parts.size() == 1) {
           try {
@@ -631,8 +632,8 @@ SearchParams::SearchParams(const OptionsDict& options)
                                   scale_target),
                         2)) *
           std::log(10) / 200 *
-          std::clamp(contempt, -options.Get<float>(kWDLContemptMaxValueId),
-                     options.Get<float>(kWDLContemptMaxValueId)) *
+          std::clamp(contempt, -options.Get<float>(kContemptMaxValueId),
+                     options.Get<float>(kContemptMaxValueId)) *
           options.Get<float>(kWDLContemptAttenuationId);
     } else {
       // Less accurate Elo model, but automatically chooses draw rate and
@@ -649,8 +650,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       float elo_active = options.Get<float>(kWDLCalibrationEloId);
       float elo_opp =
           elo_active - std::clamp(contempt,
-                                  -options.Get<float>(kWDLContemptMaxValueId),
-                                  options.Get<float>(kWDLContemptMaxValueId));
+                                  -options.Get<float>(kContemptMaxValueId),
+                                  options.Get<float>(kContemptMaxValueId));
       float scale_active = 1.0f / (1.0f / scale_zero +
                                    std::exp(elo_active / elo_slope - offset));
       float scale_opp =
