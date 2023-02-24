@@ -440,8 +440,10 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  std::vector<std::string> perspective = {"sidetomove", "white", "black", "none"};
-  options->Add<ChoiceOption>(kPerspectiveId, perspective) = "auto";
+  std::vector<std::string> perspective = {"sidetomove", "white", "black",
+                                          "none"};
+  options->Add<ChoiceOption>(kContemptPerspectiveId, perspective) =
+      "sidetomove";
   options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
@@ -541,7 +543,7 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kPerspective(options.Get<std::string>(kPerspectiveId)),
+      kContemptPerspective(options.Get<std::string>(kContemptPerspectiveId)),
       kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
@@ -581,8 +583,7 @@ SearchParams::SearchParams(const OptionsDict& options)
     float contempt = options.Get<float>(kUCIRatingAdvId);
     if (!options.IsDefault<std::string>(kContemptId)) {
       auto name = options.Get<std::string>(kUCIOpponentId);
-      for (auto& entry :
-           StrSplit(options.Get<std::string>(kContemptId), ",")) {
+      for (auto& entry : StrSplit(options.Get<std::string>(kContemptId), ",")) {
         auto parts = StrSplit(entry, "=");
         if (parts.size() == 1) {
           try {
