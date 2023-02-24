@@ -284,12 +284,12 @@ const OptionId SearchParams::kWDLRescaleDiffId{
     "wdl-rescale-diff", "WDLRescaleDiff",
     "Shifts the logistic WDL mean by diff in white's favor."};
 const OptionId SearchParams::kWDLContemptId{
-    "wdl-contempt", "WDLContempt",
+    "contempt", "Contempt",
     "The simulated rating advantage for the WDL conversion. Comma separated "
     "list in the form [name=]value, where the name is compared with the "
     "`UCI_Opponent` value to find the appropriate contempt value. The default "
-    "value is taken from `UCI_RatingAdv` and will be overriden with a value "
-    "given here without the name part."};
+    "value is taken from `UCI_RatingAdv` and will be overridden if either a "
+    "value without name is given, or if a name match is found."};
 const OptionId SearchParams::kWDLContemptMaxValueId{
     "wdl-contempt-max-value", "WDLContemptMaxValue",
     "The maximum value of contempt used. Higher values will be capped."};
