@@ -105,6 +105,12 @@ std::string DecompressGzip(const std::string& filename) {
 }
 
 void FixOlderWeightsFile(WeightsFile* file) {
+  if (file->has_weights() && !file->weights().has_encoding()) {
+    file->mutable_weights()->set_encoding(
+        static_cast<pblczero::Weights::Encoding>(
+            file->format().weights_encoding()));
+  }
+
   using nf = pblczero::NetworkFormat;
   auto network_format = file->format().network_format().network();
   const auto has_network_format = file->format().has_network_format();
@@ -160,7 +166,7 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   }
 
   if (net.has_weights() &&
-      net.format().weights_encoding() != pblczero::Format::LINEAR16) {
+      net.weights().encoding() != pblczero::Weights::LINEAR16) {
     throw Exception("Invalid weight file: unsupported encoding.");
   }
 
