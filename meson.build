@@ -478,6 +478,11 @@ if get_option('build_backends')
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
     endif
     cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
+	if get_option('cutlass')
+	  add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
+	  cuda_arguments += ['-DUSE_CUTLASS']
+	  cuda_arguments += ['-I', get_option('cutlass_include')]
+	endif
     nvcc_extra_args = []
     if cuda_cc != ''
       nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
@@ -497,6 +502,15 @@ if get_option('build_backends')
       depend_files: 'src/neural/cuda/winograd_helper.inc',
       command : [nvcc, nvcc_extra_args, cuda_arguments]
     )
+	
+	if get_option('cutlass')
+	  nvcc_cutlass_args = ['-arch=compute_80', '-code=sm_80']
+      files += custom_target('cuda cutlass code',
+        input : 'src/neural/cuda/cutlass_kernels.cu',
+        output : outputname,
+        command : [nvcc, nvcc_cutlass_args, cuda_arguments]
+      )
+    endif	
 
     # Handling of fp16 cuda code.
     nvcc_sm_list = ['80', '75', '86', '70', '89', '90']

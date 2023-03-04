@@ -337,7 +337,7 @@ class EncoderBlock {
  public:
   EncoderBlock(const LegacyWeights::EncoderLayer& cpu_weights, void* scratch,
                int heads, int size, float alpha, DataType* smolgen_global_scratch,
-               int smolgen_global_size, int max_batch_size);
+               int smolgen_global_size, int max_batch_size, bool fused_mha);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -379,6 +379,7 @@ class EncoderBlock {
   float alpha_; // scale to apply to skip connection add
 
   const bool has_smolgen_;
+  const bool use_fused_mha_;
 
   // Output sizes for smolgen layers.
   int smol_compress_size_;
@@ -469,7 +470,7 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const LegacyWeights& weights, void* scratch,
                 ActivationFunction default_act, int num_res_blocks,
-                int input_c, int max_batch_size);
+                int input_c, int max_batch_size, bool fused_mha);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -490,6 +491,7 @@ class AttentionBody : public BaseLayer<DataType> {
   int smolgen_global_size_;
   const bool has_gating_;
   const bool has_smolgen_;
+  const bool use_fused_mha_;
 };
 
 

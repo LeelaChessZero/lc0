@@ -38,7 +38,7 @@
 
 namespace lczero {
 
-#if 0
+#if 1
 // debug code to dump allocation in GPU memory
 template <typename T>
 void dumpTensor(T* memory, int elements, const char* message, bool only_summary = false) {
@@ -75,9 +75,9 @@ void dumpTensor(T* memory, int elements, const char* message, bool only_summary 
         }
 
         if (!only_summary || i < 2 || i == elements - 1) {
-          // printf("%8.4f ", val);
-          // if ((i % 8) == 7) printf("\n");
-          printf("%i;%.6f\n", i, val);
+           printf("%8.4f ", val);
+           if ((i % 8) == 7) printf("\n");
+          //printf("%i;%.6f\n", i, val);
         }
     }
     free(temp);
@@ -1444,7 +1444,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_heads_, embedding_op_size_, 1.0f,
-        nullptr, 0, max_batch_size);    // using alpha = 1 for now (TODO: may change?)
+        nullptr, 0, max_batch_size, false);    // using alpha = 1 for now (TODO: may change?)
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1452,8 +1452,12 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
 template <typename DataType>
 EncoderBlock<DataType>::EncoderBlock(
     const LegacyWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
-    int size, float alpha, DataType* smolgen_global_scratch, int smolgen_global_size, int max_batch_size)
-    : encoder_heads_(heads), embedding_op_size_(size), alpha_(alpha),
+    int size, float alpha, DataType* smolgen_global_scratch,
+    int smolgen_global_size, int max_batch_size, bool fused_mha)
+    : encoder_heads_(heads),
+      embedding_op_size_(size),
+      alpha_(alpha),
+      use_fused_mha_(fused_mha),
       has_smolgen_(cpu_weights.mha.has_smolgen), max_batch_size_(max_batch_size) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
@@ -1664,8 +1668,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       const int num_outputs = smol_global_size_; /* hwhw: 64 * 64 */
       const int batch = N * encoder_heads_;
       cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                  num_inputs, 1.0f, (const DataType*)smol_global, num_inputs,
-                  scratch0, num_inputs, 0.0f, scratch3, num_outputs);
+                  num_inputs, 1.0f, (const DataType*)smol_global, num_inputs, scratch0, num_inputs,
+                  0.0f, scratch3, num_outputs);
     }
 
   }
@@ -1711,23 +1715,42 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   // shape(k)[-1] = depth
   float factor = 1.0f / sqrt((float)depth);
 
+#ifdef USE_CUTLASS
+  if (use_fused_mha_) {
+    // TODO: check if we need skip in a different tensor than same tensor as output!
+    bool success =
+        fusedMHA(scratch3, mha_q, mha_k, mha_v,
+                 has_smolgen_ ? scratch3 : nullptr, N,
+                 encoder_heads_, depth, stream);
+
+    ReportCUDAErrors(cudaGetLastError());
+    if (!success) throw Exception("Some error running fused MHA");
+  } else
+#endif
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
     if (scratch0 != offset_scratches_[stream]) {
-      std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_*5);
+      std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_ * 5);
       for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
         int h = i % encoder_heads_;
         int n = i / encoder_heads_;
         offsets[i] = mha_k + h * depth + 64 * d_model * n;
-        offsets[i + encoder_heads_ * max_batch_size_] = mha_q + h * depth + 64 * d_model * n;
-        offsets[i + 2 * encoder_heads_ * max_batch_size_] = scratch2 + i * 64 * 64;
-        offsets[i + 3 * encoder_heads_ * max_batch_size_] = mha_v + h * depth + 64 * d_model * n;
-        offsets[i + 4 * encoder_heads_ * max_batch_size_] = scratch3 + h*depth + 64*d_model*n;
+        offsets[i + encoder_heads_ * max_batch_size_] =
+            mha_q + h * depth + 64 * d_model * n;
+        offsets[i + 2 * encoder_heads_ * max_batch_size_] =
+            scratch2 + i * 64 * 64;
+        offsets[i + 3 * encoder_heads_ * max_batch_size_] =
+            mha_v + h * depth + 64 * d_model * n;
+        offsets[i + 4 * encoder_heads_ * max_batch_size_] =
+            scratch3 + h * depth + 64 * d_model * n;
       }
-      ReportCUDAErrors(cudaMalloc((void**)&scratch_rel_ptrs_, encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
       ReportCUDAErrors(
-        cudaMemcpy(scratch_rel_ptrs_, offsets.data(), encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
-          cudaMemcpyHostToDevice));
+          cudaMalloc((void**)&scratch_rel_ptrs_,
+                     encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
+      ReportCUDAErrors(
+          cudaMemcpy(scratch_rel_ptrs_, offsets.data(),
+                     encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
+                     cudaMemcpyHostToDevice));
       offset_scratches_[stream] = scratch0;
     }
     cublasXGemmBatched<DataType>(
@@ -1735,42 +1758,30 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
         depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
                       // transform
         factor,       // to handle "/ tf.math.sqrt(dk)"
-        scratch_rel_ptrs_,// mha_k + offset /*A*/,
-        d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
-                          // other "depth" slices / heads
-        //64 * d_model,     /*strideA*/
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_,//mha_q + offset /*B*/,
-        d_model /*LDB*/,  // to skip over other other "depth" slices / heads
-        //64 * d_model,     /*strideB*/
-        0.0f,
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 2, //scratch2 + outOffset /*C*/,  // output (matmul_qk) goes to scratch2
-        64 /*LDC*/,
-        //64 * 64 /*strideC*/,
-        N * encoder_heads_);
-   }
+        scratch_rel_ptrs_, d_model /*LDA*/,
+        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_, d_model /*LDB*/,
+        0.0f, scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 2,
+        64 /*LDC*/, N * encoder_heads_);
 
-  // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
-  // attention_weights -> scratch2
-  if (has_smolgen_) {
-  // Add smolgen weights to the scaled matmul_qk attention logits before softmax.
-    Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, scratch3, stream);
-  } else {
-    Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, (const DataType*)nullptr, stream);
-  }
+    // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
+    // attention_weights -> scratch2
+    if (has_smolgen_) {
+      // Add smolgen weights to the scaled matmul_qk attention logits before
+      // softmax.
+      Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, scratch3,
+              stream);
+    } else {
+      Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2,
+              (const DataType*)nullptr, stream);
+    }
 
-  {
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_N, CUBLAS_OP_N, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 3, //mha_v + offset /*A*/,  // "v" matrix
-        d_model /*LDA*/,       // to skip over other "depth" slices / heads
-        //64 * d_model,          /*strideA*/
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 2, //scratch2 + weightsOffset /*B*/,
-        64 /*LDB*/, //64 * 64, /*strideB*/
-        0.0f,
-        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 4, //scratch3 + offset /*C*/,  // output goes to scratch3
-        d_model /*LDC*/,
-        //64 * d_model /*strideC*/,
-        N * encoder_heads_);
+        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 3,
+        d_model /*LDA*/,
+        scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 2, 64 /*LDB*/,
+        0.0f, scratch_rel_ptrs_ + encoder_heads_ * max_batch_size_ * 4,
+        d_model /*LDC*/, N * encoder_heads_);
   }
 
   // #final dense layer (mha_dense), scratch3 -> scratch2
@@ -1984,7 +1995,8 @@ template <typename DataType>
 AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
                                        void* scratch,
                                        ActivationFunction default_act,
-                                       int num_res_blocks, int input_c, int max_batch_size)
+                                       int num_res_blocks, int input_c, 
+                                       int max_batch_size, bool fused_mha)
     : embedding_op_size_(weights.ip_emb_b.size()),
       encoder_head_count_(weights.encoder_head_count),
       num_resi_blocks_(num_res_blocks),
@@ -1992,6 +2004,7 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
       input_c_(input_c),
       has_gating_(weights.ip_mult_gate.size() > 0 && weights.ip_add_gate.size() > 0),
       has_smolgen_(weights.has_smolgen),
+      use_fused_mha_(fused_mha),
       BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr) {
 
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
@@ -2012,7 +2025,7 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
-        smolgen_global_, smolgen_global_size_, max_batch_size);
+        smolgen_global_, smolgen_global_size_, max_batch_size, use_fused_mha_);
     encoder_weights_.emplace_back(pW);
   }
 }
