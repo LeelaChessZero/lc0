@@ -133,6 +133,11 @@ option('popcnt',
        value: true,
        description: 'Use the popcnt instruction')
 
+option('f16c',
+       type: 'boolean',
+       value: true,
+       description: 'Use natice fp16 conversion instructions')
+
 option('pext',
        type: 'boolean',
        value: false,

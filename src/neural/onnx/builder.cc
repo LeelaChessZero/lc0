@@ -38,8 +38,8 @@
 namespace lczero {
 
 OnnxBuilder::OnnxBuilder(int opset) : opset_(opset) {
-  if (opset < 7 || opset > 17) {
-    throw Exception("Only ONNX opsets between 7 and 17 are supported.");
+  if (opset < 7 || opset > 18) {
+    throw Exception("Only ONNX opsets between 7 and 18 are supported.");
   }
   model_.set_ir_version(4);
   model_.set_domain("org.lczero.models.*");
@@ -314,6 +314,7 @@ std::vector<std::string> OnnxBuilder::Split(const std::string& name,
     }
     return out;
   }
+  if (opset_ >= 18) AddIntAttribute(node, "num_outputs", 2);
   node->add_output(name + "/out1");
   node->add_output(name + "/out2");
   return {name + "/out1", name + "/out2"};
@@ -372,6 +373,69 @@ std::string OnnxBuilder::LayerNormalization(const std::string& name,
   AddIntAttribute(node, "axis", axis);
   AddFloatAttribute(node, "epsilon", epsilon);
   return out;
+}
+
+std::string OnnxBuilder::Expand(const std::string& name,
+                                const std::string& input,
+                                const std::string& shape) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Expand");
+  node->add_input(shape);
+  return out;
+}
+
+std::string OnnxBuilder::Shape(const std::string& name,
+                               const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Shape");
+}
+
+std::string OnnxBuilder::Exp(const std::string& name,
+                             const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Exp");
+}
+
+std::string OnnxBuilder::Div(const std::string& name, const std::string& input1,
+                             const std::string& input2) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "Div");
+  node->add_input(input2);
+  return out;
+}
+
+std::string OnnxBuilder::Sub(const std::string& name, const std::string& input1,
+                             const std::string& input2) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "Sub");
+  node->add_input(input2);
+  return out;
+}
+
+std::string OnnxBuilder::Greater(const std::string& name,
+                                 const std::string& input1,
+                                 const OnnxConst& input2) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "Greater");
+  node->add_input(AddInitializer(name + "/threshold", input2));
+  return out;
+}
+
+std::string OnnxBuilder::Where(const std::string& name,
+                               const std::string& input1,
+                               const std::string& input2,
+                               const std::string& input3) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input1, "Where");
+  node->add_input(input2);
+  node->add_input(input3);
+  return out;
+}
+
+std::string OnnxBuilder::Mish(const std::string& name,
+                              const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Mish");
 }
 
 }  // namespace lczero
