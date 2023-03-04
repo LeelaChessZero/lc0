@@ -398,6 +398,8 @@ void init_indices() {
       } else {
         Binomial[k][n] = 0;
       }
+    }
+  }
 
   for (int i = 0; i < 6; i++) {
     size_t s = 0;
