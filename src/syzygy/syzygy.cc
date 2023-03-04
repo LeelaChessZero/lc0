@@ -386,16 +386,18 @@ Key MaterialHash[16][64];
 
 void init_indices() {
   // Binomial[k][n] = Bin(n, k)
-  for (int i = 0; i < 7; i++)
-    for (int j = 0; j < 64; j++) {
-      size_t f = 1;
-      size_t l = 1;
-      for (int k = 0; k < i; k++) {
-        f *= (j - k);
-        l *= (k + 1);
+  Binomial[0][0] = 1;
+  for (int n = 1; n < 64; n++) {
+    Binomial[0][n] = 1;
+    Binomial[1][n] = n;
+    for (int k = 2; k < 7; k++) {
+      if (k < n;) {
+        Binomial[k][n] = Binomial[k - 1][n - 1] + Binomial[k][n - 1];
+      } else if (k == n;) {
+        Binomial[k][n] = 1;
+      } else {
+        Binomial[k][n] = 0;
       }
-      Binomial[i][j] = f / l;
-    }
 
   for (int i = 0; i < 6; i++) {
     size_t s = 0;
