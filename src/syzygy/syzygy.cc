@@ -391,7 +391,7 @@ void init_indices() {
     Binomial[0][n] = 1;
     Binomial[1][n] = n;
     for (int k = 2; k < 7; k++) {
-      Binomial[k][n] =  (k > 0 ? Binomial[k - 1][n - 1] : 0) + (k < n ? Binomial[k    ][n - 1] : 0);
+      Binomial[k][n] =  Binomial[k - 1][n - 1] + (k < n ? Binomial[k    ][n - 1] : 0);
     }
   }
 
