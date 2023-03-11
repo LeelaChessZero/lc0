@@ -1008,6 +1008,25 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
             weights.format().network_format().default_activation()) +
         " is not supported by BLAS backend.");
   }
+
+  // @todo Hack for old encoding compatibility. REMOVE BEFORE MERGING.
+  if (w->format().network_format().network() ==
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+      w->weights().encoder().size() > 0) {
+    CERR << "Attention body detected, hacking network format.";
+    WeightsFile x = *w;
+    x.mutable_format()->mutable_network_format()->set_network(
+        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+    if (w->weights().has_smolgen_w()) {
+      CERR << "BT2 detected, hacking activations.";
+      x.mutable_format()->mutable_network_format()->set_ffn_activation(
+          pblczero::NetworkFormat::FFN_ACTIVATION_RELU_2);
+      x.mutable_format()->mutable_network_format()->set_smolgen_activation(
+          pblczero::NetworkFormat::SMOLGEN_ACTIVATION_SWISH);
+    }
+    return std::make_unique<BlasNetwork<use_eigen>>(x, options);
+  }
+
   return std::make_unique<BlasNetwork<use_eigen>>(weights, options);
 }
 
