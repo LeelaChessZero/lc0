@@ -216,9 +216,7 @@ CC=clang-6.0 CXX=clang++-6.0 ./build.sh -Ddefault_library=static
 Python bindings can be built and installed as follows.
 
 ```shell
-git clone https://github.com/LeelaChessZero/lc0.git
-cd lc0
-pip install --user .
+pip install --user git+https://github.com/LeelaChessZero/lc0.git
 ```
 
 This will build the package `lczero-bindings` and install it to your Python user install directory.
