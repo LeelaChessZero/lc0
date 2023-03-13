@@ -106,8 +106,9 @@ class Converter {
                              ActivationFunction activation);
 
   std::string MakeSmolgen(OnnxBuilder* builder,
-                          const LegacyWeights::EncoderLayer& layer, int d_model,
-                          int heads, const std::string& encoder_in,
+                          const LegacyWeights::EncoderLayer& layer,
+                          int embedding_size, int heads,
+                          const std::string& encoder_in,
                           const std::string& name);
 
   std::string MakeEncoderLayer(OnnxBuilder* builder,
@@ -288,7 +289,7 @@ void Converter::AddStdInitializers(OnnxBuilder* builder) {
 
 std::string Converter::MakeSmolgen(OnnxBuilder* builder,
                                    const LegacyWeights::EncoderLayer& layer,
-                                   int d_model, int heads,
+                                   int embedding_size, int heads,
                                    const std::string& encoder_in,
                                    const std::string& name) {
   const auto smolgen_activation =
@@ -298,13 +299,13 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
           ? default_activation_
           : static_cast<ActivationFunction>(smolgen_activation);
   const int smolgen_hidden_channels =
-      layer.mha.smolgen.compress.size() / d_model;
+      layer.mha.smolgen.compress.size() / embedding_size;
   const int smolgen_hidden_sz = layer.mha.smolgen.dense1_b.size();
   const int smolgen_gen_sz = layer.mha.smolgen.dense2_b.size() / heads;
   auto flow = builder->MatMul(
       name + "/smolgen/compress", encoder_in,
       *GetWeghtsConverter(layer.mha.smolgen.compress,
-                          {d_model, smolgen_hidden_channels}, {1, 0}));
+                          {embedding_size, smolgen_hidden_channels}, {1, 0}));
   flow = builder->Reshape(
       name + "/smolgen/compress/reshape", flow,
       builder->AddInitializer(
@@ -396,7 +397,7 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Mul(name + "/mha/QK/scale", flow, *scale);
   if (layer.mha.has_smolgen) {
     auto smolgen_weights =
-        MakeSmolgen(builder, layer, d_model, heads, encoder_in, name);
+        MakeSmolgen(builder, layer, embedding_size, heads, encoder_in, name);
     flow = builder->Add(name + "/smolgen_weights", flow, smolgen_weights);
   }
   flow = builder->Softmax(name + "/mha/QK/softmax", flow, 3);
@@ -575,7 +576,8 @@ std::vector<int> MakePolicyMap(const short* map, int size) {
 std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
                                            const std::string& input,
                                            const LegacyWeights& weights) {
-  const int embedding_size = weights.ip_pol_b.size();
+  const int embedding_size = weights.ip_emb_b.size();
+  const int policy_embedding_size = weights.ip_pol_b.size();
   const int policy_d_model = weights.ip2_pol_b.size();
   auto flow = input;
   auto activation =
@@ -593,26 +595,27 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
   }
   flow = builder->MatMul(
       "/policy/dense1/matmul", flow,
-      *GetWeghtsConverter(
-          weights.ip_pol_w,
-          {NumEncBlocks() > 0 ? embedding_size : NumFilters(), embedding_size},
-          {1, 0}));
-  flow = builder->Add("/policy/dense1/add", flow,
-                      *GetWeghtsConverter(weights.ip_pol_b, {embedding_size}));
+      *GetWeghtsConverter(weights.ip_pol_w,
+                          {NumEncBlocks() > 0 ? embedding_size : NumFilters(),
+                           policy_embedding_size},
+                          {1, 0}));
+  flow = builder->Add(
+      "/policy/dense1/add", flow,
+      *GetWeghtsConverter(weights.ip_pol_b, {policy_embedding_size}));
   flow = MakeActivation(builder, flow, "/policy/dense1", activation);
 
   for (size_t i = 0; i < weights.pol_encoder.size(); i++) {
     std::string name = "/policy/enc_layer_" + std::to_string(i);
 
-    flow = MakeEncoderLayer(builder, weights.pol_encoder[i], embedding_size,
-                            weights.pol_encoder_head_count, flow, name,
-                            activation);
+    flow = MakeEncoderLayer(
+        builder, weights.pol_encoder[i], policy_embedding_size,
+        weights.pol_encoder_head_count, flow, name, activation);
   }
   auto encoder_out = flow;
   flow = builder->MatMul(
       "/policy/Q/matmul", encoder_out,
-      *GetWeghtsConverter(weights.ip2_pol_w, {embedding_size, policy_d_model},
-                          {1, 0}));
+      *GetWeghtsConverter(weights.ip2_pol_w,
+                          {policy_embedding_size, policy_d_model}, {1, 0}));
   flow = builder->Add("/policy/Q/add", flow,
                       *GetWeghtsConverter(weights.ip2_pol_b, {policy_d_model}));
   auto Q = builder->Reshape(
@@ -621,8 +624,8 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
                               Int64OnnxConst({-1, 64, policy_d_model}, {3})));
   flow = builder->MatMul(
       "/policy/K/matmul", encoder_out,
-      *GetWeghtsConverter(weights.ip3_pol_w, {embedding_size, policy_d_model},
-                          {1, 0}));
+      *GetWeghtsConverter(weights.ip3_pol_w,
+                          {policy_embedding_size, policy_d_model}, {1, 0}));
   flow = builder->Add("/policy/K/add", flow,
                       *GetWeghtsConverter(weights.ip3_pol_b, {policy_d_model}));
   auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
