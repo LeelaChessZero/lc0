@@ -281,8 +281,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto d_internal = floatD;
     float mu_uci = 0.0f;
     // Only the diff effect is inverted, so we only need to call if diff != 0.
-    if (params_.GetContemptPerspective() != "none" &&
-        params_.GetWDLRescaleDiff() != 0) {
+    if (params_.GetContemptPerspective() != "none") {
       auto sign = ((params_.GetContemptPerspective() == "sidetomove") ||
                    ((params_.GetContemptPerspective() == "black") ==
                     played_history_.IsBlackToMove()))
