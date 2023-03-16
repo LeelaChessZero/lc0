@@ -201,8 +201,9 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
-                       float wdl_rescale_diff, float sign, bool invert) {
+inline void WDLRescale(float& v, float& d, float& mu_uci,
+                       float wdl_rescale_ratio, float wdl_rescale_diff,
+                       float sign, bool invert) {
   if (invert) {
     wdl_rescale_diff = -wdl_rescale_diff;
     wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
@@ -228,6 +229,7 @@ inline void WDLRescale(float& v, float& d, float wdl_rescale_ratio,
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
+    if (mu_uci != nullptr) mu_uci = mu_new;
   }
 }
 }  // namespace
@@ -277,6 +279,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto floatD = edge.GetD(default_d);
     auto wl_internal = wl;
     auto d_internal = floatD;
+    float mu_uci = 0.0f;
     // Only the diff effect is inverted, so we only need to call if diff != 0.
     if (params_.GetContemptPerspective() != "none" &&
         params_.GetWDLRescaleDiff() != 0) {
@@ -285,7 +288,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                     played_history_.IsBlackToMove()))
                       ? 1.0f
                       : -1.0f;
-      WDLRescale(wl, floatD, params_.GetWDLRescaleRatio(),
+      WDLRescale(wl, floatD, mu_uci, params_.GetWDLRescaleRatio(),
                  params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
                  sign, true);
     }
@@ -308,6 +311,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       uci_info.score = q * 10000;
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
+    } else if (score_type == "WDL_mu") {
+      uci_info.score = mu_uci * 100;
     }
 
     auto w = std::max(
@@ -2160,7 +2165,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
     if (params_.GetWDLRescaleRatio() != 1.0f ||
         params_.GetWDLRescaleDiff() != 0.0f) {
-      WDLRescale(v, d, params_.GetWDLRescaleRatio(),
+      WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
                  params_.GetWDLRescaleDiff(), sign, false);
     }
   }

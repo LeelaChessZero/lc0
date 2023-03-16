@@ -427,7 +427,8 @@ void SearchParams::Populate(OptionsParser* options) {
                                          "centipawn_2018",
                                          "win_percentage",
                                          "Q",
-                                         "W-L"};
+                                         "W-L",
+                                         "WDL_mu"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
