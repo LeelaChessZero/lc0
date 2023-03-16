@@ -201,7 +201,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float& v, float& d, float& mu_uci,
+inline void WDLRescale(float& v, float& d, *mu_uci,
                        float wdl_rescale_ratio, float wdl_rescale_diff,
                        float sign, bool invert) {
   if (invert) {
@@ -229,7 +229,7 @@ inline void WDLRescale(float& v, float& d, float& mu_uci,
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
-    if (mu_uci) mu_uci = mu_new;
+    if (mu_uci) *mu_uci = mu_new;
   }
 }
 }  // namespace
@@ -288,7 +288,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                     played_history_.IsBlackToMove()))
                       ? 1.0f
                       : -1.0f;
-      WDLRescale(wl, floatD, mu_uci, params_.GetWDLRescaleRatio(),
+      WDLRescale(wl, floatD, &mu_uci, params_.GetWDLRescaleRatio(),
                  params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
                  sign, true);
     }
