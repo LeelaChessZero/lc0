@@ -201,7 +201,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float& v, float& d, *mu_uci,
+inline void WDLRescale(float& v, float& d, float *mu_uci,
                        float wdl_rescale_ratio, float wdl_rescale_diff,
                        float sign, bool invert) {
   if (invert) {
