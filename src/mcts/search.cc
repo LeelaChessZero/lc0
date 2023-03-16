@@ -229,7 +229,7 @@ inline void WDLRescale(float& v, float& d, float& mu_uci,
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
-    if (mu_uci != nullptr) mu_uci = mu_new;
+    if (mu_uci) mu_uci = mu_new;
   }
 }
 }  // namespace
