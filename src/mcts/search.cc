@@ -201,7 +201,7 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float& v, float& d, float *mu_uci,
+inline void WDLRescale(float& v, float& d, float* mu_uci,
                        float wdl_rescale_ratio, float wdl_rescale_diff,
                        float sign, bool invert) {
   if (invert) {
@@ -311,7 +311,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
     } else if (score_type == "WDL_mu") {
-      uci_info.score = mu_uci * 100;
+      uci_info.score =
+          (mu_uci != 0.0f ? mu_uci * 100 : 90 * tan(1.5637541897 * wl));
     }
 
     auto w = std::max(
