@@ -1,12 +1,5 @@
-To build with tensorflow under linux you need to install Tensorflow_cc from
-<https://github.com/FloopCZ/tensorflow_cc>. Either release v1.9.0, v1.12.0 or
-v1.13.0. Tensorflow_cc requires a specific version of protobuf, which constrains
-the build. Release v1.9.0 works out of the box, since the default protobuf
-subproject (v3.5.1) is compatible and is used instead of a system installed
-version. In contrast release v1.12.0 needs protobuf v3.6.0 and release v1.13.0
-is built with protobuf 3.6.1 but also works with 3.6.0. For those versions
-`-Dprotobuf-3-6-0=true` should be added to the build command line. Note that
-this protobuf version has issues with static builds and crashes so is not
-recommended for normal use. The crashes look very similar to:
-* <https://github.com/protocolbuffers/protobuf/issues/5107>
-* <https://github.com/protocolbuffers/protobuf/issues/5353>
+# Build lc0 with tensorflow
+The first step is to add `-Dtensorflow=true` to the meson comamnd line. If you are lucky meson will pick up the dependency and everything will work right away. If not, then there is some more meson options are required:
+1. Set `-Dtensorflow_include=/path/to/tensorflow/include/files`. This may not be the top tensorflow include directory, in some installations it was `tensorflow/bazel-bin/tensorflow/include` further down.
+2. Set `-Dtensorflow_libdir=/path/to/tensorflow_cc/library`. If you get link errors for protobuf functions, you should also add the path to protobuf library compiled during the tensorflow build, so use `-Dtensorflow_libdir=/path/to/tensorflow_cc/library,/path/to/protobuf/library` instead.
+3. Make sure you pass `-Dblas=false`, otherwise the will most probably be conflcits with the eigen library.
