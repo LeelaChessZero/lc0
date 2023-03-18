@@ -132,6 +132,10 @@ class CudaNetworkComputation : public NetworkComputation {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
 
+  float GetPUVal(int sample, int move_id) const override {
+    return inputs_outputs_->op_unc_mem_[sample * kNumOutputPolicy + move_id];
+  }
+
   float GetMVal(int sample) const override {
     if (moves_left_) {
       return inputs_outputs_->op_moves_left_mem_[sample];
@@ -408,6 +412,32 @@ class CudaNetwork : public Network {
     }
     policy_out_ = getLastLayer();
 
+    {
+      auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+          resi_last_, kNumFilters, 8, 8, kNumFilters, true, true, false, false,
+          0, use_gemm_ex);
+      conv1->LoadWeights(&weights.unc1.weights[0], &weights.unc1.biases[0],
+                         scratch_mem_);
+      network_.emplace_back(std::move(conv1));
+
+      auto pol_channels = weights.unc.biases.size();
+
+      // No relu
+      auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+          getLastLayer(), pol_channels, 8, 8, kNumFilters, false, true, false,
+          false, 0, use_gemm_ex);
+      conv2->LoadWeights(&weights.unc.weights[0], &weights.unc.biases[0],
+                         scratch_mem_);
+      network_.emplace_back(std::move(conv2));
+
+      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8);
+      policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
+
+      network_.emplace_back(std::move(policymap));
+    }
+    policy_unc_out_ = getLastLayer();
+
     // Value head.
     {
       auto convVal = std::make_unique<Conv1Layer<DataType>>(
@@ -535,6 +565,7 @@ class CudaNetwork : public Network {
     }
 
     float* opPol = io->op_policy_mem_gpu_;
+    float* opPolUnc = io->op_unc_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
     float* opMov = io->op_moves_left_mem_gpu_;
 
@@ -668,6 +699,33 @@ class CudaNetwork : public Network {
     // Copy policy output from device memory to host memory.
     ReportCUDAErrors(
         cudaMemcpyAsync(io->op_policy_mem_, io->op_policy_mem_gpu_,
+                        sizeof(float) * kNumOutputPolicy * batchSize,
+                        cudaMemcpyDeviceToHost, stream));
+    {
+      network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          stream);  // unc conv1
+
+      network_[l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], nullptr,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          stream);  // unc conv2
+
+      if (fp16) {
+        network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[1], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // unc map layer
+        copyTypeConverted(opPolUnc, (half*)(tensor_mem[0]),
+                          batchSize * kNumOutputPolicy,
+                          stream);  // UNC output
+      } else {
+        network_[l++]->Eval(batchSize, (DataType*)opPolUnc, tensor_mem[1], nullptr,
+                            scratch_mem, scratch_size_, nullptr, cublas,
+                            stream);  // unc map layer  // UNC output
+      }
+    }
+    // Copy unc output from device memory to host memory.
+    ReportCUDAErrors(
+        cudaMemcpyAsync(io->op_unc_mem_, io->op_unc_mem_gpu_,
                         sizeof(float) * kNumOutputPolicy * batchSize,
                         cudaMemcpyDeviceToHost, stream));
 
@@ -832,6 +890,7 @@ class CudaNetwork : public Network {
 
   BaseLayer<DataType>* resi_last_;
   BaseLayer<DataType>* policy_out_;
+  BaseLayer<DataType>* policy_unc_out_;
   BaseLayer<DataType>* value_out_;
   BaseLayer<DataType>* moves_left_out_;
 

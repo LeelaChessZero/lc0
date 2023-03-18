@@ -2101,9 +2101,13 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // Intermediate array to store values when processing policy.
   // There are never more than 256 valid legal moves in any legal position.
   std::array<float, 256> intermediate;
+  std::array<float, 256> intermediatepu;
   int counter = 0;
   for (auto& edge : node->Edges()) {
     float p = computation.GetPVal(
+        idx_in_computation,
+        edge.GetMove().as_nn_index(node_to_process->probability_transform));
+    intermediatepu[counter] = computation.GetPUVal(
         idx_in_computation,
         edge.GetMove().as_nn_index(node_to_process->probability_transform));
     intermediate[counter++] = p;
@@ -2111,16 +2115,29 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   float total = 0.0;
   for (int i = 0; i < counter; i++) {
+    // float delta = intermediatepu[i] * params_.GetPUScale() + params_.GetPUOffset();
+    float delta = 0.0f;
+    float basis = std::min(0.0f, intermediate[i] - max_p + delta);
     // Perform softmax and take into account policy softmax temperature T.
     // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    float p =
-        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
+    float p = FastExp(basis / params_.GetPolicySoftmaxTemp());
     intermediate[i] = p;
     total += p;
   }
+  // Normalize P values to add up to 1.0.
+  float scale = total > 0.0f ? 1.0f / total : 1.0f;
+  total = 0.0;
+  for (int i = 0; i < counter; i++) {
+    float e2x = FastExp(intermediatepu[i] * 2.0);
+    //std::cout << (e2x - 1.0f) / (1.0f + e2x) << std::endl;
+    intermediate[i] =
+        intermediate[i] * scale +
+        params_.GetPUScale() * (e2x - 1.0f) / (1.0f + e2x);
+    total += intermediate[i];
+  }
   counter = 0;
   // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
+  scale = total > 0.0f ? 1.0f / total : 1.0f;
   for (auto& edge : node->Edges()) {
     edge.edge()->SetP(intermediate[counter++] * scale);
   }
