@@ -314,8 +314,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
     } else if (score_type == "WDL_mu") {
-      uci_info.score =
-          (mu_uci != 0.0f ? mu_uci * 100 : 90 * tan(1.5637541897 * wl));
+      uci_info.score = (mu_uci != 0.0f && std::abs(wl) + d < 0.98f
+                            ? mu_uci * 100
+                            : 90 * tan(1.5637541897 * wl));
     }
 
     auto w = std::max(
