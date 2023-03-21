@@ -279,14 +279,15 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
     // Smolgen.
     if (layer.mha.has_smolgen) {
-      float* input = &head_buffer[batchStart];
+      float* input = &head_buffer[batch * kSquares * embedding_size];
       float* temp1 = &head_buffer2[batchStart];
       float* temp2 = &head_buffer3[batchStart];
 
       // Compress.
-      const auto hidden_channels = layer.mha.smolgen.compress.size() / d_model;
+      const auto hidden_channels =
+          layer.mha.smolgen.compress.size() / embedding_size;
       FullyConnectedLayer<use_eigen>::Forward1D(
-          kSquares, d_model, hidden_channels, input,
+          kSquares, embedding_size, hidden_channels, input,
           layer.mha.smolgen.compress.data(), (const float*)nullptr, NONE,
           temp1);
 
@@ -314,13 +315,21 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
                                     layer.mha.smolgen.ln2_betas.data(), 1e-3);
 
       // Global smolgen weights.
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          heads, gen_sz_outputs / heads, 64 * 64, temp1,
-          weights_.smolgen_w.data(), (const float*)nullptr, NONE, temp2);
-
-      // Add smolgen weights to QK.
-      for (auto i = 0; i < heads * kSquares * kSquares; i++) {
-        QK[i] += temp2[i];
+      const float* A = temp1;
+      const float* B = weights_.smolgen_w.data();
+      float* C = QK;
+      if (use_eigen) {
+        auto C_mat = EigenMatrixMap<float>(C, 64 * 64, heads);
+        C_mat.noalias() +=
+            ConstEigenMatrixMap<float>(B, gen_sz_outputs / heads, 64 * 64)
+                .transpose() *
+            ConstEigenMatrixMap<float>(A, gen_sz_outputs / heads, heads);
+      } else {
+#ifdef USE_BLAS
+        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, heads, 64 * 64,
+                    gen_sz_outputs / heads, 1.0f, A, gen_sz_outputs / heads, B,
+                    gen_sz_outputs / heads, 1.0f, C, 64 * 64);
+#endif
       }
     }
 
