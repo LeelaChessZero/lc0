@@ -227,8 +227,9 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
   // Smolgen.
   if (layer.mha.has_smolgen) {
-    float* input = &head_buffer[0];
+    const float* input = &head_buffer[0];
     float* QK = &head_buffer4[0];
+
     // Compress.
     const auto hidden_channels =
         layer.mha.smolgen.compress.size() / embedding_size;
@@ -242,7 +243,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
     const auto hidden_sz = layer.mha.smolgen.dense1_b.size();
     std::vector<float> temp2(batch_size * hidden_sz);
     FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size, kSquares * hidden_channels, hidden_sz, &temp1[0],
+        batch_size, kSquares * hidden_channels, hidden_sz, temp1.data(),
         layer.mha.smolgen.dense1_w.data(), layer.mha.smolgen.dense1_b.data(),
         smolgen_activation, temp2.data());
     // Layer Norm + skip connection.
@@ -255,7 +256,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
     const auto gen_sz_outputs = layer.mha.smolgen.dense2_b.size();
     std::vector<float> temp3(batch_size * gen_sz_outputs);
     FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size, hidden_sz, gen_sz_outputs, &temp2[0],
+        batch_size, hidden_sz, gen_sz_outputs, temp2.data(),
         layer.mha.smolgen.dense2_w.data(), layer.mha.smolgen.dense2_b.data(),
         smolgen_activation, temp3.data());
     // Layer Norm + skip connection.
@@ -267,7 +268,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
     // Global smolgen weights.
     FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size * heads, gen_sz_outputs / heads, 64 * 64, temp3.data(),
-        weights_.smolgen_w.data(), (const float*)nullptr, NONE, &QK[0]);
+        weights_.smolgen_w.data(), (const float*)nullptr, NONE, QK);
   }
 
   // Q
