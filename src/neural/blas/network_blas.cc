@@ -267,7 +267,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
     // Global smolgen weights.
     FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size * heads, gen_sz_outputs / heads, 64 * 64, temp3.data(),
+        batch_size * heads, gen_sz_outputs / heads, kSquares * kSquares, temp3.data(),
         weights_.smolgen_w.data(), (const float*)nullptr, NONE, QK);
   }
 
