@@ -247,7 +247,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
         layer.mha.smolgen.dense1_w.data(), layer.mha.smolgen.dense1_b.data(),
         smolgen_activation, temp2.data());
     // Layer Norm + skip connection.
-    LayerNorm2DWithSkipConnection(batch_size, hidden_sz, temp2.data(),
+    LayerNorm2DWithSkipConnection(batch_size, hidden_sz, temp2.data(), 0.0f,
                                   (const float*)nullptr,
                                   layer.mha.smolgen.ln1_gammas.data(),
                                   layer.mha.smolgen.ln1_betas.data(), 1e-3);
@@ -261,7 +261,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
         smolgen_activation, temp3.data());
     // Layer Norm + skip connection.
     LayerNorm2DWithSkipConnection(batch_size, gen_sz_outputs, temp3.data(),
-                                  (const float*)nullptr,
+                                  0.0f, (const float*)nullptr,
                                   layer.mha.smolgen.ln2_gammas.data(),
                                   layer.mha.smolgen.ln2_betas.data(), 1e-3);
 
@@ -321,17 +321,19 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 #endif
       }
     }
+  }
 
-    // Apply Softmax.
-    for (int h = 0; h < heads * kSquares * kSquares; h += kSquares) {
+  // Apply Softmax.
+  float* QK = &head_buffer4[0];
+  for (size_t h = 0; h < batch_size * heads * kSquares * kSquares;
+       h += kSquares) {
 #if defined(USE_ISPC)
-      if (!use_eigen) {
-        ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
-        continue;
-      }
-#endif
-      SoftmaxActivation(kSquares, QK + h, QK + h);
+    if (!use_eigen) {
+      ispc::SoftmaxActivation(kSquares, QK + h, QK + h);
+      continue;
     }
+#endif
+    SoftmaxActivation(kSquares, QK + h, QK + h);
   }
 
   // V
@@ -372,17 +374,11 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
       layer.mha.dense_w.data(), layer.mha.dense_b.data(), NONE,
       head_buffer3.data());
 
-  if (alpha != 1.0f) {
-    for (size_t i = 0; i < batch_size * kSquares * embedding_size; i++) {
-      head_buffer[i] *= alpha;
-    }
-  }
-
   // Layer Norm + skip connection.
   LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                head_buffer.data(), head_buffer3.data(),
-                                layer.ln1_gammas.data(), layer.ln1_betas.data(),
-                                1e-6);
+                                head_buffer.data(), 1.0f / alpha,
+                                head_buffer3.data(), layer.ln1_gammas.data(),
+                                layer.ln1_betas.data(), 1e-6);
 
   // FFN.
   FullyConnectedLayer<use_eigen>::Forward1D(
@@ -395,18 +391,11 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
       head_buffer4.data(), layer.ffn.dense2_w.data(), layer.ffn.dense2_b.data(),
       NONE, head_buffer3.data());
 
-  if (alpha != 1.0f) {
-    for (size_t i = 0; i < batch_size * kSquares * layer.ffn.dense2_b.size();
-         i++) {
-      head_buffer[i] *= alpha;
-    }
-  }
-
   // Layer Norm + skip connection.
   LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                head_buffer.data(), head_buffer3.data(),
-                                layer.ln2_gammas.data(), layer.ln2_betas.data(),
-                                1e-6);
+                                head_buffer.data(), 1.0f / alpha,
+                                head_buffer3.data(), layer.ln2_gammas.data(),
+                                layer.ln2_betas.data(), 1e-6);
 }
 
 template <bool use_eigen>

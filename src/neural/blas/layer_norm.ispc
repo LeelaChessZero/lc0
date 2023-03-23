@@ -18,6 +18,7 @@
 
 export void LayerNorm2DWithSkipConnection(uniform const size_t channels,
                                           uniform float data[],
+                                          const uniform float alpha,
                                           const uniform float skip[],
                                           const uniform float gammas[],
                                           const uniform float betas[],
@@ -29,9 +30,9 @@ export void LayerNorm2DWithSkipConnection(uniform const size_t channels,
     float ivar = 0;
     float k = data[0];
     if (skip != NULL) {
-      k += skip[0];
+      k += alpha * skip[0];
       foreach (c = 0 ... channels) {
-        float t = data[c] + skip[c];
+        float t = data[c] + alpha * skip[c];
         data[c] = t;
         t -= k;
         imean += t;
@@ -53,7 +54,7 @@ export void LayerNorm2DWithSkipConnection(uniform const size_t channels,
   float imean = 0;
   if (skip != NULL) {
     foreach (c = 0 ... channels) {
-      data[c] += skip[c];
+      data[c] += alpha * skip[c];
       imean += data[c];
     }
   } else {
