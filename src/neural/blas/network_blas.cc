@@ -583,7 +583,90 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       conv_out = res_buffer3.data();
     }
 
-    // Need to preserve conv_out which is used for value and moves left heads.
+    // Need to preserve conv_out which is used for policy and moves left heads.
+    // Value head
+    if (attn_body_) {
+      FullyConnectedLayer<use_eigen>::Forward1D(
+          batch_size * kSquares, weights_.ip_emb_b.size(),
+          num_value_input_planes, res, weights_.ip_val_w.data(),
+          weights_.ip_val_b.data(), default_activation_, head_buffer.data());
+    } else {
+      Convolution1<use_eigen>::Forward(
+          batch_size, output_channels, num_value_input_planes, conv_out,
+          weights_.value.weights.data(), head_buffer.data());
+
+      BiasActivate(batch_size, num_value_input_planes, &head_buffer[0],
+                   weights_.value.biases.data(), default_activation_);
+    }
+
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size, num_value_input_planes * kSquares, num_value_channels,
+        head_buffer.data(), weights_.ip1_val_w.data(),
+        weights_.ip1_val_b.data(),
+        default_activation_,  // Activation On
+        output_fc.data());
+
+    // Now get the score
+    if (wdl_) {
+      std::vector<float> wdl(3 * batch_size);
+      FullyConnectedLayer<use_eigen>::Forward1D(
+          batch_size, num_value_channels, 3, output_fc.data(),
+          weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
+          ACTIVATION_NONE,  // Activation Off
+          wdl.data());
+
+      for (size_t j = 0; j < batch_size; j++) {
+        std::vector<float> wdl_softmax(3);
+        SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
+
+        q_values_.emplace_back(wdl_softmax[0]);
+        q_values_.emplace_back(wdl_softmax[1]);
+        q_values_.emplace_back(wdl_softmax[2]);
+      }
+    } else {
+      for (size_t j = 0; j < batch_size; j++) {
+        double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
+                             num_value_channels, weights_.ip2_val_w.data(),
+                             &output_fc[j * num_value_channels]) +
+                         weights_.ip2_val_b[0];
+
+        q_values_.emplace_back(std::tanh(winrate));
+      }
+    }
+    if (moves_left_) {
+      if (attn_body_) {
+        FullyConnectedLayer<use_eigen>::Forward1D(
+            batch_size * kSquares, weights_.ip_emb_b.size(),
+            num_moves_input_planes, res, weights_.ip_mov_w.data(),
+            weights_.ip_mov_b.data(), default_activation_, head_buffer.data());
+      } else {
+        Convolution1<use_eigen>::Forward(
+            batch_size, output_channels, num_moves_input_planes, conv_out,
+            weights_.moves_left.weights.data(), head_buffer.data());
+
+        BiasActivate(batch_size, num_moves_input_planes, &head_buffer[0],
+                     weights_.moves_left.biases.data(), default_activation_);
+      }
+
+      FullyConnectedLayer<use_eigen>::Forward1D(
+          batch_size, num_moves_input_planes * kSquares, num_moves_channels,
+          head_buffer.data(), weights_.ip1_mov_w.data(),
+          weights_.ip1_mov_b.data(),
+          default_activation_,  // Activation On
+          output_fc.data());
+
+      std::vector<float> output_moves_left(batch_size);
+      FullyConnectedLayer<use_eigen>::Forward1D(
+          batch_size, num_moves_channels, 1, output_fc.data(),
+          weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
+          ACTIVATION_RELU,  // Specifically Relu
+          output_moves_left.data());
+
+      for (size_t j = 0; j < batch_size; j++) {
+        m_values_.emplace_back(output_moves_left[j]);
+      }
+    }
+
     if (attn_policy_) {
       if (!attn_body_) {
         // NCHW to NHWC conversion.
@@ -750,89 +833,6 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       policy.assign(output_fc.begin() + j * num_output_policy,
                     output_fc.begin() + (j + 1) * num_output_policy);
       policies_.emplace_back(std::move(policy));
-    }
-
-    // Value head
-    if (attn_body_) {
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, weights_.ip_emb_b.size(),
-          num_value_input_planes, res, weights_.ip_val_w.data(),
-          weights_.ip_val_b.data(), default_activation_, head_buffer.data());
-    } else {
-      Convolution1<use_eigen>::Forward(
-          batch_size, output_channels, num_value_input_planes, conv_out,
-          weights_.value.weights.data(), head_buffer.data());
-
-      BiasActivate(batch_size, num_value_input_planes, &head_buffer[0],
-                   weights_.value.biases.data(), default_activation_);
-    }
-
-    FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size, num_value_input_planes * kSquares, num_value_channels,
-        head_buffer.data(), weights_.ip1_val_w.data(),
-        weights_.ip1_val_b.data(),
-        default_activation_,  // Activation On
-        output_fc.data());
-
-    // Now get the score
-    if (wdl_) {
-      std::vector<float> wdl(3 * batch_size);
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size, num_value_channels, 3, output_fc.data(),
-          weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
-          ACTIVATION_NONE,  // Activation Off
-          wdl.data());
-
-      for (size_t j = 0; j < batch_size; j++) {
-        std::vector<float> wdl_softmax(3);
-        SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
-
-        q_values_.emplace_back(wdl_softmax[0]);
-        q_values_.emplace_back(wdl_softmax[1]);
-        q_values_.emplace_back(wdl_softmax[2]);
-      }
-    } else {
-      for (size_t j = 0; j < batch_size; j++) {
-        double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
-                             num_value_channels, weights_.ip2_val_w.data(),
-                             &output_fc[j * num_value_channels]) +
-                         weights_.ip2_val_b[0];
-
-        q_values_.emplace_back(std::tanh(winrate));
-      }
-    }
-    if (moves_left_) {
-      if (attn_body_) {
-        FullyConnectedLayer<use_eigen>::Forward1D(
-            batch_size * kSquares, weights_.ip_emb_b.size(),
-            num_moves_input_planes, res, weights_.ip_mov_w.data(),
-            weights_.ip_mov_b.data(), default_activation_, head_buffer.data());
-      } else {
-        Convolution1<use_eigen>::Forward(
-            batch_size, output_channels, num_moves_input_planes, conv_out,
-            weights_.moves_left.weights.data(), head_buffer.data());
-
-        BiasActivate(batch_size, num_moves_input_planes, &head_buffer[0],
-                     weights_.moves_left.biases.data(), default_activation_);
-      }
-
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size, num_moves_input_planes * kSquares, num_moves_channels,
-          head_buffer.data(), weights_.ip1_mov_w.data(),
-          weights_.ip1_mov_b.data(),
-          default_activation_,  // Activation On
-          output_fc.data());
-
-      std::vector<float> output_moves_left(batch_size);
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size, num_moves_channels, 1, output_fc.data(),
-          weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
-          ACTIVATION_RELU,  // Specifically Relu
-          output_moves_left.data());
-
-      for (size_t j = 0; j < batch_size; j++) {
-        m_values_.emplace_back(output_moves_left[j]);
-      }
     }
   }
 }
