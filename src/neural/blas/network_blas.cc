@@ -48,6 +48,13 @@
 namespace lczero {
 namespace {
 
+struct Buffers {
+  std::vector<float> buffer1;
+  std::vector<float> buffer2;
+  std::vector<float> buffer3;
+  std::vector<float> buffer4;
+};
+
 template <bool use_eigen>
 class BlasComputation : public NetworkComputation {
  public:
@@ -102,6 +109,11 @@ class BlasComputation : public NetworkComputation {
     return policies_[sample][move_id];
   }
 
+  static void ClearBuffers() {
+    std::lock_guard<std::mutex> lock(buffers_lock_);
+    free_buffers_.clear();
+  }
+
  private:
   void EncodePlanes(const InputPlanes& sample, float* buffer);
   void MakeEncoderLayer(std::vector<float>& head_buffer,
@@ -135,13 +147,21 @@ class BlasComputation : public NetworkComputation {
   ActivationFunction ffn_activation_;
   bool attn_policy_;
   bool attn_body_;
+
+  static std::mutex buffers_lock_;
+  static std::vector<std::unique_ptr<Buffers>> free_buffers_;
 };
+
+template <bool use_eigen>
+std::mutex BlasComputation<use_eigen>::buffers_lock_;
+template <bool use_eigen>
+std::vector<std::unique_ptr<Buffers>> BlasComputation<use_eigen>::free_buffers_;
 
 template <bool use_eigen>
 class BlasNetwork : public Network {
  public:
   BlasNetwork(const WeightsFile& weights, const OptionsDict& options);
-  virtual ~BlasNetwork(){};
+  ~BlasNetwork() { BlasComputation<use_eigen>::ClearBuffers(); }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
@@ -461,18 +481,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
    num_output_policy = 1858
    */
 
-  // Allocate data for the whole batch.
   size_t max_fc_channels = std::max(
       num_value_channels, std::max(num_output_policy, num_moves_channels));
-  std::vector<float> output_fc(largest_batch_size * max_fc_channels);
-
-  std::vector<float> res_buffer1(largest_batch_size * max_channels * kSquares);
-  std::vector<float> res_buffer2(largest_batch_size * max_channels * kSquares);
-  std::vector<float> res_buffer3(largest_batch_size * max_channels * kSquares);
-
-  WinogradConvolution3<use_eigen> convolve3(largest_batch_size, max_channels,
-                                            max_output_channels);
-
   size_t max_head_planes =
       std::max(num_policy_input_planes,
                std::max(num_value_input_planes, num_moves_input_planes));
@@ -480,8 +490,32 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
     max_head_planes = std::max(std::max(max_head_planes, size_t{67}),
                                weights_.ip_pol_b.size());
   }
-  std::vector<float> head_buffer(largest_batch_size * max_head_planes *
-                                 kSquares);
+
+  std::vector<float> output_fc(largest_batch_size * max_fc_channels);
+
+  std::unique_ptr<Buffers> buffers;
+  {
+    std::lock_guard<std::mutex> lock(buffers_lock_);
+    if (free_buffers_.empty()) {
+      buffers = std::make_unique<Buffers>();
+    } else {
+      buffers = std::move(free_buffers_.back());
+      free_buffers_.pop_back();
+    }
+  }
+
+  // Allocate data for the whole batch.
+  std::vector<float>& res_buffer1 = buffers->buffer1;
+  vec_adjust(res_buffer1, largest_batch_size * max_channels * kSquares);
+  std::vector<float>& res_buffer2 = buffers->buffer2;
+  vec_adjust(res_buffer2, largest_batch_size * max_channels * kSquares);
+  std::vector<float>& res_buffer3 = buffers->buffer3;
+  vec_adjust(res_buffer3, largest_batch_size * max_channels * kSquares);
+  std::vector<float>& head_buffer = buffers->buffer4;
+  vec_adjust(head_buffer, largest_batch_size * max_head_planes * kSquares);
+
+  WinogradConvolution3<use_eigen> convolve3(largest_batch_size, max_channels,
+                                            max_output_channels);
 
   // These ones will rotate during the computation.
   float* conv_in = res_buffer1.data();
@@ -845,6 +879,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       policies_.emplace_back(std::move(policy));
     }
   }
+  std::lock_guard<std::mutex> lock(buffers_lock_);
+  free_buffers_.push_back(std::move(buffers));
 }
 
 template <bool use_eigen>
