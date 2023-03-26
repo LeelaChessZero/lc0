@@ -505,71 +505,59 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   }
 
   // Allocate data for the whole batch.
-  std::vector<float>& res_buffer1 = buffers->buffer1;
-  vec_adjust(res_buffer1, largest_batch_size * max_channels * kSquares);
-  std::vector<float>& res_buffer2 = buffers->buffer2;
-  vec_adjust(res_buffer2, largest_batch_size * max_channels * kSquares);
-  std::vector<float>& res_buffer3 = buffers->buffer3;
-  vec_adjust(res_buffer3, largest_batch_size * max_channels * kSquares);
+  std::vector<float>& buffer1 = buffers->buffer1;
+  vec_adjust(buffer1, largest_batch_size * max_channels * kSquares);
+  std::vector<float>& buffer2 = buffers->buffer2;
+  vec_adjust(buffer2, largest_batch_size * max_channels * kSquares);
+  std::vector<float>& buffer3 = buffers->buffer3;
+  vec_adjust(buffer3, largest_batch_size * max_channels * kSquares);
   std::vector<float>& head_buffer = buffers->buffer4;
   vec_adjust(head_buffer, largest_batch_size * max_head_planes * kSquares);
 
   WinogradConvolution3<use_eigen> convolve3(largest_batch_size, max_channels,
                                             max_output_channels);
 
-  // These ones will rotate during the computation.
-  float* conv_in = res_buffer1.data();
-  float* conv_out = res_buffer2.data();
-  float* res = res_buffer3.data();
-
   for (size_t i = 0; i < total_batches; i += largest_batch_size) {
     const auto batch_size = std::min(total_batches - i, largest_batch_size);
     for (size_t j = 0; j < batch_size; j++) {
-      EncodePlanes(planes_[i + j], &conv_in[j * kSquares * kInputPlanes]);
+      EncodePlanes(planes_[i + j], &buffer1[j * kSquares * kInputPlanes]);
     }
 
     if (num_res_blocks > 0) {
       // Input convolution
+      convolve3.Forward(batch_size, kInputPlanes, output_channels,
+                        buffer1.data(), weights_.input.weights.data(),
+                        buffer2.data());
 
-      convolve3.Forward(batch_size, kInputPlanes, output_channels, conv_in,
-                        weights_.input.weights.data(), conv_out);
-
-      BiasActivate(batch_size, output_channels, conv_out,
+      BiasActivate(batch_size, output_channels, buffer2.data(),
                    weights_.input.biases.data(), default_activation_);
 
       // Residual tower
-
       for (auto& residual : weights_.residual) {
         const auto& conv1 = residual.conv1;
         const auto& conv2 = residual.conv2;
         const auto& se = residual.se;
 
-        std::swap(conv_out, conv_in);
+        convolve3.Forward(batch_size, output_channels, output_channels,
+                          buffer2.data(), conv1.weights.data(), buffer1.data());
 
-        convolve3.Forward(batch_size, output_channels, output_channels, conv_in,
-                          conv1.weights.data(), conv_out);
-
-        BiasActivate(batch_size, output_channels, &conv_out[0],
+        BiasActivate(batch_size, output_channels, buffer1.data(),
                      conv1.biases.data(), default_activation_);
 
-        std::swap(conv_in, res);
-        std::swap(conv_out, conv_in);
-
-        convolve3.Forward(batch_size, output_channels, output_channels, conv_in,
-                          conv2.weights.data(), conv_out);
+        convolve3.Forward(batch_size, output_channels, output_channels,
+                          buffer1.data(), conv2.weights.data(), buffer3.data());
 
         if (residual.has_se) {
           // No relu if followed by SE-unit and residual/bias is added later
-          std::swap(conv_out, conv_in);
-
           auto se_fc_outputs = se.b1.size();
-          ApplySEUnit<use_eigen>(batch_size, output_channels, se_fc_outputs,
-                                 conv_in, conv2.biases.data(), res,
-                                 se.w1.data(), se.b1.data(), se.w2.data(),
-                                 se.b2.data(), conv_out, default_activation_);
+          ApplySEUnit<use_eigen>(
+              batch_size, output_channels, se_fc_outputs, buffer3.data(),
+              conv2.biases.data(), buffer2.data(), se.w1.data(), se.b1.data(),
+              se.w2.data(), se.b2.data(), buffer2.data(), default_activation_);
         } else {
-          BiasResidual(batch_size, output_channels, &conv_out[0],
-                       conv2.biases.data(), res, default_activation_);
+          BiasResidual(batch_size, output_channels, buffer2.data(),
+                       conv2.biases.data(), buffer3.data(),
+                       default_activation_);
         }
       }
     }
@@ -588,12 +576,12 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           for (auto i = 0; i < kSquares; i++) {
             // NCHW to NHWC conversion.
             for (size_t j = 0; j < kInputPlanes; j++) {
-              res[batch * kSquares * input_size + i * input_size + j] =
-                  conv_in[batch * kSquares * kInputPlanes + j * kSquares + i];
+              buffer3[batch * kSquares * input_size + i * input_size + j] =
+                  buffer1[batch * kSquares * kInputPlanes + j * kSquares + i];
             }
             // Position encoding.
             for (size_t j = kInputPlanes; j < input_size; j++) {
-              res[batch * kSquares * input_size + i * input_size + j] =
+              buffer3[batch * kSquares * input_size + i * input_size + j] =
                   kPosEncoding[i][j - kInputPlanes];
             }
           }
@@ -602,9 +590,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
       // Input embedding.
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, input_size, embedding_size, res_buffer3.data(),
+          batch_size * kSquares, input_size, embedding_size, buffer3.data(),
           weights_.ip_emb_w.data(), weights_.ip_emb_b.data(),
-          default_activation_, res_buffer1.data());
+          default_activation_, buffer1.data());
 
       // Input gating
       if (weights_.ip_mult_gate.size() > 0 && weights_.ip_add_gate.size() > 0) {
@@ -613,8 +601,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           for (auto i = 0; i < kSquares; i++) {
             for (size_t j = 0; j < embedding_size; j++) {
               idx = batch * kSquares * embedding_size + i * embedding_size + j;
-              res_buffer1[idx] =
-                  res_buffer1[idx] * weights_.ip_mult_gate[j * kSquares + i] +
+              buffer1[idx] =
+                  buffer1[idx] * weights_.ip_mult_gate[j * kSquares + i] +
                   weights_.ip_add_gate[j * kSquares + i];
             }
           }
@@ -624,27 +612,22 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       // Attention body encoders.
       float alpha = (float)pow(2.0 * weights_.encoder.size(), 0.25);
       for (auto& layer : weights_.encoder) {
-        MakeEncoderLayer(res_buffer1, res_buffer2, res_buffer3, head_buffer,
-                         batch_size, layer, embedding_size,
-                         weights_.encoder_head_count, smolgen_activation_,
-                         ffn_activation_, alpha);
+        MakeEncoderLayer(buffer1, buffer2, buffer3, head_buffer, batch_size,
+                         layer, embedding_size, weights_.encoder_head_count,
+                         smolgen_activation_, ffn_activation_, alpha);
       }
-
-      res = res_buffer1.data();
-      conv_in = res_buffer2.data();
-      conv_out = res_buffer3.data();
     }
 
-    // Need to preserve conv_out which is used for policy and moves left heads.
+    // Preserve buffer1 and buffer2, used for policy and moves left heads.
     // Value head
     if (attn_body_) {
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, weights_.ip_emb_b.size(),
-          num_value_input_planes, res, weights_.ip_val_w.data(),
+          num_value_input_planes, buffer1.data(), weights_.ip_val_w.data(),
           weights_.ip_val_b.data(), default_activation_, head_buffer.data());
     } else {
       Convolution1<use_eigen>::Forward(
-          batch_size, output_channels, num_value_input_planes, conv_out,
+          batch_size, output_channels, num_value_input_planes, buffer2.data(),
           weights_.value.weights.data(), head_buffer.data());
 
       BiasActivate(batch_size, num_value_input_planes, &head_buffer[0],
@@ -685,15 +668,17 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         q_values_.emplace_back(std::tanh(winrate));
       }
     }
+
+    // Moves left head.
     if (moves_left_) {
       if (attn_body_) {
         FullyConnectedLayer<use_eigen>::Forward1D(
             batch_size * kSquares, weights_.ip_emb_b.size(),
-            num_moves_input_planes, res, weights_.ip_mov_w.data(),
+            num_moves_input_planes, buffer1.data(), weights_.ip_mov_w.data(),
             weights_.ip_mov_b.data(), default_activation_, head_buffer.data());
       } else {
         Convolution1<use_eigen>::Forward(
-            batch_size, output_channels, num_moves_input_planes, conv_out,
+            batch_size, output_channels, num_moves_input_planes, buffer2.data(),
             weights_.moves_left.weights.data(), head_buffer.data());
 
         BiasActivate(batch_size, num_moves_input_planes, &head_buffer[0],
@@ -719,15 +704,16 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       }
     }
 
+    // Policy head.
     if (attn_policy_) {
       if (!attn_body_) {
         // NCHW to NHWC conversion.
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
             for (size_t j = 0; j < output_channels; j++) {
-              res[batch * kSquares * output_channels + i * output_channels +
-                  j] = conv_out[batch * kSquares * output_channels +
-                                j * kSquares + i];
+              buffer1[batch * kSquares * output_channels + i * output_channels +
+                      j] = buffer2[batch * kSquares * output_channels +
+                                   j * kSquares + i];
             }
           }
         }
@@ -735,18 +721,18 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       const size_t policy_embedding_size = weights_.ip_pol_b.size();
       // Policy Embedding.
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, output_channels, policy_embedding_size, res,
-          weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
+          batch_size * kSquares, output_channels, policy_embedding_size,
+          buffer1.data(), weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
           attn_body_
               ? default_activation_
               : ACTIVATION_SELU,  // SELU activation hardcoded for apmish nets.
-          res_buffer2.data());
+          buffer2.data());
 
       const size_t policy_d_model = weights_.ip2_pol_b.size();
 
       for (auto& layer : weights_.pol_encoder) {
-        MakeEncoderLayer(res_buffer2, res_buffer1, res_buffer3, head_buffer,
-                         batch_size, layer, policy_embedding_size,
+        MakeEncoderLayer(buffer2, buffer1, buffer3, head_buffer, batch_size,
+                         layer, policy_embedding_size,
                          weights_.pol_encoder_head_count,
                          attn_body_ ? smolgen_activation_ : ACTIVATION_NONE,
                          attn_body_ ? ffn_activation_ : ACTIVATION_SELU, 1.0f);
@@ -755,17 +741,17 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       // Q
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, policy_embedding_size, policy_d_model,
-          res_buffer2.data(), weights_.ip2_pol_w.data(),
-          weights_.ip2_pol_b.data(), ACTIVATION_NONE, res_buffer1.data());
+          buffer2.data(), weights_.ip2_pol_w.data(), weights_.ip2_pol_b.data(),
+          ACTIVATION_NONE, buffer1.data());
       // K
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, policy_embedding_size, policy_d_model,
-          res_buffer2.data(), weights_.ip3_pol_w.data(),
-          weights_.ip3_pol_b.data(), ACTIVATION_NONE, res_buffer3.data());
+          buffer2.data(), weights_.ip3_pol_w.data(), weights_.ip3_pol_b.data(),
+          ACTIVATION_NONE, buffer3.data());
       const float scaling = 1.0f / sqrtf(policy_d_model);
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
-        const float* A = &res_buffer1[batch * 64 * policy_d_model];
-        const float* B = &res_buffer3[batch * 64 * policy_d_model];
+        const float* A = &buffer1[batch * 64 * policy_d_model];
+        const float* B = &buffer3[batch * 64 * policy_d_model];
         float* C = &head_buffer[batch * (64 * 64 + 8 * 24)];
         if (use_eigen) {
           auto C_mat = EigenMatrixMap<float>(C, kSquares, kSquares);
@@ -793,9 +779,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           for (int j = 0; j < 8; j++) {
             float sum = 0;
             for (size_t k = 0; k < policy_d_model; k++) {
-              sum += res_buffer3.data()[batch * kSquares * policy_d_model +
-                                        (56 + j) * policy_d_model + k] *
-                     weights_.ip4_pol_w.data()[i * policy_d_model + k];
+              sum += buffer3[batch * kSquares * policy_d_model +
+                             (56 + j) * policy_d_model + k] *
+                     weights_.ip4_pol_w[i * policy_d_model + k];
             }
             promotion_offsets[i][j] = sum;
           }
@@ -808,11 +794,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (int k = 0; k < 8; k++) {      // y in cuda
           for (int j = 0; j < 8; j++) {    // w in cuda
             for (int i = 0; i < 3; i++) {  // c in cuda
-              head_buffer.data()[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 * k +
-                                 3 * j + i] =
-                  head_buffer.data()[batch * (64 * 64 + 8 * 24) +
-                                     (48 + k) * 64 + 56 + j] +
-                  promotion_offsets[i][j];
+              head_buffer[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 * k +
+                          3 * j + i] = head_buffer[batch * (64 * 64 + 8 * 24) +
+                                                   (48 + k) * 64 + 56 + j] +
+                                       promotion_offsets[i][j];
             }
           }
         }
@@ -829,17 +814,18 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       }
     } else if (conv_policy_) {
       assert(!attn_body_);  // not supported with attention body
-      convolve3.Forward(batch_size, output_channels, output_channels, conv_out,
-                        weights_.policy1.weights.data(), res);
+      convolve3.Forward(batch_size, output_channels, output_channels,
+                        buffer2.data(), weights_.policy1.weights.data(),
+                        buffer1.data());
 
-      BiasActivate(batch_size, output_channels, &res[0],
+      BiasActivate(batch_size, output_channels, buffer1.data(),
                    weights_.policy1.biases.data(), default_activation_);
 
       convolve3.Forward(batch_size, output_channels, num_policy_input_planes,
-                        res, weights_.policy.weights.data(),
+                        buffer1.data(), weights_.policy.weights.data(),
                         head_buffer.data());
 
-      BiasActivate(batch_size, num_policy_input_planes, &head_buffer.data()[0],
+      BiasActivate(batch_size, num_policy_input_planes, head_buffer.data(),
                    weights_.policy.biases.data(), ACTIVATION_NONE);
 
       // Mapping from convolutional policy to lc0 policy
@@ -856,7 +842,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
     } else {
       assert(!attn_body_);  // not supported with attention body
       Convolution1<use_eigen>::Forward(
-          batch_size, output_channels, num_policy_input_planes, conv_out,
+          batch_size, output_channels, num_policy_input_planes, buffer2.data(),
           weights_.policy.weights.data(), head_buffer.data());
 
       BiasActivate(batch_size, num_policy_input_planes, &head_buffer[0],
