@@ -491,8 +491,6 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                                weights_.ip_pol_b.size());
   }
 
-  std::vector<float> output_fc(largest_batch_size * max_fc_channels);
-
   std::unique_ptr<Buffers> buffers;
   {
     std::lock_guard<std::mutex> lock(buffers_lock_);
@@ -510,7 +508,8 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   std::vector<float>& buffer2 = buffers->buffer2;
   vec_adjust(buffer2, largest_batch_size * max_channels * kSquares);
   std::vector<float>& buffer3 = buffers->buffer3;
-  vec_adjust(buffer3, largest_batch_size * max_channels * kSquares);
+  vec_adjust(buffer3, largest_batch_size *
+                          std::max(max_channels * kSquares, max_fc_channels));
   std::vector<float>& head_buffer = buffers->buffer4;
   vec_adjust(head_buffer, largest_batch_size * max_head_planes * kSquares);
 
@@ -639,13 +638,13 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         head_buffer.data(), weights_.ip1_val_w.data(),
         weights_.ip1_val_b.data(),
         default_activation_,  // Activation On
-        output_fc.data());
+        buffer3.data());
 
     // Now get the score
     if (wdl_) {
       std::vector<float> wdl(3 * batch_size);
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size, num_value_channels, 3, output_fc.data(),
+          batch_size, num_value_channels, 3, buffer3.data(),
           weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
           ACTIVATION_NONE,  // Activation Off
           wdl.data());
@@ -662,7 +661,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       for (size_t j = 0; j < batch_size; j++) {
         double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
                              num_value_channels, weights_.ip2_val_w.data(),
-                             &output_fc[j * num_value_channels]) +
+                             &buffer3[j * num_value_channels]) +
                          weights_.ip2_val_b[0];
 
         q_values_.emplace_back(std::tanh(winrate));
@@ -690,11 +689,11 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           head_buffer.data(), weights_.ip1_mov_w.data(),
           weights_.ip1_mov_b.data(),
           default_activation_,  // Activation On
-          output_fc.data());
+          buffer3.data());
 
       std::vector<float> output_moves_left(batch_size);
       FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size, num_moves_channels, 1, output_fc.data(),
+          batch_size, num_moves_channels, 1, buffer3.data(),
           weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
           ACTIVATION_RELU,  // Specifically Relu
           output_moves_left.data());
@@ -807,7 +806,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (auto i = 0; i < 64 * 64 + 8 * 24; i++) {
           auto j = kAttnPolicyMap[i];
           if (j >= 0) {
-            output_fc[batch * num_output_policy + j] =
+            buffer3[batch * num_output_policy + j] =
                 head_buffer[batch * (64 * 64 + 8 * 24) + i];
           }
         }
@@ -833,7 +832,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (auto i = 0; i < kPolicyUsedPlanes * kSquares; i++) {
           auto j = kConvPolicyMap[i];
           if (j >= 0) {
-            output_fc[batch * num_output_policy + j] =
+            buffer3[batch * num_output_policy + j] =
                 head_buffer[batch * num_policy_input_planes * kSquares + i];
           }
         }
@@ -853,15 +852,15 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           head_buffer.data(), weights_.ip_pol_w.data(),
           weights_.ip_pol_b.data(),
           ACTIVATION_NONE,  // Activation Off
-          output_fc.data());
+          buffer3.data());
     }
 
     for (size_t j = 0; j < batch_size; j++) {
       std::vector<float> policy(num_output_policy);
 
       // Get the moves
-      policy.assign(output_fc.begin() + j * num_output_policy,
-                    output_fc.begin() + (j + 1) * num_output_policy);
+      policy.assign(buffer3.begin() + j * num_output_policy,
+                    buffer3.begin() + (j + 1) * num_output_policy);
       policies_.emplace_back(std::move(policy));
     }
   }
