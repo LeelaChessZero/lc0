@@ -513,13 +513,18 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   std::vector<float>& head_buffer = buffers->buffer4;
   vec_adjust(head_buffer, largest_batch_size * max_head_planes * kSquares);
 
+  // Output values.
+  q_values_.reserve(wdl_ ? 3 * total_batches : total_batches);
+  policies_.reserve(total_batches);
+  if (moves_left_) m_values_.resize(total_batches);
+
   WinogradConvolution3<use_eigen> convolve3(largest_batch_size, max_channels,
                                             max_output_channels);
 
-  for (size_t i = 0; i < total_batches; i += largest_batch_size) {
-    const auto batch_size = std::min(total_batches - i, largest_batch_size);
+  for (size_t start = 0; start < total_batches; start += largest_batch_size) {
+    const auto batch_size = std::min(total_batches - start, largest_batch_size);
     for (size_t j = 0; j < batch_size; j++) {
-      EncodePlanes(planes_[i + j], &buffer1[j * kSquares * kInputPlanes]);
+      EncodePlanes(planes_[start + j], &buffer1[j * kSquares * kInputPlanes]);
     }
 
     if (num_res_blocks > 0) {
@@ -696,11 +701,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           batch_size, num_moves_channels, 1, buffer3.data(),
           weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
           ACTIVATION_RELU,  // Specifically Relu
-          output_moves_left.data());
-
-      for (size_t j = 0; j < batch_size; j++) {
-        m_values_.emplace_back(output_moves_left[j]);
-      }
+          &m_values_[start]);
     }
 
     // Policy head.
@@ -803,13 +804,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       }
       // Mapping from attention policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
+        std::vector<float> policy(num_output_policy);
         for (auto i = 0; i < 64 * 64 + 8 * 24; i++) {
           auto j = kAttnPolicyMap[i];
           if (j >= 0) {
-            buffer3[batch * num_output_policy + j] =
-                head_buffer[batch * (64 * 64 + 8 * 24) + i];
+            policy[j] = head_buffer[batch * (64 * 64 + 8 * 24) + i];
           }
         }
+        policies_.emplace_back(std::move(policy));
       }
     } else if (conv_policy_) {
       assert(!attn_body_);  // not supported with attention body
@@ -829,13 +831,15 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
+        std::vector<float> policy(num_output_policy);
         for (auto i = 0; i < kPolicyUsedPlanes * kSquares; i++) {
           auto j = kConvPolicyMap[i];
           if (j >= 0) {
-            buffer3[batch * num_output_policy + j] =
+            policy[j] =
                 head_buffer[batch * num_policy_input_planes * kSquares + i];
           }
         }
+        policies_.emplace_back(std::move(policy));
       }
 
     } else {
@@ -853,15 +857,15 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           weights_.ip_pol_b.data(),
           ACTIVATION_NONE,  // Activation Off
           buffer3.data());
-    }
 
-    for (size_t j = 0; j < batch_size; j++) {
-      std::vector<float> policy(num_output_policy);
+      for (size_t j = 0; j < batch_size; j++) {
+        std::vector<float> policy(num_output_policy);
 
-      // Get the moves
-      policy.assign(buffer3.begin() + j * num_output_policy,
-                    buffer3.begin() + (j + 1) * num_output_policy);
-      policies_.emplace_back(std::move(policy));
+        // Get the moves
+        policy.assign(buffer3.begin() + j * num_output_policy,
+                      buffer3.begin() + (j + 1) * num_output_policy);
+        policies_.emplace_back(std::move(policy));
+      }
     }
   }
   std::lock_guard<std::mutex> lock(buffers_lock_);
