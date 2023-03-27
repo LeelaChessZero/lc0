@@ -21,19 +21,20 @@
 #include <cstddef>
 #include <vector>
 
-#include "proto/net.pb.h"
-
 namespace lczero {
+// The following list matches the one in net.proto. Ideally this would be done
+// by including proto/net.pb.h, but this is incompatible with nvcc.
 enum ActivationFunction {
-  NONE = pblczero::NetworkFormat::ActivationFunction::NONE,
-  RELU = pblczero::NetworkFormat::ActivationFunction::RELU,
-  TANH = pblczero::NetworkFormat::ActivationFunction::TANH,
-  SIGMOID = pblczero::NetworkFormat::ActivationFunction::SIGMOID,
-  SELU = pblczero::NetworkFormat::ActivationFunction::SELU,
-  MISH = pblczero::NetworkFormat::ActivationFunction::MISH,
-  SWISH = pblczero::NetworkFormat::ActivationFunction::SWISH,
-  RELU_2 = pblczero::NetworkFormat::ActivationFunction::RELU_2,
-  SOFTMAX = pblczero::NetworkFormat::ActivationFunction::SOFTMAX
+  DEFAULT = 0,
+  MISH = 1,
+  RELU = 2,
+  NONE = 3,
+  TANH = 4,
+  SIGMOID = 5,
+  SELU = 6,
+  SWISH = 7,
+  RELU_2 = 8,
+  SOFTMAX = 9,
 };
 
 // Softmax activation

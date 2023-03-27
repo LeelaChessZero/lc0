@@ -292,12 +292,10 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
                                    int embedding_size, int heads,
                                    const std::string& encoder_in,
                                    const std::string& name) {
-  const auto smolgen_activation =
-      src_.format().network_format().smolgen_activation();
+  const auto smolgen_activation = static_cast<ActivationFunction>(
+      src_.format().network_format().smolgen_activation());
   const auto activation =
-      smolgen_activation == pblczero::NetworkFormat::SMOLGEN_ACTIVATION_INHERIT
-          ? default_activation_
-          : static_cast<ActivationFunction>(smolgen_activation);
+      smolgen_activation == DEFAULT ? default_activation_ : smolgen_activation;
   const int smolgen_hidden_channels =
       layer.mha.smolgen.compress.size() / embedding_size;
   const int smolgen_hidden_sz = layer.mha.smolgen.dense1_b.size();
@@ -443,11 +441,11 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Add(name + "/ffn/dense1/b", flow,
                       *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
 
-  const auto ffn_activation = src_.format().network_format().ffn_activation();
-  if (ffn_activation != pblczero::NetworkFormat::FFN_ACTIVATION_INHERIT) {
-    activation = static_cast<ActivationFunction>(ffn_activation);
-  }
-  flow = MakeActivation(builder, flow, name + "/ffn/dense1", activation);
+  const auto ffn_activation = static_cast<ActivationFunction>(
+      src_.format().network_format().ffn_activation());
+  flow =
+      MakeActivation(builder, flow, name + "/ffn/dense1",
+                     ffn_activation == DEFAULT ? activation : ffn_activation);
   flow =
       builder->MatMul(name + "/ffn/dense2/w", flow,
                       *GetWeghtsConverter(layer.ffn.dense2_w,
