@@ -260,11 +260,6 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
     "at once."};
-const OptionId SearchParams::kContemptPerspectiveId{
-    "contempt-perspective", "ContemptPerspective",
-    "Affects the way asymmetric WDL parameters are applied. Default is "
-    "'sidetomove' for matches, use 'white' and 'black' for analysis. Use "
-    "'none' to deactivate contempt and the WDL conversion."};
 const OptionId SearchParams::kDrawScoreSidetomoveId{
     "draw-score-sidetomove", "DrawScoreSideToMove",
     "Score of a drawn game, as seen by a player making the move."};
@@ -277,12 +272,11 @@ const OptionId SearchParams::kDrawScoreWhiteId{
 const OptionId SearchParams::kDrawScoreBlackId{
     "draw-score-black", "DrawScoreBlack",
     "Adjustment, added to a draw score of a black player."};
-const OptionId SearchParams::kWDLRescaleRatioId{
-    "wdl-rescale-ratio", "WDLRescaleRatio",
-    "Rescales the logistic WDL scale by the given ratio."};
-const OptionId SearchParams::kWDLRescaleDiffId{
-    "wdl-rescale-diff", "WDLRescaleDiff",
-    "Shifts the logistic WDL mean by diff in white's favor."};
+const OptionId SearchParams::kContemptPerspectiveId{
+    "contempt-perspective", "ContemptPerspective",
+    "Affects the way asymmetric WDL parameters are applied. Default is "
+    "'sidetomove' for matches, use 'white' and 'black' for analysis. Use "
+    "'none' to deactivate contempt and the WDL conversion."};
 const OptionId SearchParams::kContemptId{
     "contempt", "Contempt",
     "The simulated rating advantage for the WDL conversion. Comma separated "
@@ -293,6 +287,12 @@ const OptionId SearchParams::kContemptId{
 const OptionId SearchParams::kContemptMaxValueId{
     "contempt-max-value", "ContemptMaxValue",
     "The maximum value of contempt used. Higher values will be capped."};
+const OptionId SearchParams::kWDLRescaleRatioId{
+    "wdl-rescale-ratio", "WDLRescaleRatio",
+    "Rescales the logistic WDL scale by the given ratio."};
+const OptionId SearchParams::kWDLRescaleDiffId{
+    "wdl-rescale-diff", "WDLRescaleDiff",
+    "Shifts the logistic WDL mean by diff in white's favor."};
 const OptionId SearchParams::kWDLCalibrationEloId{
     "wdl-calibration-elo", "WDLCalibrationElo",
     "Elo of the active side, adjusted for time control relative to rapid."};
@@ -441,18 +441,18 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  std::vector<std::string> perspective = {"sidetomove", "white", "black",
-                                          "none"};
-  options->Add<ChoiceOption>(kContemptPerspectiveId, perspective) =
-      "sidetomove";
   options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
   options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
-  options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
-  options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
+  std::vector<std::string> perspective = {"sidetomove", "white", "black",
+                                          "none"};
+  options->Add<ChoiceOption>(kContemptPerspectiveId, perspective) =
+      "sidetomove";
   options->Add<StringOption>(kContemptId) = "";
   options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
+  options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
+  options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
@@ -490,13 +490,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureEndgameId);
   options->HideOption(kTemperatureWinpctCutoffId);
   options->HideOption(kTemperatureVisitOffsetId);
+  options->HideOption(kContemptMaxValueId);
   options->HideOption(kWDLRescaleRatioId);
   options->HideOption(kWDLRescaleDiffId);
-  options->HideOption(kContemptMaxValueId);
-  options->HideOption(kWDLCalibrationEloId);
   options->HideOption(kWDLContemptAttenuationId);
-  options->HideOption(kWDLEvalObjectivityId);
-  options->HideOption(kWDLDrawRateReferenceId);
+  options->HideOption(kWDLDrawRateTargetId);
   options->HideOption(kWDLBookExitBiasId);
 }
 
@@ -544,11 +542,11 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kContemptPerspective(options.Get<std::string>(kContemptPerspectiveId)),
       kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
+      kContemptPerspective(options.Get<std::string>(kContemptPerspectiveId)),
       kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
