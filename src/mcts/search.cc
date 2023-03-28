@@ -280,8 +280,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto& uci_info = uci_infos.back();
     auto wl = edge.GetWL(default_wl);
     auto floatD = edge.GetD(default_d);
-    auto wl_internal = wl;
-    auto d_internal = floatD;
     float mu_uci = 0.0f;
     // Only the diff effect is inverted, so we only need to call if diff != 0.
     if (params_.GetContemptPerspective() != "none") {
@@ -319,12 +317,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                             : 90 * tan(1.5637541897 * wl));
     }
 
-    auto w = std::max(
-        0,
-        static_cast<int>(std::round(500.0 * (1.0 + wl_internal - d_internal))));
-    auto l = std::max(
-        0,
-        static_cast<int>(std::round(500.0 * (1.0 - wl_internal - d_internal))));
+    auto w =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
+    auto l =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
     // Using 1000-w-l so that W+D+L add up to 1000.0.
     auto d = 1000 - w - l;
     if (d < 0) {
