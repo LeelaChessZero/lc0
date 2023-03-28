@@ -143,6 +143,7 @@ class Converter {
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
   ActivationFunction default_activation_;
+  bool se_reshape_init_ = false;
 };
 
 pblczero::TensorProto::DataType Converter::GetDataType() const {
@@ -230,9 +231,10 @@ std::string Converter::MakeSqueezeAndExcite(
     const std::string& input, const std::string& name) {
   const int se_filters = se_unit.b1.size();
 
-  for (static bool flag = false; !flag; flag = true) {
+  if (!se_reshape_init_) {
     builder->AddInitializer("/const/se_reshape",
                             Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
+    se_reshape_init_ = true;
   }
   auto flow = builder->GlobalAveragePool(name + "/pooled", input);
   flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
