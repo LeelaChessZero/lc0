@@ -108,6 +108,20 @@ void FixOlderWeightsFile(WeightsFile* file) {
   using nf = pblczero::NetworkFormat;
   auto network_format = file->format().network_format().network();
   const auto has_network_format = file->format().has_network_format();
+  // Hack for old encoding compatibility. REMOVE BEFORE RELEASE.
+  if (has_network_format &&
+      network_format == pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+      file->weights().encoder().size() > 0) {
+    CERR << "Attention body detected, hacking network format.";
+    auto* net = file->mutable_format()->mutable_network_format();
+    net->set_network(
+        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+    if (file->weights().has_smolgen_w()) {
+      CERR << "Smolgen detected, hacking activations.";
+      net->set_ffn_activation(pblczero::NetworkFormat::ACTIVATION_RELU_2);
+      net->set_smolgen_activation(pblczero::NetworkFormat::ACTIVATION_SWISH);
+    }
+  }
   if (has_network_format && network_format != nf::NETWORK_CLASSICAL &&
       network_format != nf::NETWORK_SE) {
     // Already in a new format, return unchanged.
