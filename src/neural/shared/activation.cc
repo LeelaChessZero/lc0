@@ -72,6 +72,8 @@ float Activate(const float val, const ActivationFunction activation) {
   switch (activation) {
     case RELU:
       return val > 0 ? val : 0;
+    case RELU_2:
+      return val > 0 ? val * val : 0;
     case MISH:
       return mish(val);
     case TANH:
