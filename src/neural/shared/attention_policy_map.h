@@ -381,7 +381,6 @@ const short kAttnPolicyMap[] = {
     -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   1852, 1853,
     1854, 1855, 1856, 1857};
 
-
 constexpr int kNumPosEncodingChannels = 64;
 
 const float kPosEncoding[64][kNumPosEncodingChannels] = {

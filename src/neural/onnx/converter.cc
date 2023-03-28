@@ -230,6 +230,10 @@ std::string Converter::MakeSqueezeAndExcite(
     const std::string& input, const std::string& name) {
   const int se_filters = se_unit.b1.size();
 
+  for (static bool flag = false; !flag; flag = true) {
+    builder->AddInitializer("/const/se_reshape",
+                            Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
+  }
   auto flow = builder->GlobalAveragePool(name + "/pooled", input);
   flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
   flow = builder->MatMul(
@@ -280,11 +284,6 @@ std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
                               input, name + "/conv1");
   return MakeConvBlock(builder, res.conv2, NumFilters(), NumFilters(), block1,
                        name + "/conv2", res.has_se ? &res.se : nullptr, input);
-}
-
-void Converter::AddStdInitializers(OnnxBuilder* builder) {
-  builder->AddInitializer("/const/se_reshape",
-                          Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
 }
 
 std::string Converter::MakeSmolgen(OnnxBuilder* builder,
@@ -845,8 +844,6 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   LegacyWeights weights(src_.weights());
   OnnxBuilder builder(options_.opset);
-
-  AddStdInitializers(&builder);
 
   onnx->set_input_planes(options_.input_planes_name);
   builder.AddInput(options_.input_planes_name, {options_.batch_size, 112, 8, 8},
