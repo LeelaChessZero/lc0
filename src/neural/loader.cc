@@ -117,7 +117,7 @@ void FixOlderWeightsFile(WeightsFile* file) {
     net->set_network(
         pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
     if (file->weights().has_smolgen_w()) {
-      CERR << "BT2 detected, hacking activations.";
+      CERR << "Smolgen detected, hacking activations.";
       net->set_ffn_activation(pblczero::NetworkFormat::ACTIVATION_RELU_2);
       net->set_smolgen_activation(pblczero::NetworkFormat::ACTIVATION_SWISH);
     }
