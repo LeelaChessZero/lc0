@@ -21,8 +21,6 @@
 #include <cstddef>
 #include <vector>
 
-#include "proto/net.pb.h"
-
 namespace lczero {
 // The following list matches the one in net.proto. Ideally this would be done
 // by including proto/net.pb.h, but this is incompatible with nvcc.
