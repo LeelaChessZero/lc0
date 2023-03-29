@@ -375,7 +375,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (w->format().network_format().network() !=
             pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
         w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+        w->format().network_format().network() !=
+            pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
       throw Exception("Network format " +
                       pblczero::NetworkFormat::NetworkStructure_Name(
                           w->format().network_format().network()) +
@@ -417,6 +419,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
+
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
                                          threads, fp16, batch_size, steps);
