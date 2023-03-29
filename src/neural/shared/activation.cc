@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "utils/exception.h"
+
 #ifdef USE_ISPC
 #include "activation_ispc.h"
 #endif
@@ -70,6 +72,8 @@ float Activate(const float val, const ActivationFunction activation) {
   switch (activation) {
     case RELU:
       return val > 0 ? val : 0;
+    case RELU_2:
+      return val > 0 ? val * val : 0;
     case MISH:
       return mish(val);
     case TANH:
@@ -78,9 +82,13 @@ float Activate(const float val, const ActivationFunction activation) {
       return 1.0f / (1.0f + expf(-val));
     case SELU:
       return selu(val);
+    case SWISH:
+      return val / (1.0f + expf(-val));
     case NONE:
       // Nothing to do.
       break;
+    default:
+      throw Exception("unsupported activation function");
   }
   return val;
 }
@@ -104,6 +112,15 @@ void Activate(const size_t len, const float* data, const float* bias,
     }
 #else
     ispc::ActivateMish(len, 1.0f, data, bias, 0.0f, output);
+#endif
+  } else if (activation == SELU) {
+#ifndef USE_ISPC
+    for (size_t b = 0; b < len; b++) {
+      float val = data[b] + bias[b];
+      output[b] = selu(val);
+    }
+#else
+    ispc::ActivateSelu(len, 1.0f, data, bias, 0.0f, output);
 #endif
   } else {
     for (size_t b = 0; b < len; b++) {

@@ -419,6 +419,24 @@ __device__ __forceinline__ float warpReduce(float x) {
   return x;
 }
 
+// fast max reduction for the warp
+__device__ __forceinline__ float warpMax(float x) {
+#pragma unroll
+  for (int mask = 16; mask > 0; mask >>= 1)
+    x = max(x, __shfl_xor_sync(0xFFFFFFFF, x, mask));
+
+  return x;
+}
+
+// atomic max implementation for floats
+__device__ __forceinline__ float atomicMaxFloat(float* addr, float val) {
+    float max;
+    max = !signbit(val) ? __int_as_float(atomicMax((int*)addr, __float_as_int(val))) :
+         __uint_as_float(atomicMin((unsigned int*)addr, __float_as_uint(val)));
+
+    return max;
+}
+
 // Helper fuction to do vector loads/stores
 template <typename T>
 __device__ __forceinline__ void copyAs(void* dst, const void* src) {
