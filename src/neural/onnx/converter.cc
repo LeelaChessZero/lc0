@@ -56,8 +56,8 @@ class Converter {
     default_activation_ =
         net.format().network_format().default_activation() ==
                 pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
-            ? MISH
-            : RELU;
+            ? ACTIVATION_MISH
+            : ACTIVATION_RELU;
   }
 
   void Convert(pblczero::Net* dst);
@@ -187,11 +187,11 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
                                       const std::string& name,
                                       ActivationFunction activation) {
   switch (activation) {
-    case RELU:
+    case ACTIVATION_RELU:
       return builder->Relu(name + "/relu", input);
-    case MISH:
+    case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
-    case SELU:
+    case ACTIVATION_SELU:
       return builder->Selu(name + "/selu", input);
     default:
       throw Exception("Unsupposrted activation in " + name);
@@ -328,7 +328,7 @@ std::string Converter::MakeEncoderLayer(
                                           {embedding_size, dff_size}, {1, 0}));
   flow = builder->Add(name + "/ffn/dense1/b", flow,
                       *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
-  flow = MakeActivation(builder, flow, name + "/ffn/dense1", SELU);
+  flow = MakeActivation(builder, flow, name + "/ffn/dense1", ACTIVATION_SELU);
   flow =
       builder->MatMul(name + "/ffn/dense2/w", flow,
                       *GetWeghtsConverter(layer.ffn.dense2_w,
@@ -373,7 +373,7 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
                           {1, 0}));
   flow = builder->Add("/policy/dense1/add", flow,
                       *GetWeghtsConverter(weights.ip_pol_b, {embedding_size}));
-  flow = MakeActivation(builder, flow, "/policy/dense1", SELU);
+  flow = MakeActivation(builder, flow, "/policy/dense1", ACTIVATION_SELU);
   for (size_t i = 0; i < weights.pol_encoder.size(); i++) {
     std::string name = "/policy/enc_layer_" + std::to_string(i);
 
