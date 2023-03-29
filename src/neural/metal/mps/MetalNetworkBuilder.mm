@@ -26,7 +26,7 @@
  */
 
 #import "neural/network_legacy.h"
-#import "neural/shared/position_encoding.h"
+#import "neural/shared/attention_policy_map.h"
 #import "MetalNetworkBuilder.h"
 #import "NetworkGraph.h"
 
