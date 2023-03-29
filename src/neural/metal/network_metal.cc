@@ -61,15 +61,15 @@ void MetalNetworkComputation::ComputeBlocking() {
 
 std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
   switch (act) {
-    case pblczero::NetworkFormat::ActivationFunction::RELU: return "relu";
-    case pblczero::NetworkFormat::ActivationFunction::MISH: return "mish";
-    case pblczero::NetworkFormat::ActivationFunction::NONE: return "none";
-    case pblczero::NetworkFormat::ActivationFunction::TANH: return "tanh";
-    case pblczero::NetworkFormat::ActivationFunction::SIGMOID: return "sigmoid";
-    case pblczero::NetworkFormat::ActivationFunction::SELU: return "selu";
-    case pblczero::NetworkFormat::ActivationFunction::SWISH: return "swish";
-    case pblczero::NetworkFormat::ActivationFunction::RELU_2: return "relu_2";
-    case pblczero::NetworkFormat::ActivationFunction::SOFTMAX: return "softmax";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_RELU: return "relu";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_MISH: return "mish";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_NONE: return "none";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_TANH: return "tanh";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SIGMOID: return "sigmoid";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SELU: return "selu";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SWISH: return "swish";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_RELU_2: return "relu_2";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SOFTMAX: return "softmax";
     default: return "";
   }
 }
@@ -112,11 +112,11 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   activations.default_activation = file.format().network_format().default_activation()
                         == pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH ? "mish" : "relu";
   const auto smolgen_activation = file.format().network_format().smolgen_activation();
-  activations.smolgen_activation = smolgen_activation == pblczero::NetworkFormat::SMOLGEN_ACTIVATION_INHERIT
+  activations.smolgen_activation = smolgen_activation == pblczero::NetworkFormat::ACTIVATION_DEFAULT
                         ? activations.default_activation
                         : activationString(static_cast<pblczero::NetworkFormat::ActivationFunction>(smolgen_activation));
   const auto ffn_activation = file.format().network_format().ffn_activation();
-  activations.ffn_activation = ffn_activation == pblczero::NetworkFormat::FFN_ACTIVATION_INHERIT
+  activations.ffn_activation = ffn_activation == pblczero::NetworkFormat::ACTIVATION_DEFAULT
                         ? activations.default_activation
                         : activationString(static_cast<pblczero::NetworkFormat::ActivationFunction>(ffn_activation));
   builder_->build(kInputPlanes, weights, attn_body, attn_policy_, conv_policy_, wdl_, moves_left_, activations);
@@ -273,25 +273,6 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
                         weights.format().network_format().default_activation()) +
                     " is not supported by the Metal backend.");
   }
-
-  // @todo Hack for old encoding compatibility. REMOVE BEFORE MERGING.
-  if (w->format().network_format().network() ==
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-      w->weights().encoder().size() > 0) {
-    CERR << "Attention body detected, hacking network format.";
-    WeightsFile x = *w;
-    x.mutable_format()->mutable_network_format()->set_network(
-        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
-    if (w->weights().has_smolgen_w()) {
-      CERR << "BT2 detected, hacking activations.";
-      x.mutable_format()->mutable_network_format()->set_ffn_activation(
-          pblczero::NetworkFormat::FFN_ACTIVATION_RELU_2);
-      x.mutable_format()->mutable_network_format()->set_smolgen_activation(
-          pblczero::NetworkFormat::SMOLGEN_ACTIVATION_SWISH);
-    }
-    return std::make_unique<MetalNetwork>(x, options);
-  }
-
   return std::make_unique<MetalNetwork>(weights, options);
 }
 
