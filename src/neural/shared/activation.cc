@@ -100,10 +100,14 @@ void Activate(const size_t len, const float* data, const float* bias,
       output[b] = data[b] + bias[b];
     }
   } else if (activation == RELU) {
+#ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = data[b] + bias[b];
       output[b] = val > 0 ? val : 0;
     }
+#else
+    ispc::ActivateRelu(len, 1.0f, data, bias, 0.0f, output);
+#endif
   } else if (activation == MISH) {
 #ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
@@ -113,6 +117,25 @@ void Activate(const size_t len, const float* data, const float* bias,
 #else
     ispc::ActivateMish(len, 1.0f, data, bias, 0.0f, output);
 #endif
+  } else if (activation == RELU_2) {
+#ifndef USE_ISPC
+    for (size_t b = 0; b < len; b++) {
+      float val = data[b] + bias[b];
+      output[b] = val > 0 ? val * val : 0;
+    }
+#else
+    ispc::ActivateRelu_2(len, data, bias, output);
+#endif
+  } else if (activation == SWISH) {
+#ifndef USE_ISPC
+    for (size_t b = 0; b < len; b++) {
+      float val = data[b] + bias[b];
+      output[b] = val / (1.0f + exp(-val));
+      ;
+    }
+#else
+    ispc::ActivateSwish(len, data, bias, output);
+#endif
   } else if (activation == SELU) {
 #ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
@@ -120,7 +143,7 @@ void Activate(const size_t len, const float* data, const float* bias,
       output[b] = selu(val);
     }
 #else
-    ispc::ActivateSelu(len, 1.0f, data, bias, 0.0f, output);
+    ispc::ActivateSelu(len, data, bias, output);
 #endif
   } else {
     for (size_t b = 0; b < len; b++) {
@@ -139,10 +162,14 @@ void Activate(const size_t len, float gamma, const float* data,
       output[b] = val;
     }
   } else if (activation == RELU) {
+#ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = gamma * data[b] + bias[b] + beta;
       output[b] = val > 0 ? val : 0;
     }
+#else
+    ispc::ActivateRelu(len, gamma, data, bias, beta, output);
+#endif
   } else if (activation == MISH) {
 #ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
@@ -174,10 +201,14 @@ void BiasResidual(const size_t batch_size, const size_t channels, float* data,
           arr[b] = val;
         }
       } else if (activation == RELU) {
+#ifndef USE_ISPC
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
           arr[b] = val > 0 ? val : 0;
         }
+#else
+        ispc::ActivateRelu(kSquares, 1.0f, res, arr, bias, arr);
+#endif
       } else if (activation == MISH) {
 #ifndef USE_ISPC
         for (size_t b = 0; b < kSquares; b++) {
