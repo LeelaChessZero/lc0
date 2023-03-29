@@ -30,15 +30,22 @@ namespace lczero {
 
 void LayerNorm2DWithSkipConnection(const size_t batch_size,
                                    const size_t channels, float* data,
-                                   const float* skip, const float* gammas,
-                                   const float* betas, float epsilon) {
+                                   const float alpha, const float* skip,
+                                   const float* gammas, const float* betas,
+                                   float epsilon) {
   for (size_t i = 0; i < batch_size; i++) {
 #ifndef USE_ISPC
     // Mean taken in dimension C.
     float mean = 0;
-    for (size_t c = 0; c < channels; ++c) {
-      data[i * channels + c] += skip[i * channels + c];
-      mean += data[i * channels + c];
+    if (skip != nullptr) {
+      for (size_t c = 0; c < channels; ++c) {
+        data[i * channels + c] += alpha * skip[i * channels + c];
+        mean += data[i * channels + c];
+      }
+    } else {
+      for (size_t c = 0; c < channels; ++c) {
+        mean += data[i * channels + c];
+      }
     }
     mean /= channels;
 
@@ -57,9 +64,15 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size,
           betas[c] + gammas[c] * (data[i * channels + c] - mean) * den;
     }
 #else
-    ispc::LayerNorm2DWithSkipConnection(channels, data + i * channels,
-                                        skip + i * channels, gammas, betas,
-                                        epsilon);
+    if (skip != nullptr) {
+      ispc::LayerNorm2DWithSkipConnection(channels, data + i * channels, alpha,
+                                          skip + i * channels, gammas, betas,
+                                          epsilon);
+    } else {
+      ispc::LayerNorm2DWithSkipConnection(channels, data + i * channels, 0.0f,
+                                          nullptr, gammas, betas, epsilon);
+    }
+
 #endif
   }
 }
