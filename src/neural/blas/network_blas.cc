@@ -109,9 +109,8 @@ class BlasComputation : public NetworkComputation {
                         std::vector<float>& head_buffer3, size_t batch_size,
                         const LegacyWeights::EncoderLayer& layer,
                         int embedding_size, int heads,
-                        ActivationFunction smolgen_activation = SWISH,
-                        ActivationFunction ffn_activation = RELU_2,
-                        float alpha = 1.0f);
+                        ActivationFunction smolgen_activation,
+                        ActivationFunction ffn_activation, float alpha);
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
@@ -236,8 +235,8 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
     std::vector<float> temp1(batch_size * kSquares * hidden_channels);
     FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size * kSquares, embedding_size, hidden_channels, input,
-        layer.mha.smolgen.compress.data(), (const float*)nullptr, NONE,
-        temp1.data());
+        layer.mha.smolgen.compress.data(), (const float*)nullptr,
+        ACTIVATION_NONE, temp1.data());
 
     // Dense 1.
     const auto hidden_sz = layer.mha.smolgen.dense1_b.size();
@@ -267,18 +266,21 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
     // Global smolgen weights.
     FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size * heads, gen_sz_outputs / heads, kSquares * kSquares, temp3.data(),
-        weights_.smolgen_w.data(), (const float*)nullptr, NONE, QK);
+        batch_size * heads, gen_sz_outputs / heads, kSquares * kSquares,
+        temp3.data(), weights_.smolgen_w.data(), (const float*)nullptr,
+        ACTIVATION_NONE, QK);
   }
 
   // Q
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
-      layer.mha.q_w.data(), layer.mha.q_b.data(), NONE, head_buffer2.data());
+      layer.mha.q_w.data(), layer.mha.q_b.data(), ACTIVATION_NONE,
+      head_buffer2.data());
   // K
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
-      layer.mha.k_w.data(), layer.mha.k_b.data(), NONE, head_buffer3.data());
+      layer.mha.k_w.data(), layer.mha.k_b.data(), ACTIVATION_NONE,
+      head_buffer3.data());
 
   // MHA (Q, K, V)
   const int depth = d_model / heads;
@@ -339,7 +341,8 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   // V
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
-      layer.mha.v_w.data(), layer.mha.v_b.data(), NONE, head_buffer3.data());
+      layer.mha.v_w.data(), layer.mha.v_b.data(), ACTIVATION_NONE,
+      head_buffer3.data());
 
   for (auto batch = size_t{0}; batch < batch_size; batch++) {
     auto batchStart = batch * kSquares * d_model;
@@ -371,7 +374,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   // Fully connected final MHA layer.
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, d_model, embedding_size, head_buffer2.data(),
-      layer.mha.dense_w.data(), layer.mha.dense_b.data(), NONE,
+      layer.mha.dense_w.data(), layer.mha.dense_b.data(), ACTIVATION_NONE,
       head_buffer3.data());
 
   // Layer Norm + skip connection.
@@ -389,7 +392,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
       head_buffer4.data(), layer.ffn.dense2_w.data(), layer.ffn.dense2_b.data(),
-      NONE, head_buffer3.data());
+      ACTIVATION_NONE, head_buffer3.data());
 
   // Layer Norm + skip connection.
   LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
@@ -587,8 +590,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
             for (size_t j = 0; j < output_channels; j++) {
-              res[batch * kSquares * output_channels + i * output_channels + j] =
-                  conv_out[batch * kSquares * output_channels + j * kSquares + i];
+              res[batch * kSquares * output_channels + i * output_channels +
+                  j] = conv_out[batch * kSquares * output_channels +
+                                j * kSquares + i];
             }
           }
         }
@@ -598,8 +602,9 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, output_channels, policy_embedding_size, res,
           weights_.ip_pol_w.data(), weights_.ip_pol_b.data(),
-          attn_body_ ? default_activation_
-                     : SELU,  // SELU activation hardcoded for apmish nets.
+          attn_body_
+              ? default_activation_
+              : ACTIVATION_SELU,  // SELU activation hardcoded for apmish nets.
           head_buffer.data());
 
       const size_t policy_d_model = weights_.ip2_pol_b.size();
@@ -616,20 +621,20 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         MakeEncoderLayer(head_buffer, head_buffer2, head_buffer3, batch_size,
                          layer, policy_embedding_size,
                          weights_.pol_encoder_head_count,
-                         attn_body_ ? smolgen_activation_ : NONE,
-                         attn_body_ ? ffn_activation_ : SELU, 1.0f);
+                         attn_body_ ? smolgen_activation_ : ACTIVATION_NONE,
+                         attn_body_ ? ffn_activation_ : ACTIVATION_SELU, 1.0f);
       }
 
       // Q
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, policy_embedding_size, policy_d_model,
           head_buffer.data(), weights_.ip2_pol_w.data(),
-          weights_.ip2_pol_b.data(), NONE, head_buffer2.data());
+          weights_.ip2_pol_b.data(), ACTIVATION_NONE, head_buffer2.data());
       // K
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size * kSquares, policy_embedding_size, policy_d_model,
           head_buffer.data(), weights_.ip3_pol_w.data(),
-          weights_.ip3_pol_b.data(), NONE, head_buffer3.data());
+          weights_.ip3_pol_b.data(), ACTIVATION_NONE, head_buffer3.data());
       const float scaling = 1.0f / sqrtf(policy_d_model);
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
         const float* A = &head_buffer2[batch * 64 * policy_d_model];
@@ -708,7 +713,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                         head_buffer.data());
 
       BiasActivate(batch_size, num_policy_input_planes, &head_buffer.data()[0],
-                   weights_.policy.biases.data(), NONE);
+                   weights_.policy.biases.data(), ACTIVATION_NONE);
 
       // Mapping from convolutional policy to lc0 policy
       for (auto batch = size_t{0}; batch < batch_size; batch++) {
@@ -734,7 +739,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           batch_size, num_policy_input_planes * kSquares, num_output_policy,
           head_buffer.data(), weights_.ip_pol_w.data(),
           weights_.ip_pol_b.data(),
-          NONE,  // Activation Off
+          ACTIVATION_NONE,  // Activation Off
           output_fc.data());
     }
 
@@ -775,7 +780,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_value_channels, 3, output_fc.data(),
           weights_.ip2_val_w.data(), weights_.ip2_val_b.data(),
-          NONE,  // Activation Off
+          ACTIVATION_NONE,  // Activation Off
           wdl.data());
 
       for (size_t j = 0; j < batch_size; j++) {
@@ -822,7 +827,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       FullyConnectedLayer<use_eigen>::Forward1D(
           batch_size, num_moves_channels, 1, output_fc.data(),
           weights_.ip2_mov_w.data(), weights_.ip2_mov_b.data(),
-          RELU,  // Specifically Relu
+          ACTIVATION_RELU,  // Specifically Relu
           output_moves_left.data());
 
       for (size_t j = 0; j < batch_size; j++) {
@@ -871,8 +876,8 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
   default_activation_ = file.format().network_format().default_activation() ==
                                 pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
-                            ? MISH
-                            : RELU;
+                            ? ACTIVATION_MISH
+                            : ACTIVATION_RELU;
 
   if (attn_body_) {
     const auto smol_act = file.format().network_format().smolgen_activation();
