@@ -28,9 +28,9 @@
 
 #include <list>
 
+#include "metal_common.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
-#include "metal_common.h"
 
 namespace lczero {
 namespace metal_backend {
@@ -107,7 +107,8 @@ class MetalNetwork : public Network {
  public:
   MetalNetwork(const WeightsFile& file, const OptionsDict& options);
   ~MetalNetwork() {
-    // if (builder_) { /** @todo clean-up delegate first */ delete builder; builder = NULL; }
+    // if (builder_) { /** @todo clean-up delegate first */ delete builder;
+    // builder = NULL; }
   }
 
   void forwardEval(InputsOutputs* io, int inputBatchSize);
@@ -119,8 +120,8 @@ class MetalNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
-                                             moves_left_, conv_policy_, attn_policy_);
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_, moves_left_,
+                                             conv_policy_, attn_policy_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -141,20 +142,19 @@ class MetalNetwork : public Network {
  private:
   NetworkCapabilities capabilities_{
       pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
-      pblczero::NetworkFormat::MOVES_LEFT_NONE
-  };
+      pblczero::NetworkFormat::MOVES_LEFT_NONE};
   int max_batch_size_;
   int batch_size_;
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
   bool attn_policy_;
-  int policy_d_model_;
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
   std::unique_ptr<MetalNetworkBuilder> builder_;
 
-  // Metal not really good at multi-threading, so we need to do one NN eval at a time.
+  // Metal not really good at multi-threading, so we need to do one NN eval at a
+  // time.
   mutable std::mutex lock_;
 };
 

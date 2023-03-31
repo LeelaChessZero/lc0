@@ -115,7 +115,6 @@ struct LegacyWeights {
   std::vector<EncoderLayer> encoder;
   int encoder_head_count;
 
-
   // Residual tower.
   std::vector<Residual> residual;
 
