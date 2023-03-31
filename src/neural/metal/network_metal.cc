@@ -25,7 +25,6 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "network_metal.h"
-#include "mps/MetalNetworkBuilder.h"
 
 #include <algorithm>
 #include <cassert>
@@ -35,17 +34,19 @@
 #include <memory>
 #include <mutex>
 
+#include "mps/MetalNetworkBuilder.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
-#include "neural/shared/policy_map.h"
 #include "neural/shared/attention_policy_map.h"
+#include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
 namespace lczero {
 namespace metal_backend {
 
-MetalNetworkComputation::MetalNetworkComputation(MetalNetwork* network, bool wdl, bool moves_left)
+MetalNetworkComputation::MetalNetworkComputation(MetalNetwork* network,
+                                                 bool wdl, bool moves_left)
     : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
   inputs_outputs_ = network_->GetInputsOutputs();
@@ -59,10 +60,34 @@ void MetalNetworkComputation::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
+std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
+  switch (act) {
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_RELU:
+      return "relu";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_MISH:
+      return "mish";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_NONE:
+      return "none";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_TANH:
+      return "tanh";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SIGMOID:
+      return "sigmoid";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SELU:
+      return "selu";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SWISH:
+      return "swish";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_RELU_2:
+      return "relu_2";
+    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SOFTMAX:
+      return "softmax";
+    default:
+      return "";
+  }
+}
+
 MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()} {
-
   LegacyWeights weights(file.weights());
 
   try {
@@ -74,9 +99,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     throw Exception("There was an error initializing the GPU device.");
   }
 
-  const int channelSize = weights.input.weights.size() / kInputPlanes / 9;
-  const int kernelSize = 3;
-
   max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
   batch_size_ = options.GetOrDefault<int>("batch", 64);
 
@@ -86,31 +108,54 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
   attn_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_ATTENTION;
 
-  wdl_ = file.format().network_format().value() == pblczero::NetworkFormat::VALUE_WDL;
+  wdl_ = file.format().network_format().value() ==
+         pblczero::NetworkFormat::VALUE_WDL;
 
   moves_left_ = (file.format().network_format().moves_left() ==
                  pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
 
-  policy_d_model_ = weights.ip2_pol_b.size();
+  bool attn_body =
+      file.format().network_format().network() ==
+      pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
 
   // Build MPS Graph.
-  builder_->build(kInputPlanes, channelSize, kernelSize, weights, attn_policy_, conv_policy_, wdl_, moves_left_,
-    file.format().network_format().default_activation() == pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH ? "mish" : "relu"
-  );
+  Activations activations;
+  activations.default_activation =
+      file.format().network_format().default_activation() ==
+              pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+          ? "mish"
+          : "relu";
+  const auto smolgen_activation =
+      file.format().network_format().smolgen_activation();
+  activations.smolgen_activation =
+      smolgen_activation == pblczero::NetworkFormat::ACTIVATION_DEFAULT
+          ? activations.default_activation
+          : activationString(
+                static_cast<pblczero::NetworkFormat::ActivationFunction>(
+                    smolgen_activation));
+  const auto ffn_activation = file.format().network_format().ffn_activation();
+  activations.ffn_activation =
+      ffn_activation == pblczero::NetworkFormat::ACTIVATION_DEFAULT
+          ? activations.default_activation
+          : activationString(
+                static_cast<pblczero::NetworkFormat::ActivationFunction>(
+                    ffn_activation));
+  builder_->build(kInputPlanes, weights, attn_body, attn_policy_, conv_policy_,
+                  wdl_, moves_left_, activations);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
   // Expand encoded input into N x 112 x 8 x 8.
-  float * dptr = &io->input_val_mem_expanded_[0];
+  float* dptr = &io->input_val_mem_expanded_[0];
   for (size_t i = 0; i < batchSize; i++) {
-      for (size_t j = 0; j < kInputPlanes; j++) {
-          const float value = io->input_val_mem_[j + i * kInputPlanes];
-          const uint64_t mask = io->input_masks_mem_[j + i * kInputPlanes];
-          for (auto k = 0; k < 64; k++) {
-              *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
-          }
+    for (size_t j = 0; j < kInputPlanes; j++) {
+      const float value = io->input_val_mem_[j + i * kInputPlanes];
+      const uint64_t mask = io->input_masks_mem_[j + i * kInputPlanes];
+      for (auto k = 0; k < 64; k++) {
+        *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
       }
+    }
   }
 
   // Metal is not thread-safe, so lock is needed.
@@ -118,18 +163,17 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 
   if (attn_policy_ || conv_policy_) {
     /**
-     * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
-     * Implementation of policy map to be done in CPU for now.
+     * @todo policy map implementation has bug in MPSGraph (GatherND not working
+     * in graph). Implementation of policy map to be done in CPU for now.
      *
      * Remove this if-branch when bug is fixed. See comments above.
      */
 
     if (moves_left_) {
-      builder_->forwardEval(
-          &io->input_val_mem_expanded_[0], batchSize,
-          {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0], &io->op_moves_left_mem_[0]});
-    }
-    else {
+      builder_->forwardEval(&io->input_val_mem_expanded_[0], batchSize,
+                            {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0],
+                             &io->op_moves_left_mem_[0]});
+    } else {
       builder_->forwardEval(
           &io->input_val_mem_expanded_[0], batchSize,
           {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0]});
@@ -145,10 +189,10 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
             for (int i = 0; i < 3; i++) {  // c in cuda
               // Promotion offsets already precalculated and stored in GPU.
               // Just the main policy offsets need to be added here.
-              io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 * k +
-                                 3 * j + i] +=
+              io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + 64 * 64 +
+                                     24 * k + 3 * j + i] +=
                   io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) +
-                                     (48 + k) * 64 + 56 + j];
+                                         (48 + k) * 64 + 56 + j];
             }
           }
         }
@@ -163,8 +207,7 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
           }
         }
       }
-    }
-    else if (conv_policy_) {
+    } else if (conv_policy_) {
       // Mapping from convolutional policy to lc0 policy
       for (size_t batch = 0; batch < batchSize; batch++) {
         for (size_t i = 0; i < 73 * 64; i++) {
@@ -177,23 +220,19 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
       }
     }
 
-  }
-  else {
+  } else {
     if (moves_left_) {
-      builder_->forwardEval(
-          &io->input_val_mem_expanded_[0], batchSize,
-          {&io->op_policy_mem_[0], &io->op_value_mem_[0], &io->op_moves_left_mem_[0]});
-    }
-    else {
-      builder_->forwardEval(
-          &io->input_val_mem_expanded_[0], batchSize,
-          {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
+      builder_->forwardEval(&io->input_val_mem_expanded_[0], batchSize,
+                            {&io->op_policy_mem_[0], &io->op_value_mem_[0],
+                             &io->op_moves_left_mem_[0]});
+    } else {
+      builder_->forwardEval(&io->input_val_mem_expanded_[0], batchSize,
+                            {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
     }
 
     // The next thread can start using the GPU now.
     lock_.unlock();
   }
-
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
@@ -205,10 +244,12 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
   if (weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+      weights.format().network_format().network() !=
+          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
     throw Exception("Network format " +
                     pblczero::NetworkFormat::NetworkStructure_Name(
-                      weights.format().network_format().network()) +
+                        weights.format().network_format().network()) +
                     " is not supported by the Metal backend.");
   }
   if (weights.format().network_format().policy() !=
@@ -219,7 +260,7 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::POLICY_ATTENTION) {
     throw Exception("Policy format " +
                     pblczero::NetworkFormat::PolicyFormat_Name(
-                      weights.format().network_format().policy()) +
+                        weights.format().network_format().policy()) +
                     " is not supported by the Metal backend.");
   }
   if (weights.format().network_format().value() !=
@@ -228,7 +269,7 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::VALUE_WDL) {
     throw Exception("Value format " +
                     pblczero::NetworkFormat::ValueFormat_Name(
-                      weights.format().network_format().value()) +
+                        weights.format().network_format().value()) +
                     " is not supported by the Metal backend.");
   }
   if (weights.format().network_format().moves_left() !=
@@ -237,22 +278,23 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::MOVES_LEFT_V1) {
     throw Exception("Moves left head format " +
                     pblczero::NetworkFormat::MovesLeftFormat_Name(
-                      weights.format().network_format().moves_left()) +
+                        weights.format().network_format().moves_left()) +
                     " is not supported by the Metal backend.");
   }
   if (weights.format().network_format().default_activation() !=
           pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
       weights.format().network_format().default_activation() !=
           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
-    throw Exception("Default activation " +
-                    pblczero::NetworkFormat::DefaultActivation_Name(
-                        weights.format().network_format().default_activation()) +
-                    " is not supported by the Metal backend.");
+    throw Exception(
+        "Default activation " +
+        pblczero::NetworkFormat::DefaultActivation_Name(
+            weights.format().network_format().default_activation()) +
+        " is not supported by the Metal backend.");
   }
   return std::make_unique<MetalNetwork>(weights, options);
 }
 
 REGISTER_NETWORK("metal", MakeMetalNetwork, 105)
 
-}  // namespace backend_metal
+}  // namespace metal_backend
 }  // namespace lczero
