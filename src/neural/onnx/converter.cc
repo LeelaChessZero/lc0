@@ -56,8 +56,8 @@ class Converter {
     default_activation_ =
         net.format().network_format().default_activation() ==
                 pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
-            ? MISH
-            : RELU;
+            ? ACTIVATION_MISH
+            : ACTIVATION_RELU;
   }
 
   void Convert(pblczero::Net* dst);
@@ -209,16 +209,16 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
                                       const std::string& name,
                                       ActivationFunction activation) {
   switch (activation) {
-    case RELU:
+    case ACTIVATION_RELU:
       return builder->Relu(name + "/relu", input);
-    case MISH:
+    case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
-    case SELU:
+    case ACTIVATION_SELU:
       return builder->Selu(name + "/selu", input);
-    case SWISH:
+    case ACTIVATION_SWISH:
       return MakeSwish(builder, input, name + "/swish");
-    case RELU_2: {
-      auto flow = MakeActivation(builder, input, name + "/sqrrelu/relu", RELU);
+    case ACTIVATION_RELU_2: {
+      auto flow = builder->Relu(name + "/sqrrelu/relu", input);
       return builder->Mul(name + "/sqrrelu/sqr", flow, flow);
     }
     default:
@@ -295,8 +295,9 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
                                    const std::string& name) {
   const auto smolgen_activation = static_cast<ActivationFunction>(
       src_.format().network_format().smolgen_activation());
-  const auto activation =
-      smolgen_activation == DEFAULT ? default_activation_ : smolgen_activation;
+  const auto activation = smolgen_activation == ACTIVATION_DEFAULT
+                              ? default_activation_
+                              : smolgen_activation;
   const int smolgen_hidden_channels =
       layer.mha.smolgen.compress.size() / embedding_size;
   const int smolgen_hidden_sz = layer.mha.smolgen.dense1_b.size();
@@ -444,9 +445,9 @@ std::string Converter::MakeEncoderLayer(
 
   const auto ffn_activation = static_cast<ActivationFunction>(
       src_.format().network_format().ffn_activation());
-  flow =
-      MakeActivation(builder, flow, name + "/ffn/dense1",
-                     ffn_activation == DEFAULT ? activation : ffn_activation);
+  flow = MakeActivation(
+      builder, flow, name + "/ffn/dense1",
+      ffn_activation == ACTIVATION_DEFAULT ? activation : ffn_activation);
   flow =
       builder->MatMul(name + "/ffn/dense2/w", flow,
                       *GetWeghtsConverter(layer.ffn.dense2_w,
@@ -583,7 +584,7 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
       src_.format().network_format().network() >=
               pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT
           ? default_activation_
-          : SELU;
+          : ACTIVATION_SELU;
   if (NumEncBlocks() == 0) {
     flow = builder->Transpose("/policy/dense1/transpose", flow, {0, 2, 3, 1});
 
