@@ -74,7 +74,18 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH };
+enum ActivationFunction {
+    ACTIVATION_DEFAULT = 0,
+    ACTIVATION_MISH = 1,
+    ACTIVATION_RELU = 2,
+    ACTIVATION_NONE = 3,
+    ACTIVATION_TANH = 4,
+    ACTIVATION_SIGMOID = 5,
+    ACTIVATION_SELU = 6,
+    ACTIVATION_SWISH = 7,
+    ACTIVATION_RELU_2 = 8,
+    ACTIVATION_SOFTMAX = 9,
+};
 
 }  // namespace cudnn_backend
 }  // namespace lczero

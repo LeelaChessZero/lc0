@@ -93,10 +93,10 @@ class ConvLayer : public BaseLayer<DataType> {
 
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
-            ActivationFunction activation = NONE, bool bias = false);
+            ActivationFunction activation = ACTIVATION_NONE, bool bias = false);
 
   ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
-            ActivationFunction activation = NONE, bool bias = false);
+            ActivationFunction activation = ACTIVATION_NONE, bool bias = false);
 
   ~ConvLayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);

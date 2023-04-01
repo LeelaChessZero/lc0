@@ -41,16 +41,16 @@ __device__ __forceinline__ float mishActivate(float el) {
 __device__ __forceinline__ float activate(float cVal,
                                           ActivationFunction activation) {
   switch (activation) {
-    case RELU:
+    case ACTIVATION_RELU:
       if (cVal < 0) cVal = 0;
       break;
-    case TANH:
+    case ACTIVATION_TANH:
       cVal = tanh(cVal);
       break;
-    case SIGMOID:
+    case ACTIVATION_SIGMOID:
       cVal = 1.0f / (1.0f + __expf(-cVal));
       break;
-    case SELU: {
+    case ACTIVATION_SELU: {
       float alpha = 1.67326324f, scale = 1.05070098f;
       if (cVal > 0)
         cVal = scale * cVal;
@@ -58,7 +58,7 @@ __device__ __forceinline__ float activate(float cVal,
         cVal = scale * alpha * (__expf(cVal) - 1.0f);
       break;
     }
-    case MISH:
+    case ACTIVATION_MISH:
       cVal = mishActivate(cVal);
       break;
   }
@@ -391,7 +391,7 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     }
 
     // relu
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
         board[h][w] = (T)activate((float)board[h][w], activation);
@@ -561,7 +561,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
     }
 
     // relu
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
         board[h][w] = (T)activate((float)board[h][w], activation);
@@ -718,7 +718,7 @@ void OutputTransform_relu_InputTransform_kernel(int N, int C,
     }
 
     // activation
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
         board[h][w] = (T) activate((float)board[h][w], activation);
