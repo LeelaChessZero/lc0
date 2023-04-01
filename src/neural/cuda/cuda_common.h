@@ -76,21 +76,22 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
 enum ActivationFunction {
-    MISH = 1, // pblczero::NetworkFormat::ActivationFunction::MISH,
-    RELU = 2, // pblczero::NetworkFormat::ActivationFunction::RELU,
-    NONE = 3, // pblczero::NetworkFormat::ActivationFunction::NONE,
-    TANH = 4, // pblczero::NetworkFormat::ActivationFunction::TANH,
-    SIGMOID = 5, // pblczero::NetworkFormat::ActivationFunction::SIGMOID,
-    SELU = 6, // pblczero::NetworkFormat::ActivationFunction::SELU,
-    SWISH = 7, // pblczero::NetworkFormat::ActivationFunction::SWISH,
-    RELU_2 = 8, // pblczero::NetworkFormat::ActivationFunction::RELU_2,
-    SOFTMAX = 9, // pblczero::NetworkFormat::ActivationFunction::SOFTMAX
+    ACTIVATION_DEFAULT = 0,
+    ACTIVATION_MISH = 1,
+    ACTIVATION_RELU = 2,
+    ACTIVATION_NONE = 3,
+    ACTIVATION_TANH = 4,
+    ACTIVATION_SIGMOID = 5,
+    ACTIVATION_SELU = 6,
+    ACTIVATION_SWISH = 7,
+    ACTIVATION_RELU_2 = 8,
+    ACTIVATION_SOFTMAX = 9,
 };
 
 struct Activations {
-    ActivationFunction default_activation = RELU;
-    ActivationFunction smolgen_activation = SWISH;
-    ActivationFunction ffn_activation = RELU_2;
+    ActivationFunction default_activation = ACTIVATION_RELU;
+    ActivationFunction smolgen_activation = ACTIVATION_SWISH;
+    ActivationFunction ffn_activation = ACTIVATION_RELU_2;
 };
 
 }  // namespace cudnn_backend

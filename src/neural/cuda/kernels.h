@@ -143,8 +143,8 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
                             cudaStream_t stream);
 
 template <typename T>
-void inputPreprocessForAttentionBody(T* output, const T* input, int N,
-                                     cudaStream_t stream);
+void inputPreprocessForAttentionBody(T* output, const T* input, const float* encoding,
+                                     int N, cudaStream_t stream);
 
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,

@@ -93,10 +93,10 @@ class ConvLayer : public BaseLayer<DataType> {
 
  public:
   ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
-            ActivationFunction activation = NONE, bool bias = false);
+            ActivationFunction activation = ACTIVATION_NONE, bool bias = false);
 
   ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
-            ActivationFunction activation = NONE, bool bias = false);
+            ActivationFunction activation = ACTIVATION_NONE, bool bias = false);
 
   ~ConvLayer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -484,6 +484,7 @@ class AttentionBody : public BaseLayer<DataType> {
   DataType *ip_emb_w_, *ip_emb_b_;    // "embedding" layer in net body
   DataType *ip_mult_gate_, *ip_add_gate_; // input gating
   DataType *smolgen_global_; // global smolgen weights for all encoder layers
+  float* pos_encoding_;
   int embedding_op_size_;
   int encoder_head_count_;
   std::vector<EncoderBlock<DataType>*> encoder_weights_;

@@ -347,7 +347,7 @@ class CudaNetwork : public Network {
     const bool mish_net = file.format().network_format().default_activation() ==
                           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH;
 
-    ActivationFunction act = mish_net ? MISH : RELU;
+    ActivationFunction act = mish_net ? ACTIVATION_MISH : ACTIVATION_RELU;
 
     // 2. Build the network, and copy the weights to GPU memory.
 
@@ -417,10 +417,10 @@ class CudaNetwork : public Network {
     if (attn_body_) {
       Activations activations;
       const auto smolgen_activation = file.format().network_format().smolgen_activation();
-      activations.smolgen_activation = smolgen_activation == pblczero::NetworkFormat::SMOLGEN_ACTIVATION_INHERIT
+      activations.smolgen_activation = smolgen_activation == pblczero::NetworkFormat::ACTIVATION_DEFAULT
                                 ? act : static_cast<ActivationFunction>(smolgen_activation);
       const auto ffn_activation = file.format().network_format().ffn_activation();
-      activations.ffn_activation = ffn_activation == pblczero::NetworkFormat::FFN_ACTIVATION_INHERIT
+      activations.ffn_activation = ffn_activation == pblczero::NetworkFormat::ACTIVATION_DEFAULT
                             ? act : static_cast<ActivationFunction>(ffn_activation);
       activations.default_activation = act;
 
@@ -456,7 +456,7 @@ class CudaNetwork : public Network {
 
       // No relu
       auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          getLastLayer(), pol_channels, 8, 8, kNumFilters, NONE, true, false,
+          getLastLayer(), pol_channels, 8, 8, kNumFilters, ACTIVATION_NONE, true, false,
           false, 0, use_gemm_ex);
       conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                          scratch_mem_);
@@ -477,7 +477,7 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(convPol));
 
       auto FCPol = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip_pol_b.size(), 1, 1, true, NONE);
+          getLastLayer(), weights.ip_pol_b.size(), 1, 1, true, ACTIVATION_NONE);
       FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
                          scratch_mem_);
       network_.emplace_back(std::move(FCPol));
@@ -511,7 +511,7 @@ class CudaNetwork : public Network {
 
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
           getLastLayer(), weights.ip2_val_b.size(), 1, 1, true,
-          fc2_tanh ? TANH : NONE);
+          fc2_tanh ? ACTIVATION_TANH : ACTIVATION_NONE);
       FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
@@ -542,7 +542,7 @@ class CudaNetwork : public Network {
       network_.emplace_back(std::move(FCMov1));
 
       auto FCMov2 = std::make_unique<FCLayer<DataType>>(getLastLayer(), 1, 1, 1,
-                                                        true, RELU);
+                                                        true, ACTIVATION_RELU);
       FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov2));
@@ -1085,25 +1085,6 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
             weights.format().network_format().default_activation()) +
         " is not supported by the CUDA backend.");
   }
-
-  // @todo Hack for old encoding compatibility. REMOVE BEFORE MERGING.
-  if (w->format().network_format().network() ==
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-      w->weights().encoder().size() > 0) {
-    CERR << "Attention body detected, hacking network format.";
-    WeightsFile x = *w;
-    x.mutable_format()->mutable_network_format()->set_network(
-        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
-    if (w->weights().has_smolgen_w()) {
-      CERR << "BT2 detected, hacking activations.";
-      x.mutable_format()->mutable_network_format()->set_ffn_activation(
-          pblczero::NetworkFormat::FFN_ACTIVATION_RELU_2);
-      x.mutable_format()->mutable_network_format()->set_smolgen_activation(
-          pblczero::NetworkFormat::SMOLGEN_ACTIVATION_SWISH);
-    }
-    return std::make_unique<CudaNetwork<DataType>>(x, options);
-  }
-
   return std::make_unique<CudaNetwork<DataType>>(weights, options);
 }
 

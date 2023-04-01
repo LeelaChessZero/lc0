@@ -164,7 +164,7 @@ void ConvLayer<DataType>::init() {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
   }
 
-  if (act_ == RELU) {
+  if (act_ == ACTIVATION_RELU) {
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_RELU,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
   }
@@ -264,14 +264,14 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
 
   float alpha = 1.0f, beta = 0.0f;
 
-  if (!(act_ != NONE || use_bias_ || input2)) {
+  if (!(act_ != ACTIVATION_NONE || use_bias_ || input2)) {
     ReportCUDNNErrors(cudnnConvolutionForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
         output));
   }
 #if CUDNN_MAJOR != 7 || CUDNN_MINOR != 0
-  else if (input2 && (act_ == RELU || act_ == NONE) && use_bias_) {
+  else if (input2 && (act_ == ACTIVATION_RELU || act_ == ACTIVATION_NONE) && use_bias_) {
     // fused bias + sum + relu!
     ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
@@ -281,7 +281,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
     // For some reason cudnn doesn't support just Convolution + Bias with nchw
     // (winograd algorithm) it works fine when RELU is also needed which is
     // somewhat strange.
-    if ((act_ == RELU || (act_ == NONE && nhwc_)) && !input2 && use_bias_) {
+    if ((act_ == ACTIVATION_RELU || (act_ == ACTIVATION_NONE && nhwc_)) && !input2 && use_bias_) {
       ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
@@ -297,7 +297,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
       if (input2 && input2 != output) {
         // Merge act with residual add unless there is bias.
         addVectors(output, output, (DataType*)input2, N * C * H * W,
-                   N * C * H * W, N * C * H * W, use_bias_ ? NONE : act_,
+                   N * C * H * W, N * C * H * W, use_bias_ ? ACTIVATION_NONE : act_,
                    stream);
         act_done = !use_bias_;
       }
@@ -310,7 +310,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
           addVectors(output, output, biases, N * C * H * W, N * C * H * W, C,
                      act_, stream);
         }
-      } else if (!act_done && act_ != NONE) {
+      } else if (!act_done && act_ != ACTIVATION_NONE) {
         addVectors(output, output, (DataType*)nullptr, N * C * H * W,
                    N * C * H * W, 0, act_, stream);
       }
@@ -330,12 +330,12 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
       ReportCUDNNErrors(cudnnAddTensor(cudnn, &alpha, bias_desc_, biases,
                                        &alpha, out_tensor_desc_, output));
     }
-    if (act_ == RELU) {
+    if (act_ == ACTIVATION_RELU) {
       ReportCUDNNErrors(cudnnActivationForward(cudnn, activation_, &alpha,
                                                out_tensor_desc_, output, &beta,
                                                out_tensor_desc_, output));
     }
-    if (act_ != RELU && act_ != NONE) {
+    if (act_ != ACTIVATION_RELU && act_ != ACTIVATION_NONE) {
       addVectors(output, output, nullptr, N * C * H * W, N * C * H * W, 0, act_,
                  stream);
       // TODO: check this actually compiles?
@@ -500,7 +500,7 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                  numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                  numFc1Out_, &beta, op2, 2 * C));
-  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, NONE, stream);
+  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE, stream);
 
   // 4. (Optional prev layer bias add), Global scale, residual add, relu and
   // bias.
@@ -542,7 +542,7 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                    numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                    numFc1Out_, &beta, op2, 2 * C));
-    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, NONE, stream);
+    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE, stream);
 
     // 4. (Optional prev layer bias add), Global scale, residual add, relu and
     // bias.
@@ -629,7 +629,7 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs));
 
-  if (use_bias_ || (act_ != NONE)) {
+  if (use_bias_ || (act_ != ACTIVATION_NONE)) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
                num_outputs, num_outputs * N, act_, stream);
   }
@@ -650,7 +650,7 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs));
 
-  if (use_bias_ || (act_ != NONE)) {
+  if (use_bias_ || (act_ != ACTIVATION_NONE)) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
                num_outputs, num_outputs * N, act_, stream);
   }
@@ -779,7 +779,7 @@ FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
       has_se_(se),
       se_k_(se_k),
       op_nhcw_(op_nhcw) {
-  if (act_ != RELU && act_ != MISH && act_ != NONE) {
+  if (act_ != ACTIVATION_RELU && act_ != ACTIVATION_MISH && act_ != ACTIVATION_NONE) {
     throw Exception("Unsupported activation for fused winograd conv SE layer.");
   }
   // Allocate memory for weights (filter tensor) and biases.
@@ -939,49 +939,49 @@ void FusedWinogradConvSELayer<DataType>::Eval(
       transformed_input, transformed_weights_, transformed_output, N * 4, C,
       c_input_, 36, cublas);
 
-  if (act_ == NONE) {
+  if (act_ == ACTIVATION_NONE) {
     if (!has_se_ && use_bias_ && !skip_add_)
-      OutputTransform<DataType, false, NONE, true, false, false, false>(
+      OutputTransform<DataType, false, ACTIVATION_NONE, true, false, false, false>(
           N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
           nullptr, nullptr, nullptr, stream);
     else
       throw Exception("unsupported network type!");
-  } else if (act_ == RELU) {
+  } else if (act_ == ACTIVATION_RELU) {
     if (has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, true, RELU, true, true, false, false>(
+      OutputTransform<DataType, true, ACTIVATION_RELU, true, true, false, false>(
           N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_,
           w2_, b2_, stream);
     else if (!has_se_ && use_bias_ && !skip_add_) {
       if (op_nhcw_)
-        OutputTransform<DataType, false, RELU, true, false, false, true>(
+        OutputTransform<DataType, false, ACTIVATION_RELU, true, false, false, true>(
             N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
             nullptr, nullptr, nullptr, stream);
       else
-        OutputTransform<DataType, false, RELU, true, false, false, false>(
+        OutputTransform<DataType, false, ACTIVATION_RELU, true, false, false, false>(
             N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
             nullptr, nullptr, nullptr, stream);
     } else if (!has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, false, RELU, true, true, false, false>(
+      OutputTransform<DataType, false, ACTIVATION_RELU, true, true, false, false>(
           N, C, 0, output, transformed_output, input2, biases_, nullptr,
           nullptr, nullptr, nullptr, stream);
     else
       throw Exception("unsupported network type!");
-  } else if (act_ == MISH) {
+  } else if (act_ == ACTIVATION_MISH) {
     if (has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, true, MISH, true, true, false, false>(
+      OutputTransform<DataType, true, ACTIVATION_MISH, true, true, false, false>(
           N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_,
           w2_, b2_, stream);
     else if (!has_se_ && use_bias_ && !skip_add_) {
       if (op_nhcw_)
-        OutputTransform<DataType, false, MISH, true, false, false, true>(
+        OutputTransform<DataType, false, ACTIVATION_MISH, true, false, false, true>(
             N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
             nullptr, nullptr, nullptr, stream);
       else
-        OutputTransform<DataType, false, MISH, true, false, false, false>(
+        OutputTransform<DataType, false, ACTIVATION_MISH, true, false, false, false>(
             N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
             nullptr, nullptr, nullptr, stream);
     } else if (!has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, false, MISH, true, true, false, false>(
+      OutputTransform<DataType, false, ACTIVATION_MISH, true, true, false, false>(
           N, C, 0, output, transformed_output, input2, biases_, nullptr,
           nullptr, nullptr, nullptr, stream);
     else
@@ -1097,7 +1097,7 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
 
   if (use_bias_)
     addBias_NCHW(output, output, biases_, N, C, H, W, act_, stream);
-  else if (act_ != NONE)
+  else if (act_ != ACTIVATION_NONE)
     addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W,
                0, act_, stream);
 }
@@ -1122,7 +1122,7 @@ ResidualBlock<DataType>::ResidualBlock(BaseLayer<DataType>* ip, int C, bool se,
       last_block_(last),
       shared_mem_size_(shared_mem_size),
       act_(activation) {
-  if (act_ != RELU && act_ != MISH) {
+  if (act_ != ACTIVATION_RELU && act_ != ACTIVATION_MISH) {
     throw Exception("Unsupported activation for residual block.");
   }
   // Allocate memory for weights (filter tensor) and biases.
@@ -1280,12 +1280,12 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
                                                  c_input_, 36, cublas);
   }
 
-  if (act_ == RELU) {
-    OutputInputTransform<DataType, false, RELU, true, false>(
+  if (act_ == ACTIVATION_RELU) {
+    OutputInputTransform<DataType, false, ACTIVATION_RELU, true, false>(
         N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
         nullptr, nullptr, nullptr, nullptr, stream);
-  } else if (act_ == MISH) {
-    OutputInputTransform<DataType, false, MISH, true, false>(
+  } else if (act_ == ACTIVATION_MISH) {
+    OutputInputTransform<DataType, false, ACTIVATION_MISH, true, false>(
         N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
         nullptr, nullptr, nullptr, nullptr, stream);
   }
@@ -1302,59 +1302,59 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
       (fp16 && (shared_mem_size_ >= kMaxResBlockFusingSeFp16AmpereSmem) &&
        (C <= kMaxResBlockFusingSeKFp16Ampere));
 
-  if (act_ == RELU) {
+  if (act_ == ACTIVATION_RELU) {
     if (last_block_) {
       if (has_se_)
-        OutputTransform<DataType, true, RELU, true, true, true, false>(
+        OutputTransform<DataType, true, ACTIVATION_RELU, true, true, true, false>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
       else
-        OutputTransform<DataType, false, RELU, true, true, true, false>(
+        OutputTransform<DataType, false, ACTIVATION_RELU, true, true, true, false>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     } else {
       if (has_se_) {
         if (allowFusing) {
-          OutputInputTransform<DataType, true, RELU, true, true>(
+          OutputInputTransform<DataType, true, ACTIVATION_RELU, true, true>(
               N, C, se_k_, output, transformed_output, input, biases1_, w1_,
               b1_, w2_, b2_, stream);
         } else {
-          OutputTransform<DataType, true, RELU, true, true, true, true>(
+          OutputTransform<DataType, true, ACTIVATION_RELU, true, true, true, true>(
               N, C, se_k_, (DataType*)input, transformed_output, input,
               biases1_, w1_, b1_, w2_, b2_, stream);
           InputTransform<DataType, true>(N, C, output, (DataType*)input,
                                          stream);
         }
       } else
-        OutputInputTransform<DataType, false, RELU, true, true>(
+        OutputInputTransform<DataType, false, ACTIVATION_RELU, true, true>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     }
-  } else if (act_ == MISH) {
+  } else if (act_ == ACTIVATION_MISH) {
     if (last_block_) {
       if (has_se_)
-        OutputTransform<DataType, true, MISH, true, true, true, false>(
+        OutputTransform<DataType, true, ACTIVATION_MISH, true, true, true, false>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
       else
-        OutputTransform<DataType, false, MISH, true, true, true, false>(
+        OutputTransform<DataType, false, ACTIVATION_MISH, true, true, true, false>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     } else {
       if (has_se_) {
         if (allowFusing) {
-          OutputInputTransform<DataType, true, MISH, true, true>(
+          OutputInputTransform<DataType, true, ACTIVATION_MISH, true, true>(
               N, C, se_k_, output, transformed_output, input, biases1_, w1_,
               b1_, w2_, b2_, stream);
         } else {
-          OutputTransform<DataType, true, MISH, true, true, true, true>(
+          OutputTransform<DataType, true, ACTIVATION_MISH, true, true, true, true>(
               N, C, se_k_, (DataType*)input, transformed_output, input,
               biases1_, w1_, b1_, w2_, b2_, stream);
           InputTransform<DataType, true>(N, C, output, (DataType*)input,
                                          stream);
         }
       } else
-        OutputInputTransform<DataType, false, MISH, true, true>(
+        OutputInputTransform<DataType, false, ACTIVATION_MISH, true, true>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     }
@@ -1400,7 +1400,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
                                                    bool attention_body,
                                                    ActivationFunction act, int max_batch_size)
     : attention_body_(attention_body),
-      act_(attention_body ? act : SELU),        // HACK : old networks without attention body (e.g: T79 use hardcoded SELU activations)
+      act_(attention_body ? act : ACTIVATION_SELU),        // HACK : old networks without attention body (e.g: T79 use hardcoded SELU activations)
       BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip) {
   embedding_op_size_ = weights.ip_pol_b.size();
   wq_op_size_ = weights.ip2_pol_b.size();
@@ -1444,7 +1444,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_heads_, embedding_op_size_, 1.0f, // using alpha = 1 for now (TODO: may change?)
-        nullptr, 0, max_batch_size, SWISH, act_); // smolgen weights not implemented in policy encoder heads yet.
+        nullptr, 0, max_batch_size, ACTIVATION_SWISH, act_); // smolgen weights not implemented in policy encoder heads yet.
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1692,7 +1692,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
         mha_qkv_w, num_inputs, num_inputs * num_outputs, scratch1,
         num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch, 3);
     addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs, max_batch,
-                             NONE, stream);
+                             ACTIVATION_NONE, stream);
   }
 
   // Apply split_heads() to q, k and v
@@ -1790,7 +1790,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   // scratch2/scratch1 -> scratch0
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch0, scratch2,
                       mha_dense_b, scratch1, ln1_gammas, ln1_betas, 1e-6,
-                      alpha_, NONE, stream);
+                      alpha_, ACTIVATION_NONE, stream);
 
   // #FFN dense 1, scratch0 -> scratch1
   const int encoder_dff = ffn_dense1_size_;
@@ -1819,7 +1819,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   // scratch2/scratch0 -> scratch1
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
                       ffn_dense2_b, scratch0, ln2_gammas, ln2_betas, 1e-6,
-                      alpha_, NONE, stream);
+                      alpha_, ACTIVATION_NONE, stream);
 }
 
 template <typename DataType>
@@ -1870,7 +1870,7 @@ void AttentionPolicyHead<DataType>::Eval(
         wqk_w_, num_inputs, num_inputs * num_outputs, scratch1, num_inputs, 0,
         0.0f, wq, num_outputs, num_outputs * batch, 2);
 
-    addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs, NONE,
+    addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs, ACTIVATION_NONE,
                              stream);
   }
 
@@ -2003,6 +2003,12 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
 
+  {
+    size_t size = 64 * kNumPosEncodingChannels * sizeof(float);
+    ReportCUDAErrors(cudaMalloc(&pos_encoding_, size));
+    ReportCUDAErrors(cudaMemcpy(pos_encoding_, kPosEncoding, size, cudaMemcpyHostToDevice));
+  }
+
   if (has_gating_) {
     allocAndUpload<DataType>(&ip_mult_gate_, weights.ip_mult_gate, scratch);
     allocAndUpload<DataType>(&ip_add_gate_, weights.ip_add_gate, scratch);
@@ -2028,6 +2034,7 @@ template <typename DataType>
 AttentionBody<DataType>::~AttentionBody() {
   ReportCUDAErrors(cudaFree(ip_emb_w_));
   ReportCUDAErrors(cudaFree(ip_emb_b_));
+  ReportCUDAErrors(cudaFree(pos_encoding_));
   if (has_gating_) {
     ReportCUDAErrors(cudaFree(ip_mult_gate_));
     ReportCUDAErrors(cudaFree(ip_add_gate_));
@@ -2064,7 +2071,7 @@ void AttentionBody<DataType>::Eval(
     tf.shape(self.POS_ENC)[2]]) flow = tf.concat([flow, positional_encoding],
     axis=2)
     */
-    inputPreprocessForAttentionBody(scratch0, input, N, stream);
+    inputPreprocessForAttentionBody(scratch0, input, pos_encoding_, N, stream);
     inputC += kNumPosEncodingChannels;
   } else {
     // #redirect flow through encoder blocks
