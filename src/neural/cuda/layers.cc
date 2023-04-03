@@ -30,6 +30,7 @@
 #include <cstring>
 #include <vector>
 
+#include "neural/shared/activation.h"
 #include "cuda_common.h"
 #include "kernels.h"
 #include "utils/fp16_utils.h"
