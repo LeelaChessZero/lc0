@@ -30,7 +30,6 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
-// #include "proto/net.pb.h"
 #include "utils/exception.h"
 
 #ifdef USE_CUDNN
@@ -74,25 +73,6 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 #define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
-
-enum ActivationFunction {
-    ACTIVATION_DEFAULT = 0,
-    ACTIVATION_MISH = 1,
-    ACTIVATION_RELU = 2,
-    ACTIVATION_NONE = 3,
-    ACTIVATION_TANH = 4,
-    ACTIVATION_SIGMOID = 5,
-    ACTIVATION_SELU = 6,
-    ACTIVATION_SWISH = 7,
-    ACTIVATION_RELU_2 = 8,
-    ACTIVATION_SOFTMAX = 9,
-};
-
-struct Activations {
-    ActivationFunction default_activation = ACTIVATION_RELU;
-    ActivationFunction smolgen_activation = ACTIVATION_SWISH;
-    ActivationFunction ffn_activation = ACTIVATION_RELU_2;
-};
 
 }  // namespace cudnn_backend
 }  // namespace lczero

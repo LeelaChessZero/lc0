@@ -25,6 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "neural/shared/activation.h"
 #include "cuda_common.h"
 #include "winograd_helper.inc"
 

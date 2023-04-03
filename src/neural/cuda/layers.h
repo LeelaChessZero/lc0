@@ -32,6 +32,7 @@
 
 #include "cuda_common.h"
 #include "neural/network_legacy.h"
+#include "neural/shared/activation.h"
 
 #ifdef USE_CUDNN
 #include <cudnn.h>

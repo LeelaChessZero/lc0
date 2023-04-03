@@ -27,6 +27,7 @@
 
 #include <cassert>
 #include <algorithm>
+#include "neural/shared/activation.h"
 #include "cuda_common.h"
 #include "winograd_helper.inc"
 
