@@ -594,6 +594,7 @@ class CudaNetwork : public Network {
 
     DataType* tensor_mem[3];
     void* scratch_mem;
+    DataType*** offset_pointers;
     cudaStream_t stream;
     cublasHandle_t cublas;
     if (multi_stream_) {
@@ -601,11 +602,13 @@ class CudaNetwork : public Network {
       // requests can run in parallel)
       for (int i = 0; i < 3; i++) tensor_mem[i] = (DataType*)io->tensor_mem_[i];
       scratch_mem = io->scratch_mem_;
+      offset_pointers = (DataType***)&io->offset_pointers_;
       stream = io->stream_;
       cublas = io->cublas_;
     } else {
       for (int i = 0; i < 3; i++) tensor_mem[i] = tensor_mem_[i];
       scratch_mem = scratch_mem_;
+      offset_pointers = (DataType***)&offset_pointers_;
       stream = 0;  // default stream
       cublas = cublas_;
     }
@@ -698,7 +701,7 @@ class CudaNetwork : public Network {
                           (numBlocks_ > 0) ? tensor_mem[2] : tensor_mem[0],
                           (numBlocks_ > 0) ? tensor_mem[0] : tensor_mem[2],
                           scratch_mem, scratch_size_, nullptr,
-                          cublas, stream);  // Entire attention body of the network
+                          cublas, stream, offset_pointers);  // Entire attention body of the network
 
       flow = tensor_mem[1];
       spare1 = tensor_mem[0];
@@ -949,6 +952,8 @@ class CudaNetwork : public Network {
 
   // this copy is used only for initialization when multi-stream is enabled
   void* scratch_mem_;
+  // this is only used when multi-stream is disabled
+  void** offset_pointers_ = nullptr;
 
   bool has_tensor_cores_;
 

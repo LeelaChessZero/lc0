@@ -64,7 +64,7 @@ class BaseLayer {
   virtual void Eval(int N, DataType* output, const DataType* input,
                     const DataType* input2, void* scratch, size_t scratch_size,
                     cudnnHandle_t cudnn, cublasHandle_t cublas,
-                    cudaStream_t stream) = 0;
+                    cudaStream_t stream, DataType*** = nullptr) = 0;
 
  protected:
   BaseLayer* input_;
@@ -104,7 +104,7 @@ class ConvLayer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   const int c_input_;
@@ -142,7 +142,7 @@ class FCLayer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   const bool use_bias_;
@@ -164,7 +164,7 @@ class PolicyMapLayer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   int used_size_;  // Size of the input without padding (typically 73x64).
@@ -193,7 +193,7 @@ class SELayer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   DataType* w1_ = nullptr;
@@ -231,7 +231,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   const int c_input_;
@@ -271,7 +271,7 @@ class Conv1Layer : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   const int c_input_;
@@ -310,7 +310,7 @@ class ResidualBlock : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   const bool has_se_;
@@ -344,7 +344,7 @@ class EncoderBlock {
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas,
-            cudaStream_t stream) const;
+            cudaStream_t stream, DataType*** offset_pointers) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
@@ -391,8 +391,6 @@ class EncoderBlock {
   int smol_global_size_;
 
   const int max_batch_size_;
-  mutable std::unordered_map<void*, DataType**> offset_pointers_;
-  mutable std::unordered_map<void*, DataType*> known_offset_scratches_;
 };
 
 // The Attention policy head implementation
@@ -414,7 +412,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   // GPU allocations to hold various weights used by the attention policy head
@@ -452,7 +450,7 @@ public:
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
  private:
   DataType *weights_, *biases_;
   ActivationFunction act_;
@@ -478,7 +476,7 @@ class AttentionBody : public BaseLayer<DataType> {
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
             cudnnHandle_t cudnn, cublasHandle_t cublas,
-            cudaStream_t stream) override;
+            cudaStream_t stream, DataType*** = nullptr) override;
 
  private:
   // GPU allocations to hold various weights used by the attention policy head

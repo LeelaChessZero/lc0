@@ -250,7 +250,7 @@ template <typename DataType>
 void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                const DataType* input2, void* scratch,
                                size_t scratch_size, cudnnHandle_t cudnn,
-                               cublasHandle_t /*cublas*/, cudaStream_t stream) {
+                               cublasHandle_t /*cublas*/, cudaStream_t stream, DataType***) {
   const cudnnDataType_t dataType =
       std::is_same<half, DataType>::value ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
 
@@ -480,7 +480,7 @@ template <>
 void SELayer<float>::Eval(int N, float* output, const float* input,
                           const float* /*input2*/, void* scratch,
                           size_t scratch_size, cudnnHandle_t /*cudnn*/,
-                          cublasHandle_t cublas, cudaStream_t stream) {
+                          cublasHandle_t cublas, cudaStream_t stream, float***) {
   // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
   float* op1 = (float*)scratch;
   float* op2 = (float*)scratch + scratch_size / sizeof(float) / 2;
@@ -512,7 +512,7 @@ template <>
 void SELayer<half>::Eval(int N, half* output, const half* input,
                          const half* input2, void* scratch, size_t scratch_size,
                          cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
-                         cudaStream_t stream) {
+                         cudaStream_t stream, half***) {
   bool se_done = false;
   if (kUseFusedSELayer && nhwc_) {
     se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_t_, b1_,
@@ -616,7 +616,7 @@ template <>
 void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
                          const half* /*input2*/, void* /*scratch*/,
                          size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
-                         cublasHandle_t cublas, cudaStream_t stream) {
+                         cublasHandle_t cublas, cudaStream_t stream, half***) {
   const int num_outputs = C * H * W;
   const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
@@ -641,7 +641,7 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                           const float* input_tensor, const float* /*input2*/,
                           void* /*scratch*/, size_t /*scratch_size*/,
                           cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
-                          cudaStream_t stream) {
+                          cudaStream_t stream, float***) {
   const int num_outputs = C * H * W;
   const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
@@ -753,7 +753,7 @@ template <typename DataType>
 void PolicyMapLayer<DataType>::Eval(
     int N, DataType* output_tensor, const DataType* input_tensor,
     const DataType* /*input2*/, void* /*scratch*/, size_t /*scratch_size*/,
-    cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/, cudaStream_t stream) {
+    cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/, cudaStream_t stream, DataType***) {
   int inputSize =
       this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
   if (attention_map_) inputSize = used_size_;
@@ -927,7 +927,7 @@ template <typename DataType>
 void FusedWinogradConvSELayer<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
-    cublasHandle_t cublas, cudaStream_t stream) {
+    cublasHandle_t cublas, cudaStream_t stream, DataType***) {
   // Split the scratch space into two parts - use first part for holding
   // transformed input and second part for transformed output.
   DataType* transformed_input = (DataType*)scratch;
@@ -1092,7 +1092,7 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                 const DataType* /*input2*/, void* /*scratch*/,
                                 size_t /*scratch_size*/,
                                 cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
-                                cudaStream_t stream) {
+                                cudaStream_t stream, DataType***) {
   cublasSpecialMatrixMul(weights_, input, output, C, H * W, c_input_, N,
                          cublas);
 
@@ -1245,7 +1245,7 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
                                    const DataType* input,
                                    const DataType* /*input2*/, void* scratch,
                                    size_t scratch_size, cudnnHandle_t /*cudnn*/,
-                                   cublasHandle_t cublas, cudaStream_t stream) {
+                                   cublasHandle_t cublas, cudaStream_t stream, DataType***) {
   // normally:
   // - "output" initially contains the transformed input,
   //    and after this layer, it contains the transformed input for next layer
@@ -1605,7 +1605,7 @@ static void cublasXGemmBatched(
 template <typename DataType>
 void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                                   DataType* scratch2, DataType* scratch3,
-                                  cublasHandle_t cublas, cudaStream_t stream) const {
+                                  cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
@@ -1717,7 +1717,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
 
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
-    if (scratch0 != known_offset_scratches_[stream]) {
+    if (*offset_pointers == nullptr) {
       std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_*5);
       for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
         int h = i % encoder_heads_;
@@ -1728,26 +1728,25 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
         offsets[i + 3 * encoder_heads_ * max_batch_size_] = mha_v + h * depth + 64 * d_model * n;
         offsets[i + 4 * encoder_heads_ * max_batch_size_] = scratch3 + h * depth + 64 * d_model * n;
       }
-      ReportCUDAErrors(cudaMalloc((void**)&offset_pointers_[stream], encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
+      ReportCUDAErrors(cudaMalloc((void**)offset_pointers, encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
       ReportCUDAErrors(
-        cudaMemcpy(offset_pointers_[stream], offsets.data(), encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
+        cudaMemcpy(*offset_pointers, offsets.data(), encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
           cudaMemcpyHostToDevice));
-      known_offset_scratches_[stream] = scratch0;
     }
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
         depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
                       // transform
         factor,       // to handle "/ tf.math.sqrt(dk)"
-        offset_pointers_[stream],// mha_k + offset /*A*/,
+        *offset_pointers,// mha_k + offset /*A*/,
         d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
                           // other "depth" slices / heads
         //64 * d_model,     /*strideA*/
-        offset_pointers_[stream] + encoder_heads_ * max_batch_size_,//mha_q + offset /*B*/,
+        *offset_pointers + encoder_heads_ * max_batch_size_,//mha_q + offset /*B*/,
         d_model /*LDB*/,  // to skip over other other "depth" slices / heads
         //64 * d_model,     /*strideB*/
         0.0f,
-        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 2, //scratch2 + outOffset /*C*/,  // output (matmul_qk) goes to scratch2
+        *offset_pointers + encoder_heads_ * max_batch_size_ * 2, //scratch2 + outOffset /*C*/,  // output (matmul_qk) goes to scratch2
         64 /*LDC*/,
         //64 * 64 /*strideC*/,
         N * encoder_heads_);
@@ -1765,13 +1764,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   {
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_N, CUBLAS_OP_N, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
-        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 3, //mha_v + offset /*A*/,  // "v" matrix
+        *offset_pointers + encoder_heads_ * max_batch_size_ * 3, //mha_v + offset /*A*/,  // "v" matrix
         d_model /*LDA*/,       // to skip over other "depth" slices / heads
         //64 * d_model,          /*strideA*/
-        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 2, //scratch2 + weightsOffset /*B*/,
+        *offset_pointers + encoder_heads_ * max_batch_size_ * 2, //scratch2 + weightsOffset /*B*/,
         64 /*LDB*/, //64 * 64, /*strideB*/
         0.0f,
-        offset_pointers_[stream] + encoder_heads_ * max_batch_size_ * 4, //scratch3 + offset /*C*/,  // output goes to scratch3
+        *offset_pointers + encoder_heads_ * max_batch_size_ * 4, //scratch3 + offset /*C*/,  // output goes to scratch3
         d_model /*LDC*/,
         //64 * d_model /*strideC*/,
         N * encoder_heads_);
@@ -1827,7 +1826,7 @@ template <typename DataType>
 void AttentionPolicyHead<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
-    cublasHandle_t cublas, cudaStream_t stream) {
+    cublasHandle_t cublas, cudaStream_t stream, DataType***) {
   DataType* scratch0 = (DataType*) scratch;
   DataType* scratch1 = (DataType*) input2;
   DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
@@ -1854,7 +1853,7 @@ void AttentionPolicyHead<DataType>::Eval(
 
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, nullptr);
   }  // End of encoder blocks
 
   DataType* wq;
@@ -1948,9 +1947,6 @@ EncoderBlock<DataType>::~EncoderBlock() {
     ReportCUDAErrors(cudaFree(smol_ln2_gammas));
     ReportCUDAErrors(cudaFree(smol_ln2_betas));
   }
-  for (const auto offset : offset_pointers_) {
-    ReportCUDAErrors(cudaFree(offset.second));
-  }
 }
 
 
@@ -1975,7 +1971,7 @@ template <typename DataType>
 void EmbeddingLayer<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* /*input2*/,
     void* /*scratch*/, size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
-    cublasHandle_t cublas, cudaStream_t stream) {
+    cublasHandle_t cublas, cudaStream_t stream, DataType***) {
   const int num_outputs = this->GetC();
   const int num_inputs = this->input_->GetC();
   const int batch = N * 64;
@@ -2051,7 +2047,7 @@ template <typename DataType>
 void AttentionBody<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
-    cublasHandle_t cublas, cudaStream_t stream) {
+    cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) {
   DataType* scratch0 = (DataType*)scratch;
   DataType* scratch1 = (DataType*)output;
   DataType* scratch2 = (DataType*)input2;
@@ -2104,7 +2100,7 @@ void AttentionBody<DataType>::Eval(
 
   // 2. Encoder blocks
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, offset_pointers);
   }  // End of encoder blocks
 }
 
