@@ -839,12 +839,17 @@ void BaseLayer<half>::cublasRowMajorMatrixMul(const half* A, const half* B,
   // dimensions of matrix B = K x N
   // dimensions of output   = M x N
 
+#ifdef USE_CUTLASS
+  cutlassRowMajorMatrixMul(A, B, Out, M, N, K, batchSize);
+#else
   // cublas supports only col major output
   // to multiply row major matrices, use the trick below
   ReportCUBLASErrors(cublasGemmStridedBatchedEx(
       cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &halfOne, B, CUDA_R_16F, N,
       N * K, A, CUDA_R_16F, K, K * M, &halfZero, Out, CUDA_R_16F, N, N * M,
       batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
+#endif 
+
 }
 
 template <>

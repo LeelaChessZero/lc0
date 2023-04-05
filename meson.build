@@ -457,6 +457,7 @@ if get_option('build_backends')
         includes += include_directories(d)
       endif
     endforeach
+
     includes += include_directories('src/neural/cuda/')
 
     cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
@@ -478,6 +479,13 @@ if get_option('build_backends')
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
     endif
     cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
+	if get_option('cutlass')
+	  # cutlass path supported only on Ampere+ for now
+	  cuda_cc = '80'
+      add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
+	  cuda_arguments += ['-DUSE_CUTLASS']
+	  cuda_arguments += ['-I', get_option('cutlass_include')]
+	endif
     nvcc_extra_args = []
     if cuda_cc != ''
       nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
