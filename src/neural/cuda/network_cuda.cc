@@ -595,6 +595,7 @@ class CudaNetwork : public Network {
     DataType* tensor_mem[3];
     void* scratch_mem;
     DataType*** offset_pointers;
+    DataType*** head_offset_pointers;
     cudaStream_t stream;
     cublasHandle_t cublas;
     if (multi_stream_) {
@@ -603,12 +604,14 @@ class CudaNetwork : public Network {
       for (int i = 0; i < 3; i++) tensor_mem[i] = (DataType*)io->tensor_mem_[i];
       scratch_mem = io->scratch_mem_;
       offset_pointers = (DataType***)&io->offset_pointers_;
+      head_offset_pointers = (DataType***)&io->head_offset_pointers_;
       stream = io->stream_;
       cublas = io->cublas_;
     } else {
       for (int i = 0; i < 3; i++) tensor_mem[i] = tensor_mem_[i];
       scratch_mem = scratch_mem_;
       offset_pointers = (DataType***)&offset_pointers_;
+      head_offset_pointers = (DataType***)&head_offset_pointers_;
       stream = 0;  // default stream
       cublas = cublas_;
     }
@@ -723,7 +726,7 @@ class CudaNetwork : public Network {
       network_[l++]->Eval(
           batchSize, spare1, flow, spare2, scratch_mem,
           scratch_size_, nullptr, cublas,
-          stream, offset_pointers);  // Entire Attention policy head except for the policy map
+          stream, head_offset_pointers);  // Entire Attention policy head except for the policy map
       if (fp16) {
         network_[l++]->Eval(batchSize, spare2, spare1, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
@@ -954,6 +957,7 @@ class CudaNetwork : public Network {
   void* scratch_mem_;
   // this is only used when multi-stream is disabled
   void** offset_pointers_ = nullptr;
+  void** head_offset_pointers_ = nullptr;
 
   bool has_tensor_cores_;
 

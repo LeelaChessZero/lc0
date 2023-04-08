@@ -126,6 +126,7 @@ struct InputsOutputs {
   void* tensor_mem_[3];
   void* scratch_mem_;
   void** offset_pointers_ = nullptr;
+  void** head_offset_pointers_ = nullptr;
 
   // cuda stream used to run the network
   cudaStream_t stream_;
