@@ -1826,7 +1826,7 @@ template <typename DataType>
 void AttentionPolicyHead<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
-    cublasHandle_t cublas, cudaStream_t stream, DataType***) {
+    cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) {
   DataType* scratch0 = (DataType*) scratch;
   DataType* scratch1 = (DataType*) input2;
   DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
@@ -1853,7 +1853,7 @@ void AttentionPolicyHead<DataType>::Eval(
 
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, nullptr);
+    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, offset_pointers);
   }  // End of encoder blocks
 
   DataType* wq;

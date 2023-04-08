@@ -723,7 +723,7 @@ class CudaNetwork : public Network {
       network_[l++]->Eval(
           batchSize, spare1, flow, spare2, scratch_mem,
           scratch_size_, nullptr, cublas,
-          stream);  // Entire Attention policy head except for the policy map
+          stream, offset_pointers);  // Entire Attention policy head except for the policy map
       if (fp16) {
         network_[l++]->Eval(batchSize, spare2, spare1, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,

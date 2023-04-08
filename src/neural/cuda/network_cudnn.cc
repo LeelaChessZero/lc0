@@ -726,7 +726,7 @@ class CudnnNetwork : public Network {
       network_[l++]->Eval(
           batchSize, tensor_mem_[0], tensor_mem_[2], tensor_mem_[1],
           scratch_mem_, scratch_size_, nullptr, cublas_,
-          stream);  // Entire Attention policy head except for the policy map
+          stream, &offset_pointers_);  // Entire Attention policy head except for the policy map
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, nullptr, cublas_,
@@ -963,6 +963,7 @@ class CudnnNetwork : public Network {
 
   DataType* tensor_mem_[3];
   void* scratch_mem_;
+  DataType** offset_pointers_ = nullptr;
   size_t scratch_size_;
 
   mutable std::mutex inputs_outputs_lock_;
