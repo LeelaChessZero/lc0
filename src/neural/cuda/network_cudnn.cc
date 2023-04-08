@@ -888,6 +888,7 @@ class CudnnNetwork : public Network {
       if (mem) ReportCUDAErrors(cudaFree(mem));
     }
     if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
+    if (head_offset_pointers_) ReportCUDAErrors(cudaFree(head_offset_pointers_));
     cudnnDestroy(cudnn_);
     cublasDestroy(cublas_);
   }

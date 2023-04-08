@@ -881,6 +881,8 @@ class CudaNetwork : public Network {
       for (auto mem : tensor_mem_) {
         if (mem) ReportCUDAErrors(cudaFree(mem));
       }
+      if (offset_pointers_) ReportCUDAErrors(cudaFree(offset_pointers_));
+      if (head_offset_pointers_) ReportCUDAErrors(cudaFree(head_offset_pointers_));
       cublasDestroy(cublas_);
     }
   }
