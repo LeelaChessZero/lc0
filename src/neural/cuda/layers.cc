@@ -1600,17 +1600,16 @@ static void cublasXGemmBatched(
   }
 }
 
-// input/output tensor is scratch1, others are used as scratch.
-// TODO: fix naming of scratch buffers
+// input/output tensor is in_out_tensor, others are used as scratch.
 template <typename DataType>
-void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
+void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor, DataType* scratch1,
                                   DataType* scratch2, DataType* scratch3,
                                   cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
   // Calculate smolgen weights. Do this first so we can make use of
-  // scratch0, scratch2 and scratch3.
+  // scratch1, scratch2 and scratch3.
   if (has_smolgen_) {
     {
       // Compress.
@@ -1621,7 +1620,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       const int batch = N * 64;
       cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)smol_compress, num_inputs,
-                  scratch1, num_inputs, 0.0f, scratch0, num_outputs);
+                  in_out_tensor, num_inputs, 0.0f, scratch1, num_outputs);
     }
 
     {
@@ -1633,9 +1632,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       const int batch = N;
       cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)smol_dense1_w, num_inputs,
-                  scratch0, num_inputs, 0.0f, scratch2, num_outputs);
+                  scratch1, num_inputs, 0.0f, scratch2, num_outputs);
 
-      LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense1_b,
+      LayerNorm<DataType>(batch, num_outputs, scratch1, scratch2, smol_dense1_b,
                           scratch2, smol_ln1_gammas, smol_ln1_betas, 1e-6,
                           0.0, /* alpha = 0 since we don't need skip */
                           smolgen_activation_, stream);
@@ -1650,9 +1649,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       const int batch = N;
       cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)smol_dense2_w, num_inputs,
-                  scratch0, num_inputs, 0.0f, scratch2, num_outputs);
+                  scratch1, num_inputs, 0.0f, scratch2, num_outputs);
 
-      LayerNorm<DataType>(batch, num_outputs, scratch0, scratch2, smol_dense2_b,
+      LayerNorm<DataType>(batch, num_outputs, scratch1, scratch2, smol_dense2_b,
                           scratch2, smol_ln2_gammas, smol_ln2_betas, 1e-6,
                           0.0, /* alpha = 0 since we don't need skip */
                           smolgen_activation_, stream);
@@ -1669,7 +1668,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       const int batch = N * encoder_heads_;
       cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)smol_global, num_inputs,
-                  scratch0, num_inputs, 0.0f, scratch3, num_outputs);
+                  scratch1, num_inputs, 0.0f, scratch3, num_outputs);
     }
 
   }
@@ -1684,13 +1683,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
     const int batch = N * 64;
     const int max_batch = max_batch_size_ * 64;
 
-    mha_q = scratch0;
+    mha_q = scratch1;
     mha_k = mha_q + num_outputs * max_batch;
     mha_v = mha_k + num_outputs * max_batch;
 
     cublasXGemmStridedBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
-        mha_qkv_w, num_inputs, num_inputs * num_outputs, scratch1,
+        mha_qkv_w, num_inputs, num_inputs * num_outputs, in_out_tensor,
         num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch, 3);
     addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs, max_batch,
                              ACTIVATION_NONE, stream);
@@ -1787,38 +1786,37 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
   }
 
   // LN1: skip connection and layer normalization (also bias add of prev gemm)
-  // scratch2/scratch1 -> scratch0
-  LayerNorm<DataType>(N * 64, embedding_op_size_, scratch0, scratch2,
-                      mha_dense_b, scratch1, ln1_gammas, ln1_betas, 1e-6,
+  // scratch2/in_out_tensor -> scratch1
+  LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
+                      mha_dense_b, in_out_tensor, ln1_gammas, ln1_betas, 1e-6,
                       alpha_, ACTIVATION_NONE, stream);
 
-  // #FFN dense 1, scratch0 -> scratch1
-  const int encoder_dff = ffn_dense1_size_;
+  // #FFN dense 1, scratch1 -> in_out_tensor
   {
     const int num_inputs = embedding_op_size_;
-    const int num_outputs = encoder_dff;
+    const int num_outputs = ffn_dense1_size_;  // encoder_dff
     const int batch = N * 64;
     cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                 num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
-                scratch0, num_inputs, 0.0f, scratch1, num_outputs);
-    addBiasBatched(scratch1, scratch1, ffn_dense1_b, 1, batch, num_outputs,
+                scratch1, num_inputs, 0.0f, in_out_tensor, num_outputs);
+    addBiasBatched(in_out_tensor, in_out_tensor, ffn_dense1_b, 1, batch, num_outputs,
                    ffn_activation_, stream);
   }
 
-  // #FFN dense 2, scratch1 -> scratch2
+  // #FFN dense 2, in_out_tensor -> scratch2
   {
-    const int num_inputs = encoder_dff;
+    const int num_inputs = ffn_dense1_size_;  // encoder_dff
     const int num_outputs = embedding_op_size_;
     const int batch = N * 64;
     cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                 num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
-                scratch1, num_inputs, 0.0f, scratch2, num_outputs);
+                in_out_tensor, num_inputs, 0.0f, scratch2, num_outputs);
   }
 
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
-  // scratch2/scratch0 -> scratch1
-  LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
-                      ffn_dense2_b, scratch0, ln2_gammas, ln2_betas, 1e-6,
+  // scratch2/scratch1 -> in_out_tensor
+  LayerNorm<DataType>(N * 64, embedding_op_size_, in_out_tensor, scratch2,
+                      ffn_dense2_b, scratch1, ln2_gammas, ln2_betas, 1e-6,
                       alpha_, ACTIVATION_NONE, stream);
 }
 
@@ -1827,25 +1825,25 @@ void AttentionPolicyHead<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) {
-  DataType* scratch0 = (DataType*) scratch;
-  DataType* scratch1 = (DataType*) input2;
-  DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
-  DataType* scratch3 = scratch1 + scratch_size / (2 * sizeof(DataType));
+  DataType* input2_tensor = (DataType*) input2;
+  DataType* temp1 = (DataType*) scratch;
+  DataType* temp2 = output + scratch_size / (2 * sizeof(DataType));
+  DataType* temp3 = input2_tensor + scratch_size / (2 * sizeof(DataType));
 
   int inputC = this->input_->GetC();
   if (!attention_body_)
-    convertNCHWtoNHWC(scratch0, input, N, inputC, N, inputC, 8, 8);
+    convertNCHWtoNHWC(temp1, input, N, inputC, N, inputC, 8, 8);
 
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
-  DataType* pol_embedding = scratch1;
+  DataType* pol_embedding = input2_tensor;
   {
     const int num_outputs = embedding_op_size_;
     const int num_inputs = inputC;
     const int batch = N * 64;
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                           num_inputs, 1.0f, (const DataType*)ip_pol_w_,
-                          num_inputs, attention_body_ ? input : scratch0,
+                          num_inputs, attention_body_ ? input : temp1,
                           num_inputs, 0.0f, pol_embedding, num_outputs);
     addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
                    num_outputs, act_, stream);
@@ -1853,7 +1851,7 @@ void AttentionPolicyHead<DataType>::Eval(
 
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, offset_pointers);
+    pEnc->Eval(N, input2_tensor, temp1, temp2, temp3, cublas, stream, offset_pointers);
   }  // End of encoder blocks
 
   DataType* wq;
@@ -1862,12 +1860,12 @@ void AttentionPolicyHead<DataType>::Eval(
     const int num_inputs = embedding_op_size_;
     const int num_outputs = policy_d_model_;
     const int batch = N * 64;
-    wq = scratch0;
+    wq = temp1;
     wk = wq + num_outputs * batch;
 
     cublasXGemmStridedBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
-        wqk_w_, num_inputs, num_inputs * num_outputs, scratch1, num_inputs, 0,
+        wqk_w_, num_inputs, num_inputs * num_outputs, input2_tensor, num_inputs, 0,
         0.0f, wq, num_outputs, num_outputs * batch, 2);
 
     addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs, ACTIVATION_NONE,
@@ -2048,10 +2046,10 @@ void AttentionBody<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) {
-  DataType* scratch0 = (DataType*)scratch;
-  DataType* scratch1 = (DataType*)output;
-  DataType* scratch2 = (DataType*)input2;
-  DataType* scratch3 = scratch2 + scratch_size / (2 * sizeof(DataType));
+  DataType* output_tensor = (DataType*)output;
+  DataType* temp1 = (DataType*)scratch;
+  DataType* temp2 = (DataType*)input2;
+  DataType* temp3 = temp2 + scratch_size / (2 * sizeof(DataType));
 
   int inputC = input_c_;
   if (num_resi_blocks_ == 0)
@@ -2068,25 +2066,25 @@ void AttentionBody<DataType>::Eval(
     tf.shape(self.POS_ENC)[2]]) flow = tf.concat([flow, positional_encoding],
     axis=2)
     */
-    inputPreprocessForAttentionBody(scratch0, input, pos_encoding_, N, stream);
+    inputPreprocessForAttentionBody(temp1, input, pos_encoding_, N, stream);
     inputC += kNumPosEncodingChannels;
   } else {
     // #redirect flow through encoder blocks
     // flow = tf.transpose(flow, perm = [ 0, 2, 3, 1 ])
     // flow = tf.reshape(flow, [ -1, 64, self.RESIDUAL_FILTERS ])
-    convertNCHWtoNHWC(scratch0, input, N, inputC, N, inputC, 8, 8);
+    convertNCHWtoNHWC(temp1, input, N, inputC, N, inputC, 8, 8);
   }
 
   // 1. square embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
-  DataType* embedding = scratch1;
+  DataType* embedding = output_tensor;
   {
     const int num_outputs = embedding_op_size_;
     const int num_inputs = inputC;
     const int batch = N * 64;
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                           num_inputs, 1.0f, (const DataType*)ip_emb_w_,
-                          num_inputs, scratch0, num_inputs, 0.0f, embedding,
+                          num_inputs, temp1, num_inputs, 0.0f, embedding,
                           num_outputs);
     addBiasBatched(embedding, embedding, ip_emb_b_, 1, batch,
                    num_outputs, activations_.default_activation, stream);
@@ -2100,7 +2098,7 @@ void AttentionBody<DataType>::Eval(
 
   // 2. Encoder blocks
   for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, scratch1, scratch0, scratch2, scratch3, cublas, stream, offset_pointers);
+    pEnc->Eval(N, output_tensor, temp1, temp2, temp3, cublas, stream, offset_pointers);
   }  // End of encoder blocks
 }
 
