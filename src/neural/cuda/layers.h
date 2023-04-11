@@ -361,12 +361,12 @@ class EncoderBlock {
 
   DataType *ln2_gammas, *ln2_betas;
 
-  DataType* smol_compress;
+  DataType *smol_compress;
   DataType *smol_dense1_w, *smol_dense1_b;
   DataType *smol_dense2_w, *smol_dense2_b;
   DataType *smol_ln1_gammas, *smol_ln1_betas;
   DataType *smol_ln2_gammas, *smol_ln2_betas;
-  DataType* smol_global;
+  DataType *smol_global;
 
   int mha_q_size_;
   int mha_k_size_;
@@ -421,7 +421,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   DataType *ip_pol_w_, *ip_pol_b_;    // "embedding" in policy attention
   DataType *ip2_pol_w_, *ip2_pol_b_;  // "wq" in policy attention
   DataType *ip3_pol_w_, *ip3_pol_b_;  // "wk" in policy attention
-  DataType* ip4_pol_w_;               // "ppo" in policy attention
+  DataType *ip4_pol_w_;               // "ppo" in policy attention
 
   DataType *wqk_w_, *wqk_b_;  // allocation containing both "wq" and "wq"
 
@@ -485,7 +485,7 @@ class AttentionBody : public BaseLayer<DataType> {
   // GPU allocations to hold various weights used by the attention policy head
   DataType *ip_emb_w_, *ip_emb_b_;         // "embedding" layer in net body
   DataType *ip_mult_gate_, *ip_add_gate_;  // input gating
-  DataType* smolgen_global_;  // global smolgen weights for all encoder layers
+  DataType *smolgen_global_;  // global smolgen weights for all encoder layers
   float* pos_encoding_;
   int embedding_op_size_;
   int encoder_head_count_;
