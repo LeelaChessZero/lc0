@@ -25,13 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <cassert>
 #include <algorithm>
-#include "neural/shared/activation.h"
-#include "cuda_common.h"
-#include "winograd_helper.inc"
+#include <cassert>
 
+#include "cuda_common.h"
+#include "neural/shared/activation.h"
 #include "neural/shared/attention_policy_map.h"
+#include "winograd_helper.inc"
 
 namespace lczero {
 namespace cudnn_backend {
@@ -131,7 +131,7 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
     copyAs<uint4>(&val[0], &input[tensorIndex]);
     copyAs<uint4>(&b[0], &bias[biasIndex]);
   }
-  
+
   // Perform bias add and activation
 #pragma unroll
   for (int i = 0; i < 4; i++) {
@@ -162,7 +162,7 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
 
   dim3 blockDim, gridDim;
   blockDim.x = C / 4;
-  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int) N);
+  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int)N);
   blockDim.z = 1;
   gridDim.x = DivUp(N, blockDim.y);
   gridDim.y = Batch;
@@ -170,12 +170,12 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
 
   switch (activation) {
     case ACTIVATION_NONE:
-      addBiasBatched_kernel<T, ACTIVATION_NONE><<<gridDim, blockDim, 0, stream>>>(
-          output, input, bias, N, C);
+      addBiasBatched_kernel<T, ACTIVATION_NONE>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
       break;
     case ACTIVATION_SELU:
-      addBiasBatched_kernel<T, ACTIVATION_SELU><<<gridDim, blockDim, 0, stream>>>(
-          output, input, bias, N, C);
+      addBiasBatched_kernel<T, ACTIVATION_SELU>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
       break;
     case ACTIVATION_MISH:
       addBiasBatched_kernel<T, ACTIVATION_MISH>
@@ -189,7 +189,7 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
       addBiasBatched_kernel<T, ACTIVATION_SWISH>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
       break;
-    case ACTIVATION_RELU_2: // square relu
+    case ACTIVATION_RELU_2:  // square relu
       addBiasBatched_kernel<T, ACTIVATION_RELU_2>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
       break;
@@ -254,14 +254,15 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
 // bias tensor is N * C (i.e, different bias for each Batch dimension)
 template <typename T>
 void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
-                    int C, int Nstride, ActivationFunction activation, cudaStream_t stream) {
+                    int C, int Nstride, ActivationFunction activation,
+                    cudaStream_t stream) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 4 != 0) throw Exception("unsupported filter size");
   if (C > 4096) throw Exception("unsupported filter size");
 
   dim3 blockDim, gridDim;
   blockDim.x = C / 4;
-  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int) N);
+  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int)N);
   blockDim.z = 1;
   gridDim.x = DivUp(N, blockDim.y);
   gridDim.y = Batch;
@@ -269,28 +270,34 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
 
   switch (activation) {
     case ACTIVATION_NONE:
-      addBiasBatched_kernel<T, ACTIVATION_NONE><<<gridDim, blockDim, 0, stream>>>(
-          output, input, bias, N, C, Nstride);
+      addBiasBatched_kernel<T, ACTIVATION_NONE>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+                                             Nstride);
       break;
     case ACTIVATION_SELU:
-      addBiasBatched_kernel<T, ACTIVATION_SELU><<<gridDim, blockDim, 0, stream>>>(
-          output, input, bias, N, C, Nstride);
+      addBiasBatched_kernel<T, ACTIVATION_SELU>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+                                             Nstride);
       break;
     case ACTIVATION_MISH:
       addBiasBatched_kernel<T, ACTIVATION_MISH>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+                                             Nstride);
       break;
     case ACTIVATION_RELU:
       addBiasBatched_kernel<T, ACTIVATION_RELU>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+                                             Nstride);
       break;
     case ACTIVATION_SWISH:
       addBiasBatched_kernel<T, ACTIVATION_SWISH>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+                                             Nstride);
       break;
-    case ACTIVATION_RELU_2: // square relu
+    case ACTIVATION_RELU_2:  // square relu
       addBiasBatched_kernel<T, ACTIVATION_RELU_2>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C, Nstride);
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+                                             Nstride);
       break;
     default:
       throw Exception(
@@ -787,7 +794,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   // Each thread processes entire chess board
   if (use_se == false) {
     dim3 grid_dim(DivUp(C, kOpInpTransformBlockSize), N, 1);
-    OutputTransform_relu_InputTransform_kernel<float, activation, use_bias, use_skip>
+    OutputTransform_relu_InputTransform_kernel<float, activation, use_bias,
+                                               use_skip>
         <<<grid_dim, kOpInpTransformBlockSize, 0, stream>>>(N, C, output, input,
                                                             (float*)skip, bias);
   } else if (C > kMaxResBlockFusingChannels) {
@@ -795,8 +803,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
         "res block fusing opt not supported for the given data type and no "
         "of filters\n");
   } else {
-    OutputTransform_SE_relu_InputTransform_kernel<float, activation,
-                                                  use_bias, use_skip>
+    OutputTransform_SE_relu_InputTransform_kernel<float, activation, use_bias,
+                                                  use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (float*)skip, bias, w1,
                               b1, w2, b2);
   }
@@ -804,13 +812,12 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-
 // softmax along C dimension which is assumed to be 64
 // each thread processes two elements. Each warp computes a sum (over 64
 // elements)
 template <typename T>
-__global__ void softmax_opt_64_kernel(T* output, const T* input, const T* input2, int N) {
-
+__global__ void softmax_opt_64_kernel(T* output, const T* input,
+                                      const T* input2, int N) {
   int index = blockDim.x * blockIdx.x + threadIdx.x;
   if (index >= N) return;
 
@@ -865,7 +872,6 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input, const T* input2
   }
 }
 
-
 // N * C Tensors
 // performs softmax along the C dimension
 // Each thread processes one element
@@ -913,12 +919,14 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
 }
 
 template <typename T>
-void Softmax(int N, int C, T* output, const T* input, const T* input2, cudaStream_t stream) {
+void Softmax(int N, int C, T* output, const T* input, const T* input2,
+             cudaStream_t stream) {
   if (C == 64) {
-    int size = N * 32;              // Total no of threads needed
+    int size = N * 32;  // Total no of threads needed
     const int kBlockSize = 256;
     int blocks = DivUp(size, kBlockSize);
-    softmax_opt_64_kernel<T><<<blocks, kBlockSize, 0, stream>>>(output, input, input2, size);
+    softmax_opt_64_kernel<T>
+        <<<blocks, kBlockSize, 0, stream>>>(output, input, input2, size);
   } else {
     softmax_kernel<T><<<N, C, 0, stream>>>(output, input, input2);
   }
@@ -956,9 +964,10 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 // 1. Perform Bias add, and skip add
 // 2. Perform layer norm (normalize across C dimension)
 template <typename T>
-__global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const T* bias,
-                                  const T* skip, const T* gammas,
-                                  const T* betas, float ep, float alpha, ActivationFunction act) {
+__global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
+                                  const T* bias, const T* skip, const T* gammas,
+                                  const T* betas, float ep, float alpha,
+                                  ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
   if (n >= N) return;
   int c = (threadIdx.y * 32 + threadIdx.x) * 16;
@@ -983,7 +992,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
       for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &bias[biasIndex + 8]);
       for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
-      for (int i=0; i < 16; i++) val[i] += oth[i];
+      for (int i = 0; i < 16; i++) val[i] += oth[i];
     } else {
       copyAs<uint4>(&val[0], &input[tensorIndex]);
       copyAs<uint4>(&val[4], &input[tensorIndex + 4]);
@@ -1020,7 +1029,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
       val[i] = activate(val[i], act) + oth[i] * alpha;
       s += val[i];
     }
-  
+
   s = shared_sum_for_layer_norm(s);
   float mean = s / C;
 
@@ -1086,7 +1095,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
       for (int i = 0; i < 8; i++) op[i] = (half)val[i];
       copyAs<uint4>(&output[tensorIndex], &op[0]);
       for (int i = 0; i < 8; i++) op[i] = (half)val[i + 8];
-      copyAs<uint4>(&output[tensorIndex+8], &op[0]);
+      copyAs<uint4>(&output[tensorIndex + 8], &op[0]);
     } else {
       copyAs<uint4>(&output[tensorIndex], &val[0]);
       copyAs<uint4>(&output[tensorIndex + 4], &val[4]);
@@ -1097,11 +1106,12 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input, const
 }
 
 // add (optional) skip connection to input, and then perform Layer normalization
-// normalization is done across C dimension (i.e, sums and std deviations taken over elements in C dim)
+// normalization is done across C dimension (i.e, sums and std deviations taken
+// over elements in C dim)
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
-               const T* skip, const T* gammas, const T* betas, float ep, float alpha,
-               ActivationFunction act, cudaStream_t stream) {
+               const T* skip, const T* gammas, const T* betas, float ep,
+               float alpha, ActivationFunction act, cudaStream_t stream) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 16 != 0) throw Exception("unsupported filter size");
   if (C > 16384) throw Exception("unsupported filter size");
@@ -1174,7 +1184,7 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   // phase 2: add the last "row" to the other 3
   // #knight offset is added to the other three
   // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4,
-  // :] 
+  // :]
   // Only 24 threads in the group are active in this phase
   if (threadInGroup < 32) {
     int x = threadInGroup % 4;
@@ -1216,16 +1226,16 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
 }
 
 template <typename T>
-__global__ void preprocess_for_attention_body_kernel(T* output, const T* input, const float* encoding) {
+__global__ void preprocess_for_attention_body_kernel(T* output, const T* input,
+                                                     const float* encoding) {
   int n = blockIdx.x;
   int hw = blockIdx.y;
   int c = threadIdx.x;
 
   T op;
-  if (c >= kInputPlanes) 
-  {
+  if (c >= kInputPlanes) {
     // concatenate from fixed pos encoding array
-    op = (T) (encoding[64 * hw + (c - kInputPlanes)]);
+    op = (T)(encoding[64 * hw + (c - kInputPlanes)]);
   } else {
     op = input[n * kInputPlanes * 64 + c * 64 + hw];  // nchw
   }
@@ -1237,7 +1247,8 @@ __global__ void preprocess_for_attention_body_kernel(T* output, const T* input, 
 }
 
 template <typename T>
-void inputPreprocessForAttentionBody(T* output, const T* input, const float* encoding, int N,
+void inputPreprocessForAttentionBody(T* output, const T* input,
+                                     const float* encoding, int N,
                                      cudaStream_t stream) {
   // N * 64 blocks
   // (kInputPlanes + kNumPosEncodingChannels) threads
@@ -1249,21 +1260,25 @@ void inputPreprocessForAttentionBody(T* output, const T* input, const float* enc
 }
 
 template <typename T>
-__global__ void input_gating_kernel(T* output, const T* input, const T* mult, const T* add, int HW, int C) {
+__global__ void input_gating_kernel(T* output, const T* input, const T* mult,
+                                    const T* add, int HW, int C) {
   int n_offset = blockIdx.z * HW * C;
-  int idx = threadIdx.y * C + blockIdx.x * blockDim.x + threadIdx.x; // index in input
-  int idxT = (blockIdx.x * blockDim.x + threadIdx.x) * HW + threadIdx.y; // index in transposed weights arrays mult and add.
+  int idx = threadIdx.y * C + blockIdx.x * blockDim.x +
+            threadIdx.x;  // index in input
+  int idxT = (blockIdx.x * blockDim.x + threadIdx.x) * HW +
+             threadIdx.y;  // index in transposed weights arrays mult and add.
 
   if (idx < HW * C) {
     // Combine multiply gating, add gating and weights transpose.
-    float op = (float) input[n_offset + idx] * (float) mult[idxT] + (float) add[idxT];
-    output[n_offset + idx] = (T) op;
+    float op =
+        (float)input[n_offset + idx] * (float)mult[idxT] + (float)add[idxT];
+    output[n_offset + idx] = (T)op;
   }
 }
 
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
-                                int N, int HW, int C, cudaStream_t stream) {
+                      int N, int HW, int C, cudaStream_t stream) {
   // Multiple blocks to fit into each input area / volume
   // Block x position indicates horizontal section of area
   // Block y position indicates batch
@@ -1275,7 +1290,8 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   gridSize.x = DivUp(C, blockSize.x);
   gridSize.y = 1;
   gridSize.z = N;
-  input_gating_kernel<T><<<gridSize, blockSize, 0, stream>>>(output, input, mult, add, HW, C);
+  input_gating_kernel<T>
+      <<<gridSize, blockSize, 0, stream>>>(output, input, mult, add, HW, C);
 
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -1321,12 +1337,12 @@ template void addBiasBatched<half>(half* output, const half* input,
                                    cudaStream_t stream);
 
 template void addBiasBatched<float>(float* output, const float* input,
-                                    const float* bias, int Batch, int N, int C, int Nstride,
-                                    ActivationFunction activation,
+                                    const float* bias, int Batch, int N, int C,
+                                    int Nstride, ActivationFunction activation,
                                     cudaStream_t stream);
 template void addBiasBatched<half>(half* output, const half* input,
-                                   const half* bias, int Batch, int N, int C, int Nstride,
-                                   ActivationFunction activation,
+                                   const half* bias, int Batch, int N, int C,
+                                   int Nstride, ActivationFunction activation,
                                    cudaStream_t stream);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
@@ -1374,81 +1390,110 @@ template void InputTransform<float, false>(int N, int C,
                                            const float* input,
                                            cudaStream_t stream);
 
-template void OutputTransform<float, true, ACTIVATION_RELU, true, true, false, false>(
+template void OutputTransform<float, true, ACTIVATION_RELU, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
+
+template void
+OutputTransform<float, false, ACTIVATION_RELU, true, true, false, false>(
+
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_RELU, true, true, false, false>(
+template void OutputTransform<float, true, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, true, ACTIVATION_RELU, true, true, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_RELU, true, false, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_RELU, true, true, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_RELU, true, false, false,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_RELU, true, false, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, true, ACTIVATION_RELU, true, true, true,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_RELU, true, false, false, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, true, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, true, ACTIVATION_RELU, true, true, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, true, ACTIVATION_MISH, true, true, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, true, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_MISH, true, true, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, true, ACTIVATION_MISH, true, true, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_MISH, true, false, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_MISH, true, true, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_MISH, true, false, false,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_MISH, true, false, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, true, ACTIVATION_MISH, true, true, true,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, cudaStream_t stream);
 
-template void OutputTransform<float, false, ACTIVATION_MISH, true, false, false, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputTransform<float, true, ACTIVATION_MISH, true, true, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
-
-template void OutputTransform<float, false, ACTIVATION_NONE, true, false, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, cudaStream_t stream);
+template void OutputTransform<float, false, ACTIVATION_NONE, true, false, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, cudaStream_t stream);
 
 template void OutputInputTransform<float, true, ACTIVATION_RELU, true, true>(
     int N, int C, int se_K, float* output, const float* input,
@@ -1480,10 +1525,10 @@ template void OutputInputTransform<float, false, ACTIVATION_MISH, true, false>(
     const float* skip, const float* bias, const float* w1, const float* b1,
     const float* w2, const float* b2, cudaStream_t stream);
 
-template void Softmax<half>(int N, int C, half* output, const half* input, const half* input2,
-                            cudaStream_t stream);
-template void Softmax<float>(int N, int C, float* output, const float* input, const float* input2,
-                             cudaStream_t stream);
+template void Softmax<half>(int N, int C, half* output, const half* input,
+                            const half* input2, cudaStream_t stream);
+template void Softmax<float>(int N, int C, float* output, const float* input,
+                             const float* input2, cudaStream_t stream);
 
 template void LayerNorm<half>(int N, int C, half* output, const half* input,
                               const half* bias, const half* skip,
@@ -1525,13 +1570,18 @@ template void inputPreprocessForAttentionBody<half>(half* output,
 
 template void inputPreprocessForAttentionBody<float>(float* output,
                                                      const float* input,
-                                                     const float* encoding, int N,
+                                                     const float* encoding,
+                                                     int N,
                                                      cudaStream_t stream);
 
-template void applyInputGating<half>(half* output, const half* input, const half* mult, const half* add,
-                                     int N, int C, int output_size, cudaStream_t stream);
+template void applyInputGating<half>(half* output, const half* input,
+                                     const half* mult, const half* add, int N,
+                                     int C, int output_size,
+                                     cudaStream_t stream);
 
-template void applyInputGating<float>(float* output, const float* input, const float* mult, const float* add,
-                                      int N, int C, int output_size, cudaStream_t stream);
+template void applyInputGating<float>(float* output, const float* input,
+                                      const float* mult, const float* add,
+                                      int N, int C, int output_size,
+                                      cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero

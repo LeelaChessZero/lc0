@@ -43,7 +43,7 @@
 #include "utils/bititer.h"
 #include "utils/exception.h"
 
-//#define DEBUG_RAW_NPS
+// #define DEBUG_RAW_NPS
 
 namespace lczero {
 using namespace cudnn_backend;
@@ -70,8 +70,9 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
 
   const size_t encoder_heads = weights.pol_encoder_head_count;
 
-  size_t size = N * 64 * std::max(std::max(embedding_op_size, encoder_dff),
-                                  policy_d_model);
+  size_t size =
+      N * 64 *
+      std::max(std::max(embedding_op_size, encoder_dff), policy_d_model);
 
   // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
   const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
@@ -402,15 +403,16 @@ class CudnnNetwork : public Network {
     // Input.
     if (use_custom_winograd_) {
       auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          nullptr, kNumFilters, 8, 8, kNumInputPlanes, mish_net ? ACTIVATION_MISH : ACTIVATION_RELU,
-          true, false, false, 0, use_gemm_ex, use_res_block_winograd_fuse_opt_);
+          nullptr, kNumFilters, 8, 8, kNumInputPlanes,
+          mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true, false, false, 0,
+          use_gemm_ex, use_res_block_winograd_fuse_opt_);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
     } else {
       auto inputConv = std::make_unique<ConvLayer<DataType>>(
-          nhwc_, kNumFilters, 8, 8, 3, kNumInputPlanes, mish_net ? ACTIVATION_MISH : ACTIVATION_RELU,
-          true);
+          nhwc_, kNumFilters, 8, 8, 3, kNumInputPlanes,
+          mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true);
       inputConv->LoadWeights(&weights.input.weights[0],
                              &weights.input.biases[0], scratch_mem_);
       network_.emplace_back(std::move(inputConv));
@@ -425,7 +427,8 @@ class CudnnNetwork : public Network {
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
               getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
-              block == 0, block == (numBlocks_ - 1), mish_net ? ACTIVATION_MISH : ACTIVATION_RELU,
+              block == 0, block == (numBlocks_ - 1),
+              mish_net ? ACTIVATION_MISH : ACTIVATION_RELU,
               deviceProp.sharedMemPerBlockOptin);
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
                               &weights.residual[block].conv1.biases[0],
@@ -443,7 +446,8 @@ class CudnnNetwork : public Network {
         } else {
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
               getLastLayer(), kNumFilters, 8, 8, kNumFilters,
-              mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true, false, false, 0, use_gemm_ex);
+              mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true, false, false,
+              0, use_gemm_ex);
           conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                              &weights.residual[block].conv1.biases[0],
                              scratch_mem_);
@@ -451,7 +455,8 @@ class CudnnNetwork : public Network {
 
           auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
               getLastLayer(), kNumFilters, 8, 8, kNumFilters,
-              mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true, true, has_se, se_k, use_gemm_ex);
+              mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true, true, has_se,
+              se_k, use_gemm_ex);
           conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                              &weights.residual[block].conv2.biases[0],
                              scratch_mem_);
@@ -478,7 +483,9 @@ class CudnnNetwork : public Network {
 
         auto conv2 = std::make_unique<ConvLayer<DataType>>(
             getLastLayer(), kNumFilters, 8, 8, 3, kNumFilters,
-            useReluAndBias ? (mish_net ? ACTIVATION_MISH : ACTIVATION_RELU) : ACTIVATION_NONE, useReluAndBias);
+            useReluAndBias ? (mish_net ? ACTIVATION_MISH : ACTIVATION_RELU)
+                           : ACTIVATION_NONE,
+            useReluAndBias);
         conv2->LoadWeights(
             &weights.residual[block].conv2.weights[0],
             useReluAndBias ? &weights.residual[block].conv2.biases[0] : nullptr,
@@ -488,7 +495,8 @@ class CudnnNetwork : public Network {
         if (weights.residual[block].has_se) {
           int numFCOut = (int)weights.residual[block].se.b1.size();
           auto se = std::make_unique<SELayer<DataType>>(
-              getLastLayer(), numFCOut, false, mish_net ? ACTIVATION_MISH : ACTIVATION_RELU);
+              getLastLayer(), numFCOut, false,
+              mish_net ? ACTIVATION_MISH : ACTIVATION_RELU);
           se->LoadWeights(&weights.residual[block].se.w1[0],
                           &weights.residual[block].se.b1[0],
                           &weights.residual[block].se.w2[0],
@@ -505,7 +513,8 @@ class CudnnNetwork : public Network {
     // Policy head.
     if (attn_policy_) {
       auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
-          getLastLayer(), weights, scratch_mem_, false, ACTIVATION_SELU, max_batch_size_);
+          getLastLayer(), weights, scratch_mem_, false, ACTIVATION_SELU,
+          max_batch_size_);
       network_.emplace_back(std::move(AttentionPolicy));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
@@ -514,8 +523,8 @@ class CudnnNetwork : public Network {
       network_.emplace_back(std::move(policymap));
     } else if (conv_policy_) {
       auto conv1 = std::make_unique<ConvLayer<DataType>>(
-          resi_last_, kNumFilters, 8, 8, 3, kNumFilters, mish_net ? ACTIVATION_MISH : ACTIVATION_RELU,
-          true);
+          resi_last_, kNumFilters, 8, 8, 3, kNumFilters,
+          mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true);
       conv1->LoadWeights(&weights.policy1.weights[0],
                          &weights.policy1.biases[0], scratch_mem_);
       network_.emplace_back(std::move(conv1));
@@ -524,7 +533,8 @@ class CudnnNetwork : public Network {
 
       // No relu
       auto conv2 = std::make_unique<ConvLayer<DataType>>(
-          getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, ACTIVATION_NONE, true);
+          getLastLayer(), pol_channels, 8, 8, 3, kNumFilters, ACTIVATION_NONE,
+          true);
       conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                          scratch_mem_);
       network_.emplace_back(std::move(conv2));
@@ -725,8 +735,9 @@ class CudnnNetwork : public Network {
     if (attn_policy_) {
       network_[l++]->Eval(
           batchSize, tensor_mem_[0], tensor_mem_[2], tensor_mem_[1],
-          scratch_mem_, scratch_size_, nullptr, cublas_,
-          stream, &head_offset_pointers_);  // Entire Attention policy head except for the policy map
+          scratch_mem_, scratch_size_, nullptr, cublas_, stream,
+          &head_offset_pointers_);  // Entire Attention policy head except for
+                                    // the policy map
       if (fp16) {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, nullptr, cublas_,
@@ -888,7 +899,8 @@ class CudnnNetwork : public Network {
       if (mem) ReportCUDAErrors(cudaFree(mem));
     }
     if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
-    if (head_offset_pointers_) ReportCUDAErrors(cudaFree(head_offset_pointers_));
+    if (head_offset_pointers_)
+      ReportCUDAErrors(cudaFree(head_offset_pointers_));
     cudnnDestroy(cudnn_);
     cublasDestroy(cublas_);
   }

@@ -99,12 +99,12 @@ struct InputsOutputs {
       }
       if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
       if (offset_pointers_) ReportCUDAErrors(cudaFree(offset_pointers_));
-      if (head_offset_pointers_) ReportCUDAErrors(cudaFree(head_offset_pointers_));
-
+      if (head_offset_pointers_) {
+        ReportCUDAErrors(cudaFree(head_offset_pointers_));
+      }
       cudaStreamDestroy(stream_);
       cublasDestroy(cublas_);
     }
-  
   }
   uint64_t* input_masks_mem_;
   float* input_val_mem_;
@@ -134,7 +134,6 @@ struct InputsOutputs {
 
   // cublas handle used to run the network
   cublasHandle_t cublas_;
-
 };
 
 }  // namespace cudnn_backend

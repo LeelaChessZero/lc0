@@ -53,7 +53,8 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
 // and perform optional activation (to be used with GEMMs/fully connected)
 template <typename T>
 void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
-                    int C, int Nstride, ActivationFunction activation, cudaStream_t stream);
+                    int C, int Nstride, ActivationFunction activation,
+                    cudaStream_t stream);
 
 // Add bias to convolution's output.
 template <typename T>
@@ -131,7 +132,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           cudaStream_t stream);
 
 template <typename T>
-void Softmax(int N, int C, T* output, const T* input, const T* input2, cudaStream_t stream);
+void Softmax(int N, int C, T* output, const T* input, const T* input2,
+             cudaStream_t stream);
 
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
@@ -144,11 +146,12 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
                             cudaStream_t stream);
 
 template <typename T>
-void inputPreprocessForAttentionBody(T* output, const T* input, const float* encoding,
-                                     int N, cudaStream_t stream);
+void inputPreprocessForAttentionBody(T* output, const T* input,
+                                     const float* encoding, int N,
+                                     cudaStream_t stream);
 
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
-                                int N, int HW, int C, cudaStream_t stream);
+                      int N, int HW, int C, cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero
