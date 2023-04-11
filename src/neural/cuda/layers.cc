@@ -1423,13 +1423,11 @@ template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(
     BaseLayer<DataType>* ip, const LegacyWeights& weights, void* scratch,
     bool attention_body, ActivationFunction act, int max_batch_size)
-    : attention_body_(attention_body),
-      act_(
-          attention_body
-              ? act
-              : ACTIVATION_SELU),  // HACK : old networks without attention body
-                                   // (e.g: T79 use hardcoded SELU activations)
-      BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip) {
+    : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
+      attention_body_(attention_body),
+      // Old networks without attention body (e.g. T79) use hardcoded SELU
+      // activations.
+      act_(attention_body ? act : ACTIVATION_SELU) {
   embedding_op_size_ = weights.ip_pol_b.size();
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
@@ -1485,13 +1483,13 @@ EncoderBlock<DataType>::EncoderBlock(
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
     ActivationFunction ffn_act)
-    : encoder_heads_(heads),
-      embedding_op_size_(size),
+    : embedding_op_size_(size),
+      encoder_heads_(heads),
       alpha_(alpha),
       has_smolgen_(cpu_weights.mha.has_smolgen),
-      max_batch_size_(max_batch_size),
       smolgen_activation_(smolgen_act),
-      ffn_activation_(ffn_act) {
+      ffn_activation_(ffn_act),
+      max_batch_size_(max_batch_size) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -2045,15 +2043,15 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
                                        void* scratch, Activations activations,
                                        int num_res_blocks, int input_c,
                                        int max_batch_size)
-    : embedding_op_size_(weights.ip_emb_b.size()),
+    : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr),
+      embedding_op_size_(weights.ip_emb_b.size()),
       encoder_head_count_(weights.encoder_head_count),
-      num_resi_blocks_(num_res_blocks),
       activations_(activations),
+      num_resi_blocks_(num_res_blocks),
       input_c_(input_c),
       has_gating_(weights.ip_mult_gate.size() > 0 &&
                   weights.ip_add_gate.size() > 0),
-      has_smolgen_(weights.has_smolgen),
-      BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr) {
+      has_smolgen_(weights.has_smolgen) {
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
 
