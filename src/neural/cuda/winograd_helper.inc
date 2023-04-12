@@ -41,16 +41,20 @@ __device__ __forceinline__ float mishActivate(float el) {
 __device__ __forceinline__ float activate(float cVal,
                                           ActivationFunction activation) {
   switch (activation) {
-    case RELU:
+    case ACTIVATION_RELU:
       if (cVal < 0) cVal = 0;
       break;
-    case TANH:
+    case ACTIVATION_RELU_2:
+      if (cVal < 0) cVal = 0;
+      cVal *= cVal;
+      break;
+    case ACTIVATION_TANH:
       cVal = tanh(cVal);
       break;
-    case SIGMOID:
+    case ACTIVATION_SIGMOID:
       cVal = 1.0f / (1.0f + __expf(-cVal));
       break;
-    case SELU: {
+    case ACTIVATION_SELU: {
       float alpha = 1.67326324f, scale = 1.05070098f;
       if (cVal > 0)
         cVal = scale * cVal;
@@ -58,8 +62,11 @@ __device__ __forceinline__ float activate(float cVal,
         cVal = scale * alpha * (__expf(cVal) - 1.0f);
       break;
     }
-    case MISH:
+    case ACTIVATION_MISH:
       cVal = mishActivate(cVal);
+      break;
+    case ACTIVATION_SWISH:
+      cVal /= (1.0f + __expf(-cVal));
       break;
   }
   return cVal;
@@ -391,7 +398,7 @@ __global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     }
 
     // relu
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
         board[h][w] = (T)activate((float)board[h][w], activation);
@@ -430,11 +437,13 @@ __device__ __forceinline__ float warpMax(float x) {
 
 // atomic max implementation for floats
 __device__ __forceinline__ float atomicMaxFloat(float* addr, float val) {
-    float max;
-    max = !signbit(val) ? __int_as_float(atomicMax((int*)addr, __float_as_int(val))) :
-         __uint_as_float(atomicMin((unsigned int*)addr, __float_as_uint(val)));
+  float max;
+  max = !signbit(val)
+            ? __int_as_float(atomicMax((int*)addr, __float_as_int(val)))
+            : __uint_as_float(
+                  atomicMin((unsigned int*)addr, __float_as_uint(val)));
 
-    return max;
+  return max;
 }
 
 // Helper fuction to do vector loads/stores
@@ -451,10 +460,17 @@ __device__ __forceinline__ void copyAs(void* dst, const void* src) {
 // every thread generates an entire board/plane (8x8 elements)
 template <typename T, ActivationFunction activation, bool use_bias,
           bool use_skip>
-__global__ __launch_bounds__(kMaxResBlockFusingChannels, 1)
-void OutputTransform_SE_relu_InputTransform_kernel(
-        int N, int C, int se_K, T* output, const T* input, T* skip,
-        const T* bias, const T* w1, const T* b1, const T* w2, const T* b2) {
+__global__ __launch_bounds__(
+    kMaxResBlockFusingChannels,
+    1) void OutputTransform_SE_relu_InputTransform_kernel(int N, int C,
+                                                          int se_K, T* output,
+                                                          const T* input,
+                                                          T* skip,
+                                                          const T* bias,
+                                                          const T* w1,
+                                                          const T* b1,
+                                                          const T* w2,
+                                                          const T* b2) {
   const bool fp16 = std::is_same<half, T>::value;
 
   int k = threadIdx.x;
@@ -561,7 +577,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
     }
 
     // relu
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
         board[h][w] = (T)activate((float)board[h][w], activation);
@@ -655,17 +671,18 @@ void OutputTransform_SE_relu_InputTransform_kernel(
   }
 }
 
-
 constexpr int kOpInpTransformBlockSize = 64;
-template <typename T, ActivationFunction activation, bool use_bias, bool use_skip>
-__global__ __launch_bounds__(kOpInpTransformBlockSize, 4)
-void OutputTransform_relu_InputTransform_kernel(int N, int C,
-                                                T* output, const T* input,
-                                                T* skip, const T* bias) {
+template <typename T, ActivationFunction activation, bool use_bias,
+          bool use_skip>
+__global__ __launch_bounds__(
+    kOpInpTransformBlockSize,
+    4) void OutputTransform_relu_InputTransform_kernel(int N, int C, T* output,
+                                                       const T* input, T* skip,
+                                                       const T* bias) {
   const bool fp16 = std::is_same<half, T>::value;
 
   int k = threadIdx.x + blockIdx.x * kOpInpTransformBlockSize;
-  if (k >= C) return;   // wasted threads (for non-multiple of 64 channel counts)
+  if (k >= C) return;  // wasted threads (for non-multiple of 64 channel counts)
   int n = blockIdx.y;
 
   T board[8][8];
@@ -708,7 +725,6 @@ void OutputTransform_relu_InputTransform_kernel(int N, int C,
     for (int x = 0; x < 8; x++)
       if (use_bias) board[y][x] += b;
 
-
   // Add skip connection, perform relu, and write to output.
   for (int h = 0; h < 8; h++) {
     // residual add
@@ -718,10 +734,10 @@ void OutputTransform_relu_InputTransform_kernel(int N, int C,
     }
 
     // activation
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
-        board[h][w] = (T) activate((float)board[h][w], activation);
+        board[h][w] = (T)activate((float)board[h][w], activation);
     }
 
     // write un-transformed output to 'skip' if required
@@ -811,7 +827,6 @@ void OutputTransform_relu_InputTransform_kernel(int N, int C,
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
   }
 }
-
 
 template <typename T>
 void FilterTransform(int N, int C, T* transformedFilter, const T* filter) {
