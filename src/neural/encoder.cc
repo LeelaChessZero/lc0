@@ -247,7 +247,12 @@ InputPlanes EncodePositionForNN(
         !board.en_passant().empty()) {
       break;
     }
-    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
+    // If en-passant is possible we know the previous move.
+    if (fill_empty_history == FillEmptyHistory::NO &&
+        (history_idx < -1 ||
+         (history_idx == -1 && board.en_passant().empty()))) {
+      break;
+    }
     // Board may be flipped so compare with position.GetBoard().
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
         position.GetBoard() == ChessBoard::kStartposBoard) {

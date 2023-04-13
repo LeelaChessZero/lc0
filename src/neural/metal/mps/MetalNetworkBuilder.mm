@@ -26,6 +26,7 @@
  */
 
 #import "neural/network_legacy.h"
+#import "neural/shared/attention_policy_map.h"
 #import "MetalNetworkBuilder.h"
 #import "NetworkGraph.h"
 
@@ -56,148 +57,156 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
-void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSize, LegacyWeights& weights, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, std::string default_activation)
+void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left, Activations activations)
 {
     Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-    MPSGraphTensor * layer;
-    NSString * defaultActivation = [NSString stringWithUTF8String:default_activation.c_str()];
+    NSString * defaultActivation = [NSString stringWithUTF8String:activations.default_activation.c_str()];
+    NSString * smolgenActivation = [NSString stringWithUTF8String:activations.smolgen_activation.c_str()];
+    NSString * ffnActivation = [NSString stringWithUTF8String:activations.ffn_activation.c_str()];
 
     // 0. Input placeholder.
-    layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
-                                              height:8
-                                               width:8
-                                               label:@"inputs"];
+    // @todo - placeholder can be made directly as NHWC to avoid transposes.
+    MPSGraphTensor * layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
+                                                               height:8
+                                                                width:8
+                                                                label:@"inputs"];
+    
+    const NSUInteger kernelSize = 3;
 
-    // 1. Input layer
-    layer = [graph addConvolutionBlockWithParent:layer
-                                   inputChannels:kInputPlanes
-                                  outputChannels:channelSize
-                                      kernelSize:kernelSize
-                                         weights:&weights.input.weights[0]
-                                          biases:&weights.input.biases[0]
-                                         activation:defaultActivation
-                                           label:@"input/conv"];
+    // Initialize global smolgen weights.
+    if (weights.has_smolgen) {
+        [graph setGlobalSmolgenWeights:&weights.smolgen_w[0]];
+    }
 
-    // 2. Residual blocks
-    for (size_t i = 0; i < weights.residual.size(); i++) {
-        layer = [graph addResidualBlockWithParent:layer
-                                    inputChannels:channelSize
-                                   outputChannels:channelSize
-                                       kernelSize:kernelSize
-                                         weights1:&weights.residual[i].conv1.weights[0]
-                                          biases1:&weights.residual[i].conv1.biases[0]
-                                         weights2:&weights.residual[i].conv2.weights[0]
-                                          biases2:&weights.residual[i].conv2.biases[0]
-                                            label:[NSString stringWithFormat:@"block_%zu", i]
-                                            hasSe:weights.residual[i].has_se ? YES : NO
-                                       seWeights1:&weights.residual[i].se.w1[0]
-                                        seBiases1:&weights.residual[i].se.b1[0]
-                                       seWeights2:&weights.residual[i].se.w2[0]
-                                        seBiases2:&weights.residual[i].se.b2[0]
-                                      seFcOutputs:weights.residual[i].se.b1.size()
-                                       activation:defaultActivation];
+    // Input conv layer only when there are residual blocks.
+    if (weights.residual.size() > 0) {
+
+        const NSUInteger channelSize = weights.input.weights.size() / (kInputPlanes * kernelSize * kernelSize);
+
+        // 1. Input layer
+        layer = [graph addConvolutionBlockWithParent:layer
+                                      outputChannels:channelSize
+                                          kernelSize:kernelSize
+                                             weights:&weights.input.weights[0]
+                                              biases:&weights.input.biases[0]
+                                             activation:defaultActivation
+                                               label:@"input/conv"];
+
+        // 2. Residual blocks
+        for (size_t i = 0; i < weights.residual.size(); i++) {
+            layer = [graph addResidualBlockWithParent:layer
+                                       outputChannels:channelSize
+                                           kernelSize:kernelSize
+                                             weights1:&weights.residual[i].conv1.weights[0]
+                                              biases1:&weights.residual[i].conv1.biases[0]
+                                             weights2:&weights.residual[i].conv2.weights[0]
+                                              biases2:&weights.residual[i].conv2.biases[0]
+                                                label:[NSString stringWithFormat:@"block_%zu", i]
+                                                hasSe:weights.residual[i].has_se ? YES : NO
+                                           seWeights1:&weights.residual[i].se.w1[0]
+                                            seBiases1:&weights.residual[i].se.b1[0]
+                                           seWeights2:&weights.residual[i].se.w2[0]
+                                            seBiases2:&weights.residual[i].se.b2[0]
+                                          seFcOutputs:weights.residual[i].se.b1.size()
+                                           activation:defaultActivation];
+        }
+
+    }
+
+    // Attention body.
+    if (attn_body) {
+
+        assert(weights.ip_emb_b.size() > 0);
+
+        // 1. NCHW -> NHWC
+        // @todo if input placeholder is NHWC, then this is not needed for attn_body, but kPosEncoding has to be reordered.
+        layer = [graph transposeChannelsWithTensor:layer withShape:@[@(-1), @64, layer.shape[1]] label:@"input/nchw_nhwc"];
+
+        if (weights.residual.size() == 0) {
+            // No residual means pure transformer, so process input position encoding.
+            layer = [graph positionEncodingWithTensor:layer
+                                            withShape:@[@64, @64]
+                                              weights:&kPosEncoding[0][0]
+                                                 type:nil
+                                                label:@"input/position_encoding"];
+        }
+
+        // 2a. Input embedding for attention body.
+        // if self.arc_encoding: @todo needs to be implemented
+        layer = [graph addFullyConnectedLayerWithParent:layer
+                                          outputChannels:weights.ip_emb_b.size()
+                                                 weights:&weights.ip_emb_w[0]
+                                                  biases:&weights.ip_emb_b[0]
+                                              activation:defaultActivation
+                                                   label:@"input/embedding"];
+
+        // # !!! input gate
+        // flow = ma_gating(flow, name=name+'embedding')
+        // def ma_gating(inputs, name):
+        //     out = Gating(name=name+'/mult_gate', additive=False)(inputs)
+        //     out = Gating(name=name+'/add_gate', additive=True)(out)
+        if (weights.ip_mult_gate.size() > 0) {
+            layer = [graph addGatingLayerWithParent:layer
+                                            weights:&weights.ip_mult_gate[0]
+                                      withOperation:@"mult"
+                                              label:@"input/mult_gate"];
+        }
+        if (weights.ip_add_gate.size() > 0) {
+            layer = [graph addGatingLayerWithParent:layer
+                                            weights:&weights.ip_add_gate[0]
+                                      withOperation:@"add"
+                                              label:@"input/add_gate"];
+        }
+        // 2b. Attention body encoder layers.
+        float alpha = (float) pow(2.0 * weights.encoder.size(), 0.25);
+        for (size_t i = 0; i < weights.encoder.size(); i++) {
+            layer = [graph addEncoderLayerWithParent:layer
+                                       legacyWeights:weights.encoder[i]
+                                               heads:weights.encoder_head_count
+                                       embeddingSize:weights.ip_emb_b.size()
+                                   smolgenActivation:smolgenActivation
+                                       ffnActivation:ffnActivation
+                                               alpha:alpha
+                                               label:[NSString stringWithFormat:@"encoder_%zu", i]];
+        }
     }
 
     // 3. Policy head.
     MPSGraphTensor * policy;
     if (attn_policy) {
         // 1. NCHW -> NHWC
-        policy = [graph transposeChannelsWithTensor:layer label:@"policy/nchw_nhwc"];
+        if (!attn_body) {
+            policy = [graph transposeChannelsWithTensor:layer withShape:@[@(-1), @64, layer.shape[1]] label:@"policy/nchw_nhwc"];
+        }
+        else {
+            policy = layer;
+        }
+
+        // 2. Square Embedding: Dense with default activation (or SELU for old ap-mish nets).
         NSUInteger embeddingSize = weights.ip_pol_b.size();
         NSUInteger policyDModel = weights.ip2_pol_b.size();
-
-        // 2. Square Embedding: Dense with SELU
+        // ap-mish uses hardcoded SELU
         policy = [graph addFullyConnectedLayerWithParent:policy
-                                          inputChannels:channelSize
                                          outputChannels:embeddingSize
                                                 weights:&weights.ip_pol_w[0]
                                                  biases:&weights.ip_pol_b[0]
-                                             activation:@"selu"
+                                             activation:attn_body ? defaultActivation : @"selu"
                                                   label:@"policy/fc_embed"];
 
         // 3. Encoder layers
-        MPSGraphTensor * mhaQ, * mhaK, * mhaV;
-        NSUInteger dModel;
         for (NSUInteger i = 0; i < weights.pol_encoder.size(); i++) {
-            dModel = weights.pol_encoder[i].mha.q_b.size();
-            mhaQ = [graph addFullyConnectedLayerWithParent:policy
-                                               inputChannels:embeddingSize
-                                        outputChannels:weights.pol_encoder[i].mha.q_b.size()
-                                               weights:&weights.pol_encoder[i].mha.q_w[0]
-                                                biases:&weights.pol_encoder[i].mha.q_b[0]
-                                            activation:nil
-                                                 label:[NSString stringWithFormat:@"policy/encoder_%zu/mhaq/fc", i]];
-
-            mhaK = [graph addFullyConnectedLayerWithParent:policy
-                                             inputChannels:embeddingSize
-                                            outputChannels:weights.pol_encoder[i].mha.k_b.size()
-                                                   weights:&weights.pol_encoder[i].mha.k_w[0]
-                                                    biases:&weights.pol_encoder[i].mha.k_b[0]
-                                                activation:nil
-                                                     label:[NSString stringWithFormat:@"policy/encoder_%zu/mhak/fc", i]];
-
-            mhaV = [graph addFullyConnectedLayerWithParent:policy
-                                             inputChannels:embeddingSize
-                                            outputChannels:weights.pol_encoder[i].mha.v_b.size()
-                                                   weights:&weights.pol_encoder[i].mha.v_w[0]
-                                                    biases:&weights.pol_encoder[i].mha.v_b[0]
-                                                activation:nil
-                                                     label:[NSString stringWithFormat:@"policy/encoder_%zu/mhav/fc", i]];
-
-            MPSGraphTensor * mha = [graph scaledMHAMatmulWithQueries:mhaQ
-                                                            withKeys:mhaK
-                                                          withValues:mhaV
-                                                               heads:weights.pol_encoder_head_count
-                                                               label:[NSString stringWithFormat:@"policy/encoder_%zu/mha", i]];
-
-            // MHA final dense layer.
-            mha = [graph addFullyConnectedLayerWithParent:mha
-                                               inputChannels:dModel
-                                              outputChannels:embeddingSize
-                                                     weights:&weights.pol_encoder[i].mha.dense_w[0]
-                                                      biases:&weights.pol_encoder[i].mha.dense_b[0]
-                                                  activation:nil
-                                                       label:[NSString stringWithFormat:@"policy/encoder_%zu/mha/fc", i]];
-
-            // Skip connection + Layer Norm 1.
-            policy = [graph addLayerNormalizationWithSkipParent:policy
-                                                 secondaryInput:mha
-                                                         gammas:&weights.pol_encoder[i].ln1_gammas[0]
-                                                          betas:&weights.pol_encoder[i].ln1_betas[0]
-                                                    channelSize:weights.pol_encoder[i].ln1_gammas.size()
-                                                        epsilon:1e-6
-                                                          label:[NSString stringWithFormat:@"policy/encoder_%zu/ln1", i]];
-
-            // Feedforward network (FFN).
-            MPSGraphTensor * ffn = [graph addFullyConnectedLayerWithParent:policy
-                                            inputChannels:dModel
-                                           outputChannels:weights.pol_encoder[i].ffn.dense1_b.size()
-                                                  weights:&weights.pol_encoder[i].ffn.dense1_w[0]
-                                                   biases:&weights.pol_encoder[i].ffn.dense1_b[0]
-                                               activation:@"selu"
-                                                    label:[NSString stringWithFormat:@"policy/encoder_%zu/ffn1", i]];
-
-            ffn = [graph addFullyConnectedLayerWithParent:ffn
-                                            inputChannels:weights.pol_encoder[i].ffn.dense1_b.size()
-                                           outputChannels:weights.pol_encoder[i].ffn.dense2_b.size()
-                                                  weights:&weights.pol_encoder[i].ffn.dense2_w[0]
-                                                   biases:&weights.pol_encoder[i].ffn.dense2_b[0]
-                                               activation:nil
-                                                    label:[NSString stringWithFormat:@"policy/encoder_%zu/ffn2", i]];
-
-            // Skip connection + Layer Norm 2.
-            policy = [graph addLayerNormalizationWithSkipParent:policy
-                                                 secondaryInput:ffn
-                                                         gammas:&weights.pol_encoder[i].ln2_gammas[0]
-                                                          betas:&weights.pol_encoder[i].ln2_betas[0]
-                                                    channelSize:weights.pol_encoder[i].ln2_gammas.size()
-                                                        epsilon:1e-6
-                                                          label:[NSString stringWithFormat:@"policy/encoder_%zu/ln2", i]];
-        } // End of encoder layers.
+            policy = [graph addEncoderLayerWithParent:policy
+                                        legacyWeights:weights.pol_encoder[i]
+                                                heads:weights.pol_encoder_head_count
+                                        embeddingSize:embeddingSize
+                                    smolgenActivation:attn_body ? smolgenActivation : nil
+                                        ffnActivation:attn_body ? ffnActivation : @"selu"
+                                                alpha:1.0
+                                                label:[NSString stringWithFormat:@"policy/encoder_%zu", i]];
+        }
 
         // 4. Self-attention q and k.
         MPSGraphTensor * queries = [graph addFullyConnectedLayerWithParent:policy
-                                                            inputChannels:embeddingSize
                                                            outputChannels:policyDModel
                                                                   weights:&weights.ip2_pol_w[0]
                                                                    biases:&weights.ip2_pol_b[0]
@@ -205,7 +214,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                                     label:@"policy/self_attention/q"];
 
         MPSGraphTensor * keys = [graph addFullyConnectedLayerWithParent:policy
-                                                         inputChannels:embeddingSize
                                                         outputChannels:policyDModel
                                                                weights:&weights.ip3_pol_w[0]
                                                                 biases:&weights.ip3_pol_b[0]
@@ -218,8 +226,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                             scale:1.0f / sqrt(policyDModel)
                                             label:@"policy/self_attention/kq"];
 
-        [graph setVariable:@"policy/self_attention/kq" tensor:policy];
-
         // 6. Slice last 8 keys (k[:, 56:, :]) and matmul with policy promotion weights, then concat to matmul_qk.
         policy = [graph attentionPolicyPromoMatmulConcatWithParent:policy
                                                           withKeys:keys
@@ -231,9 +237,12 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                                              label:@"policy/promo_logits"];
     }
     else if (conv_policy) {
+        if (attn_body) {
+            [NSException raise:@"Unsupported architecture."
+                        format:@"Convolutional policy not supported with attention body."];
+        }
         policy = [graph addConvolutionBlockWithParent:layer
-                                        inputChannels:channelSize
-                                       outputChannels:channelSize
+                                       outputChannels:weights.policy1.biases.size()
                                            kernelSize:kernelSize
                                               weights:&weights.policy1.weights[0]
                                                biases:&weights.policy1.biases[0]
@@ -242,8 +251,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
         // No activation.
         policy = [graph addConvolutionBlockWithParent:policy
-                                        inputChannels:channelSize
-                                       outputChannels:80
+                                       outputChannels:weights.policy.biases.size()
                                            kernelSize:kernelSize
                                               weights:&weights.policy.weights[0]
                                                biases:&weights.policy.biases[0]
@@ -277,10 +285,14 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
       */
     }
     else {
+        if (attn_body) {
+            [NSException raise:@"Unsupported architecture."
+                        format:@"Classical policy not supported with attention body."];
+        }
+
         const int policySize = weights.policy.biases.size();
 
         policy = [graph addConvolutionBlockWithParent:layer
-                                        inputChannels:channelSize
                                        outputChannels:policySize
                                            kernelSize:1
                                               weights:&weights.policy.weights[0]
@@ -288,9 +300,12 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
                                            activation:defaultActivation
                                                 label:@"policy/conv"];
 
+        policy = [graph flatten2DTensor:policy
+                                   axis:1
+                                   name:@"policy/conv/flatten"];
+
         policy = [graph addFullyConnectedLayerWithParent:policy
-                                           inputChannels:policySize * 8 * 8
-                                          outputChannels:1858
+                                          outputChannels:weights.ip_pol_b.size()
                                                  weights:&weights.ip_pol_w[0]
                                                   biases:&weights.ip_pol_b[0]
                                               activation:nil
@@ -299,18 +314,30 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
     // 4. Value head.
     MPSGraphTensor * value;
-    value = [graph addConvolutionBlockWithParent:layer
-                                   inputChannels:channelSize
-                                  outputChannels:32
-                                      kernelSize:1
-                                         weights:&weights.value.weights[0]
-                                          biases:&weights.value.biases[0]
-                                      activation:defaultActivation
-                                           label:@"value/conv"];
+    if (attn_body) {
+        value = [graph addFullyConnectedLayerWithParent:layer
+                                         outputChannels:weights.ip_val_b.size()
+                                                weights:&weights.ip_val_w[0]
+                                                 biases:&weights.ip_val_b[0]
+                                             activation:defaultActivation
+                                                  label:@"value/embedding"];
+    }
+    else {
+        value = [graph addConvolutionBlockWithParent:layer
+                                      outputChannels:weights.value.biases.size()
+                                          kernelSize:1
+                                             weights:&weights.value.weights[0]
+                                              biases:&weights.value.biases[0]
+                                          activation:defaultActivation
+                                               label:@"value/conv"];
+    }
+
+    value = [graph flatten2DTensor:value
+                              axis:1
+                              name:@"value/flatten"];
 
     value = [graph addFullyConnectedLayerWithParent:value
-                                       inputChannels:32 * 8 * 8
-                                      outputChannels:128
+                                      outputChannels:weights.ip1_val_b.size()
                                              weights:&weights.ip1_val_w[0]
                                               biases:&weights.ip1_val_b[0]
                                          activation:defaultActivation
@@ -318,8 +345,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
 
     if (wdl) {
         value = [graph addFullyConnectedLayerWithParent:value
-                                          inputChannels:128
-                                         outputChannels:3
+                                         outputChannels:weights.ip2_val_b.size()
                                                 weights:&weights.ip2_val_w[0]
                                                  biases:&weights.ip2_val_b[0]
                                              activation:@"softmax"
@@ -327,8 +353,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
     }
     else {
         value = [graph addFullyConnectedLayerWithParent:value
-                                          inputChannels:128
-                                         outputChannels:1
+                                         outputChannels:weights.ip2_val_b.size()
                                                 weights:&weights.ip2_val_w[0]
                                                  biases:&weights.ip2_val_b[0]
                                              activation:@"tanh"
@@ -338,32 +363,41 @@ void MetalNetworkBuilder::build(int kInputPlanes, int channelSize, int kernelSiz
     // 5. Moves left head.
     MPSGraphTensor * mlh;
     if (moves_left) {
-        const int mlhChannels = weights.moves_left.biases.size();
+        if (attn_body) {
+            mlh = [graph addFullyConnectedLayerWithParent:layer
+                                           outputChannels:weights.ip_mov_b.size()
+                                                  weights:&weights.ip_mov_w[0]
+                                                   biases:&weights.ip_mov_b[0]
+                                               activation:defaultActivation
+                                                    label:@"moves_left/embedding"];
+        }
+        else {
+            mlh = [graph addConvolutionBlockWithParent:layer
+                                        outputChannels:weights.moves_left.biases.size()
+                                            kernelSize:1
+                                               weights:&weights.moves_left.weights[0]
+                                                biases:&weights.moves_left.biases[0]
+                                            activation:defaultActivation
+                                                 label:@"moves_left/conv"];
+        }
 
-        mlh = [graph addConvolutionBlockWithParent:layer
-                                     inputChannels:channelSize
-                                    outputChannels:mlhChannels
-                                        kernelSize:1
-                                           weights:&weights.moves_left.weights[0]
-                                            biases:&weights.moves_left.biases[0]
-                                        activation:defaultActivation
-                                             label:@"mlh/conv"];
+        mlh = [graph flatten2DTensor:mlh
+                                axis:1
+                                name:@"moves_left/flatten"];
 
         mlh = [graph addFullyConnectedLayerWithParent:mlh
-                                          inputChannels:mlhChannels * 8 * 8
                                          outputChannels:weights.ip1_mov_b.size()
                                                 weights:&weights.ip1_mov_w[0]
                                                  biases:&weights.ip1_mov_b[0]
                                            activation:defaultActivation
-                                                  label:@"mlh/fc1"];
+                                                  label:@"moves_left/fc1"];
 
         mlh = [graph addFullyConnectedLayerWithParent:mlh
-                                          inputChannels:weights.ip1_mov_b.size()
-                                         outputChannels:1
+                                         outputChannels:weights.ip2_mov_b.size()
                                                 weights:&weights.ip2_mov_w[0]
                                                  biases:&weights.ip2_mov_b[0]
                                              activation:@"relu"
-                                                  label:@"mlh/fc2"];
+                                                  label:@"moves_left/fc2"];
     }
 
     // Select the outputs to be run through the inference graph.
@@ -380,24 +414,6 @@ void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector
     @autoreleasepool {
         Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
         [graph runInferenceWithBatchSize:batchSize inputs:inputs outputs:&output_mems[0]];
-    }
-}
-
-void MetalNetworkBuilder::saveVariables(std::vector<std::string> names)
-{
-    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-
-    for (const std::string name : names) {
-        [graph trackVariable:[NSString stringWithUTF8String:name.c_str()]];
-    }
-}
-
-void MetalNetworkBuilder::dumpVariables(std::vector<std::string> names, int batches)
-{
-    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-
-    for (const std::string name : names) {
-        [graph dumpVariable:[NSString stringWithUTF8String:name.c_str()] batches:batches];
     }
 }
 

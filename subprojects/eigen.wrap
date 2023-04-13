@@ -1,10 +1,12 @@
 [wrap-file]
-directory = eigen-3.3.7
+directory = eigen-3.4.0
+source_url = https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.bz2
+source_filename = eigen-3.4.0.tar.bz2
+source_hash = b4c198460eba6f28d34894e3a5710998818515104d6e74e5cc331ce31e46e626
+patch_filename = eigen_3.4.0-1_patch.zip
+patch_url = https://wrapdb.mesonbuild.com/v2/eigen_3.4.0-1/get_patch
+patch_hash = fae999acdb3ea23eada3becdbde7f7f76755e94ad85fee7775b7ab1cf12e84e3
 
-source_url = https://gitlab.com/libeigen/eigen/-/archive/3.3.7/eigen-3.3.7.tar.bz2
-source_filename = eigen-3.3.7.tar.bz2
-source_hash = 685adf14bd8e9c015b78097c1dc22f2f01343756f196acdc76a678e1ae352e11
+[provide]
+eigen3 = eigen_dep
 
-patch_url = https://github.com/borg323/eigen/files/5124100/eigen-3.3.7-1u-wrap.zip
-patch_filename = eigen-3.3.7-1u-wrap.zip
-patch_hash = f9d8cc10cb135a5cc3761f316e84d3e3e42949970245f4256470b8ec71eac3e3
