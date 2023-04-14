@@ -58,6 +58,8 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
+enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+
 ContemptPerspective EncodeContemptPerspective(std::string perspective) {
   if (perspective == "sidetomove") return ContemptPerspective::STM;
   if (perspective == "white") return ContemptPerspective::WHITE;
