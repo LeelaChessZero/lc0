@@ -33,6 +33,10 @@
 
 namespace lczero {
 
+namespace {
+enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+}  // namespace
+
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
