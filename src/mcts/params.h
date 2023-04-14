@@ -105,7 +105,7 @@ class SearchParams {
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   ContemptPerspective GetContemptPerspective() const {
-    return kContemptPerspectiveId;
+    return kContemptPerspective;
   }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
