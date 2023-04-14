@@ -58,6 +58,14 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
+ContemptPerspective EncodeContemptPerspective(std::string perspective) {
+  if (perspective == "sidetomove") return ContemptPerspective::STM;
+  if (perspective == "white") return ContemptPerspective::WHITE;
+  if (perspective == "black") return ContemptPerspective::BLACK;
+  assert(perspective == "none");
+  return ContemptPerspective::NONE;
+}
+
 }  // namespace
 
 const OptionId SearchParams::kMiniBatchSizeId{
@@ -279,7 +287,7 @@ const OptionId SearchParams::kContemptPerspectiveId{
     "'none' to deactivate contempt and the WDL conversion."};
 const OptionId SearchParams::kContemptId{
     "contempt", "Contempt",
-    "The simulated rating advantage for the WDL conversion. Comma separated "
+    "The simulated Elo advantage for the WDL conversion. Comma separated "
     "list in the form [name=]value, where the name is compared with the "
     "`UCI_Opponent` value to find the appropriate contempt value. The default "
     "value is taken from `UCI_RatingAdv` and will be overridden if either a "
@@ -372,7 +380,7 @@ const OptionId SearchParams::kUCIOpponentId{
     "the current opponent."};
 const OptionId SearchParams::kUCIRatingAdvId{
     "", "UCI_RatingAdv",
-    "UCI extension used by some GUIs to pass the estimated Elo difference from "
+    "UCI extension used by some GUIs to pass the estimated Elo advantage over "
     "the current opponent, used as the default contempt value."};
 
 void SearchParams::Populate(OptionsParser* options) {
@@ -546,7 +554,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
-      kContemptPerspective(options.Get<std::string>(kContemptPerspectiveId)),
+      kContemptPerspective(EncodeContemptPerspective(
+          options.Get<std::string>(kContemptPerspectiveId))),
       kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *

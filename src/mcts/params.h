@@ -104,8 +104,8 @@ class SearchParams {
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
-  std::string GetContemptPerspective() const {
-    return options_.Get<std::string>(kContemptPerspectiveId);
+  ContemptPerspective GetContemptPerspective() const {
+    return kContemptPerspectiveId;
   }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
@@ -259,7 +259,7 @@ class SearchParams {
   const float kMovesLeftQuadraticFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
-  const std::string kContemptPerspective;
+  const ContemptPerspective kContemptPerspective;
   const float kDrawScoreSidetomove;
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;

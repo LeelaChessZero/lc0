@@ -282,12 +282,13 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto d = edge.GetD(default_d);
     float mu_uci = 0.0f;
     // Only the diff effect is inverted, so we only need to call if diff != 0.
-    if (params_.GetContemptPerspective() != "none") {
-      auto sign = ((params_.GetContemptPerspective() == "sidetomove") ||
-                   ((params_.GetContemptPerspective() == "black") ==
-                    played_history_.IsBlackToMove()))
-                      ? 1.0f
-                      : -1.0f;
+    if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
+      auto sign =
+          ((params_.GetContemptPerspective() == ContemptPerspective::STM) ||
+           ((params_.GetContemptPerspective() == ContemptPerspective::BLACK) ==
+            played_history_.IsBlackToMove()))
+              ? 1.0f
+              : -1.0f;
       WDLRescale(wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
                  params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
                  sign, true);
@@ -2158,11 +2159,13 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
   // Check whether root moves are from the set perspective.
-  if (params_.GetContemptPerspective() != "none") {
-    bool root_stm = (params_.GetContemptPerspective() == "sidetomove")
-                        ? true
-                        : ((params_.GetContemptPerspective() == "black") ==
-                           search_->played_history_.Last().IsBlackToMove());
+  if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
+    bool root_stm =
+        (params_.GetContemptPerspective() == ContemptPerspective::STM)
+            ? true
+            : ((params_.GetContemptPerspective() ==
+                ContemptPerspective::BLACK) ==
+               search_->played_history_.Last().IsBlackToMove());
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
     if (params_.GetWDLRescaleRatio() != 1.0f ||
         params_.GetWDLRescaleDiff() != 0.0f) {
