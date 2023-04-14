@@ -279,7 +279,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
     auto wl = edge.GetWL(default_wl);
-    auto floatD = edge.GetD(default_d);
+    auto d = edge.GetD(default_d);
     float mu_uci = 0.0f;
     // Only the diff effect is inverted, so we only need to call if diff != 0.
     if (params_.GetContemptPerspective() != "none") {
@@ -288,7 +288,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                     played_history_.IsBlackToMove()))
                       ? 1.0f
                       : -1.0f;
-      WDLRescale(wl, floatD, &mu_uci, params_.GetWDLRescaleRatio(),
+      WDLRescale(wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
                  params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
                  sign, true);
     }
@@ -312,24 +312,24 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
     } else if (score_type == "WDL_mu") {
-      uci_info.score = (mu_uci != 0.0f && std::abs(wl) + floatD < 0.98f
-                            ? mu_uci * 100 *
-                            (1.0 - std::max((floatD - 0.8) / 0.2, 0.0))
-                            : 90 * tan(1.5637541897 * wl));
+      uci_info.score =
+          (mu_uci != 0.0f && std::abs(wl) + d < 0.98f
+               ? mu_uci * 100 * (1.0 - std::max((d - 0.8) / 0.2, 0.0))
+               : 90 * tan(1.5637541897 * wl));
     }
 
-    auto w =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
-    auto l =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
+    auto wdl_w =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - d))));
+    auto wdl_l =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - d))));
     // Using 1000-w-l so that W+D+L add up to 1000.0.
-    auto d = 1000 - w - l;
-    if (d < 0) {
-      w = std::min(1000, std::max(0, w + d / 2));
-      l = 1000 - w;
-      d = 0;
+    auto wdl_d = 1000 - wdl_w - wdl_l;
+    if (wdl_d < 0) {
+      wdl_w = std::min(1000, std::max(0, wdl_w + wdl_d / 2));
+      wdl_l = 1000 - wdl_w;
+      wdl_d = 0;
     }
-    uci_info.wdl = ThinkingInfo::WDL{w, d, l};
+    uci_info.wdl = ThinkingInfo::WDL{wdl_w, wdl_d, wdl_l};
     if (network_->GetCapabilities().has_mlh()) {
       uci_info.moves_left = static_cast<int>(
           (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
