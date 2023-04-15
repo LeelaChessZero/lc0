@@ -165,8 +165,8 @@ class OnednnNetwork : public Network {
     default_activation_ =
         file.format().network_format().default_activation() ==
                 pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
-            ? MISH
-            : RELU;
+            ? ACTIVATION_MISH
+            : ACTIVATION_RELU;
 
 #if DNNL_VERSION_MAJOR * 100 + DNNL_VERSION_MINOR >= 105
     dnnl::set_primitive_cache_capacity(
@@ -287,7 +287,7 @@ class OnednnNetwork : public Network {
 
         auto conv2 = std::make_unique<ConvLayer>(
             getLastLayer(idx), numFilters_, 8, 8, 3, numFilters_,
-            has_se ? NONE : default_activation_, !has_se);
+            has_se ? ACTIVATION_NONE : default_activation_, !has_se);
         w_mem = dnnl::memory(w_md, cpu_eng_,
                              &weights.residual[block].conv2.weights[0]);
         b_mem = dnnl::memory(b_md, cpu_eng_,
@@ -385,8 +385,9 @@ class OnednnNetwork : public Network {
         layers_[idx].emplace_back(std::move(conv1));
 
         // No Activation
-        auto conv2 = std::make_unique<ConvLayer>(
-            getLastLayer(idx), pol_channels_, 8, 8, 3, numFilters_, NONE);
+        auto conv2 =
+            std::make_unique<ConvLayer>(getLastLayer(idx), pol_channels_, 8, 8,
+                                        3, numFilters_, ACTIVATION_NONE);
         w_md = dnnl::memory::desc({pol_channels_, numFilters_, 3, 3},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::oihw);
@@ -411,8 +412,8 @@ class OnednnNetwork : public Network {
         convPol->LoadWeights(w_mem, b_mem, eng_, eng_stream_);
         layers_[idx].emplace_back(std::move(convPol));
 
-        auto FCPol = std::make_unique<FCLayer>(getLastLayer(idx),
-                                               kNumOutputPolicy, 1, 1, NONE);
+        auto FCPol = std::make_unique<FCLayer>(
+            getLastLayer(idx), kNumOutputPolicy, 1, 1, ACTIVATION_NONE);
         w_md = dnnl::memory::desc({kNumOutputPolicy, pol_channels_, 8, 8},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::abcd);
@@ -461,8 +462,9 @@ class OnednnNetwork : public Network {
                pblczero::NetworkFormat::VALUE_WDL;
         auto fc2_tanh = !wdl_;
 
-        auto FCVal2 = std::make_unique<FCLayer>(getLastLayer(idx), wdl_ ? 3 : 1,
-                                                1, 1, fc2_tanh ? TANH : NONE);
+        auto FCVal2 = std::make_unique<FCLayer>(
+            getLastLayer(idx), wdl_ ? 3 : 1, 1, 1,
+            fc2_tanh ? ACTIVATION_TANH : ACTIVATION_NONE);
         w_md = dnnl::memory::desc({wdl_ ? 3 : 1, value_channels_, 1, 1},
                                   dnnl::memory::data_type::f32,
                                   dnnl::memory::format_tag::abcd);
