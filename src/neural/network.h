@@ -98,8 +98,7 @@ struct NetworkCapabilities {
   }
 
   bool has_mlh() const {
-    return moves_left !=
-           pblczero::NetworkFormat::MovesLeftFormat::MOVES_LEFT_NONE;
+    return moves_left != pblczero::NetworkFormat::MOVES_LEFT_NONE;
   }
 };
 
