@@ -221,8 +221,8 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
     float alpha) {
   const int d_model = layer.mha.q_b.size();
   const int dff_size = layer.ffn.dense1_b.size();
-  std::vector<float> head_buffer4(batch_size * std::max(d_model, dff_size) *
-                                  kSquares);
+  std::vector<float> head_buffer4(batch_size * kSquares *
+                                  std::max(kSquares * heads, dff_size));
 
   // Smolgen.
   if (layer.mha.has_smolgen) {
