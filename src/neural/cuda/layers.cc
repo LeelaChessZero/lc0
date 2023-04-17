@@ -263,6 +263,19 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
   const cudnnTensorFormat_t layout =
       nhwc_ ? CUDNN_TENSOR_NHWC : CUDNN_TENSOR_NCHW;
 
+  // TODO: Run some tuning instead of hardcoding N < 10 as the condition to run
+  // these kernels.
+  if ((dataType == CUDNN_DATA_FLOAT) && (filter_size_ == 3) && (N < 10)) {
+    bool convDone = convCuda3x3(
+          (float*)output, (const float*)input, (const float*)weights,
+          (const float*)(use_bias_ ? biases : nullptr), (const float*)input2, 
+          use_relu_, N, C, c_input_);
+    if (convDone)
+    {
+        return;
+    }
+  }
+
   ReportCUDNNErrors(cudnnSetTensor4dDescriptor(out_tensor_desc_, layout,
                                                dataType, N, C, H, W));
 
