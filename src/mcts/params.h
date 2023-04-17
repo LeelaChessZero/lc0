@@ -34,7 +34,13 @@
 namespace lczero {
 
 namespace {
-enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+  enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+
+  // Use struct for WDLRescaleParams calculation to make them cacheable.
+  struct WDLRescaleParams {
+    float ratio;
+    float diff;
+  };
 }  // namespace
 
 class SearchParams {
@@ -44,12 +50,6 @@ class SearchParams {
 
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
-
-  // Use struct for WDLRescaleParams calculation to make them cacheable.
-  struct WDLRescaleParams {
-    float ratio;
-    float diff;
-  };
 
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
