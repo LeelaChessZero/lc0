@@ -127,7 +127,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
   start_ply_ = ply;
 }
 
-void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
+void SelfPlayGame::Play(int white_threads, int black_threads, bool training, bool validation,
                         SyzygyTablebase* syzygy_tb, bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
@@ -299,7 +299,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
       training_data_.Add(tree_[idx]->GetCurrentHead(),
                          tree_[idx]->GetPositionHistory(), best_eval,
-                         played_eval, best_is_proof, best_move, move, nneval);
+                         played_eval, best_is_proof, best_move, move, nneval, validation);
     }
     // Must reset the search before mutating the tree.
     search_.reset();
@@ -354,8 +354,8 @@ void SelfPlayGame::Abort() {
   if (search_) search_->Abort();
 }
 
-void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
-  training_data_.Write(writer, game_result_, adjudicated_);
+void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer, bool validation) const {
+  training_data_.Write(writer, game_result_, adjudicated_, validation);
 }
 
 std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()

@@ -78,26 +78,28 @@ std::tuple<float, float> DriftCorrect(float q, float d) {
 }  // namespace
 
 void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
-                                bool adjudicated) const {
+                                bool adjudicated, bool validation) const {
   if (training_data_.empty()) return;
   // Base estimate off of best_m.  If needed external processing can use a
   // different approach.
   float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
   for (auto chunk : training_data_) {
-    bool black_to_move = chunk.side_to_move_or_enpassant;
-    if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
-            chunk.input_format))) {
-      black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
-    }
-    if (result == GameResult::WHITE_WON) {
-      chunk.result_q = black_to_move ? -1 : 1;
-      chunk.result_d = 0;
-    } else if (result == GameResult::BLACK_WON) {
-      chunk.result_q = black_to_move ? 1 : -1;
-      chunk.result_d = 0;
-    } else {
-      chunk.result_q = 0;
-      chunk.result_d = 1;
+    if (!validation) {
+      bool black_to_move = chunk.side_to_move_or_enpassant;
+      if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
+              chunk.input_format))) {
+        black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
+      }
+      if (result == GameResult::WHITE_WON) {
+        chunk.result_q = black_to_move ? -1 : 1;
+        chunk.result_d = 0;
+      } else if (result == GameResult::BLACK_WON) {
+        chunk.result_q = black_to_move ? 1 : -1;
+        chunk.result_d = 0;
+      } else {
+        chunk.result_q = 0;
+        chunk.result_d = 1;
+      }
     }
     if (adjudicated) {
       chunk.invariance_info |= 1u << 5;  // Game adjudicated.
@@ -105,8 +107,10 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
     if (adjudicated && result == GameResult::UNDECIDED) {
       chunk.invariance_info |= 1u << 4;  // Max game length exceeded.
     }
-    chunk.plies_left = m_estimate;
-    m_estimate -= 1.0f;
+    if (!validation) {
+      chunk.plies_left = m_estimate;
+      m_estimate -= 1.0f;
+    }
     writer->WriteChunk(chunk);
   }
 }
@@ -114,7 +118,7 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
 void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
                               Eval best_eval, Eval played_eval,
                               bool best_is_proven, Move best_move,
-                              Move played_move, const NNCacheLock& nneval) {
+                              Move played_move, const NNCacheLock& nneval, bool validation) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -137,7 +141,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   // Prevent garbage/invalid training data from being uploaded to server.
   // It's possible to have N=0 when there is only one legal move in position
   // (due to smart pruning).
-  if (total_n == 0 && node->GetNumEdges() != 1) {
+  if (!validation && total_n == 0 && node->GetNumEdges() != 1) {
     throw Exception("Search generated invalid data!");
   }
   // Set illegal moves to have -1 probability.
@@ -171,6 +175,9 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   for (const auto& child : node->Edges()) {
     auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
+    if (validation) {
+      fracv = child.GetP();
+    }
     if (nneval) {
       float P = std::exp(*it - max_p);
       if (fracv > 0) {
@@ -250,12 +257,26 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   result.best_q = best_eval.wl;
   result.played_q = played_eval.wl;
   result.orig_q = orig_eval.wl;
+  if (validation) {
+    if (nneval) {
+      result.result_q = result.orig_q;
+    } else {
+      result.result_q = result.root_q;
+    }
+  }
 
   // Draw probability of WDL head.
   result.root_d = node->GetD();
   result.best_d = best_eval.d;
   result.played_d = played_eval.d;
   result.orig_d = orig_eval.d;
+  if (validation) {
+    if (nneval) {
+      result.result_d = result.orig_d;
+    } else {
+      result.result_d = result.root_d;
+    }
+  }
 
   std::tie(result.best_q, result.best_d) =
       DriftCorrect(result.best_q, result.best_d);
@@ -280,6 +301,13 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
 
   // Unknown here - will be filled in once the full data has been collected.
   result.plies_left = 0;
+  if (validation) {
+    if (nneval) {
+      result.plies_left = result.orig_m;
+    } else {
+      result.plies_left = result.root_m;
+    }
+  }
   training_data_.push_back(result);
 }
 

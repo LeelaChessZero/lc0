@@ -106,6 +106,7 @@ class SelfPlayTournament {
   const bool kShareTree;
   const size_t kParallelism;
   const bool kTraining;
+  const bool kValidation;
   const float kResignPlaythrough;
   const float kDiscardedStartChance;
 

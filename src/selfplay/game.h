@@ -79,7 +79,7 @@ class SelfPlayGame {
   static void PopulateUciParams(OptionsParser* options);
 
   // Starts the game and blocks until the game is finished.
-  void Play(int white_threads, int black_threads, bool training,
+  void Play(int white_threads, int black_threads, bool training, bool validation,
             SyzygyTablebase* syzygy_tb, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
@@ -89,7 +89,7 @@ class SelfPlayGame {
   int GetStartPly() const { return start_ply_; }
 
   // Writes training data to a file.
-  void WriteTrainingData(TrainingDataWriter* writer) const;
+  void WriteTrainingData(TrainingDataWriter* writer, bool validation) const;
 
   GameResult GetGameResult() const { return game_result_; }
   std::vector<Move> GetMoves() const;

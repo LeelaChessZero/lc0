@@ -98,11 +98,11 @@ class V6TrainingDataArray {
   // Add a chunk.
   void Add(const Node* node, const PositionHistory& history, Eval best_eval,
            Eval played_eval, bool best_is_proven, Move best_move,
-           Move played_move, const NNCacheLock& nneval);
+           Move played_move, const NNCacheLock& nneval, bool validation);
 
   // Writes training data to a file.
   void Write(TrainingDataWriter* writer, GameResult result,
-             bool adjudicated) const;
+             bool adjudicated, bool validation) const;
 
  private:
   std::vector<V6TrainingData> training_data_;

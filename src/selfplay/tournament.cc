@@ -59,6 +59,9 @@ const OptionId kTrainingId{
     "training", "Training",
     "Enables writing training data. The training data is stored into a "
     "temporary subdirectory that the engine creates."};
+const OptionId kValidationId{
+    "validation", "Validation",
+    "Overrides standard training data generation to generate 'validation' data instead."};
 const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
                                   "Show verbose thinking messages."};
 const OptionId kMoveThinkingId{"move-thinking", "MoveThinking",
@@ -110,6 +113,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kVisitsId, -1, 999999999) = -1;
   options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
   options->Add<BoolOption>(kTrainingId) = false;
+  options->Add<BoolOption>(kValidationId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<BoolOption>(kMoveThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
@@ -159,6 +163,7 @@ SelfPlayTournament::SelfPlayTournament(
       kShareTree(options.Get<bool>(kShareTreesId)),
       kParallelism(options.Get<int>(kParallelGamesId)),
       kTraining(options.Get<bool>(kTrainingId)),
+      kValidation(options.Get<bool>(kValidationId)),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId)),
       kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)) {
   std::string book = options.Get<std::string>(kOpeningsFileId);
@@ -348,7 +353,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   // PLAY GAME!
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
-  game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
+  game.Play(player1_threads, player2_threads, kTraining, kValidation, syzygy_tb_.get(),
             enable_resign);
 
   // If game was aborted, it's still undecided.
@@ -368,7 +373,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     if (kTraining &&
         game_info.play_start_ply < static_cast<int>(game_info.moves.size())) {
       TrainingDataWriter writer(game_number);
-      game.WriteTrainingData(&writer);
+      game.WriteTrainingData(&writer, kValidation);
       writer.Finalize();
       game_info.training_filename = writer.GetFileName();
     }
