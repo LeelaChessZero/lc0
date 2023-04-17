@@ -45,6 +45,12 @@ class SearchParams {
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
 
+  // Use struct for WDLRescaleParams calculation to make them cacheable.
+  struct WDLRescaleParams {
+    float ratio;
+    float diff;
+  };
+
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
   int GetMaxPrefetchBatch() const {
@@ -115,8 +121,8 @@ class SearchParams {
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
-  float GetWDLRescaleRatio() const { return kWDLRescaleRatio; }
-  float GetWDLRescaleDiff() const { return kWDLRescaleDiff; }
+  float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
+  float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
   float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
@@ -268,8 +274,7 @@ class SearchParams {
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
-  float kWDLRescaleRatio;
-  float kWDLRescaleDiff;
+  const WDLRescaleParams kWDLRescaleParams;
   const float kWDLEvalObjectivity;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
