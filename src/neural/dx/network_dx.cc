@@ -377,6 +377,12 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
                     file.format().network_format().moves_left()} {
   LegacyWeights weights(file.weights());
 
+  const int kNumFilters = (int)weights.input.biases.size();
+
+  num_blocks_ = (int)weights.residual.size();
+  has_se_ = weights.residual[0].has_se;
+  int pol_channels = (int)weights.policy.biases.size();
+
   has_conv_policy_ = file.format().network_format().policy() ==
                      pblczero::NetworkFormat::POLICY_CONVOLUTION;
   max_batch_size_ =
@@ -389,17 +395,15 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // Metacommand first, if not available - attempt using Convolution Metacommand
   // directly (whatever algorithm HW vendor is providing), and if neither is
   // available use winograd algorithm with our own GEMM compute shader.
+  // However some drivers were reported to have issues with nets having filters
+  // not divisible by 32 when using the GEMM Metacommand.
   // The below backend options can be used to override this for testing.
-  bool enable_gemm_metacommand =
-      options.GetOrDefault<bool>("enable-gemm-metacommand", true);
+  bool enable_gemm_metacommand = kNumFilters % 32 == 0 ? true : false;
+  if (!options.IsDefault<bool>("enable-gemm-metacommand")) {
+    enable_gemm_metacommand = options.Get<bool>("enable-gemm-metacommand");
+  }
   bool enable_conv_metacommand =
       options.GetOrDefault<bool>("enable-conv-metacommand", true);
-
-  const int kNumFilters = (int)weights.input.biases.size();
-
-  num_blocks_ = (int)weights.residual.size();
-  has_se_ = weights.residual[0].has_se;
-  int pol_channels = (int)weights.policy.biases.size();
 
   // Build the network, and copy the weights to GPU memory.
 
