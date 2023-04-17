@@ -1107,6 +1107,15 @@ void SearchWorker::ExecuteOneIteration() {
   // 7. Update the Search's status and progress information.
   UpdateCounters();
 
+  for (NodeToProcess& node_to_process : minibatch_) {
+    if (!node_to_process.IsCollision()) {
+      main_workspace_.move_list_cache.push_back(
+          std::move(node_to_process.moves_to_visit));
+      break;
+    }
+  }
+
+
   // If required, waste time to limit nps.
   if (params_.GetNpsLimit() > 0) {
     while (search_->IsSearchActive()) {
@@ -1137,6 +1146,22 @@ void SearchWorker::InitializeIteration(
   computation_->Reserve(params_.GetMiniBatchSize());
   minibatch_.clear();
   minibatch_.reserve(2 * params_.GetMiniBatchSize());
+  // Re-balance workspaces.
+  if (!task_workspaces_.empty()) {
+    while (true) {
+      bool any_changes = false;
+      for (int i = 0; i < static_cast<int>(task_workspaces_.size()); i++) {
+        if (task_workspaces_[i].move_list_cache.size() + 2 <
+            main_workspace_.move_list_cache.size()) {
+          task_workspaces_[i].move_list_cache.push_back(
+              std::move(main_workspace_.move_list_cache.back()));
+          main_workspace_.move_list_cache.pop_back();
+          any_changes = true;
+        }
+      }
+      if (!any_changes) break;
+    }
+  }
 }
 
 // 2. Gather minibatch.
@@ -1282,6 +1307,8 @@ void SearchWorker::GatherMinibatch() {
           minibatch_.erase(minibatch_.begin() + i);
         } else if (minibatch_[i].ooo_completed) {
           DoBackupUpdateSingleNode(minibatch_[i]);
+          main_workspace_.move_list_cache.push_back(
+              std::move(minibatch_[i].moves_to_visit));
           minibatch_.erase(minibatch_.begin() + i);
           --minibatch_size;
           ++number_out_of_order_;
@@ -1373,6 +1400,9 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
       // Perform out of order eval for the last entry in minibatch_.
       FetchSingleNodeResult(&picked_node, picked_node, 0);
+      // Release the cache lock now rather than waiting until later under mutex
+      // lock.
+      picked_node.lock = NNCacheLock();
       picked_node.ooo_completed = true;
     }
   }
@@ -1483,10 +1513,8 @@ void SearchWorker::PickNodesToExtendTask(
   current_path.clear();
   auto& moves_to_path = workspace->moves_to_path;
   moves_to_path = moves_to_base;
-  // Sometimes receiver is reused, othertimes not, so only jump start if small.
-  if (receiver->capacity() < 30) {
-    receiver->reserve(receiver->size() + 30);
-  }
+  auto& picking_results = workspace->picking_results;
+  picking_results.reserve(30);
 
   // These 2 are 'filled pre-emptively'.
   std::array<float, 256> current_pol;
@@ -1533,7 +1561,7 @@ void SearchWorker::PickNodesToExtendTask(
           // ensure the outer gather loop gives up.
           if (node->TryStartScoreUpdate()) {
             cur_limit -= 1;
-            minibatch_.push_back(NodeToProcess::Visit(
+            picking_results.push_back(NodeToProcess::Visit(
                 node, static_cast<uint16_t>(current_path.size() + base_depth)));
             completed_visits++;
           }
@@ -1545,7 +1573,7 @@ void SearchWorker::PickNodesToExtendTask(
               max_limit > cur_limit) {
             max_count = max_limit;
           }
-          receiver->push_back(NodeToProcess::Collision(
+          picking_results.push_back(NodeToProcess::Collision(
               node, static_cast<uint16_t>(current_path.size() + base_depth),
               cur_limit, max_count));
           completed_visits += cur_limit;
@@ -1727,13 +1755,20 @@ void SearchWorker::PickNodesToExtendTask(
           // Reduce 1 for the visits_to_perform to ensure the collision created
           // doesn't include this visit.
           (*visits_to_perform.back())[best_idx] -= 1;
-          receiver->push_back(NodeToProcess::Visit(
+          picking_results.push_back(NodeToProcess::Visit(
               child_node,
               static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
           completed_visits++;
-          receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
-          receiver->back().moves_to_visit = moves_to_path;
-          receiver->back().moves_to_visit.push_back(best_edge.GetMove());
+          if (workspace->move_list_cache.empty()) {
+            picking_results.back().moves_to_visit.reserve(moves_to_path.size() +
+                                                          1);
+          } else {
+            picking_results.back().moves_to_visit =
+                std::move(workspace->move_list_cache.back());
+            workspace->move_list_cache.pop_back();
+          }
+          picking_results.back().moves_to_visit = moves_to_path;
+          picking_results.back().moves_to_visit.push_back(best_edge.GetMove());
         }
         if (best_idx > vtp_last_filled.back() &&
             (*visits_to_perform.back())[best_idx] > 0) {
@@ -1810,6 +1845,11 @@ void SearchWorker::PickNodesToExtendTask(
       vtp_last_filled.pop_back();
     }
   }
+  receiver->reserve(picking_results.size());
+  for (int i = 0; i < picking_results.size(); i++) {
+    receiver->push_back(std::move(picking_results[i]));
+  }
+  picking_results.clear();
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth,

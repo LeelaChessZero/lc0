@@ -383,6 +383,8 @@ class SearchWorker {
     std::vector<int> current_path;
     std::vector<Move> moves_to_path;
     PositionHistory history;
+    std::vector<NodeToProcess> picking_results;
+    std::vector<std::vector<Move>> move_list_cache;
     TaskWorkspace() {
       vtp_buffer.reserve(30);
       visits_to_perform.reserve(30);
