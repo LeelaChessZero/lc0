@@ -72,7 +72,7 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
   auto kingTheirs = BitBoard(planes[11].mask);
   ChessBoard::Castlings castlings;
   switch (input_format) {
-    case pblczero::NetworkFormat::InputFormat::INPUT_CLASSICAL_112_PLANE: {
+    case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE: {
       if (planes[kAuxPlaneBase + 0].mask != 0) {
         castlings.set_we_can_000();
       }
