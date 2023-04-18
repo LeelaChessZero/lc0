@@ -96,6 +96,13 @@ void ShowNetworkFormatInfo(const pblczero::Net& weights) {
     COUT << Justify("MLH")
          << NetworkFormat::MovesLeftFormat_Name(net_format.moves_left());
   }
+  if (weights.weights().has_smolgen_w()) {
+    COUT << Justify("Smolgen activation")
+         << NetworkFormat::ActivationFunction_Name(
+                net_format.smolgen_activation());
+    COUT << Justify("FFN activation")
+         << NetworkFormat::ActivationFunction_Name(net_format.ffn_activation());
+  }
 }
 
 void ShowNetworkTrainingInfo(const pblczero::Net& weights) {
@@ -129,28 +136,54 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
   COUT << "\nWeights";
   COUT << "~~~~~~~";
   const auto& w = weights.weights();
-  COUT << Justify("Blocks") << w.residual_size();
-  int se_count = 0;
-  for (size_t i = 0; i < w.residual_size(); i++) {
-    if (w.residual(i).has_se()) se_count++;
-  }
-  if (se_count > 0) {
-    COUT << Justify("SE blocks") << se_count;
-  }
 
-  COUT << Justify("Filters")
-       << w.input().weights().params().size() / 2 / 112 / 9;
-  COUT << Justify("Policy") << (w.has_policy1() ? "Convolution" : "Dense");
-  if (!w.has_policy1()) {
-    int policy_channels = w.policy().biases().params().size() / 2;
-    if (policy_channels == 0) {
-      policy_channels = w.policy().bn_means().params().size() / 2;
+  const auto attn_body = w.encoder_size() > 0;
+  if (attn_body) {
+    COUT << Justify("Encoders") << w.encoder_size();
+    COUT << Justify("Encoder heads") << w.headcount();
+    COUT << Justify("Embedding size") << w.ip_emb_b().params().size() / 2;
+    COUT << Justify("DModel") << w.encoder(0).mha().q_b().params().size() / 2;
+    COUT << Justify("Encoder DFF")
+         << w.encoder(0).ffn().dense1_b().params().size() / 2;
+  } else {
+    COUT << Justify("Blocks") << w.residual_size();
+    int se_count = 0;
+    for (size_t i = 0; i < w.residual_size(); i++) {
+      if (w.residual(i).has_se()) se_count++;
     }
-    COUT << Justify("Policy channels") << policy_channels;
+    if (se_count > 0) {
+      COUT << Justify("SE blocks") << se_count;
+    }
+
+    COUT << Justify("Filters")
+         << w.input().weights().params().size() / 2 / 112 / 9;
+  }
+  if (weights.format().network_format().policy() ==
+      pblczero::NetworkFormat::POLICY_ATTENTION) {
+    COUT << Justify("Policy") << "Attention";
+    if (w.pol_encoder_size() > 0) {
+      COUT << Justify("Policy encoders") << w.pol_encoder_size();
+      COUT << Justify("Policy encoder heads") << w.pol_headcount();
+      COUT << Justify("Policy encoder DModel")
+           << w.pol_encoder(0).mha().q_b().params().size() / 2;
+      COUT << Justify("Policy encoder DFF")
+           << w.pol_encoder(0).ffn().dense1_b().params().size() / 2;
+    }
+    COUT << Justify("Policy DModel") << w.ip2_pol_b().params().size() / 2;
+  } else {
+    COUT << Justify("Policy") << (w.has_policy1() ? "Convolution" : "Dense");
+    if (!w.has_policy1()) {
+      int policy_channels = w.policy().biases().params().size() / 2;
+      if (policy_channels == 0) {
+        policy_channels = w.policy().bn_means().params().size() / 2;
+      }
+      COUT << Justify("Policy channels") << policy_channels;
+    }
   }
   COUT << Justify("Value")
        << (w.ip2_val_w().params().size() / 2 % 3 == 0 ? "WDL" : "Classical");
-  COUT << Justify("MLH") << (w.has_moves_left() ? "Present" : "Absent");
+  COUT << Justify("MLH")
+       << (w.has_moves_left() || w.has_ip_mov_w() ? "Present" : "Absent");
 }
 
 void ShowNetworkOnnxInfo(const pblczero::Net& weights,
