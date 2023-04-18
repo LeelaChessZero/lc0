@@ -270,6 +270,7 @@ class SearchParams {
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
   const ContemptPerspective kContemptPerspective;
+  const float kContempt;
   const float kDrawScoreSidetomove;
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
