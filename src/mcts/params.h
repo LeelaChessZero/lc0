@@ -37,7 +37,7 @@ namespace {
 enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
 }  // namespace
 
-// Use struct for WDLRescaleParams calculation to make them cacheable.
+// Use struct for WDLRescaleParams calculation to make them const.
 struct WDLRescaleParams {
   float ratio;
   float diff;
