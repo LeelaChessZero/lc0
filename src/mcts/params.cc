@@ -67,7 +67,7 @@ ContemptPerspective EncodeContemptPerspective(std::string perspective) {
 }
 
 float GetContempt(std::string name, std::string contempt_str) {
-  float contempt;
+  float contempt = 0;
   for (auto& entry : StrSplit(contempt_str, ",")) {
     auto parts = StrSplit(entry, "=");
     if (parts.size() == 1) {

@@ -33,9 +33,7 @@
 
 namespace lczero {
 
-namespace {
 enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
-}  // namespace
 
 // Use struct for WDLRescaleParams calculation to make them const.
 struct WDLRescaleParams {
@@ -269,12 +267,12 @@ class SearchParams {
   const float kMovesLeftQuadraticFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
-  const ContemptPerspective kContemptPerspective;
-  const float kContempt;
   const float kDrawScoreSidetomove;
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
+  const ContemptPerspective kContemptPerspective;
+  const float kContempt;
   const WDLRescaleParams kWDLRescaleParams;
   const float kWDLEvalObjectivity;
   const int kMaxOutOfOrderEvals;
