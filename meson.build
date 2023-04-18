@@ -734,5 +734,7 @@ if get_option('python_bindings')
   python.extension_module('backends',
     [py_files + files],
     include_directories: [includes],
-    dependencies: [cpython] + deps)
+    dependencies: [cpython] + deps,
+    subdir: 'lczero',
+    install: true)
 endif
