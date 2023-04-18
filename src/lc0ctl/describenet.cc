@@ -154,7 +154,6 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
     if (se_count > 0) {
       COUT << Justify("SE blocks") << se_count;
     }
-
     COUT << Justify("Filters")
          << w.input().weights().params().size() / 2 / 112 / 9;
   }
