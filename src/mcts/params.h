@@ -37,6 +37,12 @@ namespace {
 enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
 }  // namespace
 
+// Use struct for WDLRescaleParams calculation to make them cacheable.
+struct WDLRescaleParams {
+  float ratio;
+  float diff;
+};
+
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
@@ -44,12 +50,6 @@ class SearchParams {
 
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
-
-  // Use struct for WDLRescaleParams calculation to make them cacheable.
-  struct WDLRescaleParams {
-    float ratio;
-    float diff;
-  };
 
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
