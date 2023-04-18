@@ -114,8 +114,8 @@ WDLRescaleParams AccurateWDLRescaleParams(
       1.0f / std::log((1.0f + draw_rate_target) / (1.0f - draw_rate_target));
   float scale_reference = 1.0f / std::log((1.0f + draw_rate_reference) /
                                           (1.0f - draw_rate_reference));
-  ratio = scale_target / scale_reference;
-  diff =
+  float ratio = scale_target / scale_reference;
+  float diff =
       scale_target / (scale_reference * scale_reference) /
       (1.0f / std::pow(std::cosh(0.5f * (1 - book_exit_bias) / scale_target),
                        2) +
@@ -151,7 +151,7 @@ WDLRescaleParams SimplifiedWDLRescaleParams(
       1.0f / (1.0f / scale_zero + std::exp(elo_opp / elo_slope - offset));
   float scale_target =
       std::sqrt((scale_active * scale_active + scale_opp * scale_opp) / 2.0f);
-  ratio = scale_target / scale_reference;
+  float ratio = scale_target / scale_reference;
   float mu_active =
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f +
@@ -159,7 +159,7 @@ WDLRescaleParams SimplifiedWDLRescaleParams(
   float mu_opp =
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
-  diff = (mu_active - mu_opp) * contempt_attenuation;
+  float diff = (mu_active - mu_opp) * contempt_attenuation;
   WDLRescaleParams rescale_params;
   rescale_params.ratio = ratio;
   rescale_params.diff = diff;
