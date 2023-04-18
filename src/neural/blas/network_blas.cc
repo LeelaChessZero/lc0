@@ -266,7 +266,8 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
                           gen_sz_outputs));
   vec_adjust(head_buffer3,
              largest_batch_size * std::max(d_model * kSquares, hidden_sz));
-  vec_adjust(head_buffer4, batch_size * std::max(d_model, dff_size) * kSquares);
+  vec_adjust(head_buffer4,
+             batch_size * kSquares * std::max(kSquares * heads, dff_size));
 
   // Smolgen.
   if (layer.mha.has_smolgen) {

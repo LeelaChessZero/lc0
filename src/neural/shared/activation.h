@@ -37,6 +37,12 @@ enum ActivationFunction {
   ACTIVATION_SOFTMAX = 9,
 };
 
+struct Activations {
+    ActivationFunction default_activation = ACTIVATION_RELU;
+    ActivationFunction smolgen_activation = ACTIVATION_SWISH;
+    ActivationFunction ffn_activation = ACTIVATION_RELU_2;
+};
+
 // Softmax activation
 void SoftmaxActivation(const size_t size, const float* input, float* output);
 

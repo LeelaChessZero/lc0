@@ -36,7 +36,7 @@ InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {
     result.back().mask = ReverseBitsInBytes(data.planes[i]);
   }
   switch (data.input_format) {
-    case pblczero::NetworkFormat::InputFormat::INPUT_CLASSICAL_112_PLANE: {
+    case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE: {
       result.emplace_back();
       result.back().mask = data.castling_us_ooo != 0 ? ~0LL : 0LL;
       result.emplace_back();
