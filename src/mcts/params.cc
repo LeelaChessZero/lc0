@@ -95,15 +95,6 @@ float GetContempt(std::string name, std::string contempt_str) {
   return contempt;
 }
 
-// If ratio or diff for WDL conversion are explicitly changed from their
-// defaults, they take precedence.
-WDLRescaleParams DirectWDLRescaleParams(float ratio, float diff) {
-  WDLRescaleParams rescale_params;
-  rescale_params.ratio = ratio;
-  rescale_params.diff = diff;
-  return rescale_params;
-}
-
 // Calculate ratio and diff for WDL conversion from the contempt settings.
 // More accurate model, allowing book bias dependent Elo calculation.
 // Doesn't take lower accuracy of opponent into account and needs clamping.
@@ -123,10 +114,7 @@ WDLRescaleParams AccurateWDLRescaleParams(
                        2)) *
       std::log(10) / 200 * std::clamp(contempt, -contempt_max, contempt_max) *
       contempt_attenuation;
-  WDLRescaleParams rescale_params;
-  rescale_params.ratio = ratio;
-  rescale_params.diff = diff;
-  return rescale_params;
+  return WDLRescaleParams(ratio, diff);
 }
 
 // Calculate ratio and diff for WDL conversion from the contempt settings.
@@ -160,10 +148,7 @@ WDLRescaleParams SimplifiedWDLRescaleParams(
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
   float diff = (mu_active - mu_opp) * contempt_attenuation;
-  WDLRescaleParams rescale_params;
-  rescale_params.ratio = ratio;
-  rescale_params.diff = diff;
-  return rescale_params;
+  return WDLRescaleParams(ratio, diff);
 }
 }  // namespace
 
@@ -665,7 +650,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kWDLRescaleParams(
                         !options.IsDefault<float>(kWDLRescaleRatioId) ||
                         !options.IsDefault<float>(kWDLRescaleDiffId) ?
-          DirectWDLRescaleParams(options.Get<float>(kWDLRescaleRatioId),
+          WDLRescaleParams(options.Get<float>(kWDLRescaleRatioId),
                     options.Get<float>(kWDLRescaleDiffId)) :
           (options.Get<float>(kWDLCalibrationEloId) == 0
               ? AccurateWDLRescaleParams(kContempt,
