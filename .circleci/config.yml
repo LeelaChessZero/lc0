@@ -14,43 +14,19 @@ jobs:
           name: Update Meson
           command: pip3 install --upgrade meson==0.58.1
       - run:
-          name: Create Meson build dirs
-          command: mkdir build-gcc && mkdir build-clang
-      - run:
-          name: Meson Clang
-          environment:
-            CC: clang
-            CXX: clang++
-          command: meson build-clang
-      - run:
           name: Meson GCC
           environment:
             CC: gcc-8
             CXX: g++-8
-          command: meson build-gcc
-      - run:
-          name: Build Clang
-          command: |
-            cd build-clang
-            ninja
+          command: meson build-gcc -Dgtest=false
       - run:
           name: Build GCC
           command: |
             cd build-gcc
-            ninja -j 4
-      - run:
-          command: cp build-clang/lc0 /tmp/lc0-clang
-      - run:
-          command: cp build-gcc/lc0 /tmp/lc0-g++
-      - store_artifacts:
-          path: /tmp/lc0-clang
-          destination: lc0-ubuntu-18-04-clang
-      - store_artifacts:
-          path: /tmp/lc0-g++
-          destination: lc0-ubuntu-18-04-g++
+            ninja
   "mac":
     macos:
-      xcode: 14.2.0
+      xcode: 13.4.1
     steps:
       - checkout
       - run:
@@ -59,19 +35,22 @@ jobs:
             git submodule init
             git submodule update --remote
       - run:
-          name: Install Meson and Ninja
+          name: Install build tools
           command: |
             pip install meson==0.63
             pip install ninja
-      - run:
-          name: Create Meson build dir
-          command: mkdir build-gcc && mkdir build-clang
+            brew install ispc
       - run:
           name: Build lc0
           command: |
-            meson build -Dgtest=false
+            meson build --buildtype=release -Dgtest=false -Dopencl=false
             cd build
             ninja
+      - run:
+          command: cp build/lc0 /tmp/lc0
+      - store_artifacts:
+          path: /tmp/lc0
+          destination: lc0-metal-macos-12.3.1
 workflows:
   version: 2
   builds:
