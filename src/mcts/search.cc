@@ -313,10 +313,14 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
     } else if (score_type == "WDL_mu") {
+      // Reports the WDL mu value whenever it is reasonable, and defaults to
+      // centipawn otherwise.
+      float centipawn_score = 90 * tan(1.5637541897 * wl);
       uci_info.score =
-          (mu_uci != 0.0f && std::abs(wl) + d < 0.98f
-               ? mu_uci * 100 * (1.0 - std::max((d - 0.8) / 0.2, 0.0))
-               : 90 * tan(1.5637541897 * wl));
+          mu_uci != 0.0f && std::abs(wl) + d < 0.99f &&
+          (std::abs(mu_uci) < 1.0f || std::abs(centipawn_score) < std::abs(100 * mu_uci))
+               ? 100 * mu_uci
+               : centipawn_score;
     }
 
     auto wdl_w =
