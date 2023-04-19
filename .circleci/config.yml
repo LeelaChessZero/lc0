@@ -37,8 +37,8 @@ jobs:
       - run:
           name: Install build tools
           command: |
-            pip install meson==0.63
-            pip install ninja
+            pip3 install meson==0.63
+            pip3 install ninja
             brew install ispc
       - run:
           name: Build lc0
