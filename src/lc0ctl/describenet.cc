@@ -96,10 +96,17 @@ void ShowNetworkFormatInfo(const pblczero::Net& weights) {
     COUT << Justify("MLH")
          << NetworkFormat::MovesLeftFormat_Name(net_format.moves_left());
   }
-  if (weights.weights().has_smolgen_w()) {
+  if (net_format.has_default_activation()) {
+    COUT << Justify("Default activation")
+         << NetworkFormat::DefaultActivation_Name(
+                net_format.default_activation());
+  }
+  if (net_format.has_smolgen_activation()) {
     COUT << Justify("Smolgen activation")
          << NetworkFormat::ActivationFunction_Name(
                 net_format.smolgen_activation());
+  }
+  if (net_format.has_ffn_activation()) {
     COUT << Justify("FFN activation")
          << NetworkFormat::ActivationFunction_Name(net_format.ffn_activation());
   }
@@ -157,8 +164,9 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
     COUT << Justify("Filters")
          << w.input().weights().params().size() / 2 / 112 / 9;
   }
-  if (weights.format().network_format().policy() ==
-      pblczero::NetworkFormat::POLICY_ATTENTION) {
+  using pblczero::NetworkFormat;
+  const auto& format = weights.format().network_format();
+  if (format.policy() == NetworkFormat::POLICY_ATTENTION) {
     COUT << Justify("Policy") << "Attention";
     if (w.pol_encoder_size() > 0) {
       COUT << Justify("Policy encoders") << w.pol_encoder_size();
@@ -169,6 +177,20 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
            << w.pol_encoder(0).ffn().dense1_b().params().size() / 2;
     }
     COUT << Justify("Policy DModel") << w.ip2_pol_b().params().size() / 2;
+    if (attn_body) {
+      COUT << Justify("Policy activation")
+           << NetworkFormat::ActivationFunction_Name(
+                  NetworkFormat::ACTIVATION_DEFAULT);
+      COUT << Justify("Policy FFN activation")
+           << NetworkFormat::ActivationFunction_Name(format.ffn_activation());
+    } else {
+      COUT << Justify("Policy activation")
+           << NetworkFormat::ActivationFunction_Name(
+                  NetworkFormat::ACTIVATION_SELU);
+      COUT << Justify("Policy FFN activation")
+           << NetworkFormat::ActivationFunction_Name(
+                  NetworkFormat::ACTIVATION_SELU);
+    }
   } else {
     COUT << Justify("Policy") << (w.has_policy1() ? "Convolution" : "Dense");
     if (!w.has_policy1()) {
@@ -181,8 +203,7 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
   }
   COUT << Justify("Value")
        << (w.ip2_val_w().params().size() / 2 % 3 == 0 ? "WDL" : "Classical");
-  COUT << Justify("MLH")
-       << (w.has_moves_left() || w.has_ip_mov_w() ? "Present" : "Absent");
+  COUT << Justify("MLH") << (w.has_ip2_mov_w() ? "Present" : "Absent");
 }
 
 void ShowNetworkOnnxInfo(const pblczero::Net& weights,
