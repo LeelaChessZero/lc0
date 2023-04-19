@@ -23,7 +23,7 @@ jobs:
           name: Build GCC
           command: |
             cd build-gcc
-            ninja
+            ninja -j 4
   "mac":
     macos:
       xcode: 13.4.1
@@ -50,7 +50,7 @@ jobs:
           command: cp build/lc0 /tmp/lc0
       - store_artifacts:
           path: /tmp/lc0
-          destination: lc0-metal-macos-12.3.1
+          destination: lc0-macos_12.3.1-x86_64
 workflows:
   version: 2
   builds:
