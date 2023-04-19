@@ -68,7 +68,10 @@ jobs:
           command: mkdir build-gcc && mkdir build-clang
       - run:
           name: Build lc0
-          command: ./build.sh -Dgtest=false
+          command: |
+            meson build -Dgtest=false
+            cd build
+            ninja
 workflows:
   version: 2
   builds:
