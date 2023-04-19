@@ -379,12 +379,6 @@ const OptionId SearchParams::kContemptId{
 const OptionId SearchParams::kContemptMaxValueId{
     "contempt-max-value", "ContemptMaxValue",
     "The maximum value of contempt used. Higher values will be capped."};
-const OptionId SearchParams::kWDLRescaleRatioId{
-    "wdl-rescale-ratio", "WDLRescaleRatio",
-    "Rescales the logistic WDL scale by the given ratio."};
-const OptionId SearchParams::kWDLRescaleDiffId{
-    "wdl-rescale-diff", "WDLRescaleDiff",
-    "Shifts the logistic WDL mean by diff in white's favor."};
 const OptionId SearchParams::kWDLCalibrationEloId{
     "wdl-calibration-elo", "WDLCalibrationElo",
     "Elo of the active side, adjusted for time control relative to rapid."};
@@ -546,8 +540,6 @@ void SearchParams::Populate(OptionsParser* options) {
   // separated kContemptId list will override this.
   options->Add<StringOption>(kContemptId) = "";
   options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
-  options->Add<FloatOption>(kWDLRescaleRatioId, 1e-6f, 1e6f) = 1.0f;
-  options->Add<FloatOption>(kWDLRescaleDiffId, -100.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
@@ -586,8 +578,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureWinpctCutoffId);
   options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kContemptMaxValueId);
-  options->HideOption(kWDLRescaleRatioId);
-  options->HideOption(kWDLRescaleDiffId);
   options->HideOption(kWDLContemptAttenuationId);
   options->HideOption(kWDLDrawRateTargetId);
   options->HideOption(kWDLBookExitBiasId);
@@ -647,12 +637,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                     ? options.Get<float>(kUCIRatingAdvId)
                     : GetContempt(options.Get<std::string>(kUCIOpponentId),
                                   options.Get<std::string>(kContemptId))),
-      kWDLRescaleParams(
-                        !options.IsDefault<float>(kWDLRescaleRatioId) ||
-                        !options.IsDefault<float>(kWDLRescaleDiffId) ?
-          WDLRescaleParams(options.Get<float>(kWDLRescaleRatioId),
-                    options.Get<float>(kWDLRescaleDiffId)) :
-          (options.Get<float>(kWDLCalibrationEloId) == 0
+      kWDLRescaleParams(options.Get<float>(kWDLCalibrationEloId) == 0
               ? AccurateWDLRescaleParams(kContempt,
                     options.Get<float>(kWDLDrawRateTargetId),
                     options.Get<float>(kWDLDrawRateReferenceId),
@@ -664,7 +649,6 @@ SearchParams::SearchParams(const OptionsDict& options)
                     options.Get<float>(kWDLCalibrationEloId),
                     options.Get<float>(kContemptMaxValueId),
                     options.Get<float>(kWDLContemptAttenuationId))
-           )
         ),
       kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvals(std::max(

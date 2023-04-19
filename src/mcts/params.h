@@ -204,8 +204,6 @@ class SearchParams {
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
-  static const OptionId kWDLRescaleRatioId;
-  static const OptionId kWDLRescaleDiffId;
   static const OptionId kContemptId;
   static const OptionId kContemptMaxValueId;
   static const OptionId kWDLCalibrationEloId;
