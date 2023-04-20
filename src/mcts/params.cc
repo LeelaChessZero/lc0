@@ -99,8 +99,8 @@ float GetContempt(std::string name, std::string contempt_str) {
 // More accurate model, allowing book bias dependent Elo calculation.
 // Doesn't take lower accuracy of opponent into account and needs clamping.
 WDLRescaleParams AccurateWDLRescaleParams(
-  float contempt, float draw_rate_target, float draw_rate_reference,
-  float book_exit_bias, float contempt_max, float contempt_attenuation) {
+    float contempt, float draw_rate_target, float draw_rate_reference,
+    float book_exit_bias, float contempt_max, float contempt_attenuation) {
   float scale_target =
       1.0f / std::log((1.0f + draw_rate_target) / (1.0f - draw_rate_target));
   float scale_reference = 1.0f / std::log((1.0f + draw_rate_reference) /
@@ -108,10 +108,10 @@ WDLRescaleParams AccurateWDLRescaleParams(
   float ratio = scale_target / scale_reference;
   float diff =
       scale_target / (scale_reference * scale_reference) /
-      (1.0f / std::pow(std::cosh(0.5f * (1 - book_exit_bias) / scale_target),
-                       2) +
-       1.0f / std::pow(std::cosh(0.5f * (1 + book_exit_bias) / scale_target),
-                       2)) *
+      (1.0f /
+           std::pow(std::cosh(0.5f * (1 - book_exit_bias) / scale_target), 2) +
+       1.0f /
+           std::pow(std::cosh(0.5f * (1 + book_exit_bias) / scale_target), 2)) *
       std::log(10) / 200 * std::clamp(contempt, -contempt_max, contempt_max) *
       contempt_attenuation;
   return WDLRescaleParams(ratio, diff);
@@ -121,9 +121,11 @@ WDLRescaleParams AccurateWDLRescaleParams(
 // Less accurate Elo model, but automatically chooses draw rate and accuracy
 // based on the absolute Elo of both sides. Doesn't require clamping, but still
 // uses the parameter.
-WDLRescaleParams SimplifiedWDLRescaleParams(
-    float contempt, float draw_rate_reference, float elo_active,
-    float contempt_max, float contempt_attenuation) {
+WDLRescaleParams SimplifiedWDLRescaleParams(float contempt,
+                                            float draw_rate_reference,
+                                            float elo_active,
+                                            float contempt_max,
+                                            float contempt_attenuation) {
   // Parameters for the Elo dependent draw rate and scaling:
   const float scale_zero = 15.0f;
   const float elo_slope = 425.0f;
@@ -142,8 +144,7 @@ WDLRescaleParams SimplifiedWDLRescaleParams(
   float ratio = scale_target / scale_reference;
   float mu_active =
       -std::log(10) / 200 * scale_zero * elo_slope *
-      std::log(1.0f +
-               std::exp(-elo_active / elo_slope + offset) / scale_zero);
+      std::log(1.0f + std::exp(-elo_active / elo_slope + offset) / scale_zero);
   float mu_opp =
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
@@ -637,19 +638,19 @@ SearchParams::SearchParams(const OptionsDict& options)
                     ? options.Get<float>(kUCIRatingAdvId)
                     : GetContempt(options.Get<std::string>(kUCIOpponentId),
                                   options.Get<std::string>(kContemptId))),
-      kWDLRescaleParams(options.Get<float>(kWDLCalibrationEloId) == 0
-              ? AccurateWDLRescaleParams(kContempt,
-                    options.Get<float>(kWDLDrawRateTargetId),
+      kWDLRescaleParams(
+          options.Get<float>(kWDLCalibrationEloId) == 0
+              ? AccurateWDLRescaleParams(
+                    kContempt, options.Get<float>(kWDLDrawRateTargetId),
                     options.Get<float>(kWDLDrawRateReferenceId),
                     options.Get<float>(kWDLBookExitBiasId),
                     options.Get<float>(kContemptMaxValueId),
                     options.Get<float>(kWDLContemptAttenuationId))
-              : SimplifiedWDLRescaleParams(kContempt,
-                    options.Get<float>(kWDLDrawRateReferenceId),
+              : SimplifiedWDLRescaleParams(
+                    kContempt, options.Get<float>(kWDLDrawRateReferenceId),
                     options.Get<float>(kWDLCalibrationEloId),
                     options.Get<float>(kContemptMaxValueId),
-                    options.Get<float>(kWDLContemptAttenuationId))
-        ),
+                    options.Get<float>(kWDLContemptAttenuationId))),
       kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
