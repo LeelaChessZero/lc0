@@ -47,10 +47,20 @@ jobs:
             cd build
             ninja
       - run:
+          name: Build lc0 arm
+          command: |
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false -Daccelerate=false -Dmetal=false -Dispc=false --cross-file cross-files/aarch64-darwin -Db_lto=false
+            cd build-arm
+            ninja -v -j 1
+      - run:
           command: cp build/lc0 /tmp/lc0
+      - run:
+          command: cp build-arm/lc0 /tmp/lc0-arm
       - store_artifacts:
           path: /tmp/lc0
           destination: lc0-macos_12.3.1-x86_64
+          path: /tmp/lc0-arm
+          destination: lc0-macos_12.3.1-aarch64
 workflows:
   version: 2
   builds:
