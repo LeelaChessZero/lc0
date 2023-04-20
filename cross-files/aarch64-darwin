@@ -11,7 +11,7 @@ endian = 'little'
 [binaries]
 c = 'clang'
 cpp = 'clang++'
-objc = `clang`
+objc = 'clang'
 objcpp = 'clang++'
 ar = 'ar'
 ld = 'ld'
