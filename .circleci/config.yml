@@ -49,7 +49,7 @@ jobs:
       - run:
           name: Build lc0 arm
           command: |
-            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false -Daccelerate=false -Dmetal=false -Dispc=false --cross-file cross-files/aarch64-darwin -Db_lto=false
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false -Daccelerate=false -Dmetal=disabled -Dispc=false --cross-file cross-files/aarch64-darwin -Db_lto=false
             cd build-arm
             ninja -v -j 1
       - run:
