@@ -1,7 +1,7 @@
 
 [host_machine]
 system = 'darwin'
-cpu_family = 'aarch64'
+cpu_family = 'arm'
 cpu = 'aarch64'
 endian = 'little'
 
