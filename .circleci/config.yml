@@ -52,7 +52,8 @@ jobs:
             meson build-arm --buildtype=release -Dgtest=false -Dopencl=false --cross-file cross-files/aarch64-darwin
             cd build-arm
             ninja
-      - run: Make universal binary
+      - run:
+          name: Make universal binary
           command: lipo -create -o /tmp/lc0 build/lc0 build-arm/lc0
       - store_artifacts:
           path: /tmp/lc0
