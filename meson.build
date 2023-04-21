@@ -48,7 +48,7 @@ endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
 endif
-if host_machine.cpu_family() == 'arm'
+if ['arm', 'aarch64'].contains(host_machine.cpu_family())
   if get_option('neon')
     add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
     add_project_link_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
@@ -337,7 +337,7 @@ if get_option('build_backends')
         ispc_extra_args += ['--target-os=android']
       endif
 
-      if host_machine.cpu_family() == 'arm'
+      if ['arm', 'aarch64'].contains(host_machine.cpu_family())
         outputnames = [ '@BASENAME@.o']
         if host_machine.cpu() == 'aarch64'
           ispc_target = 'neon-i32x8'
