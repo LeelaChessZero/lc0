@@ -35,20 +35,20 @@ namespace lczero {
 
 enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
 
-// Use struct for WDLRescaleParams calculation to make them const.
-struct WDLRescaleParams {
-  WDLRescaleParams(float r, float d) {
-    ratio = r;
-    diff = d;
-  }
-  float ratio;
-  float diff;
-};
-
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
   SearchParams(const SearchParams&) = delete;
+
+  // Use struct for WDLRescaleParams calculation to make them const.
+  struct WDLRescaleParams {
+    WDLRescaleParams(float r, float d) {
+      ratio = r;
+      diff = d;
+    }
+    float ratio;
+    float diff;
+  };
 
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);

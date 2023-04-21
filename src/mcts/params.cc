@@ -98,7 +98,7 @@ float GetContempt(std::string name, std::string contempt_str) {
 // Calculate ratio and diff for WDL conversion from the contempt settings.
 // More accurate model, allowing book bias dependent Elo calculation.
 // Doesn't take lower accuracy of opponent into account and needs clamping.
-WDLRescaleParams AccurateWDLRescaleParams(
+SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
     float contempt, float draw_rate_target, float draw_rate_reference,
     float book_exit_bias, float contempt_max, float contempt_attenuation) {
   float scale_target =
@@ -114,18 +114,16 @@ WDLRescaleParams AccurateWDLRescaleParams(
            std::pow(std::cosh(0.5f * (1 + book_exit_bias) / scale_target), 2)) *
       std::log(10) / 200 * std::clamp(contempt, -contempt_max, contempt_max) *
       contempt_attenuation;
-  return WDLRescaleParams(ratio, diff);
+  return SearchParams::WDLRescaleParams(ratio, diff);
 }
 
 // Calculate ratio and diff for WDL conversion from the contempt settings.
 // Less accurate Elo model, but automatically chooses draw rate and accuracy
 // based on the absolute Elo of both sides. Doesn't require clamping, but still
 // uses the parameter.
-WDLRescaleParams SimplifiedWDLRescaleParams(float contempt,
-                                            float draw_rate_reference,
-                                            float elo_active,
-                                            float contempt_max,
-                                            float contempt_attenuation) {
+SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
+    float contempt, float draw_rate_reference, float elo_active,
+    float contempt_max, float contempt_attenuation) {
   // Parameters for the Elo dependent draw rate and scaling:
   const float scale_zero = 15.0f;
   const float elo_slope = 425.0f;
@@ -149,7 +147,7 @@ WDLRescaleParams SimplifiedWDLRescaleParams(float contempt,
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
   float diff = (mu_active - mu_opp) * contempt_attenuation;
-  return WDLRescaleParams(ratio, diff);
+  return SearchParams::WDLRescaleParams(ratio, diff);
 }
 }  // namespace
 
