@@ -51,7 +51,7 @@ jobs:
           command: |
             meson build-arm --buildtype=release -Dgtest=false -Dopencl=false --cross-file cross-files/aarch64-darwin
             cd build-arm
-            ninja -v -j 1
+            ninja
       - run:
           command: cp build/lc0 /tmp/lc0
       - run:
@@ -61,7 +61,7 @@ jobs:
           destination: lc0-macos_12.3.1-x86_64
       - store_artifacts:
           path: /tmp/lc0-arm
-          destination: lc0-macos_12.3.1-aarch64
+          destination: lc0-macos_12.3.1-arm64
 workflows:
   version: 2
   builds:
