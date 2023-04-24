@@ -358,7 +358,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
       opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML ? 16 : -1);
 
   int steps =
-      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 8 : 1);
+      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 4 : 1);
 
   int threads =
       opts.GetOrDefault<int>("threads", kProvider == OnnxProvider::CPU ? 1 : 0);
