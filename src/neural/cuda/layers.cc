@@ -1805,6 +1805,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
     if (int8_inf_) {
       // printf("\nAttempting int8_inf\n");
       // 1. quantize the inputs (scratch1 -> scratch0)
+      // TODO: Fuse this step with layer-norm of previous block
       quantizeActivationMatrix((int8_t*)scratch0, (const half*)scratch1, batch,
                                embedding_op_size_, input_scaling_factors_,
                                stream);
@@ -1817,6 +1818,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
       ReportCUDAErrors(cudaGetLastError());
 
       // 3. de-quantize outputs - fused with bias add (scratch2 -> scratch0)
+      // TODO: fuse the entire thing with the above GEMM.
       deQuantizeOutputMatrixBiasAdd((half*)scratch0, (const int8_t*)scratch2, batch, num_outputs, 3,
                                     output_scaling_factors_, (const half*)mha_qkv_b, stream);
     } else {
