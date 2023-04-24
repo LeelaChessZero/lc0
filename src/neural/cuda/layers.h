@@ -337,7 +337,8 @@ class EncoderBlock {
  public:
   EncoderBlock(const LegacyWeights::EncoderLayer& cpu_weights, void* scratch,
                int heads, int size, float alpha, DataType* smolgen_global_scratch,
-               int smolgen_global_size, int max_batch_size, bool fused_mha);
+               int smolgen_global_size, int max_batch_size, bool fused_mha, bool int8_calibrate,
+               bool int8_inference, void* int8_weights, int blockIndex);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -364,6 +365,16 @@ class EncoderBlock {
   DataType *smol_ln1_gammas, *smol_ln1_betas;
   DataType *smol_ln2_gammas, *smol_ln2_betas;
   DataType *smol_global;
+
+
+  bool int8_inf_, int8_cali_;
+
+  // calibration factors and weights for INT8 (in GPU memory when int8_inf_ is set, otherwise in CPU memory)
+  int8_t* kqv_int8_;                // int8 quantized weights for the KQV matrix multiplication
+  float* input_scaling_factors_;    // scaling factors needed to quantize the inputs
+  float* output_scaling_factors_;   // scaling factors needed to dequantize the outputs (just 3 floats: always in CPU memory)
+  float* input_matrix_max_values_;  // max values of input matrix to KQV GEMM
+
 
   int mha_q_size_;
   int mha_k_size_;
@@ -470,7 +481,8 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const LegacyWeights& weights, void* scratch,
                 ActivationFunction default_act, int num_res_blocks,
-                int input_c, int max_batch_size, bool fused_mha);
+                int input_c, int max_batch_size, bool fused_mha,
+                bool int8_calibrate, bool int8_inference, void *int8_weights);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,

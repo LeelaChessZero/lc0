@@ -45,6 +45,12 @@
 namespace lczero {
 using namespace cudnn_backend;
 
+namespace cudnn_backend {
+template <typename T>
+void dumpTensor(const T* memory, int elements, const char* message,
+                bool only_summary = false, bool cpu_tensor = false);
+}
+
 template <typename DataType>
 class CudaNetwork;
 
@@ -352,6 +358,74 @@ class CudaNetwork : public Network {
 
     ActivationFunction act = mish_net ? MISH : RELU;
 
+
+    use_int8_ = options.GetOrDefault<bool>("int8", false);
+    int8_calibration_run_ = options.GetOrDefault<bool>("int8-calibrate", false);
+
+    if (int8_calibration_run_ || use_int8_) {
+      if (!fp16 && use_int8_)
+        throw Exception("INT8 is supported only with cuda-fp16 backend.");
+      if (!attn_body_)
+        throw Exception("INT8 only supported for attention body networks");
+
+      // Structure of the weights file:
+      //   For each encoder block -
+      //     * per-channel scaling factors for Input Matrix to QKV GEMM
+      //        (to use for quantization of the input)
+      //     * qunatized (int8) weights for QKV GEMMs
+      //     * float factorQ, factorK, factorV
+      //       (basically factors needed to de-quantize the output) TODO!
+      // (will add more as we try int8 for more layers)
+      int embedding_op_size = weights.ip_emb_b.size();
+      int encoder_d_model = weights.encoder[0].mha.q_b.size();
+      int num_encoders = weights.encoder.size();
+      int8_weights_size_ =
+          num_encoders * ((embedding_op_size + 3) * sizeof(float) +
+                          3 * embedding_op_size * encoder_d_model * sizeof(int8_t));
+      int8_weights_ = malloc(int8_weights_size_);
+      memset(int8_weights_, 0, int8_weights_size_);
+
+      printf("\nint8_weights_size: %d\n", int8_weights_size_);
+    }
+
+    if (int8_calibration_run_) {
+      // we will write the file at the time of exit.      
+    } else if (use_int8_) {
+      FILE* fp = fopen("weights_quant.bin", "rb");
+      if (!fp) {
+        CERR << "ERROR: weights_quant.bin not found. Please run 'lc0 benchmark "
+                "-t 1 --nodes=1 -w <weightfile> --backend=cuda-fp16 "
+                "--backend-opts=int8-calibrate' first";
+        throw Exception("Quantized weights not found");
+      } else {
+        int read = fread(int8_weights_, 1, int8_weights_size_, fp);
+        fclose(fp);
+        if (read != int8_weights_size_)
+          throw Exception(
+              "Quantized weights likely corrupted or of different network");
+
+#if 0
+        // Ankan - test: dump some weights here
+        float* data = (float*)int8_weights_;
+        dumpTensor<float>(data, weights.ip_emb_b.size(),
+                          "per-channel scaling factors for input",
+                          false, true);
+
+        int8_t* w = (int8_t*)int8_weights_;
+        w += weights.ip_emb_b.size() * sizeof(float);
+        dumpTensor<int8_t>(w, 512, "quantized weights",
+                          false, true);
+
+        w += 3 * weights.ip_emb_b.size() * weights.encoder[0].mha.q_b.size() *
+             sizeof(int8_t);
+        dumpTensor<float>((float*)w, 3, "scaling factors for output", false, true);
+
+        exit(0);
+#endif
+
+      }
+    }
+
     // 2. Build the network, and copy the weights to GPU memory.
 
     // Input conv only used if there are residual blocks in the network
@@ -420,7 +494,8 @@ class CudaNetwork : public Network {
     if (attn_body_) {
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, act, numBlocks_,
-          numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_, use_fused_mha);
+          numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_, 
+          use_fused_mha, int8_calibration_run_, use_int8_, int8_weights_);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -870,6 +945,16 @@ class CudaNetwork : public Network {
       }
       cublasDestroy(cublas_);
     }
+
+    if (int8_calibration_run_) {
+      // write the calibration data/weights to file
+      FILE* fp = fopen("weights_quant.bin", "wb+");
+      fwrite(int8_weights_, 1, int8_weights_size_, fp);
+      fclose(fp);
+    }
+    if (int8_calibration_run_ || use_int8_)
+        free(int8_weights_);
+
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -919,6 +1004,8 @@ class CudaNetwork : public Network {
                                           // tower
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;                  // try to fit residual block activations in L2 cache
+  bool use_int8_;                         // try to use INT8 (works only with cuda-fp16 backend)
+  bool int8_calibration_run_;             // this is a calibration run to figure out quantization factors
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
@@ -951,6 +1038,9 @@ class CudaNetwork : public Network {
 
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
+
+  void* int8_weights_;     // loaded from disk / to be stored to disk
+  int int8_weights_size_;
 
   void showInfo() const {
     int version;
