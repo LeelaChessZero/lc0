@@ -165,8 +165,21 @@ void ShowNetworkWeightsPolicyInfo(const pblczero::Net& weights) {
   using pblczero::NetworkFormat;
   const auto& w = weights.weights();
   const auto& format = weights.format().network_format();
+  auto pol_activation = NetworkFormat::ACTIVATION_DEFAULT;
   if (format.policy() == NetworkFormat::POLICY_ATTENTION) {
     COUT << Justify("Policy") << "Attention";
+
+    // Non-attentionbody nets use hardcoded SELU as policy activation and FFN
+    // activations.
+    auto ffn_activation = format.ffn_activation();
+    if (w.encoder_size() == 0) {
+      pol_activation = NetworkFormat::ACTIVATION_SELU;
+      ffn_activation = NetworkFormat::ACTIVATION_SELU;
+    }
+
+    COUT << Justify("Policy activation")
+         << NetworkFormat::ActivationFunction_Name(pol_activation);
+
     if (w.pol_encoder_size() > 0) {
       COUT << Justify("Policy encoders") << w.pol_encoder_size();
       COUT << Justify("Policy encoder heads") << w.pol_headcount();
@@ -174,28 +187,14 @@ void ShowNetworkWeightsPolicyInfo(const pblczero::Net& weights) {
            << w.pol_encoder(0).mha().q_b().params().size() / 2;
       COUT << Justify("Policy encoder DFF")
            << w.pol_encoder(0).ffn().dense1_b().params().size() / 2;
+      COUT << Justify("Policy FFN activation")
+           << NetworkFormat::ActivationFunction_Name(ffn_activation);
     }
     COUT << Justify("Policy Dmodel") << w.ip2_pol_b().params().size() / 2;
-    if (w.encoder_size() > 0) {
-      COUT << Justify("Policy activation")
-           << NetworkFormat::ActivationFunction_Name(
-                  NetworkFormat::ACTIVATION_DEFAULT);
-      if (w.pol_encoder_size() > 0) {
-        COUT << Justify("Policy FFN activation")
-             << NetworkFormat::ActivationFunction_Name(format.ffn_activation());
-      }
-    } else {
-      COUT << Justify("Policy activation")
-           << NetworkFormat::ActivationFunction_Name(
-                  NetworkFormat::ACTIVATION_SELU);
-      if (w.pol_encoder_size() > 0) {
-        COUT << Justify("Policy FFN activation")
-             << NetworkFormat::ActivationFunction_Name(
-                    NetworkFormat::ACTIVATION_SELU);
-      }
-    }
   } else {
     COUT << Justify("Policy") << (w.has_policy1() ? "Convolution" : "Dense");
+    COUT << Justify("Policy activation")
+         << NetworkFormat::ActivationFunction_Name(pol_activation);
     if (!w.has_policy1()) {
       int policy_channels = w.policy().biases().params().size() / 2;
       if (policy_channels == 0) {
