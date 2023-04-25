@@ -370,18 +370,37 @@ class CudaNetwork : public Network {
 
       // Structure of the weights file:
       //   For each encoder block -
-      //     * per-channel scaling factors for Input Matrix to QKV GEMM
+      //     * per-channel scaling factors for Input Matrix to QKV GEMM (embedding_op_size floats)
       //        (to use for quantization of the input)
-      //     * qunatized (int8) weights for QKV GEMMs
+      //     * qunatized (int8) weights for QKV GEMMs (3 * encoder_d_model * embedding_op_size int8_ts)
       //     * float factorQ, factorK, factorV
-      //       (basically factors needed to de-quantize the output) TODO!
-      // (will add more as we try int8 for more layers)
+      //       (basically factors needed to de-quantize the output)
+      // 
+      //     * per-channel scaling factors for the MHA dense layer's input (encoder_d_model floats)
+      //     * Qunatized (int8) weights for MHA dense (embedding_op_size * encoder_d_model int8_ts)
+      //     * per-tensor output scaling factor for MHA dense (single float)
+      // 
+      //     * per-channel scaling factors for input to FFN1 (embedding_op_size_ floats)
+      //     * Qunatized (int8) weights for FFN1 (encoder_dff * encoder_d_model int8_ts)
+      //     * single output scaling factor for FFN1 (single float)
+      //     
+      //     * per-channel scaling factors for input to FFN2 (encoder_dff floats)
+      //     * Qunatized (int8) weights for FFN1 (encoder_d_model * encoder_dff int8_ts)
+      //     * single output scaling factor for FFN1 (single float)
       int embedding_op_size = weights.ip_emb_b.size();
       int encoder_d_model = weights.encoder[0].mha.q_b.size();
+      int encoder_dff = weights.encoder[0].ffn.dense1_b.size();
       int num_encoders = weights.encoder.size();
       int8_weights_size_ =
-          num_encoders * ((embedding_op_size + 3) * sizeof(float) +
-                          3 * embedding_op_size * encoder_d_model * sizeof(int8_t));
+          num_encoders *
+          (embedding_op_size * sizeof(float) +
+           3 * embedding_op_size * encoder_d_model + 3 * sizeof(float) +
+           encoder_d_model * sizeof(float) +
+           embedding_op_size * encoder_d_model + sizeof(float) +
+           embedding_op_size * sizeof(float) + encoder_dff * encoder_d_model +
+           sizeof(float) + encoder_dff * sizeof(float) +
+           embedding_op_size * encoder_dff + sizeof(float));
+
       int8_weights_ = malloc(int8_weights_size_);
       memset(int8_weights_, 0, int8_weights_size_);
 

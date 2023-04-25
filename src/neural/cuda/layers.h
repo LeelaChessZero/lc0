@@ -332,6 +332,19 @@ class ResidualBlock : public BaseLayer<DataType> {
   DataType* b2_;
 };
 
+// calibration factors and weights for INT8
+// (in GPU memory when int8_inf_ is set, otherwise in CPU memory)
+struct MatMulQuantizationData {
+  int8_t* weights_int8;            // int8 quantized weights
+  float* input_scaling_factors;    // per-column scaling factors for input
+                                   // quantization
+  float* output_scaling_factors;   // per-tensor scaling factors for output
+                                   // dequantization (always in CPU memory)
+  float* input_matrix_max_values;  // max values of input matrix (always in CPU
+                                   // memory)
+};
+
+
 template <typename DataType>
 class EncoderBlock {
  public:
@@ -367,14 +380,12 @@ class EncoderBlock {
   DataType *smol_global;
 
 
+  // int 8 stuff
   bool int8_inf_, int8_cali_;
-
-  // calibration factors and weights for INT8 (in GPU memory when int8_inf_ is set, otherwise in CPU memory)
-  int8_t* kqv_int8_;                // int8 quantized weights for the KQV matrix multiplication
-  float* input_scaling_factors_;    // scaling factors needed to quantize the inputs
-  float* output_scaling_factors_;   // scaling factors needed to dequantize the outputs (just 3 floats: always in CPU memory)
-  float* input_matrix_max_values_;  // max values of input matrix to KQV GEMM
-
+  MatMulQuantizationData kqv_;
+  MatMulQuantizationData mha_dense_;
+  MatMulQuantizationData ffn1_;
+  MatMulQuantizationData ffn2_;
 
   int mha_q_size_;
   int mha_k_size_;

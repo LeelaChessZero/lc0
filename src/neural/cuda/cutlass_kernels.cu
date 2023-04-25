@@ -27,6 +27,7 @@
 
 #include "cuda_common.h"
 #include <cstdint>
+#include "winograd_helper.inc"
 
 #ifdef USE_CUTLASS
 
@@ -153,11 +154,13 @@ static float stdDev(float arr[], int n) {
   return sqrt(var);  // return the square root of variance
 }
 
+/*
 // Helper fuction to do vector loads/stores
 template <typename T>
 __device__ __forceinline__ void copyAs(void* dst, const void* src) {
   *((T*)(dst)) = *((const T*)(src));
 }
+*/
 
 // debug code to dump allocation in GPU memory
 template <typename T>
@@ -232,6 +235,7 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int8_t* Out,
                                  int M, int N, int K, int batchSize,
                                  int AStride, int BStride, int OutStride,
                                  float alphaf, float betaf) {
+  // Ankan - For testing!
   //dumpTensor<int8_t>(A, 512, "A after scaling", false);
   //dumpTensor<int8_t>(B, 512, "B after scaling", false);
 
@@ -455,7 +459,7 @@ static void calibrateGemm(int8_t* weights_int8, float* input_scaling_factors,
     output_scaling_factors[i] = 127.0 / (AFactor * BFactor[i]);
 
   // Ankan - for debug/test
-  // printf("\nScaling factors - A: %g, B_Q: %g, B_K: %g, B_V: %g \n",
+  //printf("\nScaling factors - A: %g, B_Q: %g, B_K: %g, B_V: %g \n",
   //       127.0 / absMaxA, BFactor[0], BFactor[1], BFactor[2]);
 }
 
@@ -555,7 +559,7 @@ struct ScaleParam {
 };
 
 // process 8 elements per thread (in x dimension)
-__global__ void deQuantizeMatrix(half* output, const int8_t* input, const half *bias, int height, int width, int stride, ScaleParam s) {
+__global__ void deQuantizeMatrix(half* output, const int8_t* input, const half *bias, int height, int width, int stride, ScaleParam s, ActivationFunction act) {
   int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int b = blockIdx.z;
@@ -569,13 +573,14 @@ __global__ void deQuantizeMatrix(half* output, const int8_t* input, const half *
   half bi[8] = {};
 
   copyAs<uint2>(&ip[0], &input[b * stride + y * width + x]);
-  copyAs<uint4>(&bi[0], &bias[b * width + x]);
+  if (bias)
+    copyAs<uint4>(&bi[0], &bias[b * width + x]);
 
   for (int i = 0; i < 8; i++) {
     float val = (float)ip[i];
     val *= factor;
-    val += (float)bi[i];
-    op[i] = (half) val;
+    if (bias) val += (float)bi[i];
+    op[i] = (half) activate(val, act);
   }
 
   copyAs<uint4>(&output[b * stride + y * width + x], &op[0]);
@@ -588,7 +593,8 @@ __global__ void deQuantizeMatrix(half* output, const int8_t* input, const half *
 void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
                                    int height, int width, int batchSize,
                                    float* scale, const half* bias,
-                                   cudaStream_t stream) {
+                                   cudaStream_t stream,
+                                   ActivationFunction act = NONE) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
                lczero::cudnn_backend::DivUp(height, 16), batchSize);
@@ -600,7 +606,7 @@ void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
   ScaleParam s = {};
   for (int i = 0; i < batchSize; i++) s.scale[i] = scale[i];
 
-  deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(output, input, bias, height, width, stride, s);
+  deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(output, input, bias, height, width, stride, s, act);
   ReportCUDAErrors(cudaGetLastError());
 
 }
