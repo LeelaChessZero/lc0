@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2021-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -93,6 +93,10 @@ class OnnxNetwork : public Network {
   }
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
+  }
+  int GetMiniBatchSize() const override {
+    return batch_size_ == -1 ? Network::GetMiniBatchSize()
+                             : batch_size_ * steps_;
   }
 
   Ort::Env onnx_env_;

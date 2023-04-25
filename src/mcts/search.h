@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -221,6 +221,10 @@ class SearchWorker {
       task_threads_.emplace_back([this, i]() {
         this->RunTasks(i);
       });
+    }
+    target_minibatch_size_ = params_.GetMiniBatchSize();
+    if (target_minibatch_size_ == 0) {
+      target_minibatch_size_ = search_->network_->GetMiniBatchSize();
     }
   }
 
@@ -452,6 +456,7 @@ class SearchWorker {
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
+  int target_minibatch_size_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
   int number_out_of_order_ = 0;
