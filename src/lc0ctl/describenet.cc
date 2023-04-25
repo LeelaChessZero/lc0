@@ -167,8 +167,6 @@ void ShowNetworkWeightsPolicyInfo(const pblczero::Net& weights) {
   const auto& format = weights.format().network_format();
   auto pol_activation = NetworkFormat::ACTIVATION_DEFAULT;
   if (format.policy() == NetworkFormat::POLICY_ATTENTION) {
-    COUT << Justify("Policy") << "Attention";
-
     // Non-attentionbody nets use hardcoded SELU as policy activation and FFN
     // activations.
     auto ffn_activation = format.ffn_activation();
@@ -177,6 +175,7 @@ void ShowNetworkWeightsPolicyInfo(const pblczero::Net& weights) {
       ffn_activation = NetworkFormat::ACTIVATION_SELU;
     }
 
+    COUT << Justify("Policy") << "Attention";
     COUT << Justify("Policy activation")
          << NetworkFormat::ActivationFunction_Name(pol_activation);
 
