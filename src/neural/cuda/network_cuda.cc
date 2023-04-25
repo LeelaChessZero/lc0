@@ -896,7 +896,7 @@ class CudaNetwork : public Network {
     return capabilities_;
   }
 
-  int GetBatchSize() const override {
+  int GetMiniBatchSize() const override {
     // Simple heuristic that seems to work for a wide range of GPUs.
     return 2 * sm_count_;
   }
