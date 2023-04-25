@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2023 The LCZero Authors
+  Copyright (C) 2022-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -66,6 +66,7 @@ std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
   const Position& position = tree.HeadPosition();
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
+  
   
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
