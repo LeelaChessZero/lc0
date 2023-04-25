@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
-        meson_version: '>=0.52')
+        meson_version: '>=0.54')
 
 cc = meson.get_compiler('cpp')
 
@@ -48,7 +48,7 @@ endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
 endif
-if host_machine.cpu_family() == 'arm'
+if ['arm', 'aarch64'].contains(host_machine.cpu_family())
   if get_option('neon')
     add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
     add_project_link_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
@@ -209,7 +209,6 @@ files += [
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/utils/weights_adapter.cc',
-  'src/utils/fp16_utils.cc',
   'src/version.cc',
 ]
 includes += include_directories('src')
@@ -267,12 +266,14 @@ if get_option('build_backends')
 
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
-      add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
       mkl_inc = get_option('mkl_include')
       if run_command('scripts/checkdir.py', mkl_inc).returncode() == 0
         includes += include_directories(mkl_inc)
       endif
-      deps += [ mkl_lib ]
+      if cc.has_header('mkl.h')
+        add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
+        deps += [ mkl_lib ]
+      endif
 
     elif get_option('dnnl') and dnnl_lib.found()
       add_project_arguments(['-DUSE_DNNL', '-DUSE_BLAS'], language : 'cpp')
@@ -313,7 +314,7 @@ if get_option('build_backends')
     ispc_arch = 'x86-64'
     ispc_extra_args = []
     if get_option('ispc') and ispc.found()
-      ispc_native_only = get_option('ispc_native_only')
+      ispc_native_only = get_option('ispc_native_only') and not meson.is_cross_build()  
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
         if not ispc_native_only
@@ -330,24 +331,25 @@ if get_option('build_backends')
                           '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
       endif
-      if ispc_native_only
-        ispc_target = 'host'
-      else
-        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
-      endif
+      ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
 
       if host_machine.system() == 'android'
         ispc_extra_args += ['--target-os=android']
-        if host_machine.cpu_family() == 'arm'
-          outputnames = [ '@BASENAME@.o']
-          if host_machine.cpu() == 'aarch64'
-            ispc_target = 'neon-i32x8'
-            ispc_arch = 'aarch64'
-          else
-            ispc_target = 'neon-i32x4'
-            ispc_arch = 'arm'
-          endif
+      endif
+
+      if ['arm', 'aarch64'].contains(host_machine.cpu_family())
+        outputnames = [ '@BASENAME@.o']
+        if host_machine.cpu() == 'aarch64'
+          ispc_target = 'neon-i32x8'
+          ispc_arch = 'aarch64'
+        else
+          ispc_target = 'neon-i32x4'
+          ispc_arch = 'arm'
         endif
+      endif
+
+      if ispc_native_only
+        ispc_target = 'host'
       endif
 
       iscp_gen = generator(ispc,
@@ -377,6 +379,7 @@ if get_option('build_backends')
 
     if get_option('ispc') and ispc.found()
       files += iscp_gen.process('src/neural/blas/winograd_transform.ispc')
+      files += iscp_gen.process('src/neural/blas/layer_norm.ispc')
       files += iscp_gen.process('src/neural/shared/activation.ispc')
       add_project_arguments('-DUSE_ISPC', language : 'cpp')
     endif
@@ -497,27 +500,32 @@ if get_option('build_backends')
     )
 
     # Handling of fp16 cuda code.
-    nvcc_arch = '-arch=compute_70'
-    nvcc_sm_list = ['sm_80', 'sm_75', 'sm_86', 'sm_70']
+    nvcc_sm_list = ['80', '75', '86', '70', '89', '90']
     if host_machine.system() != 'windows'
-      nvcc_arch = '-arch=compute_60'
-      nvcc_sm_list += ['sm_60']
+      nvcc_sm_list += ['60']
       if ['arm', 'aarch64'].contains(host_machine.cpu_family())
         # Add Jetson versions to the list.
         message('Jetson support enabled.')
-        nvcc_arch = '-arch=compute_53'
-        nvcc_sm_list += ['sm_72', 'sm_62', 'sm_53']
+        nvcc_sm_list += ['72', '62', '53', '87']
       endif
     endif
     # Ignore the given CC for fp16 when it is not in the supported list.
     if cuda_cc == '' or not nvcc_sm_list.contains('sm_' + cuda_cc)
-      nvcc_extra_args = [nvcc_arch]
+      nvcc_extra_args = []
       nvcc_help = run_command(nvcc, '-h').stdout()
       foreach x : nvcc_sm_list
-        if nvcc_help.contains(x)
-          nvcc_extra_args += '-code=' + x
+        if nvcc_help.contains('sm_' + x)
+          nvcc_extra_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
         endif
       endforeach
+      # For forward compatibility.
+      if nvcc_help.contains('sm_90') # Cuda 12+
+        nvcc_extra_args += '-gencode=arch=compute_90,code=compute_90'
+      elif nvcc_help.contains('sm_80') # Cuda 11+
+        nvcc_extra_args += '-gencode=arch=compute_80,code=compute_80'
+      elif nvcc_help.contains('sm_75') # Cuda 10+
+        nvcc_extra_args += '-gencode=arch=compute_75,code=compute_75'
+      endif
     endif
     files += custom_target('cuda fp16 code',
       input : 'src/neural/cuda/fp16_kernels.cu',
@@ -580,6 +588,31 @@ if get_option('build_backends')
     has_backends = true
   endif
 
+  ## ~~~~~~~~
+  ## Metal
+  ## ~~~~~~~~
+  # Metal backend only available on MacOS.
+  # Check for required frameworks - Foundation, Metal and MPS.
+  metal_frameworks = dependency('appleframeworks',
+                                modules : ['Foundation', 'Metal', 'MetalPerformanceShaders', 'MetalPerformanceShadersGraph'],
+                                required: get_option('metal'))
+
+  if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
+    deps += metal_frameworks
+
+    files += [
+      'src/neural/metal/network_metal.cc',
+      'src/neural/metal/mps/NetworkGraph.mm',
+      'src/neural/metal/mps/MetalNetworkBuilder.mm',
+    ]
+
+    has_backends = true
+    add_project_arguments('-fobjc-arc', language : 'objc')
+    add_project_arguments('-fobjc-arc', language : 'objcpp')
+  endif
+
+
+
 endif # if get_option('build_backends')
 
 if not has_backends and get_option('build_backends')
@@ -623,6 +656,10 @@ endif
 
 if not get_option('popcnt')
   add_project_arguments('-DNO_POPCNT', language : 'cpp')
+endif
+
+if not get_option('f16c')
+  add_project_arguments('-DNO_F16C', language : 'cpp')
 endif
 
 if not get_option('pext')
@@ -684,7 +721,7 @@ endif
 if get_option('python_bindings')
   pymod = import('python')
   python = pymod.find_installation('python3')
-  if python.language_version() < '3.7'
+  if not python.language_version().version_compare('>3.7')
     error('You need python 3.7 or newer')
   endif
   py_bindings_generator = find_program('scripts/gen_py_bindings.py')
@@ -698,5 +735,7 @@ if get_option('python_bindings')
   python.extension_module('backends',
     [py_files + files],
     include_directories: [includes],
-    dependencies: [cpython] + deps)
+    dependencies: [cpython] + deps,
+    subdir: 'lczero',
+    install: true)
 endif
