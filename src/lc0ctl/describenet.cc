@@ -138,18 +138,13 @@ void ShowNetworkTrainingInfo(const pblczero::Net& weights) {
   }
 }
 
-void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
-  if (!weights.has_weights()) return;
-  COUT << "\nWeights";
-  COUT << "~~~~~~~";
+void ShowNetworkWeightsBodyInfo(const pblczero::Net& weights) {
   const auto& w = weights.weights();
-
-  const auto attn_body = w.encoder_size() > 0;
-  if (attn_body) {
+  if (w.encoder_size() > 0) {
     COUT << Justify("Encoders") << w.encoder_size();
     COUT << Justify("Encoder heads") << w.headcount();
     COUT << Justify("Embedding size") << w.ip_emb_b().params().size() / 2;
-    COUT << Justify("DModel") << w.encoder(0).mha().q_b().params().size() / 2;
+    COUT << Justify("Dmodel") << w.encoder(0).mha().q_b().params().size() / 2;
     COUT << Justify("Encoder DFF")
          << w.encoder(0).ffn().dense1_b().params().size() / 2;
   } else {
@@ -164,32 +159,40 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
     COUT << Justify("Filters")
          << w.input().weights().params().size() / 2 / 112 / 9;
   }
+}
+
+void ShowNetworkWeightsPolicyInfo(const pblczero::Net& weights) {
   using pblczero::NetworkFormat;
+  const auto& w = weights.weights();
   const auto& format = weights.format().network_format();
   if (format.policy() == NetworkFormat::POLICY_ATTENTION) {
     COUT << Justify("Policy") << "Attention";
     if (w.pol_encoder_size() > 0) {
       COUT << Justify("Policy encoders") << w.pol_encoder_size();
       COUT << Justify("Policy encoder heads") << w.pol_headcount();
-      COUT << Justify("Policy encoder DModel")
+      COUT << Justify("Policy encoder Dmodel")
            << w.pol_encoder(0).mha().q_b().params().size() / 2;
       COUT << Justify("Policy encoder DFF")
            << w.pol_encoder(0).ffn().dense1_b().params().size() / 2;
     }
-    COUT << Justify("Policy DModel") << w.ip2_pol_b().params().size() / 2;
-    if (attn_body) {
+    COUT << Justify("Policy Dmodel") << w.ip2_pol_b().params().size() / 2;
+    if (w.encoder_size() > 0) {
       COUT << Justify("Policy activation")
            << NetworkFormat::ActivationFunction_Name(
                   NetworkFormat::ACTIVATION_DEFAULT);
-      COUT << Justify("Policy FFN activation")
-           << NetworkFormat::ActivationFunction_Name(format.ffn_activation());
+      if (w.pol_encoder_size() > 0) {
+        COUT << Justify("Policy FFN activation")
+             << NetworkFormat::ActivationFunction_Name(format.ffn_activation());
+      }
     } else {
       COUT << Justify("Policy activation")
            << NetworkFormat::ActivationFunction_Name(
                   NetworkFormat::ACTIVATION_SELU);
-      COUT << Justify("Policy FFN activation")
-           << NetworkFormat::ActivationFunction_Name(
-                  NetworkFormat::ACTIVATION_SELU);
+      if (w.pol_encoder_size() > 0) {
+        COUT << Justify("Policy FFN activation")
+             << NetworkFormat::ActivationFunction_Name(
+                    NetworkFormat::ACTIVATION_SELU);
+      }
     }
   } else {
     COUT << Justify("Policy") << (w.has_policy1() ? "Convolution" : "Dense");
@@ -201,6 +204,17 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
       COUT << Justify("Policy channels") << policy_channels;
     }
   }
+}
+
+void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
+  if (!weights.has_weights()) return;
+  COUT << "\nWeights";
+  COUT << "~~~~~~~";
+
+  ShowNetworkWeightsBodyInfo(weights);
+  ShowNetworkWeightsPolicyInfo(weights);
+
+  const auto& w = weights.weights();
   COUT << Justify("Value")
        << (w.ip2_val_w().params().size() / 2 % 3 == 0 ? "WDL" : "Classical");
   COUT << Justify("MLH") << (w.has_ip2_mov_w() ? "Present" : "Absent");
