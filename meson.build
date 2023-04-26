@@ -339,7 +339,7 @@ if get_option('build_backends')
 
       if ['arm', 'aarch64'].contains(host_machine.cpu_family())
         outputnames = [ '@BASENAME@.o']
-        if host_machine.cpu() == 'aarch64'
+        if host_machine.cpu_family() == 'aarch64'
           ispc_target = 'neon-i32x8'
           ispc_arch = 'aarch64'
         else
