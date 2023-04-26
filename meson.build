@@ -48,7 +48,7 @@ endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
 endif
-if host_machine.cpu_family() == 'arm'
+if ['arm', 'aarch64'].contains(host_machine.cpu_family())
   if get_option('neon')
     add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
     add_project_link_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
@@ -314,7 +314,7 @@ if get_option('build_backends')
     ispc_arch = 'x86-64'
     ispc_extra_args = []
     if get_option('ispc') and ispc.found()
-      ispc_native_only = get_option('ispc_native_only')
+      ispc_native_only = get_option('ispc_native_only') and not meson.is_cross_build()  
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
         if not ispc_native_only
@@ -331,24 +331,25 @@ if get_option('build_backends')
                           '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
       endif
-      if ispc_native_only
-        ispc_target = 'host'
-      else
-        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
-      endif
+      ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
 
       if host_machine.system() == 'android'
         ispc_extra_args += ['--target-os=android']
-        if host_machine.cpu_family() == 'arm'
-          outputnames = [ '@BASENAME@.o']
-          if host_machine.cpu() == 'aarch64'
-            ispc_target = 'neon-i32x8'
-            ispc_arch = 'aarch64'
-          else
-            ispc_target = 'neon-i32x4'
-            ispc_arch = 'arm'
-          endif
+      endif
+
+      if ['arm', 'aarch64'].contains(host_machine.cpu_family())
+        outputnames = [ '@BASENAME@.o']
+        if host_machine.cpu() == 'aarch64'
+          ispc_target = 'neon-i32x8'
+          ispc_arch = 'aarch64'
+        else
+          ispc_target = 'neon-i32x4'
+          ispc_arch = 'arm'
         endif
+      endif
+
+      if ispc_native_only
+        ispc_target = 'host'
       endif
 
       iscp_gen = generator(ispc,
