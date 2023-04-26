@@ -462,9 +462,7 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
       kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
-      kMaxOutOfOrderEvals(std::max(
-          1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
-                              options.Get<int>(kMiniBatchSizeId)))),
+      kMaxOutOfOrderEvals(options.Get<float>(kMaxOutOfOrderEvalsId)),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
       kTaskWorkersPerSearchWorker(options.Get<int>(kTaskWorkersPerSearchWorkerId)),

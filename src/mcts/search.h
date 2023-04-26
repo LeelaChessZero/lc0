@@ -226,6 +226,9 @@ class SearchWorker {
     if (target_minibatch_size_ == 0) {
       target_minibatch_size_ = search_->network_->GetMiniBatchSize();
     }
+    max_out_of_order_ =
+        std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvals() *
+                                     target_minibatch_size_));
   }
 
   ~SearchWorker() {
@@ -457,6 +460,7 @@ class SearchWorker {
   std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
   int target_minibatch_size_;
+  int max_out_of_order_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
   int number_out_of_order_ = 0;

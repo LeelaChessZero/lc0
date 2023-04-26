@@ -1188,7 +1188,7 @@ void SearchWorker::GatherMinibatch() {
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
   while (minibatch_size < target_minibatch_size_ &&
-         number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
+         number_out_of_order_ < max_out_of_order_) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
 
@@ -1210,7 +1210,7 @@ void SearchWorker::GatherMinibatch() {
 
     PickNodesToExtend(
         std::min({collisions_left, target_minibatch_size_ - minibatch_size,
-                  params_.GetMaxOutOfOrderEvals() - number_out_of_order_}));
+                  max_out_of_order_ - number_out_of_order_}));
 
     // Count the non-collisions.
     int non_collisions = 0;
