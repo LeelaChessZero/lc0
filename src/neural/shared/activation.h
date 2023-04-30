@@ -22,18 +22,37 @@
 #include <vector>
 
 namespace lczero {
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH };
+// The following list matches the one in net.proto. Ideally this would be done
+// by including proto/net.pb.h, but this is incompatible with nvcc.
+enum ActivationFunction {
+  ACTIVATION_DEFAULT = 0,
+  ACTIVATION_MISH = 1,
+  ACTIVATION_RELU = 2,
+  ACTIVATION_NONE = 3,
+  ACTIVATION_TANH = 4,
+  ACTIVATION_SIGMOID = 5,
+  ACTIVATION_SELU = 6,
+  ACTIVATION_SWISH = 7,
+  ACTIVATION_RELU_2 = 8,
+  ACTIVATION_SOFTMAX = 9,
+};
+
+struct Activations {
+    ActivationFunction default_activation = ACTIVATION_RELU;
+    ActivationFunction smolgen_activation = ACTIVATION_SWISH;
+    ActivationFunction ffn_activation = ACTIVATION_RELU_2;
+};
 
 // Softmax activation
 void SoftmaxActivation(const size_t size, const float* input, float* output);
 
-void BiasResidual(const size_t batch_size, const size_t channels, float * data,
+void BiasResidual(const size_t batch_size, const size_t channels, float* data,
                   const float* biases, const float* eltwise,
-                  const ActivationFunction activation = RELU);
+                  const ActivationFunction activation);
 
-void BiasActivate(const size_t batch_size, const size_t channels, float * data,
+void BiasActivate(const size_t batch_size, const size_t channels, float* data,
                   const float* biases,
-                  const ActivationFunction activation = RELU);
+                  const ActivationFunction activation);
 
 float Activate(const float val, const ActivationFunction activation);
 

@@ -16,12 +16,12 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 
 Download using git:
 
-```
+```shell
 git clone -b release/0.29 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
 ```
 
 If you have cloned already an old version, fetch, view and checkout a new branch:
-```
+```shell
 git fetch --all
 git branch --all
 git checkout -t remotes/origin/release/0.29
@@ -179,7 +179,7 @@ You'll need to be running the latest Raspberry Pi OS "buster".
 
 1. Install OpenBLAS
 
-```
+```shell
 git clone https://github.com/xianyi/OpenBLAS.git
 cd OpenBLAS/
 make
@@ -189,20 +189,20 @@ cd ..
 
 2. Install Meson
 
-```
-pip3 install meson
-pip3 install ninja
+```shell
+pip install meson
+pip install ninja
 ```
 
 3. Install compiler and standard libraries
 
-```
+```shell
 sudo apt install clang-6.0 libstdc++-8-dev
 ```
 
 4. Clone lc0 and compile
 
-```
+```shell
 git clone https://github.com/LeelaChessZero/lc0.git
 cd lc0
 git submodule update --init --recursive
@@ -210,6 +210,18 @@ CC=clang-6.0 CXX=clang++-6.0 ./build.sh -Ddefault_library=static
 ```
 
 5. The resulting binary will be in build/release
+
+## Python bindings
+
+Python bindings can be built and installed as follows.
+
+```shell
+pip install --user git+https://github.com/LeelaChessZero/lc0.git
+```
+
+This will build the package `lczero-bindings` and install it to your Python user install directory.
+All the `lc0` functionality related to position evaluation is now available in the module `lczero.backends`.
+An example interactive session can be found [here](https://github.com/LeelaChessZero/lc0/pull/1261#issuecomment-622951248).
 
 ## License
 

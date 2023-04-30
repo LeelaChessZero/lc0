@@ -36,6 +36,31 @@ export void ActivateMish(uniform const size_t len, uniform float gamma,
   }
 }
 
+export void ActivateRelu(uniform const size_t len, uniform float gamma,
+                         const uniform float data[], const uniform float bias[],
+                         uniform float beta, uniform float output[]) {
+  foreach (b = 0 ... len) {
+    float val = gamma * data[b] + bias[b] + beta;
+    output[b] = val > 0 ? val : 0;
+  }
+}
+
+export void ActivateSwish(uniform const size_t len, const uniform float data[],
+                          const uniform float bias[], uniform float output[]) {
+  foreach (b = 0 ... len) {
+    float val = data[b] + bias[b];
+    output[b] = val / (1.0f + exp(-val));
+  }
+}
+
+export void ActivateRelu_2(uniform const size_t len, const uniform float data[],
+                           const uniform float bias[], uniform float output[]) {
+  foreach (b = 0 ... len) {
+    float val = data[b] + bias[b];
+    output[b] = val > 0 ? val * val : 0;
+  }
+}
+
 static inline float selu(float val) {
   float alpha = 1.67326324f, scale = 1.05070098f;
   if (val > 0) {
@@ -45,11 +70,10 @@ static inline float selu(float val) {
   }
 }
 
-export void ActivateSelu(uniform const size_t len, uniform float gamma,
-                         const uniform float data[], const uniform float bias[],
-                         uniform float beta, uniform float output[]) {
+export void ActivateSelu(uniform const size_t len, const uniform float data[],
+                         const uniform float bias[], uniform float output[]) {
   foreach (b = 0 ... len) {
-    float val = gamma * data[b] + bias[b] + beta;
+    float val = data[b] + bias[b];
     output[b] = selu(val);
   }
 }
