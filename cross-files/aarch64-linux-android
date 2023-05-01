@@ -7,7 +7,7 @@
 
 [host_machine]
 system = 'android'
-cpu_family = 'arm'
+cpu_family = 'aarch64'
 cpu = 'aarch64'
 endian = 'little'
 
