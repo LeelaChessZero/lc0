@@ -572,24 +572,23 @@ if get_option('build_backends')
   ## ONNX
   ## ~~~~~~~~~~
   if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
-    onnx_lib = cc.find_library('onnxruntime',
-                               dirs: get_option('onnx_libdir'),
-                               required: true)
+    deps += cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
+                            required: true)
     includes += include_directories(get_option('onnx_include'), is_system: true)
-    cc.has_header('onnxruntime_cxx_api.h',
-                  required: true,
+    cc.has_header('onnxruntime_cxx_api.h', required: true,
                   args: '-I' + get_option('onnx_include'))
-    deps += [onnx_lib]
-
-    files += [
-      'src/neural/onnx/network_onnx.cc',
-    ]
-
+    if not cc.has_header('cpu_provider_factory.h',
+                         args: '-I' + get_option('onnx_include'))
+      cc.has_header('../providers/cpu/cpu_provider_factory.h', required: true,
+                    args: '-I' + get_option('onnx_include'))
+      includes += include_directories(get_option('onnx_include') + '/../providers/cpu',
+                                      is_system: true)
+    endif
+    files += 'src/neural/onnx/network_onnx.cc'
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
       add_project_arguments('-DUSE_ROCM', language : 'cpp')
     endif
-
     has_backends = true
   endif
 
