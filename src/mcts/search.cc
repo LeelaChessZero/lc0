@@ -210,7 +210,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   common_info.seldepth = max_depth_;
   common_info.time = GetTimeSinceStart();
   if (!per_pv_counters) {
-    common_info.nodes = total_playouts_ + initial_visits_;
+    // Send root_node_->GetN() instead of playouts to uci info.
+    common_info.nodes = root_node_->GetN();
   }
   if (display_cache_usage) {
     common_info.hashfull =
@@ -376,6 +377,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
+  const float lcb_percentile = params_.GetLCBPercentile();
   const float fpu = GetFpu(params_, node, is_root, draw_score);
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
@@ -384,11 +386,14 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   for (const auto& edge : node->Edges()) edges.push_back(edge);
 
   std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score](EdgeAndNode a, EdgeAndNode b) {
+            [&fpu, &U_coeff, &draw_score, &lcb_percentile](EdgeAndNode a,
+                                                           EdgeAndNode b) {
               return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
+                         lcb_percentile ? a.GetLCB(draw_score, lcb_percentile) : a.GetN(),
+                         a.GetQ(fpu, draw_score), -a.GetQ(fpu, draw_score) * a.GetM(0.0f)) <
                      std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
+                         lcb_percentile ? b.GetLCB(draw_score, lcb_percentile) : b.GetN(),
+                         b.GetQ(fpu, draw_score), -b.GetQ(fpu, draw_score) * b.GetM(0.0f));
             });
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
@@ -636,6 +641,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
   if (parent->GetN() == 0) return {};
   const bool is_odd_depth = (depth % 2) == 1;
   const float draw_score = GetDrawScore(is_odd_depth);
+  const float lcb_percentile = params_.GetLCBPercentile();
   // Best child is selected using the following criteria:
   // * Prefer shorter terminal wins / avoid shorter terminal losses.
   // * Largest number of playouts.
@@ -656,7 +662,7 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                           : edges.end();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [draw_score](const auto& a, const auto& b) {
+      [draw_score, lcb_percentile](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
 
         // Lists edge types from less desirable to more desirable.
@@ -701,7 +707,12 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
-          // Prefer largest playouts then eval then prior.
+          // Prefer largest LCB then playouts then eval then prior.
+          if (lcb_percentile && a.GetLCB(draw_score, lcb_percentile) !=
+             b.GetLCB(draw_score, lcb_percentile)) {
+             return a.GetLCB(draw_score, lcb_percentile) >
+                    b.GetLCB(draw_score, lcb_percentile);
+          }
           if (a.GetN() != b.GetN()) return a.GetN() > b.GetN();
           // Default doesn't matter here so long as they are the same as either
           // both are N==0 (thus we're comparing equal defaults) or N!=0 and
@@ -2183,6 +2194,12 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = n->GetM();
     }
     n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    if (params_.GetUpdateInterval() > 0 &&
+        (n->GetNStarted() + 1) % params_.GetUpdateInterval() == 0) {
+      // Recalculate node values every x visits.
+      n->RecalculateScore(params_.GetRecalculateTemperature(),
+                          search_->GetDrawScore(false));
+    }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }

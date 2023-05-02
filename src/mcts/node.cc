@@ -38,6 +38,7 @@
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
+#include "utils/fastmath.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -203,8 +204,10 @@ Node* Node::CreateSingleChildNode(Move move) {
 void Node::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   assert(!child_);
-  edges_ = Edge::FromMovelist(moves);
-  num_edges_ = moves.size();
+  if (!edges_) {
+    edges_ = Edge::FromMovelist(moves);
+    num_edges_ = moves.size();
+  }
 }
 
 Node::ConstIterator Node::Edges() const {
@@ -291,8 +294,13 @@ void Node::SortEdges() {
   assert(!child_);
   // Sorting on raw p_ is the same as sorting on GetP() as a side effect of
   // the encoding, and its noticeably faster.
-  std::sort(edges_.get(), (edges_.get() + num_edges_),
-            [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
+  // In analyse mode it is possible to expand a node without sending it
+  // to the NN first. In that case child_ already exists, and sorting edges_
+  // would lead to indices being wrong.
+  if (!child_) {
+    std::sort(edges_.get(), (edges_.get() + num_edges_),
+              [](const Edge& a, const Edge& b) { return a.p_ > b.p_; });
+  }
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
@@ -363,6 +371,100 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   n_ += multivisit;
   // Decrement virtual loss.
   n_in_flight_ -= multivisit;
+}
+
+void Node::RecalculateScore(float temperature, float draw_score) {
+  // Recalculates node values as weighted average of child node values.
+  double wl_temp = 0.0f;
+  double d_temp = 0.0f;
+  double n_temp = 0.0f;
+  double m_temp = 0.0f;
+  uint32_t n_vanilla = 1;
+  auto losing_m = 0.0f;
+  auto winning_m = 1000.0f;
+  auto prefer_tb = false;
+  auto lower = GameResult::BLACK_WON;
+  auto upper = GameResult::BLACK_WON;
+  for (const auto& child : Edges()) {
+    // Copy + paste code from SearchWorker::MaybeSetBounds().
+    // TODO: Ideally this would be done in one function.
+    const auto [edge_lower, edge_upper] = child.GetBounds();
+    lower = std::max(edge_lower, lower);
+    upper = std::max(edge_upper, upper);
+    // Checkmate is the best, so short-circuit.
+    const auto is_tb = child.IsTbTerminal();
+    if (edge_lower == GameResult::WHITE_WON && !is_tb) {
+      // Track the shortest win.
+      winning_m = std::min(winning_m, child.GetM(0.0f));
+    } else if (edge_upper == GameResult::BLACK_WON) {
+      // Track the longest loss.
+      losing_m = std::max(losing_m, child.GetM(0.0f));
+    }
+    prefer_tb = prefer_tb || is_tb;
+
+    // Now recalculate visits.
+    n_vanilla += child.GetN();
+    double r = (temperature > 0.0) ?
+                std::min(10.0f, FastExp((GetWL() + child.GetQ(0.0f, draw_score))
+                                / temperature))
+                : 1.0f;
+    double n = r * (double)child.GetN();
+    if (n > 0) {
+      const auto visits_eff = r * n;
+      n_temp += visits_eff;
+      // Flip Q for opponent.
+      wl_temp += -child.GetWL(0.0f) * visits_eff;
+      d_temp += child.GetD(0.0f) * visits_eff;
+      m_temp += child.GetM(0.0f) * visits_eff;
+    }
+  }
+  m_temp = (n_temp > 0 ? m_temp / n_temp : 0.0f);
+  // If we found a directly winning move, we don't need tablebases.
+  if (winning_m < 1000.0) { prefer_tb = false; }
+  // If we found a node which is supposed to be terminal, we make it terminal.
+  if (lower == upper && n_vanilla > 1) {
+    if (upper == GameResult::BLACK_WON) {
+      auto m = losing_m + 1.0f;
+      MakeTerminal(-upper, m,
+        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+    } else if (upper == GameResult::WHITE_WON) {
+      auto m = winning_m + 1.0f;
+      MakeTerminal(-upper, m,
+        prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
+    }
+  } else if (n_temp > 0) {
+    wl_ = wl_temp / n_temp;
+    d_ = d_temp / n_temp;
+    m_ = m_temp + 1.0f;
+  }
+  // In AnalyseMode it's possible that we have to recalculate n_ as well.
+  if (n_vanilla != n_ && n_ > 0 && !IsTerminal()) {
+    n_ = n_vanilla;
+    // If we have to correct n_, visited policy might also be off.
+    /* // Visited policy was simplified away.
+    float visited_policy = 0.0f;
+    for (const auto& child : Edges()) {
+      if (child.GetN() > 0) visited_policy += child.GetP();
+    }
+    visited_policy_ = visited_policy; */
+  }
+}
+
+float Node::GetLCB(float draw_score, float percentile) {
+  const auto winrate = (1.0f + GetQ(draw_score))/2.0f;
+  const auto visits = (float)GetN();
+
+  auto alpha = 1.0f + winrate * visits;
+  auto beta = 1.0f + (1.0f - winrate) * visits;
+  auto logit_var = 1.0f / alpha + 1.0f / beta;
+  const auto [edge_lower, edge_upper] = GetBounds();
+  if (edge_lower == GameResult::WHITE_WON) return 1.0f;
+  if (edge_upper == GameResult::BLACK_WON) return -1.0f;
+  return percentile > 0.0
+          ? -1.0f + 2.0f * winrate / (winrate + (1.0 - winrate) *
+                    FastPow((1.0 - percentile) / percentile,
+                            std::sqrt(2.0 * logit_var)))
+          : -1.0f;
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, int multivisit) {
@@ -462,9 +564,18 @@ std::string EdgeAndNode::DebugString() const {
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
-void NodeTree::MakeMove(Move move) {
+void NodeTree::MakeMove(Move move, bool keep_siblings) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
   const auto& board = HeadPosition().GetBoard();
+  // In analyse mode we want to generate all edges from a node in the position
+  // history instead of only the played move to allow forward/backward analysis
+  // to positions before the position where search is started first.
+  // The edges_ list can't be sorted by policy because we didn't call the NN,
+  // so we skip the sorting in engine.cc
+  if (keep_siblings && !current_head_->Edges()) {
+    auto legal_moves = board.GenerateLegalMoves();
+    current_head_->CreateEdges(legal_moves);
+  }
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
@@ -477,8 +588,10 @@ void NodeTree::MakeMove(Move move) {
     }
   }
   move = board.GetModernMove(move);
-  current_head_->ReleaseChildrenExceptOne(new_head);
-  new_head = current_head_->child_.get();
+  if (!keep_siblings) {
+    current_head_->ReleaseChildrenExceptOne(new_head);
+    new_head = current_head_->child_.get();
+  }
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
   history_.Append(move);
@@ -495,7 +608,9 @@ void NodeTree::TrimTreeAtHead() {
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<Move>& moves) {
+                               const std::vector<Move>& moves,
+                               const bool analyse_mode,
+                               const bool free_memory) {
   ChessBoard starting_board;
   int no_capture_ply;
   int full_moves;
@@ -517,17 +632,19 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
+  bool keep_siblings = (analyse_mode && !free_memory);
   for (const auto& move : moves) {
-    MakeMove(move);
+    MakeMove(move, keep_siblings);
     if (old_head == current_head_) seen_old_head = true;
   }
-
+  // Unless we are explicitly in analyse mode, we want to be conservative
+  // with keeping the old tree around because of possible inconsistencies.
   // MakeMove guarantees that no siblings exist; but, if we didn't see the old
   // head, it means we might have a position that was an ancestor to a
   // previously searched position, which means that the current_head_ might
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
-  if (!seen_old_head) TrimTreeAtHead();
+  if (!seen_old_head && !analyse_mode) TrimTreeAtHead();
   return seen_old_head;
 }
 

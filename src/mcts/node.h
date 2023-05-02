@@ -155,7 +155,7 @@ class Node {
   Node* GetParent() const { return parent_; }
 
   // Returns whether a node has children.
-  bool HasChildren() const { return static_cast<bool>(edges_); }
+  bool HasChildren() const { return (static_cast<bool>(edges_) && n_ > 0); }
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
@@ -208,6 +208,10 @@ class Node {
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+  // Recalculates node values as weighted average of child node values.
+  void RecalculateScore(float temperature, float draw_score);
+  // Calculates a LCB score for move ordering.
+  float GetLCB(float draw_score, float percentile);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
   // Revert visits to a node which ended in a now reverted terminal.
@@ -382,6 +386,10 @@ class EdgeAndNode {
   }
   float GetM(float default_m) const {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
+  }
+  float GetLCB(float draw_score, float percentile) const {
+    return (node_ && node_->GetN() > 0) ?
+            node_->GetLCB(draw_score, percentile) : -1.0f;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
@@ -631,7 +639,7 @@ class NodeTree {
  public:
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
-  void MakeMove(Move move);
+  void MakeMove(Move move, bool keep_siblings = false);
   // Resets the current head to ensure it doesn't carry over details from a
   // previous search.
   void TrimTreeAtHead();
@@ -642,7 +650,9 @@ class NodeTree {
   // moves added). Returns false, if the position is completely different,
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
-                       const std::vector<Move>& moves);
+                       const std::vector<Move>& moves,
+                       const bool analyse_mode = false,
+                       const bool free_memory = false);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }

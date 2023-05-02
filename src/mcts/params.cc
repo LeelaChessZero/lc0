@@ -306,6 +306,19 @@ const OptionId SearchParams::kThreadIdlingThresholdId{
     "If there are more than this number of search threads that are not "
     "actively in the process of either sending data to the backend or waiting "
     "for data from the backend, assume that the backend is idle."};
+const OptionId SearchParams::kUpdateIntervalId{
+    "update-interval", "UpdateInterval",
+    "Update interval for recalculation of node values. Value 0 turns off "
+    "the recalculation loop completely."};
+const OptionId SearchParams::kRecalculateTemperatureId{
+    "recalc-temp", "RecalculateTemperature",
+    "Softmax temperature used in the replacement for a more intricate "
+    "node value recalculation like betaMCTS."};
+const OptionId SearchParams::kLCBPercentileId{
+    "lcb-percentile", "LCBPercentile",
+    "Percentile used for LCB move ordering and selection. Value 0.5 means "
+    "ordering by Q, value 0.0 by N. Values above 0.5 correspond to "
+    "UCB move ordering; usage only for fun and at own risk."};
 const OptionId SearchParams::kMaxCollisionVisitsScalingStartId{
     "max-collision-visits-scaling-start", "MaxCollisionVisitsScalingStart",
     "Tree size where max collision visits starts scaling up from 1."};
@@ -397,6 +410,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
+  options->Add<IntOption>(kUpdateIntervalId, 0, 100000) = 100;
+  options->Add<FloatOption>(kRecalculateTemperatureId, 0.0f, 10.0f) = 0.07f;
+  options->Add<FloatOption>(kLCBPercentileId, 0.0f, 0.99f) = 0.2f;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -481,6 +497,9 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
       kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
+      kUpdateInterval(options.Get<int>(kUpdateIntervalId)),
+      kRecalculateTemperature(options.Get<float>(kRecalculateTemperatureId)),
+      kLCBPercentile(options.Get<float>(kLCBPercentileId)),
       kMaxCollisionVisitsScalingStart(
           options.Get<int>(kMaxCollisionVisitsScalingStartId)),
       kMaxCollisionVisitsScalingEnd(
