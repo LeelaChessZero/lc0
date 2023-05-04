@@ -113,6 +113,11 @@ option('accelerate',
        value: true,
        description: 'Enable Accelerate BLAS support')
 
+option('metal',
+       type: 'feature',
+       value: 'auto',
+       description: 'Enable Metal backend')
+
 option('malloc',
        type : 'string',
        value: '',
@@ -127,6 +132,11 @@ option('popcnt',
        type: 'boolean',
        value: true,
        description: 'Use the popcnt instruction')
+
+option('f16c',
+       type: 'boolean',
+       value: true,
+       description: 'Use natice fp16 conversion instructions')
 
 option('pext',
        type: 'boolean',
