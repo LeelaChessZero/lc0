@@ -37,7 +37,8 @@ class SimpleTimeManager : public TimeManager {
       : move_overhead_(move_overhead),
         base_pct_(params.GetOrDefault<float>("base-pct", 1.4f)),
         ply_pct_(params.GetOrDefault<float>("ply-pct", 0.049f)),
-        time_factor_(params.GetOrDefault<float>("time-factor", 1.5f)) {
+        time_factor_(params.GetOrDefault<float>("time-factor", 1.5f)),
+        opening_bonus_pct_(params.GetOrDefault<float>("opening-bonus-pct", 0.0f)) {
     if (base_pct_ <= 0.0f || base_pct_ > 100.0f) {
       throw Exception("base-pct value to be in range [0.0, 100.0]");
     }
@@ -46,6 +47,9 @@ class SimpleTimeManager : public TimeManager {
     }
     if (time_factor_ < 0.0f || time_factor_ > 100.0f) {
       throw Exception("time-factor value to be in range [0.0, 100.0]");
+    }
+    if (opening_bonus_pct_ < 0.0f || opening_bonus_pct_ > 1000.0f) {
+      throw Exception("opening-bonus-pct value to be in range [0.0, 1000.0]");
     }
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
@@ -56,6 +60,7 @@ class SimpleTimeManager : public TimeManager {
   const float base_pct_;
   const float ply_pct_;
   const float time_factor_;
+  const float opening_bonus_pct_;
   float prev_time_budgeted_ = 0.0f;
   float prev_time_available_ = 0.0f;
   bool bonus_applied_ = false;
@@ -66,8 +71,7 @@ std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
   const Position& position = tree.HeadPosition();
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
-  
-  
+
   // If no time limit is given, don't stop on this condition.
   if (params.infinite || params.ponder || !time) return nullptr;
 
@@ -88,11 +92,18 @@ std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
 
   float time_budgeted = time_available * pct;
 
+  // apply any opening bonus and note the next move will also benefit
+  // from an increased time_saved as a result
+  if (!bonus_applied_) {
+    time_budgeted += time_budgeted * opening_bonus_pct_ * 0.01f;
+    bonus_applied_ = true;
+  }
+
   // immediately spend time saved from smart pruning during previous move
   if (prev_time_budgeted_ > 0.0f) {
-    const float time_saved =
-        prev_time_budgeted_ -
-        (prev_time_available_ - (time_available - static_cast<float>(increment)));
+    const float time_saved = prev_time_budgeted_ -
+                             (prev_time_available_ -
+                              (time_available - static_cast<float>(increment)));
 
     time_budgeted += std::max(time_saved, 0.0f);
   }
