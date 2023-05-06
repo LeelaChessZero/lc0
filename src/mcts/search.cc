@@ -106,6 +106,7 @@ class MEvaluator {
     }
   }
 
+  // Calculates the utility for favoring shorter wins and longer losses.
   float GetMUtility(const EdgeAndNode& child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     const float child_m = child.GetM(parent_m_);
@@ -120,6 +121,7 @@ class MEvaluator {
     return m;
   }
 
+  // Calculates the utility for favoring shorter wins and longer losses.
   float GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     const float child_m = child->GetM();
@@ -1618,7 +1620,7 @@ void SearchWorker::PickNodesToExtendTask(
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < max_needed; i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
-          current_util[i] = fpu + m_evaluator.GetDefaultM();
+          current_util[i] = fpu + m_evaluator.GetDefaultMUtility();
         }
       }
 
