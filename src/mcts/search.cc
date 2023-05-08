@@ -107,21 +107,6 @@ class MEvaluator {
   }
 
   // Calculates the utility for favoring shorter wins and longer losses.
-  float GetMUtility(const EdgeAndNode& child, float q) const {
-    if (!enabled_ || !parent_within_threshold_) return 0.0f;
-    const float child_m = child.GetM(parent_m_);
-    float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
-    m *= FastSign(-q);
-    if (q_threshold_ > 0.0f && q_threshold_ < 1.0f) {
-      // This allows a smooth M effect with higher q thresholds, which is
-      // necessary for using MLH together with contempt.
-      q = std::max(0.0f, (std::abs(q) - q_threshold_)) / (1.0f - q_threshold_);
-    }
-    m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
-    return m;
-  }
-
-  // Calculates the utility for favoring shorter wins and longer losses.
   float GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     const float child_m = child->GetM();
@@ -134,6 +119,12 @@ class MEvaluator {
     }
     m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
     return m;
+  }
+
+  float GetMUtility(const EdgeAndNode& child, float q) const {
+    if (!enabled_ || !parent_within_threshold_) return 0.0f;
+    if (child.GetN() == 0) return GetDefaultMUtility();
+    return GetMUtility(child.node(), q);
   }
 
   // The M utility to use for unvisited nodes.
