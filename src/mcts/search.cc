@@ -847,6 +847,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->may_resign = true;
   stats->num_losing_edges = 0;
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
+  stats->mate_depth = std::numeric_limits<int>::max();
 
   // If root node hasn't finished first visit, none of this code is safe.
   if (root_node_->GetN() > 0) {
@@ -871,7 +872,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) < 0.0f) {
         stats->num_losing_edges += 1;
       }
-      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) != 0.0f &&
+      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) == 1.0f &&
           !edge.IsTbTerminal()) {
         stats->mate_depth =
             std::min(stats->mate_depth,
