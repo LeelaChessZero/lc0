@@ -98,11 +98,13 @@ struct InputsOutputs {
         if (mem) ReportCUDAErrors(cudaFree(mem));
       }
       if (scratch_mem_) ReportCUDAErrors(cudaFree(scratch_mem_));
-
+      if (offset_pointers_) ReportCUDAErrors(cudaFree(offset_pointers_));
+      if (head_offset_pointers_) {
+        ReportCUDAErrors(cudaFree(head_offset_pointers_));
+      }
       cudaStreamDestroy(stream_);
       cublasDestroy(cublas_);
     }
-  
   }
   uint64_t* input_masks_mem_;
   float* input_val_mem_;
@@ -124,13 +126,14 @@ struct InputsOutputs {
   bool multi_stream_;
   void* tensor_mem_[3];
   void* scratch_mem_;
+  void** offset_pointers_ = nullptr;
+  void** head_offset_pointers_ = nullptr;
 
   // cuda stream used to run the network
   cudaStream_t stream_;
-  cublasHandle_t cublas_;
 
   // cublas handle used to run the network
-
+  cublasHandle_t cublas_;
 };
 
 }  // namespace cudnn_backend
