@@ -68,7 +68,7 @@ class BaseLayer {
 class ConvLayer : public BaseLayer {
  public:
   ConvLayer(BaseLayer* ip, int C, int H, int W, int size, int Cin,
-            ActivationFunction activation = NONE, bool skip = false);
+            ActivationFunction activation = ACTIVATION_NONE, bool skip = false);
 
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, const dnnl::engine& eng,
                    const dnnl::stream& stream);

@@ -26,6 +26,7 @@
 */
 
 #include "cuda_common.h"
+#include "neural/shared/activation.h"
 #include "winograd_helper.inc"
 
 namespace lczero {
@@ -207,13 +208,18 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
 // 'C' threads per block
 // 'N' blocks
 // Every thread generates an entire board/plane (8x8 elements).
-template <ActivationFunction activation, bool use_bias,
-          bool use_skip>
-__global__ __launch_bounds__(kMaxResBlockFusingSeKFp16Ampere,1)
-void OutputInputTransformKernel_fp16_shmem_board(
-        int N, int C, int se_K, half* output, const half* input, half* skip,
-        const half* bias, const half* w1, const half* b1, const half* w2,
-        const half* b2) {
+template <ActivationFunction activation, bool use_bias, bool use_skip>
+__global__ __launch_bounds__(
+    kMaxResBlockFusingSeKFp16Ampere,
+    1) void OutputInputTransformKernel_fp16_shmem_board(int N, int C, int se_K,
+                                                        half* output,
+                                                        const half* input,
+                                                        half* skip,
+                                                        const half* bias,
+                                                        const half* w1,
+                                                        const half* b1,
+                                                        const half* w2,
+                                                        const half* b2) {
   int k = threadIdx.x;
   int n = blockIdx.x;
 
@@ -324,7 +330,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
       for (int w = 0; w < 8; w++) boardRow[w] += skipInp[w];
     }
 
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
         boardRow[w] = (half)activate((float)boardRow[w], activation);
@@ -337,7 +343,6 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
     copyAs<uint4>(&BOARD(h, 0), &boardRow);
   }
-
 
   // Perform input transform.
 
@@ -437,10 +442,9 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
-          OutputInputTransformKernel_fp16_shmem_board<activation,
-                                                      use_bias, use_skip>,
-          cudaFuncAttributeMaxDynamicSharedMemorySize,
-          72 * C * sizeof(half));
+          OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
+                                                      use_skip>,
+          cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * C * sizeof(half));
       OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
                                                   use_skip>
           <<<N, C, 72 * C * sizeof(half), stream>>>(
@@ -452,8 +456,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           "of filters\n");
     }
   } else {
-    OutputTransform_SE_relu_InputTransform_kernel<half, activation,
-                                                  use_bias, use_skip>
+    OutputTransform_SE_relu_InputTransform_kernel<half, activation, use_bias,
+                                                  use_skip>
         <<<N, C, 0, stream>>>(N, C, se_K, output, input, (half*)skip, bias, w1,
                               b1, w2, b2);
   }
@@ -470,107 +474,137 @@ template void InputTransform<half, false>(int N, int C, half* transformed_input,
                                           const half* input,
                                           cudaStream_t stream);
 
-template void OutputTransform<half, true, RELU, true, true, false, false>(
+template void OutputTransform<half, true, ACTIVATION_RELU, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_RELU, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, true, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_RELU, true, false, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_RELU, true, false, false,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, true, ACTIVATION_RELU, true, true, true,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, true, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, true, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_MISH, true, false, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_MISH, true, false, false,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, true, ACTIVATION_MISH, true, true, true,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
+
+template void OutputTransform<half, false, ACTIVATION_NONE, true, false, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
+
+template void OutputInputTransform<half, true, ACTIVATION_RELU, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, RELU, true, true, false, false>(
+template void OutputInputTransform<half, false, ACTIVATION_RELU, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, true, RELU, true, true, true, false>(
+template void OutputInputTransform<half, false, ACTIVATION_RELU, true, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, RELU, true, true, true, false>(
+template void OutputInputTransform<half, true, ACTIVATION_MISH, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, RELU, true, false, false, false>(
+template void OutputInputTransform<half, false, ACTIVATION_MISH, true, true>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<half, false, RELU, true, false, false, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, true, RELU, true, true, true, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, true, MISH, true, true, false, false>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, false, MISH, true, true, false, false>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, true, MISH, true, true, true, false>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, false, MISH, true, true, true, false>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, false, MISH, true, false, false, false>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, false, MISH, true, false, false, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, true, MISH, true, true, true, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputTransform<half, false, NONE, true, false, false, false>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputInputTransform<half, true, RELU, true, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputInputTransform<half, false, RELU, true, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputInputTransform<half, false, RELU, true, false>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputInputTransform<half, true, MISH, true, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputInputTransform<half, false, MISH, true, true>(
-    int N, int C, int se_K, half* output, const half* input, const half* skip,
-    const half* bias, const half* w1, const half* b1, const half* w2,
-    const half* b2, cudaStream_t stream);
-
-template void OutputInputTransform<half, false, MISH, true, false>(
+template void OutputInputTransform<half, false, ACTIVATION_MISH, true, false>(
     int N, int C, int se_K, half* output, const half* input, const half* skip,
     const half* bias, const half* w1, const half* b1, const half* w2,
     const half* b2, cudaStream_t stream);

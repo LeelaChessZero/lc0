@@ -96,9 +96,9 @@ void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
     if (use_skip_) {
       conv_ops.append_sum();
     }
-    if (activation_ == RELU) {
+    if (activation_ == ACTIVATION_RELU) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    } else if (activation_ == TANH) {
+    } else if (activation_ == ACTIVATION_TANH) {
       conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
     dnnl::primitive_attr conv_attr;
@@ -113,7 +113,7 @@ void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
     out_md = use_skip_ ? output.get_desc() : conv_pd.dst_desc();
 
     // Apparently convolution doesn't go well with mish post op.
-    if (activation_ == MISH) {
+    if (activation_ == ACTIVATION_MISH) {
       auto mish_d = dnnl::eltwise_forward::desc(
           dnnl::prop_kind::forward_inference, dnnl::algorithm::eltwise_mish,
           out_md, 0.f, 0.f);
@@ -173,7 +173,7 @@ void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
                          {DNNL_ARG_DST, output},
                          {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 
-  if (activation_ == MISH) {
+  if (activation_ == ACTIVATION_MISH) {
     mish_.execute(stream, {{DNNL_ARG_SRC, output},
                            {DNNL_ARG_DST, output},
                            {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
@@ -254,11 +254,11 @@ void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
         dnnl::prop_kind::forward_inference, t_fc1_in_md, t_filter_md,
         bias_mem.get_desc(), t_fc1_out_md);
     dnnl::post_ops fc_ops;
-    if (activation_ == RELU) {
+    if (activation_ == ACTIVATION_RELU) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    } else if (activation_ == MISH) {
+    } else if (activation_ == ACTIVATION_MISH) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
-    } else if (activation_ == TANH) {
+    } else if (activation_ == ACTIVATION_TANH) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
     dnnl::primitive_attr fc_attr;
@@ -319,11 +319,11 @@ void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
     if (eng.get_kind() == dnnl::engine::kind::gpu) {
       // Using binary post-ops is a gain on gpu but a huge loss on cpu.
       mul_ops.append_binary(dnnl::algorithm::binary_add, pool_out_md);
-      if (activation_ == RELU) {
+      if (activation_ == ACTIVATION_RELU) {
         mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-      } else if (activation_ == MISH) {
+      } else if (activation_ == ACTIVATION_MISH) {
         mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
-      } else if (activation_ == TANH) {
+      } else if (activation_ == ACTIVATION_TANH) {
         mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
       }
     }
@@ -341,11 +341,11 @@ void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
           dnnl::binary::desc(dnnl::algorithm::binary_add, output.get_desc(),
                              pool_out_md, output.get_desc());
       dnnl::post_ops add_ops;
-      if (activation_ == RELU) {
+      if (activation_ == ACTIVATION_RELU) {
         add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-      } else if (activation_ == MISH) {
+      } else if (activation_ == ACTIVATION_MISH) {
         add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
-      } else if (activation_ == TANH) {
+      } else if (activation_ == ACTIVATION_TANH) {
         add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
       }
       dnnl::primitive_attr add_attr;
@@ -506,11 +506,11 @@ void FCLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
         dnnl::prop_kind::forward_inference, t_in_md, t_filter_md,
         bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}));
     dnnl::post_ops fc_ops;
-    if (activation_ == RELU) {
+    if (activation_ == ACTIVATION_RELU) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    } else if (activation_ == MISH) {
+    } else if (activation_ == ACTIVATION_MISH) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
-    } else if (activation_ == TANH) {
+    } else if (activation_ == ACTIVATION_TANH) {
       fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
     dnnl::primitive_attr fc_attr;
