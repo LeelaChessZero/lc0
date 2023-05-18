@@ -65,6 +65,10 @@ const OptionId kMinimumSmartPruningBatchesId{
     "Only allow smart pruning to stop search after at least this many batches "
     "have been evaluated. It may be useful to have this value greater than the "
     "number of search threads in use."};
+const OptionId kSmartPruningQEffectId{
+    "smart-pruning-q-effect", "SmartPruningQEffect",
+    "How much to adjust the smart pruning factor depending on the sign of the "
+    "change in Q since the previous move"};
 const OptionId kNodesAsPlayoutsId{
     "nodes-as-playouts", "NodesAsPlayouts",
     "Treat UCI `go nodes` command as referring to playouts instead of visits."};
@@ -77,6 +81,7 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) =
       (for_what == RunType::kUci ? 1.33f : 0.00f);
   options->Add<IntOption>(kMinimumSmartPruningBatchesId, 0, 10000) = 0;
+  options->Add<FloatOption>(kSmartPruningQEffectId, -1.0f, 1.0f) = 0.0f;
   options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
 
   if (for_what == RunType::kUci) {
@@ -101,7 +106,8 @@ void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
   const auto smart_pruning_factor = options.Get<float>(kSmartPruningFactorId);
   if (smart_pruning_factor > 0.0f) {
     stopper->AddStopper(std::make_unique<SmartPruningStopper>(
-        smart_pruning_factor, options.Get<int>(kMinimumSmartPruningBatchesId)));
+        smart_pruning_factor, options.Get<float>(kSmartPruningQEffectId),
+        options.Get<int>(kMinimumSmartPruningBatchesId)));
   }
 }
 
