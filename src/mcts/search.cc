@@ -2129,7 +2129,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
   }
-  node->SortEdges();
+  node->SortEdges(params_.GetPolicyTrim());
 }
 
 // 6. Propagate the new nodes' information to all their parents in the tree.

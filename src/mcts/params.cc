@@ -316,6 +316,11 @@ const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
 const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
     "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
     "Power to apply to the interpolation between 1 and max to make it curved."};
+const OptionId SearchParams::kPolicyTrimId{
+    "policy-trim", "PolicyTrim",
+    "Trim the policy array to contain this many moves after sorting. Setting "
+    "this to low values is not recommended, will most likely lead to wrong "
+    "behavior. "};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -397,6 +402,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
+  options->Add<IntOption>(kPolicyTrimId, 1, 255) = 255;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -415,6 +421,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureEndgameId);
   options->HideOption(kTemperatureWinpctCutoffId);
   options->HideOption(kTemperatureVisitOffsetId);
+  options->HideOption(kPolicyTrimId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -486,7 +493,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxCollisionVisitsScalingEnd(
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
-          options.Get<float>(kMaxCollisionVisitsScalingPowerId)) {
+          options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
+      kPolicyTrim(options.Get<int>(kPolicyTrimId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

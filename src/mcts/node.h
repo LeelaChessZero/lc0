@@ -253,7 +253,7 @@ class Node {
   // already done. Returns true if the transformation was performed.
   bool MakeSolid();
 
-  void SortEdges();
+  void SortEdges(uint8_t policy_trim);
 
   // Index in parent edges - useful for correlated ordering.
   uint16_t Index() const { return index_; }
