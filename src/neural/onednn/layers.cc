@@ -214,7 +214,6 @@ void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
 void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
                    const dnnl::memory& scratch, const dnnl::engine& eng,
                    const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
-  std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     // Also the broadcast input memory format for the binary primitives.
     auto t_pool_out_md = dnnl::memory::desc({N, C, 1, 1}, data_type_,
@@ -609,7 +608,6 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output,
                                const dnnl::engine& eng,
                                const dnnl::stream& stream,
                                dnnl::memory& scratchpad_mem) {
-  std::lock_guard<std::mutex> lock(lock_);
   if (last_batch_ != N) {
     in_md = dnnl::memory::desc({N, C, H, W}, data_type_,
                                dnnl::memory::format_tag::nhwc);

@@ -660,15 +660,6 @@ class OnednnNetwork : public Network {
                               sizeof(float));
       }
 
-      // Move input to the gpu.
-      if (eng_.get_kind() != dnnl::engine::kind::cpu) {
-        dnnl::memory tmp =
-            dnnl::memory(input_desc, eng_, io->scratch_mem.get_data_handle());
-        dnnl::reorder in_reorder = dnnl::reorder(input_mem, tmp);
-        in_reorder.execute(eng_stream_, input_mem, tmp);
-        input_mem = tmp;
-      }
-
       // Output descriptors.
       dnnl::memory::desc opPol_desc;
       if (attn_policy_) {
@@ -721,6 +712,16 @@ class OnednnNetwork : public Network {
 
       // A reference to be allocated and enlarged as needed.
       dnnl::memory& scratchpad_mem = io->scratchpad_mem;
+
+      lock_.lock();
+      // Move input to the gpu.
+      if (eng_.get_kind() != dnnl::engine::kind::cpu) {
+        dnnl::memory tmp =
+            dnnl::memory(input_desc, eng_, io->scratch_mem.get_data_handle());
+        dnnl::reorder in_reorder = dnnl::reorder(input_mem, tmp);
+        in_reorder.execute(eng_stream_, input_mem, tmp);
+        input_mem = tmp;
+      }
 
       int l = 0;
 
@@ -836,6 +837,7 @@ class OnednnNetwork : public Network {
         mov_reorder_.execute(eng_stream_, opMov_mem, opMov_mem_cpu);
       }
       eng_stream_.wait();
+      lock_.unlock();
 
       // Copy memory to output buffers and do final transformations.
       if (wdl_) {

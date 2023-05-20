@@ -141,8 +141,6 @@ class SELayer : public BaseLayer {
             const dnnl::stream& stream, dnnl::memory& scratchpad_mem) override;
 
  private:
-  std::mutex lock_;
-
   dnnl::memory filter_mem;
   dnnl::memory bias_mem;
   dnnl::memory filter2_mem;
@@ -189,8 +187,6 @@ class AttentionPolicyHead : public BaseLayer {
             const dnnl::stream& stream, dnnl::memory& scratchpad_mem) override;
 
  private:
-  std::mutex lock_;
-
   const int embedding_size_;
   const int policy_d_model_;
 
