@@ -24,13 +24,13 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
+#pragma once
 
 #include <cstdint>
 #include <cstring>
 
 // Define NO_F16C to avoid the F16C intrinsics. Also disabled with NO_POPCNT
 // since it catches most processors without F16C instructions.
-
 #if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || \
     defined(__x86_64__)
 #include <immintrin.h>
@@ -40,8 +40,10 @@
 
 namespace lczero {
 
-uint16_t FP32toFP16(float f32) {
-#if defined(NO_POPCNT) || defined(NO_F16C)
+#if defined(NO_POPCNT) || defined(NO_F16C) || \
+    (defined(__GNUC__) && !defined(__F16C__))
+
+inline uint16_t FP32toFP16(float f32) {
   unsigned int x;
   unsigned int sign = 0;
   memcpy(&x, &f32, sizeof(float));
@@ -70,15 +72,9 @@ uint16_t FP32toFP16(float f32) {
     x >>= 13;
   }
   return x | sign;
-#else
-  __m128 A = _mm_set_ss(f32);
-  __m128i H = _mm_cvtps_ph(A, 0);
-  return _mm_extract_epi16(H, 0);
-#endif
 }
 
-float FP16toFP32(uint16_t f16) {
-#if defined(NO_POPCNT) || defined(NO_F16C)
+inline float FP16toFP32(uint16_t f16) {
   unsigned int x;
   float f;
   x = f16 & 0x7fff;
@@ -94,12 +90,23 @@ float FP16toFP32(uint16_t f16) {
   if (f16 & 0x8000) x |= 0x80000000;
   memcpy(&f, &x, sizeof(float));
   return f;
+}
+
 #else
+
+inline uint16_t FP32toFP16(float f32) {
+  __m128 A = _mm_set_ss(f32);
+  __m128i H = _mm_cvtps_ph(A, 0);
+  return _mm_extract_epi16(H, 0);
+}
+
+inline float FP16toFP32(uint16_t f16) {
   __m128i H = _mm_setzero_si128();
   H = _mm_insert_epi16(H, f16, 0);
   __m128 A = _mm_cvtph_ps(H);
   return _mm_cvtss_f32(A);
-#endif
 }
 
-};  // namespace lczero
+#endif
+
+}  // namespace lczero

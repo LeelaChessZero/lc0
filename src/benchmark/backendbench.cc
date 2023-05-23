@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2020-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -40,28 +40,38 @@ const OptionId kThreadsOptionId{"threads", "Threads",
                                 "Number of (CPU) worker threads to use.", 't'};
 const OptionId kBatchesId{"batches", "",
                           "Number of batches to run as a benchmark."};
+const OptionId kStartBatchSizeId{"start-batch-size", "",
+                                 "Start benchmark from this batch size."};
 const OptionId kMaxBatchSizeId{"max-batch-size", "",
                                "Maximum batch size to benchmark."};
+const OptionId kBatchStepId{"batch-step", "",
+                            "Step of batch size in benchmark."};
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
 
-const OptionId kClippyThresholdId{"clippy-threshold", "",
-                                "Ratio of nps improvement necessary for each "
-                                "doubling of batchsize to be considered best."};
-
-void Clippy(std::string msg) {
+void Clippy(std::string title,
+            std::string msg3,  std::string best3, std::string msg2,
+            std::string best2, std::string msg,   std::string best) {
   std::cout << "  __" << std::endl;
   std::cout << " /  \\" << std::endl;
-  std::cout << " |  |" << std::endl;
-  std::cout << " +  +    " << std::string(msg.length() + 2, '_') << std::endl;
-  std::cout << "(@)(@) _|" << std::string(msg.length() + 2, ' ') << '|'
+  std::cout << " |  |    " << std::string(title.length()+2, '_') << std::endl;
+  std::cout << " +  +   | " << std::string(title.length()+1, ' ')
+            << "|" << std::endl;
+  std::cout << "(@)(@) _| "
+            << title << " |"
             << std::endl;
-  std::cout << " |  |  \\  " << msg << " |" << std::endl;
-  std::cout << " || |/  |" << std::string(msg.length() + 2, '_') << '|'
+  std::cout << " |  |  \\  " << std::string(6, ' ') << msg3
+            << std::string(4 - best3.length(), ' ') << best3
+            << std::string(title.length()-33, ' ') << "|" << std::endl;
+  std::cout << " || |/  | " << std::string(6, ' ') << msg2
+            << std::string(4 - best2.length(), ' ') << best2
+            << std::string(title.length()-33, ' ') << "|" << std::endl;
+  std::cout << " || ||  | " << std::string(6, ' ') << msg
+            << std::string(4 - best.length(), ' ') << best
+            << std::string(title.length()-33, ' ') << "|" << std::endl;
+  std::cout << " |\\_/|  |" << std::string(title.length()+2, '_') << "|"
             << std::endl;
-  std::cout << " || ||" << std::endl;
-  std::cout << " |\\_/|" << std::endl;
   std::cout << " \\___/" << std::endl;
 }
 }  // namespace
@@ -72,10 +82,11 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   options.Add<IntOption>(kBatchesId, 1, 999999999) = 100;
+  options.Add<IntOption>(kStartBatchSizeId, 1, 1024) = 1;
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
+  options.Add<IntOption>(kBatchStepId, 1, 256) = 1;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
-  options.Add<FloatOption>(kClippyThresholdId, 0.0f, 1.0f) = 0.15f;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -86,13 +97,23 @@ void BackendBenchmark::Run() {
 
     NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
+
+    // Do any backend initialization outside the loop.
+    auto warmup = network->NewComputation();
+    warmup->AddInput(EncodePositionForNN(
+        network->GetCapabilities().input_format, tree.GetPositionHistory(), 8,
+        FillEmptyHistory::ALWAYS, nullptr));
+    warmup->ComputeBlocking();
+
     const int batches = option_dict.Get<int>(kBatchesId);
 
-    int best = 1;
-    float best_nps = 0.0f;
+    int best = 1; int best2 = 1; int best3 = 1;
+    float best_nps = 0.0f; float best_nps2 = 0.0f; float best_nps3 = 0.0f;
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
-    for (int i = 1; i <= option_dict.Get<int>(kMaxBatchSizeId); i++) {
+    for (int i = option_dict.Get<int>(kStartBatchSizeId);
+         i <= option_dict.Get<int>(kMaxBatchSizeId);
+         i += option_dict.Get<int>(kBatchStepId)) {
       const auto start = std::chrono::steady_clock::now();
       // TODO: support threads not equal to 1 to be able to more sensibly test
       // multiplexing backend.
@@ -116,12 +137,27 @@ void BackendBenchmark::Run() {
                 << " nps." << std::endl;
 
       if (option_dict.Get<bool>(kClippyId)) {
-        const float threshold = option_dict.Get<float>(kClippyThresholdId);
+        float nps_ingame  = std::pow((nps + best_nps)  / 2, 1.085);
+        float nps_ingame2 = std::pow((nps + best_nps2) / 2, 1.085);
+        float nps_ingame3 = std::pow((nps + best_nps3) / 2, 1.085);
+        float threshold  = 0.16947 * exp(-4.1695e-6 * nps_ingame  * 180) + 0.02;
+        float threshold2 = 0.16947 * exp(-4.1695e-6 * nps_ingame2 *  15) + 0.02;
+        float threshold3 = 0.16947 * exp(-4.1695e-6 * nps_ingame3 *   1) + 0.02;
 
         if (nps > best_nps &&
             threshold * (i - best) * best_nps < (nps - best_nps) * best) {
           best_nps = nps;
           best = i;
+          if (threshold2 * (i - best2) * best_nps2 <
+              (nps - best_nps2) * best2) {
+            best_nps2 = nps;
+            best2 = i;
+            if (threshold3 * (i - best3) * best_nps3 <
+                (nps - best_nps3) * best3) {
+              best_nps3 = nps;
+              best3 = i;
+            }
+          }
           if (!pending) {
             pending = std::chrono::steady_clock::now();
           }
@@ -130,16 +166,21 @@ void BackendBenchmark::Run() {
           time = std::chrono::steady_clock::now() - *pending;
           if (time.count() > 10) {
             Clippy(
-                std::to_string(best) +
-                " looks like the best minibatch-size for this net (so far).");
+                "Recommended minibatch-size for this net (so far):",
+                "1s/move   (Bullet):     ", std::to_string(best3),
+                "15s/move  (Rapid):      ", std::to_string(best2),
+                "3min/move (Tournament): ", std::to_string(best));
             pending.reset();
           }
         }
       }
     }
     if (option_dict.Get<bool>(kClippyId)) {
-      Clippy(std::to_string(best) +
-             " looks like the best minibatch-size for this net.");
+        Clippy(
+            "Recommended minibatch-size for this net:",
+            "1s/move   (Bullet):     ", std::to_string(best3),
+            "15s/move  (Rapid):      ", std::to_string(best2),
+            "3min/move (Tournament): ", std::to_string(best));
     }
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;

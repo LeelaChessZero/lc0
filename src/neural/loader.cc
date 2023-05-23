@@ -108,11 +108,6 @@ void FixOlderWeightsFile(WeightsFile* file) {
   using nf = pblczero::NetworkFormat;
   auto network_format = file->format().network_format().network();
   const auto has_network_format = file->format().has_network_format();
-  if (has_network_format && network_format != nf::NETWORK_CLASSICAL &&
-      network_format != nf::NETWORK_SE) {
-    // Already in a new format, return unchanged.
-    return;
-  }
 
   auto* net = file->mutable_format()->mutable_network_format();
   if (!has_network_format) {
@@ -132,6 +127,18 @@ void FixOlderWeightsFile(WeightsFile* file) {
     net->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
+  } else if (network_format ==
+                 pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+             file->weights().encoder().size() > 0) {
+    // Attention body network made with old protobuf.
+    auto* net = file->mutable_format()->mutable_network_format();
+    net->set_network(
+        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+    if (file->weights().has_smolgen_w()) {
+      // Need to override activation defaults for smolgen.
+      net->set_ffn_activation(pblczero::NetworkFormat::ACTIVATION_RELU_2);
+      net->set_smolgen_activation(pblczero::NetworkFormat::ACTIVATION_SWISH);
+    }
   }
 }
 
@@ -154,12 +161,15 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   FixOlderWeightsFile(&net);
 
   // Weights files with this signature are also compatible.
-  if (net_ver != 0x5c99973 && net_ver > lc0_ver)
+  if (net_ver != 0x5c99973 && net_ver > lc0_ver) {
     throw Exception("Invalid weight file: lc0 version >= " + min_version +
                     " required.");
+  }
 
-  if (net.format().weights_encoding() != pblczero::Format::LINEAR16)
+  if (net.has_weights() &&
+      net.format().weights_encoding() != pblczero::Format::LINEAR16) {
     throw Exception("Invalid weight file: unsupported encoding.");
+  }
 
   return net;
 }
@@ -170,14 +180,17 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
   FloatVectors vecs;
   auto buffer = DecompressGzip(filename);
 
-  if (buffer.size() < 2)
+  if (buffer.size() < 2) {
     throw Exception("Invalid weight file: too small.");
-  else if (buffer[0] == '1' && buffer[1] == '\n')
+  }
+  if (buffer[0] == '1' && buffer[1] == '\n') {
     throw Exception("Invalid weight file: no longer supported.");
-  else if (buffer[0] == '2' && buffer[1] == '\n')
+  }
+  if (buffer[0] == '2' && buffer[1] == '\n') {
     throw Exception(
         "Text format weights files are no longer supported. Use a command line "
         "tool to convert it to the new format.");
+  }
 
   return ParseWeightsProto(buffer);
 }

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,11 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/writer.h"
+#include "trainingdata/writer.h"
 
-#include <iomanip>
-#include <sstream>
-#include "utils/commandline.h"
+#include "trainingdata/trainingdata.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
 #include "utils/random.h"

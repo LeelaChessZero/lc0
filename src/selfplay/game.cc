@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,8 +31,7 @@
 
 #include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
-#include "mcts/stoppers/stoppers.h"
-#include "neural/writer.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -62,6 +61,10 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kOpeningStopProbId{
+    "opening-stop-prob", "OpeningStopProb",
+    "From each opening move, start a self-play game with probability max(p, "
+    "1/n), where p is the value given and n the opening moves remaining."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -73,13 +76,17 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
                            bool shared_tree, const Opening& opening)
     : options_{white, black},
       chess960_{white.uci_options->Get<bool>(kUciChess960) ||
-                black.uci_options->Get<bool>(kUciChess960)} {
+                black.uci_options->Get<bool>(kUciChess960)},
+      training_data_(SearchParams(*white.uci_options).GetHistoryFill(),
+                     SearchParams(*black.uci_options).GetHistoryFill(),
+                     white.network->GetCapabilities().input_format) {
   orig_fen_ = opening.start_fen;
   tree_[0] = std::make_shared<NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
@@ -90,16 +97,46 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
     tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(orig_fen_, {});
   }
+  int ply = 0;
+  auto white_prob = white.uci_options->Get<float>(kOpeningStopProbId);
+  auto black_prob = black.uci_options->Get<float>(kOpeningStopProbId);
+  if (white_prob != black_prob && white_prob != 0 && black_prob != 0) {
+    throw Exception("Stop probabilities must be both equal or zero!");
+  }
+
   for (Move m : opening.moves) {
+    // For early exit from the opening, we support two cases: a) where both
+    // sides have the same exit probability and b) where one side's exit
+    // probability is zero. In the following formula, `positions` is the number
+    // of possible exit points remaining, used for adjusting the exit
+    // probability (to avoid favoring the last position).
+    auto exit_prob_now = tree_[0]->IsBlackToMove() ? black_prob : white_prob;
+    auto exit_prob_next = tree_[0]->IsBlackToMove() ? white_prob : black_prob;
+    int positions = opening.moves.size() - ply + 1;
+    if (exit_prob_now > 0.0f &&
+        Random::Get().GetFloat(1.0f) <
+            std::max(exit_prob_now,
+                     exit_prob_now / (exit_prob_now * ((positions + 1) / 2) +
+                                      exit_prob_next * (positions / 2)))) {
+      break;
+    }
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
+    ply++;
   }
+  start_ply_ = ply;
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         SyzygyTablebase* syzygy_tb, bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
+  // If we are training, verify that input formats are consistent.
+  if (training &&
+      options_[0].network->GetCapabilities().input_format !=
+          options_[1].network->GetCapabilities().input_format) {
+    throw Exception("Can't mix networks with different input format!");
+  }
   // Take syzygy tablebases from player1 options.
   std::string tb_paths =
       options_[0].uci_options->Get<std::string>(kSyzygyTablebaseId);
@@ -130,7 +167,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       auto stoppers = options_[idx].search_limits.MakeSearchStopper();
-      PopulateIntrinsicStoppers(stoppers.get(), options_[idx].uci_options);
+      PopulateIntrinsicStoppers(stoppers.get(), *options_[idx].uci_options);
 
       std::unique_ptr<UciResponder> responder =
           std::make_unique<CallbackUciResponder>(
@@ -258,24 +295,11 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         }
       }
       // Append training data. The GameResult is later overwritten.
-      const auto input_format =
-          options_[idx].network->GetCapabilities().input_format;
-      Eval orig_eval;
       NNCacheLock nneval =
           search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
-      if (nneval) {
-        orig_eval.wl = nneval->q;
-        orig_eval.d = nneval->d;
-        orig_eval.ml = nneval->m;
-      } else {
-        orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
-        orig_eval.d = std::numeric_limits<float>::quiet_NaN();
-        orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
-      }
-      training_data_.push_back(tree_[idx]->GetCurrentHead()->GetV6TrainingData(
-          GameResult::UNDECIDED, tree_[idx]->GetPositionHistory(),
-          search_->GetParams().GetHistoryFill(), input_format, best_eval,
-          played_eval, orig_eval, best_is_proof, best_move, move));
+      training_data_.Add(tree_[idx]->GetCurrentHead(),
+                         tree_[idx]->GetPositionHistory(), best_eval,
+                         played_eval, best_is_proof, best_move, move, nneval);
     }
     // Must reset the search before mutating the tree.
     search_.reset();
@@ -331,43 +355,15 @@ void SelfPlayGame::Abort() {
 }
 
 void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
-  if (training_data_.empty()) return;
-  // Base estimate off of best_m.  If needed external processing can use a
-  // different approach.
-  float m_estimate = training_data_.back().best_m + training_data_.size() - 1;
-  for (auto chunk : training_data_) {
-    bool black_to_move = chunk.side_to_move_or_enpassant;
-    if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
-            chunk.input_format))) {
-      black_to_move = (chunk.invariance_info & (1u << 7)) != 0;
-    }
-    if (game_result_ == GameResult::WHITE_WON) {
-      chunk.result_q = black_to_move ? -1 : 1;
-      chunk.result_d = 0;
-    } else if (game_result_ == GameResult::BLACK_WON) {
-      chunk.result_q = black_to_move ? 1 : -1;
-      chunk.result_d = 0;
-    } else {
-      chunk.result_q = 0;
-      chunk.result_d = 1;
-    }
-    if (adjudicated_) {
-      chunk.invariance_info |= 1u << 5; // Game adjudicated.
-    }
-    if (adjudicated_ && game_result_ == GameResult::UNDECIDED) {
-      chunk.invariance_info |= 1u << 4; // Max game length exceeded.
-    }
-    chunk.plies_left = m_estimate;
-    m_estimate -= 1.0f;
-    writer->WriteChunk(chunk);
-  }
+  training_data_.Write(writer, game_result_, adjudicated_);
 }
 
 std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
     const {
   auto result = std::make_unique<ChainedSearchStopper>();
 
-  // always set VisitsStopper to avoid exceeding the limit 4000000000, the default value when visits = 0
+  // always set VisitsStopper to avoid exceeding the limit 4000000000, the
+  // default value when visits = 0
   result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
   if (playouts >= 0) {
     result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));

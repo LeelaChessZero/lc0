@@ -1,4 +1,136 @@
-﻿v0.27.0-rc0 (2021-02-06)
+﻿v0.30.0-rc1 (2023-04-24)
+~~~~~~~
+* Support for networks with attention body and smolgen added to blas, cuda,
+  metal and onnx backends.
+* Persistent L2 cache optimization for the cuda backend. Use the
+  `cache_opt=true` backend option to turn it on.
+* Some performance improvements for the cuda, onnx and blas backends.
+* Added the `threads` backend option to onnx, defaults to 0 (let the
+  onnxruntime decide) except for onnx-cpu that defaults to 1.
+* The onnx-dml package now includes a `directml.dll` installation script.
+* Some users experienced memory issues with onnx-dml, so the defaults were
+  changed. This may affect performance, in which case you can use the `steps=8`
+  backend option to get the old behavior.
+* The Python bindings are available as a package, see the README for
+  instructions.
+* Some assorted fixes and code cleanups.
+
+v0.29.0 (2022-12-13)
+~~~~~~~
+* Updated onednn version to the latest one.
+
+v0.29.0-rc1 (2022-12-09)
+~~~~~~~
+* New metal backend for apple systems. This is now the default backend for
+  macos builds.
+* New onnx-dml backend to use DirectML under windows, has better net
+  compatibility than dx12 and is faster than opencl. See the README for use
+  instructions, a separate download of the DirectML dll is required.
+* Full attention policy support in cuda, cudnn, metal, onnx, blas, dnnl, and
+  eigen backends.
+* Partial attention policy support in onednn backend (good enough for T79).
+* Now the onnx backends can use fp16 when running with a network file (not with
+  .onnx model files). This is the default for onnx-cuda and onnx-dml, can be
+  switched on or off with by setting the `fp16` backend option to `true` or
+  `false` respectively.
+* The onednn package comes with a dnnl compiled to allow running on an intel gpu
+  by adding `gpu=0` to the backend options.
+* The default net is now 791556 for most backends except opencl and dx12 that
+  get 753723 (as they lack attention policy support).
+* Support for using pgn book with long lines in training: selfplay can start at
+  a random point in the book.
+* New "simple" time manager.
+* Support for double Fischer random chess (dfrc).
+* Added TC-dependent output to the backendbench assistant.
+* Starting with this version, the check backend compares policy for valid moves
+  after softmax.
+* Some assorted fixes and code cleanups.
+
+v0.29.0-rc0 (2022-04-03)
+~~~~~~~
+* Initial support for attention policy, only cuda backend and partially in
+  blas/dnnl/eigen (good enough for T79).
+* Non multigather (legacy) search code and `--multigather` option are removed.
+* 15b default net is now 753723.
+* The onnx backend now allows selecting gpu to use.
+* Improved error messages for unsupported network files.
+* Some assorted fixes.
+
+v0.28.2 (2021-12-13)
+~~~~~~~
+* No changes from v0.28.1-rc1 as the v0.28.1 release was botched.
+
+v0.28.1 (2021-12-12)
+~~~~~~~
+* No changes from rc1.
+
+v0.28.1-rc1 (2021-12-05)
+~~~~~~~
+* Improved cuda performance for 512 filter networks on Amprere GPUs.
+* Several fixes for the onnx backend.
+* Command line options for network file conversion to/from onnx.
+* Documentation updates.
+* Correctness fixes for rescorer support functions.
+
+v0.28.0 (2021-08-25)
+~~~~~~~
+* Fixed an issue with small third-party nets on the cuda/cudnn backends.
+* Minor tweak to the default task-workers for the cpu packages.
+
+v0.28.0-rc2 (2021-08-20)
+~~~~~~~
+* The cuda backend option multi_stream is now off by default. You should
+  consider setting it to on if you have a recent gpu with a lot of vram.
+* The default time manager is back to "legacy".
+* Updated default parameters.
+* Newer and stronger nets are included in the release packages.
+* Added support for onnx network files and runtime with the "onnx" backend.
+* Several bug and stability fixes.
+
+v0.28.0-rc1 (2021-06-16)
+~~~~~~~
+* Multigather is now made the default (and also improved). Some search settings
+  have changed meaning, so if you have modified values please discard them.
+  Specifically, `max-collision-events`, `max-collision-visits` and
+ `max-out-of-order-evals-factor` have changed default values, but other options
+  also affect the search. Similarly, check that your gui is not caching the old
+  values.
+* Performance improvements for the cuda/cudnn backends.
+* Support for policy focus during training.
+* Larger/stronger 15b default net for all packages except android, blas and dnnl
+  that get a new 10b network.
+* The distributed binaries come with the mimalloc memory allocator for better
+  performance when a large tree has to be destroyed (e.g. after an unexpected
+  move).
+* The `legacy` time manager will use more time for the first move after a long
+  book line.
+* The `--preload` command line flag will initialize the backend and load the
+  network during startup.
+* A 'fen' command was added as a UCI extension to print the current position.
+* Experimental onednn backend for recent intel cpus and gpus.
+
+v0.27.0 (2021-02-21)
+~~~~~~~
+* A better value for the backendbench Clippy threshold.
+
+v0.27.0-rc2 (2021-02-18)
+~~~~~~~
+* Fix additional cases where 'invalid move' could be incorrectly reported.
+* Replace WDL softmax in cudnn backend with same implementation as cuda
+  backend. This fixes some inaccuracy issues that were causing training
+  data to be rejected at a fairly low frequency.
+* Ensure that training data Q/D pairs form valid WDL targets even if there
+  is accumulated drift in calculation.
+* Fix for the calculation of the 'best q is proven' bit in training data.
+* Multiple fixes for timelosses and infinite instamoving in smooth time
+  manager. Smooth time manager now made default after these fixes.
+
+v0.27.0-rc1 (2021-02-06)
+~~~~~~~
+* Fix a bug which meant `position ... moves ...` didn't work if the moves 
+  went off the end of the existing tree. 
+
+v0.27.0-rc0 (2021-02-06)
 ~~~~~~~
 * Multigather search inspired by Ceres.
 * V6 training format with additional info for training experiments.
