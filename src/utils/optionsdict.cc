@@ -80,7 +80,7 @@ bool OptionsDict::HasSubdict(const std::string& name) const {
 template <>
 bool OptionsDict::GetOnce(const std::string& key) const {
   for (const auto* alias : aliases_) {
-    const auto& dict = alias->TypeDict<bool>::dict_;
+    const auto& dict = alias->TypeDict<bool>::dict();
     auto iter = dict.find(key);
     if (iter != dict.end()) {
       if (iter->second.IsSet()) return false;
