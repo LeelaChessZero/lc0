@@ -66,6 +66,8 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "only then starts timing."};
 const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
+const OptionId kClearTree{"", "ClearTree",
+                          "Clear the tree before the next search."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -114,6 +116,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->HideOption(kStrictUciTiming);
 
   options->Add<BoolOption>(kPreload) = false;
+  options->Add<ButtonOption>(kClearTree);
 }
 
 void EngineController::ResetMoveTimer() {
@@ -292,6 +295,10 @@ void EngineController::Go(const GoParams& params) {
   if (!options_.Get<bool>(kShowMovesleft)) {
     // Strip movesleft information from the response.
     responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
+  }
+
+  if (options_.GetOnce<bool>(kClearTree)) {
+    tree_->TrimTreeAtHead();
   }
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
