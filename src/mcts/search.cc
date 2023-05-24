@@ -314,10 +314,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "WDL_mu") {
       // Reports the WDL mu value whenever it is reasonable, and defaults to
       // centipawn otherwise.
-      const float threshold_centipawn_fallback = 0.99f;
+      const float centipawn_fallback_threshold = 0.99f;
       float centipawn_score = 90 * tan(1.5637541897 * wl);
       uci_info.score =
-          mu_uci != 0.0f && std::abs(wl) + d < threshold_centipawn_fallback &&
+          mu_uci != 0.0f && std::abs(wl) + d < centipawn_fallback_threshold &&
                   (std::abs(mu_uci) < 1.0f ||
                    std::abs(centipawn_score) < std::abs(100 * mu_uci))
               ? 100 * mu_uci
