@@ -210,20 +210,21 @@ inline void WDLRescale(float& v, float& d, float* mu_uci,
   auto l = (1 - v - d) / 2;
   // Safeguard against numerical issues; skip WDL transformation if WDL is too
   // extreme.
-  const float zero = 0.0001f;
-  const float one = 0.9999f;
-  if (w > zero && d > zero && l > zero && w < one && d < one && l < one) {
+  const float eps = 0.0001f;
+  if (w > eps && d > eps && l > eps && w < (1.0f - eps) && d < (1.0f - eps) &&
+      l < (1.0f - eps)) {
     auto a = FastLog(1 / l - 1);
     auto b = FastLog(1 / w - 1);
     auto s = 2 / (a + b);
     // Safeguard against unrealistically broad WDL distributions coming from
     // the NN. Could be made into a parameter, but probably unnecessary.
-    if (!invert) s = std::min(1.4f, s);
+    const float max_reasonable_s = 1.4f;
+    if (!invert) s = std::min(max_reasonable_s, s);
     auto mu = (a - b) / (a + b);
     auto s_new = s * wdl_rescale_ratio;
     if (invert) {
       std::swap(s, s_new);
-      s = std::min(1.4f, s);
+      s = std::min(max_reasonable_s, s);
     }
     auto mu_new = mu + sign * s * s * wdl_rescale_diff;
     auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
@@ -313,9 +314,10 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "WDL_mu") {
       // Reports the WDL mu value whenever it is reasonable, and defaults to
       // centipawn otherwise.
+      const float threshold_centipawn_fallback = 0.99f;
       float centipawn_score = 90 * tan(1.5637541897 * wl);
       uci_info.score =
-          mu_uci != 0.0f && std::abs(wl) + d < 0.99f &&
+          mu_uci != 0.0f && std::abs(wl) + d < threshold_centipawn_fallback &&
                   (std::abs(mu_uci) < 1.0f ||
                    std::abs(centipawn_score) < std::abs(100 * mu_uci))
               ? 100 * mu_uci

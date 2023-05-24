@@ -66,8 +66,9 @@ ContemptPerspective EncodeContemptPerspective(std::string perspective) {
   return ContemptPerspective::NONE;
 }
 
-float GetContempt(std::string name, std::string contempt_str) {
-  float contempt = 0;
+float GetContempt(std::string name, std::string contempt_str,
+                  float uci_rating_adv) {
+  float contempt = uci_rating_adv;
   for (auto& entry : StrSplit(contempt_str, ",")) {
     auto parts = StrSplit(entry, "=");
     if (parts.size() == 1) {
@@ -124,7 +125,11 @@ SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
 SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
     float contempt, float draw_rate_reference, float elo_active,
     float contempt_max, float contempt_attenuation) {
-  // Parameters for the Elo dependent draw rate and scaling:
+  // Scale parameter of the logistic WDL distribution is fitted as a sigmoid,
+  // predicting b/a for the WDL model fits for Stockfish levels at the Elo in
+  // https://github.com/official-stockfish/Stockfish/pull/4341
+  // Elo dependent mu is calculated from d(mu)/d(Elo) = c * s
+  // Sigmoid parameters for the Elo dependent scaling:
   const float scale_zero = 15.0f;
   const float elo_slope = 425.0f;
   const float offset = 6.75f;
@@ -137,9 +142,11 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
       1.0f / (1.0f / scale_zero + std::exp(elo_active / elo_slope - offset));
   float scale_opp =
       1.0f / (1.0f / scale_zero + std::exp(elo_opp / elo_slope - offset));
+  // Scale of target WDL distribution uses a sigmoid with Elo as input.
   float scale_target =
       std::sqrt((scale_active * scale_active + scale_opp * scale_opp) / 2.0f);
   float ratio = scale_target / scale_reference;
+  // Mu is calculated as the integral over scale(Elo) between the Elo values.
   float mu_active =
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_active / elo_slope + offset) / scale_zero);
@@ -393,7 +400,7 @@ const OptionId SearchParams::kWDLEvalObjectivityId{
 const OptionId SearchParams::kWDLDrawRateTargetId{
     "wdl-draw-rate-target", "WDLDrawRateTarget",
     "To define the accuracy of play, the target draw rate in equal "
-    "positions is used as a proxy."};
+    "positions is used as a proxy. Ignored if WDLCalibrationElo is set."};
 const OptionId SearchParams::kWDLDrawRateReferenceId{
     "wdl-draw-rate-reference", "WDLDrawRateReference",
     "Set this to the draw rate predicted by the used neural network at "
@@ -403,7 +410,7 @@ const OptionId SearchParams::kWDLBookExitBiasId{
     "wdl-book-exit-bias", "WDLBookExitBias",
     "The book exit bias used when measuring engine Elo. Value of startpos is "
     "around 0.2, value of 50% white win is 1. Only relevant if target draw "
-    "rate is above 80%."};
+    "rate is above 80%; ignored if WDLCalibrationElo is set."};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
@@ -635,7 +642,8 @@ SearchParams::SearchParams(const OptionsDict& options)
       kContempt(options.IsDefault<std::string>(kContemptId)
                     ? options.Get<float>(kUCIRatingAdvId)
                     : GetContempt(options.Get<std::string>(kUCIOpponentId),
-                                  options.Get<std::string>(kContemptId))),
+                                  options.Get<std::string>(kContemptId),
+                                  options.Get<float>(kUCIRatingAdvId))),
       kWDLRescaleParams(
           options.Get<float>(kWDLCalibrationEloId) == 0
               ? AccurateWDLRescaleParams(
