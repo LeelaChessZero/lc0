@@ -29,12 +29,18 @@
 #include <cstdint>
 #include "winograd_helper.inc"
 
+#include <thrust/device_ptr.h>
+#include <thrust/fill.h>
+
+
 #ifdef USE_CUTLASS
 
 
 #include "cutlass/gemm/device/gemm_array.h"
 #include "cutlass/gemm/device/gemm_batched.h"
-
+#include "cutlass/epilogue/thread/linear_combination_bias_elementwise.h"
+#include "cutlass/gemm/kernel/default_gemm_with_broadcast.h"
+#include "cutlass/gemm/device/gemm_universal_with_broadcast.h"
 
 // Fused MHA implementation from cutlass example #41
 #include "fused_multi_head_attention/kernel_forward.h"
@@ -142,7 +148,6 @@ static float mean(float arr[], int n) {
   return sum / n;
 }
 
-
 // function to calculate standard deviation
 static float stdDev(float arr[], int n) {
   float m = mean(arr, n);  // get the mean
@@ -165,7 +170,7 @@ __device__ __forceinline__ void copyAs(void* dst, const void* src) {
 // debug code to dump allocation in GPU memory
 template <typename T>
 void dumpTensor(const T* memory, int elements, const char* message,
-                       bool only_summary = false, bool cpu_tensor = false) {
+                bool only_summary = false, bool cpu_tensor = false) {
   const bool fp16 = std::is_same<half, T>::value;
   const bool int8 = std::is_same<int8_t, T>::value;
   printf("\n%s\n", message);
@@ -188,8 +193,7 @@ void dumpTensor(const T* memory, int elements, const char* message,
     if (int8) {
       int8_t* arr = (int8_t*)temp;
       val = (float)arr[i];
-    }
-    else if (fp16) {
+    } else if (fp16) {
       half* arr = (half*)temp;
       val = (float)arr[i];
     } else {
@@ -229,6 +233,68 @@ void dumpTensor(const T* memory, int elements, const char* message,
   printf("\n");
 }
 
+// int8 GEMM using CUTLASS (with per-column output quantization)
+void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
+                                 const float* scaleVector, int8_t* Out, int M,
+                                 int N, int K, int batchSize, int AStride,
+                                 int BStride, int OutStride, int VecStride,
+                                 float alphaf, float betaf) {
+  using ElementAccumulator = int32_t;
+  using ElementComputeEpilogue = float;
+  using ElementIO = int8_t;
+  using ElementScale = float;
+  using ThreadBlockSwizzle =
+      cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle;
+  constexpr int elementsPerAccess =
+      128 / cutlass::sizeof_bits<ElementIO>::value;
+
+  using EpilogueOutputOp =
+      cutlass::epilogue::thread::LinearCombinationBiasElementwise<
+          ElementIO, ElementAccumulator, ElementComputeEpilogue, ElementIO,
+          ElementIO,
+          ElementScale,  // element Vector
+          elementsPerAccess, false,
+          cutlass::multiplies<ElementComputeEpilogue>>;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalWithBroadcast<
+      ElementIO, cutlass::layout::RowMajor, ElementIO,
+      cutlass::layout::ColumnMajor, ElementIO, cutlass::layout::RowMajor,
+      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+      cutlass::gemm::GemmShape<256, 128, 128>,
+      cutlass::gemm::GemmShape<64, 64, 128>,
+      cutlass::gemm::GemmShape<16, 8, 32>, EpilogueOutputOp, ThreadBlockSwizzle,
+      2>;
+
+  typename Gemm::Arguments arguments{cutlass::gemm::GemmUniversalMode::kBatched,
+                                     {M, N, K},
+                                     batchSize,
+                                     {alphaf, betaf},
+                                     A,
+                                     B,
+                                     nullptr,
+                                     Out,
+                                     (float*)scaleVector,
+                                     nullptr,
+                                     AStride,
+                                     BStride,
+                                     0,
+                                     OutStride,
+                                     VecStride,  // batch_stride_Vector
+                                     0,
+                                     K,
+                                     K,
+                                     0,
+                                     N,
+                                     0,
+                                     0};
+
+  // Instantiate CUTLASS kernel depending on templates
+  Gemm gemm_op;
+
+  // Initialize CUTLASS kernel with arguments and workspace pointer
+  cutlass::Status status = gemm_op.initialize(arguments, nullptr);
+  status = gemm_op();
+}
 
 // int8 GEMM using CUTLASS
 void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int8_t* Out,
@@ -236,8 +302,8 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int8_t* Out,
                                  int AStride, int BStride, int OutStride,
                                  float alphaf, float betaf) {
   // Ankan - For testing!
-  //dumpTensor<int8_t>(A, 512, "A after scaling", false);
-  //dumpTensor<int8_t>(B, 512, "B after scaling", false);
+  // dumpTensor<int8_t>(A, 512, "A after scaling", false);
+  // dumpTensor<int8_t>(B, 512, "B after scaling", false);
 
   using ElementAccumulator = int32_t;    // <- data type of accumulator
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
@@ -292,9 +358,207 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int8_t* Out,
   status = gemm_op();
 }
 
+void cutlassMatrixMulBTransposed_Emulate_INT8(const half* A, const half* B,
+                                              half* Out, int M, int N, int K,
+                                              int batchSize, int AStride,
+                                              int BStride, int OutStride,
+                                              bool useInt8) {
+    // emulate int8 quantization:
+    //  * Copy inputs to CPU
+    //  * Use smooth quant to figure out per-channel scaling factor for the input
+    //  * compute quantized weights and scaling factors for A and B matrices
+    //  * quantize the A and B matrices
+    //  * multiply them on CPU
+    //  * de-quantize the output back to fp16
+
+    int ASize = M * K;
+    int BSize = K * N * batchSize;
+    int OutSize = M * N * batchSize;
+    half* cpuA = (half*)malloc(ASize * sizeof(half));
+    half* cpuB = (half*)malloc(BSize * sizeof(half));
+    half* cpuOut = (half*)malloc(OutSize * sizeof(half));
+
+    int8_t* AInt8 = (int8_t*)malloc(ASize);
+    int8_t* BInt8 = (int8_t*)malloc(BSize);
+    int8_t* OutInt8 = (int8_t*)malloc(OutSize);
+
+    cudaMemcpy(cpuA, A, ASize * sizeof(half), cudaMemcpyDeviceToHost);
+    cudaMemcpy(cpuB, B, BSize * sizeof(half), cudaMemcpyDeviceToHost);
+
+    std::vector<float> scaling_factors(K);
+    std::vector<float> input_scaling_factors(K);    // Not used here, but just for testing.
+    std::vector<float> output_scaling_factors(N * batchSize);
+
+    // apply smooth-quant (basically adjust A and B matrices to make
+    // quantization easier)
+    for (int k = 0; k < K; k++) {
+      float absMaxA = 0;
+      float absMaxB = 0;
+      // scan a column of Matrix A to find the abs max.
+      for (int y = 0; y < M; y++) {
+        float val = (float) cpuA[y * K + k];
+        absMaxA = std::max(absMaxA, abs(val));
+      }
+
+      // scan a column of Matrix B (from each batch dimension)
+      for (int b = 0; b < batchSize; b++)
+        for (int x = 0; x < N; x++) {
+          float val = (float) cpuB[b * N * K + x * K + k];
+          absMaxB = std::max(absMaxB, abs(val));
+        }
+
+      // compute scaling factor:
+      float s = sqrt(absMaxA / (absMaxB));
+
+      // sanity check, don't use too small, or too big scaling factors
+      if (s < 1)
+        s = 1.0f;  // don't try to squeeze activations for improving range of
+                   // weights!
+      if (s > 10) s = 10.0f;
+
+      scaling_factors[k] = s;
+
+      // printf("\nMaxA: %f, MaxB: %f, scale: %f ", absMaxA, absMaxB, s);
+
+      // scale A and B matrices using the scaling factor
+      for (int y = 0; y < M; y++) {
+        float val = (float) cpuA[y * K + k];
+        val /= s;
+        cpuA[y * K + k] = (half) val;
+      }
+
+      for (int b = 0; b < batchSize; b++)
+        for (int x = 0; x < N; x++) {
+          float val = (float) cpuB[b * N * K + x * K + k];
+          val *= s;
+          cpuB[b * N * K + x * K + k] = (half) val;
+        }
+    }
+
+    // figure out scaling factors for A and B matrices
+    float absMaxA = 0;
+    for (int i = 0; i < M * K; i++) {
+      float val = (float) cpuA[i];
+      absMaxA = std::max(absMaxA, abs(val));
+    }
+
+    float AFactor = 127.0 / absMaxA;
+
+    // update the scaling factors based on global max for Activation matrix
+    for (int i = 0; i < K; i++) {
+      input_scaling_factors[i] = 127.0f / (scaling_factors[i] * absMaxA);
+    }
+
+    std::vector<float> BFactor(batchSize);
+    for (int b = 0; b < batchSize; b++) {
+      float absMaxB = 0;
+      for (int i = 0; i < K * N; i++) {
+        float val = cpuB[i + b * K * N];
+        absMaxB = std::max(absMaxB, abs(val));
+      }
+
+      // quantize the weights
+      float scaleB = 127.0f / absMaxB;
+      BFactor[b] = scaleB;
+      for (int i = 0; i < K * N; i++) {
+        float val = (float) cpuB[i + b * K * N];
+        // quantize and clamp
+        val = (val * scaleB);
+        if (val > 127) val = 127;
+        if (val < -128) val = -128;
+        BInt8[i + b * K * N] = (int8_t)roundf(val);
+      }
+    }
+
+    // quantize input activation matrix (A)
+    for (int i = 0; i < M * K; i++) {
+      float val = (float)cpuA[i];
+      val = (val * AFactor);
+      if (val > 127) val = 127;
+      if (val < -128) val = -128;
+      AInt8[i] = (int8_t)roundf(val);
+    }
+
+
+    // output scaling factors
+    // multiply the matrices to figure out range of values in output matrix for
+    // per-channel quantization
+    for (int b = 0; b < batchSize; b++) {
+      for (int x = 0; x < N; x++) {
+        float colAbsMax = 0;
+        for (int y = 0; y < M; y++) {
+          int s = 0;
+          for (int k = 0; k < K; k++) {
+            int v1 = AInt8[y * K + k];
+            int v2 = BInt8[b * K * N + x * K + k];
+            s += v1 * v2;
+          }
+          colAbsMax = std::max(colAbsMax, (float)abs(s));
+        }
+        float outFactor = colAbsMax ? (127.0f / colAbsMax) : 1;
+        output_scaling_factors[b * N + x] = outFactor;
+      }
+    }
+
+    std::vector<float> output_deq_factors(batchSize);
+    for (int i = 0; i < batchSize; i++)
+      output_deq_factors[i] = 1.0f / (AFactor * BFactor[i]);
+
+    // Actually multiply the int8 matrices and apply per-column scaling to store int8 result
+    for (int b = 0; b < batchSize; b++) {
+      for (int x = 0; x < N; x++) {
+        for (int y = 0; y < M; y++) {
+          int s = 0;
+          for (int k = 0; k < K; k++) {
+            int v1 = AInt8[y * K + k];
+            int v2 = BInt8[b * K * N + x * K + k];
+            s += v1 * v2;
+          }
+          OutInt8[b * M * N + N * y + x] =
+              (int8_t) roundf(s * output_scaling_factors[b * N + x]);
+        }
+      }
+    }
+
+   
+    // dequantize the output matrix
+    for (int b = 0; b < batchSize; b++)
+      for (int x = 0; x < N; x++)
+        for (int y = 0; y < M; y++) {
+          float val = (float) OutInt8[b * M * N + N * y + x];
+          val /= output_scaling_factors[b * N + x];
+          val *= output_deq_factors[b];
+          cpuOut[b * M * N + N * y + x] = (half)val;
+        }
+
+
+    // dump the inputs and outputs for debugging - Ankan
+    dumpTensor<float>(&input_scaling_factors[0], 768, "input_scaling_factors", false, true);
+    dumpTensor<int8_t>(AInt8, 768, "input quantized", false, true);
+    dumpTensor<int8_t>(BInt8, 768, "weight quantized", false, true);
+    dumpTensor<int8_t>(OutInt8, 768, "output quantized", false, true);
+    dumpTensor<float>(&output_scaling_factors[0], 768, "output_scaling_factors",
+                      false, true);
+    //dumpTensor<half>(cpuOut, 768, "dequantized output", false, true);
+    //exit(0);
+
+    cudaMemcpy(Out, cpuOut, OutSize * sizeof(half), cudaMemcpyHostToDevice);
+
+    free(cpuA);
+    free(cpuB);
+    free(cpuOut);
+
+    free(AInt8);
+    free(BInt8);
+    free(OutInt8);
+}
+
 // FP16 GEMM using cutlass
 void cutlassMatrixMulBTransposed(const half* A, const half* B, half* Out, int M,
-    int N, int K, int batchSize, int AStride, int BStride, int OutStride, bool useInt8) {
+                                 int N, int K, int batchSize, int AStride,
+                                 int BStride, int OutStride, bool useInt8) {
+  if (useInt8)
+    return cutlassMatrixMulBTransposed_Emulate_INT8(A, B, Out, M, N, K, batchSize, AStride, BStride, OutStride, useInt8);
 
   half halfOne = (half)1.0f;
   half halfZero = (half)0.0f;
@@ -342,7 +606,7 @@ void cutlassMatrixMulBTransposed(const half* A, const half* B, half* Out, int M,
                                         // precision, it's 8 elements. This
                                         // becomes the vector width of math
                                         // instructions in epilogue too
-      ElementAccumulator,  // <- data type of accumulator
+      ElementAccumulator,               // <- data type of accumulator
       float>;  // <- data type for alpha/beta in linear combination function
 
   constexpr int NumStages = 3;  // stages == 2/4 is also good sometimes
@@ -368,10 +632,14 @@ void cutlassMatrixMulBTransposed(const half* A, const half* B, half* Out, int M,
 }
 
 
+int8_t values[1024 * 64];
 static void calibrateGemm(int8_t* weights_int8, float* input_scaling_factors,
-                          float* output_scaling_factors, float* cpuA,
-                          float* cpuB, int M, int N, int K, int batchSize) {
+                          float* output_scaling_factors, float *output_deq_factors, float* cpuA,
+                          float* cpuB, float *maxValuesA, float *maxValuesOut, int M, int N, int K, int batchSize) {
   std::vector<float> scaling_factors(K);
+
+  std::vector<float> A_Max(M * K);      // this is another matrix we use to track calculations using max values
+  for (int i = 0; i < M * K; i++) A_Max[i] = maxValuesA[i];
 
   // apply smooth-quant (basically adjust A and B matrices to make quantization
   // easier)
@@ -380,7 +648,7 @@ static void calibrateGemm(int8_t* weights_int8, float* input_scaling_factors,
     float absMaxB = 0;
     // scan a column of Matrix A to find the abs max.
     for (int y = 0; y < M; y++) {
-      float val = cpuA[y * K + k];
+      float val = A_Max[y * K + k];
       absMaxA = std::max(absMaxA, abs(val));
     }
 
@@ -406,23 +674,23 @@ static void calibrateGemm(int8_t* weights_int8, float* input_scaling_factors,
 
     // scale A and B matrices using the scaling factor
     for (int y = 0; y < M; y++) {
-      float val = cpuA[y * K + k];
+      float val = A_Max[y * K + k];
       val /= s;
-      cpuA[y * K + k] = (half)val;
+      A_Max[y * K + k] = val;
     }
 
     for (int b = 0; b < batchSize; b++)
       for (int x = 0; x < N; x++) {
         float val = cpuB[b * N * K + x * K + k];
         val *= s;
-        cpuB[b * N * K + x * K + k] = (half)val;
+        cpuB[b * N * K + x * K + k] = val;
       }
   }
 
   // figure out scaling factors for A and B matrices
   float absMaxA = 0;
   for (int i = 0; i < M * K; i++) {
-    float val = cpuA[i];
+    float val = A_Max[i];
     absMaxA = std::max(absMaxA, abs(val));
   }
 
@@ -455,11 +723,66 @@ static void calibrateGemm(int8_t* weights_int8, float* input_scaling_factors,
   }
 
   // output scaling factors
+  // multiply the matrices to figure out range of values in output matrix for per-channel quantization
+  for (int b = 0; b < batchSize; b++) {
+    for (int x = 0; x < N; x++) {
+      float colAbsMax = 0;
+      for (int y = 0; y < M; y++) {
+        int s = 0;
+        for (int k = 0; k < K; k++) {
+          int v1 = (int)roundf(input_scaling_factors[k] * cpuA[y * K + k]);
+          int v2 = weights_int8[b * K * N + x * K + k];
+          s += v1 * v2;
+        }
+        float m = maxValuesOut[b * M * N + y * N + x];
+        m = std::max(m, abs((float)s));
+        maxValuesOut[b * M * N + y * N + x] = m;    // also update the abs max value found in output matrix
+        colAbsMax = std::max(colAbsMax, m);
+      }
+      float outFactor = colAbsMax ? (127.0f / colAbsMax) : 1;
+      output_scaling_factors[b * N + x] = outFactor;
+    }
+  }
+
   for (int i = 0; i < batchSize; i++)
-    output_scaling_factors[i] = 127.0 / (AFactor * BFactor[i]);
+    output_deq_factors[i] = 1.0f / (AFactor * BFactor[i]);
+
+#if 0
+  // Ankan - For debug - print the quantized expected values of output matrix 
+  for (int b = 0; b < batchSize; b++)
+    for (int x = 0; x < N; x++)
+      for (int y = 0; y < M; y++) {
+        float s = 0;
+        for (int k = 0; k < K; k++) {
+          float v1 = input_scaling_factors[k] * cpuA[y * K + k];
+          float v2 = (float)(weights_int8[b * K * N + x * K + k]);
+          s += v1 * v2;
+        }
+        values[b * M * N + y * N + x] =
+            (int8_t)roundf(s * output_scaling_factors[b * N + x]);
+      }
+
+  for (int y = 0; y < M; y++)
+    for (int k = 0; k < K; k++)
+      cpuA[i] *= input_scaling_factors[k];
+  
+
+  dumpTensor<float>(cpuA, 768, "input matrix during calibration",
+                     false, true);
+
+  dumpTensor<int8_t>(weights_int8, 768, "weights - during calibration", false,
+                     true);
+
+
+  dumpTensor<float>(output_scaling_factors, 768, "output_scaling_factors",
+                    false, true);
+
+  dumpTensor<int8_t>(values, 768, "output during quantization", false, true);
+  exit(0);
+#endif
 
   // Ankan - for debug/test
-  //printf("\nScaling factors - A: %g, B_Q: %g, B_K: %g, B_V: %g \n",
+  // printf("\nScaling factors - A: %g, B_Q: %g, B_K: %g, B_V: %g \n",
   //       127.0 / absMaxA, BFactor[0], BFactor[1], BFactor[2]);
 }
 
@@ -474,7 +797,8 @@ static void calibrateGemm(int8_t* weights_int8, float* input_scaling_factors,
 // maxValuesA contains the max values in activation matrix found so far
 template <typename DataType>
 void calibrateGemmForInt8(int8_t* weights_int8, float* input_scaling_factors,
-                          float* output_scaling_factors, float* maxValuesA,
+                          float* output_scaling_factors,
+                          float* output_deq_factors, float* maxValuesA, float *maxValuesOut,
                           const DataType* A, const DataType* B, int M, int N,
                           int K, int batchSize, int M_Batch) {
   auto cpuA = (DataType*)malloc(M_Batch * M * K * sizeof(DataType));
@@ -494,15 +818,16 @@ void calibrateGemmForInt8(int8_t* weights_int8, float* input_scaling_factors,
 
   for (int b = 0; b < M_Batch; b++) {
     for (int i = 0; i < M * K; i++) {
-      float val = abs((float)cpuA[b * M * K + i]);
-      val = std::max(val, maxValuesA[i]);
+      float val = (float)cpuA[b * M * K + i];
       fpA[i] = val;
+      val = std::max(abs(val), maxValuesA[i]);
       maxValuesA[i] = val;  // update the max activation matrix
     }
 
     // calibrate a single sample
     calibrateGemm(weights_int8, input_scaling_factors, output_scaling_factors,
-                  fpA, fpB, M, N, K, batchSize);
+                  output_deq_factors, fpA, fpB, maxValuesA, maxValuesOut, M, N, K,
+                  batchSize);
   }
 
   free(fpA);
@@ -510,7 +835,6 @@ void calibrateGemmForInt8(int8_t* weights_int8, float* input_scaling_factors,
   free(cpuA);
   free(cpuB);
 }
-
 
 // process 8 elements per thread (in x dimension)
 __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
@@ -526,7 +850,7 @@ __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
 
   copyAs<uint4>(&ip[0], &input[y * width + x]);
   copyAs<uint4>(&factor[0], &scale[x]);
-  copyAs<uint4>(&factor[4], &scale[x+4]);
+  copyAs<uint4>(&factor[4], &scale[x + 4]);
 
   for (int i = 0; i < 8; i++) {
     float val = roundf((float)ip[i] * factor[i]);
@@ -538,11 +862,10 @@ __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
   copyAs<uint2>(&output[y * width + x], &op[0]);
 }
 
-
 // The scale is per column
 void quantizeActivationMatrix(int8_t* output, const half* input, int height,
-                              int width, const float* scale, cudaStream_t stream) {
-
+                              int width, const float* scale,
+                              cudaStream_t stream) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
                lczero::cudnn_backend::DivUp(height, 16));
@@ -551,7 +874,6 @@ void quantizeActivationMatrix(int8_t* output, const half* input, int height,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-
 #define MAX_BATCH_DEQUANT 16
 
 struct ScaleParam {
@@ -559,73 +881,82 @@ struct ScaleParam {
 };
 
 // process 8 elements per thread (in x dimension)
-__global__ void deQuantizeMatrix(half* output, const int8_t* input, const half *bias, int height, int width, int stride, ScaleParam s, ActivationFunction act) {
+__global__ void deQuantizeMatrix(half* output, const int8_t* input,
+                                 const half* bias, int height, int width,
+                                 int stride, const float *invScale, ScaleParam deq,
+                                 ActivationFunction act) {
   int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int b = blockIdx.z;
 
   if (x >= width || y >= height) return;
 
-  float factor = s.scale[b];
-
   int8_t ip[8] = {};
   half op[8] = {};
   half bi[8] = {};
+  float inv_scale[8];
+  float deq_scale = deq.scale[b];
 
   copyAs<uint2>(&ip[0], &input[b * stride + y * width + x]);
-  if (bias)
-    copyAs<uint4>(&bi[0], &bias[b * width + x]);
+  if (bias) copyAs<uint4>(&bi[0], &bias[b * width + x]);
+
+  if (invScale) {
+    copyAs<uint4>(&inv_scale[0], &invScale[b * width + x]);
+    copyAs<uint4>(&inv_scale[4], &invScale[b * width + x + 4]);
+  } else {
+    for (int i = 0; i < 8; i++) inv_scale[i] = 1 / 127.0f;
+  }
 
   for (int i = 0; i < 8; i++) {
     float val = (float)ip[i];
-    val *= factor;
+    val *= (deq_scale / inv_scale[i]);
     if (bias) val += (float)bi[i];
-    op[i] = (half) activate(val, act);
+    op[i] = (half)activate(val, act);
   }
 
   copyAs<uint4>(&output[b * stride + y * width + x], &op[0]);
 }
 
-
-
 // the scale (in CPU memory) is per "batch"
 // the bias is per column, per batch
 void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
                                    int height, int width, int batchSize,
-                                   float* scale, const half* bias,
+                                   float* invScale, float *deq, const half* bias,
                                    cudaStream_t stream,
                                    ActivationFunction act = NONE) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
                lczero::cudnn_backend::DivUp(height, 16), batchSize);
 
-  assert(batchSize < MAX_BATCH_DEQUANT);    // otherwise we will need to put them in GPU memory
+  // otherwise we will need to put them in GPU memory
+  assert(batchSize < MAX_BATCH_DEQUANT);  
 
   int stride = width * height;
 
   ScaleParam s = {};
-  for (int i = 0; i < batchSize; i++) s.scale[i] = scale[i];
+  for (int i = 0; i < batchSize; i++) s.scale[i] = deq[i];
 
-  deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(output, input, bias, height, width, stride, s, act);
+  deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(
+      output, input, bias, height, width, stride, invScale, s, act);
   ReportCUDAErrors(cudaGetLastError());
+}
 
+void fillGpuArray(float* arr, float val, int count) {
+  thrust::device_ptr<float> dev_ptr(arr);
+  thrust::fill(dev_ptr, dev_ptr + count, val);
 }
 
 
-
-
-template void calibrateGemmForInt8<float>(int8_t* weights_int8,
-                                          float* input_scaling_factors,
-                                          float* output_scaling_factors,
-                                          float* maxValuesA, const float* A,
-                                          const float* B, int M, int N, int K,
-                                          int batchSize, int M_Batch);
-template void calibrateGemmForInt8<half>(int8_t* weights_int8,
-                                         float* input_scaling_factors,
-                                         float* output_scaling_factors,
-                                         float* maxValuesA, const half* A,
-                                         const half* B, int M, int N, int K,
-                                         int batchSize, int M_Batch);
+template void calibrateGemmForInt8<float>(
+    int8_t* weights_int8, float* input_scaling_factors,
+    float* output_scaling_factors, float* output_deq_factors, float* maxValuesA,
+    float* maxValuesOut, const float* A, const float* B, int M, int N, int K,
+    int batchSize, int M_Batch);
+template void calibrateGemmForInt8<half>(
+    int8_t* weights_int8, float* input_scaling_factors,
+    float* output_scaling_factors, float* output_deq_factors, float* maxValuesA,
+    float* maxValuesOut, const half* A, const half* B, int M, int N, int K,
+    int batchSize, int M_Batch);
 
 template void dumpTensor<float>(const float* memory, int elements,
                                 const char* message, bool only_summary,

@@ -38,7 +38,14 @@
 
 namespace lczero {
 
-#if 1
+namespace cudnn_backend {
+template <typename T>
+void dumpTensor(const T* memory, int elements, const char* message,
+                bool only_summary = false, bool cpu_tensor = false);
+}
+
+
+#if 0
 
 #include <cmath>
 using namespace std;
@@ -1480,6 +1487,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   }
 }
 
+void fillGpuArray(float *arr, float val, int count);
 
 static int8_t* SetQuantizationData(MatMulQuantizationData& data, int8_t* w, int InputCols, int OutputCols, int outBatch, bool cali) {
   size_t matrix_size = InputCols * OutputCols * sizeof(int8_t) * outBatch;
@@ -1501,10 +1509,16 @@ static int8_t* SetQuantizationData(MatMulQuantizationData& data, int8_t* w, int 
 
     // go to output scaling factors
     w += matrix_size;
-    data.output_scaling_factors = (float*)w;
+    ReportCUDAErrors(cudaMalloc(&data.output_scaling_factors,
+                                sizeof(float) * OutputCols * outBatch));
+    ReportCUDAErrors(cudaMemcpy(data.output_scaling_factors, w,
+                                sizeof(float) * OutputCols * outBatch,
+                                cudaMemcpyHostToDevice));
+    // go to output dequantization factors
+    w += outBatch * OutputCols * sizeof(float);
+    data.output_deq_factors = (float*) w;
 
-
-    // go to next entry
+    // go to next item
     w += outBatch * sizeof(float);
   } else {
     // Just save the pointers to CPU weights (we will over-write here during calibration)
@@ -1513,12 +1527,18 @@ static int8_t* SetQuantizationData(MatMulQuantizationData& data, int8_t* w, int 
     data.weights_int8 = w;
     w += matrix_size;
     data.output_scaling_factors = (float*)w;
+    w += outBatch * OutputCols * sizeof(float);
+    data.output_deq_factors = (float*) w;
     w += outBatch * sizeof(float);
 
-    // to keep track of max values in input activation matrix
+    // to keep track of max values in activation matrices
     int InputMatrixSizeForBatch1 = 64 * InputCols * sizeof(float);
     data.input_matrix_max_values = (float*)malloc(InputMatrixSizeForBatch1);
     memset(data.input_matrix_max_values, 0, InputMatrixSizeForBatch1);
+
+    int OutputMatrixSizeForBatch1 = 64 * OutputCols * sizeof(float) * outBatch;
+    data.output_matrix_max_values = (float*)malloc(OutputMatrixSizeForBatch1);
+    memset(data.output_matrix_max_values, 0, OutputMatrixSizeForBatch1);
   }
 
   // return pointer to next item
@@ -1615,7 +1635,9 @@ EncoderBlock<DataType>::EncoderBlock(
     smol_global = smolgen_global_scratch;
   }
   // int8 stuff
+  blockIndex_ = blockIndex;
   if (int8_inference || int8_calibrate) {
+    /*
     int per_encoder_size = embedding_op_size_ * sizeof(float) +
                            3 * embedding_op_size_ * mha_q_size_ +
                            3 * sizeof(float) + mha_q_size_ * sizeof(float) +
@@ -1624,6 +1646,15 @@ EncoderBlock<DataType>::EncoderBlock(
                            ffn_dense1_size_ * mha_q_size_ + sizeof(float) +
                            ffn_dense1_size_ * sizeof(float) +
                            embedding_op_size_ * ffn_dense1_size_ + sizeof(float);
+                           */
+    int embedding_op_size = embedding_op_size_;
+    int encoder_d_model = mha_q_size_;
+    int encoder_dff = ffn_dense1_size_;
+    int per_encoder_size = 
+          (embedding_op_size * sizeof(float) + 3 * embedding_op_size * encoder_d_model    + 3 * (encoder_d_model + 1)    * sizeof(float) +
+           encoder_d_model   * sizeof(float) +     encoder_d_model   * embedding_op_size  +     (embedding_op_size + 1)  * sizeof(float) +
+           embedding_op_size * sizeof(float) +     embedding_op_size * encoder_dff        +     (encoder_dff + 1)        * sizeof(float) +
+           encoder_dff       * sizeof(float) +     encoder_dff       * embedding_op_size  +     (embedding_op_size + 1)  * sizeof(float));
 
     auto w = (int8_t*)int8_weights;
     // go to current encoder block
@@ -1631,7 +1662,8 @@ EncoderBlock<DataType>::EncoderBlock(
     w = SetQuantizationData(kqv_, w, embedding_op_size_, mha_q_size_, 3, int8_calibrate);
     w = SetQuantizationData(mha_dense_, w, mha_q_size_, embedding_op_size_, 1, int8_calibrate);
     w = SetQuantizationData(ffn1_, w, embedding_op_size_, ffn_dense1_size_, 1, int8_calibrate);
-    SetQuantizationData(ffn2_, w, ffn_dense1_size_, embedding_op_size_, 1, int8_calibrate);
+    w = SetQuantizationData(ffn2_, w, ffn_dense1_size_, embedding_op_size_, 1, int8_calibrate);
+    // printf("\nSize of weights: %d\n", (w - (int8_t*)int8_weights));
 
     // print some weights
     /*
@@ -1709,13 +1741,20 @@ static void cublasXGemmBatched(
 
 template <typename DataType>
 void calibrateGemmForInt8(int8_t* weights_int8, float* input_scaling_factors,
-                          float* output_scaling_factors, float* maxValuesA,
-                          const DataType* A, const DataType* B, int M, int N,
+                          float* output_scaling_factors,
+                          float* output_deq_factors, float* maxValuesA,
+                          float* maxValuesOut, const DataType* A, const DataType* B, int M, int N,
                           int K, int batchSize, int M_Batch);
 
 void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int8_t* Out,
                                  int M, int N, int K, int batchSize,
                                  int AStride, int BStride, int OutStride,
+                                 float alphaf, float betaf);
+
+void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
+                                 const float* scaleVector, int8_t* Out, int M,
+                                 int N, int K, int batchSize, int AStride,
+                                 int BStride, int OutStride, int VecStride,
                                  float alphaf, float betaf);
 
 void quantizeActivationMatrix(int8_t* output, const half* input, int height,
@@ -1724,7 +1763,7 @@ void quantizeActivationMatrix(int8_t* output, const half* input, int height,
 
 void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
                                    int height, int width, int batchSize,
-                                   float* scale, const half* bias,
+                                   float* scale, float *deq, const half* bias,
                                    cudaStream_t stream, ActivationFunction act = NONE);
 
 // input/output tensor is scratch1, others are used as scratch.
@@ -1822,11 +1861,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
 
     if (int8_cali_) {
       calibrateGemmForInt8(kqv_.weights_int8, kqv_.input_scaling_factors,
-                           kqv_.output_scaling_factors, kqv_.input_matrix_max_values, scratch1, mha_qkv_w, 64,
-                           d_model, embedding_op_size_, 3, N);
+          kqv_.output_scaling_factors, kqv_.output_deq_factors,
+                           kqv_.input_matrix_max_values,
+                           kqv_.output_matrix_max_values, scratch1,
+          mha_qkv_w, 64, d_model, embedding_op_size_, 3, N);
     }
     
-    if (int8_inf_) {
+    if (true && int8_inf_) {
       // printf("\nAttempting int8_inf\n");
       // 1. quantize the inputs (scratch1 -> scratch0)
       // TODO: Fuse this step with layer-norm of previous block
@@ -1835,35 +1876,68 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                                stream);
 
       // 2. perform int8 GEMM (scratch0 -> scratch2)
+      /*
       cutlassMatrixMulBTransposed(
           (const int8_t*)scratch0, kqv_.weights_int8, (int8_t*)scratch2, batch,
           num_outputs, num_inputs, 3, 0, num_inputs * num_outputs,
           num_outputs * batch_to_use, 1.0 / 127.0, 0.0f);
+        */  
+      // per-layer output scaling
+      
+      cutlassMatrixMulBTransposed(
+          (const int8_t*)scratch0, kqv_.weights_int8,
+          kqv_.output_scaling_factors, (int8_t*)scratch2, batch,
+          num_outputs, num_inputs, 3, 0, num_inputs * num_outputs,
+          num_outputs * batch_to_use, num_outputs, 1.0f, 0.0f);
+          
       ReportCUDAErrors(cudaGetLastError());
+      /*
+      dumpTensor<int8_t>((const int8_t*)scratch0, 768, "quantized input matrix",
+                         false, false);
 
+      dumpTensor<int8_t>(kqv_.weights_int8, 768,
+                        "weights - during run", false, false);
+
+      dumpTensor<int8_t>((const int8_t*)scratch2, 768,
+                         "some quantized output values", false, false);
+
+      dumpTensor<float>(kqv_.output_scaling_factors, 768,
+                        "output_scaling_factors - during run",
+                        false, false);
+                        */
       // 3. de-quantize outputs - fused with bias add (scratch2 -> scratch0)
       // TODO: fuse the entire thing with the above GEMM.
       deQuantizeOutputMatrixBiasAdd((half*)scratch0, (const int8_t*)scratch2, batch, num_outputs, 3,
-                                    kqv_.output_scaling_factors, (const half*)mha_qkv_b, stream);
-    } else {
+          kqv_.output_scaling_factors,
+          kqv_.output_deq_factors, (const half*) mha_qkv_b, stream);
+
+      /*
+      dumpTensor<half>((const half*)scratch0, 768,
+                         "dequantized output values after bias add", false, false);
+      exit(0);
+      */
+   } else {
+      
       cublasXGemmStridedBatched<DataType>(
           cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
           1.0f, mha_qkv_w, num_inputs, num_inputs * num_outputs, scratch1,
           num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * batch_to_use,
           3);
-      /*
+#if 0        
       cutlassMatrixMulBTransposed((const half*)scratch1, (const half*)mha_qkv_w,
-                                  (half*) mha_q, batch,
-                                  num_outputs, num_inputs, 3,
-                                  0, num_inputs * num_outputs,
-                                 num_outputs * batch_to_use);
-                                 */
-      // dumpTensor(mha_q, num_outputs * N, "output of kqv gemm", false);
-      // exit(0);
-
+                                  (half*)mha_q, batch_to_use, num_outputs,
+                                  num_inputs, 3, 0, num_inputs * num_outputs,
+                                  num_outputs * batch_to_use, true);
+                                  
       addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs,
                                batch_to_use, NONE, stream);
-    }
+
+      dumpTensor<DataType>((const DataType*)mha_q,
+                           /*num_outputs * batch_to_use*/ 768,
+                           "ref output values after bias add", false, false);
+      exit(0);
+#endif
+   }
   }
 
   // Apply split_heads() to q, k and v
@@ -1959,7 +2033,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
     if (int8_cali_) {
       calibrateGemmForInt8(
           mha_dense_.weights_int8, mha_dense_.input_scaling_factors,
-          mha_dense_.output_scaling_factors, mha_dense_.input_matrix_max_values,
+          mha_dense_.output_scaling_factors, mha_dense_.output_deq_factors,
+          mha_dense_.input_matrix_max_values,
+          mha_dense_.output_matrix_max_values,
           scratch3, mha_dense_w, 64, embedding_op_size_, d_model, 1, N);
     }
 
@@ -1967,7 +2043,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
     const int num_outputs = embedding_op_size_;
     const int batch = N * 64;
 
-    if (int8_inf_) {
+    if (true && int8_inf_) {
       // 1. quantize the inputs (scratch3 -> scratch0)
       // TODO: Fuse this step with the previous fused MHA
       quantizeActivationMatrix((int8_t*)scratch0, (const half*)scratch3, batch,
@@ -1975,20 +2051,35 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
                                stream);
 
       // 2. perform int8 GEMM (scratch0 -> scratch3)
+      /*
       cutlassMatrixMulBTransposed(
           (const int8_t*)scratch0, mha_dense_.weights_int8, (int8_t*)scratch3, batch,
           num_outputs, num_inputs, 1, 0, 0, 0, 1.0 / 127.0, 0.0f);
+          */
+      
+      cutlassMatrixMulBTransposed(
+          (const int8_t*)scratch0, mha_dense_.weights_int8,
+          mha_dense_.output_scaling_factors, (int8_t*)scratch3,
+          batch, num_outputs, num_inputs, 1, 0, 0, 0, 0, 1.0f, 0.0f);
+          
+
       ReportCUDAErrors(cudaGetLastError());
 
       // 3. de-quantize outputs (scratch3 -> scratch2)
       // TODO: Fuse this with LN1 (should be easy!)
       deQuantizeOutputMatrixBiasAdd(
           (half*)scratch2, (const int8_t*)scratch3, batch, num_outputs, 1,
-          mha_dense_.output_scaling_factors, nullptr, stream);
+          mha_dense_.output_scaling_factors, mha_dense_.output_deq_factors,
+          nullptr, stream);
     } else {
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, mha_dense_w, num_inputs, scratch3,
                   num_inputs, 0.0f, scratch2, num_outputs);
+      /*
+           cutlassMatrixMulBTransposed(
+          (const half*)scratch3, (const half*)mha_dense_w, (half*)scratch2,
+          batch, num_outputs, num_inputs, 1, 0, 0, 0, true);
+          */
     }
   }
 
@@ -2004,39 +2095,82 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
     if (int8_cali_) {
       calibrateGemmForInt8(
           ffn1_.weights_int8, ffn1_.input_scaling_factors,
-          ffn1_.output_scaling_factors, ffn1_.input_matrix_max_values, scratch1,
-          ffn_dense1_w, 64, encoder_dff, embedding_op_size_, 1, N);
+          ffn1_.output_scaling_factors, ffn1_.output_deq_factors,
+          ffn1_.input_matrix_max_values, ffn1_.output_matrix_max_values, scratch0,
+          ffn_dense1_w, 64,
+          encoder_dff, embedding_op_size_, 1, N);
     }
 
     const int num_inputs = embedding_op_size_;
     const int num_outputs = encoder_dff;
     const int batch = N * 64;
 
-    if (false && int8_inf_) {   // Ankan - test! .. enabling this one kills accuracy :-/
+    if (true && int8_inf_) {                                  
       // 1. quantize the inputs (scratch0 -> scratch1)
       // TODO: Fuse this step with LN1 (should be easy)
       quantizeActivationMatrix((int8_t*)scratch1, (const half*)scratch0, batch,
                                num_inputs, ffn1_.input_scaling_factors, stream);
 
       // 2. perform int8 GEMM (scratch1 -> scratch2)
+      /*
       cutlassMatrixMulBTransposed((const int8_t*)scratch1, ffn1_.weights_int8,
                                   (int8_t*)scratch2, batch, num_outputs,
                                   num_inputs, 1, 0, 0, 0, 1.0 / 127.0, 0.0f);
-      ReportCUDAErrors(cudaGetLastError());
+                                  */
+      cutlassMatrixMulBTransposed((const int8_t*)scratch1, ffn1_.weights_int8,
+                                  ffn1_.output_scaling_factors,
+                                  (int8_t*)scratch2, batch, num_outputs,
+                                  num_inputs, 1, 0, 0, 0, 0, 1.0f, 0.0f);
 
+      ReportCUDAErrors(cudaGetLastError());
+      /*
+      dumpTensor<float>(ffn1_.input_scaling_factors, 768,
+                        "input_scaling_factors - during run", false, false);
+
+      dumpTensor<int8_t>((const int8_t*)scratch1, 768, "quantized input matrix",
+                         false, false);
+
+      dumpTensor<int8_t>(ffn1_.weights_int8, 768,
+                        "weights - during run", false, false);
+
+      dumpTensor<int8_t>((const int8_t*)scratch2, 768,
+                         "some quantized output values", false, false);
+
+      dumpTensor<float>(ffn1_.output_scaling_factors, 768,
+                        "output_scaling_factors - during run",
+                        false, false);
+                        */
       // 3. de-quantize outputs - fused with bias add (scratch2 -> scratch1)
       // TODO: Fuse this with the above GEMM
       deQuantizeOutputMatrixBiasAdd(
           (half*)scratch1, (const int8_t*)scratch2, batch, num_outputs, 1,
-          ffn1_.output_scaling_factors, (const half*)ffn_dense1_b, stream,
+          ffn1_.output_scaling_factors, ffn1_.output_deq_factors,
+          (const half*)ffn_dense1_b, stream,
           has_smolgen_ ? RELU_2 : act);
+
+      // Ankan - test!
+      //dumpTensor<DataType>((const DataType*)scratch1, 768,
+      //                     "runtime output values after bias and RELU2", false, false);
+      //exit(0);
+
     } else {
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, ffn_dense1_w, num_inputs, scratch0,
                   num_inputs, 0.0f, scratch1, num_outputs);
+      /*
+      cutlassMatrixMulBTransposed(
+          (const half*)scratch0, (const half*)ffn_dense1_w, (half*)scratch1,
+          batch, num_outputs, num_inputs, 1, 0, 0, 0, true);
+          */
       addBiasBatched(scratch1, scratch1, ffn_dense1_b, 1, batch, num_outputs,
                      has_smolgen_ ? RELU_2 : act,
                      stream);  // @todo sqr relu to have its own flag
+
+      // Ankan - test!
+      //dumpTensor<DataType>((const DataType*)scratch1, 768,
+      //                     "Ref output values after bias and RELU2", false,
+      //                     false);
+      //exit(0);
     }
   }
 
@@ -2045,35 +2179,75 @@ void EncoderBlock<DataType>::Eval(int N, DataType* scratch1, DataType* scratch0,
     if (int8_cali_) {
       calibrateGemmForInt8(
           ffn2_.weights_int8, ffn2_.input_scaling_factors,
-          ffn2_.output_scaling_factors, ffn2_.input_matrix_max_values, scratch1,
+          ffn2_.output_scaling_factors, ffn2_.output_deq_factors,
+          ffn2_.input_matrix_max_values, ffn2_.output_matrix_max_values, scratch1,
           ffn_dense2_w, 64, embedding_op_size_, encoder_dff, 1, N);
     }
 
     const int num_inputs = encoder_dff;
     const int num_outputs = embedding_op_size_;
     const int batch = N * 64;
-    if (int8_inf_) {
+    if (true && int8_inf_) {
       // 1. quantize the inputs (scratch1 -> scratch2)
       // TODO: Fuse this step with above bias add at least (or ideally with the
       // above GEMM)
       quantizeActivationMatrix((int8_t*)scratch2, (const half*)scratch1, batch,
                                num_inputs, ffn2_.input_scaling_factors, stream);
+      /*
+      dumpTensor<float>((const float*)ffn2_.input_scaling_factors, 768,
+                        "input scaling factors during run",
+                         false, false);
 
+      dumpTensor<int8_t>((const int8_t*)scratch2, 768, "quantized input matrix",
+                         false, false);
+
+      dumpTensor<int8_t>(ffn2_.weights_int8, 768, "weights - during run", false,
+                         false);
+                         */
       // 2. perform int8 GEMM (scratch2 -> scratch1)
+      /*
       cutlassMatrixMulBTransposed((const int8_t*)scratch2, ffn2_.weights_int8,
                                   (int8_t*)scratch1, batch, num_outputs,
                                   num_inputs, 1, 0, 0, 0, 1.0 / 127.0, 0.0f);
+                                  */
+      
+      cutlassMatrixMulBTransposed((const int8_t*)scratch2, ffn2_.weights_int8, ffn2_.output_scaling_factors,
+                                  (int8_t*)scratch1, batch, num_outputs,
+                                  num_inputs, 1, 0, 0, 0, 0, 1.0f, 0.0f);
+                                  
       ReportCUDAErrors(cudaGetLastError());
+      /*
+      dumpTensor<int8_t>((const int8_t*)scratch1, 768,
+                         "some quantized output values", false, false);
 
+      dumpTensor<float>(ffn1_.output_scaling_factors, 768,
+                        "output_scaling_factors - during run", false, false);
+                        */
       // 3. de-quantize outputs (scratch1 -> scratch2)
       // TODO: Fuse this with LN2 (should be easy)
       deQuantizeOutputMatrixBiasAdd(
           (half*)scratch2, (const int8_t*)scratch1, batch, num_outputs, 1,
-          ffn2_.output_scaling_factors, nullptr, stream);
+                                    ffn2_.output_scaling_factors,
+                                    ffn2_.output_deq_factors, nullptr, stream);
+      /*
+      dumpTensor<half>((const half*)scratch2, 768, "dequantized output values",
+                       false, false);
+      exit(0);*/
     } else {
-        cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                 num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
                 scratch1, num_inputs, 0.0f, scratch2, num_outputs);
+      /*
+      cutlassMatrixMulBTransposed(
+          (const half*)scratch1, (const half*)ffn_dense2_w, (half*)scratch2,
+          batch, num_outputs, num_inputs, 1, 0, 0, 0, true);
+          */
+      /*
+      dumpTensor<half>((const half*)scratch2, 768, "dequantized output values - ref",
+                       false, false);
+
+      exit(0);
+                       */
     }
   }
 
@@ -2212,17 +2386,25 @@ EncoderBlock<DataType>::~EncoderBlock() {
   if (int8_inf_) {
     ReportCUDAErrors(cudaFree(kqv_.weights_int8));
     ReportCUDAErrors(cudaFree(kqv_.input_scaling_factors));
+    ReportCUDAErrors(cudaFree(kqv_.output_scaling_factors));
     ReportCUDAErrors(cudaFree(mha_dense_.weights_int8));
     ReportCUDAErrors(cudaFree(mha_dense_.input_scaling_factors));
+    ReportCUDAErrors(cudaFree(mha_dense_.output_scaling_factors));
     ReportCUDAErrors(cudaFree(ffn1_.weights_int8));
     ReportCUDAErrors(cudaFree(ffn1_.input_scaling_factors));
+    ReportCUDAErrors(cudaFree(ffn1_.output_scaling_factors));
     ReportCUDAErrors(cudaFree(ffn2_.weights_int8));
     ReportCUDAErrors(cudaFree(ffn2_.input_scaling_factors));
+    ReportCUDAErrors(cudaFree(ffn2_.output_scaling_factors));
   } else if (int8_cali_) {
     free(kqv_.input_matrix_max_values);
+    free(kqv_.output_matrix_max_values);
     free(mha_dense_.input_matrix_max_values);
+    free(mha_dense_.output_matrix_max_values);
     free(ffn1_.input_matrix_max_values);
+    free(ffn1_.output_matrix_max_values);
     free(ffn2_.input_matrix_max_values);
+    free(ffn2_.output_matrix_max_values);
   }
 }
 

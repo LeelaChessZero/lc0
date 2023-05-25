@@ -338,10 +338,11 @@ struct MatMulQuantizationData {
   int8_t* weights_int8;            // int8 quantized weights
   float* input_scaling_factors;    // per-column scaling factors for input
                                    // quantization
-  float* output_scaling_factors;   // per-tensor scaling factors for output
-                                   // dequantization (always in CPU memory)
-  float* input_matrix_max_values;  // max values of input matrix (always in CPU
-                                   // memory)
+  float* output_scaling_factors;   // per-column scaling factors for output
+                                   // dequantization
+  float* output_deq_factors;       // per-tensor. Always in cpu memory (passed as constants to dequantization kernels)
+  float* input_matrix_max_values;  // max values of input matrix (always in CPU memory)
+  float* output_matrix_max_values; // max values in output matrix (always in CPU memory)
 };
 
 
@@ -381,6 +382,7 @@ class EncoderBlock {
 
 
   // int 8 stuff
+  int blockIndex_;
   bool int8_inf_, int8_cali_;
   MatMulQuantizationData kqv_;
   MatMulQuantizationData mha_dense_;

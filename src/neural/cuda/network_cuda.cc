@@ -373,33 +373,33 @@ class CudaNetwork : public Network {
       //     * per-channel scaling factors for Input Matrix to QKV GEMM (embedding_op_size floats)
       //        (to use for quantization of the input)
       //     * qunatized (int8) weights for QKV GEMMs (3 * encoder_d_model * embedding_op_size int8_ts)
-      //     * float factorQ, factorK, factorV
-      //       (basically factors needed to de-quantize the output)
+      //     * per-channel scaling factors for quantizing the Outut matrix (encoder_d_model * 3 floats)
+      //     * per-tensor output dequantization factors (3 floats)
       // 
       //     * per-channel scaling factors for the MHA dense layer's input (encoder_d_model floats)
       //     * Qunatized (int8) weights for MHA dense (embedding_op_size * encoder_d_model int8_ts)
-      //     * per-tensor output scaling factor for MHA dense (single float)
+      //     * per-channel output scaling factors for MHA dense (embedding_op_size floats)
+      //     * per-tensor output dequantization factor (1 float)
       // 
       //     * per-channel scaling factors for input to FFN1 (embedding_op_size_ floats)
       //     * Qunatized (int8) weights for FFN1 (encoder_dff * encoder_d_model int8_ts)
-      //     * single output scaling factor for FFN1 (single float)
+      //     * per-channel output scaling factors for FFN1 (encoder_dff floats)
+      //     * per-tensor output dequantization factor (1 float)
       //     
       //     * per-channel scaling factors for input to FFN2 (encoder_dff floats)
-      //     * Qunatized (int8) weights for FFN1 (encoder_d_model * encoder_dff int8_ts)
-      //     * single output scaling factor for FFN1 (single float)
+      //     * Qunatized (int8) weights for FFN2 (embedding_op_size * encoder_dff int8_ts)
+      //     * per-channel output scaling factors for FFN2 (embedding_op_size floats)
+      //     * per-tensor output dequantization factor (1 float)
       int embedding_op_size = weights.ip_emb_b.size();
       int encoder_d_model = weights.encoder[0].mha.q_b.size();
       int encoder_dff = weights.encoder[0].ffn.dense1_b.size();
       int num_encoders = weights.encoder.size();
       int8_weights_size_ =
           num_encoders *
-          (embedding_op_size * sizeof(float) +
-           3 * embedding_op_size * encoder_d_model + 3 * sizeof(float) +
-           encoder_d_model * sizeof(float) +
-           embedding_op_size * encoder_d_model + sizeof(float) +
-           embedding_op_size * sizeof(float) + encoder_dff * encoder_d_model +
-           sizeof(float) + encoder_dff * sizeof(float) +
-           embedding_op_size * encoder_dff + sizeof(float));
+          (embedding_op_size * sizeof(float) + 3 * embedding_op_size * encoder_d_model    + 3 * (encoder_d_model + 1)    * sizeof(float) +
+           encoder_d_model   * sizeof(float) +     encoder_d_model   * embedding_op_size  +     (embedding_op_size + 1)  * sizeof(float) +
+           embedding_op_size * sizeof(float) +     embedding_op_size * encoder_dff        +     (encoder_dff + 1)        * sizeof(float) +
+           encoder_dff       * sizeof(float) +     encoder_dff       * embedding_op_size  +     (embedding_op_size + 1)  * sizeof(float));
 
       int8_weights_ = malloc(int8_weights_size_);
       memset(int8_weights_, 0, int8_weights_size_);
@@ -413,8 +413,8 @@ class CudaNetwork : public Network {
       FILE* fp = fopen("weights_quant.bin", "rb");
       if (!fp) {
         CERR << "ERROR: weights_quant.bin not found. Please run 'lc0 benchmark "
-                "-t 1 --nodes=1 -w <weightfile> --backend=cuda-fp16 "
-                "--backend-opts=int8-calibrate' first";
+                "-t 1 --nodes=1 -w <weightfile> --backend=cuda "
+                "--backend-opts=int8-calibrate=true' first";
         throw Exception("Quantized weights not found");
       } else {
         int read = fread(int8_weights_, 1, int8_weights_size_, fp);
@@ -437,7 +437,7 @@ class CudaNetwork : public Network {
 
         w += 3 * weights.ip_emb_b.size() * weights.encoder[0].mha.q_b.size() *
              sizeof(int8_t);
-        dumpTensor<float>((float*)w, 3, "scaling factors for output", false, true);
+        dumpTensor<float>((float*)w, 768, "scaling factors for output", false, true);
 
         exit(0);
 #endif
