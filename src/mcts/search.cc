@@ -40,7 +40,7 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
-#include "utils/expbackoff.h"
+#include "utils/spinhelper.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 
@@ -1128,7 +1128,12 @@ void SearchWorker::ExecuteOneIteration() {
   InitializeIteration(search_->network_->NewComputation());
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
-    ExponentialBackoff ebo;
+    std::unique_ptr<SpinHelper> spin_helper;
+    if (params_.GetNumThreads() > 64)
+      spin_helper = std::make_unique<ExponentialBackoffSpinHelper>();
+    else
+      spin_helper = std::make_unique<SpinHelper>();
+
     while (true) {
       // If search is stop, we've not gathered or done anything and we don't
       // want to, so we can safely skip all below. But make sure we have done
@@ -1139,15 +1144,16 @@ void SearchWorker::ExecuteOneIteration() {
       }
 
       int available = 0;
-      while ((available = search_->pending_searchers_.load(std::memory_order_acquire)) == 0) {
-        ebo.SpinToSleep();
+      if ((available = search_->pending_searchers_.load(std::memory_order_acquire)) == 0) {
+        spin_helper->Wait();
+        continue;
       }
 
       if (search_->pending_searchers_.compare_exchange_weak(
               available, available - 1, std::memory_order_acq_rel)) {
         break;
       } else {
-        ebo.Backoff();
+        spin_helper->Backoff();
       }
     }
   }

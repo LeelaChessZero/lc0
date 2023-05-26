@@ -40,8 +40,6 @@ namespace lczero {
 namespace {
 const int kDefaultThreads = 2;
 
-const OptionId kThreadsOptionId{"threads", "Threads",
-                                "Number of (CPU) worker threads to use.", 't'};
 const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
                           "output the log to the console.",
@@ -95,7 +93,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
 
   NetworkFactory::PopulateOptions(options);
-  options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options->Add<IntOption>(SearchParams::kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
   SearchParams::Populate(options);
 
@@ -303,7 +301,7 @@ void EngineController::Go(const GoParams& params) {
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
-  search_->StartThreads(options_.Get<int>(kThreadsOptionId));
+  search_->StartThreads(options_.Get<int>(SearchParams::kThreadsOptionId));
 }
 
 void EngineController::PonderHit() {

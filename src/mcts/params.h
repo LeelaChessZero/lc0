@@ -156,6 +156,9 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
+  int GetNumThreads() const {
+    return options_.GetOrDefault<int>(kThreadsOptionId, 1);
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -230,6 +233,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingPowerId;
   static const OptionId kUCIOpponentId;
   static const OptionId kUCIRatingAdvId;
+  static const OptionId kThreadsOptionId;
 
  private:
   const OptionsDict& options_;

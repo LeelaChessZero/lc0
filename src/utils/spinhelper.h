@@ -34,14 +34,27 @@
 
 namespace lczero {
 
-class ExponentialBackoff {
+class SpinHelper {
  public:
-  ExponentialBackoff()
+  virtual ~SpinHelper() = default;
+
+  virtual void Backoff() {
+    SpinloopPause();
+  }
+
+  virtual void Wait() {
+    SpinloopPause();
+  }
+};
+
+class ExponentialBackoffSpinHelper : public SpinHelper {
+ public:
+  ExponentialBackoffSpinHelper()
     : backoff_iters_(kMinBackoffIters),
       spin_to_sleep_iters_(0) {
   }
 
-  void Backoff() {
+  virtual void Backoff() {
     thread_local std::uniform_int_distribution<size_t> distribution;
     thread_local std::minstd_rand generator(std::random_device{}());
     const size_t spin_count = distribution(generator, decltype(distribution)::param_type{0, backoff_iters_});
@@ -54,7 +67,8 @@ class ExponentialBackoff {
     spin_to_sleep_iters_ = 0;
   }
 
-  void SpinToSleep() {
+  // Spin to sleep
+  virtual void Wait() {
     if (spin_to_sleep_iters_ < kMaxSpinToSleepIters) {
       spin_to_sleep_iters_++;
       SpinloopPause();

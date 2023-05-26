@@ -29,6 +29,7 @@
 
 #include "chess/board.h"
 #include "mcts/node.h"
+#include "mcts/params.h"
 #include "neural/factory.h"
 #include "utils/optionsparser.h"
 
@@ -36,8 +37,6 @@ namespace lczero {
 namespace {
 const int kDefaultThreads = 1;
 
-const OptionId kThreadsOptionId{"threads", "Threads",
-                                "Number of (CPU) worker threads to use.", 't'};
 const OptionId kBatchesId{"batches", "",
                           "Number of batches to run as a benchmark."};
 const OptionId kStartBatchSizeId{"start-batch-size", "",
@@ -79,7 +78,7 @@ void Clippy(std::string title,
 void BackendBenchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
-  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options.Add<IntOption>(SearchParams::kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   options.Add<IntOption>(kBatchesId, 1, 999999999) = 100;
   options.Add<IntOption>(kStartBatchSizeId, 1, 1024) = 1;
