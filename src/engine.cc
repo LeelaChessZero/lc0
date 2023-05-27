@@ -114,8 +114,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->HideOption(kStrictUciTiming);
 
   options->Add<BoolOption>(kPreload) = false;
-  options->Add<BoolOption>(SearchParams::kEnablePendingSearcherSpinBackoffId) =
-      false;
 }
 
 void EngineController::ResetMoveTimer() {

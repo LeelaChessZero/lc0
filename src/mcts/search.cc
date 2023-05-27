@@ -1129,7 +1129,7 @@ void SearchWorker::ExecuteOneIteration() {
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     std::unique_ptr<SpinHelper> spin_helper;
-    if (params_.GetEnablePendingSearcherSpinBackoff()) {
+    if (params_.GetSearcherSpinBackoff()) {
       spin_helper = std::make_unique<ExponentialBackoffSpinHelper>();
     } else {
       // This is a hard spin lock to reduce latency but at the expense of busy

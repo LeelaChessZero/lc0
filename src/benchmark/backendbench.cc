@@ -29,7 +29,6 @@
 
 #include "chess/board.h"
 #include "mcts/node.h"
-#include "mcts/params.h"
 #include "neural/factory.h"
 #include "utils/optionsparser.h"
 
@@ -88,8 +87,6 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kBatchStepId, 1, 256) = 1;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
-  options.Add<BoolOption>(SearchParams::kEnablePendingSearcherSpinBackoffId) =
-      false;
 
   if (!options.ProcessAllFlags()) return;
 
