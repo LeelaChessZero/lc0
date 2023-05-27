@@ -1129,10 +1129,14 @@ void SearchWorker::ExecuteOneIteration() {
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     std::unique_ptr<SpinHelper> spin_helper;
-    if (params_.GetNumThreads() > 64)
+    if (params_.GetEnablePendingSearcherSpinBackoff()) {
       spin_helper = std::make_unique<ExponentialBackoffSpinHelper>();
-    else
+    } else {
+      // This is a hard spin lock to reduce latency but at the expense of busy
+      // wait cpu usage. If search worker count is large, this is probably a
+      // bad idea.
       spin_helper = std::make_unique<SpinHelper>();
+    }
 
     while (true) {
       // If search is stop, we've not gathered or done anything and we don't
@@ -1143,8 +1147,9 @@ void SearchWorker::ExecuteOneIteration() {
         return;
       }
 
-      int available = 0;
-      if ((available = search_->pending_searchers_.load(std::memory_order_acquire)) == 0) {
+      int available =
+          search_->pending_searchers_.load(std::memory_order_acquire);
+      if (available == 0) {
         spin_helper->Wait();
         continue;
       }

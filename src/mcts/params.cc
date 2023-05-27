@@ -466,8 +466,9 @@ const OptionId SearchParams::kUCIRatingAdvId{
     "", "UCI_RatingAdv",
     "UCI extension used by some GUIs to pass the estimated Elo advantage over "
     "the current opponent, used as the default contempt value."};
-const OptionId SearchParams::kThreadsOptionId{"threads", "Threads",
-    "Number of (CPU) worker threads to use.", 't'};
+const OptionId SearchParams::kEnablePendingSearcherSpinBackoffId{
+    "enable-pending-searcher-spin-backoff", "EnablePendingSearcherSpinBackoff",
+    "Enable backoff for the spin lock that acquires available searcher."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.

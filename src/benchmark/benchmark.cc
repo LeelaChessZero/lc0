@@ -37,6 +37,8 @@ namespace lczero {
 namespace {
 const int kDefaultThreads = 2;
 
+const OptionId kThreadsOptionId{"threads", "Threads",
+                                "Number of (CPU) worker threads to use.", 't'};
 const OptionId kNodesId{"nodes", "", "Number of nodes to run as a benchmark."};
 const OptionId kMovetimeId{"movetime", "",
                            "Benchmark time allocation, in milliseconds."};
@@ -48,7 +50,7 @@ const OptionId kNumPositionsId{"num-positions", "",
 void Benchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
-  options.Add<IntOption>(SearchParams::kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
   SearchParams::Populate(&options);
 
@@ -56,6 +58,8 @@ void Benchmark::Run() {
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
   options.Add<StringOption>(kFenId) = "";
   options.Add<IntOption>(kNumPositionsId, 1, 34) = 34;
+  options.Add<BoolOption>(SearchParams::kEnablePendingSearcherSpinBackoffId) =
+      false;
 
   if (!options.ProcessAllFlags()) return;
 
@@ -106,7 +110,7 @@ void Benchmark::Run() {
               std::bind(&Benchmark::OnInfo, this, std::placeholders::_1)),
           MoveList(), start, std::move(stopper), false, option_dict, &cache,
           nullptr);
-      search->StartThreads(option_dict.Get<int>(SearchParams::kThreadsOptionId));
+      search->StartThreads(option_dict.Get<int>(kThreadsOptionId));
       search->Wait();
       const auto end = std::chrono::steady_clock::now();
 

@@ -156,8 +156,8 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
-  int GetNumThreads() const {
-    return options_.GetOrDefault<int>(kThreadsOptionId, 1);
+  bool GetEnablePendingSearcherSpinBackoff() const {
+    return options_.Get<bool>(kEnablePendingSearcherSpinBackoffId);
   }
 
   // Search parameter IDs.
@@ -233,7 +233,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingPowerId;
   static const OptionId kUCIOpponentId;
   static const OptionId kUCIRatingAdvId;
-  static const OptionId kThreadsOptionId;
+  static const OptionId kEnablePendingSearcherSpinBackoffId;
 
  private:
   const OptionsDict& options_;
