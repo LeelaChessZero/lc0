@@ -324,8 +324,12 @@ bool StringOption::ProcessShortFlagWithValue(char flag,
 }
 
 std::string StringOption::GetHelp(const OptionsDict& dict) const {
-  return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetHelpText(),
-                    GetUciOption(), GetVal(dict));
+  std::string long_flag = GetLongFlag();
+  if (!long_flag.empty()) {
+    long_flag += "=STRING";
+  }
+  return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
+                    GetVal(dict));
 }
 
 std::string StringOption::GetOptionString(const OptionsDict& dict) const {
