@@ -508,7 +508,7 @@ if get_option('build_backends')
       if ['arm', 'aarch64'].contains(host_machine.cpu_family())
         message('Compiling for Jetson.')
         nvcc_arch = '-arch=compute_53'
-        nvcc_sm_list = ['sm_53', 'sm_62', 'sm_72']
+        nvcc_sm_list = ['sm_53', 'sm_62', 'sm_72', 'sm_87']
       endif
     endif
 
