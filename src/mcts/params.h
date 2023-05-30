@@ -156,8 +156,8 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
-  bool GetSearcherSpinBackoff() const {
-    return kSearcherSpinBackoff;
+  bool GetSearchSpinBackoff() const {
+    return kSearchSpinBackoff;
   }
 
   // Search parameter IDs.
@@ -233,7 +233,7 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingPowerId;
   static const OptionId kUCIOpponentId;
   static const OptionId kUCIRatingAdvId;
-  static const OptionId kSearcherSpinBackoffId;
+  static const OptionId kSearchSpinBackoffId;
 
  private:
   const OptionsDict& options_;
@@ -294,7 +294,7 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
-  const bool kSearcherSpinBackoff;
+  const bool kSearchSpinBackoff;
 };
 
 }  // namespace lczero

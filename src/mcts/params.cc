@@ -466,8 +466,8 @@ const OptionId SearchParams::kUCIRatingAdvId{
     "", "UCI_RatingAdv",
     "UCI extension used by some GUIs to pass the estimated Elo advantage over "
     "the current opponent, used as the default contempt value."};
-const OptionId SearchParams::kSearcherSpinBackoffId{
-    "searcher-spin-backoff", "SearcherSpinBackoff",
+const OptionId SearchParams::kSearchSpinBackoffId{
+    "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
 
 void SearchParams::Populate(OptionsParser* options) {
@@ -568,7 +568,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
   options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
-  options->Add<BoolOption>(kSearcherSpinBackoffId) = false;
+  options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -685,8 +685,8 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
-      kSearcherSpinBackoff(
-          options_.Get<bool>(kSearcherSpinBackoffId)) {
+      kSearchSpinBackoff(
+          options_.Get<bool>(kSearchSpinBackoffId)) {
   if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
           std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
       1.0f) {

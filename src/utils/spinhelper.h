@@ -37,14 +37,8 @@ namespace lczero {
 class SpinHelper {
  public:
   virtual ~SpinHelper() = default;
-
-  virtual void Backoff() {
-    SpinloopPause();
-  }
-
-  virtual void Wait() {
-    SpinloopPause();
-  }
+  virtual void Backoff() {}
+  virtual void Wait() {}
 };
 
 class ExponentialBackoffSpinHelper : public SpinHelper {
