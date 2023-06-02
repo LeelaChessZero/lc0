@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2022 The LCZero Authors
+  Copyright (C) 2022-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -35,21 +35,21 @@ class SimpleTimeManager : public TimeManager {
  public:
   SimpleTimeManager(int64_t move_overhead, const OptionsDict& params)
       : move_overhead_(move_overhead),
-        basepct_(params.GetOrDefault<float>("base-pct", 1.83f)),
-        plypct_(params.GetOrDefault<float>("ply-pct", 0.0454f)),
-        timefactor_(params.GetOrDefault<float>("time-factor", 33.4f)),
-        opening_bonus_(params.GetOrDefault<float>("opening-bonus", 82.5f)) {
-    if (basepct_ <= 0.0f || basepct_ > 100.0f) {
+        base_pct_(params.GetOrDefault<float>("base-pct", 1.4f)),
+        ply_pct_(params.GetOrDefault<float>("ply-pct", 0.049f)),
+        time_factor_(params.GetOrDefault<float>("time-factor", 1.5f)),
+        opening_bonus_pct_(params.GetOrDefault<float>("opening-bonus-pct", 0.0f)) {
+    if (base_pct_ <= 0.0f || base_pct_ > 100.0f) {
       throw Exception("base-pct value to be in range [0.0, 100.0]");
     }
-    if (plypct_ < 0.0f || plypct_ > 1.0f) {
+    if (ply_pct_ < 0.0f || ply_pct_ > 1.0f) {
       throw Exception("ply-pct value to be in range [0.0, 1.0]");
     }
-    if (timefactor_ < 0.0f || timefactor_ > 100.0f) {
+    if (time_factor_ < 0.0f || time_factor_ > 100.0f) {
       throw Exception("time-factor value to be in range [0.0, 100.0]");
     }
-    if (opening_bonus_ < 0.0f || opening_bonus_ > 1000.0f) {
-      throw Exception("opening-bonus value to be in range [0.0, 1000.0]");
+    if (opening_bonus_pct_ < 0.0f || opening_bonus_pct_ > 1000.0f) {
+      throw Exception("opening-bonus-pct value to be in range [0.0, 1000.0]");
     }
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
@@ -57,13 +57,13 @@ class SimpleTimeManager : public TimeManager {
 
  private:
   const int64_t move_overhead_;
-  const float basepct_;
-  const float plypct_;
-  const float timefactor_;
-  const float opening_bonus_;
-  float prev_move_time = 0.0f;
-  float prev_total_moves_time = 0.0f;
-  bool bonus_applied = false;
+  const float base_pct_;
+  const float ply_pct_;
+  const float time_factor_;
+  const float opening_bonus_pct_;
+  float prev_time_budgeted_ = 0.0f;
+  float prev_time_available_ = 0.0f;
+  bool bonus_applied_ = false;
 };
 
 std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
@@ -78,50 +78,52 @@ std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
   const std::optional<int64_t>& inc = is_black ? params.binc : params.winc;
   const int increment = inc ? std::max(int64_t(0), *inc) : 0;
 
-  const float total_moves_time =
+  const float time_available =
       static_cast<float>(*time) - static_cast<float>(move_overhead_);
 
+  const float time_ratio =
+      static_cast<float>(increment) / static_cast<float>(*time);
+
   // increase percentage as ply count increases
-  float pct = (basepct_ + position.GetGamePly() * plypct_) * 0.01f;
+  float pct = (base_pct_ + position.GetGamePly() * ply_pct_) * 0.01f;
 
-  // increase percentage as ratio of increment time to total time gets smaller
-  pct += pct * (static_cast<float>(increment) /
-                static_cast<float>(total_moves_time) * timefactor_);
+  // increase percentage as ratio of increment to total time reaches equality
+  pct += time_ratio * time_factor_;
 
-  float this_move_time = total_moves_time * pct;
-
-  // immediately spend time saved from smart pruning during previous move
-  if (prev_move_time > 0.0f) {
-    const float time_saved =
-        prev_move_time - (prev_total_moves_time -
-                          (total_moves_time - static_cast<float>(increment)));
-
-    this_move_time += time_saved;
-  }
+  float time_budgeted = time_available * pct;
 
   // apply any opening bonus and note the next move will also benefit
   // from an increased time_saved as a result
-  if (!bonus_applied) {
-    this_move_time += this_move_time * opening_bonus_ * 0.01f;
-    bonus_applied = true;
+  if (!bonus_applied_) {
+    time_budgeted += time_budgeted * opening_bonus_pct_ * 0.01f;
+    bonus_applied_ = true;
   }
 
-  this_move_time = std::min(this_move_time, total_moves_time);
+  // immediately spend time saved from smart pruning during previous move
+  if (prev_time_budgeted_ > 0.0f) {
+    const float time_saved = prev_time_budgeted_ -
+                             (prev_time_available_ -
+                              (time_available - static_cast<float>(increment)));
 
-  prev_move_time = this_move_time;
-  prev_total_moves_time = total_moves_time;
+    time_budgeted += std::max(time_saved, 0.0f);
+  }
 
-  LOGFILE << "Budgeted time for the move: " << this_move_time << "ms"
+  time_budgeted = std::min(time_budgeted, time_available);
+
+  LOGFILE << "Budgeted time for the move: " << time_budgeted << "ms "
           << "Remaining time " << *time << "ms(-" << move_overhead_
           << "ms overhead)";
 
-  return std::make_unique<TimeLimitStopper>(this_move_time);
+  prev_time_budgeted_ = time_budgeted;
+  prev_time_available_ = time_available;
+
+  return std::make_unique<TimeLimitStopper>(time_budgeted);
 }
 
 }  // namespace
 
-std::unique_ptr<TimeManager> MakeSimpleTimeManager(
-    int64_t move_overhead, const OptionsDict& params) {
+std::unique_ptr<TimeManager> MakeSimpleTimeManager(int64_t move_overhead,
+                                                   const OptionsDict& params) {
   return std::make_unique<SimpleTimeManager>(move_overhead, params);
 }
 }  // namespace lczero
