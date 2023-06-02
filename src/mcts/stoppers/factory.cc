@@ -77,8 +77,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
     tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
   } catch (...) {
     float slowmover = options.Get<float>(kSlowMoverId);
-    tm_options.AddSubdictFromString("legacy(slowmover=" +
-                                    std::to_string(slowmover) + ")");
+    tm_options.AddSubdict("legacy")->Set("slowmover", slowmover);
   }
   const auto managers = tm_options.ListSubdicts();
 
