@@ -70,6 +70,8 @@ float GetContempt(std::string name, std::string contempt_str,
                   float uci_rating_adv) {
   float contempt = uci_rating_adv;
   for (auto& entry : StrSplit(contempt_str, ",")) {
+    // The default contempt is an empty string, so skip empty entries.
+    if (entry.length() == 0) continue;
     auto parts = StrSplit(entry, "=");
     if (parts.size() == 1) {
       try {
@@ -639,11 +641,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
       kContemptPerspective(EncodeContemptPerspective(
           options.Get<std::string>(kContemptPerspectiveId))),
-      kContempt(options.IsDefault<std::string>(kContemptId)
-                    ? options.Get<float>(kUCIRatingAdvId)
-                    : GetContempt(options.Get<std::string>(kUCIOpponentId),
-                                  options.Get<std::string>(kContemptId),
-                                  options.Get<float>(kUCIRatingAdvId))),
+      kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),
+                            options.Get<std::string>(kContemptId),
+                            options.Get<float>(kUCIRatingAdvId))),
       kWDLRescaleParams(
           options.Get<float>(kWDLCalibrationEloId) == 0
               ? AccurateWDLRescaleParams(
