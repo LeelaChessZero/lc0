@@ -64,7 +64,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
     if (for_what == RunType::kUci) {
       options->Add<StringOption>(kTimeManagerId) = "legacy";
     } else {
-      options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 0.0f;
+      options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
     }
   }
 }
@@ -76,9 +76,9 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   try {
     tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
   } catch (...) {
-    return MakeCommonTimeManager(
-        MakeLegacyTimeManager(move_overhead, options.Get<float>(kSlowMoverId)),
-        options, move_overhead);
+    float slowmover = options.Get<float>(kSlowMoverId);
+    tm_options.AddSubdictFromString("legacy(slowmover=" +
+                                    std::to_string(slowmover) + ")");
   }
   const auto managers = tm_options.ListSubdicts();
 

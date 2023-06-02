@@ -135,7 +135,7 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
     }
   }
   // always limit nodes to avoid exceeding the limit 4000000000. That number is
-  // default when node_limit = 0)
+  // default when node_limit = 0.
   stopper->AddStopper(std::make_unique<VisitsStopper>(
       node_limit, options.Get<float>(kSmartPruningFactorId) > 0.0f));
 

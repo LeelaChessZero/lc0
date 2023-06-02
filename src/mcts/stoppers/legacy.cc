@@ -74,14 +74,6 @@ class LegacyTimeManager : public TimeManager {
         spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)),
         first_move_bonus_(params.GetOrDefault<float>("first-move-bonus", 1.8f)),
         book_ply_bonus_(params.GetOrDefault<float>("book-ply-bonus", 0.25f)) {}
-  LegacyTimeManager(int64_t move_overhead, float slowmover)
-      : move_overhead_(move_overhead),
-        slowmover_(slowmover),
-        time_curve_midpoint_(51.5f),
-        time_curve_steepness_(7.0f),
-        spend_saved_time_(1.0f),
-        first_move_bonus_(1.8f),
-        book_ply_bonus_(0.25f) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
 
@@ -176,10 +168,5 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
 std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params) {
   return std::make_unique<LegacyTimeManager>(move_overhead, params);
-}
-
-std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
-                                                   float slowmover) {
-  return std::make_unique<LegacyTimeManager>(move_overhead, slowmover);
 }
 }  // namespace lczero
