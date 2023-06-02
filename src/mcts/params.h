@@ -33,13 +33,25 @@
 
 namespace lczero {
 
+enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+
 class SearchParams {
  public:
   SearchParams(const OptionsDict& options);
   SearchParams(const SearchParams&) = delete;
 
+  // Use struct for WDLRescaleParams calculation to make them const.
+  struct WDLRescaleParams {
+    WDLRescaleParams(float r, float d) {
+      ratio = r;
+      diff = d;
+    }
+    float ratio;
+    float diff;
+  };
+
   // Populates UciOptions with search parameters.
-  static void Populate(OptionsParser* options, bool is_simple = false);
+  static void Populate(OptionsParser* options);
 
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
@@ -104,10 +116,16 @@ class SearchParams {
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
+  ContemptPerspective GetContemptPerspective() const {
+    return kContemptPerspective;
+  }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
   float GetBlackDrawDelta() const { return kDrawScoreBlack; }
+  float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
+  float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
+  float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
   int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
   float GetNpsLimit() const { return kNpsLimit; }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
@@ -184,11 +202,19 @@ class SearchParams {
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
-  static const OptionId kContemptId;
+  static const OptionId kContemptPerspectiveId;
   static const OptionId kDrawScoreSidetomoveId;
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
   static const OptionId kDrawScoreBlackId;
+  static const OptionId kContemptId;
+  static const OptionId kContemptMaxValueId;
+  static const OptionId kWDLCalibrationEloId;
+  static const OptionId kWDLContemptAttenuationId;
+  static const OptionId kWDLEvalObjectivityId;
+  static const OptionId kWDLDrawRateTargetId;
+  static const OptionId kWDLDrawRateReferenceId;
+  static const OptionId kWDLBookExitBiasId;
   static const OptionId kMaxOutOfOrderEvalsId;
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;
@@ -202,13 +228,15 @@ class SearchParams {
   static const OptionId kMaxCollisionVisitsScalingStartId;
   static const OptionId kMaxCollisionVisitsScalingEndId;
   static const OptionId kMaxCollisionVisitsScalingPowerId;
+  static const OptionId kUCIOpponentId;
+  static const OptionId kUCIRatingAdvId;
 
  private:
   const OptionsDict& options_;
   // Cached parameter values. Values have to be cached if either:
   // 1. Parameter is accessed often and has to be cached for performance
   // reasons.
-  // 2. Parameter has to stay the say during the search.
+  // 2. Parameter has to stay the same during the search.
   // TODO(crem) Some of those parameters can be converted to be dynamic after
   //            trivial search optimizations.
   const float kCpuct;
@@ -241,6 +269,14 @@ class SearchParams {
   const float kMovesLeftQuadraticFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
+  const float kDrawScoreSidetomove;
+  const float kDrawScoreOpponent;
+  const float kDrawScoreWhite;
+  const float kDrawScoreBlack;
+  const ContemptPerspective kContemptPerspective;
+  const float kContempt;
+  const WDLRescaleParams kWDLRescaleParams;
+  const float kWDLEvalObjectivity;
   const int kMaxOutOfOrderEvals;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
@@ -254,10 +290,6 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingStart;
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
-  float kDrawScoreSidetomove;
-  float kDrawScoreOpponent;
-  float kDrawScoreWhite;
-  float kDrawScoreBlack;
 };
 
 }  // namespace lczero

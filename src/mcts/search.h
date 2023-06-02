@@ -44,7 +44,6 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
-#include "utils/numa.h"
 
 namespace lczero {
 
@@ -216,11 +215,10 @@ class SearchWorker {
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
-    Numa::BindThread(id);
+    search_->network_->InitThread(id);
     for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
       task_workspaces_.emplace_back();
       task_threads_.emplace_back([this, i]() {
-        Numa::BindThread(i);
         this->RunTasks(i);
       });
     }
@@ -271,8 +269,6 @@ class SearchWorker {
 
   // 2. Gather minibatch.
   void GatherMinibatch();
-  // Variant for multigather path.
-  void GatherMinibatch2();
 
   // 2b. Copy collisions into shared_collisions_.
   void CollectCollisions();
@@ -426,8 +422,7 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  void ExtendNode(Node* node, int depth);
-  bool AddNodeToComputation(Node* node, bool add_if_cached, int* transform_out);
+  bool AddNodeToComputation(Node* node);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.

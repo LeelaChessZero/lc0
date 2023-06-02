@@ -99,7 +99,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
-  SearchParams::Populate(options, is_simple);
+  SearchParams::Populate(options);
 
   ConfigFile::PopulateOptions(options);
   if (is_simple) {
@@ -142,9 +142,11 @@ void EngineController::UpdateFromUciOptions() {
     if (!syzygy_tb_->init(tb_paths)) {
       CERR << "Failed to load Syzygy tablebases!";
       syzygy_tb_ = nullptr;
-    } else {
-      tb_paths_ = tb_paths;
     }
+    tb_paths_ = tb_paths;
+  } else if (tb_paths.empty()) {
+    syzygy_tb_ = nullptr;
+    tb_paths_.clear();
   }
 
   // Network.

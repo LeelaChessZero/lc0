@@ -82,7 +82,7 @@ void ApplySEUnit(const size_t batch_size, const size_t channels,
   FullyConnectedLayer<use_eigen>::Forward1D(batch_size, se_fc_outputs,
                                             2 * channels, fc_out1.data(),
                                             weights_w2, weights_b2,
-                                            NONE,  // Activation Off
+                                            ACTIVATION_NONE,  // Activation Off
                                             pool.data());
 
   // Sigmoid, scale and add residual

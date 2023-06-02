@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "utils/exception.h"
+
 #ifdef USE_ISPC
 #include "activation_ispc.h"
 #endif
@@ -68,35 +70,45 @@ static inline float selu(float val) {
 
 float Activate(const float val, const ActivationFunction activation) {
   switch (activation) {
-    case RELU:
+    case ACTIVATION_RELU:
       return val > 0 ? val : 0;
-    case MISH:
+    case ACTIVATION_RELU_2:
+      return val > 0 ? val * val : 0;
+    case ACTIVATION_MISH:
       return mish(val);
-    case TANH:
+    case ACTIVATION_TANH:
       return tanhf(val);
-    case SIGMOID:
+    case ACTIVATION_SIGMOID:
       return 1.0f / (1.0f + expf(-val));
-    case SELU:
+    case ACTIVATION_SELU:
       return selu(val);
-    case NONE:
+    case ACTIVATION_SWISH:
+      return val / (1.0f + expf(-val));
+    case ACTIVATION_NONE:
       // Nothing to do.
       break;
+    default:
+      throw Exception("unsupported activation function");
   }
   return val;
 }
 
 void Activate(const size_t len, const float* data, const float* bias,
               float* output, const ActivationFunction activation) {
-  if (activation == NONE) {
+  if (activation == ACTIVATION_NONE) {
     for (size_t b = 0; b < len; b++) {
       output[b] = data[b] + bias[b];
     }
-  } else if (activation == RELU) {
+  } else if (activation == ACTIVATION_RELU) {
+#ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = data[b] + bias[b];
       output[b] = val > 0 ? val : 0;
     }
-  } else if (activation == MISH) {
+#else
+    ispc::ActivateRelu(len, 1.0f, data, bias, 0.0f, output);
+#endif
+  } else if (activation == ACTIVATION_MISH) {
 #ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = data[b] + bias[b];
@@ -104,6 +116,34 @@ void Activate(const size_t len, const float* data, const float* bias,
     }
 #else
     ispc::ActivateMish(len, 1.0f, data, bias, 0.0f, output);
+#endif
+  } else if (activation == ACTIVATION_RELU_2) {
+#ifndef USE_ISPC
+    for (size_t b = 0; b < len; b++) {
+      float val = data[b] + bias[b];
+      output[b] = val > 0 ? val * val : 0;
+    }
+#else
+    ispc::ActivateRelu_2(len, data, bias, output);
+#endif
+  } else if (activation == ACTIVATION_SWISH) {
+#ifndef USE_ISPC
+    for (size_t b = 0; b < len; b++) {
+      float val = data[b] + bias[b];
+      output[b] = val / (1.0f + exp(-val));
+      ;
+    }
+#else
+    ispc::ActivateSwish(len, data, bias, output);
+#endif
+  } else if (activation == ACTIVATION_SELU) {
+#ifndef USE_ISPC
+    for (size_t b = 0; b < len; b++) {
+      float val = data[b] + bias[b];
+      output[b] = selu(val);
+    }
+#else
+    ispc::ActivateSelu(len, data, bias, output);
 #endif
   } else {
     for (size_t b = 0; b < len; b++) {
@@ -116,17 +156,21 @@ void Activate(const size_t len, const float* data, const float* bias,
 void Activate(const size_t len, float gamma, const float* data,
               const float* bias, float beta, float* output,
               const ActivationFunction activation) {
-  if (activation == NONE) {
+  if (activation == ACTIVATION_NONE) {
     for (size_t b = 0; b < len; b++) {
       float val = gamma * data[b] + bias[b] + beta;
       output[b] = val;
     }
-  } else if (activation == RELU) {
+  } else if (activation == ACTIVATION_RELU) {
+#ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = gamma * data[b] + bias[b] + beta;
       output[b] = val > 0 ? val : 0;
     }
-  } else if (activation == MISH) {
+#else
+    ispc::ActivateRelu(len, gamma, data, bias, beta, output);
+#endif
+  } else if (activation == ACTIVATION_MISH) {
 #ifndef USE_ISPC
     for (size_t b = 0; b < len; b++) {
       float val = gamma * data[b] + bias[b] + beta;
@@ -151,17 +195,21 @@ void BiasResidual(const size_t batch_size, const size_t channels, float* data,
       auto bias = biases[c];
       auto arr = &data[c * kSquares];
       auto res = &eltwise[c * kSquares];
-      if (activation == NONE) {
+      if (activation == ACTIVATION_NONE) {
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
           arr[b] = val;
         }
-      } else if (activation == RELU) {
+      } else if (activation == ACTIVATION_RELU) {
+#ifndef USE_ISPC
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
           arr[b] = val > 0 ? val : 0;
         }
-      } else if (activation == MISH) {
+#else
+        ispc::ActivateRelu(kSquares, 1.0f, res, arr, bias, arr);
+#endif
+      } else if (activation == ACTIVATION_MISH) {
 #ifndef USE_ISPC
         for (size_t b = 0; b < kSquares; b++) {
           float val = res[b] + arr[b] + bias;
@@ -188,17 +236,17 @@ void BiasActivate(const size_t batch_size, const size_t channels, float* data,
     for (size_t c = 0; c < channels; ++c) {
       auto bias = biases[c];
       auto arr = &data[c * kSquares];
-      if (activation == NONE) {
+      if (activation == ACTIVATION_NONE) {
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;
           arr[b] = val;
         }
-      } else if (activation == RELU) {
+      } else if (activation == ACTIVATION_RELU) {
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;
           arr[b] = val > 0 ? val : 0;
         }
-      } else if (activation == MISH) {
+      } else if (activation == ACTIVATION_MISH) {
 #ifndef USE_ISPC
         for (size_t b = 0; b < kSquares; b++) {
           float val = arr[b] + bias;

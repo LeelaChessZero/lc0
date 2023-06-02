@@ -98,8 +98,7 @@ struct NetworkCapabilities {
   }
 
   bool has_mlh() const {
-    return moves_left !=
-           pblczero::NetworkFormat::MovesLeftFormat::MOVES_LEFT_NONE;
+    return moves_left != pblczero::NetworkFormat::MOVES_LEFT_NONE;
   }
 };
 
@@ -107,6 +106,7 @@ class Network {
  public:
   virtual const NetworkCapabilities& GetCapabilities() const = 0;
   virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
+  virtual void InitThread(int /*id*/) {}
   virtual ~Network() = default;
 };
 

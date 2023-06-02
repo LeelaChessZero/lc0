@@ -106,26 +106,29 @@ class MEvaluator {
     }
   }
 
-  float GetM(const EdgeAndNode& child, float q) const {
-    if (!enabled_ || !parent_within_threshold_) return 0.0f;
-    const float child_m = child.GetM(parent_m_);
-    float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
-    m *= FastSign(-q);
-    m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
-    return m;
-  }
-
-  float GetM(Node* child, float q) const {
+  // Calculates the utility for favoring shorter wins and longer losses.
+  float GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     const float child_m = child->GetM();
     float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
     m *= FastSign(-q);
+    if (q_threshold_ > 0.0f && q_threshold_ < 1.0f) {
+      // This allows a smooth M effect with higher q thresholds, which is
+      // necessary for using MLH together with contempt.
+      q = std::max(0.0f, (std::abs(q) - q_threshold_)) / (1.0f - q_threshold_);
+    }
     m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
     return m;
   }
 
+  float GetMUtility(const EdgeAndNode& child, float q) const {
+    if (!enabled_ || !parent_within_threshold_) return 0.0f;
+    if (child.GetN() == 0) return GetDefaultMUtility();
+    return GetMUtility(child.node(), q);
+  }
+
   // The M utility to use for unvisited nodes.
-  float GetDefaultM() const { return 0.0f; }
+  float GetDefaultMUtility() const { return 0.0f; }
 
  private:
   static bool WithinThreshold(const Node* parent, float q_threshold) {
@@ -194,6 +197,45 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }
 }  // namespace
 
+namespace {
+// WDL conversion formula based on random walk model.
+inline void WDLRescale(float& v, float& d, float* mu_uci,
+                       float wdl_rescale_ratio, float wdl_rescale_diff,
+                       float sign, bool invert) {
+  if (invert) {
+    wdl_rescale_diff = -wdl_rescale_diff;
+    wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
+  }
+  auto w = (1 + v - d) / 2;
+  auto l = (1 - v - d) / 2;
+  // Safeguard against numerical issues; skip WDL transformation if WDL is too
+  // extreme.
+  const float eps = 0.0001f;
+  if (w > eps && d > eps && l > eps && w < (1.0f - eps) && d < (1.0f - eps) &&
+      l < (1.0f - eps)) {
+    auto a = FastLog(1 / l - 1);
+    auto b = FastLog(1 / w - 1);
+    auto s = 2 / (a + b);
+    // Safeguard against unrealistically broad WDL distributions coming from
+    // the NN. Could be made into a parameter, but probably unnecessary.
+    const float max_reasonable_s = 1.4f;
+    if (!invert) s = std::min(max_reasonable_s, s);
+    auto mu = (a - b) / (a + b);
+    auto s_new = s * wdl_rescale_ratio;
+    if (invert) {
+      std::swap(s, s_new);
+      s = std::min(max_reasonable_s, s);
+    }
+    auto mu_new = mu + sign * s * s * wdl_rescale_diff;
+    auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
+    auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
+    v = w_new - l_new;
+    d = std::max(0.0f, 1.0f - w_new - l_new);
+    if (mu_uci) *mu_uci = mu_new;
+  }
+}
+}  // namespace
+
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
@@ -235,8 +277,21 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     ++multipv;
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
-    const auto wl = edge.GetWL(default_wl);
-    const auto floatD = edge.GetD(default_d);
+    auto wl = edge.GetWL(default_wl);
+    auto d = edge.GetD(default_d);
+    float mu_uci = 0.0f;
+    // Only the diff effect is inverted, so we only need to call if diff != 0.
+    if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
+      auto sign =
+          ((params_.GetContemptPerspective() == ContemptPerspective::STM) ||
+           ((params_.GetContemptPerspective() == ContemptPerspective::BLACK) ==
+            played_history_.IsBlackToMove()))
+              ? 1.0f
+              : -1.0f;
+      WDLRescale(wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
+                 params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
+                 sign, true);
+    }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
       uci_info.mate = std::copysign(
@@ -256,20 +311,31 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       uci_info.score = q * 10000;
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
+    } else if (score_type == "WDL_mu") {
+      // Reports the WDL mu value whenever it is reasonable, and defaults to
+      // centipawn otherwise.
+      const float centipawn_fallback_threshold = 0.99f;
+      float centipawn_score = 90 * tan(1.5637541897 * wl);
+      uci_info.score =
+          mu_uci != 0.0f && std::abs(wl) + d < centipawn_fallback_threshold &&
+                  (std::abs(mu_uci) < 1.0f ||
+                   std::abs(centipawn_score) < std::abs(100 * mu_uci))
+              ? 100 * mu_uci
+              : centipawn_score;
     }
 
-    auto w =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - floatD))));
-    auto l =
-        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - floatD))));
+    auto wdl_w =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 + wl - d))));
+    auto wdl_l =
+        std::max(0, static_cast<int>(std::round(500.0 * (1.0 - wl - d))));
     // Using 1000-w-l so that W+D+L add up to 1000.0.
-    auto d = 1000 - w - l;
-    if (d < 0) {
-      w = std::min(1000, std::max(0, w + d / 2));
-      l = 1000 - w;
-      d = 0;
+    auto wdl_d = 1000 - wdl_w - wdl_l;
+    if (wdl_d < 0) {
+      wdl_w = std::min(1000, std::max(0, wdl_w + wdl_d / 2));
+      wdl_l = 1000 - wdl_w;
+      wdl_d = 0;
     }
-    uci_info.wdl = ThinkingInfo::WDL{w, d, l};
+    uci_info.wdl = ThinkingInfo::WDL{wdl_w, wdl_d, wdl_l};
     if (network_->GetCapabilities().has_mlh()) {
       uci_info.moves_left = static_cast<int>(
           (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
@@ -436,10 +502,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
         up = -up;
         std::swap(lo, up);
       }
-      *oss << (lo == up                                                ? "(T) "
-               : lo == GameResult::DRAW && up == GameResult::WHITE_WON ? "(W) "
-               : lo == GameResult::BLACK_WON && up == GameResult::DRAW ? "(L) "
-                                                                       : "");
+      *oss << (lo == up
+                   ? "(T) "
+                   : lo == GameResult::DRAW && up == GameResult::WHITE_WON
+                         ? "(W) "
+                         : lo == GameResult::BLACK_WON && up == GameResult::DRAW
+                               ? "(L) "
+                               : "");
     }
   };
 
@@ -449,7 +518,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                : MEvaluator();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
-    float M = m_evaluator.GetM(edge, Q);
+    float M = m_evaluator.GetMUtility(edge, Q);
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
@@ -521,6 +590,9 @@ NNCacheLock Search::GetCachedNNEval(const Node* node) const {
 void Search::MaybeTriggerStop(const IterationStats& stats,
                               StoppersHints* hints) {
   hints->Reset();
+  if (params_.GetNpsLimit() > 0) {
+    hints->UpdateEstimatedNps(params_.GetNpsLimit());
+  }
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
   // Already responded bestmove, nothing to do here.
@@ -544,11 +616,6 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
   }
-
-  // Use a 0 visit cancel score update to clear out any cached best edge, as
-  // at the next iteration remaining playouts may be different.
-  // TODO(crem) Is it really needed?
-  root_node_->CancelScoreUpdate(0);
 }
 
 // Return the evaluation of the actual best child, regardless of temperature
@@ -846,6 +913,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   stats->win_found = false;
+  stats->may_resign = true;
   stats->num_losing_edges = 0;
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
 
@@ -863,7 +931,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     for (const auto& edge : root_node_->Edges()) {
       const auto n = edge.GetN();
       const auto q = edge.GetQ(fpu, draw_score);
-      const auto m = m_evaluator.GetM(edge, q);
+      const auto m = m_evaluator.GetMUtility(edge, q);
       const auto q_plus_m = q + m;
       stats->edge_n.push_back(n);
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
@@ -871,6 +939,12 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       }
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) < 0.0f) {
         stats->num_losing_edges += 1;
+      }
+      // If game is resignable, no need for moving quicker. This allows
+      // proving mate when losing anyway for better score output.
+      // Hardcoded resign threshold, because there is no available parameter.
+      if (n > 0 && q > -0.98f) {
+        stats->may_resign = false;
       }
       if (max_n < n) {
         max_n = n;
@@ -888,12 +962,10 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
 }
 
 void Search::WatchdogThread() {
-  Numa::BindThread(0);
   LOGFILE << "Start a watchdog thread.";
   StoppersHints hints;
   IterationStats stats;
   while (true) {
-    hints.Reset();
     PopulateCommonIterationStats(&stats);
     MaybeTriggerStop(stats, &hints);
     MaybeOutputInfo();
@@ -1077,7 +1149,7 @@ void SearchWorker::ExecuteOneIteration() {
   }
 
   // 2. Gather minibatch.
-  GatherMinibatch2();
+  GatherMinibatch();
   task_count_.store(-1, std::memory_order_release);
   search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
@@ -1161,7 +1233,7 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
 }
 }  // namespace
 
-void SearchWorker::GatherMinibatch2() {
+void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
   int cur_n = 0;
@@ -1596,13 +1668,13 @@ void SearchWorker::PickNodesToExtendTask(
         int index = child->Index();
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
-        current_util[index] = q + m_evaluator.GetM(child, q);
+        current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < max_needed; i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
-          current_util[i] = fpu + m_evaluator.GetDefaultM();
+          current_util[i] = fpu + m_evaluator.GetDefaultMUtility();
         }
       }
 
@@ -1699,7 +1771,7 @@ void SearchWorker::PickNodesToExtendTask(
         }
         (*visits_to_perform.back())[best_idx] += new_visits;
         cur_limit -= new_visits;
-        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node, nullptr);
+        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
 
         // Probably best place to check for two-fold draws consistently.
         // Depth starts with 1 at root, so real depth is depth - 1.
@@ -1791,7 +1863,7 @@ void SearchWorker::PickNodesToExtendTask(
           }
           current_path.back() = idx;
           current_path.push_back(-1);
-          node = child.GetOrSpawnNode(/* parent */ node, nullptr);
+          node = child.GetOrSpawnNode(/* parent */ node);
           found_child = true;
           break;
         }
@@ -1906,48 +1978,11 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   node->CreateEdges(legal_moves);
 }
 
-void SearchWorker::ExtendNode(Node* node, int depth) {
-  std::vector<Move> to_add;
-  // Could instead reserve one more than the difference between history_.size()
-  // and history_.capacity().
-  to_add.reserve(60);
-  // Need a lock to walk parents of leaf in case MakeSolid is concurrently
-  // adjusting parent chain.
-  {
-    SharedMutex::SharedLock lock(search_->nodes_mutex_);
-    Node* cur = node;
-    while (cur != search_->root_node_) {
-      Node* prev = cur->GetParent();
-      to_add.push_back(prev->GetEdgeToNode(cur)->GetMove());
-      cur = prev;
-    }
-  }
-  std::reverse(to_add.begin(), to_add.end());
-
-  ExtendNode(node, depth, to_add, &history_);
-}
-
 // Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
-                                        int* transform_out) {
+bool SearchWorker::AddNodeToComputation(Node* node) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  // If already in cache, no need to do anything.
-  if (add_if_cached) {
-    if (computation_->AddInputByHash(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
-      return true;
-    }
-  } else {
-    if (search_->cache_->ContainsKey(hash)) {
-      if (transform_out) {
-        *transform_out = TransformForPosition(
-            search_->network_->GetCapabilities().input_format, history_);
-      }
-      return true;
-    }
+  if (search_->cache_->ContainsKey(hash)) {
+    return true;
   }
   int transform;
   auto planes =
@@ -1974,7 +2009,6 @@ bool SearchWorker::AddNodeToComputation(Node* node, bool add_if_cached,
   }
 
   computation_->AddInput(hash, std::move(planes), std::move(moves));
-  if (transform_out) *transform_out = transform;
   return false;
 }
 
@@ -2015,7 +2049,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node, false, nullptr)) {
+    if (AddNodeToComputation(node)) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
@@ -2127,8 +2161,25 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   }
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  node_to_process->v = -computation.GetQVal(idx_in_computation);
-  node_to_process->d = computation.GetDVal(idx_in_computation);
+  auto v = -computation.GetQVal(idx_in_computation);
+  auto d = computation.GetDVal(idx_in_computation);
+  // Check whether root moves are from the set perspective.
+  if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
+    bool root_stm =
+        (params_.GetContemptPerspective() == ContemptPerspective::STM)
+            ? true
+            : ((params_.GetContemptPerspective() ==
+                ContemptPerspective::BLACK) ==
+               search_->played_history_.Last().IsBlackToMove());
+    auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
+    if (params_.GetWDLRescaleRatio() != 1.0f ||
+        params_.GetWDLRescaleDiff() != 0.0f) {
+      WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
+                 params_.GetWDLRescaleDiff(), sign, false);
+    }
+  }
+  node_to_process->v = v;
+  node_to_process->d = d;
   node_to_process->m = computation.GetMVal(idx_in_computation);
   // ...and secondly, the policy data.
   // Calculate maximum first.
