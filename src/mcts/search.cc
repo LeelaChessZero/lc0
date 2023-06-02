@@ -40,6 +40,7 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
+#include "utils/spinhelper.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 
@@ -1127,6 +1128,16 @@ void SearchWorker::ExecuteOneIteration() {
   InitializeIteration(search_->network_->NewComputation());
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
+    std::unique_ptr<SpinHelper> spin_helper;
+    if (params_.GetSearchSpinBackoff()) {
+      spin_helper = std::make_unique<ExponentialBackoffSpinHelper>();
+    } else {
+      // This is a hard spin lock to reduce latency but at the expense of busy
+      // wait cpu usage. If search worker count is large, this is probably a
+      // bad idea.
+      spin_helper = std::make_unique<SpinHelper>();
+    }
+
     while (true) {
       // If search is stop, we've not gathered or done anything and we don't
       // want to, so we can safely skip all below. But make sure we have done
@@ -1135,16 +1146,20 @@ void SearchWorker::ExecuteOneIteration() {
           search_->GetTotalPlayouts() + search_->initial_visits_ > 0) {
         return;
       }
+
       int available =
           search_->pending_searchers_.load(std::memory_order_acquire);
-      if (available > 0 &&
-          search_->pending_searchers_.compare_exchange_weak(
+      if (available == 0) {
+        spin_helper->Wait();
+        continue;
+      }
+
+      if (search_->pending_searchers_.compare_exchange_weak(
               available, available - 1, std::memory_order_acq_rel)) {
         break;
+      } else {
+        spin_helper->Backoff();
       }
-      // This is a hard spin lock to reduce latency but at the expense of busy
-      // wait cpu usage. If search worker count is large, this is probably a bad
-      // idea.
     }
   }
 
