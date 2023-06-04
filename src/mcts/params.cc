@@ -628,7 +628,7 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kDrawScoreBlack{options.Get<int>(kDrawScoreId) / 100.0f},
+      kDrawScore{options.Get<int>(kDrawScoreId) / 100.0f},
       kContemptPerspective(EncodeContemptPerspective(
           options.Get<std::string>(kContemptPerspectiveId))),
       kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),
