@@ -362,8 +362,8 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "at once."};
 const OptionId SearchParams::kDrawScoreId{
     "draw-score", "DrawScore",
-    "Adjustment of the draw score from white's perspective. For Armageddon, "
-    "use -100."};
+    "Adjustment of the draw score from white's perspective. Value 0 gives "
+    "standard scoring, value -1 gives Armageddon scoring."};
 const OptionId SearchParams::kContemptPerspectiveId{
     "contempt-perspective", "ContemptPerspective",
     "Affects the way asymmetric WDL parameters are applied. Default is "
@@ -530,7 +530,7 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  options->Add<IntOption>(kDrawScoreId, -100, 100) = 0;
+  options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
   std::vector<std::string> perspective = {"sidetomove", "white", "black",
                                           "none"};
   options->Add<ChoiceOption>(kContemptPerspectiveId, perspective) =
@@ -628,7 +628,7 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kDrawScore{options.Get<int>(kDrawScoreId) / 100.0f},
+      kDrawScore(options.Get<float>(kDrawScoreId)),
       kContemptPerspective(EncodeContemptPerspective(
           options.Get<std::string>(kContemptPerspectiveId))),
       kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),
