@@ -281,8 +281,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto wl = edge.GetWL(default_wl);
     auto d = edge.GetD(default_d);
     float mu_uci = 0.0f;
-    // Only the diff effect is inverted, so we only need to call if diff != 0.
-    if (params_.GetWDLRescaleDiff() != 0.0f) {
+    if (params_.GetWDLRescaleRatio() != 1.0f ||
+        params_.GetWDLRescaleDiff() != 0.0f) {
       // For ContemptMode::NONE diff is 0, so value of sign is irrelevant.
       auto sign = ((params_.GetContemptMode() == ContemptMode::PLAY) ||
                    ((params_.GetContemptMode() == ContemptMode::BLACK) ==
@@ -2179,9 +2179,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
-  // Check whether root moves are from the set perspective.
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       params_.GetWDLRescaleDiff() != 0.0f) {
+    // Check whether root moves are from the set perspective.
     // For ContemptMode::NONE diff is 0, so values of root_stm and sign are
     // irrelevant.
     bool root_stm = (params_.GetContemptMode() == ContemptMode::PLAY)
