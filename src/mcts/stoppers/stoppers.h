@@ -131,12 +131,13 @@ class KldGainStopper : public SearchStopper {
 // best move to potentially become the best one, stop the search.
 class SmartPruningStopper : public SearchStopper {
  public:
-  SmartPruningStopper(float smart_pruning_factor, int64_t minimum_batches);
+  SmartPruningStopper(float smart_pruning_factor, int64_t minimum_batches, float hyperpruning_threshold);
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
 
  private:
   const double smart_pruning_factor_;
   const int64_t minimum_batches_;
+  const double hyperpruning_threshold_;
   Mutex mutex_;
   std::optional<int64_t> first_eval_time_ GUARDED_BY(mutex_);
 };
