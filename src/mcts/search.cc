@@ -40,9 +40,9 @@
 #include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
-#include "utils/spinhelper.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
+#include "utils/spinhelper.h"
 
 namespace lczero {
 
@@ -281,14 +281,14 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto wl = edge.GetWL(default_wl);
     auto d = edge.GetD(default_d);
     float mu_uci = 0.0f;
-    // Only the diff effect is inverted, so we only need to call if diff != 0.
-    if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
-      auto sign =
-          ((params_.GetContemptPerspective() == ContemptPerspective::STM) ||
-           ((params_.GetContemptPerspective() == ContemptPerspective::BLACK) ==
-            played_history_.IsBlackToMove()))
-              ? 1.0f
-              : -1.0f;
+    if (params_.GetWDLRescaleRatio() != 1.0f ||
+        params_.GetWDLRescaleDiff() != 0.0f) {
+      // For ContemptMode::NONE diff is 0, so value of sign is irrelevant.
+      auto sign = ((params_.GetContemptMode() == ContemptMode::PLAY) ||
+                   ((params_.GetContemptMode() == ContemptMode::BLACK) ==
+                    played_history_.IsBlackToMove()))
+                      ? 1.0f
+                      : -1.0f;
       WDLRescale(wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
                  params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
                  sign, true);
@@ -1282,8 +1282,9 @@ void SearchWorker::GatherMinibatch() {
     // massive nps drop.
     if (thread_count > 1 && minibatch_size > 0 &&
         computation_->GetCacheMisses() > params_.GetIdlingMinimumWork() &&
-        thread_count - search_->backend_waiting_counter_.load(
-                           std::memory_order_relaxed) >
+        thread_count -
+                search_->backend_waiting_counter_.load(
+                    std::memory_order_relaxed) >
             params_.GetThreadIdlingThreshold()) {
       return;
     }
@@ -2176,20 +2177,18 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
-  // Check whether root moves are from the set perspective.
-  if (params_.GetContemptPerspective() != ContemptPerspective::NONE) {
-    bool root_stm =
-        (params_.GetContemptPerspective() == ContemptPerspective::STM)
-            ? true
-            : ((params_.GetContemptPerspective() ==
-                ContemptPerspective::BLACK) ==
-               search_->played_history_.Last().IsBlackToMove());
+  if (params_.GetWDLRescaleRatio() != 1.0f ||
+      params_.GetWDLRescaleDiff() != 0.0f) {
+    // Check whether root moves are from the set perspective.
+    // For ContemptMode::NONE diff is 0, so values of root_stm and sign are
+    // irrelevant.
+    bool root_stm = (params_.GetContemptMode() == ContemptMode::PLAY)
+                        ? true
+                        : ((params_.GetContemptMode() == ContemptMode::BLACK) ==
+                           search_->played_history_.Last().IsBlackToMove());
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-    if (params_.GetWDLRescaleRatio() != 1.0f ||
-        params_.GetWDLRescaleDiff() != 0.0f) {
-      WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
-                 params_.GetWDLRescaleDiff(), sign, false);
-    }
+    WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
+               params_.GetWDLRescaleDiff(), sign, false);
   }
   node_to_process->v = v;
   node_to_process->d = d;
