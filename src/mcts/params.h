@@ -33,7 +33,7 @@
 
 namespace lczero {
 
-enum class ContemptPerspective { STM, WHITE, BLACK, NONE };
+enum class ContemptMode { PLAY, WHITE, BLACK, NONE };
 
 class SearchParams {
  public:
@@ -116,9 +116,7 @@ class SearchParams {
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
-  ContemptPerspective GetContemptPerspective() const {
-    return kContemptPerspective;
-  }
+  ContemptMode GetContemptMode() const { return kContemptMode; }
   float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
   float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
   float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
@@ -156,9 +154,7 @@ class SearchParams {
   float GetMaxCollisionVisitsScalingPower() const {
     return kMaxCollisionVisitsScalingPower;
   }
-  bool GetSearchSpinBackoff() const {
-    return kSearchSpinBackoff;
-  }
+  bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -205,7 +201,7 @@ class SearchParams {
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
-  static const OptionId kContemptPerspectiveId;
+  static const OptionId kContemptModeId;
   static const OptionId kDrawScoreSidetomoveId;
   static const OptionId kDrawScoreOpponentId;
   static const OptionId kDrawScoreWhiteId;
@@ -277,7 +273,7 @@ class SearchParams {
   const float kDrawScoreOpponent;
   const float kDrawScoreWhite;
   const float kDrawScoreBlack;
-  const ContemptPerspective kContemptPerspective;
+  const ContemptMode kContemptMode;
   const float kContempt;
   const WDLRescaleParams kWDLRescaleParams;
   const float kWDLEvalObjectivity;
