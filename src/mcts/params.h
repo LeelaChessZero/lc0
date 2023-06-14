@@ -116,11 +116,8 @@ class SearchParams {
   }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
+  float GetDrawScore() const { return kDrawScore; }
   ContemptMode GetContemptMode() const { return kContemptMode; }
-  float GetSidetomoveDrawScore() const { return kDrawScoreSidetomove; }
-  float GetOpponentDrawScore() const { return kDrawScoreOpponent; }
-  float GetWhiteDrawDelta() const { return kDrawScoreWhite; }
-  float GetBlackDrawDelta() const { return kDrawScoreBlack; }
   float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
   float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
   float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
@@ -201,11 +198,8 @@ class SearchParams {
   static const OptionId kMovesLeftSlopeId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
+  static const OptionId kDrawScoreId;
   static const OptionId kContemptModeId;
-  static const OptionId kDrawScoreSidetomoveId;
-  static const OptionId kDrawScoreOpponentId;
-  static const OptionId kDrawScoreWhiteId;
-  static const OptionId kDrawScoreBlackId;
   static const OptionId kContemptId;
   static const OptionId kContemptMaxValueId;
   static const OptionId kWDLCalibrationEloId;
@@ -269,10 +263,7 @@ class SearchParams {
   const float kMovesLeftQuadraticFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
-  const float kDrawScoreSidetomove;
-  const float kDrawScoreOpponent;
-  const float kDrawScoreWhite;
-  const float kDrawScoreBlack;
+  const float kDrawScore;
   const ContemptMode kContemptMode;
   const float kContempt;
   const WDLRescaleParams kWDLRescaleParams;
