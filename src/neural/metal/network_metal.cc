@@ -62,23 +62,23 @@ void MetalNetworkComputation::ComputeBlocking() {
 
 std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
   switch (act) {
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_RELU:
+    case pblczero::NetworkFormat::ACTIVATION_RELU:
       return "relu";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_MISH:
+    case pblczero::NetworkFormat::ACTIVATION_MISH:
       return "mish";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_NONE:
+    case pblczero::NetworkFormat::ACTIVATION_NONE:
       return "none";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_TANH:
+    case pblczero::NetworkFormat::ACTIVATION_TANH:
       return "tanh";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SIGMOID:
+    case pblczero::NetworkFormat::ACTIVATION_SIGMOID:
       return "sigmoid";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SELU:
+    case pblczero::NetworkFormat::ACTIVATION_SELU:
       return "selu";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SWISH:
+    case pblczero::NetworkFormat::ACTIVATION_SWISH:
       return "swish";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_RELU_2:
+    case pblczero::NetworkFormat::ACTIVATION_RELU_2:
       return "relu_2";
-    case pblczero::NetworkFormat::ActivationFunction::ACTIVATION_SOFTMAX:
+    case pblczero::NetworkFormat::ACTIVATION_SOFTMAX:
       return "softmax";
     default:
       return "";

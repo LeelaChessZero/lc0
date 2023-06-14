@@ -1,4 +1,21 @@
-﻿v0.29.0 (2022-12-13)
+﻿v0.30.0-rc1 (2023-04-24)
+~~~~~~~
+* Support for networks with attention body and smolgen added to blas, cuda,
+  metal and onnx backends.
+* Persistent L2 cache optimization for the cuda backend. Use the
+  `cache_opt=true` backend option to turn it on.
+* Some performance improvements for the cuda, onnx and blas backends.
+* Added the `threads` backend option to onnx, defaults to 0 (let the
+  onnxruntime decide) except for onnx-cpu that defaults to 1.
+* The onnx-dml package now includes a `directml.dll` installation script.
+* Some users experienced memory issues with onnx-dml, so the defaults were
+  changed. This may affect performance, in which case you can use the `steps=8`
+  backend option to get the old behavior.
+* The Python bindings are available as a package, see the README for
+  instructions.
+* Some assorted fixes and code cleanups.
+
+v0.29.0 (2022-12-13)
 ~~~~~~~
 * Updated onednn version to the latest one.
 

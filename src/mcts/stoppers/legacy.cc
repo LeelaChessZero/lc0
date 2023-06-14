@@ -72,6 +72,7 @@ class LegacyTimeManager : public TimeManager {
             params.GetOrDefault<float>("midpoint-move", 51.5f)),
         time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
         spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)),
+        first_move_bonus_(params.GetOrDefault<float>("first-move-bonus", 1.8f)),
         book_ply_bonus_(params.GetOrDefault<float>("book-ply-bonus", 0.25f)) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const NodeTree& tree) override;
@@ -83,6 +84,7 @@ class LegacyTimeManager : public TimeManager {
   const float time_curve_steepness_;
   const float spend_saved_time_;
   // When starting a game from a book, add bonus time per ply of the book.
+  const float first_move_bonus_;
   const float book_ply_bonus_;
   bool first_move_of_game_ = true;
   // No need to be atomic as only one thread will update it.
@@ -133,8 +135,8 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
   // Limit the bonus to max. 12 plies, which also prevents spending too much
   // time on the first move in resumed games.
   if (first_move_of_game_) {
-    this_move_time *= (1.0f + book_ply_bonus_ *
-                       std::min(12, position.GetGamePly()));
+    this_move_time *= (1.0f + first_move_bonus_ +
+                       book_ply_bonus_ * std::min(12, position.GetGamePly()));
     first_move_of_game_ = false;
   }
 

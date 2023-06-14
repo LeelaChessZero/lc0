@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
-        meson_version: '>=0.52')
+        meson_version: '>=0.54')
 
 cc = meson.get_compiler('cpp')
 
@@ -48,7 +48,7 @@ endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
 endif
-if host_machine.cpu_family() == 'arm'
+if ['arm', 'aarch64'].contains(host_machine.cpu_family())
   if get_option('neon')
     add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
     add_project_link_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
@@ -314,7 +314,7 @@ if get_option('build_backends')
     ispc_arch = 'x86-64'
     ispc_extra_args = []
     if get_option('ispc') and ispc.found()
-      ispc_native_only = get_option('ispc_native_only')
+      ispc_native_only = get_option('ispc_native_only') and not meson.is_cross_build()  
       if host_machine.system() == 'windows'
         outputnames = [ '@BASENAME@.obj']
         if not ispc_native_only
@@ -331,24 +331,25 @@ if get_option('build_backends')
                           '@BASENAME@_avx512knl.o', '@BASENAME@_avx512skx.o' ]
         endif
       endif
-      if ispc_native_only
-        ispc_target = 'host'
-      else
-        ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
-      endif
+      ispc_target = 'sse2-i32x8,sse4-i32x8,avx1-i32x8,avx2-i32x8,avx512knl-i32x16,avx512skx-i32x16'
 
       if host_machine.system() == 'android'
         ispc_extra_args += ['--target-os=android']
-        if host_machine.cpu_family() == 'arm'
-          outputnames = [ '@BASENAME@.o']
-          if host_machine.cpu() == 'aarch64'
-            ispc_target = 'neon-i32x8'
-            ispc_arch = 'aarch64'
-          else
-            ispc_target = 'neon-i32x4'
-            ispc_arch = 'arm'
-          endif
+      endif
+
+      if ['arm', 'aarch64'].contains(host_machine.cpu_family())
+        outputnames = [ '@BASENAME@.o']
+        if host_machine.cpu_family() == 'aarch64'
+          ispc_target = 'neon-i32x8'
+          ispc_arch = 'aarch64'
+        else
+          ispc_target = 'neon-i32x4'
+          ispc_arch = 'arm'
         endif
+      endif
+
+      if ispc_native_only
+        ispc_target = 'host'
       endif
 
       iscp_gen = generator(ispc,
@@ -499,22 +500,25 @@ if get_option('build_backends')
     )
 
     # Handling of fp16 cuda code.
-    nvcc_sm_list = ['80', '75', '86', '70', '89', '90']
+    nvcc_arch = '-arch=compute_70'
+    nvcc_sm_list = ['sm_70', 'sm_80', 'sm_90']
     if host_machine.system() != 'windows'
-      nvcc_sm_list += ['60']
+      nvcc_arch = '-arch=compute_60'
+      nvcc_sm_list += ['sm_60']
       if ['arm', 'aarch64'].contains(host_machine.cpu_family())
-        # Add Jetson versions to the list.
-        message('Jetson support enabled.')
-        nvcc_sm_list += ['72', '62', '53', '87']
+        message('Compiling for Jetson.')
+        nvcc_arch = '-arch=compute_53'
+        nvcc_sm_list = ['sm_53', 'sm_62', 'sm_72', 'sm_87']
       endif
     endif
-    # Ignore the given CC for fp16 when it is not in the supported list.
-    if cuda_cc == '' or not nvcc_sm_list.contains('sm_' + cuda_cc)
-      nvcc_extra_args = []
+
+    # Ignore CC without support for fp16, or the build will break.
+    if cuda_cc == '' or cuda_cc.to_int() < 53
+      nvcc_extra_args = [nvcc_arch]
       nvcc_help = run_command(nvcc, '-h').stdout()
       foreach x : nvcc_sm_list
-        if nvcc_help.contains('sm_' + x)
-          nvcc_extra_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
+        if nvcc_help.contains(x)
+          nvcc_extra_args += '-code=' + x
         endif
       endforeach
       # For forward compatibility.
@@ -734,5 +738,7 @@ if get_option('python_bindings')
   python.extension_module('backends',
     [py_files + files],
     include_directories: [includes],
-    dependencies: [cpython] + deps)
+    dependencies: [cpython] + deps,
+    subdir: 'lczero',
+    install: true)
 endif
