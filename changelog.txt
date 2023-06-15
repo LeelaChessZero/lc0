@@ -1,4 +1,24 @@
-﻿v0.30.0-rc1 (2023-04-24)
+﻿v0.30.0-rc2 (2023-06-15)
+~~~~~~~
+* WDL conversion for more realistic WDL score and contempt. Adds an Elo based
+  WDL transformation of the NN value head output. Helps with more accurate play
+  at high level (WDL sharpening), more aggressive play against weaker opponents
+  and draw avoiding openings (contempt), piece odds play. There will be a blog
+  post soon explaining in detail how it works.
+* A new score type `WDL_mu` which follows the new eval convention, where +1.00
+  means 50% white win chance.
+* Simplified to a single `--draw-score` parameter, adjusting the draw score from
+  white's perspective: 0 gives standard scoring, -1 gives Armageddon scoring.
+* Updated describenet for new net architectures.
+* Added a `first-move-bonus` option to the legacy time manager, to accompany
+  `book-ply-bonus` for shallow openings.
+* Changed mlh threshold effect to create a smooth transition.
+* Revised 'simple' time manager.
+* A new spinlock implementation (selected with `--search-spin-backoff`) to help
+  with many cpu threads (e.g. 128 threads), obviously for cpu backends only.
+* Some assorted fixes and code cleanups.
+
+v0.30.0-rc1 (2023-04-24)
 ~~~~~~~
 * Support for networks with attention body and smolgen added to blas, cuda,
   metal and onnx backends.
