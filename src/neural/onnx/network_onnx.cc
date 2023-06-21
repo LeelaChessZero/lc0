@@ -240,12 +240,22 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     int batch = batch_size * step;
 
     auto input_tensor = PrepareInputs(i, batch);
-    if (network_->provider_ == OnnxProvider::DML) network_->lock_.lock();
+    // The DML onnxruntime execution provider is documented as not supporting
+    // multi-threaded calls to Run on the same inference session. We found the
+    // same to be true for the ROCm execution provider (at least for CNNs).
+    // TODO: This may be a onnxruntime/ROCm bug, check onnxruntime 1.16 release.
+    if (network_->provider_ == OnnxProvider::DML ||
+        network_->provider_ == OnnxProvider::ROCM) {
+      network_->lock_.lock();
+    }
     network_->session_[step - 1].Run(
         {}, network_->inputs_cstr_.data(), &input_tensor, 1,
         network_->outputs_cstr_.data(), output_tensors_.data(),
         output_tensors_.size());
-    if (network_->provider_ == OnnxProvider::DML) network_->lock_.unlock();
+    if (network_->provider_ == OnnxProvider::DML ||
+        network_->provider_ == OnnxProvider::ROCM) {
+      network_->lock_.unlock();
+    }
     i += batch;
   }
 }
