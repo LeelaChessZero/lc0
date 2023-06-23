@@ -238,6 +238,7 @@ class PonderResponseTransformer : public TransformingUciResponder {
         if (ponder_info.score) ponder_info.score = -*ponder_info.score;
         if (ponder_info.depth > 1) ponder_info.depth--;
         if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+        if (ponder_info.wdl) std::swap(ponder_info.wdl->w, ponder_info.wdl->l);
         ponder_info.pv.clear();
       }
       if (!info.pv.empty() && info.pv[0].as_string() == ponder_move_) {
