@@ -298,7 +298,7 @@ void EngineController::Go(const GoParams& params) {
   search_ = std::make_unique<Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
-      *move_start_time_, std::move(stopper), params.infinite || params.ponder,
+      *move_start_time_, std::move(stopper), params.infinite, params.ponder,
       options_, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "

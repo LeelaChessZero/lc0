@@ -154,9 +154,9 @@ Search::Search(const NodeTree& tree, Network* network,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
-               const OptionsDict& options, NNCache* cache,
+               bool ponder, const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!infinite),
+    : ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       cache_(cache),
@@ -174,6 +174,24 @@ Search::Search(const NodeTree& tree, Network* network,
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
+  }
+  contempt_mode_ = params_.GetContemptMode();
+  if (contempt_mode_ == ContemptMode::PLAY) {
+    if (infinite) {
+      contempt_mode_ = ContemptMode::NONE;
+      if (params_.GetWDLRescaleRatio() != 1.0f ||
+          params_.GetWDLRescaleDiff() != 0.0f) {
+        std::vector<ThinkingInfo> info(1);
+        info.back().comment =
+            "WARNING: Contempt mode set to 'disable' as 'play' not supported "
+            "for infinite search.";
+        uci_responder_->OutputThinkingInfo(&info);
+      }
+    } else {
+      contempt_mode_ = played_history_.IsBlackToMove() != ponder
+                           ? ContemptMode::BLACK
+                           : ContemptMode::WHITE;
+    }
   }
 }
 
@@ -283,15 +301,16 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     float mu_uci = 0.0f;
     if (params_.GetWDLRescaleRatio() != 1.0f ||
         params_.GetWDLRescaleDiff() != 0.0f) {
-      // For ContemptMode::NONE diff is 0, so value of sign is irrelevant.
-      auto sign = ((params_.GetContemptMode() == ContemptMode::PLAY) ||
-                   ((params_.GetContemptMode() == ContemptMode::BLACK) ==
-                    played_history_.IsBlackToMove()))
+      auto sign = ((contempt_mode_ == ContemptMode::BLACK) ==
+                   played_history_.IsBlackToMove())
                       ? 1.0f
                       : -1.0f;
-      WDLRescale(wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
-                 params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
-                 sign, true);
+      WDLRescale(
+          wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
+          contempt_mode_ == ContemptMode::NONE
+              ? 0
+              : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
+          sign, true);
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -2180,15 +2199,14 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       params_.GetWDLRescaleDiff() != 0.0f) {
     // Check whether root moves are from the set perspective.
-    // For ContemptMode::NONE diff is 0, so values of root_stm and sign are
-    // irrelevant.
-    bool root_stm = (params_.GetContemptMode() == ContemptMode::PLAY)
-                        ? true
-                        : ((params_.GetContemptMode() == ContemptMode::BLACK) ==
-                           search_->played_history_.Last().IsBlackToMove());
+    bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
+                    search_->played_history_.Last().IsBlackToMove();
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
     WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
-               params_.GetWDLRescaleDiff(), sign, false);
+               search_->contempt_mode_ == ContemptMode::NONE
+                   ? 0
+                   : params_.GetWDLRescaleDiff(),
+               sign, false);
   }
   node_to_process->v = v;
   node_to_process->d = d;
