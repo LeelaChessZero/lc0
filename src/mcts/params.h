@@ -117,7 +117,14 @@ class SearchParams {
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetDrawScore() const { return kDrawScore; }
-  ContemptMode GetContemptMode() const { return kContemptMode; }
+  ContemptMode GetContemptMode() const {
+    std::string mode = options_.Get<std::string>(kContemptModeId);
+    if (mode == "play") return ContemptMode::PLAY;
+    if (mode == "white_side_analysis") return ContemptMode::WHITE;
+    if (mode == "black_side_analysis") return ContemptMode::BLACK;
+    assert(mode == "disable");
+    return ContemptMode::NONE;
+  }
   float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
   float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
   float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
@@ -264,7 +271,6 @@ class SearchParams {
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
   const float kDrawScore;
-  const ContemptMode kContemptMode;
   const float kContempt;
   const WDLRescaleParams kWDLRescaleParams;
   const float kWDLEvalObjectivity;

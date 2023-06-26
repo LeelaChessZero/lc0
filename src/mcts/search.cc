@@ -176,8 +176,10 @@ Search::Search(const NodeTree& tree, Network* network,
                              std::memory_order_release);
   }
   contempt_mode_ = params_.GetContemptMode();
+  // Make sure the contempt mode is never "play" beyond this point.
   if (contempt_mode_ == ContemptMode::PLAY) {
     if (infinite) {
+      // For infinite search disable contempt, only "white"/"black" make sense.
       contempt_mode_ = ContemptMode::NONE;
       if (params_.GetWDLRescaleRatio() != 1.0f ||
           params_.GetWDLRescaleDiff() != 0.0f) {
@@ -188,6 +190,7 @@ Search::Search(const NodeTree& tree, Network* network,
         uci_responder_->OutputThinkingInfo(&info);
       }
     } else {
+      // Otherwise set it to the root move's side, unless pondering.
       contempt_mode_ = played_history_.IsBlackToMove() != ponder
                            ? ContemptMode::BLACK
                            : ContemptMode::WHITE;
@@ -300,7 +303,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto d = edge.GetD(default_d);
     float mu_uci = 0.0f;
     if (params_.GetWDLRescaleRatio() != 1.0f ||
-        params_.GetWDLRescaleDiff() != 0.0f) {
+        (params_.GetWDLRescaleDiff() != 0.0f &&
+         contempt_mode_ != ContemptMode::NONE)) {
       auto sign = ((contempt_mode_ == ContemptMode::BLACK) ==
                    played_history_.IsBlackToMove())
                       ? 1.0f
@@ -2197,7 +2201,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
   if (params_.GetWDLRescaleRatio() != 1.0f ||
-      params_.GetWDLRescaleDiff() != 0.0f) {
+      (params_.GetWDLRescaleDiff() != 0.0f &&
+       search_->contempt_mode_ != ContemptMode::NONE)) {
     // Check whether root moves are from the set perspective.
     bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
                     search_->played_history_.Last().IsBlackToMove();
