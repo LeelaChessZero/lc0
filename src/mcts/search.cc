@@ -221,9 +221,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float& v, float& d, float* mu_uci,
-                       float wdl_rescale_ratio, float wdl_rescale_diff,
-                       float sign, bool invert) {
+inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
+                         float wdl_rescale_diff, float sign, bool invert) {
   if (invert) {
     wdl_rescale_diff = -wdl_rescale_diff;
     wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
@@ -253,8 +252,9 @@ inline void WDLRescale(float& v, float& d, float* mu_uci,
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
-    if (mu_uci) *mu_uci = mu_new;
+    return mu_new;
   }
+  return 0;
 }
 }  // namespace
 
@@ -308,8 +308,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                    played_history_.IsBlackToMove())
                       ? 1.0f
                       : -1.0f;
-      WDLRescale(
-          wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
+      mu_uci = WDLRescale(
+          wl, d, params_.GetWDLRescaleRatio(),
           contempt_mode_ == ContemptMode::NONE
               ? 0
               : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
@@ -2206,7 +2206,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
                     search_->played_history_.Last().IsBlackToMove();
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-    WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
+    WDLRescale(v, d, params_.GetWDLRescaleRatio(),
                search_->contempt_mode_ == ContemptMode::NONE
                    ? 0
                    : params_.GetWDLRescaleDiff(),
