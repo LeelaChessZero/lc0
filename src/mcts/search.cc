@@ -181,8 +181,8 @@ Search::Search(const NodeTree& tree, Network* network,
     if (infinite) {
       // For infinite search disable contempt, only "white"/"black" make sense.
       contempt_mode_ = ContemptMode::NONE;
-      if (params_.GetWDLRescaleRatio() != 1.0f ||
-          params_.GetWDLRescaleDiff() != 0.0f) {
+      // Issue a warning only if contempt mode would have an effect.
+      if (params_.GetWDLRescaleDiff() != 0.0f) {
         std::vector<ThinkingInfo> info(1);
         info.back().comment =
             "WARNING: Contempt mode set to 'disable' as 'play' not supported "
@@ -302,9 +302,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto wl = edge.GetWL(default_wl);
     auto d = edge.GetD(default_d);
     float mu_uci = 0.0f;
-    if (score_type == "WDL_mu" || params_.GetWDLRescaleRatio() != 1.0f ||
-        (params_.GetWDLRescaleDiff() != 0.0f &&
-         contempt_mode_ != ContemptMode::NONE)) {
+    if (score_type == "WDL_mu" || (params_.GetWDLRescaleDiff() != 0.0f &&
+                                   contempt_mode_ != ContemptMode::NONE)) {
       auto sign = ((contempt_mode_ == ContemptMode::BLACK) ==
                    played_history_.IsBlackToMove())
                       ? 1.0f
