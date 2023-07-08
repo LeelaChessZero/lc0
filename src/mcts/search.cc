@@ -154,9 +154,9 @@ Search::Search(const NodeTree& tree, Network* network,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
-               const OptionsDict& options, NNCache* cache,
+               bool ponder, const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!infinite),
+    : ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       cache_(cache),
@@ -174,6 +174,27 @@ Search::Search(const NodeTree& tree, Network* network,
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
+  }
+  contempt_mode_ = params_.GetContemptMode();
+  // Make sure the contempt mode is never "play" beyond this point.
+  if (contempt_mode_ == ContemptMode::PLAY) {
+    if (infinite) {
+      // For infinite search disable contempt, only "white"/"black" make sense.
+      contempt_mode_ = ContemptMode::NONE;
+      // Issue a warning only if contempt mode would have an effect.
+      if (params_.GetWDLRescaleDiff() != 0.0f) {
+        std::vector<ThinkingInfo> info(1);
+        info.back().comment =
+            "WARNING: Contempt mode set to 'disable' as 'play' not supported "
+            "for infinite search.";
+        uci_responder_->OutputThinkingInfo(&info);
+      }
+    } else {
+      // Otherwise set it to the root move's side, unless pondering.
+      contempt_mode_ = played_history_.IsBlackToMove() != ponder
+                           ? ContemptMode::BLACK
+                           : ContemptMode::WHITE;
+    }
   }
 }
 
@@ -200,9 +221,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline void WDLRescale(float& v, float& d, float* mu_uci,
-                       float wdl_rescale_ratio, float wdl_rescale_diff,
-                       float sign, bool invert) {
+inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
+                         float wdl_rescale_diff, float sign, bool invert) {
   if (invert) {
     wdl_rescale_diff = -wdl_rescale_diff;
     wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
@@ -232,8 +252,9 @@ inline void WDLRescale(float& v, float& d, float* mu_uci,
     auto l_new = FastLogistic((-1.0f - mu_new) / s_new);
     v = w_new - l_new;
     d = std::max(0.0f, 1.0f - w_new - l_new);
-    if (mu_uci) *mu_uci = mu_new;
+    return mu_new;
   }
+  return 0;
 }
 }  // namespace
 
@@ -281,17 +302,18 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     auto wl = edge.GetWL(default_wl);
     auto d = edge.GetD(default_d);
     float mu_uci = 0.0f;
-    if (params_.GetWDLRescaleRatio() != 1.0f ||
-        params_.GetWDLRescaleDiff() != 0.0f) {
-      // For ContemptMode::NONE diff is 0, so value of sign is irrelevant.
-      auto sign = ((params_.GetContemptMode() == ContemptMode::PLAY) ||
-                   ((params_.GetContemptMode() == ContemptMode::BLACK) ==
-                    played_history_.IsBlackToMove()))
+    if (score_type == "WDL_mu" || (params_.GetWDLRescaleDiff() != 0.0f &&
+                                   contempt_mode_ != ContemptMode::NONE)) {
+      auto sign = ((contempt_mode_ == ContemptMode::BLACK) ==
+                   played_history_.IsBlackToMove())
                       ? 1.0f
                       : -1.0f;
-      WDLRescale(wl, d, &mu_uci, params_.GetWDLRescaleRatio(),
-                 params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
-                 sign, true);
+      mu_uci = WDLRescale(
+          wl, d, params_.GetWDLRescaleRatio(),
+          contempt_mode_ == ContemptMode::NONE
+              ? 0
+              : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
+          sign, true);
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -2178,17 +2200,17 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
   if (params_.GetWDLRescaleRatio() != 1.0f ||
-      params_.GetWDLRescaleDiff() != 0.0f) {
+      (params_.GetWDLRescaleDiff() != 0.0f &&
+       search_->contempt_mode_ != ContemptMode::NONE)) {
     // Check whether root moves are from the set perspective.
-    // For ContemptMode::NONE diff is 0, so values of root_stm and sign are
-    // irrelevant.
-    bool root_stm = (params_.GetContemptMode() == ContemptMode::PLAY)
-                        ? true
-                        : ((params_.GetContemptMode() == ContemptMode::BLACK) ==
-                           search_->played_history_.Last().IsBlackToMove());
+    bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
+                    search_->played_history_.Last().IsBlackToMove();
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-    WDLRescale(v, d, nullptr, params_.GetWDLRescaleRatio(),
-               params_.GetWDLRescaleDiff(), sign, false);
+    WDLRescale(v, d, params_.GetWDLRescaleRatio(),
+               search_->contempt_mode_ == ContemptMode::NONE
+                   ? 0
+                   : params_.GetWDLRescaleDiff(),
+               sign, false);
   }
   node_to_process->v = v;
   node_to_process->d = d;

@@ -58,14 +58,6 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
-ContemptMode EncodeContemptMode(std::string mode) {
-  if (mode == "play") return ContemptMode::PLAY;
-  if (mode == "white_side_analysis") return ContemptMode::WHITE;
-  if (mode == "black_side_analysis") return ContemptMode::BLACK;
-  assert(mode == "disable");
-  return ContemptMode::NONE;
-}
-
 float GetContempt(std::string name, std::string contempt_str,
                   float uci_rating_adv) {
   float contempt = uci_rating_adv;
@@ -628,13 +620,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
       kDrawScore(options.Get<float>(kDrawScoreId)),
-      kContemptMode(
-          EncodeContemptMode(options.Get<std::string>(kContemptModeId))),
-      kContempt(kContemptMode == ContemptMode::NONE
-                    ? 0
-                    : GetContempt(options.Get<std::string>(kUCIOpponentId),
-                                  options.Get<std::string>(kContemptId),
-                                  options.Get<float>(kUCIRatingAdvId))),
+      kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),
+                            options.Get<std::string>(kContemptId),
+                            options.Get<float>(kUCIRatingAdvId))),
       kWDLRescaleParams(
           options.Get<float>(kWDLCalibrationEloId) == 0
               ? AccurateWDLRescaleParams(
@@ -672,7 +660,6 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
-      kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {
-}
+      kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
 }  // namespace lczero
