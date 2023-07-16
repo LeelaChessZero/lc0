@@ -1078,6 +1078,17 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+#ifdef PLAIN_CUDA
+    // Check if we must switch to cuda.
+    if (weights.format().network_format().network() ==
+        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
+      CERR << "Nework format not supported directly, switching backend.";
+      return NetworkFactory::Get()->Create(
+          "cuda" +
+              std::string(std::is_same<half, DataType>::value ? "-fp16" : ""),
+          weights, options);
+    }
+#endif
     throw Exception("Network format " +
                     pblczero::NetworkFormat::NetworkStructure_Name(
                         weights.format().network_format().network()) +
@@ -1131,17 +1142,6 @@ std::unique_ptr<Network> MakeCudnnNetworkAuto(
   cudaDeviceProp deviceProp = {};
   // No error checking here, this will be repeated later.
   cudaGetDeviceProperties(&deviceProp, gpu_id);
-
-#ifdef PLAIN_CUDA
-  // Maybe plain cuda is preferred.
-  int cuda_version;
-  cudaRuntimeGetVersion(&cuda_version);
-  if (cuda_version >= 11000 && deviceProp.major >= 7 &&
-      !strstr(deviceProp.name, "GTX")) {
-    CERR << "Seems like [cuda-auto] is a better option.";
-    return NetworkFactory::Get()->Create("cuda-auto", weights, options);
-  }
-#endif
 
   // Check if the GPU supports FP16.
   if (deviceProp.major >= 7 ||
