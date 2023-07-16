@@ -14,3 +14,7 @@ src/.vs/
 subprojects/*
 testdata/
 xcuserdata
+.clang-tidy
+compile_flags.txt
+.vscode
+.mesonpy*

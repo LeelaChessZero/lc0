@@ -28,8 +28,11 @@
 #include "mcts/params.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 
 #include "utils/exception.h"
+#include "utils/string.h"
 
 #if __has_include("params_override.h")
 #include "params_override.h"
@@ -40,6 +43,9 @@
 #endif
 #ifndef DEFAULT_MAX_PREFETCH
 #define DEFAULT_MAX_PREFETCH 32
+#endif
+#ifndef DEFAULT_TASK_WORKERS
+#define DEFAULT_TASK_WORKERS 4
 #endif
 
 namespace lczero {
@@ -52,6 +58,98 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
+float GetContempt(std::string name, std::string contempt_str,
+                  float uci_rating_adv) {
+  float contempt = uci_rating_adv;
+  for (auto& entry : StrSplit(contempt_str, ",")) {
+    // The default contempt is an empty string, so skip empty entries.
+    if (entry.length() == 0) continue;
+    auto parts = StrSplit(entry, "=");
+    if (parts.size() == 1) {
+      try {
+        contempt = std::stof(parts[0]);
+      } catch (std::exception& e) {
+        throw Exception("Invalid default contempt: " + entry);
+      }
+    } else if (parts.size() == 2) {
+      if (std::search(name.begin(), name.end(), parts[0].begin(),
+                      parts[0].end(), [](unsigned char a, unsigned char b) {
+                        return std::tolower(a) == std::tolower(b);
+                      }) != name.end()) {
+        try {
+          contempt = std::stof(parts[1]);
+        } catch (std::exception& e) {
+          throw Exception("Invalid contempt entry: " + entry);
+        }
+        break;
+      }
+    } else {
+      throw Exception("Invalid contempt entry:" + entry);
+    }
+  }
+  return contempt;
+}
+
+// Calculate ratio and diff for WDL conversion from the contempt settings.
+// More accurate model, allowing book bias dependent Elo calculation.
+// Doesn't take lower accuracy of opponent into account and needs clamping.
+SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
+    float contempt, float draw_rate_target, float draw_rate_reference,
+    float book_exit_bias, float contempt_max, float contempt_attenuation) {
+  float scale_target =
+      1.0f / std::log((1.0f + draw_rate_target) / (1.0f - draw_rate_target));
+  float scale_reference = 1.0f / std::log((1.0f + draw_rate_reference) /
+                                          (1.0f - draw_rate_reference));
+  float ratio = scale_target / scale_reference;
+  float diff =
+      scale_target / (scale_reference * scale_reference) /
+      (1.0f /
+           std::pow(std::cosh(0.5f * (1 - book_exit_bias) / scale_target), 2) +
+       1.0f /
+           std::pow(std::cosh(0.5f * (1 + book_exit_bias) / scale_target), 2)) *
+      std::log(10) / 200 * std::clamp(contempt, -contempt_max, contempt_max) *
+      contempt_attenuation;
+  return SearchParams::WDLRescaleParams(ratio, diff);
+}
+
+// Calculate ratio and diff for WDL conversion from the contempt settings.
+// Less accurate Elo model, but automatically chooses draw rate and accuracy
+// based on the absolute Elo of both sides. Doesn't require clamping, but still
+// uses the parameter.
+SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
+    float contempt, float draw_rate_reference, float elo_active,
+    float contempt_max, float contempt_attenuation) {
+  // Scale parameter of the logistic WDL distribution is fitted as a sigmoid,
+  // predicting b/a for the WDL model fits for Stockfish levels at the Elo in
+  // https://github.com/official-stockfish/Stockfish/pull/4341
+  // Elo dependent mu is calculated from d(mu)/d(Elo) = c * s
+  // Sigmoid parameters for the Elo dependent scaling:
+  const float scale_zero = 15.0f;
+  const float elo_slope = 425.0f;
+  const float offset = 6.75f;
+
+  float scale_reference = 1.0f / std::log((1.0f + draw_rate_reference) /
+                                          (1.0f - draw_rate_reference));
+  float elo_opp =
+      elo_active - std::clamp(contempt, -contempt_max, contempt_max);
+  float scale_active =
+      1.0f / (1.0f / scale_zero + std::exp(elo_active / elo_slope - offset));
+  float scale_opp =
+      1.0f / (1.0f / scale_zero + std::exp(elo_opp / elo_slope - offset));
+  // Scale of target WDL distribution uses a sigmoid with Elo as input.
+  float scale_target =
+      std::sqrt((scale_active * scale_active + scale_opp * scale_opp) / 2.0f);
+  float ratio = scale_target / scale_reference;
+  // Mu is calculated as the integral over scale(Elo) between the Elo values.
+  float mu_active =
+      -std::log(10) / 200 * scale_zero * elo_slope *
+      std::log(1.0f + std::exp(-elo_active / elo_slope + offset) / scale_zero);
+  float mu_opp =
+      -std::log(10) / 200 * scale_zero * elo_slope *
+      std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
+  float diff = (mu_active - mu_opp) * contempt_attenuation;
+  return SearchParams::WDLRescaleParams(ratio, diff);
+}
 }  // namespace
 
 const OptionId SearchParams::kMiniBatchSizeId{
@@ -254,18 +352,51 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
     "at once."};
-const OptionId SearchParams::kDrawScoreSidetomoveId{
-    "draw-score-sidetomove", "DrawScoreSideToMove",
-    "Score of a drawn game, as seen by a player making the move."};
-const OptionId SearchParams::kDrawScoreOpponentId{
-    "draw-score-opponent", "DrawScoreOpponent",
-    "Score of a drawn game, as seen by the opponent."};
-const OptionId SearchParams::kDrawScoreWhiteId{
-    "draw-score-white", "DrawScoreWhite",
-    "Adjustment, added to a draw score of a white player."};
-const OptionId SearchParams::kDrawScoreBlackId{
-    "draw-score-black", "DrawScoreBlack",
-    "Adjustment, added to a draw score of a black player."};
+const OptionId SearchParams::kDrawScoreId{
+    "draw-score", "DrawScore",
+    "Adjustment of the draw score from white's perspective. Value 0 gives "
+    "standard scoring, value -1 gives Armageddon scoring."};
+const OptionId SearchParams::kContemptModeId{
+    "contempt-mode", "ContemptMode",
+    "Affects the way asymmetric WDL parameters are applied. Default is 'play' "
+    "for matches, use 'white_side_analysis' and 'black_side_analysis' for "
+    "analysis. Use 'disable' to deactivate contempt."};
+const OptionId SearchParams::kContemptId{
+    "contempt", "Contempt",
+    "The simulated Elo advantage for the WDL conversion. Comma separated "
+    "list in the form [name=]value, where the name is compared with the "
+    "`UCI_Opponent` value to find the appropriate contempt value. The default "
+    "value is taken from `UCI_RatingAdv` and will be overridden if either a "
+    "value without name is given, or if a name match is found."};
+const OptionId SearchParams::kContemptMaxValueId{
+    "contempt-max-value", "ContemptMaxValue",
+    "The maximum value of contempt used. Higher values will be capped."};
+const OptionId SearchParams::kWDLCalibrationEloId{
+    "wdl-calibration-elo", "WDLCalibrationElo",
+    "Elo of the active side, adjusted for time control relative to rapid."};
+const OptionId SearchParams::kWDLContemptAttenuationId{
+    "wdl-contempt-attenuation", "WDLContemptAttenuation",
+    "Scales how Elo advantage is applied for contempt. Use 1.0 for realistic "
+    "analysis, and 0.5-0.6 for optimal match performance."};
+const OptionId SearchParams::kWDLEvalObjectivityId{
+    "wdl-eval-objectivity", "WDLEvalObjectivity",
+    "When calculating the centipawn eval output, decides how objective/"
+    "contempt influenced the reported eval should be. Value 0.0 reports the "
+    "internally used WDL values, 1.0 attempts an objective eval."};
+const OptionId SearchParams::kWDLDrawRateTargetId{
+    "wdl-draw-rate-target", "WDLDrawRateTarget",
+    "To define the accuracy of play, the target draw rate in equal "
+    "positions is used as a proxy. Ignored if WDLCalibrationElo is set."};
+const OptionId SearchParams::kWDLDrawRateReferenceId{
+    "wdl-draw-rate-reference", "WDLDrawRateReference",
+    "Set this to the draw rate predicted by the used neural network at "
+    "default settings. The accuracy rescaling is done relative to the "
+    "reference draw rate."};
+const OptionId SearchParams::kWDLBookExitBiasId{
+    "wdl-book-exit-bias", "WDLBookExitBias",
+    "The book exit bias used when measuring engine Elo. Value of startpos is "
+    "around 0.2, value of 50% white win is 1. Only relevant if target draw "
+    "rate is above 80%; ignored if WDLCalibrationElo is set."};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
@@ -275,9 +406,6 @@ const OptionId SearchParams::kSolidTreeThresholdId{
     "solid-tree-threshold", "SolidTreeThreshold",
     "Only nodes with at least this number of visits will be considered for "
     "solidification for improved cache locality."};
-const OptionId SearchParams::kMultiGatherEnabledId{
-    "multi-gather", "MultiGather",
-    "If enabled, search will be replaced by the multigather approach."};
 const OptionId SearchParams::kTaskWorkersPerSearchWorkerId{
     "task-workers", "TaskWorkers",
     "The number of task workers to use to help the search worker."};
@@ -306,6 +434,27 @@ const OptionId SearchParams::kThreadIdlingThresholdId{
     "If there are more than this number of search threads that are not "
     "actively in the process of either sending data to the backend or waiting "
     "for data from the backend, assume that the backend is idle."};
+const OptionId SearchParams::kMaxCollisionVisitsScalingStartId{
+    "max-collision-visits-scaling-start", "MaxCollisionVisitsScalingStart",
+    "Tree size where max collision visits starts scaling up from 1."};
+const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
+    "max-collision-visits-scaling-end", "MaxCollisionVisitsScalingEnd",
+    "Tree size where max collision visits reaches max. Set to 0 to disable "
+    "scaling entirely."};
+const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
+    "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
+    "Power to apply to the interpolation between 1 and max to make it curved."};
+const OptionId SearchParams::kUCIOpponentId{
+    "", "UCI_Opponent",
+    "UCI option used by the GUI to pass the name and other information about "
+    "the current opponent."};
+const OptionId SearchParams::kUCIRatingAdvId{
+    "", "UCI_RatingAdv",
+    "UCI extension used by some GUIs to pass the estimated Elo advantage over "
+    "the current opponent, used as the default contempt value."};
+const OptionId SearchParams::kSearchSpinBackoffId{
+    "search-spin-backoff", "SearchSpinBackoff",
+    "Enable backoff for the spin lock that acquires available searcher."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -340,8 +489,13 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
   options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.359f;
-  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 32;
-  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 1000000) = 9999;
+  options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 917;
+  options->Add<IntOption>(kMaxCollisionVisitsId, 1, 100000000) = 80000;
+  options->Add<IntOption>(kMaxCollisionVisitsScalingStartId, 1, 100000) = 28;
+  options->Add<IntOption>(kMaxCollisionVisitsScalingEndId, 0, 100000000) =
+      145000;
+  options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
+      1.25;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
@@ -354,26 +508,39 @@ void SearchParams::Populate(OptionsParser* options) {
                                          "centipawn_2018",
                                          "win_percentage",
                                          "Q",
-                                         "W-L"};
+                                         "W-L",
+                                         "WDL_mu"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.2f;
+  options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0345f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.004f;
+  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.0027f;
   options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftScaledFactorId, -1.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftScaledFactorId, -2.0f, 2.0f) = 1.6521f;
+  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) =
+      -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
+  options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
+  std::vector<std::string> mode = {"play", "white_side_analysis",
+                                   "black_side_analysis", "disable"};
+  options->Add<ChoiceOption>(kContemptModeId, mode) = "play";
+  // The default kContemptId is empty, so the initial contempt value is taken
+  // from kUCIRatingAdvId. Adding any value (without name) in the comma
+  // separated kContemptId list will override this.
+  options->Add<StringOption>(kContemptId) = "";
+  options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
+  options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
+  options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
+  options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
+  options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
+  options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
+  options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
-  options->Add<BoolOption>(kMultiGatherEnabledId) = false;
-  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = 4;
+  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
+      DEFAULT_TASK_WORKERS;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
   options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
   options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =
@@ -381,6 +548,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<IntOption>(kMinimumWorkPerTaskForProcessingId, 1, 100000) = 8;
   options->Add<IntOption>(kIdlingMinimumWorkId, 0, 10000) = 0;
   options->Add<IntOption>(kThreadIdlingThresholdId, 0, 128) = 1;
+  options->Add<StringOption>(kUCIOpponentId);
+  options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
+  options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -399,6 +569,10 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureEndgameId);
   options->HideOption(kTemperatureWinpctCutoffId);
   options->HideOption(kTemperatureVisitOffsetId);
+  options->HideOption(kContemptMaxValueId);
+  options->HideOption(kWDLContemptAttenuationId);
+  options->HideOption(kWDLDrawRateTargetId);
+  options->HideOption(kWDLBookExitBiasId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
@@ -445,20 +619,31 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
-      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
-      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
-      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
+      kDrawScore(options.Get<float>(kDrawScoreId)),
+      kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),
+                            options.Get<std::string>(kContemptId),
+                            options.Get<float>(kUCIRatingAdvId))),
+      kWDLRescaleParams(
+          options.Get<float>(kWDLCalibrationEloId) == 0
+              ? AccurateWDLRescaleParams(
+                    kContempt, options.Get<float>(kWDLDrawRateTargetId),
+                    options.Get<float>(kWDLDrawRateReferenceId),
+                    options.Get<float>(kWDLBookExitBiasId),
+                    options.Get<float>(kContemptMaxValueId),
+                    options.Get<float>(kWDLContemptAttenuationId))
+              : SimplifiedWDLRescaleParams(
+                    kContempt, options.Get<float>(kWDLDrawRateReferenceId),
+                    options.Get<float>(kWDLCalibrationEloId),
+                    options.Get<float>(kContemptMaxValueId),
+                    options.Get<float>(kWDLContemptAttenuationId))),
+      kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvals(std::max(
           1, static_cast<int>(options.Get<float>(kMaxOutOfOrderEvalsId) *
                               options.Get<int>(kMiniBatchSizeId)))),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
-      kMultiGatherEnabled(options.Get<bool>(kMultiGatherEnabledId)),
       kTaskWorkersPerSearchWorker(
-          options.Get<bool>(kMultiGatherEnabledId)
-              ? options.Get<int>(kTaskWorkersPerSearchWorkerId)
-              : 0),
+          options.Get<int>(kTaskWorkersPerSearchWorkerId)),
       kMinimumWorkSizeForProcessing(
           options.Get<int>(kMinimumWorkSizeForProcessingId)),
       kMinimumWorkSizeForPicking(
@@ -468,14 +653,13 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMinimumWorkPerTaskForProcessing(
           options.Get<int>(kMinimumWorkPerTaskForProcessingId)),
       kIdlingMinimumWork(options.Get<int>(kIdlingMinimumWorkId)),
-      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)) {
-  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
-          std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
-      1.0f) {
-    throw Exception(
-        "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
-        "be <= 100");
-  }
-}
+      kThreadIdlingThreshold(options.Get<int>(kThreadIdlingThresholdId)),
+      kMaxCollisionVisitsScalingStart(
+          options.Get<int>(kMaxCollisionVisitsScalingStartId)),
+      kMaxCollisionVisitsScalingEnd(
+          options.Get<int>(kMaxCollisionVisitsScalingEndId)),
+      kMaxCollisionVisitsScalingPower(
+          options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
+      kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
 }  // namespace lczero

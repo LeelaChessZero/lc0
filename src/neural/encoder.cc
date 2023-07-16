@@ -32,9 +32,6 @@
 namespace lczero {
 
 namespace {
-const int kMoveHistory = 8;
-const int kPlanesPerBoard = 13;
-const int kAuxPlaneBase = kPlanesPerBoard * kMoveHistory;
 
 int CompareTransposing(BitBoard board, int initial_transform) {
   uint64_t value = board.as_int();
@@ -157,10 +154,10 @@ InputPlanes EncodePositionForNN(
     switch (input_format) {
       case pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE: {
         // "Legacy" input planes with:
-        // - Plane 104 (0-based) filled with 1 if white can castle queenside.
-        // - Plane 105 filled with ones if white can castle kingside.
-        // - Plane 106 filled with ones if black can castle queenside.
-        // - Plane 107 filled with ones if white can castle kingside.
+        // - Plane 104 (0-based) filled with 1 if we can castle queenside.
+        // - Plane 105 filled with ones if we can castle kingside.
+        // - Plane 106 filled with ones if they can castle queenside.
+        // - Plane 107 filled with ones if they can castle kingside.
         if (board.castlings().we_can_000()) result[kAuxPlaneBase + 0].SetAll();
         if (board.castlings().we_can_00()) result[kAuxPlaneBase + 1].SetAll();
         if (board.castlings().they_can_000()) {
@@ -185,13 +182,23 @@ InputPlanes EncodePositionForNN(
         // h-side (kingside) castling right.
         const auto& cast = board.castlings();
         result[kAuxPlaneBase + 0].mask =
-            ((cast.we_can_000() ? BoardSquare(ChessBoard::A1).as_board() : 0) |
-             (cast.they_can_000() ? BoardSquare(ChessBoard::A8).as_board() : 0))
-            << cast.queenside_rook();
+            (cast.we_can_000()
+                 ? BoardSquare(ChessBoard::A1 + cast.our_queenside_rook())
+                       .as_board()
+                 : 0) |
+            (cast.they_can_000()
+                 ? BoardSquare(ChessBoard::A8 + cast.their_queenside_rook())
+                       .as_board()
+                 : 0);
         result[kAuxPlaneBase + 1].mask =
-            ((cast.we_can_00() ? BoardSquare(ChessBoard::A1).as_board() : 0) |
-             (cast.they_can_00() ? BoardSquare(ChessBoard::A8).as_board() : 0))
-            << cast.kingside_rook();
+            (cast.we_can_00()
+                 ? BoardSquare(ChessBoard::A1 + cast.our_kingside_rook())
+                       .as_board()
+                 : 0) |
+            (cast.they_can_00()
+                 ? BoardSquare(ChessBoard::A8 + cast.their_kingside_rook())
+                       .as_board()
+                 : 0);
         break;
       }
       default:
@@ -240,7 +247,12 @@ InputPlanes EncodePositionForNN(
         !board.en_passant().empty()) {
       break;
     }
-    if (history_idx < 0 && fill_empty_history == FillEmptyHistory::NO) break;
+    // If en-passant is possible we know the previous move.
+    if (fill_empty_history == FillEmptyHistory::NO &&
+        (history_idx < -1 ||
+         (history_idx == -1 && board.en_passant().empty()))) {
+      break;
+    }
     // Board may be flipped so compare with position.GetBoard().
     if (history_idx < 0 && fill_empty_history == FillEmptyHistory::FEN_ONLY &&
         position.GetBoard() == ChessBoard::kStartposBoard) {

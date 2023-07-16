@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@
 #include "mcts/stoppers/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "trainingdata/trainingdata.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -76,13 +77,16 @@ class SelfPlayGame {
 
   // Populate command line options that it uses.
   static void PopulateUciParams(OptionsParser* options);
-  
+
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,
-	  SyzygyTablebase* syzygy_tb, bool enable_resign = true);
+            SyzygyTablebase* syzygy_tb, bool enable_resign = true);
   // Aborts the game currently played, doesn't matter if it's synchronous or
   // not.
   void Abort();
+
+  // Number of ply used from the given opening.
+  int GetStartPly() const { return start_ply_; }
 
   // Writes training data to a file.
   void WriteTrainingData(TrainingDataWriter* writer) const;
@@ -102,6 +106,7 @@ class SelfPlayGame {
   // tree_[0] == tree_[1].
   std::shared_ptr<NodeTree> tree_[2];
   std::string orig_fen_;
+  int start_ply_;
 
   // Search that is currently in progress. Stored in members so that Abort()
   // can stop it.
@@ -119,10 +124,9 @@ class SelfPlayGame {
   std::mutex mutex_;
 
   // Training data to send.
-  std::vector<V6TrainingData> training_data_;
+  V6TrainingDataArray training_data_;
 
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
-
 };
 
 }  // namespace lczero

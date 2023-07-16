@@ -72,6 +72,15 @@ class StderrLogMessage : public std::ostringstream {
   LogMessage log_;
 };
 
+class StdoutLogMessage : public std::ostringstream {
+ public:
+  StdoutLogMessage(const char* file, int line);
+  ~StdoutLogMessage();
+
+ private:
+  LogMessage log_;
+};
+
 std::chrono::time_point<std::chrono::system_clock> SteadyClockToSystemClock(
     std::chrono::time_point<std::chrono::steady_clock> time);
 
@@ -80,3 +89,4 @@ std::string FormatTime(std::chrono::time_point<std::chrono::system_clock> time);
 
 #define LOGFILE ::lczero::LogMessage(__FILE__, __LINE__)
 #define CERR ::lczero::StderrLogMessage(__FILE__, __LINE__)
+#define COUT ::lczero::StdoutLogMessage(__FILE__, __LINE__)

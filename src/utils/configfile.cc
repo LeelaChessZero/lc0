@@ -65,13 +65,13 @@ std::string ConfigFile::ProcessConfigFlag(
       param = param.substr(2);
       const auto pos = param.find('=');
       if (pos != std::string::npos) {
-        if (param.substr(0, pos) == kConfigFileId.long_flag) {
+        if (param.substr(0, pos) == kConfigFileId.long_flag()) {
           filename = param.substr(pos + 1);
         }
       }
     }
     if (param.size() == 2 && param[0] == '-') {
-      if (param[1] == kConfigFileId.short_flag && iter + 1 != end) {
+      if (param[1] == kConfigFileId.short_flag() && iter + 1 != end) {
         filename = *(iter + 1);
         ++iter;
       }

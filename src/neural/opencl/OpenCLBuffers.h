@@ -40,6 +40,7 @@
 #include "utils/logging.h"
 
 class OpenCL_Network;
+class OpenCL;
 
 class OpenCLBuffers {
   friend class OpenCL;
