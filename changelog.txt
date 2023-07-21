@@ -1,4 +1,11 @@
-﻿v0.30.0-rc2 (2023-06-15)
+﻿v0.30.0 (2023-07-21)
+~~~~~~~
+* WDL_mu score type is now the default and the mlh-threshold default was
+  changed from 0 to 0.8.
+* Fixes for contempt with infinite search and pondering and for the wdl display
+  when pondering.
+
+v0.30.0-rc2 (2023-06-15)
 ~~~~~~~
 * WDL conversion for more realistic WDL score and contempt. Adds an Elo based
   WDL transformation of the NN value head output. Helps with more accurate play
