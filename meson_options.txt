@@ -63,6 +63,11 @@ option('ispc_native_only',
        value: true,
        description: 'use ispc and enable native arch only')
 
+option('native_cuda',
+       type: 'boolean',
+       value: true,
+       description: 'build cuda code for native arch only (if supported)')
+
 option('cudnn',
        type: 'boolean',
        value: true,
