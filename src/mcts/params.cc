@@ -58,14 +58,6 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
-ContemptPerspective EncodeContemptPerspective(std::string perspective) {
-  if (perspective == "sidetomove") return ContemptPerspective::STM;
-  if (perspective == "white") return ContemptPerspective::WHITE;
-  if (perspective == "black") return ContemptPerspective::BLACK;
-  assert(perspective == "none");
-  return ContemptPerspective::NONE;
-}
-
 float GetContempt(std::string name, std::string contempt_str,
                   float uci_rating_adv) {
   float contempt = uci_rating_adv;
@@ -360,23 +352,15 @@ const OptionId SearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
     "at once."};
-const OptionId SearchParams::kDrawScoreSidetomoveId{
-    "draw-score-sidetomove", "DrawScoreSideToMove",
-    "Score of a drawn game, as seen by a player making the move."};
-const OptionId SearchParams::kDrawScoreOpponentId{
-    "draw-score-opponent", "DrawScoreOpponent",
-    "Score of a drawn game, as seen by the opponent."};
-const OptionId SearchParams::kDrawScoreWhiteId{
-    "draw-score-white", "DrawScoreWhite",
-    "Adjustment, added to a draw score of a white player."};
-const OptionId SearchParams::kDrawScoreBlackId{
-    "draw-score-black", "DrawScoreBlack",
-    "Adjustment, added to a draw score of a black player."};
-const OptionId SearchParams::kContemptPerspectiveId{
-    "contempt-perspective", "ContemptPerspective",
-    "Affects the way asymmetric WDL parameters are applied. Default is "
-    "'sidetomove' for matches, use 'white' and 'black' for analysis. Use "
-    "'none' to deactivate contempt and the WDL conversion."};
+const OptionId SearchParams::kDrawScoreId{
+    "draw-score", "DrawScore",
+    "Adjustment of the draw score from white's perspective. Value 0 gives "
+    "standard scoring, value -1 gives Armageddon scoring."};
+const OptionId SearchParams::kContemptModeId{
+    "contempt-mode", "ContemptMode",
+    "Affects the way asymmetric WDL parameters are applied. Default is 'play' "
+    "for matches, use 'white_side_analysis' and 'black_side_analysis' for "
+    "analysis. Use 'disable' to deactivate contempt."};
 const OptionId SearchParams::kContemptId{
     "contempt", "Contempt",
     "The simulated Elo advantage for the WDL conversion. Comma separated "
@@ -526,11 +510,11 @@ void SearchParams::Populate(OptionsParser* options) {
                                          "Q",
                                          "W-L",
                                          "WDL_mu"};
-  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
+  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "WDL_mu";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0345f;
-  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.8f;
   options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.0027f;
   options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kMovesLeftScaledFactorId, -2.0f, 2.0f) = 1.6521f;
@@ -538,14 +522,10 @@ void SearchParams::Populate(OptionsParser* options) {
       -0.6521f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
-  options->Add<IntOption>(kDrawScoreSidetomoveId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreOpponentId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreWhiteId, -100, 100) = 0;
-  options->Add<IntOption>(kDrawScoreBlackId, -100, 100) = 0;
-  std::vector<std::string> perspective = {"sidetomove", "white", "black",
-                                          "none"};
-  options->Add<ChoiceOption>(kContemptPerspectiveId, perspective) =
-      "sidetomove";
+  options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
+  std::vector<std::string> mode = {"play", "white_side_analysis",
+                                   "black_side_analysis", "disable"};
+  options->Add<ChoiceOption>(kContemptModeId, mode) = "play";
   // The default kContemptId is empty, so the initial contempt value is taken
   // from kUCIRatingAdvId. Adding any value (without name) in the comma
   // separated kContemptId list will override this.
@@ -639,12 +619,7 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMovesLeftQuadraticFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
-      kDrawScoreSidetomove{options.Get<int>(kDrawScoreSidetomoveId) / 100.0f},
-      kDrawScoreOpponent{options.Get<int>(kDrawScoreOpponentId) / 100.0f},
-      kDrawScoreWhite{options.Get<int>(kDrawScoreWhiteId) / 100.0f},
-      kDrawScoreBlack{options.Get<int>(kDrawScoreBlackId) / 100.0f},
-      kContemptPerspective(EncodeContemptPerspective(
-          options.Get<std::string>(kContemptPerspectiveId))),
+      kDrawScore(options.Get<float>(kDrawScoreId)),
       kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),
                             options.Get<std::string>(kContemptId),
                             options.Get<float>(kUCIRatingAdvId))),
@@ -685,15 +660,6 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
-      kSearchSpinBackoff(
-          options_.Get<bool>(kSearchSpinBackoffId)) {
-  if (std::max(std::abs(kDrawScoreSidetomove), std::abs(kDrawScoreOpponent)) +
-          std::max(std::abs(kDrawScoreWhite), std::abs(kDrawScoreBlack)) >
-      1.0f) {
-    throw Exception(
-        "max{|sidetomove|+|opponent|} + max{|white|+|black|} draw score must "
-        "be <= 100");
-  }
-}
+      kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
 }  // namespace lczero
