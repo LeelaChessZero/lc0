@@ -450,9 +450,8 @@ if get_option('build_backends')
       cuda_files += 'src/neural/cuda/network_cudnn.cc'
       add_project_arguments('-DUSE_CUDNN', language : 'cpp')
     endif
-    if get_option('plain_cuda')
+    if get_option('plain_cuda') or get_option('cudnn') # cudnn needs this for newer nets.
       cuda_files += 'src/neural/cuda/network_cuda.cc'
-      add_project_arguments('-DPLAIN_CUDA', language : 'cpp')
     endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d).returncode() == 0

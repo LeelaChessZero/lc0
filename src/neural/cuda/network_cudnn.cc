@@ -1078,7 +1078,6 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
           pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
       weights.format().network_format().network() !=
           pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-#ifdef PLAIN_CUDA
     // Check if we must switch to cuda.
     if (weights.format().network_format().network() ==
         pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
@@ -1088,7 +1087,6 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
               std::string(std::is_same<half, DataType>::value ? "-fp16" : ""),
           weights, options);
     }
-#endif
     throw Exception("Network format " +
                     pblczero::NetworkFormat::NetworkStructure_Name(
                         weights.format().network_format().network()) +
