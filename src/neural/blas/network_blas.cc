@@ -56,10 +56,14 @@ struct Buffers {
 };
 
 template <bool use_eigen>
+class BlasNetwork;
+
+template <bool use_eigen>
 class BlasComputation : public NetworkComputation {
  public:
-  BlasComputation(const LegacyWeights& weights, const size_t max_batch_size,
-                  const bool wdl, const bool moves_left, const bool conv_policy,
+  BlasComputation(BlasNetwork<use_eigen>* network, const LegacyWeights& weights,
+                  const size_t max_batch_size, const bool wdl,
+                  const bool moves_left, const bool conv_policy,
                   const ActivationFunction default_activation,
                   const ActivationFunction smolgen_activation,
                   const ActivationFunction ffn_activation,
@@ -109,11 +113,6 @@ class BlasComputation : public NetworkComputation {
     return policies_[sample][move_id];
   }
 
-  static void ClearBuffers() {
-    std::lock_guard<std::mutex> lock(buffers_lock_);
-    free_buffers_.clear();
-  }
-
  private:
   void EncodePlanes(const InputPlanes& sample, float* buffer);
   void MakeEncoderLayer(std::vector<float>& head_buffer,
@@ -148,24 +147,18 @@ class BlasComputation : public NetworkComputation {
   bool attn_policy_;
   bool attn_body_;
 
-  static std::mutex buffers_lock_;
-  static std::vector<std::unique_ptr<Buffers>> free_buffers_;
+  BlasNetwork<use_eigen>* network_;
 };
-
-template <bool use_eigen>
-std::mutex BlasComputation<use_eigen>::buffers_lock_;
-template <bool use_eigen>
-std::vector<std::unique_ptr<Buffers>> BlasComputation<use_eigen>::free_buffers_;
 
 template <bool use_eigen>
 class BlasNetwork : public Network {
  public:
   BlasNetwork(const WeightsFile& weights, const OptionsDict& options);
-  ~BlasNetwork() { BlasComputation<use_eigen>::ClearBuffers(); }
+  virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
-        weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
+        this, weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
         default_activation_, smolgen_activation_, ffn_activation_, attn_policy_,
         attn_body_);
   }
@@ -175,6 +168,22 @@ class BlasNetwork : public Network {
   }
 
   void InitThread(int id) override { Numa::BindThread(id); }
+
+  std::unique_ptr<Buffers> GetBuffers() {
+    std::lock_guard<std::mutex> lock(buffers_lock_);
+    if (free_buffers_.empty()) {
+      return std::make_unique<Buffers>();
+    } else {
+      auto buffers = std::move(free_buffers_.back());
+      free_buffers_.pop_back();
+      return buffers;
+    }
+  }
+
+  void ReleaseBuffers(std::unique_ptr<Buffers> buffers) {
+    std::lock_guard<std::mutex> lock(buffers_lock_);
+    free_buffers_.push_back(std::move(buffers));
+  }
 
  private:
   // A cap on the max batch size since it consumes a lot of memory
@@ -191,13 +200,15 @@ class BlasNetwork : public Network {
   ActivationFunction ffn_activation_;
   bool attn_policy_;
   bool attn_body_;
+  std::mutex buffers_lock_;
+  std::vector<std::unique_ptr<Buffers>> free_buffers_;
 };
 
 template <bool use_eigen>
 BlasComputation<use_eigen>::BlasComputation(
-    const LegacyWeights& weights, const size_t max_batch_size, const bool wdl,
-    const bool moves_left, const bool conv_policy,
-    const ActivationFunction default_activation,
+    BlasNetwork<use_eigen>* network, const LegacyWeights& weights,
+    const size_t max_batch_size, const bool wdl, const bool moves_left,
+    const bool conv_policy, const ActivationFunction default_activation,
     const ActivationFunction smolgen_activation,
     const ActivationFunction ffn_activation, const bool attn_policy,
     const bool attn_body)
@@ -212,7 +223,8 @@ BlasComputation<use_eigen>::BlasComputation(
       smolgen_activation_(smolgen_activation),
       ffn_activation_(ffn_activation),
       attn_policy_(attn_policy),
-      attn_body_(attn_body) {
+      attn_body_(attn_body),
+      network_(network) {
 #ifdef USE_DNNL
   omp_set_num_threads(1);
 #endif
@@ -492,16 +504,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                                weights_.ip_pol_b.size());
   }
 
-  std::unique_ptr<Buffers> buffers;
-  {
-    std::lock_guard<std::mutex> lock(buffers_lock_);
-    if (free_buffers_.empty()) {
-      buffers = std::make_unique<Buffers>();
-    } else {
-      buffers = std::move(free_buffers_.back());
-      free_buffers_.pop_back();
-    }
-  }
+  std::unique_ptr<Buffers> buffers = network_->GetBuffers();
 
   // Allocate data for the whole batch.
   std::vector<float>& buffer1 = buffers->buffer1;
@@ -869,8 +872,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       }
     }
   }
-  std::lock_guard<std::mutex> lock(buffers_lock_);
-  free_buffers_.push_back(std::move(buffers));
+  network_->ReleaseBuffers(std::move(buffers));
 }
 
 template <bool use_eigen>
