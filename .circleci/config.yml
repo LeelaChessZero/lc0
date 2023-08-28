@@ -39,7 +39,7 @@ jobs:
           command: |
             pip3 install meson==0.63
             pip3 install ninja
-            brew install ispc
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install ispc
       - run:
           name: Build lc0
           command: |
