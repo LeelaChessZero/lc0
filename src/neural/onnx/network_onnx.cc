@@ -52,7 +52,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA, DML };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM };
 
 class OnnxNetwork;
 
@@ -82,8 +82,8 @@ class OnnxComputation : public NetworkComputation {
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider, int gpu, bool fp16, int batch_size,
-              int steps);
+              OnnxProvider provider, int gpu, int threads, bool fp16,
+              int batch_size, int steps);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
@@ -240,20 +240,30 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     int batch = batch_size * step;
 
     auto input_tensor = PrepareInputs(i, batch);
-    if (network_->provider_ == OnnxProvider::DML) network_->lock_.lock();
+    // The DML onnxruntime execution provider is documented as not supporting
+    // multi-threaded calls to Run on the same inference session. We found the
+    // same to be true for the ROCm execution provider (at least for CNNs).
+    // TODO: This may be a onnxruntime/ROCm bug, check onnxruntime 1.16 release.
+    if (network_->provider_ == OnnxProvider::DML ||
+        network_->provider_ == OnnxProvider::ROCM) {
+      network_->lock_.lock();
+    }
     network_->session_[step - 1].Run(
         {}, network_->inputs_cstr_.data(), &input_tensor, 1,
         network_->outputs_cstr_.data(), output_tensors_.data(),
         output_tensors_.size());
-    if (network_->provider_ == OnnxProvider::DML) network_->lock_.unlock();
+    if (network_->provider_ == OnnxProvider::DML ||
+        network_->provider_ == OnnxProvider::ROCM) {
+      network_->lock_.unlock();
+    }
     i += batch;
   }
 }
 
-Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int batch_size) {
+Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
+                               int batch_size) {
   Ort::SessionOptions options;
-  OrtCUDAProviderOptions cuda_options;
-  // options.SetIntraOpNumThreads(1);
+  options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
   if (batch_size > 0) {
@@ -275,13 +285,19 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int batch_size) {
       throw Exception("ONNX backend internal error.");
 #endif
       break;
-    case OnnxProvider::CUDA:
+    case OnnxProvider::ROCM: {
+      OrtROCMProviderOptions rocm_options;
+      rocm_options.device_id = gpu;
+      options.AppendExecutionProvider_ROCM(rocm_options);
+      break;
+    }
+    case OnnxProvider::CUDA: {
+      OrtCUDAProviderOptions cuda_options;
       cuda_options.device_id = gpu;
       options.AppendExecutionProvider_CUDA(cuda_options);
       break;
+    }
     case OnnxProvider::CPU:
-      // Doesn't really work. :-( There are two execution providers (CUDA and
-      // CPU) already added, don't know how to force it to use CPU.
       auto status = OrtSessionOptionsAppendExecutionProvider_CPU(options, 0);
       if (status) {
         std::string error_message = Ort::GetApi().GetErrorMessage(status);
@@ -296,7 +312,7 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int batch_size) {
 }
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
-                         OnnxProvider provider, int gpu, bool fp16,
+                         OnnxProvider provider, int gpu, int threads, bool fp16,
                          int batch_size, int steps)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       steps_(steps),
@@ -312,9 +328,10 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
   }
 
   for (int step = 1; step <= steps_; step++)
-    session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
-                          file.onnx_model().model().size(),
-                          GetOptions(provider, gpu, batch_size_ * step));
+    session_.emplace_back(
+        onnx_env_, file.onnx_model().model().data(),
+        file.onnx_model().model().size(),
+        GetOptions(provider, gpu, threads, batch_size_ * step));
 
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
@@ -358,7 +375,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
       opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML ? 16 : -1);
 
   int steps =
-      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 8 : 1);
+      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 4 : 1);
+
+  int threads =
+      opts.GetOrDefault<int>("threads", kProvider == OnnxProvider::CPU ? 1 : 0);
 
   if (batch_size <= 0) batch_size = -1;  // Variable batch size.
 
@@ -366,13 +386,15 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
       "fp16", kProvider == OnnxProvider::CPU ? false : true);
 
   if (w->has_onnx_model()) {
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, false,
-                                         batch_size, steps);
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
+                                         false, batch_size, steps);
   } else {
     if (w->format().network_format().network() !=
             pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
         w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
+            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+        w->format().network_format().network() !=
+            pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
       throw Exception("Network format " +
                       pblczero::NetworkFormat::NetworkStructure_Name(
                           w->format().network_format().network()) +
@@ -409,15 +431,21 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     }
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
+    converter_options.alt_mish = opts.GetOrDefault<bool>(
+        "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
+
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
-    return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu, fp16,
-                                         batch_size, steps);
+    return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
+                                         threads, fp16, batch_size, steps);
   }
 }
 
+#ifdef USE_ROCM
+REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
+#endif
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif

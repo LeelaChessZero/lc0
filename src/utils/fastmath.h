@@ -85,6 +85,13 @@ inline float FastLog(const float a) {
 // Fast approximate exp(x). Does only limited range checking.
 inline float FastExp(const float a) { return FastExp2(1.442695040f * a); }
 
+// Safeguarded fast logistic function, based on FastExp().
+inline float FastLogistic(const float a) {
+  if (a > 20.0f) {return 1.0f;}
+  if (a < -20.0f) {return 0.0f;}
+  return 1.0f / (1.0f + FastExp(-a));
+}
+
 inline float FastSign(const float a) {
   // Microsoft compiler does not have a builtin for copysign and emits a
   // library call which is too expensive for hot paths.
