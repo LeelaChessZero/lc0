@@ -63,12 +63,17 @@ If you get something like
 
    meson.build:604:4: ERROR: WrapDB connection failed to https://wrapdb.mesonbuild.com/v1/projects/zlib/1.2.11/4/get_zip with error <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1108)>
 
-when you run build.cmd, then download the
+when you run build.cmd, it may be that your machine does not trust the Let's Encrypt R3 intermediate certificate. To fix this, download https://letsencrypt.org/certs/lets-encrypt-r3.pem, run Windows PowerShell as administrator, and run the following command:
+
+`Import-Certificate -FilePath *path to file* -CertStoreLocation Cert:\LocalMachine\CA`
+
+If things still aren't working after that, you can instead manually download the
+
 
    https://wrapdb.mesonbuild.com/v1/projects/zlib/1.2.11/4/get_zip
 
-file in your browser, and place the file in the lc0\subprojects\packagecache folder. then Remove the
+file in your browser and place the file in the lc0\subprojects\packagecache folder. Then remove the
 
    lc0\subprojects\zlib-1.2.11
 
-folder, and run build again.
+folder and run build again.
