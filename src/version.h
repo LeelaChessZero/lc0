@@ -29,6 +29,7 @@
 // Versioning is performed according to the standard at <https://semver.org/>
 // Creating a new version should be performed using scripts/bumpversion.py.
 
+#include <cstdint>
 #include <string>
 #include "version.inc"
 #include "build_id.h"

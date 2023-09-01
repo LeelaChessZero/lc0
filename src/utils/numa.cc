@@ -41,7 +41,7 @@ int Numa::threads_per_core_ = 1;
 void Numa::Init() {
 #if defined(_WIN64) && _WIN32_WINNT >= 0x0601
   SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* buffer;
-  DWORD len;
+  DWORD len = 0;
   GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
   buffer = static_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(malloc(len));
   GetLogicalProcessorInformationEx(RelationProcessorCore, buffer, &len);
