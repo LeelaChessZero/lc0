@@ -73,9 +73,9 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
   OptionsDict tm_options;
-  try {
+  if (options.Exists<std::string>(kTimeManagerId)) {
     tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
-  } catch (...) {
+  } else {
     float slowmover = options.Get<float>(kSlowMoverId);
     tm_options.AddSubdict("legacy")->Set("slowmover", slowmover);
   }
