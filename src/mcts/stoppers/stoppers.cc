@@ -144,6 +144,17 @@ bool DepthStopper::ShouldStop(const IterationStats& stats, StoppersHints*) {
 }
 
 ///////////////////////////
+// MateStopper
+///////////////////////////
+bool MateStopper::ShouldStop(const IterationStats& stats, StoppersHints*) {
+  if (stats.mate_depth <= mate_) {
+    LOGFILE << "Stopped search: Found mate.";
+    return true;
+  }
+  return false;
+}
+
+///////////////////////////
 // KldGainStopper
 ///////////////////////////
 
