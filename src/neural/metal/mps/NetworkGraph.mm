@@ -715,7 +715,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                         gammas:&smolgen->ln1_gammas[0]
                                                          betas:&smolgen->ln1_betas[0]
                                                          alpha:0.0
-                                                       epsilon:1e-6
+                                                       epsilon:1e-3
                                                          label:[NSString stringWithFormat:@"%@/smolgen/ln1", label]];
 
         // 3. Dense 2 with layer norm.
@@ -731,7 +731,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                         gammas:&smolgen->ln2_gammas[0]
                                                          betas:&smolgen->ln2_betas[0]
                                                          alpha:0.0
-                                                       epsilon:1e-6
+                                                       epsilon:1e-3
                                                          label:[NSString stringWithFormat:@"%@/smolgen/ln2", label]];
 
         smolgenWeights = [self reshapeTensor:smolgenWeights
