@@ -141,8 +141,11 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
           : activationString(
                 static_cast<pblczero::NetworkFormat::ActivationFunction>(
                     ffn_activation));
+
+  std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
+  std::string value_head = options.GetOrDefault<std::string>("value_head", "winner");
   builder_->build(kInputPlanes, weights, attn_body, attn_policy_, conv_policy_,
-                  wdl_, moves_left_, activations);
+                  wdl_, moves_left_, activations, policy_head, value_head);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
@@ -180,6 +183,10 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     }
     // The next thread can start using the GPU now.
     lock_.unlock();
+
+    for (auto i=0; i<1000; i++) {
+      CERR << i << ";" << io->op_policy_raw_mem_[i];
+    }
 
     if (attn_policy_) {
       // Promotion offset calculation.
