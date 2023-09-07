@@ -1,20 +1,19 @@
 version: 2
 jobs:
   build:
-    docker:
-      - image: nvidia/cuda:11.3.1-cudnn8-devel-ubuntu18.04
+    machine:
+      image: linux-cuda-11:default
+      resource_class: medium
     steps:
       - checkout
       - run:
-          name: Install build tools
-          command: |
-            apt-get update
-            apt-get -y install git
-            pip3 install meson==0.58.1
-            pip3 install ninja
-      - run:
           name: "Pull Submodules"
           command: git submodule update --init
+      - run:
+          name: Install build tools
+          command: |
+            pip3 install meson==0.58.1
+            pip3 install ninja
       - run:
           name: Meson GCC
           command: meson build-gcc -Dgtest=false
