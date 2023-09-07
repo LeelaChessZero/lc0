@@ -232,7 +232,7 @@ LegacyWeights::PolicyHeads::PolicyHeads(
 LegacyWeights::ValueHeads::ValueHeads(
     const pblczero::Weights::ValueHeads& valueheads)
     : winner(valueheads.winner()),
-      q(valueheads.winner()),
-      st(valueheads.winner()) {}
+      q(valueheads.q()),
+      st(valueheads.st()) {}
 
 }  // namespace lczero
