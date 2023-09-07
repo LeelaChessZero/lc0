@@ -33,7 +33,7 @@
 
 namespace lczero {
 
-enum class RunType { kUci, kSelfplay };
+enum class RunType { kUci, kSimpleUci, kSelfplay };
 void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
 
 // Option ID for a cache size. It's used from multiple places and there's no
