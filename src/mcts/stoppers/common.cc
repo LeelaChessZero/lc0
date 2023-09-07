@@ -110,7 +110,7 @@ namespace {
 void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options,
                                const GoParams& params, int64_t move_overhead) {
-  const bool infinite = params.infinite || params.ponder;
+  const bool infinite = params.infinite || params.ponder || params.mate;
 
   // RAM limit watching stopper.
   const auto cache_size_mb = options.Get<int>(kNNCacheSizeId);
@@ -144,6 +144,11 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
   // "go depth" stopper.
   if (params.depth) {
     stopper->AddStopper(std::make_unique<DepthStopper>(*params.depth));
+  }
+
+  // "go mate" stopper.
+  if (params.mate) {
+    stopper->AddStopper(std::make_unique<MateStopper>(*params.mate));
   }
 
   // Add internal search tree stoppers when we want to automatically stop.

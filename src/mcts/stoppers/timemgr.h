@@ -47,6 +47,7 @@ struct IterationStats {
   int64_t nodes_since_movestart = 0;
   int64_t batches_since_movestart = 0;
   int average_depth = 0;
+  int mate_depth = std::numeric_limits<int>::max();
   std::vector<uint32_t> edge_n;
 
   // TODO: remove this in favor of time_usage_hint_=kImmediateMove when
