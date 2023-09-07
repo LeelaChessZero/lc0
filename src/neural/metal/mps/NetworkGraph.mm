@@ -1218,7 +1218,7 @@ static const NSInteger kMinSubBatchSize = 20;
     // Use vanilla as default head.
     /* @todo check that head exists */
     lczero::LegacyWeights::PolicyHead& head = heads.vanilla;
-    if ([activeHead isEqual:@"optimistic_st"] /* @todo check that head exists */) {
+    if ([activeHead isEqual:@"optimistic"] /* @todo check that head exists */) {
         head = heads.optimistic_st;
     }
     else if ([activeHead isEqual:@"soft"] /* @todo check that head exists */) {
@@ -1233,21 +1233,16 @@ static const NSInteger kMinSubBatchSize = 20;
         // tokens = tf.reverse(policy_tokens, axis=[1]) if opponent else policy_tokens
 
         // 2. Square Embedding: Dense with default activation (or SELU for old ap-mish nets).
-        NSUInteger embeddingSize = head.ip_pol_b.size();
+        NSUInteger embeddingSize = heads.ip_pol_b.size();
         NSUInteger policyDModel = head.ip2_pol_b.size();
-//        NSLog(@"embedding size: %i, %f", head.ip_pol_b.size(), head.ip_pol_b[0]);
-        NSLog(@"embedding size: %i", head.ip_pol_b.size());
-        for (auto i=0; i<head.ip_pol_b.size(); i++) {
-//            NSLog(@"ip_pol_b[%i]: %f", i, head.ip_pol_b[i]);
-        }
         // ap-mish uses hardcoded SELU
         policy = [self addFullyConnectedLayerWithParent:policy
                                          outputChannels:embeddingSize
-                                                weights:&head.ip_pol_w[0]
-                                                 biases:&head.ip_pol_b[0]
+                                                weights:&heads.ip_pol_w[0]
+                                                 biases:&heads.ip_pol_b[0]
                                              activation:attentionBody ? defaultActivation : @"selu"
                                                   label:[NSString stringWithFormat:@"%@/fc_embed", label]];
-        return policy;
+
         // 3. Encoder layers
         for (NSUInteger i = 0; i < head.pol_encoder.size(); i++) {
             policy = [self addEncoderLayerWithParent:policy

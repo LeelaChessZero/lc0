@@ -243,9 +243,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights,
                                  policyHeads:weights.policy_heads
                                   activeHead:policyHead
                                        label:@"policy"];
-    NSLog(@"active head: %@", policyHead);
-    [graph setResultTensors:@[policy]];
-    return;
+
     // 4. Value head.
     MPSGraphTensor * value = [graph makeValueHeadWithTensor:layer
                                               attentionBody:attn_body
