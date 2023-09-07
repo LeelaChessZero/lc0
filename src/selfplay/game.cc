@@ -182,9 +182,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
-          std::move(stoppers),
-          /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
-          syzygy_tb);
+          std::move(stoppers), /* infinite */ false, /* ponder */ false,
+          *options_[idx].uci_options, options_[idx].cache, syzygy_tb);
     }
 
     // Do search.
