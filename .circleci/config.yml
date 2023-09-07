@@ -9,7 +9,7 @@ jobs:
           name: Install build tools
           command: |
             apt-get update
-            apt-get -y install git python3-pip gcc-8 g++-8
+            apt-get -y install git python3-pip gcc-8 g++-8 zlib1g zlib1g-dev
             pip3 install meson==0.58.1
             pip3 install ninja
       - run:
