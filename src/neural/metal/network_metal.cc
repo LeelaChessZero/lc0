@@ -143,7 +143,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                     ffn_activation));
 
   std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
-  std::string value_head = options.GetOrDefault<std::string>("value_head", "winner");
+  std::string value_head = options.GetOrDefault<std::string>("value_head", "q");
   builder_->build(kInputPlanes, weights, attn_body, attn_policy_, conv_policy_,
                   wdl_, moves_left_, activations, policy_head, value_head);
 }

@@ -1377,11 +1377,11 @@ static const NSInteger kMinSubBatchSize = 20;
                                               label:(NSString * __nonnull)label
 {
     // Selected head to construct.
-    // Use winner as default head.
+    // Use value_q as default head.
     /* @todo check that head exists */
-    lczero::LegacyWeights::ValueHead& head = heads.winner;
-    if ([activeHead isEqual:@"q"] /* @todo check that head exists */) {
-        head = heads.q;
+    lczero::LegacyWeights::ValueHead& head = heads.q;
+    if ([activeHead isEqual:@"winner"] /* @todo check that head exists */) {
+        head = heads.winner;
     }
     else if ([activeHead isEqual:@"st"] /* @todo check that head exists */) {
         head = heads.st;
