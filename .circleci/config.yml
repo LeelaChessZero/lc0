@@ -39,7 +39,9 @@ jobs:
           command: |
             pip3 install meson==0.63
             pip3 install ninja
-            brew install ispc
+            curl -LJOs https://github.com/ispc/ispc/releases/download/v1.21.0/ispc-v1.21.0-macOS.universal.tar.gz
+            tar xf ispc-v1.21.0-macOS.universal.tar.gz
+            cp ispc-v1.21.0-macOS.universal/bin/ispc /usr/local/bin
       - run:
           name: Build lc0
           command: |

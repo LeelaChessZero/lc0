@@ -54,7 +54,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
          {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth",
-          "nodes", "movetime", "searchmoves", "ponder"}},
+          "mate", "nodes", "movetime", "searchmoves", "ponder"}},
         {{"start"}, {}},
         {{"stop"}, {}},
         {{"ponderhit"}, {}},
@@ -192,6 +192,7 @@ bool UciLoop::DispatchCommand(
     UCIGOOPTION(binc);
     UCIGOOPTION(movestogo);
     UCIGOOPTION(depth);
+    UCIGOOPTION(mate);
     UCIGOOPTION(nodes);
     UCIGOOPTION(movetime);
 #undef UCIGOOPTION

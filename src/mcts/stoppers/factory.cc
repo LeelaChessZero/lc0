@@ -50,13 +50,22 @@ const OptionId kTimeManagerId{
     "Name and config of a time manager. "
     "Possible names are 'legacy' (default), 'smooth', 'alphazero', and simple."
     "See https://lc0.org/timemgr for configuration details."};
+const OptionId kSlowMoverId{
+    "slowmover", "Slowmover",
+    "Budgeted time for a move is multiplied by this value, causing the engine "
+    "to spend more time (if value is greater than 1) or less time (if the "
+    "value is less than 1)."};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   PopulateCommonStopperOptions(for_what, options);
-  if (for_what == RunType::kUci) {
+  if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-    options->Add<StringOption>(kTimeManagerId) = "legacy";
+    if (for_what == RunType::kUci) {
+      options->Add<StringOption>(kTimeManagerId) = "legacy";
+    } else {
+      options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
+    }
   }
 }
 
@@ -64,8 +73,12 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
   OptionsDict tm_options;
-  tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
-
+  if (options.Exists<std::string>(kTimeManagerId)) {
+    tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
+  } else {
+    float slowmover = options.Get<float>(kSlowMoverId);
+    tm_options.AddSubdict("legacy")->Set("slowmover", slowmover);
+  }
   const auto managers = tm_options.ListSubdicts();
 
   std::unique_ptr<TimeManager> time_manager;
