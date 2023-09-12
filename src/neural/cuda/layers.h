@@ -482,12 +482,21 @@ class AttentionBody : public BaseLayer<DataType> {
             DataType*** = nullptr) override;
 
  private:
-  // GPU allocations to hold various weights used by the attention policy head
-  DataType *ip_emb_w_, *ip_emb_b_;         // "embedding" layer in net body
-  DataType *ip_mult_gate_, *ip_add_gate_;  // input gating
+  // GPU allocations to hold various weights used by the attention net body.
+  DataType *ip_emb_pre_w_, *ip_emb_pre_b_;  // input position preprocessing weights.
+  DataType *ip_emb_w_, *ip_emb_b_;          // "embedding" layer in net body
+  DataType *ip_emb_ln_g_, *ip_emb_ln_b_;  // input embedding layernorm gamma and beta
+  DataType *ip_mult_gate_, *ip_add_gate_;   // input gating
+  DataType *ip_emb_ffn_d1_w_, *ip_emb_ffn_d1_b_;  // input embedding FFN dense1 weights
+  DataType *ip_emb_ffn_d2_w_, *ip_emb_ffn_d2_b_;  // input embedding FFN dense2 weights
+  DataType *ip_emb_ffn_ln_g_, *ip_emb_ffn_ln_b_;  // input embedding FFN layernorm gamma and beta
   DataType *smolgen_global_;  // global smolgen weights for all encoder layers
-  float* pos_encoding_;
+  bool new_encoding_;   // flag for new position encoding
+  DataType *pos_encoding_;
+  int embedding_dense_size_;
   int embedding_op_size_;
+  int embedding_ffn_size_;
+  int embedding_ffn_dff_;
   int encoder_head_count_;
   std::vector<EncoderBlock<DataType>*> encoder_weights_;
   Activations activations_;

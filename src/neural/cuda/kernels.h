@@ -147,7 +147,9 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
 
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
-                                     const float* encoding, int N,
+                                     const T* encoding, int N,
+                                     int input_size, int encoding_size,
+                                     bool new_encoding,
                                      cudaStream_t stream);
 
 template <typename T>

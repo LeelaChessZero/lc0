@@ -1227,20 +1227,26 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
 
 template <typename T>
 __global__ void preprocess_for_attention_body_kernel(T* output, const T* input,
-                                                     const float* encoding) {
+                                                     const T* encoding,
+                                                     int input_size, int encoding_size,
+                                                     bool new_encoding) {
   int n = blockIdx.x;
   int hw = blockIdx.y;
   int c = threadIdx.x;
 
   T op;
-  if (c >= kInputPlanes) {
-    // concatenate from fixed pos encoding array
-    op = (T)(encoding[64 * hw + (c - kInputPlanes)]);
+  if (c >= input_size) {
+    // concatenate from position encoding array
+    if (new_encoding) {
+      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size + (c - input_size)]);
+    } else {
+      op = (T)(encoding[64 * hw + (c - input_size)]);
+    }
   } else {
-    op = input[n * kInputPlanes * 64 + c * 64 + hw];  // nchw
+    op = input[n * input_size * 64 + c * 64 + hw];  // nchw
   }
 
-  constexpr int outputC = kInputPlanes + kNumPosEncodingChannels;
+  int outputC = input_size + encoding_size;
 
   // convert to nhwc
   output[n * 64 * outputC + hw * outputC + c] = op;
@@ -1248,15 +1254,17 @@ __global__ void preprocess_for_attention_body_kernel(T* output, const T* input,
 
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
-                                     const float* encoding, int N,
+                                     const T* encoding, int N,
+                                     int input_size, int encoding_size,
+                                     bool new_encoding,
                                      cudaStream_t stream) {
   // N * 64 blocks
   // (kInputPlanes + kNumPosEncodingChannels) threads
   // Each thread computes a single output element
   dim3 gridSize = dim3(N, 64);
-  int blockSize = kInputPlanes + kNumPosEncodingChannels;
+  int blockSize = input_size + encoding_size;
   preprocess_for_attention_body_kernel<T>
-      <<<gridSize, blockSize, 0, stream>>>(output, input, encoding);
+      <<<gridSize, blockSize, 0, stream>>>(output, input, encoding, input_size, encoding_size, new_encoding);
 }
 
 template <typename T>
@@ -1565,13 +1573,20 @@ template void convertNCHWtoNHWC<half, half>(half* output_tensor,
 
 template void inputPreprocessForAttentionBody<half>(half* output,
                                                     const half* input,
-                                                    const float* encoding,
-                                                    int N, cudaStream_t stream);
+                                                    const half* encoding,
+                                                    int N,
+                                                    int input_size,
+                                                    int encoding_size,
+                                                    bool new_encoding,
+                                                    cudaStream_t stream);
 
 template void inputPreprocessForAttentionBody<float>(float* output,
                                                      const float* input,
                                                      const float* encoding,
                                                      int N,
+                                                     int input_size,
+                                                     int encoding_size,
+                                                     bool new_encoding,
                                                      cudaStream_t stream);
 
 template void applyInputGating<half>(half* output, const half* input,

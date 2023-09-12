@@ -50,23 +50,23 @@ template <typename DataType>
 class CudaNetwork;
 
 static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
-  const size_t embedding_op_size = weights.ip_pol_b.size();
-  const size_t policy_d_model = weights.ip2_pol_b.size();
-  assert(policy_d_model == weights.ip3_pol_b.size());
+  const size_t embedding_op_size = weights.policy_heads.vanilla.ip_pol_b.size();
+  const size_t policy_d_model = weights.policy_heads.vanilla.ip2_pol_b.size();
+  assert(policy_d_model == weights.policy_heads.vanilla.ip3_pol_b.size());
 
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
 
-  if (weights.pol_encoder.size() > 0) {
-    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
-    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
+  if (weights.policy_heads.vanilla.pol_encoder.size() > 0) {
+    encoder_d_model = weights.policy_heads.vanilla.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.policy_heads.vanilla.pol_encoder[0].ffn.dense1_b.size();
 
-    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
-    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
-    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
+    assert(encoder_d_model == weights.policy_heads.vanilla.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.policy_heads.vanilla.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.policy_heads.vanilla.pol_encoder[0].ffn.dense2_b.size());
   }
 
-  const size_t encoder_heads = weights.pol_encoder_head_count;
+  const size_t encoder_heads = weights.policy_heads.vanilla.pol_encoder_head_count;
 
   size_t size =
       N * 64 *
@@ -203,6 +203,9 @@ class CudaNetwork : public Network {
                  pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+
+    policy_head_ = options.GetOrDefault<std::string>("policy_head", "vanilla");
+    value_head_ = options.GetOrDefault<std::string>("value_head", "q");
 
     showInfo();
 
@@ -950,6 +953,8 @@ class CudaNetwork : public Network {
   bool attn_policy_;
   bool attn_body_;
   int num_encoder_blocks_;
+  std::string policy_head_;
+  std::string value_head_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
