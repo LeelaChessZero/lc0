@@ -80,6 +80,17 @@ void OptionsParser::HideOption(const OptionId& id) {
   if (option) option->hidden_ = true;
 }
 
+void OptionsParser::HideAllOptions() {
+  for (const auto& option : options_) {
+    option->hidden_ = true;
+  }
+}
+
+void OptionsParser::UnhideOption(const OptionId& id) {
+  const auto option = FindOptionById(id);
+  if (option) option->hidden_ = false;
+}
+
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
