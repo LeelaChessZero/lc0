@@ -1422,32 +1422,46 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
 template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(
     BaseLayer<DataType>* ip, const LegacyWeights& weights, void* scratch,
-    bool attention_body, ActivationFunction act, int max_batch_size)
+    bool attention_body, ActivationFunction act, std::string policy_head, int max_batch_size)
     : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
       attention_body_(attention_body),
       // Old networks without attention body (e.g. T79) use hardcoded SELU
       // activations.
       act_(attention_body ? act : ACTIVATION_SELU) {
-  embedding_op_size_ = weights.ip_pol_b.size();
-  wq_op_size_ = weights.ip2_pol_b.size();
-  wk_op_size_ = weights.ip3_pol_b.size();
+  // Selected head to construct.
+  // Use vanilla as default head.
+  /* @todo check that head exists */
+  LegacyWeights::PolicyHead head = weights.policy_heads.vanilla;
+  if (policy_head == "optimistic" /* @todo check that head exists */) {
+      head = weights.policy_heads.optimistic_st;
+  }
+  else if (policy_head == "soft" /* @todo check that head exists */) {
+      head = weights.policy_heads.soft;
+  }
+  else if (policy_head == "opponent" /* @todo check that head exists */) {
+      head = weights.policy_heads.opponent;
+  }
 
-  encoder_heads_ = weights.pol_encoder_head_count;
+  embedding_op_size_ = weights.policy_heads.ip_pol_b.size();
+  wq_op_size_ = head.ip2_pol_b.size();
+  wk_op_size_ = head.ip3_pol_b.size();
+
+  encoder_heads_ = head.pol_encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
-  allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
-  allocAndUpload<DataType>(&ip_pol_b_, weights.ip_pol_b, scratch);
+  allocAndUpload<DataType>(&ip_pol_w_, weights.policy_heads.ip_pol_w, scratch);
+  allocAndUpload<DataType>(&ip_pol_b_, weights.policy_heads.ip_pol_b, scratch);
 
-  allocAndUpload<DataType>(&ip2_pol_w_, weights.ip2_pol_w, scratch);
-  allocAndUpload<DataType>(&ip2_pol_b_, weights.ip2_pol_b, scratch);
+  allocAndUpload<DataType>(&ip2_pol_w_, head.ip2_pol_w, scratch);
+  allocAndUpload<DataType>(&ip2_pol_b_, head.ip2_pol_b, scratch);
 
-  allocAndUpload<DataType>(&ip3_pol_w_, weights.ip3_pol_w, scratch);
-  allocAndUpload<DataType>(&ip3_pol_b_, weights.ip3_pol_b, scratch);
+  allocAndUpload<DataType>(&ip3_pol_w_, head.ip3_pol_w, scratch);
+  allocAndUpload<DataType>(&ip3_pol_b_, head.ip3_pol_b, scratch);
 
   // big allocation to hold wq and wk weights one after the other
   {
-    size_t elements = weights.ip2_pol_w.size();
-    assert(elements == weights.ip3_pol_w.size());
+    size_t elements = head.ip2_pol_w.size();
+    assert(elements == head.ip3_pol_w.size());
 
     size_t size = elements * sizeof(DataType) * 2;
     ReportCUDAErrors(cudaMalloc(&wqk_w_, size));
@@ -1456,7 +1470,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
     ReportCUDAErrors(cudaMemcpy(wqk_w_ + elements, ip3_pol_w_, size / 2,
                                 cudaMemcpyDeviceToDevice));
 
-    elements = weights.ip2_pol_b.size();
+    elements = head.ip2_pol_b.size();
     size = elements * sizeof(DataType) * 2;
     ReportCUDAErrors(cudaMalloc(&wqk_b_, size));
     ReportCUDAErrors(
@@ -1465,9 +1479,9 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
                                 cudaMemcpyDeviceToDevice));
   }
 
-  allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
+  allocAndUpload<DataType>(&ip4_pol_w_, head.ip4_pol_w, scratch);
 
-  for (const auto& enc : weights.pol_encoder) {
+  for (const auto& enc : head.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_heads_, embedding_op_size_,
         1.0f,  // using alpha = 1 for now (TODO: may change?)
@@ -1677,9 +1691,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                             num_inputs, 0.0f, buffer1, num_outputs);
 
       LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense1_b,
-                          buffer1, smol_ln1_gammas, smol_ln1_betas, 1e-3,
-                          0.0, /* alpha = 0 since we don't need skip */
-                          smolgen_activation_, stream);
+                          (DataType*)nullptr, smol_ln1_gammas, smol_ln1_betas, 1e-3,
+                          1.0, smolgen_activation_, stream);
     }
 
     {
@@ -1695,9 +1708,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                             num_inputs, 0.0f, buffer1, num_outputs);
 
       LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense2_b,
-                          buffer1, smol_ln2_gammas, smol_ln2_betas, 1e-3,
-                          0.0, /* alpha = 0 since we don't need skip */
-                          smolgen_activation_, stream);
+                          (DataType*)nullptr, smol_ln2_gammas, smol_ln2_betas, 1e-3,
+                          1.0, smolgen_activation_, stream);
     }
 
     {
@@ -1848,7 +1860,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // LN1: skip connection and layer normalization (also bias add of prev gemm)
   // buffer1/in_out_tensor -> scratch
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch, buffer1, mha_dense_b,
-                      in_out_tensor, ln1_gammas, ln1_betas, 1e-6, alpha_,
+                      in_out_tensor, ln1_gammas, ln1_betas, 1e-3, alpha_,
                       ACTIVATION_NONE, stream);
 
   // #FFN dense 1, scratch -> in_out_tensor
@@ -1876,7 +1888,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
   // buffer1/scratch -> in_out_tensor
   LayerNorm<DataType>(N * 64, embedding_op_size_, in_out_tensor, buffer1,
-                      ffn_dense2_b, scratch, ln2_gammas, ln2_betas, 1e-6,
+                      ffn_dense2_b, scratch, ln2_gammas, ln2_betas, 1e-3,
                       alpha_, ACTIVATION_NONE, stream);
 }
 
@@ -2096,7 +2108,7 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
   }
 
   int num_encoders = weights.encoder.size();
-  float alpha = (float)pow(2.0 * num_encoders, 0.25);
+  float alpha = (float)pow(2.0 * num_encoders, -0.25);
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
@@ -2215,7 +2227,7 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
                             embedding, num_outputs);
       // embedding layer norm with fused in bias add of previous gemm.
       LayerNorm<DataType>(N * 64, embedding_op_size_, temp, embedding, ip_emb_b_,
-                      embedding, ip_emb_ln_g_, ip_emb_ln_b_, 1e-3, 0.0,
+                      (DataType*)nullptr, ip_emb_ln_g_, ip_emb_ln_b_, 1e-3, 1.0,
                       activations_.default_activation, stream);
     }
 
@@ -2245,17 +2257,15 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d2_w_, num_inputs,
                   buffer1, num_inputs, 0.0f, buffer2, num_outputs);
-      // // LN2: skip connection and layer normilization (also bias add of prev gemm)
-      // // buffer1/scratch -> in_out_tensor
+      // Embedding LN: skip connection and layer normilization (also bias add of prev gemm)
+      // buffer2 -> embedding
       float alpha = (float)pow(2. * encoder_weights_.size(), -0.25);
-      LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, temp,
-                          ip_emb_ffn_d2_b_, buffer2, ip_emb_ffn_ln_g_, ip_emb_ffn_ln_b_,
+      LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
+                          ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_, ip_emb_ffn_ln_b_,
                           1e-3, alpha, ACTIVATION_NONE, stream);
     }
 
-    dumpTensor(embedding, embedding_ffn_size_ * 64 * N, "FFN1", false);
-  }
-  else {
+  } else {
     // 1. square embedding (fully connected layer)
     // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
     DataType* embedding = output_tensor;

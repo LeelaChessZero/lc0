@@ -409,7 +409,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
  public:
   AttentionPolicyHead(BaseLayer<DataType>* ip, const LegacyWeights& weights,
                       void* scratch, bool attention_body,
-                      ActivationFunction act, int max_batch_size);
+                      ActivationFunction act, std::string policy_head, int max_batch_size);
   ~AttentionPolicyHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,

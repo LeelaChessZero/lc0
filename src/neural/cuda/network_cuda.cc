@@ -204,9 +204,6 @@ class CudaNetwork : public Network {
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
-    policy_head_ = options.GetOrDefault<std::string>("policy_head", "vanilla");
-    value_head_ = options.GetOrDefault<std::string>("value_head", "q");
-
     showInfo();
 
     int total_gpus;
@@ -443,8 +440,9 @@ class CudaNetwork : public Network {
 
     // Policy head.
     if (attn_policy_) {
+      std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
       auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
-          getLastLayer(), weights, scratch_mem_, attn_body_, act,
+          getLastLayer(), weights, scratch_mem_, attn_body_, act, policy_head,
           max_batch_size_);
       network_.emplace_back(std::move(AttentionPolicy));
 
@@ -495,9 +493,20 @@ class CudaNetwork : public Network {
 
     // Value head.
     {
+      // Selected head to construct.
+      // Use value_q as default head.
+      std::string value_head = options.GetOrDefault<std::string>("value_head", "q");
+      /* @todo check that head exists */
+      LegacyWeights::ValueHead head = weights.value_heads.q;
+      if (value_head == "winner" /* @todo check that head exists */) {
+          head = weights.value_heads.winner;
+      }
+      else if (value_head == "st" /* @todo check that head exists */) {
+          head = weights.value_heads.st;
+      }
       if (attn_body_) {
         auto embedded_val = std::make_unique<EmbeddingLayer<DataType>>(
-            encoder_last_, weights.ip_val_w, weights.ip_val_b, scratch_mem_,
+            encoder_last_, head.ip_val_w, head.ip_val_b, scratch_mem_,
             act);
         network_.emplace_back(std::move(embedded_val));
       } else {
@@ -510,8 +519,8 @@ class CudaNetwork : public Network {
       }
 
       auto FCVal1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, act);
-      FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
+          getLastLayer(), head.ip1_val_b.size(), 1, 1, true, act);
+      FCVal1->LoadWeights(&head.ip1_val_w[0], &head.ip1_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
 
@@ -520,9 +529,9 @@ class CudaNetwork : public Network {
       auto fc2_tanh = !wdl_;
 
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip2_val_b.size(), 1, 1, true,
+          getLastLayer(), head.ip2_val_b.size(), 1, 1, true,
           fc2_tanh ? ACTIVATION_TANH : ACTIVATION_NONE);
-      FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
+      FCVal2->LoadWeights(&head.ip2_val_w[0], &head.ip2_val_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
     }
@@ -953,8 +962,6 @@ class CudaNetwork : public Network {
   bool attn_policy_;
   bool attn_body_;
   int num_encoder_blocks_;
-  std::string policy_head_;
-  std::string value_head_;
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 

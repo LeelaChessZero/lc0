@@ -1007,27 +1007,36 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   }
 
   if (!oobThread) {
-    // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
-      copyAs<uint4>(&inp[0], &skip[tensorIndex]);
-      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
-      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
-    } else {
-      copyAs<uint4>(&oth[0], &skip[tensorIndex]);
-      copyAs<uint4>(&oth[4], &skip[tensorIndex + 4]);
-      copyAs<uint4>(&oth[8], &skip[tensorIndex + 8]);
-      copyAs<uint4>(&oth[12], &skip[tensorIndex + 12]);
+    if (skip != nullptr) {
+      // Load from memory (16 elements a time)
+      if (fp16) {
+        half inp[8];
+        copyAs<uint4>(&inp[0], &skip[tensorIndex]);
+        for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+        copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
+        for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+      } else {
+        copyAs<uint4>(&oth[0], &skip[tensorIndex]);
+        copyAs<uint4>(&oth[4], &skip[tensorIndex + 4]);
+        copyAs<uint4>(&oth[8], &skip[tensorIndex + 8]);
+        copyAs<uint4>(&oth[12], &skip[tensorIndex + 12]);
+      }
     }
   }
 
   // 1. Compute mean
   float s = 0;
   if (!oobThread)
-    for (int i = 0; i < 16; i++) {
-      val[i] = activate(val[i], act) + oth[i] * alpha;
-      s += val[i];
+    if (skip != nullptr) {
+      for (int i = 0; i < 16; i++) {
+        val[i] = activate(val[i], act) * alpha + oth[i];
+        s += val[i];
+      }
+    } else {
+      for (int i = 0; i < 16; i++) {
+        val[i] = activate(val[i], act) * alpha;
+        s += val[i];
+      }
     }
 
   s = shared_sum_for_layer_norm(s);

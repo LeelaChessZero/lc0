@@ -512,9 +512,10 @@ class CudnnNetwork : public Network {
 
     // Policy head.
     if (attn_policy_) {
+      std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
       auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
           getLastLayer(), weights, scratch_mem_, false, ACTIVATION_SELU,
-          max_batch_size_);
+          policy_head, max_batch_size_);
       network_.emplace_back(std::move(AttentionPolicy));
 
       auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
