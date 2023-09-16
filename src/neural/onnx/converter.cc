@@ -409,23 +409,19 @@ std::string Converter::MakeEncoderLayer(
       name + "/mha/out/reshape", flow,
       builder->AddInitializer("/const" + name + "/mha/out/shape",
                               Int64OnnxConst({-1, d_model}, {2})));
-  flow =
-      builder->MatMul(name + "/mha/out/dense/w", flow,
-                      *GetWeghtsConverter(layer.mha.dense_w,
-                                          {d_model, embedding_size}, {1, 0}));
-  flow = builder->Add(name + "/mha/out/dense/b", flow,
-                      *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
-  std::unique_ptr<OnnxConst> alpha_onnx;
+  auto mha_dense_w = layer.mha.dense_w;
+  auto mha_dense_b = layer.mha.dense_b;
   if (alpha != 1.0) {
-    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-      alpha_onnx = std::make_unique<Float16OnnxConst>(
-          Float16OnnxConst({FP32toFP16(alpha)}, {1}));
-    } else {
-      alpha_onnx =
-          std::make_unique<FloatOnnxConst>(FloatOnnxConst({alpha}, {1}));
-    }
-    flow = builder->Mul(name + "/mha/out/alpha", flow, *alpha_onnx);
+    std::transform(mha_dense_w.begin(), mha_dense_w.end(), mha_dense_w.begin(),
+                   [alpha](float f) { return alpha * f; });
+    std::transform(mha_dense_b.begin(), mha_dense_b.end(), mha_dense_b.begin(),
+                   [alpha](float f) { return alpha * f; });
   }
+  flow = builder->MatMul(
+      name + "/mha/out/dense/w", flow,
+      *GetWeghtsConverter(mha_dense_w, {d_model, embedding_size}, {1, 0}));
+  flow = builder->Add(name + "/mha/out/dense/b", flow,
+                      *GetWeghtsConverter(mha_dense_b, {embedding_size}));
   flow = builder->Add(name + "/mha/out/skip", flow, encoder_in);
 
   auto ffn_in = builder->LayerNormalization(
@@ -445,16 +441,21 @@ std::string Converter::MakeEncoderLayer(
   flow = MakeActivation(
       builder, flow, name + "/ffn/dense1",
       ffn_activation == ACTIVATION_DEFAULT ? activation : ffn_activation);
-  flow =
-      builder->MatMul(name + "/ffn/dense2/w", flow,
-                      *GetWeghtsConverter(layer.ffn.dense2_w,
-                                          {dff_size, embedding_size}, {1, 0}));
-  flow =
-      builder->Add(name + "/ffn/dense2/b", flow,
-                   *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
+  auto ffn_dense2_w = layer.ffn.dense2_w;
+  auto ffn_dense2_b = layer.ffn.dense2_b;
   if (alpha != 1.0) {
-    flow = builder->Mul(name + "/ffn/alpha", flow, *alpha_onnx);
+    std::transform(ffn_dense2_w.begin(), ffn_dense2_w.end(),
+                   ffn_dense2_w.begin(),
+                   [alpha](float f) { return alpha * f; });
+    std::transform(ffn_dense2_b.begin(), ffn_dense2_b.end(),
+                   ffn_dense2_b.begin(),
+                   [alpha](float f) { return alpha * f; });
   }
+  flow = builder->MatMul(
+      name + "/ffn/dense2/w", flow,
+      *GetWeghtsConverter(ffn_dense2_w, {dff_size, embedding_size}, {1, 0}));
+  flow = builder->Add(name + "/ffn/dense2/b", flow,
+                      *GetWeghtsConverter(ffn_dense2_b, {embedding_size}));
   flow = builder->Add(name + "/ffn/skip", flow, ffn_in);
   flow = builder->LayerNormalization(
       name + "/ln2", flow,
