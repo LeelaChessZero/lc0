@@ -416,7 +416,6 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Add(name + "/mha/out/dense/b", flow,
                       *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
   std::unique_ptr<OnnxConst> alpha_onnx;
-  std::string alpha_in;
   if (alpha != 1.0) {
     if (GetDataType() == pblczero::TensorProto::FLOAT16) {
       alpha_onnx = std::make_unique<Float16OnnxConst>(
@@ -425,11 +424,9 @@ std::string Converter::MakeEncoderLayer(
       alpha_onnx =
           std::make_unique<FloatOnnxConst>(FloatOnnxConst({alpha}, {1}));
     }
-    alpha_in = builder->Mul(name + "/alpha*input", encoder_in, *alpha_onnx);
-  } else {
-    alpha_in = encoder_in;
+    flow = builder->Mul(name + "/mha/out/alpha", flow, *alpha_onnx);
   }
-  flow = builder->Add(name + "/mha/out/skip", flow, alpha_in);
+  flow = builder->Add(name + "/mha/out/skip", flow, encoder_in);
 
   auto ffn_in = builder->LayerNormalization(
       name + "/ln1", flow,
@@ -455,13 +452,10 @@ std::string Converter::MakeEncoderLayer(
   flow =
       builder->Add(name + "/ffn/dense2/b", flow,
                    *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
-  std::string alpha_ffn_in;
   if (alpha != 1.0) {
-    alpha_ffn_in = builder->Mul(name + "/alpha*out1", ffn_in, *alpha_onnx);
-  } else {
-    alpha_ffn_in = ffn_in;
+    flow = builder->Mul(name + "/ffn/alpha", flow, *alpha_onnx);
   }
-  flow = builder->Add(name + "/ffn/skip", flow, alpha_ffn_in);
+  flow = builder->Add(name + "/ffn/skip", flow, ffn_in);
   flow = builder->LayerNormalization(
       name + "/ln2", flow,
       *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
@@ -552,7 +546,7 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                 Int64OnnxConst({-1, embedding_size}, {2})));
   }
 
-  float alpha = std::pow(2.0f * NumEncBlocks(), 0.25f);
+  float alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
   for (size_t i = 0; i < NumEncBlocks(); i++) {
     flow = MakeEncoderLayer(
         builder, weights.encoder[i], embedding_size, weights.encoder_head_count,
