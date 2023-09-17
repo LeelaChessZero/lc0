@@ -440,4 +440,40 @@ std::string OnnxBuilder::Mish(const std::string& name,
   return PopulateStdNodeFields(node, name, input, "Mish");
 }
 
+std::string OnnxBuilder::Sqrt(const std::string& name,
+                              const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Sqrt");
+}
+
+std::string OnnxBuilder::Reciprocal(const std::string& name,
+                                    const std::string& input) {
+  auto* node = model_.mutable_graph()->add_node();
+  return PopulateStdNodeFields(node, name, input, "Reciprocal");
+}
+
+std::string OnnxBuilder::Cast(const std::string& name, const std::string& input,
+                              pblczero::TensorProto::DataType type) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Cast");
+  AddIntAttribute(node, "to", type);
+  return out;
+}
+
+std::string OnnxBuilder::ReduceMean(const std::string& name,
+                                    const std::string& input,
+                                    std::initializer_list<int> axes) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "ReduceMean");
+  if (opset_ < 18) {
+    AddIntsAttribute(node, "axes", axes);
+  } else {
+    node->add_input(AddInitializer(
+        name + "/axes",
+        Int64OnnxConst(std::vector<int64_t>(begin(axes), end(axes)),
+                       {static_cast<int>(axes.size())})));
+  }
+  return out;
+}
+
 }  // namespace lczero

@@ -111,6 +111,11 @@ class Converter {
                           const std::string& encoder_in,
                           const std::string& name);
 
+  std::string MakeLayerNorm(OnnxBuilder* builder, const std::string& input,
+                            const std::string& name,
+                            const lczero::OnnxConst& gammas,
+                            const lczero::OnnxConst& betas, float eps = 1e-6);
+
   std::string MakeEncoderLayer(OnnxBuilder* builder,
                                const LegacyWeights::EncoderLayer& layer,
                                int embedding_size, int heads,
@@ -320,10 +325,10 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
       name + "/smolgen/dense1/b", flow,
       *GetWeghtsConverter(layer.mha.smolgen.dense1_b, {smolgen_hidden_sz}));
   flow = MakeActivation(builder, flow, name + "/smolgen/dense1", activation);
-  flow = builder->LayerNormalization(
-      name + "/smolgen/ln1", flow,
+  flow = MakeLayerNorm(
+      builder, flow, name + "/smolgen/ln1",
       *GetWeghtsConverter(layer.mha.smolgen.ln1_gammas, {smolgen_hidden_sz}),
-      *GetWeghtsConverter(layer.mha.smolgen.ln1_betas, {smolgen_hidden_sz}), 1,
+      *GetWeghtsConverter(layer.mha.smolgen.ln1_betas, {smolgen_hidden_sz}),
       1e-3);
   flow = builder->MatMul(
       name + "/smolgen/dense2/w", flow,
@@ -333,13 +338,12 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
                       *GetWeghtsConverter(layer.mha.smolgen.dense2_b,
                                           {smolgen_gen_sz * heads}));
   flow = MakeActivation(builder, flow, name + "/smolgen/dense2", activation);
-  flow = builder->LayerNormalization(
-      name + "/smolgen/ln2", flow,
-      *GetWeghtsConverter(layer.mha.smolgen.ln2_gammas,
-                          {smolgen_gen_sz * heads}),
-      *GetWeghtsConverter(layer.mha.smolgen.ln2_betas,
-                          {smolgen_gen_sz * heads}),
-      1, 1e-3);
+  flow = MakeLayerNorm(builder, flow, name + "/smolgen/ln2",
+                       *GetWeghtsConverter(layer.mha.smolgen.ln2_gammas,
+                                           {smolgen_gen_sz * heads}),
+                       *GetWeghtsConverter(layer.mha.smolgen.ln2_betas,
+                                           {smolgen_gen_sz * heads}),
+                       1e-3);
   flow =
       builder->Reshape(name + "/smolgen/gen_from/reshape", flow,
                        builder->AddInitializer(
@@ -351,6 +355,33 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
       name + "/smolgen/out/reshape", flow,
       builder->AddInitializer("/const" + name + "/smolgen/out/shape",
                               Int64OnnxConst({-1, heads, 64, 64}, {4})));
+  return flow;
+}
+
+std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
+                                     const std::string& input,
+                                     const std::string& name,
+                                     const lczero::OnnxConst& gammas,
+                                     const lczero::OnnxConst& betas,
+                                     float eps) {
+  if (!options_.alt_ln) {
+    return builder->LayerNormalization(name, input, gammas, betas, 1, eps);
+  }
+  auto in =
+      builder->Cast(name + "/to_float", input, pblczero::TensorProto::FLOAT);
+  auto flow = builder->ReduceMean(name + "/mean", in, {1});
+  in = builder->Sub(name + "/centered", in, flow);
+  flow = builder->Mul(name + "/squared", in, in);
+  flow = builder->ReduceMean(name + "/var", flow, {1});
+  flow =
+      builder->Add(name + "/var_eps", flow,
+                   static_cast<const OnnxConst&>(FloatOnnxConst({eps}, {1})));
+  flow = builder->Sqrt(name + "/std", flow);
+  flow = builder->Reciprocal(name + "/inv_std", flow);
+  flow = builder->Mul(name + "/normalized", in, flow);
+  flow = builder->Cast(name + "/to_data_type", flow, GetDataType());
+  flow = builder->Mul(name + "/gammas", flow, gammas);
+  flow = builder->Add(name + "/betas", flow, betas);
   return flow;
 }
 
@@ -430,11 +461,10 @@ std::string Converter::MakeEncoderLayer(
     alpha_in = encoder_in;
   }
   flow = builder->Add(name + "/mha/out/skip", flow, alpha_in);
-
-  auto ffn_in = builder->LayerNormalization(
-      name + "/ln1", flow,
-      *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
-      *GetWeghtsConverter(layer.ln1_betas, {embedding_size}), 1);
+  auto ffn_in =
+      MakeLayerNorm(builder, flow, name + "/ln1",
+                    *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
+                    *GetWeghtsConverter(layer.ln1_betas, {embedding_size}));
   const int dff_size = layer.ffn.dense1_b.size();
   flow =
       builder->MatMul(name + "/ffn/dense1/w", ffn_in,
@@ -462,10 +492,9 @@ std::string Converter::MakeEncoderLayer(
     alpha_ffn_in = ffn_in;
   }
   flow = builder->Add(name + "/ffn/skip", flow, alpha_ffn_in);
-  flow = builder->LayerNormalization(
-      name + "/ln2", flow,
-      *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
-      *GetWeghtsConverter(layer.ln2_betas, {embedding_size}), 1);
+  flow = MakeLayerNorm(builder, flow, name + "/ln2",
+                       *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
+                       *GetWeghtsConverter(layer.ln2_betas, {embedding_size}));
   return flow;
 }
 
