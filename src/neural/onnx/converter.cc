@@ -364,18 +364,31 @@ std::string Converter::MakeEncoderLayer(
   auto mha_shape =
       builder->AddInitializer("/const" + name + "/mha/shape",
                               Int64OnnxConst({-1, 64, heads, depth}, {4}));
+  float scale = pow(depth, -0.25f);
+  auto mha_q_w = layer.mha.q_w;
+  auto mha_q_b = layer.mha.q_b;
+  std::transform(mha_q_w.begin(), mha_q_w.end(), mha_q_w.begin(),
+                 [scale](float f) { return scale * f; });
+  std::transform(mha_q_b.begin(), mha_q_b.end(), mha_q_b.begin(),
+                 [scale](float f) { return scale * f; });
   auto flow = builder->MatMul(
       name + "/mha/Q/w", encoder_in,
-      *GetWeghtsConverter(layer.mha.q_w, {embedding_size, d_model}, {1, 0}));
+      *GetWeghtsConverter(mha_q_w, {embedding_size, d_model}, {1, 0}));
   flow = builder->Add(name + "/mha/Q/b", flow,
-                      *GetWeghtsConverter(layer.mha.q_b, {d_model}));
+                      *GetWeghtsConverter(mha_q_b, {d_model}));
   flow = builder->Reshape(name + "/mha/Q/reshape", flow, mha_shape);
   auto Q = builder->Transpose(name + "/mha/Q/transpose", flow, {0, 2, 1, 3});
+  auto mha_k_w = layer.mha.k_w;
+  auto mha_k_b = layer.mha.k_b;
+  std::transform(mha_k_w.begin(), mha_k_w.end(), mha_k_w.begin(),
+                 [scale](float f) { return scale * f; });
+  std::transform(mha_k_b.begin(), mha_k_b.end(), mha_k_b.begin(),
+                 [scale](float f) { return scale * f; });
   flow = builder->MatMul(
       name + "/mha/K/w", encoder_in,
-      *GetWeghtsConverter(layer.mha.k_w, {embedding_size, d_model}, {1, 0}));
+      *GetWeghtsConverter(mha_k_w, {embedding_size, d_model}, {1, 0}));
   flow = builder->Add(name + "/mha/K/b", flow,
-                      *GetWeghtsConverter(layer.mha.k_b, {d_model}));
+                      *GetWeghtsConverter(mha_k_b, {d_model}));
   flow = builder->Reshape(name + "/mha/K/reshape", flow, mha_shape);
   auto K = builder->Transpose(name + "/mha/K/transpose", flow, {0, 2, 3, 1});
   flow = builder->MatMul(
@@ -386,15 +399,6 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Reshape(name + "/mha/V/reshape", flow, mha_shape);
   auto V = builder->Transpose(name + "/mha/V/transpose", flow, {0, 2, 1, 3});
   flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
-  std::unique_ptr<OnnxConst> scale;
-  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-    scale = std::make_unique<Float16OnnxConst>(
-        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(depth))}, {1}));
-  } else {
-    scale = std::make_unique<FloatOnnxConst>(
-        FloatOnnxConst({1.0f / sqrtf(depth)}, {1}));
-  }
-  flow = builder->Mul(name + "/mha/QK/scale", flow, *scale);
   if (layer.mha.has_smolgen) {
     auto smolgen_weights =
         MakeSmolgen(builder, layer, embedding_size, heads, encoder_in, name);
@@ -607,34 +611,38 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
         weights.pol_encoder_head_count, flow, name, activation);
   }
   auto encoder_out = flow;
+  float scale = pow(policy_d_model, -0.25f);
+  auto ip2_pol_w = weights.ip2_pol_w;
+  auto ip2_pol_b = weights.ip2_pol_b;
+  std::transform(ip2_pol_w.begin(), ip2_pol_w.end(), ip2_pol_w.begin(),
+                 [scale](float f) { return scale * f; });
+  std::transform(ip2_pol_b.begin(), ip2_pol_b.end(), ip2_pol_b.begin(),
+                 [scale](float f) { return scale * f; });
   flow = builder->MatMul(
       "/policy/Q/matmul", encoder_out,
-      *GetWeghtsConverter(weights.ip2_pol_w,
-                          {policy_embedding_size, policy_d_model}, {1, 0}));
+      *GetWeghtsConverter(ip2_pol_w, {policy_embedding_size, policy_d_model},
+                          {1, 0}));
   flow = builder->Add("/policy/Q/add", flow,
-                      *GetWeghtsConverter(weights.ip2_pol_b, {policy_d_model}));
+                      *GetWeghtsConverter(ip2_pol_b, {policy_d_model}));
   auto Q = builder->Reshape(
       "/policy/Q/reshape", flow,
       builder->AddInitializer("/const/QK_shape",
                               Int64OnnxConst({-1, 64, policy_d_model}, {3})));
+  auto ip3_pol_w = weights.ip3_pol_w;
+  auto ip3_pol_b = weights.ip3_pol_b;
+  std::transform(ip3_pol_w.begin(), ip3_pol_w.end(), ip3_pol_w.begin(),
+                 [scale](float f) { return scale * f; });
+  std::transform(ip3_pol_b.begin(), ip3_pol_b.end(), ip3_pol_b.begin(),
+                 [scale](float f) { return scale * f; });
   flow = builder->MatMul(
       "/policy/K/matmul", encoder_out,
-      *GetWeghtsConverter(weights.ip3_pol_w,
-                          {policy_embedding_size, policy_d_model}, {1, 0}));
+      *GetWeghtsConverter(ip3_pol_w, {policy_embedding_size, policy_d_model},
+                          {1, 0}));
   flow = builder->Add("/policy/K/add", flow,
-                      *GetWeghtsConverter(weights.ip3_pol_b, {policy_d_model}));
+                      *GetWeghtsConverter(ip3_pol_b, {policy_d_model}));
   auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
   flow = builder->Transpose("/policy/K/transpose", K, {0, 2, 1});
   flow = builder->MatMul("/policy/matmul", Q, flow);
-  std::unique_ptr<OnnxConst> scale;
-  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-    scale = std::make_unique<Float16OnnxConst>(
-        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(policy_d_model))}, {1}));
-  } else {
-    scale = std::make_unique<FloatOnnxConst>(
-        FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
-  }
-  flow = builder->Mul("/policy/scale", flow, *scale);
   auto prom = builder->Slice("policy/promotion/slice", K, {0, 56, 0},
                              {INT_MAX, 64, policy_d_model});
   prom = builder->MatMul(
