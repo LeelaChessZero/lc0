@@ -494,13 +494,13 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                 Int64OnnxConst({-1, 64, 112}, {3})));
     std::string pad;
     if (options_.opset < 8) {
-      pad = builder->Slice("attn_body/pad/slice", flow, {0, 0, 0},
+      pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
                            {INT_MAX, 1, 1});
       pad = builder->Reshape(
           "/attn_body/pad/reshape_in", pad,
           builder->AddInitializer("/const/pad_in_shape",
                                   Int64OnnxConst({-1, 1}, {2})));
-      pad = builder->Sub("attn_body/pad/zeros_vec", pad, pad);
+      pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
       std::unique_ptr<OnnxConst> one;
       if (GetDataType() == pblczero::TensorProto::FLOAT16) {
         one = std::make_unique<Float16OnnxConst>(
