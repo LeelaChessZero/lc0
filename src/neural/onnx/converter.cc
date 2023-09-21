@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <initializer_list>
 #include <memory>
+#include <numeric>
 
 #include "neural/loader.h"
 #include "neural/network.h"
@@ -434,11 +435,19 @@ std::string Converter::MakeEncoderLayer(
   auto ffn_dense1_b = layer.ffn.dense1_b;
   auto ffn_dense2_w = layer.ffn.dense2_w;
   auto ffn_dense2_b = layer.ffn.dense2_b;
+  auto max_ln1_gammas = std::abs(*std::max_element(
+      ln1_gammas.begin(), ln1_gammas.end(),
+      [](float a, float b) { return std::abs(a) < std::abs(b); }));
+  auto max_ffn_dense1_w = std::abs(*std::max_element(
+      layer.ffn.dense1_w.begin(), layer.ffn.dense1_w.end(),
+      [](float a, float b) { return std::abs(a) < std::abs(b); }));
   const auto ffn_activation = static_cast<ActivationFunction>(
       src_.format().network_format().ffn_activation());
   if (ffn_activation == ACTIVATION_RELU_2 &&
+      max_ln1_gammas * max_ffn_dense1_w > 1.f &&
       GetDataType() == pblczero::TensorProto::FLOAT16) {
-    float shift = 0.5f;
+    float shift =
+        std::exp2(std::ceil(std::log2(max_ln1_gammas * max_ffn_dense1_w)));
     std::transform(ln1_gammas.begin(), ln1_gammas.end(), ln1_gammas.begin(),
                    [shift](float f) { return shift * f; });
     std::transform(ln1_betas.begin(), ln1_betas.end(), ln1_betas.begin(),
