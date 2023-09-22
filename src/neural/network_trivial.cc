@@ -444,6 +444,8 @@ class TrivialNetworkComputation : public NetworkComputation {
 
   float GetDVal(int) const override { return 0.0f; }
 
+  float GetEVal(int) const override { return 0.0f; }
+
   float GetMVal(int /* sample */) const override { return 0.0f; }
 
   float GetPVal(int /* sample */, int move_id) const override {

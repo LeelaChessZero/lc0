@@ -185,6 +185,10 @@ class OpenCLComputation : public NetworkComputation {
     }
   }
 
+  float GetEVal(int sample) const override {
+    return 0.0f;
+  }
+
   float GetMVal(int sample) const override {
     if (moves_left_) {
       auto d = m_values_[sample];
