@@ -134,10 +134,12 @@ class Output {
     for (int i = 0; i < 1858; ++i) p_[i] = computation.GetPVal(idx, i);
     q_ = computation.GetQVal(idx);
     d_ = computation.GetDVal(idx);
+    e_ = computation.GetEVal(idx);
     m_ = computation.GetMVal(idx);
   }
   float q() const { return q_; }
   float d() const { return d_; }
+  float e() const { return e_; }
   float m() const { return m_; }
   std::vector<float> p_raw(const std::vector<int>& indicies) {
     std::vector<float> result(indicies.size());
@@ -173,6 +175,7 @@ class Output {
   float p_[1858];
   float q_;
   float d_;
+  float e_;
   float m_;
 };
 

@@ -128,6 +128,10 @@ class OnednnNetworkComputation : public NetworkComputation {
     }
   }
 
+  float GetEVal(int sample) const override {
+    return 0.0f;
+  }
+
   float GetPVal(int sample, int move_id) const override {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
