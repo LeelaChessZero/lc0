@@ -925,7 +925,7 @@ class CudnnNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_, false,
                                              moves_left_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
@@ -943,7 +943,7 @@ class CudnnNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false); }
+  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false, false); }
 
  private:
   const NetworkCapabilities capabilities_;

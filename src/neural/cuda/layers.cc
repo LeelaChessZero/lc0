@@ -2294,6 +2294,121 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   }  // End of encoder blocks
 }
 
+template <typename DataType>
+ValueHead<DataType>::ValueHead(BaseLayer<DataType>* ip,
+                               const LegacyWeights::ValueHead& weights,
+                               void* scratch, bool attention_body,
+                               bool wdl, bool wdl_err,
+                               ActivationFunction act,
+                               int max_batch_size)
+    : BaseLayer<DataType>(weights.ip_val_b.size(), 8, 8, ip),
+      attention_body_(attention_body),
+      embedding_size_(attention_body ? weights.ip_val_b.size() : 0),
+      convolution_size_(attention_body ? 0 : weights.value.biases.size()),
+      value_hidden_size_(weights.ip1_val_b.size()),
+      act_(act),
+      wdl_(wdl),
+      wdl_err_(wdl_err) {
+  // Selected head to construct.
+  // Use value_q as default head.
+  /* @todo check that head exists */
+  if (attention_body_) {
+    allocAndUpload<DataType>(&ip_val_w_, weights.ip_val_w, scratch);
+    allocAndUpload<DataType>(&ip_val_b_, weights.ip_val_b, scratch);
+  } else {
+    // @todo value convolution here.
+  }
+
+  allocAndUpload<DataType>(&ip1_val_w_, weights.ip1_val_w, scratch);
+  allocAndUpload<DataType>(&ip1_val_b_, weights.ip1_val_b, scratch);
+
+  allocAndUpload<DataType>(&ip2_val_w_, weights.ip2_val_w, scratch);
+  allocAndUpload<DataType>(&ip2_val_b_, weights.ip2_val_b, scratch);
+
+  if (wdl_err_) {
+    allocAndUpload<DataType>(&ip_val_err_w_, weights.ip_val_err_w, scratch);
+    allocAndUpload<DataType>(&ip_val_err_b_, weights.ip_val_err_b, scratch);
+  }
+}
+
+template <typename DataType>
+ValueHead<DataType>::~ValueHead() {
+  if (attention_body_) {
+    ReportCUDAErrors(cudaFree(ip_val_w_));
+    ReportCUDAErrors(cudaFree(ip_val_b_));
+  }
+  ReportCUDAErrors(cudaFree(ip1_val_w_));
+  ReportCUDAErrors(cudaFree(ip1_val_b_));
+  ReportCUDAErrors(cudaFree(ip2_val_w_));
+  ReportCUDAErrors(cudaFree(ip2_val_b_));
+  if (wdl_err_) {
+    ReportCUDAErrors(cudaFree(ip_val_err_w_));
+    ReportCUDAErrors(cudaFree(ip_val_err_b_));
+  }
+}
+
+template <typename DataType>
+void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
+                               const DataType* input2, void* scratch,
+                               size_t scratch_size, cudnnHandle_t /*cudnn*/,
+                               cublasHandle_t cublas, cudaStream_t stream,
+                               DataType***) {
+  DataType* buffer = (DataType*)input2;
+  {
+    const int num_inputs = this->input_->GetC();
+    const int num_outputs = embedding_size_;
+    const int batch = N * 64;
+    if (attention_body_) {
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                            num_inputs, 1.0f, (const DataType*)ip_val_w_, num_inputs,
+                            input, num_inputs, 0.0f, buffer, num_outputs);
+      addBiasBatched<DataType>(buffer, buffer, ip_val_b_, N, 64, num_outputs, act_, stream);
+
+    } else {
+      // Convolution for old conv value head
+    }
+  }
+
+  {
+    // Value dense 1
+    const int num_inputs = embedding_size_ * 64;
+    const int num_outputs = value_hidden_size_;
+    const int batch = N;
+    DataType* layer_out = (DataType*)scratch;
+    cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                          num_inputs, 1.0f, (const DataType*)ip1_val_w_, num_inputs,
+                          buffer, num_inputs, 0.0f, layer_out, num_outputs);
+    addBiasBatched<DataType>(layer_out, layer_out, ip1_val_b_, 1, batch,
+                             num_outputs, act_, stream);
+  }
+
+  {
+    // Value dense 2
+    const int num_inputs = value_hidden_size_;
+    const int num_outputs = wdl_ ? 3 : 1;
+    const int batch = N;
+    DataType* layer_out = wdl_err_ ? (DataType*)buffer : (DataType*)output;
+    cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                      num_inputs, 1.0f, (const DataType*)ip2_val_w_, num_inputs,
+                      (DataType*)scratch, num_inputs, 0.0f, layer_out, num_outputs);
+    addVectors(layer_out, layer_out, ip2_val_b_, num_outputs * batch,
+               num_outputs * batch, num_outputs, wdl_ ? ACTIVATION_NONE : ACTIVATION_TANH,
+               stream);
+  }
+
+  if (wdl_err_) {
+    // Value error dense
+    const int num_inputs = value_hidden_size_;
+    const int num_outputs = 1;
+    const int batch = N;
+    cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                      num_inputs, 1.0f, (const DataType*)ip_val_err_w_, num_inputs,
+                      (DataType*)scratch, num_inputs, 0.0f, output, num_outputs);
+    addVectors(output, output, ip_val_err_b_, N,
+               N, 1, ACTIVATION_SIGMOID, stream);
+  }
+}
+
 // Template instantiation.
 #ifdef USE_CUDNN
 template class ConvLayer<half>;
@@ -2329,6 +2444,9 @@ template class AttentionBody<float>;
 
 template class EmbeddingLayer<half>;
 template class EmbeddingLayer<float>;
+
+template class ValueHead<half>;
+template class ValueHead<float>;
 
 // Misc error handling stuff.
 #ifdef USE_CUDNN

@@ -507,5 +507,45 @@ class AttentionBody : public BaseLayer<DataType> {
   const bool has_smolgen_;
 };
 
+// The value head implementation
+// Responsible for loading weights into GPU memory, and evaluating the value
+// head and value error head
+template <typename DataType>
+class ValueHead : public BaseLayer<DataType> {
+  using BaseLayer<DataType>::C;
+  using BaseLayer<DataType>::H;
+  using BaseLayer<DataType>::W;
+  using BaseLayer<DataType>::GetC;
+  using BaseLayer<DataType>::GetH;
+  using BaseLayer<DataType>::GetW;
+
+ public:
+  ValueHead(BaseLayer<DataType>* ip, const LegacyWeights::ValueHead& weights,
+                      void* scratch, bool attention_body, bool wdl, bool wdl_err,
+                      ActivationFunction act, int max_batch_size);
+  ~ValueHead();
+  void Eval(int N, DataType* output, const DataType* input,
+            const DataType* input2, void* scratch, size_t scratch_size,
+            cudnnHandle_t cudnn, cublasHandle_t cublas, cudaStream_t stream,
+            DataType*** = nullptr) override;
+
+ private:
+  // GPU allocations to hold various weights used by the attention policy head
+  DataType *value_w_, *value_b_;            // "convolution" in value head (legacy)
+  DataType *ip_val_w_, *ip_val_b_;          // "embedding" in value head
+  DataType *ip1_val_w_, *ip1_val_b_;        // "FC1" in value head
+  DataType *ip2_val_w_, *ip2_val_b_;        // "FC2" in value head
+  DataType *ip_val_err_w_, *ip_val_err_b_;  // value error "FC" weights
+
+  int embedding_size_;
+  int convolution_size_;
+  int value_hidden_size_;
+  bool wdl_;
+  bool wdl_err_;
+  bool attention_body_;
+  ActivationFunction act_;
+};
+
+
 }  // namespace cudnn_backend
 }  // namespace lczero
