@@ -446,8 +446,11 @@ std::string Converter::MakeEncoderLayer(
   if (ffn_activation == ACTIVATION_RELU_2 &&
       max_ln1_gammas * max_ffn_dense1_w > 1.f &&
       GetDataType() == pblczero::TensorProto::FLOAT16) {
+    // Some networks overflow the second LayerNormalization variance calculation
+    // in fp16 (despite the onnx docs saying it is done in fp32). Only a few
+    // layers are likely to be affected, here we scale them down to avoid it.
     float shift =
-        std::exp2(std::ceil(std::log2(max_ln1_gammas * max_ffn_dense1_w)));
+        std::exp2(-std::ceil(std::log2(max_ln1_gammas * max_ffn_dense1_w)));
     std::transform(ln1_gammas.begin(), ln1_gammas.end(), ln1_gammas.begin(),
                    [shift](float f) { return shift * f; });
     std::transform(ln1_betas.begin(), ln1_betas.end(), ln1_betas.begin(),
