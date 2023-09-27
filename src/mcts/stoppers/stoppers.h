@@ -111,6 +111,16 @@ class DepthStopper : public SearchStopper {
   const int depth_;
 };
 
+// Stops when a mate at specified depth (or less) is found.
+class MateStopper : public SearchStopper {
+ public:
+  MateStopper(int mate) : mate_(mate) {}
+  bool ShouldStop(const IterationStats&, StoppersHints*) override;
+
+ private:
+  const int mate_;
+};
+
 // Stops when search doesn't bring required KLD gain.
 class KldGainStopper : public SearchStopper {
  public:
