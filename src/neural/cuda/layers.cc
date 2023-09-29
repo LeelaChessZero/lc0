@@ -2362,7 +2362,7 @@ void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
       cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                             num_inputs, 1.0f, (const DataType*)ip_val_w_, num_inputs,
                             input, num_inputs, 0.0f, buffer, num_outputs);
-      addBiasBatched<DataType>(buffer, buffer, ip_val_b_, N, 64, num_outputs, act_, stream);
+      addBiasBatched<DataType>(buffer, buffer, ip_val_b_, 1, batch, num_outputs, act_, stream);
 
     } else {
       // Convolution for old conv value head
