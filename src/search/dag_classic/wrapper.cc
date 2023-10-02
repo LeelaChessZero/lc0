@@ -49,6 +49,10 @@ const OptionId kClearTree{
      .help_text = "Clear the tree before the next search.",
      .visibility = OptionId::kProOnly}};
 
+#ifdef FIX_TT
+const OptionId kHashId{"hash", "Hash", "Size of the transposition table."};
+#endif
+
 class DagClassicSearch : public SearchBase {
  public:
   DagClassicSearch(UciResponder* responder, const OptionsDict* options)
@@ -102,7 +106,11 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 void DagClassicSearch::NewGame() {
   LOGFILE << "New game.";
   search_.reset();
+#ifndef FIX_TT
   tt_.clear();
+#else
+  tt_.Clear();
+#endif
   tree_.reset();
   time_manager_ = classic::MakeTimeManager(*options_);
 }
@@ -112,6 +120,10 @@ void DagClassicSearch::SetPosition(const GameState& pos) {
   const bool is_same_game = tree_->ResetToPosition(pos);
   LOGFILE << "Tree reset to a new position.";
   if (!is_same_game) time_manager_ = classic::MakeTimeManager(*options_);
+#ifdef FIX_TT
+  // Transposition table size.
+  tt_.SetCapacity(options_->Get<int>(kHashId));
+#endif
 }
 
 void DagClassicSearch::StartSearch(const GoParams& params) {
@@ -126,7 +138,10 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
       options_->Get<int>(SharedBackendParams::kNNCacheSizeId);
   // FIXME: This is too conservative.
   const size_t kAvgNodeSize =
-      sizeof(Node) + sizeof(LowNode) + sizeof(TranspositionTable::slot_type) +
+      sizeof(Node) + sizeof(LowNode) +
+#ifndef FIX_TT
+      sizeof(TranspositionTable::slot_type) +
+#endif
       classic::MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
   const size_t kAvgCacheItemSize =
       3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
@@ -156,6 +171,9 @@ class DagClassicSearchFactory : public SearchFactory {
 
   void PopulateParams(OptionsParser* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
+#ifdef FIX_TT
+    parser->Add<IntOption>(kHashId, 0, 999999999) = 2000000;
+#endif
     SearchParams::Populate(parser);
     classic::PopulateTimeManagementOptions(classic::RunType::kUci, parser);
 

@@ -209,12 +209,14 @@ Search::Search(const NodeTree& tree, Backend* backend,
           searchmoves_, syzygy_tb_, played_history_,
           params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
+#ifndef FIX_TT
   // Evict expired entries from the transposition table.
   // Garbage collection may lead to expiration at any time so this is not
   // enough to prevent expired entries later during the search.
   absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
 
   LOGFILE << "Transposition table garbage collection done.";
+#endif
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
@@ -2072,13 +2074,23 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   // Check the transposition table first and NN cache second before asking for
   // NN evaluation.
   picked_node.hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+#ifndef FIX_TT
   auto tt_iter = search_->tt_->find(picked_node.hash);
   // Transposition table entry might be expired.
   if (tt_iter != search_->tt_->end()) {
     picked_node.tt_low_node = tt_iter->second.lock();
   }
+#else
+  auto entry = search_->tt_->LookupAndPin(picked_node.hash);
+  if (entry) {
+    picked_node.tt_low_node = entry->lock();
+    search_->tt_->Unpin(picked_node.hash, entry);
+  }
+#endif
   if (picked_node.tt_low_node) {
+#ifndef FIX_TT
     assert(!tt_iter->second.expired());
+#endif
     picked_node.is_tt_hit = true;
   } else {
     picked_node.tt_low_node = std::make_shared<LowNode>(legal_moves);
@@ -2225,18 +2237,44 @@ void SearchWorker::DoBackupUpdateSingleNode(
   auto path = node_to_process.path;
 
   if (node_to_process.nn_queried) {
+#ifdef FIX_TT
+    auto entry = search_->tt_->LookupAndPin(node_to_process.hash);
+    bool is_tt_miss = !entry;
+#else
     auto [tt_iter, is_tt_miss] = search_->tt_->try_emplace(
         node_to_process.hash, node_to_process.tt_low_node);
+#endif
     if (is_tt_miss) {
+#ifndef FIX_TT
       assert(!tt_iter->second.expired());
+#endif
       node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+#ifdef FIX_TT
+      search_->tt_->Insert(node_to_process.hash,
+                           std::make_unique<std::weak_ptr<LowNode>>(
+                               node_to_process.tt_low_node));
+#endif
     } else {
+#ifndef FIX_TT
       auto tt_low_node = tt_iter->second.lock();
+#else
+      auto tt_low_node = entry->lock();
+      search_->tt_->Unpin(node_to_process.hash, entry);
+#endif
       if (!tt_low_node) {
+#ifndef FIX_TT
         tt_iter->second = node_to_process.tt_low_node;
+#endif
         node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+#ifdef FIX_TT
+        search_->tt_->Insert(node_to_process.hash,
+                             std::make_unique<std::weak_ptr<LowNode>>(
+                                 node_to_process.tt_low_node));
+#endif
       } else {
+#ifndef FIX_TT
         assert(!tt_iter->second.expired());
+#endif
         node_to_process.node->SetLowNode(tt_low_node);
       }
     }
