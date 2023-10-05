@@ -204,7 +204,8 @@ class CudaNetwork : public Network {
     attn_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_ATTENTION;
 
-    attn_body_ = file.format().network_format().network() ==
+    // Mask out the multihead format bit 7.
+    attn_body_ = (file.format().network_format().network() & 127) ==
                  pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
@@ -1046,16 +1047,11 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
         " backend requires a network file.");
   }
   const WeightsFile& weights = *w;
-  if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
+  if ((weights.format().network_format().network() & 128) == 0) {
     throw Exception("Network format " +
                     pblczero::NetworkFormat::NetworkStructure_Name(
                         weights.format().network_format().network()) +
-                    " is not supported by the CUDA backend.");
+                    " is not currently supported by this version of the CUDA backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&
