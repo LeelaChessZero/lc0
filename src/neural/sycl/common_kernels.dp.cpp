@@ -25,31 +25,16 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-/*   This file is part of Leela Chess Zero.
-    Modifications Copyright (C) 2023 Intel Corporation
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <https://www.gnu.org/licenses/>. 
-   
-   SPDX-License-Identifier: GNU General Public License v3.0 only
-*/
-
-
 #include <sycl/sycl.hpp>
-#include <cassert>
+#include <dpct/dpct.hpp>
 #include <algorithm>
+#include <cassert>
+
 #include "sycl_common.h"
+#include "neural/shared/activation.h"
+#include "neural/shared/attention_policy_map.h"
 #include "winograd_helper.h"
+#include <cmath>
 
 namespace lczero {
 namespace sycldnn_backend {
@@ -64,7 +49,7 @@ constexpr int kInputPlanes = 112;
 template <typename T>
 void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
                                   int bsize, ActivationFunction activation,
-                                  sycl::nd_item<3> item_ct1) {
+                                  const sycl::nd_item<3> &item_ct1) {
   int i = item_ct1.get_local_id(2) +
           item_ct1.get_local_range(2) * item_ct1.get_group(2);
   if (i < size) {
@@ -85,11 +70,11 @@ void addVectors_kernel(T* c, T* a, T* b, int size, int asize,
 // activation.
 template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
-                ActivationFunction activation, sycl::queue &mqueue) {
+                ActivationFunction activation, sycl::queue &sycl_queue) {
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
-  mqueue.parallel_for(
+  sycl_queue.parallel_for(
       sycl::nd_range<3>(
           sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
           sycl::range<3>(1, 1, kBlockSize)),
@@ -97,12 +82,49 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
         addVectors_kernel(c, a, b, size, asize, bsize, activation, item_ct1);
       });
   
-  
+  ReportCUDAErrors(0);
+}
+
+template <typename T>
+void addVectorsHNC_NHC_kernel(T* a, T* b, int N, int H, int C,
+                              const sycl::nd_item<3> &item_ct1) {
+  int i = item_ct1.get_local_id(2) +
+          item_ct1.get_local_range(2) * item_ct1.get_group(2);
+  if (i < N * H * C) {
+    int orig_i = i;
+    int c = i % C;
+    i /= C;
+    int n = i % N;
+    i /= N;
+    int h = i;
+    float aVal = (float)a[orig_i];
+    float bVal = (float)b[n * H * C + h * C + c];
+
+    float cVal = aVal + bVal;
+
+    a[orig_i] = (T)cVal;
+  }
+}
+
+template <typename T>
+void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C,
+                       sycl::queue &sycl_queue) {
+  const int kBlockSize = 256;
+  int blocks = DivUp(N * H * C, kBlockSize);
+  sycl_queue.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                                             sycl::range<3>(1, 1, kBlockSize),
+                                         sycl::range<3>(1, 1, kBlockSize)),
+                       [=](sycl::nd_item<3> item_ct1) {
+                         addVectorsHNC_NHC_kernel(a, b, N, H, C, item_ct1);
+                       });
+
+  ReportCUDAErrors(0);
 }
 
 template <typename T, ActivationFunction act>
 void addBiasBatched_kernel(T* output, const T* input, const T* bias,
-                                      int N, int C, sycl::nd_item<3> item_ct1) {
+                                      int N, int C,
+                                      const sycl::nd_item<3> &item_ct1) {
   int batch = item_ct1.get_group(1);
   int n = item_ct1.get_group(2) * item_ct1.get_local_range(1) +
           item_ct1.get_local_id(1);
@@ -130,7 +152,7 @@ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
     copyAs<sycl::uint4>(&val[0], &input[tensorIndex]);
     copyAs<sycl::uint4>(&b[0], &bias[biasIndex]);
   }
-  
+
   // Perform bias add and activation
 #pragma unroll
   for (int i = 0; i < 4; i++) {
@@ -154,8 +176,7 @@ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
 // bias tensor is N * C (i.e, different bias for each Batch dimension)
 template <typename T>
 void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
-                    int C, ActivationFunction activation,
-                    sycl::queue& mqueue) {
+                    int C, ActivationFunction activation, sycl::queue &sycl_queue) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 4 != 0) throw Exception("unsupported filter size");
   if (C > 4096) throw Exception("unsupported filter size");
@@ -170,35 +191,228 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
   gridDim[0] = 1;
 
   switch (activation) {
-    case NONE:
-     
-      mqueue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+    case ACTIVATION_NONE:
+      //addBiasBatched_kernel<T, ACTIVATION_NONE>
+        //  <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+        sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
                            [=](sycl::nd_item<3> item_ct1) {
-                             addBiasBatched_kernel<T, NONE>(output, input, bias,
+                             addBiasBatched_kernel<T, ACTIVATION_NONE>(output, input, bias,
                                                             N, C, item_ct1);
                            });
       break;
-    case SELU:
-      
-      mqueue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+    case ACTIVATION_SELU:
+      //addBiasBatched_kernel<T, ACTIVATION_SELU>
+        //  <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+
+        sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
                            [=](sycl::nd_item<3> item_ct1) {
-                             addBiasBatched_kernel<T, SELU>(output, input, bias,
+                             addBiasBatched_kernel<T, ACTIVATION_SELU>(output, input, bias,
                                                             N, C, item_ct1);
                            });
+
+      break;
+    case ACTIVATION_MISH:
+      //addBiasBatched_kernel<T, ACTIVATION_MISH>
+        //  <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+
+      sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_MISH>(output, input, bias,
+                                                            N, C, item_ct1);
+                           });
+      break;
+    case ACTIVATION_RELU:
+      //addBiasBatched_kernel<T, ACTIVATION_RELU>
+        //  <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_RELU>(output, input, bias,
+                                                            N, C, item_ct1);
+                           });
+      break;
+    case ACTIVATION_SWISH:
+      //addBiasBatched_kernel<T, ACTIVATION_SWISH>
+        //  <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      
+      sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_SWISH>(output, input, bias,
+                                                            N, C, item_ct1);
+                           });
+      break;
+    case ACTIVATION_RELU_2:  // square relu
+      //addBiasBatched_kernel<T, ACTIVATION_RELU_2>
+        //  <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      
+      sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_RELU_2>(output, input, bias,
+                                                            N, C, item_ct1);
+                           });
+
       break;
     default:
       throw Exception(
           "unsupported activation in addBiasBatched. Add in switch-case here");
   }
 
- 
-  
+  /*
+  DPCT1010:49: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
+}
+
+template <typename T, ActivationFunction act>
+void addBiasBatched_kernel(T* output, const T* input, const T* bias,
+                                      int N, int C, int Nstride,
+                                      const sycl::nd_item<3> &item_ct1) {
+  int batch = item_ct1.get_group(1);
+  int n = item_ct1.get_group(2) * item_ct1.get_local_range(1) +
+          item_ct1.get_local_id(1);
+  if (n >= N) return;
+  int c = item_ct1.get_local_id(2) * 4;
+
+  int biasIndex = batch * C + c;
+  int tensorIndex = batch * Nstride * C + n * C + c;
+
+  float val[4];
+  float b[4];
+
+  // Load from memory
+  const bool fp16 = std::is_same<sycl::half, T>::value;
+  if (fp16) {
+    sycl::half inp[4];
+    copyAs<sycl::uint2>(&inp[0], &input[tensorIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
+
+    copyAs<sycl::uint2>(&inp[0], &bias[biasIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
+  } else {
+    copyAs<sycl::uint4>(&val[0], &input[tensorIndex]);
+    copyAs<sycl::uint4>(&b[0], &bias[biasIndex]);
+  }
+
+  // Perform bias add and activation
+#pragma unroll
+  for (int i = 0; i < 4; i++) {
+    float x = val[i] + b[i];
+    x = activate(x, act);
+    val[i] = x;
+  }
+
+  // write to memory
+  if (fp16) {
+    sycl::half op[4];
+#pragma unroll
+    for (int i = 0; i < 4; i++) op[i] = (sycl::half)val[i];
+    copyAs<sycl::uint2>(&output[tensorIndex], &op[0]);
+  } else {
+    copyAs<sycl::uint4>(&output[tensorIndex], &val[0]);
+  }
+}
+
+// Input/output tensors are Batch * N * C
+// bias tensor is N * C (i.e, different bias for each Batch dimension)
+template <typename T>
+void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+                    int C, int Nstride, ActivationFunction activation, sycl::queue &sycl_queue) {
+  // process 4 elements per thread to achieve close to peak memory bandwidth
+  if (C % 4 != 0) throw Exception("unsupported filter size");
+  if (C > 4096) throw Exception("unsupported filter size");
+
+  sycl::range<3> blockDim(1, 1, 1), gridDim(1, 1, 1);
+  blockDim[2] = C / 4;
+  unsigned int tmp = (512 / blockDim[2]);
+  blockDim[1] = sycl::min(sycl::max(tmp, 1u), (unsigned int)N);
+  blockDim[0] = 1;
+  gridDim[2] = DivUp(N, blockDim[1]);
+  gridDim[1] = Batch;
+  gridDim[0] = 1;
+
+  switch (activation) {
+    case ACTIVATION_NONE:
+      //addBiasBatched_kernel<T, ACTIVATION_NONE>
+      //    <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+       //                                      Nstride);
+       sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_NONE>(output, input, bias,
+                                                            N, C, Nstride, item_ct1);
+                           });
+      break;
+    case ACTIVATION_SELU:
+     // addBiasBatched_kernel<T, ACTIVATION_SELU>
+       //   <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+         //                                    Nstride);
+          sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_SELU>(output, input, bias,
+                                                            N, C, Nstride, item_ct1);
+                            });
+      break;
+    case ACTIVATION_MISH:
+      //addBiasBatched_kernel<T, ACTIVATION_MISH>
+      //    <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+       //                                      Nstride);
+      sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_MISH>(output, input, bias,
+                                                            N, C, Nstride, item_ct1);
+                           });
+
+      break;
+    case ACTIVATION_RELU:
+      //addBiasBatched_kernel<T, ACTIVATION_RELU>
+        //  <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+          //                                   Nstride);
+
+      sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_RELU>(output, input, bias,
+                                                            N, C, Nstride, item_ct1);
+                            });
+      break;
+    case ACTIVATION_SWISH:
+      //addBiasBatched_kernel<T, ACTIVATION_SWISH>
+      //    <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+      //                                       Nstride);
+
+       sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_SWISH>(output, input, bias,
+                                                            N, C, Nstride, item_ct1);
+                          });
+      break;
+    case ACTIVATION_RELU_2:  // square relu
+     // addBiasBatched_kernel<T, ACTIVATION_RELU_2>
+     //     <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
+      //                                       Nstride);
+      sycl_queue.parallel_for(sycl::nd_range<3>(gridDim * blockDim, blockDim),
+                           [=](sycl::nd_item<3> item_ct1) {
+                             addBiasBatched_kernel<T, ACTIVATION_RELU_2>(output, input, bias,
+                                                            N, C, Nstride, item_ct1);
+                            });
+
+      break;
+    default:
+      throw Exception(
+          "unsupported activation in addBiasBatched. Add in switch-case here");
+  }
+
+  /*
+  DPCT1010:50: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 template <typename T>
 void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
                                     int W, ActivationFunction activation,
-                                    sycl::nd_item<3> item_ct1) {
+                                    const sycl::nd_item<3> &item_ct1) {
   int i = item_ct1.get_local_id(2) +
           item_ct1.get_local_range(2) * item_ct1.get_group(2);
   int size = N * C * H * W;
@@ -220,20 +434,23 @@ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
 // Add bias to convolution's output.
 template <typename T>
 void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
-                  ActivationFunction activation, sycl::queue& mqueue) {
+                  ActivationFunction activation, sycl::queue &sycl_queue) {
   int size = N * C * H * W;
   const int kBlockSize = 256;
   int blocks = DivUp(size, kBlockSize);
 
-  mqueue.parallel_for(
+  sycl_queue.parallel_for(
       sycl::nd_range<3>(
           sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
           sycl::range<3>(1, 1, kBlockSize)),
       [=](sycl::nd_item<3> item_ct1) {
         addBias_NCHW_kernel(c, a, b, N, C, H, W, activation, item_ct1);
       });
-  
- 
+  /*
+  DPCT1010:51: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 template <typename dT, typename sT>
@@ -256,7 +473,7 @@ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
 template <typename dT, typename sT>
 void NCHWtoNHWC_kernel(dT* output_tensor, const sT* input_tensor,
                                   int Nin, int Cin, int Nout, int Cout, int H,
-                                  int W, sycl::nd_item<3> item_ct1) {
+                                  int W, const sycl::nd_item<3> &item_ct1) {
   int tid = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
             item_ct1.get_local_id(2);
 
@@ -278,12 +495,11 @@ void NCHWtoNHWC_kernel(dT* output_tensor, const sT* input_tensor,
 
 template <typename DstType, typename SrcType>
 void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
-                       int Nin, int Cin, int Nout, int Cout, int H, int W, sycl::queue &mqueue) {
+                       int Nin, int Cin, int Nout, int Cout, int H, int W, sycl::queue &sycl_queue) {
   size_t numElements = Nout * Cout * H * W;
   const int blockSize = 256;
   int blocks = DivUp(numElements, blockSize);
-
-  mqueue.parallel_for(
+  sycl_queue.parallel_for(
       sycl::nd_range<3>(
           sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, blockSize),
           sycl::range<3>(1, 1, blockSize)),
@@ -295,7 +511,7 @@ void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
 
 template <typename DstType, typename SrcType>
 void copyTypeConverted_kernel(DstType* op, SrcType* ip, int N,
-                              sycl::nd_item<3> item_ct1) {
+                              const sycl::nd_item<3> &item_ct1) {
   int tid = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
             item_ct1.get_local_id(2);
 
@@ -306,11 +522,10 @@ void copyTypeConverted_kernel(DstType* op, SrcType* ip, int N,
 }
 
 template <typename DstType, typename SrcType>
-void copyTypeConverted(DstType* op, SrcType* ip, int N,
-                       sycl::queue &mqueue) {
+void copyTypeConverted(DstType* op, SrcType* ip, int N, sycl::queue &sycl_queue) {
   const int kBlockSize = 256;
   int blocks = DivUp(N, kBlockSize);
-  mqueue.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+  sycl_queue.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
                                              sycl::range<3>(1, 1, kBlockSize),
                                          sycl::range<3>(1, 1, kBlockSize)),
                        [=](sycl::nd_item<3> item_ct1) {
@@ -323,7 +538,7 @@ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
                                  int N, int C, int H, int W, const float* means,
                                  const float* varMultipliers,
                                  ActivationFunction activation,
-                                 sycl::nd_item<3> item_ct1) {
+                                 const sycl::nd_item<3> &item_ct1) {
   int index = item_ct1.get_local_id(2) +
               item_ct1.get_local_range(2) * item_ct1.get_group(2);
 
@@ -351,12 +566,12 @@ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
 template <typename T>
 void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
                int H, int W, float* means, float* var_multipliers,
-               ActivationFunction activation, sycl::queue &mqueue) {
+               ActivationFunction activation, sycl::queue &sycl_queue) {
   const int total_elements = N * C * H * W;
   const int kBlockSize = 256;
   int blocks = DivUp(total_elements, kBlockSize);
 
-  mqueue.parallel_for(
+  sycl_queue.parallel_for(
       sycl::nd_range<3>(
           sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
           sycl::range<3>(1, 1, kBlockSize)),
@@ -365,14 +580,17 @@ void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
                          var_multipliers, activation, item_ct1);
       });
 
-  
- 
+  /*
+  DPCT1010:52: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 void expandPlanes_kernel_Fp32_NCHW(float* output,
                                               const uint64_t* masks,
                                               const float* values, int n,
-                                              sycl::nd_item<3> item_ct1,
+                                              const sycl::nd_item<3> &item_ct1,
                                               uint64_t *shMasks, float *shVals) {
   // Block size of 256, same mask/val for 64 consecutive threads.
   constexpr int kNumShmemElements = 256 / 64;
@@ -391,6 +609,12 @@ void expandPlanes_kernel_Fp32_NCHW(float* output,
     shVals[item_ct1.get_local_id(2)] =
         values[planeIndex + item_ct1.get_local_id(2)];
   }
+  /*
+  DPCT1113:53: Consider replacing
+  sycl::nd_item::barrier(sycl::access::fence_space::local_space) with
+  sycl::nd_item::barrier() if function "expandPlanes_kernel_Fp32_NCHW" is called
+  in a multidimensional kernel.
+  */
   item_ct1.barrier(sycl::access::fence_space::local_space);
 
   uint64_t mask = shMasks[item_ct1.get_local_id(2) >> 6];
@@ -406,14 +630,24 @@ void expandPlanes_kernel_Fp32_NCHW(float* output,
 }
 
 void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
-                            const float* values, int n,
-                            sycl::queue &mqueue) {
+                            const float* values, int n, sycl::queue &sycl_queue) {
   int threads = n * 8 * 8;  // Each thread writes a single element.
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);
-  mqueue.submit([&](sycl::handler& cgh) {
+  
+  sycl_queue.submit([&](sycl::handler& cgh) {
+    /*
+    DPCT1101:115: 'kNumShmemElements' expression was replaced with a value.
+    Modify the code to use the original expression, provided in comments, if
+    it is correct.
+    */
     sycl::local_accessor<uint64_t, 1> shMasks_acc_ct1(
         sycl::range<1>(4 /*kNumShmemElements*/), cgh);
+    /*
+    DPCT1101:116: 'kNumShmemElements' expression was replaced with a value.
+    Modify the code to use the original expression, provided in comments, if
+    it is correct.
+    */
     sycl::local_accessor<float, 1> shVals_acc_ct1(
         sycl::range<1>(4 /*kNumShmemElements*/), cgh);
 
@@ -427,14 +661,17 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
                                         shVals_acc_ct1.get_pointer());
         });
   });
- 
- 
+  /*
+  DPCT1010:54: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 // TODO: Can optimize using shared memory if this becomes a bottleneck.
 void expandPlanes_kernel_Fp16_NHWC(sycl::half* output, const uint64_t* masks,
                                    const float* values, int n,
-                                   sycl::nd_item<3> item_ct1) {
+                                   const sycl::nd_item<3>& item_ct1) {
   const int index = item_ct1.get_local_id(2) +
                     item_ct1.get_local_range(2) * item_ct1.get_group(2);
   if (index >= n * 8 * 8) return;
@@ -455,26 +692,31 @@ void expandPlanes_kernel_Fp16_NHWC(sycl::half* output, const uint64_t* masks,
 }
 
 void expandPlanes_Fp16_NHWC(sycl::half* output, const uint64_t* masks,
-                            const float* values, int n,
-                            sycl::queue &mqueue) {
+                            const float* values, int n, sycl::queue &sycl_queue) {
   int threads = n * 8 * 8;  // Each thread writes a single element.
   const int kBlockSize = 256;
   int blocks = DivUp(threads, kBlockSize);
-  mqueue.parallel_for(
-      sycl::nd_range<3>(
-          sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
-          sycl::range<3>(1, 1, kBlockSize)),
-      [=](sycl::nd_item<3> item_ct1) {
-        expandPlanes_kernel_Fp16_NHWC(output, masks, values, n, item_ct1);
-      });
-  
- 
+  {
+    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    sycl_queue.parallel_for(
+        sycl::nd_range<3>(
+            sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
+            sycl::range<3>(1, 1, kBlockSize)),
+        [=](sycl::nd_item<3> item_ct1) {
+          expandPlanes_kernel_Fp16_NHWC(output, masks, values, n, item_ct1);
+        });
+  }
+  /*
+  DPCT1010:55: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 void expandPlanes_kernel_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
                                    const float* values, int n,
-                                   sycl::nd_item<3> item_ct1, uint64_t* shMasks,
-                                   sycl::half* shVals) {
+                                   const sycl::nd_item<3>& item_ct1,
+                                   uint64_t* shMasks, sycl::half* shVals) {
   // block size of 256, same mask/val for 64 consecutive threads
   constexpr int kNumShmemElements = 256 / 64;
 
@@ -492,7 +734,12 @@ void expandPlanes_kernel_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
     shVals[item_ct1.get_local_id(2)] =
         values[planeIndex + item_ct1.get_local_id(2)];
   }
-  
+  /*
+  DPCT1113:56: Consider replacing
+  sycl::nd_item::barrier(sycl::access::fence_space::local_space) with
+  sycl::nd_item::barrier() if function "expandPlanes_kernel_Fp16_NCHW" is called
+  in a multidimensional kernel.
+  */
   item_ct1.barrier(sycl::access::fence_space::local_space);
 
   uint64_t mask = shMasks[item_ct1.get_local_id(2) >> 6];
@@ -508,29 +755,44 @@ void expandPlanes_kernel_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
 }
 
 void expandPlanes_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
-                            const float* values, int n,
-                            sycl::queue &mqueue) {
+                            const float* values, int n, sycl::queue &sycl_queue) {
   int threads = n * 8 * 8;  // each thread writes a single element
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);
-  mqueue.submit([&](sycl::handler& cgh) {
-    sycl::local_accessor<uint64_t, 1> shMasks_acc_ct1(
-        sycl::range<1>(4 /*kNumShmemElements*/), cgh);
-    sycl::local_accessor<sycl::half, 1> shVals_acc_ct1(
-        sycl::range<1>(4 /*kNumShmemElements*/), cgh);
+  {
+    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    sycl_queue.submit([&](sycl::handler& cgh) {
+      /*
+      DPCT1101:117: 'kNumShmemElements' expression was replaced with a value.
+      Modify the code to use the original expression, provided in comments, if
+      it is correct.
+      */
+      sycl::local_accessor<uint64_t, 1> shMasks_acc_ct1(
+          sycl::range<1>(4 /*kNumShmemElements*/), cgh);
+      /*
+      DPCT1101:118: 'kNumShmemElements' expression was replaced with a value.
+      Modify the code to use the original expression, provided in comments, if
+      it is correct.
+      */
+      sycl::local_accessor<sycl::half, 1> shVals_acc_ct1(
+          sycl::range<1>(4 /*kNumShmemElements*/), cgh);
 
-    cgh.parallel_for(
-        sycl::nd_range<3>(
-            sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, blockSize),
-            sycl::range<3>(1, 1, blockSize)),
-        [=](sycl::nd_item<3> item_ct1) {
-          expandPlanes_kernel_Fp16_NCHW(output, masks, values, n, item_ct1,
-                                        shMasks_acc_ct1.get_pointer(),
-                                        shVals_acc_ct1.get_pointer());
-        });
-  });
-  
- 
+      cgh.parallel_for(
+          sycl::nd_range<3>(
+              sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, blockSize),
+              sycl::range<3>(1, 1, blockSize)),
+          [=](sycl::nd_item<3> item_ct1) {
+            expandPlanes_kernel_Fp16_NCHW(output, masks, values, n, item_ct1,
+                                          shMasks_acc_ct1.get_pointer(),
+                                          shVals_acc_ct1.get_pointer());
+          });
+    });
+  }
+  /*
+  DPCT1010:57: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 template <typename T>
@@ -538,7 +800,7 @@ void globalScale_kernel(T* output, const T* input,
                                    const T* scaleBias, const T* prevLayerBias,
                                    int inputSize, int C,
                                    ActivationFunction activation,
-                                   sycl::nd_item<3> item_ct1) {
+                                   const sycl::nd_item<3> &item_ct1) {
   const int kPlaneSize = 64;
 
   int tid = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
@@ -574,7 +836,7 @@ void globalScale_kernel_fp16_nhwc(sycl::half* output, const sycl::half* input,
                                   const sycl::half* prevLayerBias,
                                   int inputSize, int C, int HWC,
                                   ActivationFunction activation,
-                                  sycl::nd_item<3> item_ct1) {
+                                  const sycl::nd_item<3>& item_ct1) {
   int tid = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
             item_ct1.get_local_id(2);
 
@@ -609,7 +871,7 @@ void globalScale_kernel_fp16_nhwc(sycl::half* output, const sycl::half* input,
 void globalAvgPool_kernel_NHWC_fp16(sycl::half* output, const sycl::half* input,
                                     const sycl::half* prevLayerBias,
                                     int inputSize, int outputSize,
-                                    sycl::nd_item<3> item_ct1) {
+                                    const sycl::nd_item<3>& item_ct1) {
   const int elementsPerThread = 64;  // 8x8 board.
 
   int blockStart = item_ct1.get_group(2) * item_ct1.get_local_range(2);
@@ -637,7 +899,7 @@ template <typename T>
 void globalAvgPool_kernel(T* output, const T* input,
                                      const T* prevLayerBias, int inputSize,
                                      int outputSize, int C,
-                                     sycl::nd_item<3> item_ct1) {
+                                     const sycl::nd_item<3> &item_ct1) {
   const int elementsPerWarp = 64;
   const int elementsPerThread = 2;
 
@@ -659,8 +921,13 @@ void globalAvgPool_kernel(T* output, const T* input,
 // Compute warp wide sum (for entire plane - elementsPerWarp elements).
 #pragma unroll
   for (int offset = 1; offset < 32; offset *= 2) {
-    
-    S += sycl::shift_group_left(item_ct1.get_sub_group(), S, offset);
+    /*
+    DPCT1023:10: The SYCL sub-group does not support mask options for
+    dpct::shift_sub_group_left. You can specify
+    "--use-experimental-features=masked-sub-group-operation" to use the
+    experimental helper function to migrate __shfl_down_sync.
+    */
+    S += dpct::shift_sub_group_left(item_ct1.get_sub_group(), S, offset);
   }
 
   float avg = S / elementsPerWarp;
@@ -677,8 +944,7 @@ void globalAvgPool_kernel(T* output, const T* input,
 
 template <typename T>
 void globalAvgPool(int N, int C, T* output, const T* input,
-                   const T* prevLayerBias, bool nhwc, sycl::queue& q_ct1) {
-  
+                   const T* prevLayerBias, bool nhwc, sycl::queue &sycl_queue) {
   const int kPlaneSize = 64;
 
   const bool fp16 = std::is_same<sycl::half, T>::value;
@@ -686,18 +952,22 @@ void globalAvgPool(int N, int C, T* output, const T* input,
     assert(fp16);
     // For NHWC fp16, simply launch N blocks, each with C threads.
     /*
-    DPCT1049:13: The work-group size passed to the SYCL kernel may exceed the
+    DPCT1049:11: The work-group size passed to the SYCL kernel may exceed the
     limit. To get the device limit, query info::device::max_work_group_size.
     Adjust the work-group size if needed.
     */
-    q_ct1.parallel_for(
-        sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
-                          sycl::range<3>(1, 1, C)),
-        [=](sycl::nd_item<3> item_ct1) {
-          globalAvgPool_kernel_NHWC_fp16(
-              (sycl::half*)output, (sycl::half*)input,
-              (sycl::half*)prevLayerBias, N * C * kPlaneSize, N * C, item_ct1);
-        });
+    {
+      dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+      sycl_queue.parallel_for(
+          sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                            sycl::range<3>(1, 1, C)),
+          [=](sycl::nd_item<3> item_ct1) {
+            globalAvgPool_kernel_NHWC_fp16((sycl::half*)output,
+                                           (sycl::half*)input,
+                                           (sycl::half*)prevLayerBias,
+                                           N * C * kPlaneSize, N * C, item_ct1);
+          });
+    }
   } else {
     // For NCHW layout (used with fp32),
     // each warp processes a full plane (64 elements), and writes a single
@@ -708,7 +978,7 @@ void globalAvgPool(int N, int C, T* output, const T* input,
     const int kBlockSize = kWarpsPerBlock * 32;
 
     int blocks = DivUp(kTotalWarps, kWarpsPerBlock);
-    q_ct1.parallel_for(
+    sycl_queue.parallel_for(
         sycl::nd_range<3>(
             sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
             sycl::range<3>(1, 1, kBlockSize)),
@@ -717,15 +987,17 @@ void globalAvgPool(int N, int C, T* output, const T* input,
                                N * C, C, item_ct1);
         });
   }
-
-  
+  /*
+  DPCT1010:58: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                  const T* prevLayerBias, bool nhwc,
-                 ActivationFunction activation, sycl::queue &q_ct1) {
-  
+                 ActivationFunction activation, sycl::queue &sycl_queue) {
   const bool fp16 = std::is_same<sycl::half, T>::value;
 
   // Each thread writes one output.
@@ -734,34 +1006,33 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
 
   if (nhwc) {
     assert(fp16);
-    q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, kBlocks) *
-                                             sycl::range<3>(1, 1, kBlockSize),
-                                         sycl::range<3>(1, 1, kBlockSize)),
-                       [=](sycl::nd_item<3> item_ct1) {
-                         globalScale_kernel_fp16_nhwc(
-                             (sycl::half*)output, (sycl::half*)input,
-                             (sycl::half*)scaleBias, (sycl::half*)prevLayerBias,
-                             N * C * 8 * 8, C, 8 * 8 * C, activation, item_ct1);
-                       });
+    sycl_queue.parallel_for(
+        sycl::nd_range<3>(
+            sycl::range<3>(1, 1, kBlocks) * sycl::range<3>(1, 1, kBlockSize),
+            sycl::range<3>(1, 1, kBlockSize)),
+        [=](sycl::nd_item<3> item_ct1) {
+          ((sycl::half*)output, (sycl::half*)input, (sycl::half*)scaleBias,
+           (sycl::half*)prevLayerBias, N * C * 8 * 8, C, 8 * 8 * C, activation);
+        });
   } else {
-    q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, kBlocks) *
-                                             sycl::range<3>(1, 1, kBlockSize),
-                                         sycl::range<3>(1, 1, kBlockSize)),
-                       [=](sycl::nd_item<3> item_ct1) {
-                         globalScale_kernel(output, input, scaleBias,
-                                            prevLayerBias, N * C * 8 * 8, C,
-                                            activation, item_ct1);
-                       });
+    sycl_queue.parallel_for(
+        sycl::nd_range<3>(
+            sycl::range<3>(1, 1, kBlocks) * sycl::range<3>(1, 1, kBlockSize),
+            sycl::range<3>(1, 1, kBlockSize)),
+        [=](sycl::nd_item<3> item_ct1) {
+          globalScale_kernel(output, input, scaleBias, prevLayerBias,
+                             N * C * 8 * 8, C, activation, item_ct1);
+        });
   }
   
-  
+  ReportCUDAErrors(0);
 }
 
 template <typename T>
 void policyMap_kernel(T* output, const T* input,
                                  const short* indices, int N, int inputSize,
                                  int usedSize, int outputSize,
-                                 sycl::nd_item<3> item_ct1) {
+                                 const sycl::nd_item<3> &item_ct1) {
   int tid = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
             item_ct1.get_local_id(2);
 
@@ -779,14 +1050,13 @@ void policyMap_kernel(T* output, const T* input,
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
-               int inputSize, int usedSize, int outputSize,
-               sycl::queue &mqueue) {
+               int inputSize, int usedSize, int outputSize, sycl::queue &sycl_queue) {
   // Each thread processes one input element
   // Only some of the threads (with valid mapping) write output
   const int kBlockSize = 256;
   const int kBlocks = DivUp(N * usedSize, kBlockSize);
 
-  mqueue.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, kBlocks) *
+  sycl_queue.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, kBlocks) *
                                              sycl::range<3>(1, 1, kBlockSize),
                                          sycl::range<3>(1, 1, kBlockSize)),
                        [=](sycl::nd_item<3> item_ct1) {
@@ -794,75 +1064,99 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
                                              (short*)indices, N, inputSize,
                                              usedSize, outputSize, item_ct1);
                        });
- 
- 
+  /*
+  DPCT1010:60: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 template <typename T = float, bool use_se, ActivationFunction activation,
           bool use_bias, bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
-                          const T* b1, const T* w2, const T* b2,
-                          sycl::queue &mqueue) {
+                          const T* b1, const T* w2, const T* b2, sycl::queue &sycl_queue) {
   // Each thread processes entire chess board
   if (use_se == false) {
     sycl::range<3> grid_dim(1, N, DivUp(C, kOpInpTransformBlockSize));
-    mqueue.parallel_for(
-        sycl::nd_range<3>(
-            grid_dim * sycl::range<3>(1, 1, kOpInpTransformBlockSize),
-            sycl::range<3>(1, 1, kOpInpTransformBlockSize)),
-        [=](sycl::nd_item<3> item_ct1) {
-          OutputTransform_relu_InputTransform_kernel<float, activation,
-                                                     use_bias, use_skip>(
-              N, C, output, input, (float*)skip, bias, item_ct1);
-        });
+    {
+      dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+      sycl_queue.parallel_for(
+          sycl::nd_range<3>(
+              grid_dim * sycl::range<3>(1, 1, kOpInpTransformBlockSize),
+              sycl::range<3>(1, 1, kOpInpTransformBlockSize)),
+          [=](sycl::nd_item<3> item_ct1) {
+            OutputTransform_relu_InputTransform_kernel<float, activation,
+                                                       use_bias, use_skip>(
+                N, C, output, input, (float*)skip, bias, item_ct1);
+          });
+    }
   } else if (C > kMaxResBlockFusingChannels) {
     throw Exception(
         "res block fusing opt not supported for the given data type and no "
         "of filters\n");
   } else {
     /*
-    DPCT1049:14: The work-group size passed to the SYCL kernel may exceed the
+    DPCT1049:12: The work-group size passed to the SYCL kernel may exceed the
     limit. To get the device limit, query info::device::max_work_group_size.
     Adjust the work-group size if needed.
     */
-    mqueue.submit([&](sycl::handler& cgh) {
-
-      sycl::local_accessor<float, 1> shared_data_acc_ct1( sycl::range<1>(384 /*kMaxResBlockFusingChannels*/), cgh);
-      sycl::local_accessor<float, 2> shared_sums_acc_ct1(sycl::range<2>(12 /*kMaxResBlockFusingChannels / 32*/, 128 /*kMaxResBlockFusingSeK*/), cgh);
+    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    sycl_queue.submit([&](sycl::handler& cgh) {
+      /*
+      DPCT1101:119: 'kMaxResBlockFusingChannels' expression was replaced
+      with a value. Modify the code to use the original expression, provided
+      in comments, if it is correct.
+      */
+      sycl::local_accessor<float, 1> shared_data_acc_ct1(
+          sycl::range<1>(384 /*kMaxResBlockFusingChannels*/), cgh);
+      /*
+      DPCT1101:120: 'kMaxResBlockFusingChannels / 32' expression was
+      replaced with a value. Modify the code to use the original expression,
+      provided in comments, if it is correct.
+      */
+      /*
+      DPCT1101:121: 'kMaxResBlockFusingSeK' expression was replaced with a
+      value. Modify the code to use the original expression, provided in
+      comments, if it is correct.
+      */
+      sycl::local_accessor<float, 2> shared_sums_acc_ct1(
+          sycl::range<2>(12 /*kMaxResBlockFusingChannels / 32*/,
+                         128 /*kMaxResBlockFusingSeK*/),
+          cgh);
 
       cgh.parallel_for(
-          sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C), sycl::range<3>(1, 1, C)),
+          sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                            sycl::range<3>(1, 1, C)),
           [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
-            
-            //float **shared_sums = (float **) shared_sums_acc_ct1.get_pointer();   
-
             OutputTransform_SE_relu_InputTransform_kernel<float, activation,
                                                           use_bias, use_skip>(
                 N, C, se_K, output, input, (float*)skip, bias, w1, b1, w2, b2,
                 item_ct1, shared_data_acc_ct1.get_pointer(),
                 shared_sums_acc_ct1);
-          
           });
     });
   }
 
-  
- 
+  /*
+  DPCT1010:61: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
-
 
 // softmax along C dimension which is assumed to be 64
 // each thread processes two elements. Each warp computes a sum (over 64
 // elements)
 template <typename T>
-void softmax_opt_64_kernel(T* output, const T* input, int N,
-                           sycl::nd_item<3> item_ct1) {
+void softmax_opt_64_kernel(T* output, const T* input,
+                                      const T* input2, int N,
+                                      const sycl::nd_item<3> &item_ct1) {
   int index = item_ct1.get_local_range(2) * item_ct1.get_group(2) +
               item_ct1.get_local_id(2);
   if (index >= N) return;
 
-  float x[2];
+  float x[4];
   float ex[2];
 
   // Load from memory
@@ -872,20 +1166,44 @@ void softmax_opt_64_kernel(T* output, const T* input, int N,
     copyAs<int>(&inp[0], &input[index * 2]);
     x[0] = (float)inp[0];
     x[1] = (float)inp[1];
+    if (input2 != nullptr) {
+      copyAs<int>(&inp[0], &input2[index * 2]);
+      x[2] = (float)inp[0];
+      x[3] = (float)inp[1];
+    }
   } else {
     copyAs<sycl::uint2>(&x[0], &input[index * 2]);
+    if (input2 != nullptr) {
+      copyAs<sycl::uint2>(&x[2], &input2[index * 2]);
+    }
   }
 
-  ex[0] = sycl::exp(x[0]);
-  ex[1] = sycl::exp(x[1]);
+  if (input2 != nullptr) {
+    x[0] += x[2];
+    x[1] += x[3];
+  }
+  float threadMax = sycl::max(x[0], x[1]);
+  float maxval = warpMax(threadMax, item_ct1);
+  /*
+  DPCT1023:13: The SYCL sub-group does not support mask options for
+  dpct::select_from_sub_group. You can specify
+  "--use-experimental-features=masked-sub-group-operation" to use the
+  experimental helper function to migrate __shfl_sync.
+  */
+  maxval = dpct::select_from_sub_group(item_ct1.get_sub_group(), maxval, 0);
+
+  ex[0] = sycl::exp(x[0] - maxval);
+  ex[1] = sycl::exp(x[1] - maxval);
 
   float threadSum = ex[0] + ex[1];
   float Sum = warpReduce(threadSum, item_ct1);
   /*
-  DPCT1023:15: The SYCL sub-group does not support mask options for
-  dpct::select_from_sub_group.
+  DPCT1023:14: The SYCL sub-group does not support mask options for
+  dpct::select_from_sub_group. You can specify
+  "--use-experimental-features=masked-sub-group-operation" to use the
+  experimental helper function to migrate __shfl_sync.
   */
-  Sum = sycl::select_from_group(item_ct1.get_sub_group(), Sum, 0);
+  Sum = dpct::select_from_sub_group(item_ct1.get_sub_group(), Sum, 0);
 
   ex[0] = ex[0] / Sum;
   ex[1] = ex[1] / Sum;
@@ -901,41 +1219,50 @@ void softmax_opt_64_kernel(T* output, const T* input, int N,
   }
 }
 
-
 // N * C Tensors
 // performs softmax along the C dimension
 // Each thread processes one element
 // Sums are computed in shared memory
 // C threads per block, N blocks
 template <typename T>
-void softmax_kernel(T* output, const T* input, sycl::nd_item<3> item_ct1,
-                    float &sum) {
+void softmax_kernel(T* output, const T* input, const T* input2,
+                    const sycl::nd_item<3> &item_ct1, float &sum, float &maxval) {
   int n = item_ct1.get_group(2);
   int c = item_ct1.get_local_id(2);
   int C = item_ct1.get_local_range(2);
   int index = n * C + c;
 
-  if (c == 0) sum = 0;
-  
-  item_ct1.barrier(sycl::access::fence_space::local_space);
-
   // softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
 
   float x = (float)input[index];
-  float ex = sycl::exp(x);
+  if (input2 != nullptr) x += (float)input2[index];
+
+  if (c == 0) {
+    sum = 0;
+    maxval = x;
+  }
+
+  
+  item_ct1.barrier(sycl::access::fence_space::local_space);
+
+  // Get max across warp first, and then update across C dimension
+  float warpmax = warpMax(x, item_ct1);
+  if ((c & 0x1F) == 0) atomicMaxFloat(&maxval, warpmax);
+
+  
+  item_ct1.barrier(sycl::access::fence_space::local_space);
+
+  float ex = sycl::exp(x - maxval);
 
   // compute warp wide sums first
   float val = warpReduce(ex, item_ct1);
 
   // update shared memory sum across C dimension
-  if ((c & 0x1F) == 0){
-      sycl::atomic_ref<float, sycl::memory_order::relaxed, sycl::memory_scope::work_group, sycl::access::address_space::local_space> aref(sum);
-      aref.fetch_add(val);
-  }
-      //dpct::atomic_fetch_add<float, sycl::access::address_space::generic_space>(
-        //  &sum, val);
+  if ((c & 0x1F) == 0)
+      dpct::atomic_fetch_add<sycl::access::address_space::generic_space>(&sum,
+                                                                         val);
 
-
+  
   item_ct1.barrier(sycl::access::fence_space::local_space);
 
   float op = ex / sum;
@@ -944,38 +1271,51 @@ void softmax_kernel(T* output, const T* input, sycl::nd_item<3> item_ct1,
 }
 
 template <typename T>
-void Softmax(int N, int C, T* output, const T* input, sycl::queue &mqueue) {
+void Softmax(int N, int C, T* output, const T* input, const T* input2, sycl::queue &sycl_queue) {
   if (C == 64) {
-    int size = N * 32;              // Total no of threads needed
+    int size = N * 32;  // Total no of threads needed
     const int kBlockSize = 256;
     int blocks = DivUp(size, kBlockSize);
-    mqueue.parallel_for(
-        sycl::nd_range<3>(
-            sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
-            sycl::range<3>(1, 1, kBlockSize)),
-        [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
-          softmax_opt_64_kernel<T>(output, input, size, item_ct1);
-        });
+    {
+      dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+      sycl_queue.parallel_for(
+          sycl::nd_range<3>(
+              sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
+              sycl::range<3>(1, 1, kBlockSize)),
+          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+            softmax_opt_64_kernel<T>(output, input, input2, size, item_ct1);
+          });
+    }
   } else {
-   
-    mqueue.submit([&](sycl::handler& cgh) {
+    /*
+    DPCT1049:15: The work-group size passed to the SYCL kernel may exceed the
+    limit. To get the device limit, query info::device::max_work_group_size.
+    Adjust the work-group size if needed.
+    */
+    sycl_queue.submit([&](sycl::handler& cgh) {
       sycl::local_accessor<float, 0> sum_acc_ct1(cgh);
+      sycl::local_accessor<float, 0> maxval_acc_ct1(cgh);
 
       cgh.parallel_for(
           sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                             sycl::range<3>(1, 1, C)),
           [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
-            softmax_kernel<T>(output, input, item_ct1, sum_acc_ct1);
+            softmax_kernel<T>(output, input, input2, item_ct1, sum_acc_ct1,
+                              maxval_acc_ct1);
           });
     });
   }
 
-
-
+  /*
+  DPCT1010:65: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
-float shared_sum_for_layer_norm(
-    float x, sycl::nd_item<3> item_ct1, sycl::local_accessor<float, 2> sum) {
+__dpct_inline__ float shared_sum_for_layer_norm(
+    float x, const sycl::nd_item<3>& item_ct1,
+    sycl::local_accessor<float, 2> sum) {
   // compute warp-wide sum
   float s = warpReduce(x, item_ct1);
 
@@ -1009,54 +1349,70 @@ float shared_sum_for_layer_norm(
 // 2. Perform layer norm (normalize across C dimension)
 template <typename T>
 void layer_norm_kernel(int N, int C, T* output, const T* input, const T* bias,
-                                  const T* skip, const T* gammas,
-                                  const T* betas, float ep,
-                                  sycl::nd_item<3> item_ct1,
-                                  sycl::local_accessor<float, 2> sum) {
+                       const T* skip, const T* gammas, const T* betas, float ep,
+                       float alpha, ActivationFunction act,
+                       const sycl::nd_item<3>& item_ct1,
+                       sycl::local_accessor<float, 2> sum) {
   int n = item_ct1.get_group(2) * item_ct1.get_local_range(0) +
           item_ct1.get_local_id(0);
   if (n >= N) return;
-  int c = (item_ct1.get_local_id(1) * 32 + item_ct1.get_local_id(2)) * 4;
+  int c = (item_ct1.get_local_id(1) * 32 + item_ct1.get_local_id(2)) * 16;
   bool oobThread = c >= C;
 
   int biasIndex = c;
   int tensorIndex = n * C + c;
 
-  float val[4] = {0, 0, 0, 0};
-  float b[4] = {0, 0, 0, 0};
-  float sk[4] = {0, 0, 0, 0};
-  float bts[4] = {0, 0, 0, 0};
-  float gms[4] = {0, 0, 0, 0};
+  float val[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  float oth[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   const bool fp16 = std::is_same<sycl::half, T>::value;
   if (!oobThread) {
-    // Load from memory (4 elements a time)
+    // Load from memory (16 elements a time)
     if (fp16) {
-      sycl::half inp[4];
-      copyAs<sycl::uint2>(&inp[0], &input[tensorIndex]);
-      for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
-      copyAs<sycl::uint2>(&inp[0], &skip[tensorIndex]);
-      for (int i = 0; i < 4; i++) sk[i] = (float)inp[i];
-      copyAs<sycl::uint2>(&inp[0], &bias[biasIndex]);
-      for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
-      copyAs<sycl::uint2>(&inp[0], &betas[biasIndex]);
-      for (int i = 0; i < 4; i++) bts[i] = (float)inp[i];
-      copyAs<sycl::uint2>(&inp[0], &gammas[biasIndex]);
-      for (int i = 0; i < 4; i++) gms[i] = (float)inp[i];
+      sycl::half inp[8];
+      copyAs<sycl::uint4>(&inp[0], &input[tensorIndex]);
+      for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
+      copyAs<sycl::uint4>(&inp[0], &input[tensorIndex + 8]);
+      for (int i = 0; i < 8; i++) val[i + 8] = (float)inp[i];
+      copyAs<sycl::uint4>(&inp[0], &bias[biasIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<sycl::uint4>(&inp[0], &bias[biasIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+      for (int i = 0; i < 16; i++) val[i] += oth[i];
     } else {
       copyAs<sycl::uint4>(&val[0], &input[tensorIndex]);
-      copyAs<sycl::uint4>(&sk[0], &skip[tensorIndex]);
-      copyAs<sycl::uint4>(&b[0], &bias[biasIndex]);
-      copyAs<sycl::uint4>(&bts[0], &betas[biasIndex]);
-      copyAs<sycl::uint4>(&gms[0], &gammas[biasIndex]);
+      copyAs<sycl::uint4>(&val[4], &input[tensorIndex + 4]);
+      copyAs<sycl::uint4>(&val[8], &input[tensorIndex + 8]);
+      copyAs<sycl::uint4>(&val[12], &input[tensorIndex + 12]);
+      copyAs<sycl::uint4>(&oth[0], &bias[biasIndex]);
+      copyAs<sycl::uint4>(&oth[4], &bias[biasIndex + 4]);
+      copyAs<sycl::uint4>(&oth[8], &bias[biasIndex + 8]);
+      copyAs<sycl::uint4>(&oth[12], &bias[biasIndex + 12]);
+      for (int i = 0; i < 16; i++) val[i] += oth[i];
+    }
+  }
+
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      sycl::half inp[8];
+      copyAs<sycl::uint4>(&inp[0], &skip[tensorIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<sycl::uint4>(&inp[0], &skip[tensorIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<sycl::uint4>(&oth[0], &skip[tensorIndex]);
+      copyAs<sycl::uint4>(&oth[4], &skip[tensorIndex + 4]);
+      copyAs<sycl::uint4>(&oth[8], &skip[tensorIndex + 8]);
+      copyAs<sycl::uint4>(&oth[12], &skip[tensorIndex + 12]);
     }
   }
 
   // 1. Compute mean
   float s = 0;
   if (!oobThread)
-    for (int i = 0; i < 4; i++) {
-      val[i] += b[i] + sk[i];
+    for (int i = 0; i < 16; i++) {
+      val[i] = activate(val[i], act) + oth[i] * alpha;
       s += val[i];
     }
 
@@ -1066,7 +1422,7 @@ void layer_norm_kernel(int N, int C, T* output, const T* input, const T* bias,
   // 2. Compute varience
   s = 0;
   if (!oobThread)
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 16; i++) {
       float d = val[i] - mean;
       float d_sq = d * d;
       s += d_sq;
@@ -1074,60 +1430,111 @@ void layer_norm_kernel(int N, int C, T* output, const T* input, const T* bias,
   s = shared_sum_for_layer_norm(s, item_ct1, sum);
   float var = s / C;
 
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      sycl::half inp[8];
+      copyAs<sycl::uint4>(&inp[0], &gammas[biasIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<sycl::uint4>(&inp[0], &gammas[biasIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<sycl::uint4>(&oth[0], &gammas[biasIndex]);
+      copyAs<sycl::uint4>(&oth[4], &gammas[biasIndex + 4]);
+      copyAs<sycl::uint4>(&oth[8], &gammas[biasIndex + 8]);
+      copyAs<sycl::uint4>(&oth[12], &gammas[biasIndex + 12]);
+    }
+  }
+
   // 3. Normalize
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 16; i++) {
     float d = val[i] - mean;
     float norm = d / sycl::sqrt(var + ep);
-    float op = norm * gms[i] + bts[i];
+    float op = norm * oth[i];
     val[i] = op;
+  }
+
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      sycl::half inp[8];
+      copyAs<sycl::uint4>(&inp[0], &betas[biasIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<sycl::uint4>(&inp[0], &betas[biasIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<sycl::uint4>(&oth[0], &betas[biasIndex]);
+      copyAs<sycl::uint4>(&oth[4], &betas[biasIndex + 4]);
+      copyAs<sycl::uint4>(&oth[8], &betas[biasIndex + 8]);
+      copyAs<sycl::uint4>(&oth[12], &betas[biasIndex + 12]);
+    }
+  }
+
+  for (int i = 0; i < 16; i++) {
+    val[i] += oth[i];
   }
 
   if (!oobThread) {
     // Write to memory
     if (fp16) {
-      sycl::half op[4];
-      for (int i = 0; i < 4; i++) op[i] = (sycl::half)val[i];
-      copyAs<sycl::uint2>(&output[tensorIndex], &op[0]);
+      sycl::half op[8];
+      for (int i = 0; i < 8; i++) op[i] = (sycl::half)val[i];
+      copyAs<sycl::uint4>(&output[tensorIndex], &op[0]);
+      for (int i = 0; i < 8; i++) op[i] = (sycl::half)val[i + 8];
+      copyAs<sycl::uint4>(&output[tensorIndex + 8], &op[0]);
     } else {
       copyAs<sycl::uint4>(&output[tensorIndex], &val[0]);
+      copyAs<sycl::uint4>(&output[tensorIndex + 4], &val[4]);
+      copyAs<sycl::uint4>(&output[tensorIndex + 8], &val[8]);
+      copyAs<sycl::uint4>(&output[tensorIndex + 12], &val[12]);
     }
   }
 }
 
 // add (optional) skip connection to input, and then perform Layer normalization
-// normalization is done across C dimension (i.e, sums and std deviations taken over elements in C dim)
+// normalization is done across C dimension (i.e, sums and std deviations taken
+// over elements in C dim)
 template <typename T>
 void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep,
-               sycl::queue & mqueue) {
+               float alpha, ActivationFunction act, sycl::queue &sycl_queue) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
-  if (C % 4 != 0) throw Exception("unsupported filter size");
-  if (C > 4096) throw Exception("unsupported filter size");
+  if (C % 16 != 0) throw Exception("unsupported filter size");
+  if (C > 16384) throw Exception("unsupported filter size");
 
   sycl::range<3> blockDim(1, 1, 1), gridDim(1, 1, 1);
   blockDim[2] = 32;
-  blockDim[1] = DivUp(C / 4, 32);
-  unsigned int tmp = 512 / (blockDim[2] * blockDim[1]);  
-  blockDim[0] = sycl::min(sycl::max(tmp, 1u),
-                         (unsigned int)N);
+  blockDim[1] = DivUp(C / 16, 32);
+  unsigned int tmp = 512 / (blockDim[2] * blockDim[1]);
+  blockDim[0] = sycl::min(sycl::max(tmp, 1u), (unsigned int)N);
   gridDim[2] = DivUp(N, blockDim[0]);
   gridDim[1] = 1;
   gridDim[0] = 1;
 
- 
-  mqueue.submit([&](sycl::handler& cgh) {
-    sycl::local_accessor<float, 2> sum_acc_ct1(sycl::range<2>(16, 16), cgh);
+  /*
+  DPCT1049:17: The work-group size passed to the SYCL kernel may exceed the
+  limit. To get the device limit, query info::device::max_work_group_size.
+  Adjust the work-group size if needed.
+  */
+  {
+    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    sycl_queue.submit([&](sycl::handler& cgh) {
+      sycl::local_accessor<float, 2> sum_acc_ct1(sycl::range<2>(16, 16), cgh);
 
-    cgh.parallel_for(
-        sycl::nd_range<3>(gridDim * blockDim, blockDim),
-        [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
-          layer_norm_kernel<T>(N, C, output, input, bias, skip, gammas, betas,
-                               ep, item_ct1, sum_acc_ct1);
-        });
-  });
+      cgh.parallel_for(
+          sycl::nd_range<3>(gridDim * blockDim, blockDim),
+          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+            layer_norm_kernel<T>(N, C, output, input, bias, skip, gammas, betas,
+                                 ep, alpha, act, item_ct1, sum_acc_ct1);
+          });
+    });
+  }
 
- 
- 
+  /*
+  DPCT1010:68: SYCL uses exceptions to report errors and does not use the error
+  codes. The call was replaced with 0. You need to rewrite this code.
+  */
+  ReportCUDAErrors(0);
 }
 
 // Compute promotion logits in a single kernel
@@ -1141,7 +1548,7 @@ template <typename T>
 void promotion_logits_kernel(int C, T* output, const T* keys,
                                         const T* ppo,
                                         const T* policy_attn_logits,
-                                        sycl::nd_item<3> item_ct1,
+                                        const sycl::nd_item<3> &item_ct1,
                                         sycl::local_accessor<float, 2> promotion_offsets) {
   constexpr int output_stride = 64 * 64 + 8 * 24;
   int n = item_ct1.get_group(2);     // [0..N)
@@ -1179,13 +1586,17 @@ void promotion_logits_kernel(int C, T* output, const T* keys,
     promotion_offsets[x][y] = S;
   }
 
-  
+  /*
+  DPCT1065:69: Consider replacing sycl::nd_item::barrier() with
+  sycl::nd_item::barrier(sycl::access::fence_space::local_space) for better
+  performance if there is no access to global memory.
+  */
   item_ct1.barrier(sycl::access::fence_space::local_space);
 
   // phase 2: add the last "row" to the other 3
   // #knight offset is added to the other three
   // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4,
-  // :] 
+  // :]
   // Only 24 threads in the group are active in this phase
   if (threadInGroup < 32) {
     int x = threadInGroup % 4;
@@ -1195,7 +1606,7 @@ void promotion_logits_kernel(int C, T* output, const T* keys,
     }
   }
 
-
+  
   item_ct1.barrier(sycl::access::fence_space::local_space);
 
   // phase 3: add 8x8 chunk of policy_attn_logits matrix to promotion offsets
@@ -1217,13 +1628,12 @@ void promotion_logits_kernel(int C, T* output, const T* keys,
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,
-                            const T* ppo, const T* policy_attn_logits,
-                            sycl::queue &mqueue) {
+                            const T* ppo, const T* policy_attn_logits, sycl::queue &sycl_queue) {
   // N blocks
   // 8 * 24 threads
   // Each thread computes a single output element
   sycl::range<3> blockDim(1, 8, 24);
-  mqueue.submit([&](sycl::handler& cgh) {
+  sycl_queue.submit([&](sycl::handler& cgh) {
     sycl::local_accessor<float, 2> promotion_offsets_acc_ct1(
         sycl::range<2>(4, 8), cgh);
 
@@ -1236,207 +1646,366 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
   });
 }
 
+template <typename T>
+void preprocess_for_attention_body_kernel(T* output, const T* input,
+                                                     const float* encoding,
+                                                     const sycl::nd_item<3> &item_ct1) {
+  int n = item_ct1.get_group(2);
+  int hw = item_ct1.get_group(1);
+  int c = item_ct1.get_local_id(2);
+
+  T op;
+  if (c >= kInputPlanes) {
+    // concatenate from fixed pos encoding array
+    op = (T)(encoding[64 * hw + (c - kInputPlanes)]);
+  } else {
+    op = input[n * kInputPlanes * 64 + c * 64 + hw];  // nchw
+  }
+
+  constexpr int outputC = kInputPlanes + kNumPosEncodingChannels;
+
+  // convert to nhwc
+  output[n * 64 * outputC + hw * outputC + c] = op;
+}
+
+template <typename T>
+void inputPreprocessForAttentionBody(T* output, const T* input,
+                                     const float* encoding, int N,
+                                     sycl::queue &sycl_queue) {
+  // N * 64 blocks
+  // (kInputPlanes + kNumPosEncodingChannels) threads
+  // Each thread computes a single output element
+  sycl::range<3> gridSize = sycl::range<3>(1, 64, N);
+  int blockSize = kInputPlanes + kNumPosEncodingChannels;
+  
+  sycl_queue.parallel_for(
+      sycl::nd_range<3>(gridSize * sycl::range<3>(1, 1, blockSize),
+                        sycl::range<3>(1, 1, blockSize)),
+      [=](sycl::nd_item<3> item_ct1) {
+        preprocess_for_attention_body_kernel<T>(output, input, encoding,
+                                                item_ct1);
+      });
+}
+
+template <typename T>
+void input_gating_kernel(T* output, const T* input, const T* mult,
+                                    const T* add, int HW, int C,
+                                    const sycl::nd_item<3> &item_ct1) {
+  int n_offset = item_ct1.get_group(0) * HW * C;
+  int idx = item_ct1.get_local_id(1) * C +
+            item_ct1.get_group(2) * item_ct1.get_local_range(2) +
+            item_ct1.get_local_id(2);  // index in input
+  int idxT = (item_ct1.get_group(2) * item_ct1.get_local_range(2) +
+              item_ct1.get_local_id(2)) *
+                 HW +
+             item_ct1.get_local_id(
+                 1);  // index in transposed weights arrays mult and add.
+
+  if (idx < HW * C) {
+    // Combine multiply gating, add gating and weights transpose.
+    float op =
+        (float)input[n_offset + idx] * (float)mult[idxT] + (float)add[idxT];
+    output[n_offset + idx] = (T)op;
+  }
+}
+
+template <typename T>
+void applyInputGating(T* output, const T* input, const T* mult, const T* add,
+                      int N, int HW, int C, sycl::queue &sycl_queue) {
+  // Multiple blocks to fit into each input area / volume
+  // Block x position indicates horizontal section of area
+  // Block y position indicates batch
+  // Each thread computes a single output element
+  sycl::range<3> blockSize(1, 1, 1), gridSize(1, 1, 1);
+  blockSize[2] = DivUp(1024, HW);
+  blockSize[1] = HW;
+  blockSize[0] = 1;
+  gridSize[2] = DivUp(C, blockSize[2]);
+  gridSize[1] = 1;
+  gridSize[0] = N;
+  
+  sycl_queue.parallel_for(sycl::nd_range<3>(gridSize * blockSize, blockSize),
+                       [=](sycl::nd_item<3> item_ct1) {
+                         input_gating_kernel<T>(output, input, mult, add, HW, C,
+                                                item_ct1);
+                       });
+
+  ReportCUDAErrors(0);
+}
+
 // Template instantiation.
-template void copyTypeConverted<sycl::half, float>(sycl::half* op, float* ip, int N,
-                                              sycl::queue& mqueue);
-
-template void copyTypeConverted<float, sycl::half>(float* op, sycl::half* ip, int N,
-                                             sycl::queue& mqueue);
-
-template void copyTypeConverted<float, float>(float* op, float* ip, int N, sycl::queue& mqueue);
-
-template void copyTypeConverted<sycl::half, sycl::half>(sycl::half* op, sycl::half* ip, int N,
-                                            sycl::queue& mqueue);
+template void copyTypeConverted<sycl::half, float>(sycl::half* op, float* ip, int N, sycl::queue &sycl_queue);
+template void copyTypeConverted<float, sycl::half>(float* op, sycl::half* ip, int N, sycl::queue &sycl_queue);
+template void copyTypeConverted<float, float>(float* op, float* ip, int N, sycl::queue &sycl_queue);
+template void copyTypeConverted<sycl::half, sycl::half>(sycl::half* op, sycl::half* ip, int N, sycl::queue &sycl_queue);
 
 template void batchNorm<float>(float* output, const float* input,
                                const float* skipInput, int N, int C, int H,
                                int W, float* means, float* var_multipliers,
-                               ActivationFunction activation, sycl::queue& mqueue);
+                               ActivationFunction activation, sycl::queue &sycl_queue);
 
 template void batchNorm<sycl::half>(sycl::half* output, const sycl::half* input,
                               const sycl::half* skipInput, int N, int C, int H, int W,
                               float* means, float* var_multipliers,
-                              ActivationFunction activation, sycl::queue& mqueue);
+                              ActivationFunction activation, sycl::queue &sycl_queue);
 
-template void addVectors<float>(float* c, float* a, float* b, int size, int asize, int bsize, ActivationFunction act, sycl::queue& mqueue);
+template void addVectors<float>(float* c, float* a, float* b, int size,
+                                int asize, int bsize, ActivationFunction act, sycl::queue &sycl_queue);
 
 template void addVectors<sycl::half>(sycl::half* c, sycl::half* a, sycl::half* b, int size, int asize,
-                               int bsize, ActivationFunction act, sycl::queue& mqueue);
+                               int bsize, ActivationFunction act, sycl::queue &sycl_queue);
 
-template void addBiasBatched<float>(float* output, const float* input, const float* bias, int Batch, int N, int C, ActivationFunction activation, sycl::queue& mqueue);
+template void addVectorsHNC_NHC<float>(float* a, float* b, int N, int H, int C, sycl::queue &sycl_queue);
+template void addVectorsHNC_NHC<sycl::half>(sycl::half* a, sycl::half* b, int N, int H, int C, sycl::queue &sycl_queue);
+
+template void addBiasBatched<float>(float* output, const float* input,
+                                    const float* bias, int Batch, int N, int C,
+                                    ActivationFunction activation, sycl::queue &sycl_queue);
 
 template void addBiasBatched<sycl::half>(sycl::half* output, const sycl::half* input,
-                                   const sycl::half* bias, int Batch, int N, int C, ActivationFunction activation, sycl::queue& mqueue);
+                                   const sycl::half* bias, int Batch, int N, int C,
+                                   ActivationFunction activation, sycl::queue &sycl_queue);
 
-template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C, int H, int W, ActivationFunction activation, sycl::queue& mqueue);
+template void addBiasBatched<float>(float* output, const float* input,
+                                    const float* bias, int Batch, int N, int C,
+                                    int Nstride, ActivationFunction activation, sycl::queue &sycl_queue);
 
-template void addBias_NCHW<sycl::half>(sycl::half* c, sycl::half* a, sycl::half* b, int N, int C, int H, int W, ActivationFunction activation, sycl::queue& mqueue);
+template void addBiasBatched<sycl::half>(sycl::half* output, const sycl::half* input,
+                                   const sycl::half* bias, int Batch, int N, int C,
+                                   int Nstride, ActivationFunction activation, sycl::queue &sycl_queue);
 
-template void globalAvgPool<float>(int N, int C, float* output, const float* input, const float* prevLayerBias, bool nhwc, sycl::queue& q_ct1);
+template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
+                                  int H, int W, ActivationFunction activation, sycl::queue &sycl_queue);
 
-template void globalAvgPool<sycl::half>(int N, int C, sycl::half* output, const sycl::half* input, const sycl::half* prevLayerBias, bool nhwc, sycl::queue& q_ct1);
+template void addBias_NCHW<sycl::half>(sycl::half* c, sycl::half* a, sycl::half* b, int N, int C, int H,
+                                 int W, ActivationFunction activation, sycl::queue &sycl_queue);
+
+template void globalAvgPool<float>(int N, int C, float* output,
+                                   const float* input,
+                                   const float* prevLayerBias, bool nhwc, sycl::queue &sycl_queue);
+
+template void globalAvgPool<sycl::half>(int N, int C, sycl::half* output, const sycl::half* input,
+                                  const sycl::half* prevLayerBias, bool nhwc, sycl::queue &sycl_queue);
 
 template void globalScale<float>(int N, int C, float* output,
                                  const float* input, const float* scaleBias,
                                  const float* prevLayerBias, bool nhwc,
-                                 ActivationFunction activation, sycl::queue& q_ct1);
+                                 ActivationFunction activation, sycl::queue &sycl_queue);
 
 template void globalScale<sycl::half>(int N, int C, sycl::half* output, const sycl::half* input,
                                 const sycl::half* scaleBias,
                                 const sycl::half* prevLayerBias, bool nhwc,
-                                ActivationFunction activation, sycl::queue& q_ct1);
+                                ActivationFunction activation, sycl::queue &sycl_queue);
 
-template void PolicyMap<float>(int N, float* output, const float* input, const short* indices, int inputSize, int usedSize, int outputSize, sycl::queue& mqueue);
+template void PolicyMap<float>(int N, float* output, const float* input,
+                               const short* indices, int inputSize,
+                               int usedSize, int outputSize, sycl::queue &sycl_queue);
 
-template void PolicyMap<sycl::half>(int N, sycl::half* output, const sycl::half* input, const short* indices, int inputSize, int usedSize, int outputSize, sycl::queue& mqueue);
+template void PolicyMap<sycl::half>(int N, sycl::half* output, const sycl::half* input,
+                              const short* indices, int inputSize, int usedSize,
+                              int outputSize, sycl::queue &sycl_queue);
 
-template void FilterTransform<float>(int N, int C, float* transformedFilter, const float* filter, sycl::queue& mqueue);
+template void FilterTransform<float>(int N, int C, float* transformedFilter,
+                                     const float* filter, sycl::queue &sycl_queue);
 
-template void InputTransform<float, true>(int N, int C, float* transformed_input, const float* input, sycl::queue& mqueue);
+template void InputTransform<float, true>(int N, int C,
+                                          float* transformed_input,
+                                          const float* input, sycl::queue &sycl_queue);
 
-template void InputTransform<float, false>(int N, int C, float* transformed_input, const float* input, sycl::queue& mqueue);
+template void InputTransform<float, false>(int N, int C,
+                                           float* transformed_input,
+                                           const float* input, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, true, RELU, true, true, false, false>(int N, int C, int se_K, float* output, const float* input, const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+template void OutputTransform<float, true, ACTIVATION_RELU, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, false, RELU, true, true, false, false>(
+template void
+OutputTransform<float, false, ACTIVATION_RELU, true, true, false, false>(
 
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+    const float* w2, const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, true, RELU, true, true, true, false>(
+template void OutputTransform<float, true, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_RELU, true, false, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_RELU, true, false, false,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, true, ACTIVATION_RELU, true, true, true,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, true, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, true, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_MISH, true, false, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_MISH, true, false, false,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, true, ACTIVATION_MISH, true, true, true,
+                              true>(int N, int C, int se_K, float* output,
+                                    const float* input, const float* skip,
+                                    const float* bias, const float* w1,
+                                    const float* b1, const float* w2,
+                                    const float* b2, sycl::queue &sycl_queue);
+
+template void OutputTransform<float, false, ACTIVATION_NONE, true, false, false,
+                              false>(int N, int C, int se_K, float* output,
+                                     const float* input, const float* skip,
+                                     const float* bias, const float* w1,
+                                     const float* b1, const float* w2,
+                                     const float* b2, sycl::queue &sycl_queue);
+
+template void OutputInputTransform<float, true, ACTIVATION_RELU, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+    const float* w2, const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, false, RELU, true, true, true, false>(
+template void OutputInputTransform<float, false, ACTIVATION_RELU, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+    const float* w2, const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, false, RELU, true, false, false, false>(
+template void OutputInputTransform<float, false, ACTIVATION_RELU, true, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+    const float* w2, const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, false, RELU, true, false, false, true>(
+template void OutputInputTransform<float, true, ACTIVATION_MISH, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+    const float* w2, const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, true, RELU, true, true, true, true>(
+template void OutputInputTransform<float, false, ACTIVATION_MISH, true, true>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+    const float* w2, const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, true, MISH, true, true, false, false>(
+template void OutputInputTransform<float, false, ACTIVATION_MISH, true, false>(
     int N, int C, int se_K, float* output, const float* input,
     const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+    const float* w2, const float* b2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, false, MISH, true, true, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
+template void Softmax<sycl::half>(int N, int C, sycl::half* output, const sycl::half* input,
+                            const sycl::half* input2, sycl::queue &sycl_queue);
 
-template void OutputTransform<float, true, MISH, true, true, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputTransform<float, false, MISH, true, true, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputTransform<float, false, MISH, true, false, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputTransform<float, false, MISH, true, false, false, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputTransform<float, true, MISH, true, true, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputTransform<float, false, NONE, true, false, false, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputInputTransform<float, true, RELU, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputInputTransform<float, false, RELU, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputInputTransform<float, false, RELU, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputInputTransform<float, true, MISH, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputInputTransform<float, false, MISH, true, true>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void OutputInputTransform<float, false, MISH, true, false>(
-    int N, int C, int se_K, float* output, const float* input,
-    const float* skip, const float* bias, const float* w1, const float* b1,
-    const float* w2, const float* b2, sycl::queue &mqueue);
-
-template void Softmax<sycl::half>(int N, int C, sycl::half* output, const sycl::half* input,sycl::queue &mqueue);
-
-template void Softmax<float>(int N, int C, float* output, const float* input, sycl::queue &mqueue);
+template void Softmax<float>(int N, int C, float* output, const float* input,
+                             const float* input2, sycl::queue &sycl_queue);
 
 template void LayerNorm<sycl::half>(int N, int C, sycl::half* output, const sycl::half* input,
                               const sycl::half* bias, const sycl::half* skip,
                               const sycl::half* gammas, const sycl::half* betas, float ep,
-                              sycl::queue &mqueue);
+                              float alpha, ActivationFunction act, sycl::queue &sycl_queue);
 
 template void LayerNorm<float>(int N, int C, float* output, const float* input,
                                const float* bias, const float* skip,
                                const float* gammas, const float* betas,
-                               float ep, sycl::queue &mqueue);
+                               float ep, float alpha, ActivationFunction act, sycl::queue &sycl_queue);
 
 template void ComputePromotionLogits<sycl::half>(int N, int C, sycl::half* output,
                                            const sycl::half* keys, const sycl::half* ppo,
-                                           const sycl::half* policy_attn_logits,
-                                           sycl::queue &mqueue);
+                                           const sycl::half* policy_attn_logits, sycl::queue &sycl_queue);
 
 template void ComputePromotionLogits<float>(int N, int C, float* output,
                                             const float* keys, const float* ppo,
-                                            const float* policy_attn_logits,
-                                            sycl::queue &mqueue);
+                                            const float* policy_attn_logits, sycl::queue &sycl_queue);
 
 template void convertNCHWtoNHWC<sycl::half, float>(sycl::half* output_tensor,
                                              const float* input_tensor, int Nin,
                                              int Cin, int Nout, int Cout, int H,
-                                             int W, sycl::queue& mqueue);
+                                             int W, sycl::queue &sycl_queue);
 
 template void convertNCHWtoNHWC<float, float>(float* output_tensor,
                                               const float* input_tensor,
                                               int Nin, int Cin, int Nout,
-                                              int Cout, int H, int W, sycl::queue& mqueue);
-                                             
+                                              int Cout, int H, int W, sycl::queue &sycl_queue);
+
 template void convertNCHWtoNHWC<sycl::half, sycl::half>(sycl::half* output_tensor,
                                             const sycl::half* input_tensor, int Nin,
                                             int Cin, int Nout, int Cout, int H,
-                                            int W, sycl::queue& mqueue);
-}  // namespace sycldnn_backend
+                                            int W, sycl::queue &sycl_queue);
+
+template void inputPreprocessForAttentionBody<sycl::half>(sycl::half* output,
+                                                    const sycl::half* input,
+                                                    const float* encoding,
+                                                    int N, sycl::queue &sycl_queue);
+
+template void inputPreprocessForAttentionBody<float>(float* output,
+                                                     const float* input,
+                                                     const float* encoding,
+                                                     int N, sycl::queue &sycl_queue);
+
+template void applyInputGating<sycl::half>(sycl::half* output, const sycl::half* input,
+                                     const sycl::half* mult, const sycl::half* add, int N,
+                                     int C, int output_size, sycl::queue &sycl_queue);
+
+template void applyInputGating<float>(float* output, const float* input,
+                                      const float* mult, const float* add,
+                                      int N, int C, int output_size, sycl::queue &sycl_queue);
+}  // namespace cudnn_backend
 }  // namespace lczero

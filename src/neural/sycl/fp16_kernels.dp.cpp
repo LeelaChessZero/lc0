@@ -26,8 +26,15 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "sycl_common.h"
-#include "winograd_helper.h"
+#include <dpct/dpct.hpp>
+#include "cuda_common.h"
+#include "neural/shared/activation.h"
+
+// Allow building on an old architecture.
+#if DPCT_COMPATIBILITY_TEMP < 530
+#define SKIP_FP16_BITS 1
+#endif
+#include "winograd_helper.inc"
 
 namespace lczero {
 namespace sycldnn_backend {
@@ -46,12 +53,20 @@ namespace sycldnn_backend {
 // for second fully connected layer).
 // The kernel assumes K <= C.
 
-template <int C, int K> void SE_Layer_NHWC(sycl::half* output, const sycl::half* skip,
+template <int C, int K>
+/*
+DPCT1110:20: The total declared local variable size in device function
+SE_Layer_NHWC exceeds 128 bytes and may cause high register pressure. Consult
+with your hardware vendor to find the total register size available and adjust
+the code, or use smaller sub-group size to avoid high register pressure.
+*/
+void SE_Layer_NHWC(sycl::half* output, const sycl::half* skip,
                    const sycl::half* input, const sycl::half* w1,
                    const sycl::half* b1, const sycl::half* w2,
                    const sycl::half* b2, const sycl::half* bPrev,
                    ActivationFunction activation,
                    const sycl::nd_item<3>& item_ct1, sycl::half* sharedData) {
+#if DPCT_COMPATIBILITY_TEMP >= 530
   const int elementsPerThread = 64;  // 8x8 board
   const int se_K = K;
 
@@ -78,12 +93,7 @@ template <int C, int K> void SE_Layer_NHWC(sycl::half* output, const sycl::half*
   sycl::half avg = S / (sycl::half)elementsPerThread;
   sharedData[c] = avg;
 
-  /*
-  DPCT1065:19: Consider replacing sycl::nd_item::barrier() with
-  sycl::nd_item::barrier(sycl::access::fence_space::local_space) for better
-  performance if there is no access to global memory.
-  */
-  item_ct1.barrier();
+  item_ct1.barrier(sycl::access::fence_space::local_space);
 
   // 2. First fully connected layer.
   if (c < K) {
@@ -100,12 +110,7 @@ template <int C, int K> void SE_Layer_NHWC(sycl::half* output, const sycl::half*
 
     sharedData[c] = S;
   }
-  /*
-  DPCT1065:20: Consider replacing sycl::nd_item::barrier() with
-  sycl::nd_item::barrier(sycl::access::fence_space::local_space) for better
-  performance if there is no access to global memory.
-  */
-  item_ct1.barrier();
+  item_ct1.barrier(sycl::access::fence_space::local_space);
 
   // 3. Second fully connected layer.
   S = 0;
@@ -130,86 +135,324 @@ template <int C, int K> void SE_Layer_NHWC(sycl::half* output, const sycl::half*
     sycl::half val = localData[i].y() + localData[i].x() * S + B;
 
     // Relu activation function.
-    val = (sycl::half)activate((float)val, activation);
+    val = (half)activate((float)val, activation);
 
     output[inputIndex] = val;
   }
+#endif
 }
-
-
-template <int B, int K> void SE_Layer_NHWC_CALL(int N, int C, sycl::half* output,
-                  const sycl::half* skip, const sycl::half* input,
-                  const sycl::half* w1, const sycl::half* b1,
-                  const sycl::half* w2, const sycl::half* b2,
-                  const sycl::half* bPrev, ActivationFunction activation, sycl::queue &sycl_queue_){
-
-
-                  sycl_queue_.submit([&](sycl::handler& cgh) {
-
-                    sycl::accessor<sycl::half, 1, sycl::access::mode::read_write, sycl::access::target::local> shared_data(sycl::range<1>(B), cgh);
-
-                   cgh.parallel_for(
-                     sycl::nd_range<3>(
-                        sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
-                        sycl::range<3>(1, 1, C)),
-                        [=](sycl::nd_item<3> item_ct1) {
-
-                        
-                            SE_Layer_NHWC<B,K>(output, skip, input, w1, b1, w2, b2, bPrev, activation, item_ct1, shared_data.get_pointer());
-                        
-                        });
-
-                  
-                  
-                  });
-}
-
 
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
                   const sycl::half* skip, const sycl::half* input,
                   const sycl::half* w1, const sycl::half* b1,
                   const sycl::half* w2, const sycl::half* b2,
-                  const sycl::half* bPrev, ActivationFunction activation, sycl::queue &sycl_queue_) {
+                  const sycl::half* bPrev, ActivationFunction activation) {
   // TODO: Think of more elegant way to avoid this hardcoding :-/
   if (numFc1Out == 16) {
     if (C == 64) {
-      SE_Layer_NHWC_CALL<64, 16> (N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:21: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(64), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<64, 16>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                    activation, item_ct1,
+                                    sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else {
       // TODO: support other channel counts.
       throw Exception("channel count unsupported by SE layer");
     }
   } else if (numFc1Out == 32) {
     if (C == 64) {
-      SE_Layer_NHWC_CALL<64, 32>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:22: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(64), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<64, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                    activation, item_ct1,
+                                    sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 128) {
-      SE_Layer_NHWC_CALL<128, 32>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:23: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(128), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<128, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 192) {
-      SE_Layer_NHWC_CALL<192, 32>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:24: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(192), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<192, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 256) {
-      SE_Layer_NHWC_CALL<256, 32>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:25: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(256), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<256, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 320) {
-      SE_Layer_NHWC_CALL<320, 32>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:26: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(320), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<320, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 352) {
-      SE_Layer_NHWC_CALL<352, 32>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:27: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(352), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<352, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 384) {
-      SE_Layer_NHWC_CALL<384, 32>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:28: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(384), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<384, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else {
       // TODO: support other channel counts.
       return false;
     }
   } else if (numFc1Out == 64) {
     if (C == 64) {
-      SE_Layer_NHWC_CALL<64, 64>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:29: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(64), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<64, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                    activation, item_ct1,
+                                    sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 128) {
-      SE_Layer_NHWC_CALL<128, 64>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:30: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(128), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<128, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 192) {
-      SE_Layer_NHWC_CALL<192, 64>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:31: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(192), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<192, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 256) {
-      SE_Layer_NHWC_CALL<256, 64>(N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:32: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(256), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<256, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 320) {
-      SE_Layer_NHWC_CALL<320, 64> (N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:33: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(320), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<320, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else if (C == 384) {
-      SE_Layer_NHWC_CALL<384, 64> (N,C,output, skip, input, w1, b1, w2, b2, bPrev, activation,sycl_queue_);
+      /*
+      DPCT1049:34: The work-group size passed to the SYCL kernel may exceed the
+      limit. To get the device limit, query info::device::max_work_group_size.
+      Adjust the work-group size if needed.
+      */
+      dpct::has_capability_or_fail(dpct::get_default_queue().get_device(),
+                                   {sycl::aspect::fp16});
+      dpct::get_default_queue().submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<sycl::half, 1> sharedData_acc_ct1(
+            sycl::range<1>(384), cgh);
+
+        cgh.parallel_for(
+            sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
+                              sycl::range<3>(1, 1, C)),
+            [=](sycl::nd_item<3> item_ct1) {
+              SE_Layer_NHWC<384, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
+                                     activation, item_ct1,
+                                     sharedData_acc_ct1.get_pointer());
+            });
+      });
     } else {
       // TODO: support other channel counts.
       return false;
@@ -219,7 +462,7 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
     return false;
   }
   /*
-  DPCT1010:21: SYCL uses exceptions to report errors and does not use the error
+  DPCT1010:72: SYCL uses exceptions to report errors and does not use the error
   codes. The call was replaced with 0. You need to rewrite this code.
   */
   ReportCUDAErrors(0);
@@ -239,19 +482,19 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
 // Every thread generates an entire board/plane (8x8 elements).
 template <ActivationFunction activation, bool use_bias, bool use_skip>
 /*
-DPCT1110:7: The total declared local variable size in device function
+DPCT1110:35: The total declared local variable size in device function
 OutputInputTransformKernel_fp16_shmem_board exceeds 128 bytes and may cause high
 register pressure. Consult with your hardware vendor to find the total register
 size available and adjust the code, or use smaller sub-group size to avoid high
 register pressure.
 */
-
 void OutputInputTransformKernel_fp16_shmem_board(
     int N, int C, int se_K, sycl::half* output, const sycl::half* input,
     sycl::half* skip, const sycl::half* bias, const sycl::half* w1,
     const sycl::half* b1, const sycl::half* w2, const sycl::half* b2,
     const sycl::nd_item<3>& item_ct1, uint8_t* dpct_local, float* shared_data,
     sycl::local_accessor<float, 2> shared_sums) {
+#if DPCT_COMPATIBILITY_TEMP >= 530
   int k = item_ct1.get_local_id(2);
   int n = item_ct1.get_group(2);
 
@@ -360,10 +603,10 @@ void OutputInputTransformKernel_fp16_shmem_board(
       for (int w = 0; w < 8; w++) boardRow[w] += skipInp[w];
     }
 
-    if (activation != NONE) {
+    if (activation != ACTIVATION_NONE) {
 #pragma unroll
       for (int w = 0; w < 8; w++)
-        boardRow[w] = (sycl::half)activate((float)boardRow[w], activation);
+        boardRow[w] = (half)activate((float)boardRow[w], activation);
     }
 
     // write un-transformed output to 'skip' if required
@@ -373,7 +616,6 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
     copyAs<sycl::uint4>(&BOARD(h, 0), &boardRow);
   }
-
 
   // Perform input transform.
 
@@ -457,19 +699,21 @@ void OutputInputTransformKernel_fp16_shmem_board(
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
   }
+#endif
 }
 
 template <typename T = sycl::half, bool use_se, ActivationFunction activation,
           bool use_bias, bool use_skip>
 void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                           const T* skip, const T* bias, const T* w1,
-                          const T* b1, const T* w2, const T* b2, sycl::queue &sycl_queue_) {
+                          const T* b1, const T* w2, const T* b2,
+                          dpct::queue_ptr stream) {
   // Each thread processes entire chess board.
   if (use_se == false) {
     sycl::range<3> grid_dim(1, N, DivUp(C, kOpInpTransformBlockSize));
     {
-      //dpct::has_capability_or_fail(stream->get_device(), {sycl::aspect::fp16});
-      sycl_queue_.parallel_for(
+      dpct::has_capability_or_fail(stream->get_device(), {sycl::aspect::fp16});
+      stream->parallel_for(
           sycl::nd_range<3>(
               grid_dim * sycl::range<3>(1, 1, kOpInpTransformBlockSize),
               sycl::range<3>(1, 1, kOpInpTransformBlockSize)),
@@ -482,45 +726,42 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   } else if (C > kMaxResBlockFusingChannels) {
     // Use special kernel with reduced register pressure - only works on Ampere,
     // and only for fp16.
-    
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
-    //  cudaFuncSetAttribute(
-      //    OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
-        //                                              use_skip>,
-          //cudaFuncAttributeMaxDynamicSharedMemorySize,
-         // 72 * C * sizeof(sycl::half));
-
+      cudaFuncSetAttribute(
+          OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
+                                                      use_skip>,
+          cudaFuncAttributeMaxDynamicSharedMemorySize,
+          72 * C * sizeof(sycl::half));
       /*
-      DPCT1049:8: The work-group size passed to the SYCL kernel may exceed the
+      DPCT1049:36: The work-group size passed to the SYCL kernel may exceed the
       limit. To get the device limit, query info::device::max_work_group_size.
       Adjust the work-group size if needed.
       */
       {
-        //dpct::has_capability_or_fail(stream->get_device(),
-          //                           {sycl::aspect::fp16});
-        
-        sycl_queue_.submit([&](sycl::handler& cgh) {
+        dpct::has_capability_or_fail(stream->get_device(),
+                                     {sycl::aspect::fp16});
+        stream->submit([&](sycl::handler& cgh) {
           /*
-          DPCT1083:23: The size of local memory in the migrated code may be
+          DPCT1083:124: The size of local memory in the migrated code may be
           different from the original code. Check that the allocated memory
           size in the migrated code is correct.
           */
           sycl::local_accessor<uint8_t, 1> dpct_local_acc_ct1(
               sycl::range<1>(72 * C * sizeof(sycl::half)), cgh);
           /*
-          DPCT1101:24: 'kMaxResBlockFusingSeKFp16Ampere' expression was
+          DPCT1101:125: 'kMaxResBlockFusingSeKFp16Ampere' expression was
           replaced with a value. Modify the code to use the original
           expression, provided in comments, if it is correct.
           */
           sycl::local_accessor<float, 1> shared_data_acc_ct1(
               sycl::range<1>(512 /*kMaxResBlockFusingSeKFp16Ampere*/), cgh);
           /*
-          DPCT1101:25: 'kMaxResBlockFusingSeKFp16Ampere / 32' expression was
+          DPCT1101:126: 'kMaxResBlockFusingSeKFp16Ampere / 32' expression was
           replaced with a value. Modify the code to use the original
           expression, provided in comments, if it is correct.
           */
           /*
-          DPCT1101:26: 'kMaxResBlockFusingSeK' expression was replaced with a
+          DPCT1101:127: 'kMaxResBlockFusingSeK' expression was replaced with a
           value. Modify the code to use the original expression, provided in
           comments, if it is correct.
           */
@@ -545,7 +786,6 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
               });
         });
       }
-
     } else {
       throw Exception(
           "res block fusing opt not supported for the given data type and no "
@@ -553,26 +793,26 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     }
   } else {
     /*
-    DPCT1049:9: The work-group size passed to the SYCL kernel may exceed the
+    DPCT1049:37: The work-group size passed to the SYCL kernel may exceed the
     limit. To get the device limit, query info::device::max_work_group_size.
     Adjust the work-group size if needed.
     */
-   //dpct::has_capability_or_fail(stream->get_device(), {sycl::aspect::fp16});
-    sycl_queue_.submit([&](sycl::handler& cgh) {
+    dpct::has_capability_or_fail(stream->get_device(), {sycl::aspect::fp16});
+    stream->submit([&](sycl::handler& cgh) {
       /*
-      DPCT1101:28: 'kMaxResBlockFusingChannels' expression was replaced with
-      a value. Modify the code to use the original expression, provided in
-      comments, if it is correct.
+      DPCT1101:128: 'kMaxResBlockFusingChannels' expression was replaced
+      with a value. Modify the code to use the original expression, provided
+      in comments, if it is correct.
       */
       sycl::local_accessor<float, 1> shared_data_acc_ct1(
           sycl::range<1>(384 /*kMaxResBlockFusingChannels*/), cgh);
       /*
-      DPCT1101:29: 'kMaxResBlockFusingChannels / 32' expression was replaced
-      with a value. Modify the code to use the original expression, provided
-      in comments, if it is correct.
+      DPCT1101:129: 'kMaxResBlockFusingChannels / 32' expression was
+      replaced with a value. Modify the code to use the original expression,
+      provided in comments, if it is correct.
       */
       /*
-      DPCT1101:30: 'kMaxResBlockFusingSeK' expression was replaced with a
+      DPCT1101:130: 'kMaxResBlockFusingSeK' expression was replaced with a
       value. Modify the code to use the original expression, provided in
       comments, if it is correct.
       */
@@ -594,128 +834,156 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     });
   }
   /*
-  DPCT1010:22: SYCL uses exceptions to report errors and does not use the error
+  DPCT1010:73: SYCL uses exceptions to report errors and does not use the error
   codes. The call was replaced with 0. You need to rewrite this code.
   */
-  //ReportCUDAErrors(0);
+  ReportCUDAErrors(0);
 }
 
-//void FilterTransform(int N, int C, T* transformedFilter, const T* filter, sycl::queue &mqueue)
+template void FilterTransform<half>(int N, int C, half* transformedFilter,
+                                    const half* filter);
 
-template void FilterTransform<sycl::half>(int N, int C, sycl::half* transformedFilter,
-                                    const sycl::half* filter, sycl::queue &sycl_queue_);
+template void InputTransform<half, true>(int N, int C, half* transformed_input,
+                                         const half* input,
+                                         cudaStream_t stream);
+template void InputTransform<half, false>(int N, int C, half* transformed_input,
+                                          const half* input,
+                                          cudaStream_t stream);
 
-template void InputTransform<sycl::half, true>(int N, int C, sycl::half* transformed_input,
-                                         const sycl::half* input, sycl::queue &sycl_queue_);
+template void OutputTransform<half, true, ACTIVATION_RELU, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void InputTransform<sycl::half, false>(int N, int C, sycl::half* transformed_input,
-                                          const sycl::half* input, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_RELU, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
+template void OutputTransform<half, true, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, true, RELU, true, true, false, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_RELU, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, RELU, true, true, false, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_RELU, true, false, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, true, RELU, true, true, true, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_RELU, true, false, false,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, RELU, true, true, true, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, true, ACTIVATION_RELU, true, true, true,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, RELU, true, false, false, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, true, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, RELU, true, false, false, true>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_MISH, true, true, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, true, RELU, true, true, true, true>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, true, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, true, MISH, true, true, false, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_MISH, true, true, true,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, MISH, true, true, false, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_MISH, true, false, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, true, MISH, true, true, true, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_MISH, true, false, false,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, MISH, true, true, true, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, true, ACTIVATION_MISH, true, true, true,
+                              true>(int N, int C, int se_K, half* output,
+                                    const half* input, const half* skip,
+                                    const half* bias, const half* w1,
+                                    const half* b1, const half* w2,
+                                    const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, MISH, true, false, false, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputTransform<half, false, ACTIVATION_NONE, true, false, false,
+                              false>(int N, int C, int se_K, half* output,
+                                     const half* input, const half* skip,
+                                     const half* bias, const half* w1,
+                                     const half* b1, const half* w2,
+                                     const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, MISH, true, false, false, true>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputInputTransform<half, true, ACTIVATION_RELU, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, true, MISH, true, true, true, true>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputInputTransform<half, false, ACTIVATION_RELU, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
 
-template void OutputTransform<sycl::half, false, NONE, true, false, false, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputInputTransform<half, false, ACTIVATION_RELU, true, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
 
-template void OutputInputTransform<sycl::half, true, RELU, true, true>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputInputTransform<half, true, ACTIVATION_MISH, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
 
-template void OutputInputTransform<sycl::half, false, RELU, true, true>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputInputTransform<half, false, ACTIVATION_MISH, true, true>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
 
-template void OutputInputTransform<sycl::half, false, RELU, true, false>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
-
-template void OutputInputTransform<sycl::half, true, MISH, true, true>(
-    int N, int C, int se_K, sycl::half* output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
-
-template void OutputInputTransform<sycl::half, false, MISH, true, true>(
-    int N, int C, int se_K, sycl::half *output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
-
-template void OutputInputTransform<sycl::half, false, MISH, true, false>(
-    int N, int C, int se_K, sycl::half *output, const sycl::half* input, const sycl::half* skip,
-    const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
-    const sycl::half* b2, sycl::queue &sycl_queue_);
+template void OutputInputTransform<half, false, ACTIVATION_MISH, true, false>(
+    int N, int C, int se_K, half* output, const half* input, const half* skip,
+    const half* bias, const half* w1, const half* b1, const half* w2,
+    const half* b2, cudaStream_t stream);
 
 }  // namespace cudnn_backend
 }  // namespace lczero

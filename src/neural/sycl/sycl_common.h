@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2019 The LCZero Authors
+  Copyright (C) 2018 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,36 +24,23 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-
-/*   This file is part of Leela Chess Zero.
-    Modifications Copyright (C) 2023 Intel Corporation
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <https://www.gnu.org/licenses/>. 
-   
-   SPDX-License-Identifier: GNU General Public License v3.0 only
-*/
-
-
-
 #pragma once
 
 #include <sycl/sycl.hpp>
-//#include <oneapi/mkl.hpp>
-//#include <dpct/blas_utils.hpp>
+#include <dpct/dpct.hpp>
+#include <dpct/blas_utils.hpp>
 
 #include "utils/exception.h"
 
+#ifdef USE_CUDNN
+#include <cudnn.h>
+#else
+typedef void* cudnnHandle_t;
+#endif
+
+//#if CUBLAS_VER_MAJOR < 11
+//#define CUBLAS_PEDANTIC_MATH CUBLAS_DEFAULT_MATH
+//#endif
 
 namespace lczero {
 namespace sycldnn_backend {
@@ -73,25 +60,19 @@ static constexpr int kMaxResBlockFusingSeFp16AmpereSmem =
     sizeof(sycl::half);  // shared memory used by the special
                          // kernel
 
-#ifdef USE_HIPBLAS
-//void HIPblasError(int status, const char* file, const int& line);
-//void HIPError(int status, const char* file, const int& line);
-
-//#define ReportHIPBLASErrors(status) HIPblasError(status, __FILE__, __LINE__)
-//#define ReportHIPErrors(status) HIPError(status, __FILE__, __LINE__)
-
-#elifdef USE_CUBLAS
+#ifdef USE_CUDNN
+void CudnnError(cudnnStatus_t status, const char* file, const int& line);
+#endif
 void CublasError(int status, const char* file, const int& line);
-void CudaError(int status, const char* file, const int& line);
+void CudaError(dpct::err0 status, const char* file, const int& line);
 
+#ifdef USE_CUDNN
+#define ReportCUDNNErrors(status) CudnnError(status, __FILE__, __LINE__)
+#endif
 #define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
 #define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
-#endif
-
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
-
-enum ActivationFunction { NONE, RELU, TANH, SIGMOID, SELU, MISH };
 
 }  // namespace cudnn_backend
 }  // namespace lczero
