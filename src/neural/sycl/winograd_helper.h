@@ -953,7 +953,7 @@ void InputTransform(int N, int C, T* transformed_input, const T* input,
   Adjust the work-group size if needed.
   */
   {
-    dpct::has_capability_or_fail(mqueue.get_device(), {sycl::aspect::fp16});
+    
     mqueue.parallel_for(
         sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                           sycl::range<3>(1, 1, C)),
@@ -982,7 +982,7 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
   Adjust the work-group size if needed.
   */
   {
-    dpct::has_capability_or_fail(mqueue.get_device(), {sycl::aspect::fp16});
+    
     mqueue.submit([&](sycl::handler& cgh) {
       sycl::local_accessor<float, 1> shared_data_acc_ct1(sycl::range<1>(1024),
                                                          cgh);

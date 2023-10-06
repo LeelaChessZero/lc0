@@ -275,6 +275,7 @@ if get_option('USE_SYCL')
       files += 'src/neural/sycl/layers.cc.dp.cpp'
       files += 'src/neural/sycl/network_sycl.cc.dp.cpp'
       files += 'src/neural/sycl/common_kernels.dp.cpp'
+      files += 'src/neural/sycl/fp16_kernels.dp.cpp'
 
       if(get_option('USE_L0_BACKEND') == true)
         message('Building SYCL for the L0 backend')

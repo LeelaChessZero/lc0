@@ -697,7 +697,7 @@ void expandPlanes_Fp16_NHWC(sycl::half* output, const uint64_t* masks,
   const int kBlockSize = 256;
   int blocks = DivUp(threads, kBlockSize);
   {
-    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    
     sycl_queue.parallel_for(
         sycl::nd_range<3>(
             sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
@@ -760,7 +760,7 @@ void expandPlanes_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);
   {
-    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    
     sycl_queue.submit([&](sycl::handler& cgh) {
       /*
       DPCT1101:117: 'kNumShmemElements' expression was replaced with a value.
@@ -957,7 +957,7 @@ void globalAvgPool(int N, int C, T* output, const T* input,
     Adjust the work-group size if needed.
     */
     {
-      dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+      
       sycl_queue.parallel_for(
           sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                             sycl::range<3>(1, 1, C)),
@@ -1080,7 +1080,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   if (use_se == false) {
     sycl::range<3> grid_dim(1, N, DivUp(C, kOpInpTransformBlockSize));
     {
-      dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+      
       sycl_queue.parallel_for(
           sycl::nd_range<3>(
               grid_dim * sycl::range<3>(1, 1, kOpInpTransformBlockSize),
@@ -1101,7 +1101,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     limit. To get the device limit, query info::device::max_work_group_size.
     Adjust the work-group size if needed.
     */
-    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    
     sycl_queue.submit([&](sycl::handler& cgh) {
       /*
       DPCT1101:119: 'kMaxResBlockFusingChannels' expression was replaced
@@ -1277,7 +1277,7 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2, sycl::que
     const int kBlockSize = 256;
     int blocks = DivUp(size, kBlockSize);
     {
-      dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+      
       sycl_queue.parallel_for(
           sycl::nd_range<3>(
               sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
@@ -1517,7 +1517,7 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
   Adjust the work-group size if needed.
   */
   {
-    dpct::has_capability_or_fail(sycl_queue.get_device(), {sycl::aspect::fp16});
+    
     sycl_queue.submit([&](sycl::handler& cgh) {
       sycl::local_accessor<float, 2> sum_acc_ct1(sycl::range<2>(16, 16), cgh);
 

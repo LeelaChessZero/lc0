@@ -249,43 +249,12 @@ class SyclNetwork : public Network {
     //sycl_queue_->get_device().get_device_info(deviceProp);
 
 
-    //if (fp16) {
-      // Check if the GPU support FP16.
+    if (fp16) {
 
-      /*
-      DPCT1005:81: The SYCL device version is different from CUDA Compute
-      Compatibility. You may need to rewrite this code.
-      */
-      //if ((deviceProp.get_major_version() == 6 &&
-      //     deviceProp.get_minor_version() != 1) ||
-          /*
-          DPCT1005:82: The SYCL device version is different from CUDA Compute
-          Compatibility. You may need to rewrite this code.
-          */
-        //  (deviceProp.get_major_version() == 5 &&
-        //   deviceProp.get_minor_version() == 3)) {
-        // FP16 without tensor cores supported on GP100 (SM 6.0) and Jetson
-        // (SM 5.3 and 6.2). SM 6.1 GPUs also have FP16, but slower than FP32.
-        ;
-      /*
-      DPCT1005:83: The SYCL device version is different from CUDA Compute
-      Compatibility. You may need to rewrite this code.
-      */
-      //} else if (deviceProp.get_major_version() >= 7) {
-        // Some GPUs (GTX 16xx) are SM 7.5 but don't have tensor cores
-        // enabling TENSOR_OP_MATH for them works but is very very slow
-        // (likely because the system emulates it).
-        //if (!strstr(deviceProp.get_name(), "GTX 16")) {
-          //has_tensor_cores_ = true;
-       // }
-      //} else {
-       // throw Exception("Your GPU doesn't support FP16");
-     // }
-    //}
-
+        dpct::has_capability_or_fail(sycl_queue_->get_device(), {sycl::aspect::fp16});
+        CERR << "Using Fp16 " 
     
-    
-    //if (!multi_stream_) {
+      //if (!multi_stream_) {
      // ReportCUBLASErrors(
      //     DPCT_CHECK_ERROR(cublas_ = &dpct::get_default_queue()));
       //if (has_tensor_cores_)
@@ -303,7 +272,7 @@ class SyclNetwork : public Network {
                                 // avoid cublas bug of making use of tensor
                                 // core math on TU11x GPUs that don't
                                 // support it.
-    //}
+    }
 
     const int kNumInputPlanes = kInputPlanes;
     const int kNumFilters = (int)weights.input.biases.size();
