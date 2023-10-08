@@ -67,8 +67,9 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       smolgen_w(LayerAdapter(weights.smolgen_w()).as_vector()),
       has_smolgen(weights.has_smolgen_w()),
       policy_heads(weights.policy_heads()),
-      value_heads(weights.value_heads()),
-      has_multiheads(weights.has_policy_heads() && weights.has_value_heads()) {
+      value_heads(weights.value_heads()) {
+  has_multiheads = weights.has_policy_heads() && weights.policy_heads().has_optimistic_st()
+                && weights.has_value_heads() && weights.value_heads().has_q();
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
