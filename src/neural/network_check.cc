@@ -105,6 +105,10 @@ class CheckComputation : public NetworkComputation {
     return work_comp_->GetDVal(sample);
   }
 
+  float GetEVal(int sample) const override {
+    return work_comp_->GetEVal(sample);
+  }
+
   float GetMVal(int sample) const override {
     return work_comp_->GetMVal(sample);
   }

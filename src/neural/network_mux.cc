@@ -54,6 +54,10 @@ class MuxingComputation : public NetworkComputation {
     return parent_->GetDVal(sample + idx_in_parent_);
   }
 
+  float GetEVal(int sample) const override {
+    return parent_->GetEVal(sample + idx_in_parent_);
+  }
+
   float GetMVal(int sample) const override {
     return parent_->GetMVal(sample + idx_in_parent_);
   }
