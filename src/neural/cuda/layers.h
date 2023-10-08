@@ -474,7 +474,7 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const LegacyWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
-                int max_batch_size);
+                int max_batch_size, bool new_encoding);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -522,7 +522,7 @@ class ValueHead : public BaseLayer<DataType> {
  public:
   ValueHead(BaseLayer<DataType>* ip, const LegacyWeights::ValueHead& weights,
                       void* scratch, bool attention_body, bool wdl, bool wdl_err,
-                      ActivationFunction act, int max_batch_size);
+                      ActivationFunction act, int max_batch_size, bool use_gemm_ex);
   ~ValueHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -530,15 +530,16 @@ class ValueHead : public BaseLayer<DataType> {
             DataType*** = nullptr) override;
 
  private:
+  // "convolution" in value head (legacy)
+  std::unique_ptr<Conv1Layer<DataType>> conv_;
+
   // GPU allocations to hold various weights used by the attention policy head
-  DataType *value_w_, *value_b_;            // "convolution" in value head (legacy)
   DataType *ip_val_w_, *ip_val_b_;          // "embedding" in value head
   DataType *ip1_val_w_, *ip1_val_b_;        // "FC1" in value head
   DataType *ip2_val_w_, *ip2_val_b_;        // "FC2" in value head
   DataType *ip_val_err_w_, *ip_val_err_b_;  // value error "FC" weights
 
   int embedding_size_;
-  int convolution_size_;
   int value_hidden_size_;
   bool wdl_;
   bool wdl_err_;

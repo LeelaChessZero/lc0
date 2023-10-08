@@ -1428,17 +1428,15 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
       // Old networks without attention body (e.g. T79) use hardcoded SELU
       // activations.
       act_(attention_body ? act : ACTIVATION_SELU) {
-  // Selected head to construct.
-  // Use vanilla as default head.
-  /* @todo check that head exists */
+  // Selected head to construct, use vanilla as default head.
   LegacyWeights::PolicyHead head = weights.policy_heads.vanilla;
-  if (policy_head == "optimistic" /* @todo check that head exists */) {
+  if (policy_head == "optimistic") {
       head = weights.policy_heads.optimistic_st;
   }
-  else if (policy_head == "soft" /* @todo check that head exists */) {
+  else if (policy_head == "soft") {
       head = weights.policy_heads.soft;
   }
-  else if (policy_head == "opponent" /* @todo check that head exists */) {
+  else if (policy_head == "opponent") {
       head = weights.policy_heads.opponent;
   }
 
@@ -2054,7 +2052,7 @@ template <typename DataType>
 AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
                                        void* scratch, Activations activations,
                                        int num_res_blocks, int input_c,
-                                       int max_batch_size)
+                                       int max_batch_size, bool new_encoding)
     : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr),
       embedding_op_size_(weights.ip_emb_b.size()),
       encoder_head_count_(weights.encoder_head_count),
@@ -2064,7 +2062,7 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
       has_gating_(weights.ip_mult_gate.size() > 0 &&
                   weights.ip_add_gate.size() > 0),
       has_smolgen_(weights.has_smolgen),
-      new_encoding_(weights.has_multiheads) {
+      new_encoding_(new_encoding) {
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
 
@@ -2300,23 +2298,23 @@ ValueHead<DataType>::ValueHead(BaseLayer<DataType>* ip,
                                void* scratch, bool attention_body,
                                bool wdl, bool wdl_err,
                                ActivationFunction act,
-                               int max_batch_size)
+                               int max_batch_size, bool use_gemm_ex)
     : BaseLayer<DataType>(weights.ip_val_b.size(), 8, 8, ip),
       attention_body_(attention_body),
-      embedding_size_(attention_body ? weights.ip_val_b.size() : 0),
-      convolution_size_(attention_body ? 0 : weights.value.biases.size()),
+      embedding_size_(attention_body ? weights.ip_val_b.size() : weights.value.biases.size()),
       value_hidden_size_(weights.ip1_val_b.size()),
       act_(act),
       wdl_(wdl),
       wdl_err_(wdl_err) {
-  // Selected head to construct.
-  // Use value_q as default head.
-  /* @todo check that head exists */
   if (attention_body_) {
     allocAndUpload<DataType>(&ip_val_w_, weights.ip_val_w, scratch);
     allocAndUpload<DataType>(&ip_val_b_, weights.ip_val_b, scratch);
   } else {
-    // @todo value convolution here.
+    conv_ = std::make_unique<Conv1Layer<DataType>>(
+        ip, weights.value.biases.size(), 8, 8, ip->GetC(), act,
+        true, use_gemm_ex);
+    conv_->LoadWeights((float*)&weights.value.weights[0],
+                      (float*)&weights.value.biases[0], scratch);
   }
 
   allocAndUpload<DataType>(&ip1_val_w_, weights.ip1_val_w, scratch);
@@ -2365,7 +2363,8 @@ void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
       addBiasBatched<DataType>(buffer, buffer, ip_val_b_, 1, batch, num_outputs, act_, stream);
 
     } else {
-      // Convolution for old conv value head
+      conv_->Eval(N, buffer, input, nullptr, scratch,
+                  scratch_size, nullptr, cublas, stream);
     }
   }
 
