@@ -115,8 +115,9 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                  pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
 
+  // Mask out the multihead format bit 7.
   bool attn_body =
-      file.format().network_format().network() ==
+      (file.format().network_format().network() & 127) ==
       pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
 
   // Build MPS Graph.
@@ -143,8 +144,36 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                     ffn_activation));
 
   std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
-  std::string value_head = options.GetOrDefault<std::string>("value_head", "q");
-  builder_->build(kInputPlanes, weights, attn_body, attn_policy_, conv_policy_,
+  // Check that selected policy head exists.
+  if (attn_policy_) {
+    if ((policy_head == "vanilla" && weights.policy_heads.vanilla.ip2_pol_b.size() == 0)
+        || (policy_head == "optimistic" && weights.policy_heads.optimistic_st.ip2_pol_b.size() == 0)
+        || (policy_head == "soft" && weights.policy_heads.soft.ip2_pol_b.size() == 0)
+        || (policy_head != "vanilla" && policy_head != "optimistic" && policy_head != "soft")) {
+      throw Exception("The policy head you specified '" + policy_head + "'"
+        + " does not exist in this net.");
+    }
+  } else {
+    if ((policy_head == "vanilla" && weights.policy_heads.vanilla.policy.weights.size() == 0)
+        || (policy_head == "optimistic" && weights.policy_heads.optimistic_st.policy.weights.size() == 0)
+        || (policy_head == "soft" && weights.policy_heads.soft.policy.weights.size() == 0)
+        || (policy_head != "vanilla" && policy_head != "optimistic" && policy_head != "soft")) {
+      throw Exception("The policy head you specified '" + policy_head + "'"
+        + " does not exist in this net.");
+    }
+  }
+
+  std::string value_head = options.GetOrDefault<std::string>("value_head", "winner");
+  // Check that selected value head exists.
+  if ((value_head == "winner" && weights.value_heads.winner.ip1_val_b.size() == 0)
+      || (value_head == "q" && weights.value_heads.q.ip1_val_b.size() == 0)
+      || (value_head == "st" && weights.value_heads.st.ip1_val_b.size() == 0)
+      || (value_head != "winner" && value_head != "q" && value_head != "st")) {
+    throw Exception("The value head you specified '" + value_head + "'"
+      + " does not exist in this net.");
+  }
+  auto embedding = static_cast<InputEmbedding>(file.format().network_format().input_embedding());
+  builder_->build(kInputPlanes, weights, embedding, attn_body, attn_policy_, conv_policy_,
                   wdl_, moves_left_, activations, policy_head, value_head);
 }
 
@@ -244,12 +273,11 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
     throw Exception("The Metal backend requires a network file.");
   }
   const WeightsFile& weights = *w;
-  if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
+  auto format = weights.format().network_format().network() & 127;
+  if ((weights.format().network_format().network() & 128) == 0 ||
+      (format != pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
+      format != pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+      format != pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT)) {
     throw Exception("Network format " +
                     pblczero::NetworkFormat::NetworkStructure_Name(
                         weights.format().network_format().network()) +

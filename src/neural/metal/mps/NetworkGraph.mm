@@ -1216,15 +1216,14 @@ static const NSInteger kMinSubBatchSize = 20;
 {
     // Selected head to construct.
     // Use vanilla as default head.
-    /* @todo check that head exists */
     lczero::LegacyWeights::PolicyHead& head = heads.vanilla;
-    if ([activeHead isEqual:@"optimistic"] /* @todo check that head exists */) {
+    if ([activeHead isEqual:@"optimistic"]) {
         head = heads.optimistic_st;
     }
-    else if ([activeHead isEqual:@"soft"] /* @todo check that head exists */) {
+    else if ([activeHead isEqual:@"soft"]) {
         head = heads.soft;
     }
-    else if ([activeHead isEqual:@"opponent"] /* @todo check that head exists */) {
+    else if ([activeHead isEqual:@"opponent"]) {
         head = heads.opponent;
     }
 
@@ -1295,7 +1294,7 @@ static const NSInteger kMinSubBatchSize = 20;
         }
         policy = [self addConvolutionBlockWithParent:policy
                                       outputChannels:head.policy1.biases.size()
-                                          kernelSize:9
+                                          kernelSize:3
                                              weights:&head.policy1.weights[0]
                                               biases:&head.policy1.biases[0]
                                           activation:defaultActivation
@@ -1304,7 +1303,7 @@ static const NSInteger kMinSubBatchSize = 20;
         // No activation.
         policy = [self addConvolutionBlockWithParent:policy
                                       outputChannels:head.policy.biases.size()
-                                          kernelSize:9
+                                          kernelSize:3
                                              weights:&head.policy.weights[0]
                                               biases:&head.policy.biases[0]
                                           activation:nil
@@ -1377,13 +1376,12 @@ static const NSInteger kMinSubBatchSize = 20;
                                               label:(NSString * __nonnull)label
 {
     // Selected head to construct.
-    // Use value_q as default head.
-    /* @todo check that head exists */
-    lczero::LegacyWeights::ValueHead& head = heads.q;
-    if ([activeHead isEqual:@"winner"] /* @todo check that head exists */) {
-        head = heads.winner;
+    // Use value_winner as default head.
+    lczero::LegacyWeights::ValueHead& head = heads.winner;
+    if ([activeHead isEqual:@"q"]) {
+        head = heads.q;
     }
-    else if ([activeHead isEqual:@"st"] /* @todo check that head exists */) {
+    else if ([activeHead isEqual:@"st"]) {
         head = heads.st;
     }
 
@@ -1416,22 +1414,12 @@ static const NSInteger kMinSubBatchSize = 20;
                                         activation:defaultActivation
                                              label:[NSString stringWithFormat:@"%@/%@/fc1", label, activeHead]];
 
-    if (wdl) {
-        value = [self addFullyConnectedLayerWithParent:value
-                                        outputChannels:head.ip2_val_b.size()
-                                               weights:&head.ip2_val_w[0]
-                                                biases:&head.ip2_val_b[0]
-                                            activation:@"softmax"
-                                                 label:[NSString stringWithFormat:@"%@/%@/fc2", label, activeHead]];
-    }
-    else {
-        value = [self addFullyConnectedLayerWithParent:value
-                                        outputChannels:head.ip2_val_b.size()
-                                               weights:&head.ip2_val_w[0]
-                                                biases:&head.ip2_val_b[0]
-                                            activation:@"tanh"
-                                                 label:[NSString stringWithFormat:@"%@/%@/fc2", label, activeHead]];
-    }
+    value = [self addFullyConnectedLayerWithParent:value
+                                    outputChannels:head.ip2_val_b.size()
+                                            weights:&head.ip2_val_w[0]
+                                            biases:&head.ip2_val_b[0]
+                                        activation:wdl ? @"softmax" : @"tanh"
+                                                label:[NSString stringWithFormat:@"%@/%@/fc2", label, activeHead]];
 
     return value;
 }

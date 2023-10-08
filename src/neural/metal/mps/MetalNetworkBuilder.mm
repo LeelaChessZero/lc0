@@ -57,7 +57,7 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
-void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights,
+void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, InputEmbedding embedding,
                                 bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left,
                                 Activations activations, std::string policy_head, std::string value_head)
 {
@@ -124,9 +124,10 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights,
         // 1. NCHW -> NHWC
         layer = [graph transposeChannelsWithTensor:layer withShape:@[@(-1), @64, layer.shape[1]] label:@"input/nchw_nhwc"];
 
+        // 2a. Input embedding for attention body.
         if (weights.residual.size() == 0) {
             // No residual means pure transformer, so process input position encoding.
-            if (weights.has_multiheads) {
+            if (embedding == InputEmbedding::INPUT_EMBEDDING_PE_DENSE) {
                 // New input position encoding.
                 layer = [graph dynamicPositionEncodingWithTensor:layer
                                                            width:weights.ip_emb_preproc_b.size() / 64
@@ -135,6 +136,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights,
                                                            label:@"input/position_encoding"];
             }
             else {
+                // Old input position encoding with map.
                 layer = [graph positionEncodingWithTensor:layer
                                                 withShape:@[@64, @64]
                                                   weights:&kPosEncoding[0][0]
@@ -143,8 +145,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights,
             }
         }
 
-        // 2a. Input embedding for attention body.
-        // if self.arc_encoding: @todo needs to be implemented
+        // Embedding layer.
         layer = [graph addFullyConnectedLayerWithParent:layer
                                          outputChannels:weights.ip_emb_b.size()
                                                 weights:&weights.ip_emb_w[0]
@@ -153,7 +154,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights,
                                                   label:@"input/embedding"];
 
         // Add layernorm for new nets.
-        if (weights.has_multiheads) {
+        if (embedding == InputEmbedding::INPUT_EMBEDDING_PE_DENSE) {
             layer = [graph addLayerNormalizationWithParent:layer
                                      scaledSecondaryTensor:nil
                                                     gammas:&weights.ip_emb_ln_gammas[0]
@@ -182,7 +183,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights,
         }
 
         float alpha = (float) pow(2.0 * weights.encoder.size(), -0.25);
-        if (weights.has_multiheads) {
+        if (embedding == InputEmbedding::INPUT_EMBEDDING_PE_DENSE) {
             // Input embedding feedforward network added for new multihead nets.
             MPSGraphTensor * ffn = [graph addFullyConnectedLayerWithParent:layer
                                                             outputChannels:weights.ip_emb_ffn.dense1_b.size()

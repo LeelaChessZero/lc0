@@ -45,8 +45,8 @@ class MetalNetworkBuilder {
 
   std::string init(int gpu_id);
 
-  void build(int kInputPlanes, LegacyWeights& weights, bool attn_body,
-             bool attn_policy, bool conv_policy, bool wdl, bool moves_left,
+  void build(int kInputPlanes, LegacyWeights& weights, InputEmbedding embedding,
+             bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left,
              Activations activations, std::string  policy_head, std::string value_head);
 
   void forwardEval(float* inputs, int batchSize,
