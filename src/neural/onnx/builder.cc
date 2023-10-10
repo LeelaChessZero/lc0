@@ -135,12 +135,15 @@ std::string PopulateStdNodeFields(pblczero::NodeProto* node,
 std::string OnnxBuilder::Conv(const std::string& name,
                               const std::string& input_name,
                               const OnnxConst& kernel_weights,
-                              const OnnxConst& bias_weights, int pads) {
+                              const OnnxConst& bias_weights, 
+                              int filters,
+                              int pads) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input_name, "Conv");
   node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
   node->add_input(AddInitializer(name + "/w/bias", bias_weights));
   AddIntsAttribute(node, "pads", {pads, pads, pads, pads});
+  AddIntsAttribute(node, "kernel_shape", {filters, filters});
   return out;
 }
 
