@@ -416,12 +416,14 @@ void addBias_NCHW_kernel(T* c, T* a, T* b, int N, int C, int H,
   int i = item_ct1.get_local_id(2) +
           item_ct1.get_local_range(2) * item_ct1.get_group(2);
   int size = N * C * H * W;
+
   if (i < size) {
     float aVal = (float)a[i];
 
     // All this math can be optimized, but the kernel is memory bound anyway.
     int biasIndex = (i / (H * W)) % C;
     float bVal = (float)b[biasIndex];
+    
 
     float cVal = aVal + bVal;
 

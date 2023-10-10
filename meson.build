@@ -269,6 +269,7 @@ if get_option('USE_SYCL')
       add_project_arguments('-ffast-math', language : 'cpp')
       add_project_arguments('-fsycl-unnamed-lambda', language : 'cpp') 
       add_project_arguments('-w', language : 'cpp')
+      add_project_arguments('-g', language : 'cpp')
       #add_project_arguments('-Wall', language : 'cpp')
       #add_project_arguments('-Wextra', language : 'cpp')
       

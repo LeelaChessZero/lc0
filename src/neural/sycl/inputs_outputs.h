@@ -50,6 +50,7 @@ struct InputsOutputs {
 
     //ReportCUDAErrors(cudaHostAlloc(&input_val_mem_, maxBatchSize * kInputPlanes * sizeof(float), 0));
     //ReportCUDAErrors(cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
+    CERR << maxBatchSize << " " << kInputPlanes;  
     input_val_mem_shared_ = malloc_host<float>(maxBatchSize * kInputPlanes, q_ct1);
 
     
@@ -66,7 +67,7 @@ struct InputsOutputs {
 
     //ReportCUDAErrors(cudaHostAlloc(&op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(float), 0));
     //ReportCUDAErrors(cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
-
+    op_value_mem_shared_ = malloc_host<float>(maxBatchSize * (wdl ? 3 : 1), q_ct1);
 
 
     if (moves_left) {
@@ -97,6 +98,7 @@ struct InputsOutputs {
 
 
   ~InputsOutputs() {
+    /*
     sycl::free(input_masks_mem_shared_, q_ct1);
     sycl::free(input_val_mem_shared_, q_ct1);
     sycl::free(op_value_mem_shared_, q_ct1);
@@ -114,10 +116,10 @@ struct InputsOutputs {
           sycl::free(offset_pointers_, q_ct1);
       if (head_offset_pointers_) {
           sycl::free(head_offset_pointers_, q_ct1);
-      }
+      } 
       //dpct::get_current_device().destroy_queue(stream_);
       //cublas_ = nullptr;
-    }
+    } */
   }
   uint64_t* input_masks_mem_shared_;
   float* input_val_mem_shared_;

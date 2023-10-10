@@ -549,7 +549,8 @@ template <>
 void SELayer<float>::Eval(int N, float* output, const float* input,
                           const float* /*input2*/, void* scratch,
                           size_t scratch_size, sycl::queue &sycl_queue, float***) {
-                            
+
+  //CERR << "SELayer<float>::Eval. ";                          
   // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
   float* op1 = (float*)scratch;
   float* op2 = (float*)scratch + scratch_size / sizeof(float) / 2;
@@ -673,6 +674,9 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
 template <>
 void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* input,
                          const sycl::half* input2, void* scratch, size_t scratch_size, sycl::queue &sycl_queue, sycl::half***) {
+
+
+  //CERR << "SELayer<sycl::half>::Eval. ";
 
   bool se_done = false;
   if (kUseFusedSELayer && nhwc_) {
@@ -835,6 +839,9 @@ template <>
  void FCLayer<sycl::half>::Eval(int N, sycl::half* output_tensor, const sycl::half* input_tensor,
                           const sycl::half* /*input2*/, void* /*scratch*/,
                           size_t /*scratch_size*/, sycl::queue &sycl_queue, sycl::half***) {
+
+   //CERR << "FCLayer<sycl::half>::Eval. ";
+
    const int num_outputs = C * H * W;
    const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
@@ -884,10 +891,14 @@ template <>
 void FCLayer<float>::Eval(int N, float* output_tensor,
                           const float* input_tensor, const float* /*input2*/,
                           void* /*scratch*/, size_t /*scratch_size*/, sycl::queue &sycl_queue, float***) {
+
+  //CERR << "FCLayer<float>::Eval. ";
+
   const int num_outputs = C * H * W;
   const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
   float alpha = 1.0f, beta = 0.0f;
+  //CERR << "FCLayer<float>::Eval - 1. " << num_inputs << " " << num_outputs;
 
   #ifdef USE_CUBLAS
   cublasHandle_t handle = cuBlasContextManager::getcuBlasHandle_t();
@@ -1055,6 +1066,9 @@ template <typename DataType>
 void PolicyMapLayer<DataType>::Eval(
     int N, DataType* output_tensor, const DataType* input_tensor,
     const DataType* /*input2*/, void* /*scratch*/, size_t /*scratch_size*/, sycl::queue &sycl_queue, DataType***) {
+  
+  //CERR << "PolicyMapLayer<DataType>::Eval. ";    
+
   int inputSize =
       this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
   if (attention_map_) inputSize = used_size_;
@@ -1356,6 +1370,9 @@ void FusedWinogradConvSELayer<DataType>::Eval(
     void* scratch, size_t scratch_size, sycl::queue &sycl_queue, DataType***) {
   // Split the scratch space into two parts - use first part for holding
   // transformed input and second part for transformed output.
+
+  //CERR << "FusedWinogradConvSELayer<DataType>::Eval. ";
+
   DataType* transformed_input = (DataType*)scratch;
   DataType* transformed_output =
       transformed_input + scratch_size / (2 * sizeof(DataType));
@@ -1446,7 +1463,9 @@ Conv1Layer<DataType>::Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
   weights_ = (DataType *)sycl::malloc_device(weight_size, sycl_queue_);
 
   if (use_bias_) {
+    
     const size_t bias_size = sizeof(DataType) * C;
+    //CERR << "Conv1Layer using bias " << bias_size; 
     biases_ = (DataType *)sycl::malloc_device(bias_size, sycl_queue_);
   }
 }
@@ -1639,12 +1658,23 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                 size_t /*scratch_size*/,
                                 sycl::queue &sycl_queue, DataType***) {
 
-  cublasSpecialMatrixMul(weights_, input, output, C, H * W, c_input_, N, sycl_queue);
+  sycl_queue.wait();
+  
+  //CERR << "Conv1Layer<DataType>::Eval. ";
 
-  if (use_bias_)
+  cublasSpecialMatrixMul(weights_, input, output, C, H * W, c_input_, N, sycl_queue);
+ // CERR << "cublasSpecialMatrixMul. ";
+
+  sycl_queue.wait();
+  if (use_bias_){
+  // CERR << "addBias. " << N << " " << C << " " << H << " " << W;
     addBias_NCHW(output, output, biases_, N, C, H, W, act_, sycl_queue);
-  else if (act_ != ACTIVATION_NONE)
+  } else if (act_ != ACTIVATION_NONE) {
     addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W, 0, act_, sycl_queue);
+  //  CERR << "addVectors. ";
+  }
+
+  sycl_queue.wait();
 }
 
 template <typename DataType>
@@ -1788,6 +1818,8 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
                                    const DataType* input,
                                    const DataType* /*input2*/, void* scratch,
                                    size_t scratch_size, sycl::queue &sycl_queue, DataType***) {
+
+  //CERR << "ResidualBlock<DataType>::Eval. ";
   // normally:
   // - "output" initially contains the transformed input,
   //    and after this layer, it contains the transformed input for next layer
@@ -2276,6 +2308,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                                   DataType* scratch, DataType* buffer1,
                                   DataType* buffer2, sycl::queue &sycl_queue,
                                   DataType*** offset_pointers) {
+
+  //CERR << "EncoderBlock<DataType>::Eval. ";
+
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
@@ -2524,6 +2559,8 @@ void AttentionPolicyHead<DataType>::Eval(int N, DataType* output, const DataType
             const DataType* input2, void* scratch, size_t scratch_size,
             sycl::queue &sycl_queue, DataType*** offset_pointers) {
 
+  //CERR << "AttentionPolicyHead<DataType>::Eval. ";
+
   DataType* input2_tensor = (DataType*)input2;
   DataType* buffer1 = output + scratch_size / (2 * sizeof(DataType));
   DataType* buffer2 = input2_tensor + scratch_size / (2 * sizeof(DataType));
@@ -2669,6 +2706,10 @@ template <typename DataType>
 void EmbeddingLayer<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* /*input2*/,
     void* /*scratch*/, size_t /*scratch_size*/, sycl::queue &sycl_queue, DataType***) {
+
+  
+  //CERR << "EmbeddingLayer<DataType>::Eval. ";
+
   const int num_outputs = this->GetC();
   const int num_inputs = this->input_->GetC();
   const int batch = N * 64;
@@ -2751,6 +2792,9 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
                                    size_t scratch_size, 
                                    sycl::queue &sycl_queue,
                                    DataType*** offset_pointers) {
+
+  //CERR << "AttentionBody<DataType>::Eval. ";
+
   DataType* output_tensor = (DataType*)output;
   DataType* buffer1 = (DataType*)input2;
   DataType* buffer2 = buffer1 + scratch_size / (2 * sizeof(DataType));
