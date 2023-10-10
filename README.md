@@ -1,6 +1,3 @@
-This fork is for the sycl code to run with the [dpc++ llvm](https://github.com/intel/llvm) code on AMD, Nvidia, and Intel GPUs. Code on this fork is still in development. 
-
-
 [![CircleCI](https://circleci.com/gh/LeelaChessZero/lc0.svg?style=shield)](https://circleci.com/gh/LeelaChessZero/lc0)
 [![AppVeyor](https://ci.appveyor.com/api/projects/status/3245b83otdee7oj7?svg=true)](https://ci.appveyor.com/project/leelachesszero/lc0)
 
