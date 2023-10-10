@@ -1,5 +1,5 @@
 #include <sycl/sycl.hpp>
-#include <dpct/dpct.hpp>
+#include "dpct/dpct.hpp"
 /*
   This file is part of Leela Chess Zero.
   Copyright (C) 2020 The LCZero Authors

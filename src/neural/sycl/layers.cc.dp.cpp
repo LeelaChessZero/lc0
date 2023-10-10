@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include <sycl/sycl.hpp>
-#include <dpct/dpct.hpp>
+#include "dpct/dpct.hpp"
 #include "layers.h"
 
 #include <cassert>
@@ -54,7 +54,7 @@
 #include "neural/shared/activation.h"
 #include "neural/shared/attention_policy_map.h"
 #include "utils/fp16_utils.h"
-#include <dpct/lib_common_utils.hpp>
+#include "dpct/lib_common_utils.hpp"
 
 #include <cmath>
 
@@ -2261,6 +2261,8 @@ static void cublasXGemmBatched(transpose_type transa,
 
   const bool fp16 = std::is_same<sycl::half, DataType>::value;
   
+
+  #ifdef USE_CUBLAS
   cublasHandle_t handle = cuBlasContextManager::getcuBlasHandle_t();
   
   if (fp16) {
@@ -2300,6 +2302,53 @@ static void cublasXGemmBatched(transpose_type transa,
 
     });
   }
+
+  #elifdef USE_HIPBLAS
+
+   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
+  
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
+
+
+    sycl_queue.submit([&](sycl::handler &cgh) {
+        cgh.host_task([=](sycl::interop_handle ih) {
+
+        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+        hipblasSetStream(handle, hipStreamHandle);       
+
+        hipblasHgemmBatched(
+        handle, transa, transb, m, n, k, (const half*)&alpha_h, (half**)A, lda,
+        (half**)B, ldb, (const half*)&beta_h, (half**)C, ldc, batchCount);
+        
+        hipStreamSynchronize(hipStreamHandle);
+
+      });
+
+    });
+
+  } else {
+    
+    sycl_queue.submit([&](sycl::handler &cgh) {
+        cgh.host_task([=](sycl::interop_handle ih) {
+
+        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+        hipblasSetStream(handle, hipStreamHandle);        
+
+        hipblasSgemmBatched(
+        handle, transa, transb, m, n, k, &alpha, (float**)A, lda, (float**)B,
+        ldb, &beta, (float**)C, ldc, batchCount);
+        
+        hipStreamSynchronize(hipStreamHandle);
+
+      });
+
+    });
+  }
+  #else
+    oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const float *)A, lda, strideA, (const float *)B, ldb, strideB, beta, (float *)C, ldc, strideC, batchCount); 
+  #endif
 }
 
 // input/output tensor is in_out_tensor, others are used as scratch.
