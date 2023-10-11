@@ -268,7 +268,6 @@ std::string Converter::MakeConvBlock(
       *GetWeghtsConverter(weights.weights,
                           {output_channels, input_channels, filters, filters}),
       *GetWeghtsConverter(weights.biases, {output_channels}),
-      filters,
       (filters - 1) / 2);
 
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
