@@ -364,6 +364,9 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
                                      const lczero::OnnxConst& gammas,
                                      const lczero::OnnxConst& betas,
                                      float eps) {
+  if (!options_.alt_ln) {
+    return builder->LayerNormalization(name, input, gammas, betas, 1, eps);
+  }
   auto in =
       builder->Cast(name + "/to_float", input, pblczero::TensorProto::FLOAT);
   auto flow = builder->ReduceMean(name + "/mean", in, {1});

@@ -362,6 +362,21 @@ std::string OnnxBuilder::Sigmoid(const std::string& name,
   return PopulateStdNodeFields(node, name, input, "Sigmoid");
 }
 
+// This is only defined in opset 17 but onnxruntime supports it from 1.
+std::string OnnxBuilder::LayerNormalization(const std::string& name,
+                                            const std::string& input,
+                                            const OnnxConst& scale,
+                                            const OnnxConst& bias, int axis,
+                                            float epsilon) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "LayerNormalization");
+  node->add_input(AddInitializer(name + "/w/scale", scale));
+  node->add_input(AddInitializer(name + "/w/bias", bias));
+  AddIntAttribute(node, "axis", axis);
+  AddFloatAttribute(node, "epsilon", epsilon);
+  return out;
+}
+
 std::string OnnxBuilder::Expand(const std::string& name,
                                 const std::string& input,
                                 const std::string& shape) {
