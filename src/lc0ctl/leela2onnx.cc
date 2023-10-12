@@ -53,6 +53,8 @@ const OptionId kOutputValue{
     "ONNX name to use for value policy head output node."};
 const OptionId kOutputMlh{"mlh-head-name", "MlhHeadName",
                           "ONNX name to use for the MLH head output node."};
+const OptionId kOnnxToPytorch{"onnx2pytorch", "Onnx2Pytorch",
+                          "Only use layer definitions supported by onnx2pytorch."};
 
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
@@ -63,6 +65,7 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kOutputWdl) = "/output/wdl";
   options->Add<StringOption>(kOutputValue) = "/output/value";
   options->Add<StringOption>(kOutputMlh) = "/output/mlh";
+  options->Add<BoolOption>(kOnnxToPytorch) = false;
   if (!options->ProcessAllFlags()) return false;
 
   const OptionsDict& dict = options->GetOptionsDict();
@@ -94,6 +97,8 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
+    // onnx2pytorch only needs an alternate layernorm-implementation
+    onnx_options.alt_ln = dict.Get<bool>(kOnnxToPytorch);
     weights_file = ConvertWeightsToOnnx(weights_file, onnx_options);
   }
 
