@@ -44,7 +44,7 @@ struct WeightsToOnnxConverterOptions {
   int batch_size = -1;
   int opset = 17;
   bool alt_mish = false;
-  bool alt_ln = false;
+  bool alternative_layer_normalization = false;
 };
 
 // Converts "classical" weights file to weights file with embedded ONNX model.

@@ -364,7 +364,7 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
                                      const lczero::OnnxConst& gammas,
                                      const lczero::OnnxConst& betas,
                                      float eps) {
-  if (!options_.alt_ln) {
+  if (!options_.alternative_layer_normalization) {
     return builder->LayerNormalization(name, input, gammas, betas, 1, eps);
   }
   auto in =
