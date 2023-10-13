@@ -97,8 +97,9 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
-    // onnx2pytorch only needs an alternate layernorm-implementation
-    onnx_options.alt_ln = dict.Get<bool>(kOnnxToPytorch);
+    // onnx2pytorch only needs an alternate layernorm-implementation, so it's currently
+    // only enables that. Might need to be extended in the future.
+    onnx_options.alternative_layer_normalization = dict.Get<bool>(kOnnxToPytorch);
     weights_file = ConvertWeightsToOnnx(weights_file, onnx_options);
   }
 
