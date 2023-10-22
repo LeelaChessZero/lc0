@@ -540,6 +540,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
+    LOGFILE <<  "Q: " << Q;
+    LOGFILE <<  "M: " << M;
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
