@@ -97,6 +97,12 @@ const OptionId kOnnxOutputMlhId{"onnx-output-mlh", "OnnxOutputMlh",
 
 const OptionId kValidateModelId{"validate-weights", "ValidateWeights",
                                 "Do a basic check of the provided ONNX file."};
+const OptionId kFixRule50Id{
+    "fix-rule50", "",
+    "Fix tensorflow exported onnx that needs rule50 input scaling."};
+const OptionId kFixWdlSoftmaxId{
+    "fix-wdl-softmax", "",
+    "Fix tensorflow exported onnx that is missing wdl output softmax."};
 
 bool ProcessParameters(OptionsParser* options) {
   using pblczero::NetworkFormat;
@@ -133,6 +139,8 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kOnnxOutputMlhId);
 
   options->Add<BoolOption>(kValidateModelId) = true;
+  options->Add<BoolOption>(kFixRule50Id) = false;
+  options->Add<BoolOption>(kFixWdlSoftmaxId) = false;
 
   if (!options->ProcessAllFlags()) return false;
 
@@ -142,10 +150,8 @@ bool ProcessParameters(OptionsParser* options) {
   return true;
 }
 
-bool ValidateNetwork(const pblczero::Net& weights) {
+bool ValidateNetwork(const pblczero::Net& weights, pblczero::ModelProto& onnx) {
   const auto& onnx_model = weights.onnx_model();
-  pblczero::ModelProto onnx;
-  onnx.ParseFromString(onnx_model.model());
 
   if (!onnx.has_ir_version()) {
     CERR << "ONNX file doesn't appear to have version specified. Likely not an "
@@ -230,6 +236,77 @@ bool ValidateNetwork(const pblczero::Net& weights) {
   return true;
 }
 
+const std::vector<float> rule50weights = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1.0f / 99, 1, 1};
+
+bool FixRule50(pblczero::ModelProto& model, const std::string& in) {
+  bool flag = false;
+
+  std::string name = "rule50fix";
+
+  for (size_t i = 0; i < model.graph().node_size(); i++) {
+    auto node = model.graph().node(i);
+    for (size_t j = 0; j < node.input_size(); j++) {
+      if (node.input(j) == in) {
+        CERR << "Inerting scaling between " << in << " and " << node.name();
+        model.mutable_graph()->mutable_node(i)->mutable_input()->at(j) =
+            std::string(name);
+        flag = true;
+      }
+    }
+  }
+
+  auto* init = model.mutable_graph()->add_initializer();
+  init->set_name(name + "_weights");
+  init->set_data_type(pblczero::TensorProto::FLOAT);
+  init->add_dims(112);
+  init->add_dims(1);
+  init->add_dims(1);
+  init->set_raw_data(
+      std::string(reinterpret_cast<const char*>(rule50weights.data()),
+                  rule50weights.size() * sizeof(float)));
+
+  auto* new_node = model.mutable_graph()->add_node();
+  new_node->set_name(name);
+  new_node->set_op_type("Mul");
+  new_node->add_input(in);
+  new_node->add_output(name);
+
+  new_node->add_input(name + "_weights");
+
+  return flag;
+}
+
+bool FixWdlSoftmax(pblczero::ModelProto& model, const std::string& out) {
+  bool flag = false;
+  std::string name = "sofmax_fix";
+
+  for (size_t i = 0; i < model.graph().node_size(); i++) {
+    auto node = model.graph().node(i);
+    for (size_t j = 0; j < node.output_size(); j++) {
+      if (node.output(j) == out) {
+        CERR << "Inserting softmax between " << node.name() << " and " << out;
+        model.mutable_graph()->mutable_node(i)->mutable_output()->at(j) =
+            std::string(name);
+        flag = true;
+        break;
+      }
+    }
+  }
+
+  auto* new_node = model.mutable_graph()->add_node();
+  new_node->set_name(name);
+  new_node->set_op_type("Softmax");
+  new_node->add_input(name);
+  new_node->add_output(out);
+
+  return flag;
+}
+
 }  // namespace
 
 void ConvertOnnxToLeela() {
@@ -239,6 +316,11 @@ void ConvertOnnxToLeela() {
   if (!ProcessParameters(&options_parser)) return;
 
   const OptionsDict& dict = options_parser.GetOptionsDict();
+
+  auto onnx_model = ReadFileToString(dict.Get<std::string>(kInputFilenameId));
+  pblczero::ModelProto model;
+  model.ParseFromString(onnx_model);
+  bool flag = false;
 
   pblczero::Net out_weights;
   out_weights.set_magic(0x1c0);
@@ -258,7 +340,11 @@ void ConvertOnnxToLeela() {
       dict.Get<std::string>(kInputFormatId),
       NetworkFormat::InputFormat_AllValues, NetworkFormat::InputFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxInputId)) {
-    onnx->set_input_planes(dict.Get<std::string>(kOnnxInputId));
+    auto in = dict.Get<std::string>(kOnnxInputId);
+    onnx->set_input_planes(in);
+    if (dict.Get<bool>(kFixRule50Id)) {
+      flag = FixRule50(model, in);
+    }
   }
 
   // Policy.
@@ -277,7 +363,11 @@ void ConvertOnnxToLeela() {
     onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
   }
   if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
-    onnx->set_output_wdl(dict.Get<std::string>(kOnnxOutputWdlId));
+    auto out = dict.Get<std::string>(kOnnxOutputWdlId);
+    onnx->set_output_wdl(out);
+    if (dict.Get<bool>(kFixWdlSoftmaxId)) {
+      flag |= FixWdlSoftmax(model, out);
+    }
   }
 
   // Mlh.
@@ -289,8 +379,13 @@ void ConvertOnnxToLeela() {
     onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
   }
 
-  onnx->set_model(ReadFileToString(dict.Get<std::string>(kInputFilenameId)));
-  if (dict.Get<bool>(kValidateModelId) && !ValidateNetwork(out_weights)) {
+  if (flag) {
+    onnx->set_model(model.OutputAsString());
+  } else {
+    onnx->set_model(onnx_model);
+  }
+  if (dict.Get<bool>(kValidateModelId) &&
+      !ValidateNetwork(out_weights, model)) {
     return;
   }
   WriteStringToGzFile(dict.Get<std::string>(kOutputFilenameId),
