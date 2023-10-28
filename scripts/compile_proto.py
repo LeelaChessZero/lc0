@@ -376,6 +376,8 @@ class ProtoFieldParser:
                 w.Write("%s* add_%s();" % (cpp_type, name))
             else:
                 w.Write("void add_%s(%s val);" % (name, cpp_type))
+            # Using a vector here breaks API compatibility with the standard
+            # protobuf library, but it is more convenient.
             w.Write("const std::vector<%s>& %s() const;" %
                     (var_cpp_type, name))
             w.Write("std::vector<%s>* mutable_%s();" % (var_cpp_type, name))
