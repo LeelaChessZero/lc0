@@ -236,16 +236,7 @@ bool ValidateNetwork(const pblczero::Net& weights, pblczero::ModelProto& onnx) {
   return true;
 }
 
-const std::vector<float> rule50weights = {
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1.0f / 99, 1, 1};
-
-bool FixRule50(pblczero::ModelProto& model, const std::string& in) {
-  bool flag = false;
-
+void FixRule50(pblczero::ModelProto& model, const std::string& in) {
   std::string name = "rule50fix";
 
   for (size_t i = 0; i < model.graph().node_size(); i++) {
@@ -255,7 +246,6 @@ bool FixRule50(pblczero::ModelProto& model, const std::string& in) {
         CERR << "Inerting scaling between " << in << " and " << node.name();
         model.mutable_graph()->mutable_node(i)->mutable_input()->at(j) =
             std::string(name);
-        flag = true;
       }
     }
   }
@@ -266,6 +256,8 @@ bool FixRule50(pblczero::ModelProto& model, const std::string& in) {
   init->add_dims(112);
   init->add_dims(1);
   init->add_dims(1);
+  std::vector<float> rule50weights(112, 1.0f);
+  rule50weights[109] = 1.0f / 99;
   init->set_raw_data(
       std::string(reinterpret_cast<const char*>(rule50weights.data()),
                   rule50weights.size() * sizeof(float)));
@@ -277,12 +269,9 @@ bool FixRule50(pblczero::ModelProto& model, const std::string& in) {
   new_node->add_output(name);
 
   new_node->add_input(name + "_weights");
-
-  return flag;
 }
 
-bool FixWdlSoftmax(pblczero::ModelProto& model, const std::string& out) {
-  bool flag = false;
+void FixWdlSoftmax(pblczero::ModelProto& model, const std::string& out) {
   std::string name = "sofmax_fix";
 
   for (size_t i = 0; i < model.graph().node_size(); i++) {
@@ -292,7 +281,6 @@ bool FixWdlSoftmax(pblczero::ModelProto& model, const std::string& out) {
         CERR << "Inserting softmax between " << node.name() << " and " << out;
         model.mutable_graph()->mutable_node(i)->mutable_output()->at(j) =
             std::string(name);
-        flag = true;
         break;
       }
     }
@@ -303,8 +291,6 @@ bool FixWdlSoftmax(pblczero::ModelProto& model, const std::string& out) {
   new_node->set_op_type("Softmax");
   new_node->add_input(name);
   new_node->add_output(out);
-
-  return flag;
 }
 
 }  // namespace
@@ -320,7 +306,7 @@ void ConvertOnnxToLeela() {
   auto onnx_model = ReadFileToString(dict.Get<std::string>(kInputFilenameId));
   pblczero::ModelProto model;
   model.ParseFromString(onnx_model);
-  bool flag = false;
+  bool updated = false;
 
   pblczero::Net out_weights;
   out_weights.set_magic(0x1c0);
@@ -343,7 +329,8 @@ void ConvertOnnxToLeela() {
     auto in = dict.Get<std::string>(kOnnxInputId);
     onnx->set_input_planes(in);
     if (dict.Get<bool>(kFixRule50Id)) {
-      flag = FixRule50(model, in);
+      FixRule50(model, in);
+      updated = true;
     }
   }
 
@@ -366,7 +353,8 @@ void ConvertOnnxToLeela() {
     auto out = dict.Get<std::string>(kOnnxOutputWdlId);
     onnx->set_output_wdl(out);
     if (dict.Get<bool>(kFixWdlSoftmaxId)) {
-      flag |= FixWdlSoftmax(model, out);
+      FixWdlSoftmax(model, out);
+      updated = true;
     }
   }
 
@@ -379,7 +367,7 @@ void ConvertOnnxToLeela() {
     onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
   }
 
-  if (flag) {
+  if (updated) {
     onnx->set_model(model.OutputAsString());
   } else {
     onnx->set_model(onnx_model);
