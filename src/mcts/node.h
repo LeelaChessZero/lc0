@@ -164,7 +164,17 @@ class Node {
   uint32_t GetChildrenVisits() const { return n_ > 0 ? n_ - 1 : 0; }
   // Returns n = n_if_flight.
   int GetNStarted() const { return n_ + n_in_flight_; }
-  float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
+  
+  float GetQ(float draw_score) const {
+  float new_wl;
+  if (draw_score == 0) {
+    new_wl = wl_;
+  } else {
+    new_wl = wl_ + (draw_score * wl_);
+  }
+
+  return new_wl;
+}
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetWL() const { return wl_; }

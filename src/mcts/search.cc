@@ -79,21 +79,15 @@ class MEvaluator {
  public:
   MEvaluator()
       : enabled_{false},
-        m_slope_{0.0f},
-        m_cap_{0.0f},
-        a_constant_{0.0f},
-        a_linear_{0.0f},
-        a_square_{0.0f},
+        move_midpoint_{0.0f},
+        steepness_factor_{0.0f},
         q_threshold_{0.0f},
         parent_m_{0.0f} {}
 
   MEvaluator(const SearchParams& params, const Node* parent = nullptr)
       : enabled_{true},
-        m_slope_{params.GetMovesLeftSlope()},
-        m_cap_{params.GetMovesLeftMaxEffect()},
-        a_constant_{params.GetMovesLeftConstantFactor()},
-        a_linear_{params.GetMovesLeftScaledFactor()},
-        a_square_{params.GetMovesLeftQuadraticFactor()},
+        move_midpoint_{params.GetMovesLeftMidpointMove()},
+        steepness_factor_{params.GetMovesLeftSteepnessFactor()},
         q_threshold_{params.GetMovesLeftThreshold()},
         parent_m_{parent ? parent->GetM() : 0.0f},
         parent_within_threshold_{parent ? WithinThreshold(parent, q_threshold_)
@@ -106,42 +100,51 @@ class MEvaluator {
       parent_within_threshold_ = WithinThreshold(parent, q_threshold_);
     }
   }
+  
+   float Mish(float q) const {
+     return q * std::tanh(std::log(1.0f + std::exp(q)));
+     }
 
-  // Calculates the utility for favoring shorter wins and longer losses.
-  float GetMUtility(Node* child, float q) const {
-    if (!enabled_ || !parent_within_threshold_) return 0.0f;
+   float GetMUtility(Node* child, float q) const {
+    if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
+    if (child->GetN() == 0) return GetDefaultMUtility();
     const float child_m = child->GetM();
-    float m = std::clamp(m_slope_ * (child_m - parent_m_), -m_cap_, m_cap_);
-    m *= FastSign(-q);
-    if (q_threshold_ > 0.0f && q_threshold_ < 1.0f) {
-      // This allows a smooth M effect with higher q thresholds, which is
-      // necessary for using MLH together with contempt.
-      q = std::max(0.0f, (std::abs(q) - q_threshold_)) / (1.0f - q_threshold_);
-    }
-    m *= a_constant_ + a_linear_ * std::abs(q) + a_square_ * q * q;
+    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * (child_m - move_midpoint_)));
+    float m = (100.0f - child_m) / 200.0f;
+    // Use the Mish function
+    q = Mish(q);
+    // Add 1 to the value of q before taking the logarithm,
+    // to avoid getting undefined values.
+    m *= (1.0f - w) * q + w * (q + std::log(q + 1.0f) + 0.5f * q);
     return m;
-  }
-
-  float GetMUtility(const EdgeAndNode& child, float q) const {
-    if (!enabled_ || !parent_within_threshold_) return 0.0f;
-    if (child.GetN() == 0) return GetDefaultMUtility();
-    return GetMUtility(child.node(), q);
   }
 
   // The M utility to use for unvisited nodes.
   float GetDefaultMUtility() const { return 0.0f; }
+  
+  
+  float GetMUtility(const EdgeAndNode& child, float q) const {
+    if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
+    if (child.GetN() == 0) return GetDefaultMUtility();
+    const float child_m = child.GetM(parent_m_);
+    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * (child_m - move_midpoint_)));
+    float m = (100.0f - child_m) / 200.0f;
+    // Use the Mish function 
+    q = Mish(q);
+    // Add 1 to the value of q before taking the logarithm,
+    // to avoid getting undefined values.
+    m *= (1.0f - w) * q + w * (q + std::log(q + 1.0f) + 0.5f * q);
+    return m;
+  }
 
- private:
+  private:
   static bool WithinThreshold(const Node* parent, float q_threshold) {
     return std::abs(parent->GetQ(0.0f)) > q_threshold;
   }
 
   const bool enabled_;
-  const float m_slope_;
-  const float m_cap_;
-  const float a_constant_;
-  const float a_linear_;
-  const float a_square_;
+  const float move_midpoint_;
+  const float steepness_factor_;
   const float q_threshold_;
   float parent_m_ = 0.0f;
   bool parent_within_threshold_ = false;
@@ -424,9 +427,7 @@ int64_t Search::GetTimeSinceFirstBatch() const REQUIRES(counters_mutex_) {
 
 // Root is depth 0, i.e. even depth.
 float Search::GetDrawScore(bool is_odd_depth) const {
-  return (is_odd_depth == played_history_.IsBlackToMove()
-              ? params_.GetDrawScore()
-              : -params_.GetDrawScore());
+  return params_.GetDrawScore();
 }
 
 namespace {
