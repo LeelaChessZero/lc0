@@ -318,6 +318,61 @@ pblczero::OnnxModel_DataType GetDataType(pblczero::ModelProto& model,
   return OnnxModel::FLOAT;
 }
 
+bool EnsureOutDataType(pblczero::ModelProto& model, const std::string& name,
+                       pblczero::OnnxModel_DataType data_type) {
+  // Check if output has the correct data type and set it if not.
+  for (size_t i = 0; i < model.graph().output_size(); i++) {
+    auto out = model.graph().output(i);
+    if (out.name() == name) {
+      if (!out.has_type()) {
+        model.mutable_graph()->mutable_output(i)->mutable_type();
+      }
+      if (!out.type().has_tensor_type()) {
+        model.mutable_graph()
+            ->mutable_output(i)
+            ->mutable_type()
+            ->mutable_tensor_type();
+      }
+      if (!out.type().tensor_type().has_elem_type() ||
+          out.type().tensor_type().elem_type() !=
+              static_cast<pblczero::TensorProto_DataType>(data_type)) {
+        model.mutable_graph()
+            ->mutable_output(i)
+            ->mutable_type()
+            ->mutable_tensor_type()
+            ->set_elem_type(
+                static_cast<pblczero::TensorProto_DataType>(data_type));
+        break;
+      }
+      return false;
+    }
+  }
+
+  // Insert a cast to the correct data type.
+  for (size_t i = 0; i < model.graph().node_size(); i++) {
+    auto node = model.graph().node(i);
+    for (size_t j = 0; j < node.output_size(); j++) {
+      if (node.output(j) == name) {
+        CERR << "Inserting cast between " << node.name() << " and " << name;
+        model.mutable_graph()->mutable_node(i)->mutable_output()->at(j) =
+            std::string(name + "/cast");
+        break;
+      }
+    }
+  }
+
+  auto* new_node = model.mutable_graph()->add_node();
+  new_node->set_name(name + "/cast");
+  new_node->set_op_type("Cast");
+  new_node->add_input(name + "/cast");
+  new_node->add_output(name);
+  auto* attr = new_node->add_attribute();
+  attr->set_name("to");
+  attr->set_type(pblczero::AttributeProto::INT);
+  attr->set_i(data_type);
+  return true;
+}
+
 }  // namespace
 
 void ConvertOnnxToLeela() {
@@ -364,7 +419,9 @@ void ConvertOnnxToLeela() {
       dict.Get<std::string>(kPolicyFormatId),
       NetworkFormat::PolicyFormat_AllValues, NetworkFormat::PolicyFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
-    onnx->set_output_policy(dict.Get<std::string>(kOnnxOutputPolicyId));
+    auto out = dict.Get<std::string>(kOnnxOutputPolicyId);
+    onnx->set_output_policy(out);
+    updated |= EnsureOutDataType(model, out, data_type);
   }
 
   // Value.
@@ -372,7 +429,9 @@ void ConvertOnnxToLeela() {
       dict.Get<std::string>(kValueFormatId),
       NetworkFormat::ValueFormat_AllValues, NetworkFormat::ValueFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
-    onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
+    auto out = dict.Get<std::string>(kOnnxOutputValueId);
+    onnx->set_output_value(out);
+    updated |= EnsureOutDataType(model, out, data_type);
   }
   if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
     auto out = dict.Get<std::string>(kOnnxOutputWdlId);
@@ -381,6 +440,7 @@ void ConvertOnnxToLeela() {
       FixWdlSoftmax(model, out);
       updated = true;
     }
+    updated |= EnsureOutDataType(model, out, data_type);
   }
 
   // Mlh.
@@ -389,7 +449,9 @@ void ConvertOnnxToLeela() {
         GetEnumValueFromString(dict.Get<std::string>(kMovesLeftFormatId),
                                NetworkFormat::MovesLeftFormat_AllValues,
                                NetworkFormat::MovesLeftFormat_Name));
-    onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
+    auto out = dict.Get<std::string>(kOnnxOutputMlhId);
+    onnx->set_output_mlh(out);
+    updated |= EnsureOutDataType(model, out, data_type);
   }
 
   if (updated) {
