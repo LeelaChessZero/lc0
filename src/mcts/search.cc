@@ -104,7 +104,7 @@ class MEvaluator {
    float Mish(float q) const {
      return q * std::tanh(std::log(1.0f + std::exp(q)));
      }
-
+   // Calculates the utility for favoring shorter wins and longer losses.
    float GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
     if (child->GetN() == 0) return GetDefaultMUtility();
