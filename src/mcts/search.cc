@@ -433,7 +433,9 @@ int64_t Search::GetTimeSinceFirstBatch() const REQUIRES(counters_mutex_) {
 
 // Root is depth 0, i.e. even depth.
 float Search::GetDrawScore(bool is_odd_depth) const {
-  return params_.GetDrawScore();
+  return (is_odd_depth == played_history_.IsBlackToMove()
+              ? params_.GetDrawScore()
+              : -params_.GetDrawScore());
 }
 
 namespace {
