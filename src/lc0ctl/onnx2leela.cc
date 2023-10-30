@@ -373,6 +373,48 @@ bool EnsureOutDataType(pblczero::ModelProto& model, const std::string& name,
   return true;
 }
 
+bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
+                  pblczero::OnnxModel_DataType data_type) {
+  bool updated = false;
+
+  // Input.
+  if (dict.OwnExists<std::string>(kOnnxInputId)) {
+    if (dict.Get<bool>(kFixRule50Id)) {
+      FixRule50(model, dict.Get<std::string>(kOnnxInputId),
+                data_type == pblczero::OnnxModel::FLOAT16);
+      updated = true;
+    }
+  }
+
+  // Policy.
+  if (dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
+    updated |= EnsureOutDataType(
+        model, dict.Get<std::string>(kOnnxOutputPolicyId), data_type);
+  }
+
+  // Value.
+  if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
+    updated |= EnsureOutDataType(
+        model, dict.Get<std::string>(kOnnxOutputValueId), data_type);
+  }
+  if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
+    auto out = dict.Get<std::string>(kOnnxOutputWdlId);
+    if (dict.Get<bool>(kFixWdlSoftmaxId)) {
+      FixWdlSoftmax(model, out);
+      updated = true;
+    }
+    updated |= EnsureOutDataType(model, out, data_type);
+  }
+
+  // Mlh.
+  if (dict.OwnExists<std::string>(kOnnxOutputMlhId)) {
+    updated |= EnsureOutDataType(model, dict.Get<std::string>(kOnnxOutputMlhId),
+                                 data_type);
+  }
+
+  return updated;
+}
+
 }  // namespace
 
 void ConvertOnnxToLeela() {
@@ -386,7 +428,6 @@ void ConvertOnnxToLeela() {
   auto onnx_model = ReadFileToString(dict.Get<std::string>(kInputFilenameId));
   pblczero::ModelProto model;
   model.ParseFromString(onnx_model);
-  bool updated = false;
 
   pblczero::Net out_weights;
   out_weights.set_magic(0x1c0);
@@ -407,10 +448,6 @@ void ConvertOnnxToLeela() {
     auto in = dict.Get<std::string>(kOnnxInputId);
     onnx->set_input_planes(in);
     data_type = GetDataType(model, in);
-    if (dict.Get<bool>(kFixRule50Id)) {
-      FixRule50(model, in, data_type == OnnxModel::FLOAT16);
-      updated = true;
-    }
   }
   onnx->set_data_type(data_type);
 
@@ -419,9 +456,7 @@ void ConvertOnnxToLeela() {
       dict.Get<std::string>(kPolicyFormatId),
       NetworkFormat::PolicyFormat_AllValues, NetworkFormat::PolicyFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
-    auto out = dict.Get<std::string>(kOnnxOutputPolicyId);
-    onnx->set_output_policy(out);
-    updated |= EnsureOutDataType(model, out, data_type);
+    onnx->set_output_policy(dict.Get<std::string>(kOnnxOutputPolicyId));
   }
 
   // Value.
@@ -429,18 +464,10 @@ void ConvertOnnxToLeela() {
       dict.Get<std::string>(kValueFormatId),
       NetworkFormat::ValueFormat_AllValues, NetworkFormat::ValueFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
-    auto out = dict.Get<std::string>(kOnnxOutputValueId);
-    onnx->set_output_value(out);
-    updated |= EnsureOutDataType(model, out, data_type);
+    onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
   }
   if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
-    auto out = dict.Get<std::string>(kOnnxOutputWdlId);
-    onnx->set_output_wdl(out);
-    if (dict.Get<bool>(kFixWdlSoftmaxId)) {
-      FixWdlSoftmax(model, out);
-      updated = true;
-    }
-    updated |= EnsureOutDataType(model, out, data_type);
+    onnx->set_output_wdl(dict.Get<std::string>(kOnnxOutputWdlId));
   }
 
   // Mlh.
@@ -449,12 +476,10 @@ void ConvertOnnxToLeela() {
         GetEnumValueFromString(dict.Get<std::string>(kMovesLeftFormatId),
                                NetworkFormat::MovesLeftFormat_AllValues,
                                NetworkFormat::MovesLeftFormat_Name));
-    auto out = dict.Get<std::string>(kOnnxOutputMlhId);
-    onnx->set_output_mlh(out);
-    updated |= EnsureOutDataType(model, out, data_type);
+    onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
   }
 
-  if (updated) {
+  if (MaybeFixOnnx(model, dict, data_type)) {
     onnx->set_model(model.OutputAsString());
   } else {
     onnx->set_model(onnx_model);
