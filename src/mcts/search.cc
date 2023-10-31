@@ -108,14 +108,14 @@ class MEvaluator {
    float GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
     if (child->GetN() == 0) return GetDefaultMUtility();
-    const float child_m = child->GetM();
+    const float child_m = std::round(child->GetM() / 2.0f);
     // Weighted average of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
     float w = 1.0f / (1.0f + std::exp(steepness_factor_ * (child_m - move_midpoint_)));
     float m = (100.0f - child_m) / 200.0f;
-    // Use the Mish function to apply a non-linear transformation to 
-    // q, to regularized very high q values.
-    q = Mish(q);
+    if (std::abs(q) > 0.90f) {
+    q = std::tanh(q);
+     }
     // Add 1 to the value of q before taking the logarithm,
     // to avoid getting undefined values.
     m *= (1.0f - w) * q + w * (q + std::log(q + 1.0f) + 0.5f * q);
@@ -131,12 +131,12 @@ class MEvaluator {
   float GetMUtility(const EdgeAndNode& child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
     if (child.GetN() == 0) return GetDefaultMUtility();
-    const float child_m = child.GetM(parent_m_);
+    const float child_m = std::round(child.GetM(parent_m_) / 2.0f);
     float w = 1.0f / (1.0f + std::exp(steepness_factor_ * (child_m - move_midpoint_)));
     float m = (100.0f - child_m) / 200.0f;
-    // Use the Mish function to apply a non-linear transformation to 
-    // q, to regularized very high q values.
-    q = Mish(q);
+    if (std::abs(q) > 0.90f) {
+    q = std::tanh(q);
+     }
     // Add 1 to the value of q before taking the logarithm,
     // to avoid getting undefined values.
     m *= (1.0f - w) * q + w * (q + std::log(q + 1.0f) + 0.5f * q);
@@ -549,8 +549,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
+    float MLH = edge.GetM(0.0f) / 2.0f;
     LOGFILE <<  "Q: " << Q;
     LOGFILE <<  "M: " << M;
+    LOGFILE <<  "MLH: " << MLH;
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
