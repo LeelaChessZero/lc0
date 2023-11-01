@@ -187,3 +187,9 @@ option('onnx_include',
        type: 'string',
        value: '',
        description: 'Paths to ONNX runtime includes')
+
+option('sycl',
+       type: 'combo',
+	   choices : ['off', 'l0', 'amd', 'nvidia'],
+       value: 'off',
+       description: 'Enable SYCL backend')

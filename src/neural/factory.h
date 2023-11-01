@@ -115,14 +115,14 @@ class NetworkFactory {
   friend class Register;
 };
 
-#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter) \
-  namespace {                                                         \
-  static NetworkFactory::Register regH38fhs##counter(                 \
-      name,                                                           \
-      [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
-        return func(w, o);                                            \
-      },                                                              \
-      priority);                                                      \
+#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)          \
+  namespace {                                                                  \
+  std::unique_ptr<Network> func_##counter(const std::optional<WeightsFile>& w, \
+                                          const OptionsDict& o) {              \
+    return func(w, o);                                                         \
+  }                                                                            \
+  static NetworkFactory::Register regH38fhs##counter(name, func_##counter,     \
+                                                     priority);                \
   }
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \
   REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)

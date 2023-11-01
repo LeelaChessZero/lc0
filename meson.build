@@ -36,7 +36,7 @@ if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
-if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
+if cc.get_id() != 'msvc'
   if get_option('buildtype') == 'release'
     add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
   endif
@@ -47,6 +47,7 @@ if cc.get_id() == 'msvc'
 endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
+  add_project_arguments(cc.get_supported_arguments(['/source-charset:utf-8']), language : 'cpp')
 endif
 if ['arm', 'aarch64'].contains(host_machine.cpu_family())
   if get_option('neon')
@@ -619,7 +620,34 @@ if get_option('build_backends')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
   endif
 
+  ## ~~~~
+  ## Sycl
+  ## ~~~~
+  if get_option('sycl') != 'off'
+      has_backends = true
+      message('Building SYCL')
+      add_project_arguments('-fsycl', language : 'cpp')
+      add_project_arguments('-ffast-math', language : 'cpp')
 
+      files += 'src/neural/sycl/layers.cc.dp.cpp'
+      files += 'src/neural/sycl/network_sycl.cc.dp.cpp'
+      files += 'src/neural/sycl/common_kernels.dp.cpp'
+      files += 'src/neural/sycl/fp16_kernels.dp.cpp'
+
+      if get_option('sycl') == 'l0'
+        message('Building SYCL for the L0 backend')
+        add_project_arguments('-DMKL_ILP64', language : 'cpp')
+        deps += cc.find_library('mkl_sycl', required: true)
+        deps += cc.find_library('mkl_intel_ilp64', required: true)
+        deps += cc.find_library('mkl_sequential', required: true)
+        deps += cc.find_library('mkl_core', required: true)
+        deps += cc.find_library('OpenCL', required: true)
+      elif get_option('sycl') == 'amd'
+        error('Building SYCL for AMD backend not yet supported')
+      else
+        error('Building SYCL for the NVIDIA backend not yet supported')
+      endif
+  endif
 
 endif # if get_option('build_backends')
 
