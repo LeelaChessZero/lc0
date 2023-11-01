@@ -1725,6 +1725,18 @@ void SearchWorker::PickNodesToExtendTask(
         int index = child->Index();
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
+        float d = std::max(0.0f, 1.0f - q);
+        // Here Q needs to be rescaled so it can be used with MUtility.
+        // If Q is not rescaled it would give the wrong MUtility score.
+        bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
+                    search_->played_history_.Last().IsBlackToMove();
+        auto sign = ((current_path.size() + base_depth) % 2 == 0) ? 1.0f : -1.0f;
+        WDLRescale(q, d, params_.GetWDLRescaleRatio(),
+               search_->contempt_mode_ == ContemptMode::NONE
+                   ? 0
+                   : params_.GetWDLRescaleDiff(),
+               sign, false);
+        //float new_q = 
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
       const float fpu =
