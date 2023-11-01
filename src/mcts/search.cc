@@ -1636,6 +1636,8 @@ void SearchWorker::PickNodesToExtendTask(
   const float odd_draw_score = search_->GetDrawScore(true);
   const auto& root_move_filter = search_->root_move_filter_;
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
+  bool defendable = false;
+  //bool defendable = static_cast<int>(reinterpret_cast<void*>(p));
 
   int max_limit = std::numeric_limits<int>::max();
 
@@ -1726,6 +1728,9 @@ void SearchWorker::PickNodesToExtendTask(
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
         float d = std::max(0.0f, 1.0f - q);
+        defendable = (q > 0.0f) && (search_->played_history_.Last().IsBlackToMove())
+                      || (!search_->played_history_.Last().IsBlackToMove());
+        if (defendable) {
         // Here Q needs to be rescaled so it can be used with MUtility.
         // If Q is not rescaled it would give the wrong MUtility score.
         bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
@@ -1736,7 +1741,7 @@ void SearchWorker::PickNodesToExtendTask(
                    ? 0
                    : params_.GetWDLRescaleDiff(),
                sign, false);
-        //float new_q = 
+        } 
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
       const float fpu =
@@ -2232,6 +2237,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
+  // To use 0 comtempt as black if not winning.
+  bool defendable = (v > 0.0f) && (search_->played_history_.Last().IsBlackToMove())
+                      || (!search_->played_history_.Last().IsBlackToMove());
+  
+  if (defendable) {
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       (params_.GetWDLRescaleDiff() != 0.0f &&
        search_->contempt_mode_ != ContemptMode::NONE)) {
@@ -2244,6 +2254,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                    ? 0
                    : params_.GetWDLRescaleDiff(),
                sign, false);
+     }
   }
   node_to_process->v = v;
   node_to_process->d = d;
