@@ -20,7 +20,7 @@ option('opencl_libdirs',
 
 option('cudnn_libdirs',
        type: 'array',
-       value: ['/usr/local/cuda/lib64'],
+       value: ['/opt/cuda/lib64/', '/usr/local/cuda/lib64/', '/usr/lib/cuda/lib64/'],
        description: 'Paths to Cuda/cudnn libraries')
 
 option('mkl_libdirs',
@@ -50,37 +50,42 @@ option('build_backends',
 
 option('blas',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable BLAS backend')
 
 option('ispc',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'use ispc')
 
 option('ispc_native_only',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'use ispc and enable native arch only')
+
+option('native_cuda',
+       type: 'boolean',
+       value: true,
+       description: 'build cuda code for native arch only (if supported)')
 
 option('cudnn',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable cuDNN backend')
 
 option('plain_cuda',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable CUDA backend')
 
 option('opencl',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable OpenCL backend')
 
 option('dx',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable DirectX12 backend')
 
 option('tensorflow',
@@ -93,49 +98,9 @@ option('onednn',
        value: false,
        description: 'Enable oneDNN backend')
 
-option('USE_CUDA',
-       type: 'boolean',
-       value: false,
-       description: 'Enable CUDA')
-
-option('USE_AMD',
-       type: 'boolean',
-       value: false,
-       description: 'Enable AMD')
-
-option('USE_SYCL',
-       type: 'boolean',
-       value: true,
-       description: 'Enable SYCL L0 backend')
-
-option('USE_NVIDIA_BACKEND',
-       type: 'boolean',
-       value: false,
-       description: 'Enable SYCL NVIDIA backend')
-
-option('USE_AMD_BACKEND',
-       type: 'boolean',
-       value: false,
-       description: 'Enable SYCL AMD backend')
-
-option('USE_L0_BACKEND',
-       type: 'boolean',
-       value: false,
-       description: 'Enable SYCL L0 backend')
-
-option('USE_SM',
-       type: 'string',
-       value: '61',
-       description: 'SM to use for SYCL NVIDIA backend')
-
-option('GPU_AOT',
-       type: 'array',
-       value: [],
-       description: 'AOT setting for Intel devices')
-
 option('openblas',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable OpenBLAS support')
 
 option('mkl',
@@ -150,7 +115,7 @@ option('dnnl',
 
 option('accelerate',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable Accelerate BLAS support')
 
 option('metal',
@@ -170,8 +135,13 @@ option('mimalloc_libdir',
 
 option('popcnt',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Use the popcnt instruction')
+
+option('f16c',
+       type: 'boolean',
+       value: true,
+       description: 'Use natice fp16 conversion instructions')
 
 option('pext',
        type: 'boolean',
@@ -185,7 +155,7 @@ option('neon',
 
 option('gtest',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Build gtest tests')
 
 option('embed',
@@ -217,3 +187,9 @@ option('onnx_include',
        type: 'string',
        value: '',
        description: 'Paths to ONNX runtime includes')
+
+option('sycl',
+       type: 'combo',
+	   choices : ['off', 'l0', 'amd', 'nvidia'],
+       value: 'off',
+       description: 'Enable SYCL backend')

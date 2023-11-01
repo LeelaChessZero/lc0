@@ -1536,6 +1536,7 @@ template <>
     sycl::half beta = 0;
     #endif
 
+#ifdef USE_CUBLAS
     sycl_queue.submit([&](sycl::handler &cgh) {
          
          cgh.host_task([=](sycl::interop_handle ih) {
@@ -1553,6 +1554,29 @@ template <>
         
          });   
    });
+#elifdef USE_HIPBLAS
+    sycl_queue.submit([&](sycl::handler &cgh) {
+      cgh.host_task([=](sycl::interop_handle ih) {
+         auto hipStreamHandle =
+             sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+         hipblasSetStream(handle, hipStreamHandle);
+         hipblasGemmStridedBatchedEx(
+              handle, transpose_type_notranspose, transpose_type_notranspose,
+              N, M, K, &alpha, B, HIPBLAS_R_16F, N, N * K, A, HIPBLAS_R_16F, K,
+              0, &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_R_16F,
+              HIPBLAS_GEMM_DEFAULT);
+         hipStreamSynchronize(hipStreamHandle);
+      });
+    });
+#else
+    int64_t M_ = M;
+    int64_t N_ = N;
+    int64_t K_ = K;
+    oneapi::mkl::blas::column_major::gemm_batch(
+        sycl_queue, transpose_type_notranspose, transpose_type_notranspose, N_,
+        M_, K_, alpha, B, N_, N_ * K_, A, K_, 0, beta, Out, N_, N_ * M_,
+        batchSize);
+#endif
 }
 
 template <>
@@ -2367,6 +2391,10 @@ static void cublasXGemmBatched(transpose_type transa,
     });
   }
   #else
+    int64_t strideA = transa == transpose_type_transpose ? lda * m : lda * k;
+    int64_t strideB = transb == transpose_type_transpose ? ldb * k : ldb * n;
+    int64_t strideC = ldc * n;
+
     oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const float *)A, lda, strideA, (const float *)B, ldb, strideB, beta, (float *)C, ldc, strideC, batchCount); 
   #endif
 }
