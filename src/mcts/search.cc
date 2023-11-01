@@ -1730,7 +1730,7 @@ void SearchWorker::PickNodesToExtendTask(
         // If Q is not rescaled it would give the wrong MUtility score.
         bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
                     search_->played_history_.Last().IsBlackToMove();
-        auto sign = (root_stm ^ search_->played_history_.Last().IsBlackToMove();) ? 1.0f : -1.0f;
+        auto sign = (root_stm ^ search_->played_history_.Last().IsBlackToMove()) ? 1.0f : -1.0f;
         WDLRescale(q, d, params_.GetWDLRescaleRatio(),
                search_->contempt_mode_ == ContemptMode::NONE
                    ? 0
