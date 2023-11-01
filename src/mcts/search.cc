@@ -1728,7 +1728,7 @@ void SearchWorker::PickNodesToExtendTask(
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
         float d = std::max(0.0f, 1.0f - q);
-        defendable = (q > 0.0f) && (search_->played_history_.Last().IsBlackToMove())
+        defendable = (q > 0.0f && search_->played_history_.Last().IsBlackToMove())
                       || (!search_->played_history_.Last().IsBlackToMove());
         if (defendable) {
         // Here Q needs to be rescaled so it can be used with MUtility.
@@ -2238,7 +2238,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
   // To use 0 comtempt as black if not winning.
-  bool defendable = (v > 0.0f) && (search_->played_history_.Last().IsBlackToMove())
+  bool defendable = (v > 0.0f && search_->played_history_.Last().IsBlackToMove())
                       || (!search_->played_history_.Last().IsBlackToMove());
   
   if (defendable) {
