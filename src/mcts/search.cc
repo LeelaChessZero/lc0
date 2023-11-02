@@ -111,7 +111,7 @@ class MEvaluator {
     const float child_m = std::round(child->GetM() / 2.0f);
     // Weighted average of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
-    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * (child_m - move_midpoint_)));
+    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * ((child_m - move_midpoint_) / 100.0f)));
     float m = (100.0f - child_m) / 200.0f;
     if (std::abs(q) > 0.90f) {
     q = std::tanh(q);
@@ -132,7 +132,7 @@ class MEvaluator {
     if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
     if (child.GetN() == 0) return GetDefaultMUtility();
     const float child_m = std::round(child.GetM(parent_m_) / 2.0f);
-    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * (child_m - move_midpoint_)));
+    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * ((child_m - move_midpoint_) / 100.0f)));
     float m = (100.0f - child_m) / 200.0f;
     if (std::abs(q) > 0.90f) {
     q = std::tanh(q);
