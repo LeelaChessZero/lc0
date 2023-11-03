@@ -100,10 +100,7 @@ class MEvaluator {
       parent_within_threshold_ = WithinThreshold(parent, q_threshold_);
     }
   }
-   // TODO: Bonan. Test without mish.
-   float Mish(float q) const {
-     return q * std::tanh(std::log(1.0f + std::exp(q)));
-     }
+  
    // Calculates the utility for favoring shorter wins and longer losses.
    float GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
@@ -125,22 +122,9 @@ class MEvaluator {
   // The M utility to use for unvisited nodes.
   float GetDefaultMUtility() const { return 0.0f; }
   
-  // Here I didn't want to do the wraping since 
-  // in EdgeAndNode we loop through edges instead 
-  // of nodes so I dont understand why we call child.node here.
   float GetMUtility(const EdgeAndNode& child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
-    if (child.GetN() == 0) return GetDefaultMUtility();
-    const float child_m = std::round(child.GetM(parent_m_) / 2.0f);
-    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * ((child_m - move_midpoint_) / 100.0f)));
-    float m = (100.0f - child_m) / 200.0f;
-    if (std::abs(q) > 0.90f) {
-    q = std::tanh(q);
-     }
-    // Add 1 to the value of q before taking the logarithm,
-    // to avoid getting undefined values.
-    m *= (1.0f - w) * q + w * (q + std::log(q + 1.0f) + 0.5f * q);
-    return m;
+    return GetMUtility(child.node(), q);
   }
 
   private:
