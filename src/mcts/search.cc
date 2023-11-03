@@ -1728,8 +1728,8 @@ void SearchWorker::PickNodesToExtendTask(
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
         float d = std::max(0.0f, 1.0f - q);
-        defendable = (q > 0.0f && search_->played_history_.Last().IsBlackToMove())
-                      || (!search_->played_history_.Last().IsBlackToMove());
+        defendable = (q > 0.0f && search_->played_history_.IsBlackToMove() == is_root_node)
+                      || (!search_->played_history_.IsBlackToMove() == is_root_node);
         if (defendable) {
         // Here Q needs to be rescaled so it can be used with MUtility.
         // If Q is not rescaled it would give the wrong MUtility score.
