@@ -100,7 +100,7 @@ class MEvaluator {
       parent_within_threshold_ = WithinThreshold(parent, q_threshold_);
     }
   }
-  
+ 
    // Calculates the utility for favoring shorter wins and longer losses.
    float GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
@@ -123,7 +123,8 @@ class MEvaluator {
   float GetDefaultMUtility() const { return 0.0f; }
   
   float GetMUtility(const EdgeAndNode& child, float q) const {
-    if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
+    if (!enabled_ || !parent_within_threshold_) return 0.0f;
+    if (child.GetN() == 0) return GetDefaultMUtility();
     return GetMUtility(child.node(), q);
   }
 
