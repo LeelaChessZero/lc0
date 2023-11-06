@@ -311,16 +311,18 @@ class SyclNetwork : public Network {
     // (Ampere)
     // It turns dynamically off based on filter count (see
     // ResidualBlock<DataType>::Eval)
+    // TODO: fix res_block_fusing.
     if (kNumFilters % 32 == 0 && std::is_same<sycl::half, DataType>::value) {
-      use_res_block_winograd_fuse_opt_ = true;
+      use_res_block_winograd_fuse_opt_ = false;
     } else {
       use_res_block_winograd_fuse_opt_ = false;
     }
     // Override if set in backend-opts.
+#if  0
     if (!options.IsDefault<bool>("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
     }
-
+#endif
     /*
     DPCT1005:86: The SYCL device version is different from CUDA Compute
     Compatibility. You may need to rewrite this code.
