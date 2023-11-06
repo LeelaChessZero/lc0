@@ -192,7 +192,7 @@ class Node {
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
                     Terminal type = Terminal::EndOfGame);
   // Makes the node not terminal and updates its visits.
-  void MakeNotTerminal();
+  void MakeNotTerminal(uint32_t visits = 0);
   void SetBounds(GameResult lower, GameResult upper);
 
   // If this node is not in the process of being expanded by another thread
