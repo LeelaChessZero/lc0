@@ -750,7 +750,30 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
         });
     });
 
-    #endif
+#elifdef USE_HIPBLAS
+    hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
+
+    sycl_queue.submit([&](sycl::handler &cgh) {
+      cgh.host_task([=](sycl::interop_handle ih) {
+
+        auto hipStreamHandle =
+            sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+        hipblasSetStream(handle, hipStreamHandle);
+
+        hipblasSgemm(handle, transpose_type_transpose,
+                     transpose_type_notranspose,numFc1Out_, N, C, &alpha,
+                     ((const sycl::half *)w1_), C, ((const sycl::half *)op2), C,
+                     &beta, ((sycl::half *)op1), numFc1Out_);
+
+        hipStreamSynchronize(hipStreamHandle);
+      });
+    });
+#else
+    oneapi::mkl::blas::column_major::gemm(
+        sycl_queue, transpose_type_transpose, transpose_type_notranspose,
+        numFc1Out_, N, C, alpha, ((const sycl::half *)w1_), C,
+        ((const sycl::half *)op2),C, beta, ((sycl::half *)op1), numFc1Out_);
+#endif
 
     addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, act_, sycl_queue);
 
@@ -774,8 +797,29 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
         });
     });  
     
-    #endif
-    
+#elifdef USE_HIPBLAS
+    sycl_queue.submit([&](sycl::handler &cgh) {
+      cgh.host_task([=](sycl::interop_handle ih) {
+        auto hipStreamHandle =
+            sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+        hipblasSetStream(handle, hipStreamHandle);
+
+        hipblasSgemm(
+            handle, transpose_type_transpose, transpose_type_notranspose, 2 * C,
+            N, numFc1Out_, &alpha,((const sycl::half *)w2_), numFc1Out_,
+            ((const sycl::half *)op1), numFc1Out_, &beta, ((sycl::half *)op2),
+            2 * C);
+
+        hipStreamSynchronize(hipStreamHandle);
+      });
+    });
+#else
+    oneapi::mkl::blas::column_major::gemm(
+        sycl_queue, transpose_type_transpose, transpose_type_notranspose, 2 * C,
+        N, numFc1Out_, alpha, ((const sycl::half *)w2_), numFc1Out_,
+        ((const sycl::half *)op1), numFc1Out_, beta, ((sycl::half *)op2),
+        2 * C);
+#endif
     
     addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE, sycl_queue);
 
@@ -898,8 +942,30 @@ template <>
         
        });
    });  
-   #endif     
-   
+#elifdef USE_HIPBLAS
+  hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
+  sycl_queue.submit([&](sycl::handler &cgh) {
+    cgh.host_task([=](sycl::interop_handle ih) {
+      auto hipStreamHandle =
+          sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+      hipblasSetStream(handle, hipStreamHandle);
+
+      hipblasSgemm(
+          handle, transpose_type_transpose, transpose_type_notranspose,
+          num_outputs, N, num_inputs, &alpha, ((const sycl::half *)weights_),
+          num_inputs, ((const sycl::half *)input_tensor), num_inputs, &beta,
+          ((sycl::half *)output_tensor), num_outputs);
+
+        hipStreamSynchronize(hipStreamHandle);
+      });
+  });
+#else
+  oneapi::mkl::blas::column_major::gemm(
+      sycl_queue, transpose_type_transpose, transpose_type_notranspose,
+      num_outputs, N, num_inputs, alpha, ((const sycl::half *)weights_),
+      num_inputs, ((const sycl::half *)input_tensor), num_inputs, beta,
+      ((sycl::half *)output_tensor), num_outputs);
+#endif
 
    if (use_bias_ || (act_ != ACTIVATION_NONE)) {
      addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
@@ -1274,8 +1340,33 @@ template <>
          });   
    });
   
-  #endif  
+#elifdef USE_HIPBLAS
+  hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
 
+  sycl_queue.submit([&](sycl::handler &cgh) {
+    cgh.host_task([=](sycl::interop_handle ih) {
+      auto hipStreamHandle =
+          sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+      hipblasSetStream(handle, hipStreamHandle);
+
+      hipblasGemmStridedBatchedEx(
+          handle, transpose_type_notranspose, transpose_type_notranspose, N, M,
+          K, &alpha, B, HIPBLAS_R_16F, N, N * K, A, HIPBLAS_R_16F, K, K * M,
+          &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_R_16F,
+          HIPBLAS_GEMM_DEFAULT);
+
+      hipStreamSynchronize(hipStreamHandle);
+    });
+  );
+#else
+  int64_t M_ = M;
+  int64_t N_ = N;
+  int64_t K_ = K;
+  oneapi::mkl::blas::column_major::gemm_batch(
+      sycl_queue, transpose_type_notranspose, transpose_type_notranspose, N_,
+      M_, K_, alpha, B, N_, N_ * K_, A, K_, K_ * M_, beta, Out, N_, N_ * M_,
+      batchSize);
+#endif
  }
 
 template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const float* B,
@@ -2217,8 +2308,8 @@ static void cublasXgemm(transpose_type transa,
         });
       });
   #else
-    oneapi::mkl::blas::column_major::gemm(sycl_queue, transa, transb, m, n, k, alpha, (const float *)A, lda,
-        (const float *)B, ldb, beta, (float *)C, ldc);
+    oneapi::mkl::blas::column_major::gemm(sycl_queue, transa, transb, m, n, k, alpha, (const DataType *)A, lda,
+        (const DataType *)B, ldb, beta, (DataType *)C, ldc);
   #endif
 
 }
@@ -2292,7 +2383,7 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
       });
     });
     #else
-      oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const float *)A, lda, strideA, (const float *)B, ldb, strideB, beta, (float *)C, ldc, strideC, batchCount); 
+      oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const DataType *)A, lda, strideA, (const DataType *)B, ldb, strideB, beta, (DataType *)C, ldc, strideC, batchCount);
     #endif
 }
 
@@ -2395,7 +2486,7 @@ static void cublasXGemmBatched(transpose_type transa,
     int64_t strideB = transb == transpose_type_transpose ? ldb * k : ldb * n;
     int64_t strideC = ldc * n;
 
-    oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const float *)A, lda, strideA, (const float *)B, ldb, strideB, beta, (float *)C, ldc, strideC, batchCount); 
+    oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const DataType *)A, lda, strideA, (const DataType *)B, ldb, strideB, beta, (DataType *)C, ldc, strideC, batchCount);
   #endif
 }
 

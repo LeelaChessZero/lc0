@@ -61,15 +61,22 @@ pause
 
 cd build
 
-ninja -d keeprsp
-
-if errorlevel 1 exit /b
-
-if exist lc0.exe.rsp (
+if not %SYCL%==off (
   setlocal EnableDelayedExpansion
-  for /f "delims=" %%f in (lc0.exe.rsp) do set x=%%f
-  set x=!x:"/SUBSYSTEM:CONSOLE"=!
-  echo !x:/MACHINE:x64=! > lc0.exe.rsp
-  if not %SYCL%==off icx -fsycl -o lc0.exe @lc0.exe.rsp
-  del lc0.exe.rsp
+  findstr /n ^^ build.ninja > foo_build
+  del build.ninja
+  for /f "delims=" %%f in (foo_build) do (
+    set x=%%f
+    set x=!x:"xilink.exe"="icx"!
+    set x=!x:/MACHINE:x64 /OUT:$out $in $LINK_ARGS= -fsycl -o $out $in $LINK_ARGS!
+    set x=!x:/SUBSYSTEM:CONSOLE=!
+    set x=!x:/OPT:REF=!
+    set x=!x: msvc= gcc!
+    set x=!x:/showIncludes=/QMD!
+    set x=!x:*:=!
+    echo(!x!>> build.ninja
+    if "!x!"==" deps = gcc" echo  depfile = $out.d>> build.ninja
+  )
 )
+del foo_build
+ninja
