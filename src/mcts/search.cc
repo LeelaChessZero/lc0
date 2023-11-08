@@ -2202,6 +2202,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
+  
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       (params_.GetWDLRescaleDiff() != 0.0f &&
        search_->contempt_mode_ != ContemptMode::NONE)) {
@@ -2214,7 +2215,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                    ? 0
                    : params_.GetWDLRescaleDiff(),
                sign, false);
-     }
   }
   node_to_process->v = v;
   node_to_process->d = d;
