@@ -103,16 +103,18 @@ class MEvaluator {
  
    // Calculates the utility for favoring shorter wins and longer losses.
    float GetMUtility(Node* child, float q) const {
-    if (!enabled_ || !parent_within_threshold_) return GetDefaultMUtility();
-    if (child->GetN() == 0) return GetDefaultMUtility();
+    if (!enabled_ || !parent_within_threshold_) 
+        return GetDefaultMUtility();
+    if (child->GetN() == 0) 
+        return GetDefaultMUtility();
+    float sign = FastSign(q);
     const float child_m = std::round(child->GetM() / 2.0f);
-    // Weighted average of movesleft to give greater priority to
+    // Weighted average(w) of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
-    float w = 1.0f / (1.0f + std::exp(steepness_factor_ * ((child_m - move_midpoint_) / 100.0f)));
-    float m = (100.0f - child_m) / 200.0f;
-    if (std::abs(q) > 0.90f) {
-    q = std::tanh(q);
-     }
+    float w = std::numeric_limits<float>::min();
+    w = 1.0f / (1.0f + std::exp((sign * steepness_factor_) 
+              * ((move_midpoint_ - child_m) / 200.0f)));
+    float m = (move_midpoint_ - child_m) / 200.0f;
     // Add 1 to the value of q before taking the logarithm,
     // to avoid getting undefined values.
     m *= (1.0f - w) * q + w * (q + std::log(q + 1.0f) + 0.5f * q);
@@ -1621,9 +1623,6 @@ void SearchWorker::PickNodesToExtendTask(
   const float odd_draw_score = search_->GetDrawScore(true);
   const auto& root_move_filter = search_->root_move_filter_;
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
-  bool defendable = false;
-  //bool defendable = static_cast<int>(reinterpret_cast<void*>(p));
-
   int max_limit = std::numeric_limits<int>::max();
 
   current_path.push_back(-1);
@@ -1712,21 +1711,6 @@ void SearchWorker::PickNodesToExtendTask(
         int index = child->Index();
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
-        float d = std::max(0.0f, 1.0f - q);
-        defendable = (q > 0.0f && search_->played_history_.IsBlackToMove() == is_root_node)
-                      || (!search_->played_history_.IsBlackToMove() == is_root_node);
-        if (defendable) {
-        // Here Q needs to be rescaled so it can be used with MUtility.
-        // If Q is not rescaled it would give the wrong MUtility score.
-        bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
-                    search_->played_history_.Last().IsBlackToMove();
-        auto sign = (root_stm ^ search_->played_history_.Last().IsBlackToMove()) ? 1.0f : -1.0f;
-        WDLRescale(q, d, params_.GetWDLRescaleRatio(),
-               search_->contempt_mode_ == ContemptMode::NONE
-                   ? 0
-                   : params_.GetWDLRescaleDiff(),
-               sign, false);
-        } 
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
       const float fpu =
@@ -2222,11 +2206,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
-  // To use 0 comtempt as black if not winning.
-  bool defendable = (v > 0.0f && search_->played_history_.Last().IsBlackToMove())
-                      || (!search_->played_history_.Last().IsBlackToMove());
-  
-  if (defendable) {
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       (params_.GetWDLRescaleDiff() != 0.0f &&
        search_->contempt_mode_ != ContemptMode::NONE)) {
