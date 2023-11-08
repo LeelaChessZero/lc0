@@ -111,8 +111,7 @@ class MEvaluator {
     const float child_m = std::round(child->GetM() / 2.0f);
     // Weighted average(w) of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
-    float w = std::numeric_limits<float>::lowest();
-    w = 1.0f / (1.0f + std::exp((sign * steepness_factor_) 
+    float w = 1.0f / (1.0f + std::exp((sign * steepness_factor_) 
               * ((move_midpoint_ - child_m) / 200.0f)));
     float m = (move_midpoint_ - child_m) / 200.0f;
     // Add 1 to the value of q before taking the logarithm,
