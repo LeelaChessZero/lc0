@@ -321,8 +321,8 @@ const OptionId SearchParams::kHistoryFillId{
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SearchParams::kMovesLeftMidpointMoveId{
     "moves-left-midpoint-move", "MovesLeftMidpointMove",
-    "determines the maximum value of the curve,"
-	"which is the highest possible Mutility value."};
+    "determines where the curve crosses the y-axis,"
+	"where the value of the calculation for m gets negative."};
 const OptionId SearchParams::kMovesLeftThresholdId{
     "moves-left-threshold", "MovesLeftThreshold",
     "Absolute value of node Q needs to exceed this value before shorter wins "
@@ -330,7 +330,8 @@ const OptionId SearchParams::kMovesLeftThresholdId{
 const OptionId SearchParams::kMovesLeftSteepnessFactorId{
     "moves-left-steepness-factor", "MovesLeftSteepnessFactor",
     "This sets the steepness of the curve," 
-	"which is how quickly the Mutility value changes as the moves-left decrease."};
+	"which is how quickly the Mutility value changes as the moves-left decrease."
+    "How high or low the curve of the sigmoid goes"};
 const OptionId SearchParams::kDisplayCacheUsageId{
     "display-cache-usage", "DisplayCacheUsage",
     "Display cache fullness through UCI info `hash` section."};
@@ -501,7 +502,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kMovesLeftMidpointMoveId, 0.0f, 200.0f) = 100.0f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftSteepnessFactorId, -1.0f, 1.0f) = -0.05f;
+  options->Add<FloatOption>(kMovesLeftSteepnessFactorId, -1.0f, 1.0f) = 0.0005f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
   options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
