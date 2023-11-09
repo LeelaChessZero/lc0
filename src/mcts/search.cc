@@ -102,12 +102,12 @@ class MEvaluator {
   }
  
    // Calculates the utility for favoring shorter wins and longer losses.
-   float GetMUtility(Node* child, float q) const {
+   float GetMUtility(Node* child, float q, bool is_black_to_move) const {
     if (!enabled_ || !parent_within_threshold_) 
         return GetDefaultMUtility();
     if (child->GetN() == 0) 
         return GetDefaultMUtility();
-    float sign = FastSign(q);
+    float sign = (is_black_to_move) ? -1.0f : 1.0f;
     const float child_m = std::round(child->GetM() / 2.0f);
     // Weighted average(w) of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
@@ -123,10 +123,10 @@ class MEvaluator {
   // The M utility to use for unvisited nodes.
   float GetDefaultMUtility() const { return 0.0f; }
   
-  float GetMUtility(const EdgeAndNode& child, float q) const {
+  float GetMUtility(const EdgeAndNode& child, float q, bool is_black_to_move) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     if (child.GetN() == 0) return GetDefaultMUtility();
-    return GetMUtility(child.node(), q);
+    return GetMUtility(child.node(), q, is_black_to_move);
   }
 
   private:
@@ -534,7 +534,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                : MEvaluator();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
-    float M = m_evaluator.GetMUtility(edge, Q);
+    float M = m_evaluator.GetMUtility(edge, Q, is_black_to_move);
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
@@ -948,7 +948,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     for (const auto& edge : root_node_->Edges()) {
       const auto n = edge.GetN();
       const auto q = edge.GetQ(fpu, draw_score);
-      const auto m = m_evaluator.GetMUtility(edge, q);
+      const auto m = m_evaluator.GetMUtility(edge, q, false);
       const auto q_plus_m = q + m;
       stats->edge_n.push_back(n);
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
@@ -1619,6 +1619,7 @@ void SearchWorker::PickNodesToExtendTask(
   const auto& root_move_filter = search_->root_move_filter_;
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
   int max_limit = std::numeric_limits<int>::max();
+  bool is_black_to_move = (search_->played_history_.IsBlackToMove() == is_root_node);
 
   current_path.push_back(-1);
   while (current_path.size() > 0) {
@@ -1706,7 +1707,7 @@ void SearchWorker::PickNodesToExtendTask(
         int index = child->Index();
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
-        current_util[index] = q + m_evaluator.GetMUtility(child, q);
+        current_util[index] = q + m_evaluator.GetMUtility(child, q, is_black_to_move);
       }
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
