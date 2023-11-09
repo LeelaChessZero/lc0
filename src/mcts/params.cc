@@ -321,7 +321,7 @@ const OptionId SearchParams::kHistoryFillId{
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SearchParams::kMovesLeftMidpointMoveId{
     "moves-left-midpoint-move", "MovesLeftMidpointMove",
-    "determines where the curve crosses the y-axis,"
+    "determines where the curve-value crosses the y-axis,"
 	"where the value of the calculation for m gets negative."};
 const OptionId SearchParams::kMovesLeftThresholdId{
     "moves-left-threshold", "MovesLeftThreshold",
@@ -331,7 +331,7 @@ const OptionId SearchParams::kMovesLeftSteepnessFactorId{
     "moves-left-steepness-factor", "MovesLeftSteepnessFactor",
     "This sets the steepness of the curve," 
 	"which is how quickly the Mutility value changes as the moves-left decrease."
-    "How high or low the curve of the sigmoid goes"};
+    "How high or low the curve-value goes"};
 const OptionId SearchParams::kDisplayCacheUsageId{
     "display-cache-usage", "DisplayCacheUsage",
     "Display cache fullness through UCI info `hash` section."};
