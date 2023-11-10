@@ -105,11 +105,13 @@ class MEvaluator {
    float GetMUtility(Node* child, float q, bool is_black_to_move) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     if (child->GetN() == 0) return 0.0f;
-    float sign = (is_black_to_move) ? -1.0f : 1.0f;
+    // This variable is to help when playing as black,
+    // so we dont defend too agressively.
+    float utility_factor = (is_black_to_move) ? 0.1f : 1.0f;
     const float child_m = std::round(child->GetM() / 2.0f);
     // Weighted average(w) of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
-    float w = 1.0f / (1.0f + std::exp((sign * steepness_factor_) 
+    float w = 1.0f / (1.0f + std::exp((utility_factor * steepness_factor_) 
               * ((move_midpoint_ - child_m) / 200.0f)));
     float m = (move_midpoint_ - child_m) / 200.0f;
     // Add 1 to the value of q before taking the logarithm,
