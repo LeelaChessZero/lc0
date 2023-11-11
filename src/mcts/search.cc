@@ -107,7 +107,7 @@ class MEvaluator {
     if (child->GetN() == 0) return 0.0f;
     // This variable is to help when playing as black,
     // so we dont defend too agressively.
-    float utility_factor = (is_black_to_move) ? 0.1f : 1.0f;
+    float utility_factor = (is_black_to_move) ? -1.0f : 1.0f;
     const float child_m = std::round(child->GetM() / 2.0f);
     // Weighted average(w) of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
