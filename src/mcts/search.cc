@@ -111,7 +111,7 @@ class MEvaluator {
     // Weighted average(w) of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
     const double w = 1.0f / (1.0f + std::exp((utility_factor * steepness_factor_) 
-              * ((move_midpoint_ - child_m) / 200.0f)));
+                     * ((move_midpoint_ - child_m) / 200.0f)));
     double m = std::numeric_limits<float>::lowest();
     m = ((move_midpoint_ - child_m) / 200.0f);
     if (std::abs(q) < 0.90f){
