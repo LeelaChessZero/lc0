@@ -114,7 +114,7 @@ class MEvaluator {
                      * ((move_midpoint_ - child_m) / 200.0f)));
     double m = std::numeric_limits<float>::lowest();
     m = ((move_midpoint_ - child_m) / 200.0f);
-    if (std::abs(q) < 0.90f){
+    if (std::abs(q) < 0.90f) {
         q = std::tanh(q);
     }
     // Add 1 to the value of q before taking the logarithm,
