@@ -102,34 +102,27 @@ class MEvaluator {
   }
  
    // Calculates the utility for favoring shorter wins and longer losses.
-   double GetMUtility(Node* child, float q, bool is_black_to_move) const {
+   double GetMUtility(Node* child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
-    // This variable is to help when playing as black,
-    // so we dont defend too agressively.
-    const float utility_factor = is_black_to_move ? -1.0f : 1.0f;
     const float child_m = std::round(child->GetM() / 2.0f);
     // Weighted average(w) of movesleft to give greater priority to
     // shorter moves when winning and longer moves when losing.
-    const double w = 1.0f / (1.0f + std::exp((utility_factor * steepness_factor_) 
+    double w = 1.0f / (1.0f + std::exp((steepness_factor_) 
                      * ((move_midpoint_ - child_m) / 200.0f)));
-    double m = std::numeric_limits<float>::lowest();
-    m = ((move_midpoint_ - child_m) / 200.0f);
-    if (std::abs(q) < 0.90f) {
-        q = std::tanh(q);
-    }
+    double m = ((move_midpoint_ - child_m) / 200.0f);
     // Add 1 to the value of q before taking the logarithm,
     // to avoid getting undefined values.
-    m *= (1.0f - w) * q + w * (q + std::log(q + 1.0f) + 0.5f * q);
+    m *= (1.0f - w) * q + w * (std::copysign(1.0f, q) * (std::log(std::abs(q) + 1) + 0.5f * q));
     return m;
   }
 
   // The M utility to use for unvisited nodes.
   float GetDefaultMUtility() const { return 0.0f; }
   
-  double GetMUtility(const EdgeAndNode& child, float q, bool is_black_to_move) const {
+  double GetMUtility(const EdgeAndNode& child, float q) const {
     if (!enabled_ || !parent_within_threshold_) return 0.0f;
     if (child.GetN() == 0) return 0.0f;
-    return GetMUtility(child.node(), q, is_black_to_move);
+    return GetMUtility(child.node(), q);
   }
 
   private:
@@ -537,7 +530,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                                : MEvaluator();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
-    float M = m_evaluator.GetMUtility(edge, Q, is_black_to_move);
+    float M = m_evaluator.GetMUtility(edge, Q);
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
@@ -945,15 +938,13 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     float max_q_plus_m = -1000;
     uint64_t max_n = 0;
     bool max_n_has_max_q_plus_m = true;
-    const bool is_root = root_node_;
-    const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
     const auto m_evaluator = network_->GetCapabilities().has_mlh()
                                  ? MEvaluator(params_, root_node_)
                                  : MEvaluator();
     for (const auto& edge : root_node_->Edges()) {
       const auto n = edge.GetN();
       const auto q = edge.GetQ(fpu, draw_score);
-      const auto m = m_evaluator.GetMUtility(edge, q, is_black_to_move);
+      const auto m = m_evaluator.GetMUtility(edge, q);
       const auto q_plus_m = q + m;
       stats->edge_n.push_back(n);
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
@@ -1624,7 +1615,6 @@ void SearchWorker::PickNodesToExtendTask(
   const auto& root_move_filter = search_->root_move_filter_;
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
   int max_limit = std::numeric_limits<int>::max();
-  bool is_black_to_move = search_->played_history_.Last().IsBlackToMove();
 
   current_path.push_back(-1);
   while (current_path.size() > 0) {
@@ -1712,7 +1702,7 @@ void SearchWorker::PickNodesToExtendTask(
         int index = child->Index();
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
-        current_util[index] = q + m_evaluator.GetMUtility(child, q, is_black_to_move);
+        current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
