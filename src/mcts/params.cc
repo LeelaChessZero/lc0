@@ -284,7 +284,7 @@ const OptionId SearchParams::kOutOfOrderEvalId{
     "in the cache or is terminal, evaluate it right away without sending the "
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
-const OptionId SearchParams::kMaxOutOfOrderEvalsId{
+const OptionId SearchParams::kMaxOutOfOrderEvalsFactorId{
     "max-out-of-order-evals-factor", "MaxOutOfOrderEvalsFactor",
     "Maximum number of out of order evals during gathering of a batch is "
     "calculated by multiplying the maximum batch size by this number."};
@@ -494,7 +494,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMaxCollisionVisitsScalingPowerId, 0.01, 100) =
       1.25;
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
-  options->Add<FloatOption>(kMaxOutOfOrderEvalsId, 0.0f, 100.0f) = 2.4f;
+  options->Add<FloatOption>(kMaxOutOfOrderEvalsFactorId, 0.0f, 100.0f) = 2.4f;
   options->Add<BoolOption>(kStickyEndgamesId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = false;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
@@ -634,7 +634,8 @@ SearchParams::SearchParams(const OptionsDict& options)
                     options.Get<float>(kContemptMaxValueId),
                     options.Get<float>(kWDLContemptAttenuationId))),
       kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
-      kMaxOutOfOrderEvals(options.Get<float>(kMaxOutOfOrderEvalsId)),
+      kMaxOutOfOrderEvalsFactor(
+          options.Get<float>(kMaxOutOfOrderEvalsFactorId)),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
       kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
       kTaskWorkersPerSearchWorker(

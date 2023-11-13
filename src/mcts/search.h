@@ -227,7 +227,7 @@ class SearchWorker {
       target_minibatch_size_ = search_->network_->GetMiniBatchSize();
     }
     max_out_of_order_ =
-        std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvals() *
+        std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvalsFactor() *
                                      target_minibatch_size_));
   }
 
