@@ -82,8 +82,8 @@ class OnnxComputation : public NetworkComputation {
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider, int gpu, int threads, bool fp16,
-              int batch_size, int steps);
+              OnnxProvider provider, int gpu, int threads, int batch_size,
+              int steps);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
@@ -321,13 +321,13 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
 }
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
-                         OnnxProvider provider, int gpu, int threads, bool fp16,
+                         OnnxProvider provider, int gpu, int threads,
                          int batch_size, int steps)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       steps_(steps),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
-      fp16_(fp16),
+      fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
       batch_size_(batch_size),
       provider_(provider) {
   // Sanity checks.
@@ -396,7 +396,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
-                                         false, batch_size, steps);
+                                         batch_size, steps);
   } else {
     if (w->format().network_format().network() !=
             pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
@@ -448,7 +448,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
-                                         threads, fp16, batch_size, steps);
+                                         threads, batch_size, steps);
   }
 }
 

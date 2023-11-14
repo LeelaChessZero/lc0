@@ -376,10 +376,14 @@ class ProtoFieldParser:
                 w.Write("%s* add_%s();" % (cpp_type, name))
             else:
                 w.Write("void add_%s(%s val);" % (name, cpp_type))
+            # Using a vector here breaks API compatibility with the standard
+            # protobuf library, but it is more convenient.
             w.Write("const std::vector<%s>& %s() const;" %
                     (var_cpp_type, name))
+            w.Write("std::vector<%s>* mutable_%s();" % (var_cpp_type, name))
             if self.type.IsMessage():
                 w.Write("const %s& %s(size_t idx) const;" % (cpp_type, name))
+                w.Write("%s* mutable_%s(size_t idx);" % (cpp_type, name))
             else:
                 w.Write("%s %s(size_t idx) const;" % (cpp_type, name))
             w.Write("size_t %s_size() const;" % (name))
@@ -408,9 +412,15 @@ class ProtoFieldParser:
             w.Write(
                 "inline const std::vector<%s>& %s::%s() const { return %s_; }"
                 % (var_cpp_type, class_name, name, name))
+            w.Write(
+                "inline std::vector<%s>* %s::mutable_%s() { return &%s_; }"
+                % (var_cpp_type, class_name, name, name))
             if self.type.IsMessage():
                 w.Write(
                     "inline const %s& %s::%s(size_t idx) const { return %s_[idx]; }"
+                    % (cpp_type, class_name, name, name))
+                w.Write(
+                    "inline %s* %s::mutable_%s(size_t idx) { return &%s_[idx]; }"
                     % (cpp_type, class_name, name, name))
             else:
                 w.Write(

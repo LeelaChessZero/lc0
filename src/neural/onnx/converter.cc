@@ -884,6 +884,9 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   LegacyWeights weights(src_.weights());
   OnnxBuilder builder(options_.opset);
 
+  onnx->set_data_type(GetDataType() == pblczero::TensorProto::FLOAT16
+                          ? pblczero::OnnxModel::FLOAT16
+                          : pblczero::OnnxModel::FLOAT);
   onnx->set_input_planes(options_.input_planes_name);
   builder.AddInput(options_.input_planes_name, {options_.batch_size, 112, 8, 8},
                    GetDataType());
