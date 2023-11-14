@@ -75,6 +75,43 @@ std::tuple<float, float> DriftCorrect(float q, float d) {
   }
   return {q, d};
 }
+
+Eval CalculateOriginalEval(const Node* node) {
+  double n = node->GetN();
+  double q = -node->GetWL() * n;
+  double d = node->GetD() * n;
+  double m = node->GetM() * n - n + 1;
+
+  for (auto& edge : node->Edges()) {
+    double n = edge.GetN();
+    q -= edge.GetWL(0) * n;
+    d -= edge.GetD(0) * n;
+    m -= edge.GetM(0) * n;
+  }
+
+  // Checks to compensate for drift.
+  if (q > 1.0f) {
+    q = 1.0f;
+  } else if (q < -1.0f) {
+    q = -1.0f;
+  }
+
+  if (d > 1.0f) {
+    d = 1.0f;
+  } else if (d < 0.0f) {
+    d = 0.0f;
+  }
+
+  Eval result;
+
+  result.wl = q;
+  result.d = d;
+  result.ml = m;
+
+  DriftCorrect(&result.wl, &result.d);
+
+  return result;
+}
 }  // namespace
 
 void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
@@ -227,7 +264,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   if (best_is_proven) {
     result.invariance_info |= 1u << 3;  // Best node is proven best;
   }
-  result.dummy = 0;
+  result.info2 = 0;
   result.rule50_count = position.GetRule50Ply();
 
   // Game result is undecided.
@@ -235,14 +272,14 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   result.result_d = 1;
 
   Eval orig_eval;
+  // If cached values exist, use those.
   if (nneval) {
     orig_eval.wl = nneval->q;
     orig_eval.d = nneval->d;
     orig_eval.ml = nneval->m;
   } else {
-    orig_eval.wl = std::numeric_limits<float>::quiet_NaN();
-    orig_eval.d = std::numeric_limits<float>::quiet_NaN();
-    orig_eval.ml = std::numeric_limits<float>::quiet_NaN();
+    orig_eval = CalculateOriginalEval(node);
+    result.info2 |= (1u << 7);
   }
 
   // Aggregate evaluation WL.
