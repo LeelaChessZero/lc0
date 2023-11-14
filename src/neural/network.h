@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -107,6 +107,7 @@ class Network {
   virtual const NetworkCapabilities& GetCapabilities() const = 0;
   virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
   virtual void InitThread(int /*id*/) {}
+  virtual int GetMiniBatchSize() const { return 256; }
   virtual ~Network() = default;
 };
 

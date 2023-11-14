@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2019 The LCZero Authors
+  Copyright (C) 2018-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1246,9 +1246,9 @@ void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
   computation_ = std::make_unique<CachingComputation>(std::move(computation),
                                                       search_->cache_);
-  computation_->Reserve(params_.GetMiniBatchSize());
+  computation_->Reserve(target_minibatch_size_);
   minibatch_.clear();
-  minibatch_.reserve(2 * params_.GetMiniBatchSize());
+  minibatch_.reserve(2 * target_minibatch_size_);
 }
 
 // 2. Gather minibatch.
@@ -1299,8 +1299,8 @@ void SearchWorker::GatherMinibatch() {
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
-  while (minibatch_size < params_.GetMiniBatchSize() &&
-         number_out_of_order_ < params_.GetMaxOutOfOrderEvals()) {
+  while (minibatch_size < target_minibatch_size_ &&
+         number_out_of_order_ < max_out_of_order_) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
 
@@ -1322,8 +1322,8 @@ void SearchWorker::GatherMinibatch() {
     int new_start = static_cast<int>(minibatch_.size());
 
     PickNodesToExtend(
-        std::min({collisions_left, params_.GetMiniBatchSize() - minibatch_size,
-                  params_.GetMaxOutOfOrderEvals() - number_out_of_order_}));
+        std::min({collisions_left, target_minibatch_size_ - minibatch_size,
+                  max_out_of_order_ - number_out_of_order_}));
 
     // Count the non-collisions.
     int non_collisions = 0;

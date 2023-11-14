@@ -217,6 +217,7 @@ class CudaNetwork : public Network {
     showDeviceInfo(deviceProp);
 
     l2_cache_size_ = deviceProp.l2CacheSize;
+    sm_count_ = deviceProp.multiProcessorCount;
 
     allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
 
@@ -895,6 +896,11 @@ class CudaNetwork : public Network {
     return capabilities_;
   }
 
+  int GetMiniBatchSize() const override {
+    // Simple heuristic that seems to work for a wide range of GPUs.
+    return 2 * sm_count_;
+  }
+
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
@@ -931,6 +937,7 @@ class CudaNetwork : public Network {
   const NetworkCapabilities capabilities_;
   int gpu_id_;
   int l2_cache_size_;
+  int sm_count_;
   int max_batch_size_;
   bool wdl_;
   bool moves_left_;
