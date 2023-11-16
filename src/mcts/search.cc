@@ -112,7 +112,7 @@ class MEvaluator {
     double m = ((move_midpoint_ - child_m) / 200.0f);
     // Add 1 to the value of q before taking the logarithm,
     // to avoid getting undefined values.
-    m *= (1.0f - w) * q + w * (std::copysign(1.0f, q) * (std::log(std::abs(q) + 1) + 0.5f * q));
+    m *= (1.0f - w) * q + w * ((std::copysign(1.0f, q) * std::log(std::abs(q) + 1)) + 0.5f * q);
     return m;
   }
 
