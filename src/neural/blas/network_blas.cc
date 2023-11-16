@@ -167,9 +167,9 @@ class BlasNetwork : public Network {
     return capabilities_;
   }
 
-  int GetMiniBatchSize() const override {
-    return 7;
-  }
+  int GetMiniBatchSize() const override { return 7; }
+
+  bool IsCpu() const override { return true; }
 
   void InitThread(int id) override { Numa::BindThread(id); }
 

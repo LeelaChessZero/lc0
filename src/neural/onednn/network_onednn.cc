@@ -801,8 +801,10 @@ class OnednnNetwork : public Network {
     return capabilities_;
   }
 
-  int GetMiniBatchSize() const override {
-    return batch_size_ * steps_;
+  int GetMiniBatchSize() const override { return batch_size_ * steps_; }
+
+  bool IsCpu() const override {
+    return eng_.get_kind() == dnnl::engine::kind::cpu;
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {

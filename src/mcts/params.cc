@@ -405,7 +405,8 @@ const OptionId SearchParams::kSolidTreeThresholdId{
     "solidification for improved cache locality."};
 const OptionId SearchParams::kTaskWorkersPerSearchWorkerId{
     "task-workers", "TaskWorkers",
-    "The number of task workers to use to help the search worker."};
+    "The number of task workers to use to help the search worker. Setting to "
+    "-1 will use a heuristic value."};
 const OptionId SearchParams::kMinimumWorkSizeForProcessingId{
     "minimum-processing-work", "MinimumProcessingWork",
     "This many visits need to be gathered before tasks will be used to "
@@ -536,8 +537,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
-  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) =
-      DEFAULT_TASK_WORKERS;
+  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = -1;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
   options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
   options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =
