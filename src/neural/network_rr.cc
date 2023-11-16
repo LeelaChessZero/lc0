@@ -60,6 +60,10 @@ class RoundRobinNetwork : public Network {
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
 
+    min_batch_size_ =
+        std::min(min_batch_size_, networks_.back()->GetMiniBatchSize());
+    is_cpu_ &= networks_.back()->IsCpu();
+
     if (networks_.size() == 1) {
       capabilities_ = networks_.back()->GetCapabilities();
     } else {
@@ -76,12 +80,20 @@ class RoundRobinNetwork : public Network {
     return capabilities_;
   }
 
+  int GetMiniBatchSize() const override { return min_batch_size_; }
+
+  int GetThreads() const override { return networks_.size(); }
+
+  bool IsCpu() const override { return is_cpu_; }
+
   ~RoundRobinNetwork() {}
 
  private:
   std::vector<std::unique_ptr<Network>> networks_;
   std::atomic<long long> counter_;
   NetworkCapabilities capabilities_;
+  int min_batch_size_ = std::numeric_limits<int>::max();
+  bool is_cpu_ = true;
 };
 
 std::unique_ptr<Network> MakeRoundRobinNetwork(
