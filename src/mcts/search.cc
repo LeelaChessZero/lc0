@@ -110,9 +110,12 @@ class MEvaluator {
     double w = 1.0f / (1.0f + std::exp((steepness_factor_) 
                      * ((move_midpoint_ - child_m) / 200.0f)));
     double m = ((move_midpoint_ - child_m) / 200.0f);
-    // Add 1 to the value of q before taking the logarithm,
+    // Add 1 to the value before taking the logarithm,
     // to avoid getting undefined values.
-    m *= (1.0f - w) * q + w * ((std::copysign(1.0f, q) * std::log(std::abs(q) + 1)) + 0.5f * q);
+    // use abs and copysign to protect against -inf 
+    // when q negative.
+    float log = std::copysign(1.0f, q) * std::log(std::abs(q) + 1.0f);
+    m *= (1.0f - w) * q + w * (log + 0.5f * q);
     return m;
   }
 
