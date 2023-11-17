@@ -647,6 +647,11 @@ if get_option('build_backends')
       else
         error('Building SYCL for the NVIDIA backend not yet supported')
       endif
+      if host_machine.system() == 'windows'
+        # For sycl under windows we need to link using icx to generate the device code.
+        # This script edits build.ninja for this and for an icx dependency issue.
+        meson.add_postconf_script('scripts/sycl_build_hack.py')
+      endif
   endif
 
 endif # if get_option('build_backends')

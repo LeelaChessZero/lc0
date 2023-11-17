@@ -27,12 +27,9 @@ rem 3. In most cases you won't need to change anything further down.
 echo Deleting build directory:
 rd /s build
 
-set CC=icx
+rem Use cl for C files to get a resource compiler as needed for zlib.
+set CC=cl
 set CXX=icx
-
-set WINDRES=rc
-
-set backend=ninja
 
 set BLAS=true
 if %MKL%==false if %DNNL%==false if %OPENBLAS%==false if %EIGEN%==false set BLAS=false
@@ -47,7 +44,7 @@ if "%CUDA_PATH%"=="%CUDNN_PATH%" (
 
 if %CUDNN%==true set PATH=%CUDA_PATH%\bin;%PATH%
 
-meson build --backend %backend% --buildtype release -Ddx=%DX12% -Dcudnn=%CUDNN% -Dplain_cuda=%CUDA% ^
+meson setup build --buildtype release -Ddx=%DX12% -Dcudnn=%CUDNN% -Dplain_cuda=%CUDA% ^
 -Dopencl=%OPENCL% -Dblas=%BLAS% -Dmkl=%MKL% -Dopenblas=%OPENBLAS% -Ddnnl=%DNNL% -Dgtest=%TEST% ^
 -Dcudnn_include="%CUDNN_INCLUDE_PATH%" -Dcudnn_libdirs="%CUDNN_LIB_PATH%" ^
 -Dmkl_include="%MKL_PATH%\include" -Dmkl_libdirs="%MKL_PATH%\lib\intel64" -Ddnnl_dir="%DNNL_PATH%" ^
@@ -61,22 +58,4 @@ pause
 
 cd build
 
-if not %SYCL%==off (
-  setlocal EnableDelayedExpansion
-  findstr /n ^^ build.ninja > foo_build
-  del build.ninja
-  for /f "delims=" %%f in (foo_build) do (
-    set x=%%f
-    set x=!x:"xilink.exe"="icx"!
-    set x=!x:/MACHINE:x64 /OUT:$out $in $LINK_ARGS= -fsycl -o $out $in $LINK_ARGS!
-    set x=!x:/SUBSYSTEM:CONSOLE=!
-    set x=!x:/OPT:REF=!
-    set x=!x: msvc= gcc!
-    set x=!x:/showIncludes=/QMD!
-    set x=!x:*:=!
-    echo(!x!>> build.ninja
-    if "!x!"==" deps = gcc" echo  depfile = $out.d>> build.ninja
-  )
-)
-del foo_build
 ninja
