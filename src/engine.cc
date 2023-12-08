@@ -39,10 +39,9 @@
 
 namespace lczero {
 namespace {
-const int kDefaultThreads = 2;
-
-const OptionId kThreadsOptionId{"threads", "Threads",
-                                "Number of (CPU) worker threads to use.", 't'};
+const OptionId kThreadsOptionId{
+    "threads", "Threads",
+    "Number of (CPU) worker threads to use, 0 for the backend default.", 't'};
 const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
                           "output the log to the console.",
@@ -97,7 +96,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   const bool is_simple =
       CommandLine::BinaryName().find("simple") != std::string::npos;
   NetworkFactory::PopulateOptions(options);
-  options->Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
+  options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
   SearchParams::Populate(options);
 

@@ -98,6 +98,7 @@ class OnnxNetwork : public Network {
     return batch_size_ == -1 ? Network::GetMiniBatchSize()
                              : batch_size_ * steps_;
   }
+  bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;

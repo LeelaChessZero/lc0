@@ -216,7 +216,18 @@ class SearchWorker {
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
     search_->network_->InitThread(id);
-    for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
+    task_workers_ = params.GetTaskWorkersPerSearchWorker();
+    if (task_workers_ < 0) {
+      if (search_->network_->IsCpu()) {
+        task_workers_ = 0;
+      } else {
+        int working_threads = std::max(
+            search_->thread_count_.load(std::memory_order_acquire) - 1, 1);
+        task_workers_ = std::min(
+            std::thread::hardware_concurrency() / working_threads - 1, 4U);
+      }
+    }
+    for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
       task_threads_.emplace_back([this, i]() {
         this->RunTasks(i);
@@ -459,6 +470,7 @@ class SearchWorker {
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
+  int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;
   // History is reset and extended by PickNodeToExtend().
