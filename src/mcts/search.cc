@@ -1515,8 +1515,19 @@ int SearchWorker::WaitForTasks() {
   }
 }
 
+void SearchWorker::ProactivelyNotifyTaskWorkers() {
+  if (task_workers_ <= 0 || search_->network_->IsCpu())
+    return;
+
+  // While nothing is ready yet - wake the task runners so they are ready to
+  // receive quickly.
+  Mutex::Lock lock(picking_tasks_mutex_);
+  task_added_.notify_all();
+}
+
 void SearchWorker::PickNodesToExtend(int collision_limit) {
   ResetTasks();
+  ProactivelyNotifyTaskWorkers();
   std::vector<Move> empty_movelist;
   // This lock must be held until after the task_completed_ wait succeeds below.
   // Since the tasks perform work which assumes they have the lock, even though
