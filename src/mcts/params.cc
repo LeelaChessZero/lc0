@@ -537,7 +537,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
-  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, 0, 128) = -1;
+  options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, -1, 128) = -1;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
   options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
   options->Add<IntOption>(kMinimumRemainingWorkSizeForPickingId, 0, 100000) =
