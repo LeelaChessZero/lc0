@@ -448,9 +448,9 @@ if get_option('build_backends')
     if get_option('cudnn') and cu_dnn.found()
       deps += cu_dnn
       cuda_files += 'src/neural/cuda/network_cudnn.cc'
+      cuda_files += 'src/neural/cuda/network_cuda.cc' # To support newer nets.
       add_project_arguments('-DUSE_CUDNN', language : 'cpp')
-    endif
-    if get_option('plain_cuda')
+    elif get_option('plain_cuda')
       cuda_files += 'src/neural/cuda/network_cuda.cc'
     endif
     foreach d : get_option('cudnn_include')
