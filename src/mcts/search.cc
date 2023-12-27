@@ -239,7 +239,7 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
     auto s = 2 / (a + b);
     // Safeguard against unrealistically broad WDL distributions coming from
     // the NN. Could be made into a parameter, but probably unnecessary.
-    const float max_reasonable_s = 1.4f;
+    const float max_reasonable_s = 4.0f;
     if (!invert) s = std::min(max_reasonable_s, s);
     auto mu = (a - b) / (a + b);
     auto s_new = s * wdl_rescale_ratio;
