@@ -35,6 +35,7 @@
 #include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
 #include "utils/files.h"
+#include "utils/fp16_utils.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -81,8 +82,6 @@ const OptionId kMovesLeftFormatId("moves-left-format", "MovesLeftFormat",
                                   "Format of the moves left head output.");
 
 // ONNX options.
-const OptionId kOnnxDataTypeId("onnx-data-type", "OnnxDataType",
-                               "Data type to feed into the neural network.");
 const OptionId kOnnxInputId{"onnx-input", "OnnxInput",
                             "The name of the input ONNX node."};
 const OptionId kOnnxOutputValueId{
@@ -97,6 +96,12 @@ const OptionId kOnnxOutputMlhId{"onnx-output-mlh", "OnnxOutputMlh",
 
 const OptionId kValidateModelId{"validate-weights", "ValidateWeights",
                                 "Do a basic check of the provided ONNX file."};
+const OptionId kFixRule50Id{
+    "fix-rule50", "",
+    "Fix tensorflow exported onnx that needs rule50 input scaling."};
+const OptionId kFixWdlSoftmaxId{
+    "fix-wdl-softmax", "",
+    "Fix tensorflow exported onnx that is missing wdl output softmax."};
 
 bool ProcessParameters(OptionsParser* options) {
   using pblczero::NetworkFormat;
@@ -122,10 +127,6 @@ bool ProcessParameters(OptionsParser* options) {
                        NetworkFormat::MovesLeftFormat_Name)) =
       NetworkFormat::MovesLeftFormat_Name(NetworkFormat::MOVES_LEFT_V1);
   // Onnx options.
-  options->Add<ChoiceOption>(kOnnxDataTypeId,
-                             GetAllEnumValues(OnnxModel::DataType_AllValues,
-                                              OnnxModel::DataType_Name)) =
-      OnnxModel::DataType_Name(OnnxModel::FLOAT);
   options->Add<StringOption>(kOnnxInputId);
   options->Add<StringOption>(kOnnxOutputPolicyId);
   options->Add<StringOption>(kOnnxOutputValueId);
@@ -133,6 +134,8 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kOnnxOutputMlhId);
 
   options->Add<BoolOption>(kValidateModelId) = true;
+  options->Add<BoolOption>(kFixRule50Id) = false;
+  options->Add<BoolOption>(kFixWdlSoftmaxId) = false;
 
   if (!options->ProcessAllFlags()) return false;
 
@@ -142,10 +145,8 @@ bool ProcessParameters(OptionsParser* options) {
   return true;
 }
 
-bool ValidateNetwork(const pblczero::Net& weights) {
+bool ValidateNetwork(const pblczero::Net& weights, pblczero::ModelProto& onnx) {
   const auto& onnx_model = weights.onnx_model();
-  pblczero::ModelProto onnx;
-  onnx.ParseFromString(onnx_model.model());
 
   if (!onnx.has_ir_version()) {
     CERR << "ONNX file doesn't appear to have version specified. Likely not an "
@@ -230,6 +231,190 @@ bool ValidateNetwork(const pblczero::Net& weights) {
   return true;
 }
 
+void FixRule50(pblczero::ModelProto& model, const std::string& in, bool fp16) {
+  std::string name = "rule50fix";
+
+  for (size_t i = 0; i < model.graph().node_size(); i++) {
+    auto node = model.graph().node(i);
+    for (size_t j = 0; j < node.input_size(); j++) {
+      if (node.input(j) == in) {
+        CERR << "Inerting scaling between " << in << " and " << node.name();
+        model.mutable_graph()->mutable_node(i)->mutable_input()->at(j) =
+            std::string(name);
+      }
+    }
+  }
+
+  auto* init = model.mutable_graph()->add_initializer();
+  init->set_name(name + "_weights");
+  init->add_dims(112);
+  init->add_dims(1);
+  init->add_dims(1);
+  if (fp16) {
+    init->set_data_type(pblczero::TensorProto::FLOAT16);
+    std::vector<uint16_t> rule50weights(112, FP32toFP16(1.0f));
+    rule50weights[109] = FP32toFP16(1.0f / 99);
+    init->set_raw_data(
+        std::string(reinterpret_cast<const char*>(rule50weights.data()),
+                    rule50weights.size() * sizeof(uint16_t)));
+  } else {
+    init->set_data_type(pblczero::TensorProto::FLOAT);
+    std::vector<float> rule50weights(112, 1.0f);
+    rule50weights[109] = 1.0f / 99;
+    init->set_raw_data(
+        std::string(reinterpret_cast<const char*>(rule50weights.data()),
+                    rule50weights.size() * sizeof(float)));
+  }
+  auto* new_node = model.mutable_graph()->add_node();
+  new_node->set_name(name);
+  new_node->set_op_type("Mul");
+  new_node->add_input(in);
+  new_node->add_output(name);
+
+  new_node->add_input(name + "_weights");
+}
+
+void FixWdlSoftmax(pblczero::ModelProto& model, const std::string& out) {
+  std::string name = "softmax_fix";
+
+  for (size_t i = 0; i < model.graph().node_size(); i++) {
+    auto node = model.graph().node(i);
+    for (size_t j = 0; j < node.output_size(); j++) {
+      if (node.output(j) == out) {
+        CERR << "Inserting softmax between " << node.name() << " and " << out;
+        model.mutable_graph()->mutable_node(i)->mutable_output()->at(j) =
+            std::string(name);
+        break;
+      }
+    }
+  }
+
+  auto* new_node = model.mutable_graph()->add_node();
+  new_node->set_name(name);
+  new_node->set_op_type("Softmax");
+  new_node->add_input(name);
+  new_node->add_output(out);
+}
+
+pblczero::OnnxModel_DataType GetDataType(pblczero::ModelProto& model,
+                                         const std::string& name) {
+  using pblczero::TensorProto;
+  using pblczero::OnnxModel;
+  for (auto& in : model.graph().input()) {
+    if (in.name() == name && in.has_type() && in.type().has_tensor_type() &&
+        in.type().tensor_type().has_elem_type()) {
+      auto data_type = in.type().tensor_type().elem_type();
+      switch (data_type) {
+        case TensorProto::FLOAT:
+          return OnnxModel::FLOAT;
+        case TensorProto::FLOAT16:
+          return OnnxModel::FLOAT16;
+        default:
+          throw Exception("Unsupported data type: " +
+                          TensorProto::DataType_Name(data_type));
+      }
+    }
+  }
+  return OnnxModel::FLOAT;
+}
+
+bool EnsureOutDataType(pblczero::ModelProto& model, const std::string& name,
+                       pblczero::OnnxModel_DataType data_type) {
+  // Check if output has the correct data type and set it if not.
+  for (size_t i = 0; i < model.graph().output_size(); i++) {
+    auto out = model.graph().output(i);
+    if (out.name() == name) {
+      if (!out.has_type()) {
+        model.mutable_graph()->mutable_output(i)->mutable_type();
+      }
+      if (!out.type().has_tensor_type()) {
+        model.mutable_graph()
+            ->mutable_output(i)
+            ->mutable_type()
+            ->mutable_tensor_type();
+      }
+      if (!out.type().tensor_type().has_elem_type() ||
+          out.type().tensor_type().elem_type() !=
+              static_cast<pblczero::TensorProto_DataType>(data_type)) {
+        model.mutable_graph()
+            ->mutable_output(i)
+            ->mutable_type()
+            ->mutable_tensor_type()
+            ->set_elem_type(
+                static_cast<pblczero::TensorProto_DataType>(data_type));
+        break;
+      }
+      return false;
+    }
+  }
+
+  // Insert a cast to the correct data type.
+  for (size_t i = 0; i < model.graph().node_size(); i++) {
+    auto node = model.graph().node(i);
+    for (size_t j = 0; j < node.output_size(); j++) {
+      if (node.output(j) == name) {
+        CERR << "Inserting cast between " << node.name() << " and " << name;
+        model.mutable_graph()->mutable_node(i)->mutable_output()->at(j) =
+            std::string(name + "/cast");
+        break;
+      }
+    }
+  }
+
+  auto* new_node = model.mutable_graph()->add_node();
+  new_node->set_name(name + "/cast");
+  new_node->set_op_type("Cast");
+  new_node->add_input(name + "/cast");
+  new_node->add_output(name);
+  auto* attr = new_node->add_attribute();
+  attr->set_name("to");
+  attr->set_type(pblczero::AttributeProto::INT);
+  attr->set_i(data_type);
+  return true;
+}
+
+bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
+                  pblczero::OnnxModel_DataType data_type) {
+  bool updated = false;
+
+  // Input.
+  if (dict.OwnExists<std::string>(kOnnxInputId)) {
+    if (dict.Get<bool>(kFixRule50Id)) {
+      FixRule50(model, dict.Get<std::string>(kOnnxInputId),
+                data_type == pblczero::OnnxModel::FLOAT16);
+      updated = true;
+    }
+  }
+
+  // Policy.
+  if (dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
+    updated |= EnsureOutDataType(
+        model, dict.Get<std::string>(kOnnxOutputPolicyId), data_type);
+  }
+
+  // Value.
+  if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
+    updated |= EnsureOutDataType(
+        model, dict.Get<std::string>(kOnnxOutputValueId), data_type);
+  }
+  if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
+    auto out = dict.Get<std::string>(kOnnxOutputWdlId);
+    if (dict.Get<bool>(kFixWdlSoftmaxId)) {
+      FixWdlSoftmax(model, out);
+      updated = true;
+    }
+    updated |= EnsureOutDataType(model, out, data_type);
+  }
+
+  // Mlh.
+  if (dict.OwnExists<std::string>(kOnnxOutputMlhId)) {
+    updated |= EnsureOutDataType(model, dict.Get<std::string>(kOnnxOutputMlhId),
+                                 data_type);
+  }
+
+  return updated;
+}
+
 }  // namespace
 
 void ConvertOnnxToLeela() {
@@ -240,6 +425,10 @@ void ConvertOnnxToLeela() {
 
   const OptionsDict& dict = options_parser.GetOptionsDict();
 
+  auto onnx_model = ReadFileToString(dict.Get<std::string>(kInputFilenameId));
+  pblczero::ModelProto model;
+  model.ParseFromString(onnx_model);
+
   pblczero::Net out_weights;
   out_weights.set_magic(0x1c0);
   // ONNX networks appeared in v0.28.
@@ -249,17 +438,18 @@ void ConvertOnnxToLeela() {
   auto format = out_weights.mutable_format()->mutable_network_format();
   format->set_network(NetworkFormat::NETWORK_ONNX);
   auto onnx = out_weights.mutable_onnx_model();
-  onnx->set_data_type(GetEnumValueFromString(
-      dict.Get<std::string>(kOnnxDataTypeId), OnnxModel::DataType_AllValues,
-      OnnxModel::DataType_Name));
+  auto data_type = OnnxModel::FLOAT;
 
   // Input.
   format->set_input(GetEnumValueFromString(
       dict.Get<std::string>(kInputFormatId),
       NetworkFormat::InputFormat_AllValues, NetworkFormat::InputFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxInputId)) {
-    onnx->set_input_planes(dict.Get<std::string>(kOnnxInputId));
+    auto in = dict.Get<std::string>(kOnnxInputId);
+    onnx->set_input_planes(in);
+    data_type = GetDataType(model, in);
   }
+  onnx->set_data_type(data_type);
 
   // Policy.
   format->set_policy(GetEnumValueFromString(
@@ -289,8 +479,13 @@ void ConvertOnnxToLeela() {
     onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
   }
 
-  onnx->set_model(ReadFileToString(dict.Get<std::string>(kInputFilenameId)));
-  if (dict.Get<bool>(kValidateModelId) && !ValidateNetwork(out_weights)) {
+  if (MaybeFixOnnx(model, dict, data_type)) {
+    onnx->set_model(model.OutputAsString());
+  } else {
+    onnx->set_model(onnx_model);
+  }
+  if (dict.Get<bool>(kValidateModelId) &&
+      !ValidateNetwork(out_weights, model)) {
     return;
   }
   WriteStringToGzFile(dict.Get<std::string>(kOutputFilenameId),
