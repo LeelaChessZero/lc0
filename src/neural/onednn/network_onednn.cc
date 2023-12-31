@@ -180,7 +180,12 @@ class OnednnNetwork : public Network {
     cpu_eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
 
     if (!options.IsDefault<int>("gpu")) {
-      eng_ = dnnl::engine(dnnl::engine::kind::gpu, options.Get<int>("gpu"));
+      try {
+        eng_ = dnnl::engine(dnnl::engine::kind::gpu, options.Get<int>("gpu"));
+      } catch (dnnl::error &e) {
+        CERR << "OneDNN gpu engine unavailable, switching to cpu engine.";
+        eng_ = cpu_eng_;
+      }
     } else {
       eng_ = cpu_eng_;
     }
