@@ -31,13 +31,11 @@
 #include <vector>
 
 #include "cuda_common.h"
-#include "neural/network.h"
 #include "kernels.h"
 #include "neural/network.h"
 #include "neural/shared/activation.h"
 #include "neural/shared/attention_policy_map.h"
 #include "utils/fp16_utils.h"
-#include "neural/shared/attention_policy_map.h"
 
 namespace lczero {
 
@@ -1486,7 +1484,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
         enc, scratch, encoder_heads_, embedding_op_size_,
         1.0f,  // using alpha = 1 for now (TODO: may change?)
         nullptr, 0, max_batch_size, ACTIVATION_SWISH,
-        act_);  // smolgen weights not implemented in policy encoder heads yet.
+        act_, false);  // smolgen weights not implemented in policy encoder heads yet.
     encoder_weights_.emplace_back(pW);
   }
 }

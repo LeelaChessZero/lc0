@@ -382,6 +382,7 @@ class EncoderBlock {
   float alpha_;  // scale to apply to skip connection add
 
   const bool has_smolgen_;
+  const bool use_fused_mha_;
   const ActivationFunction smolgen_activation_;
   const ActivationFunction ffn_activation_;
 
