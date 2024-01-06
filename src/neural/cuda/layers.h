@@ -340,7 +340,7 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act);
+               ActivationFunction ffn_act, bool fused_mha);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -474,7 +474,7 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const LegacyWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
-                int max_batch_size, bool new_encoding);
+                int max_batch_size, bool new_encoding, bool fused_mha);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -505,6 +505,7 @@ class AttentionBody : public BaseLayer<DataType> {
   int smolgen_global_size_;
   const bool has_gating_;
   const bool has_smolgen_;
+  const bool use_fused_mha_;
 };
 
 // The value head implementation
