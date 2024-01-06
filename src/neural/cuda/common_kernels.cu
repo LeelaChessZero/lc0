@@ -33,8 +33,6 @@
 #include "neural/shared/attention_policy_map.h"
 #include "winograd_helper.inc"
 
-#include "neural/shared/attention_policy_map.h"
-
 namespace lczero {
 namespace cudnn_backend {
 namespace {
@@ -73,34 +71,6 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
 
   addVectors_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, size, asize,
                                                        bsize, activation);
-  ReportCUDAErrors(cudaGetLastError());
-}
-
-template <typename T>
-__global__ void addVectorsHNC_NHC_kernel(T* a, T* b, int N, int H, int C) {
-  int i = threadIdx.x + blockDim.x * blockIdx.x;
-  if (i < N * H * C) {
-    int orig_i = i;
-    int c = i % C;
-    i /= C;
-    int n = i % N;
-    i /= N;
-    int h = i;
-    float aVal = (float)a[orig_i];
-    float bVal = (float)b[n * H * C + h * C + c];
-
-    float cVal = aVal + bVal;
-
-    a[orig_i] = (T)cVal;
-  }
-}
-
-template <typename T>
-void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C, cudaStream_t stream) {
-  const int kBlockSize = 256;
-  int blocks = DivUp(N * H * C, kBlockSize);
-  addVectorsHNC_NHC_kernel<<<blocks, kBlockSize, 0, stream>>>(a, b, N, H, C);
-
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -328,105 +298,6 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
       addBiasBatched_kernel<T, ACTIVATION_RELU_2>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
                                              Nstride);
-      break;
-    default:
-      throw Exception(
-          "unsupported activation in addBiasBatched. Add in switch-case here");
-  }
-
-  ReportCUDAErrors(cudaGetLastError());
-}
-
-template <typename T, ActivationFunction act>
-__global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
-                                      int N, int C, int Nstride) {
-  int batch = blockIdx.y;
-  int n = blockIdx.x * blockDim.y + threadIdx.y;
-  if (n >= N) return;
-  int c = threadIdx.x * 4;
-
-  int biasIndex = batch * C + c;
-  int tensorIndex = batch * Nstride * C + n * C + c;
-
-  float val[4];
-  float b[4];
-
-  // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[4];
-    copyAs<uint2>(&inp[0], &input[tensorIndex]);
-#pragma unroll
-    for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
-
-    copyAs<uint2>(&inp[0], &bias[biasIndex]);
-#pragma unroll
-    for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
-  } else {
-    copyAs<uint4>(&val[0], &input[tensorIndex]);
-    copyAs<uint4>(&b[0], &bias[biasIndex]);
-  }
-
-  // Perform bias add and activation
-#pragma unroll
-  for (int i = 0; i < 4; i++) {
-    float x = val[i] + b[i];
-    x = activate(x, act);
-    val[i] = x;
-  }
-
-  // write to memory
-  if (fp16) {
-    half op[4];
-#pragma unroll
-    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
-    copyAs<uint2>(&output[tensorIndex], &op[0]);
-  } else {
-    copyAs<uint4>(&output[tensorIndex], &val[0]);
-  }
-}
-
-// Input/output tensors are Batch * N * C
-// bias tensor is N * C (i.e, different bias for each Batch dimension)
-template <typename T>
-void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
-                    int C, int Nstride, ActivationFunction activation, cudaStream_t stream) {
-  // process 4 elements per thread to achieve close to peak memory bandwidth
-  if (C % 4 != 0) throw Exception("unsupported filter size");
-  if (C > 4096) throw Exception("unsupported filter size");
-
-  dim3 blockDim, gridDim;
-  blockDim.x = C / 4;
-  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int) N);
-  blockDim.z = 1;
-  gridDim.x = DivUp(N, blockDim.y);
-  gridDim.y = Batch;
-  gridDim.z = 1;
-
-  switch (activation) {
-    case ACTIVATION_NONE:
-      addBiasBatched_kernel<T, ACTIVATION_NONE>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_SELU:
-      addBiasBatched_kernel<T, ACTIVATION_SELU>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_MISH:
-      addBiasBatched_kernel<T, ACTIVATION_MISH>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_RELU:
-      addBiasBatched_kernel<T, ACTIVATION_RELU>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_SWISH:
-      addBiasBatched_kernel<T, ACTIVATION_SWISH>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_RELU_2:  // square relu
-      addBiasBatched_kernel<T, ACTIVATION_RELU_2>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
       break;
     default:
       throw Exception(

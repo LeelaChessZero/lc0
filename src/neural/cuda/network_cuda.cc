@@ -68,8 +68,42 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
 
   const size_t encoder_heads = weights.policy_heads.vanilla.pol_encoder_head_count;
 
-  size_t size = N * 64 * std::max(std::max(embedding_op_size, encoder_dff),
-                                  policy_d_model);
+  size_t size =
+      N * 64 *
+      std::max(std::max(embedding_op_size, encoder_dff), policy_d_model);
+
+  // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
+  const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
+  const size_t output_size = N * (64 * 64 + 8 * 24);
+  size = std::max(size, std::max(matmul_qk_size, output_size));
+
+  size_t qkv_size = N * 64 * encoder_d_model;
+  // We store qkv in single allocation, and other intermediate tensors are
+  // sometimes stored by splitting an allocation into two halves.
+  size = std::max(2 * size, 3 * qkv_size);
+  return size;
+}
+
+static size_t getMaxAttentionBodySize(const LegacyWeights& weights, int N) {
+  const size_t embedding_op_size = weights.ip_emb_b.size();
+
+  size_t encoder_d_model = 0;
+  size_t encoder_dff = 0;
+
+  if (weights.encoder.size() > 0) {
+    encoder_d_model = weights.encoder[0].mha.q_b.size();
+    encoder_dff = weights.encoder[0].ffn.dense1_b.size();
+
+    assert(encoder_d_model == weights.encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.encoder[0].ffn.dense2_b.size());
+  }
+
+  const size_t encoder_heads = weights.encoder_head_count;
+
+  size_t size =
+      N * 64 *
+      std::max(std::max(embedding_op_size, encoder_dff), encoder_d_model);
 
   // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
   const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
@@ -782,7 +816,6 @@ class CudaNetwork : public Network {
                           stream);  // POLICY output
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare2, nullptr,
-        network_[l++]->Eval(batchSize, (DataType*)opPol, spare2, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
                             stream);  // policy map layer  // POLICY output
       }
@@ -799,7 +832,6 @@ class CudaNetwork : public Network {
         copyTypeConverted(opPol, (half*)(spare2), batchSize * kNumOutputPolicy,
                           stream);  // POLICY
       } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
                             stream);  // pol FC  // POLICY
@@ -856,7 +888,6 @@ class CudaNetwork : public Network {
                             scratch_size_, nullptr, cublas, stream);
         copyTypeConverted(opMov, (half*)(spare1), batchSize, stream);
       } else {
-        network_[l++]->Eval(batchSize, (DataType*)opMov, spare2, nullptr,
         network_[l++]->Eval(batchSize, (DataType*)opMov, spare2, nullptr,
                             scratch_mem, scratch_size_, nullptr, cublas,
                             stream);

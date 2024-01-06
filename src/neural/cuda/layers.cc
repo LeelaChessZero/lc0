@@ -2001,7 +2001,6 @@ AttentionPolicyHead<DataType>::~AttentionPolicyHead() {
 
 template <typename DataType>
 EncoderBlock<DataType>::~EncoderBlock() {
-EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(mha_q_w));
   ReportCUDAErrors(cudaFree(mha_q_b));
   ReportCUDAErrors(cudaFree(mha_k_w));
