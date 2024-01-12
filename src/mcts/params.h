@@ -127,6 +127,7 @@ class SearchParams {
   }
   float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
   float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
+  float GetWDLMaxReasonableS() const { return kWDLMaxReasonableS; }
   float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
   float GetMaxOutOfOrderEvalsFactor() const {
     return kMaxOutOfOrderEvalsFactor;
@@ -213,6 +214,7 @@ class SearchParams {
   static const OptionId kContemptMaxValueId;
   static const OptionId kWDLCalibrationEloId;
   static const OptionId kWDLContemptAttenuationId;
+  static const OptionId kWDLMaxReasonableSId;
   static const OptionId kWDLEvalObjectivityId;
   static const OptionId kWDLDrawRateTargetId;
   static const OptionId kWDLDrawRateReferenceId;
@@ -275,6 +277,7 @@ class SearchParams {
   const float kDrawScore;
   const float kContempt;
   const WDLRescaleParams kWDLRescaleParams;
+  const float kWDLMaxReasonableS;
   const float kWDLEvalObjectivity;
   const float kMaxOutOfOrderEvalsFactor;
   const float kNpsLimit;
