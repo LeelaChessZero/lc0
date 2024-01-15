@@ -50,8 +50,7 @@ const ChessBoard ChessBoard::kStartposBoard(ChessBoard::kStartposFen);
 const BitBoard ChessBoard::kPawnMask = 0x00FFFFFFFFFFFF00ULL;
 
 void ChessBoard::Clear() {
-  std::memset(reinterpret_cast<void*>(this), 0, sizeof(ChessBoard));
-  castlings_.SetRookPositions(FILE_A, FILE_H, FILE_A, FILE_H);
+  *this = ChessBoard();
 }
 
 void ChessBoard::Mirror() {
