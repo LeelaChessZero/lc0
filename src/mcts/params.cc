@@ -144,7 +144,7 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
   float mu_opp =
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
-  float diff = scale_target / (scale_reference * scale_reference) *
+  float diff = 1.0f / (scale_reference * scale_reference) *
                (mu_active - mu_opp) * contempt_attenuation;
   return SearchParams::WDLRescaleParams(ratio, diff);
 }
