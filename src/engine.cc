@@ -30,6 +30,9 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <string>
+#include <vector>
+
 
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
@@ -83,7 +86,19 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   return result;
 }
 
+std::vector<std::string> SplitString(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::string token;
+    std::istringstream tokenStream(str);
+    while (std::getline(tokenStream, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
 }  // namespace
+
+
 
 EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
@@ -359,10 +374,31 @@ void EngineLoop::CmdIsReady() {
 
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
-  options_.SetUciOption(name, value, context);
-  // Set the log filename for the case it was set in UCI option.
-  Logging::Get().SetFilename(
-      options_.GetOptionsDict().Get<std::string>(kLogFileId));
+    if (name.empty() || value.empty()) {
+        throw Exception("Both name and value must be provided");
+    } else {
+        // Split the names and values by space
+        std::vector<std::string> names = SplitString(name, ';');
+        std::vector<std::string> values = SplitString(value, ';');
+        // Check that the number of names and values match
+        if (names.size() != values.size()) {
+            throw Exception("Mismatched number of names and values");
+        }
+        // Set the UCI options for each name-value pair
+        for (size_t i = 0; i < names.size(); ++i) {
+            const std::string& name = names[i];
+            const std::string& value = values[i];
+            // Check that the name is valid
+            if (!options_.FindOptionByUciName(name)) {
+                throw Exception("Unknown option: " + name);
+            }
+            // Set the UCI option
+            options_.SetUciOption(name, value, context);
+            // Set the log filename for the case it was set in UCI option.
+            Logging::Get().SetFilename(
+            options_.GetOptionsDict().Get<std::string>(kLogFileId));
+        }
+    }
 }
 
 void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
