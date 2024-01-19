@@ -377,7 +377,7 @@ void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
     if (name.empty() || value.empty()) {
         throw Exception("Both name and value must be provided");
     } else {
-        // Split the names and values by space
+        // Split the names and values by semicolon.
         std::vector<std::string> names = SplitString(name, ';');
         std::vector<std::string> values = SplitString(value, ';');
         // Check that the number of names and values match
