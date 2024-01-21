@@ -83,7 +83,7 @@ void OptionsParser::SetUciOption(const std::string& name,
        name.empty() ? throw Exception("An option name must be provided") 
                     : throw Exception("Provide a value for the option");
     } else {
-        // Split the names and values by semicolon.
+        // Split the names and values by space.
         std::vector<std::string> names = SplitString(name, ' ');
         std::vector<std::string> values = SplitString(value, ' ');
         // Check that the number of names and values match
