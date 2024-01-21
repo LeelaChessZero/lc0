@@ -30,6 +30,8 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include "utils/commandline.h"
 #include "utils/configfile.h"
@@ -64,17 +66,47 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
   return result;
 }
 
+std::vector<std::string> SplitString(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::string token;
+    std::istringstream tokenStream(str);
+    while (std::getline(tokenStream, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
 void OptionsParser::SetUciOption(const std::string& name,
                                  const std::string& value,
                                  const std::string& context) {
-  auto option = FindOptionByUciName(name);
-  if (option) {
-    option->SetValue(value, GetMutableOptions(context));
-    return;
-  }
-  throw Exception("Unknown option: " + name);
+   if (name.empty() || value.empty()) {
+       name.empty() ? throw Exception("An option name must be provided") 
+                    : throw Exception("Provide a value for the option");
+    } else {
+        // Split the names and values by semicolon.
+        std::vector<std::string> names = SplitString(name, ' ');
+        std::vector<std::string> values = SplitString(value, ' ');
+        // Check that the number of names and values match
+        if (names.size() != values.size()) {
+            throw Exception("Mismatched number of names and values");
+        }
+        // Set the UCI options for each name-value pair
+        for (size_t i = 0; i < names.size(); ++i) {
+            const std::string& name = names[i];
+            const std::string& value = values[i];
+            auto option = FindOptionByUciName(name);
+            if (option) {
+            option->SetValue(value, GetMutableOptions(context));
+            } else {
+            // If name is not valid throw an error.
+            throw Exception("Unknown option: " + name);
+            }
+        }
+        return;
+    }
 }
 
+                                 
 void OptionsParser::HideOption(const OptionId& id) {
   const auto option = FindOptionById(id);
   if (option) option->hidden_ = true;

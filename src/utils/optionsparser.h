@@ -111,8 +111,6 @@ class OptionsParser {
   const OptionsDict& GetOptionsDict(const std::string& context = {});
   // Gets the dictionary for given context which caller can modify.
   OptionsDict* GetMutableOptions(const std::string& context = {});
-   // Returns an option based by its uci name.
-  Option* FindOptionByUciName(const std::string& name) const;
   // Gets the mutable list of default options.
   OptionsDict* GetMutableDefaultsOptions() { return &defaults_; }
   // Adds a subdictionary for a given context.
@@ -125,6 +123,8 @@ class OptionsParser {
   void ShowHidden() const;
   // Returns an option based on the long flag.
   Option* FindOptionByLongFlag(const std::string& flag) const;
+  // Returns an option based by its uci name.
+  Option* FindOptionByUciName(const std::string& name) const;
   // Returns an option based by its id.
   Option* FindOptionById(const OptionId& id) const;
 
