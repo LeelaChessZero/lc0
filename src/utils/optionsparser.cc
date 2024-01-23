@@ -79,21 +79,9 @@ std::vector<std::string> SplitString(const std::string& str, char delimiter) {
 void OptionsParser::SetUciOption(const std::string& name,
                                  const std::string& value,
                                  const std::string& context) {
-   if (name.empty() || value.empty()) {
-       name.empty() ? throw Exception("An option name must be provided") 
-                    : throw Exception("Provide a value for the option");
+   if (name.empty()) {
+      throw Exception("An option name must be provided");
     } else {
-        // Split the names and values by space.
-        std::vector<std::string> names = SplitString(name, ' ');
-        std::vector<std::string> values = SplitString(value, ' ');
-        // Check that the number of names and values match
-        if (names.size() != values.size()) {
-            throw Exception("Mismatched number of names and values");
-        }
-        // Set the UCI options for each name-value pair
-        for (size_t i = 0; i < names.size(); ++i) {
-            const std::string& name = names[i];
-            const std::string& value = values[i];
             auto option = FindOptionByUciName(name);
             if (option) {
             option->SetValue(value, GetMutableOptions(context));
@@ -101,7 +89,6 @@ void OptionsParser::SetUciOption(const std::string& name,
             // If name is not valid throw an error.
             throw Exception("Unknown option: " + name);
             }
-        }
         return;
     }
 }

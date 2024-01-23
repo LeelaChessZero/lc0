@@ -31,8 +31,6 @@
 #include <cmath>
 #include <functional>
 
-
-
 #include "mcts/search.h"
 #include "mcts/stoppers/factory.h"
 #include "utils/commandline.h"
@@ -84,9 +82,8 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   }
   return result;
 }
+
 }  // namespace
-
-
 
 EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
                                    const OptionsDict& options)
@@ -363,11 +360,10 @@ void EngineLoop::CmdIsReady() {
 void EngineLoop::CmdSetOption(const std::string& name, 
                               const std::string& value,
                               const std::string& context) {
-            // Set the UCI option
-            options_.SetUciOption(name, value, context);
-            // Set the log filename for the case it was set in UCI option.
-            Logging::Get().SetFilename(
-            options_.GetOptionsDict().Get<std::string>(kLogFileId));
+  options_.SetUciOption(name, value, context);
+  // Set the log filename for the case it was set in UCI option.
+  Logging::Get().SetFilename(
+      options_.GetOptionsDict().Get<std::string>(kLogFileId));
 }
 
 void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
