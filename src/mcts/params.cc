@@ -109,6 +109,21 @@ SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
   return SearchParams::WDLRescaleParams(ratio, diff);
 }
 
+// Converts regular Elo into ideal UHO game pair Elo based on the same Elo
+// dependent draw rate model used below. Necessary because regular Elo doesn't
+// behave well at higher level, while the ideal UHO game pair Elo calculated
+// from the decisive game pair ratio underestimates Elo differences by a
+// factor of 2 at lower levels.
+
+float ConvertRegularToGamePairElo(float elo_regular) {
+  const float transition_sharpness = 250.0f;
+  const float transition_midpoint = 2737.0f;
+  return elo_regular +
+         0.5f * transition_sharpness *
+             std::log(1.0f + std::exp((transition_midpoint - elo_regular) /
+                                      transition_sharpness));
+}
+
 // Calculate ratio and diff for WDL conversion from the contempt settings.
 // Less accurate Elo model, but automatically chooses draw rate and accuracy
 // based on the absolute Elo of both sides. Doesn't require clamping, but still
@@ -129,6 +144,10 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
                                           (1.0f - draw_rate_reference));
   float elo_opp =
       elo_active - std::clamp(contempt, -contempt_max, contempt_max);
+  // Convert regular Elo input into internally used game pair Elo.
+  float elo_active = ConvertRegularToGamePairElo(elo_active);
+  float elo_opp = ConvertRegularToGamePairElo(elo_opp);
+  // Estimate draw rate from given Elo.
   float scale_active =
       1.0f / (1.0f / scale_zero + std::exp(elo_active / elo_slope - offset));
   float scale_opp =
