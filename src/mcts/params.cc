@@ -145,8 +145,8 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
   float elo_opp =
       elo_active - std::clamp(contempt, -contempt_max, contempt_max);
   // Convert regular Elo input into internally used game pair Elo.
-  float elo_active = ConvertRegularToGamePairElo(elo_active);
-  float elo_opp = ConvertRegularToGamePairElo(elo_opp);
+  elo_active = ConvertRegularToGamePairElo(elo_active);
+  elo_opp = ConvertRegularToGamePairElo(elo_opp);
   // Estimate draw rate from given Elo.
   float scale_active =
       1.0f / (1.0f / scale_zero + std::exp(elo_active / elo_slope - offset));
