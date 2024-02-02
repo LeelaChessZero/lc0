@@ -26,8 +26,9 @@
 */
 
 #import "CoreML.h"
-#import <CoreML/CoreML.h>
 #import <Foundation/Foundation.h>
+#import <CoreML/CoreML.h>
+#import "CoreMLModel.h"
 
 namespace lczero {
 namespace coreml_backend {
@@ -48,9 +49,10 @@ CoreML::CoreML() {
                NSLog(@"Initializing model with the compiled model URL...");
                NSError* modelInitError = nil;
                MLModelConfiguration* configuration = [[MLModelConfiguration alloc] init];
-               MLModel* model = [MLModel modelWithContentsOfURL:compiledModelURL
-                                                  configuration:configuration
-                                                          error:&modelInitError];
+               MLModel* mlmodel = [MLModel modelWithContentsOfURL:compiledModelURL
+                                                    configuration:configuration
+                                                            error:&modelInitError];
+              [CoreMLModel setMLModel:mlmodel];
 
                if (modelInitError) {
                  NSLog(@"Error initializing model: %@", modelInitError.localizedDescription);
@@ -69,7 +71,11 @@ CoreML::CoreML() {
 
 CoreML::~CoreML() {}
 
-void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> output_mems) {}
+void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> output_mems) {
+  NSLog(@">>> CoreML::forwardEval");
+  MLModel* mlmodel = [CoreMLModel getMLModel];
+  NSLog(@"<<< CoreML::forwardEval");
+}
 
 }  // namespace coreml_backend
 }  // namespace lczero
