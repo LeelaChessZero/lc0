@@ -403,46 +403,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
                                          batch_size, steps);
   } else {
-    if (w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-        w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-        w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
-      throw Exception("Network format " +
-                      pblczero::NetworkFormat::NetworkStructure_Name(
-                          w->format().network_format().network()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CLASSICAL &&
-        w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CONVOLUTION &&
-        w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_ATTENTION) {
-      throw Exception("Policy format " +
-                      pblczero::NetworkFormat::PolicyFormat_Name(
-                          w->format().network_format().policy()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().value() !=
-            pblczero::NetworkFormat::VALUE_CLASSICAL &&
-        w->format().network_format().value() !=
-            pblczero::NetworkFormat::VALUE_WDL) {
-      throw Exception("Value format " +
-                      pblczero::NetworkFormat::ValueFormat_Name(
-                          w->format().network_format().value()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().default_activation() !=
-            pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
-        w->format().network_format().default_activation() !=
-            pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
-      throw Exception("Default activation " +
-                      pblczero::NetworkFormat::DefaultActivation_Name(
-                          w->format().network_format().default_activation()) +
-                      " is not supported by the ONNX backend.");
-    }
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.alt_mish = opts.GetOrDefault<bool>(

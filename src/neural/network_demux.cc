@@ -142,7 +142,7 @@ class DemuxingNetwork : public Network {
     }
 
     for (int i = 0; i < nn_threads; ++i) {
-      threads_.emplace_back([this, i]() { Worker(); });
+      threads_.emplace_back([this]() { Worker(); });
     }
   }
 
