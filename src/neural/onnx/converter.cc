@@ -226,8 +226,10 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       auto flow = builder->Relu(name + "/sqrrelu/relu", input);
       return builder->Mul(name + "/sqrrelu/sqr", flow, flow);
     }
+    case ACTIVATION_NONE:
+      return input;
     default:
-      throw Exception("Unsupposrted activation in " + name);
+      throw Exception("Unsupported activation in " + name);
   }
 }
 
