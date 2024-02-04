@@ -28,6 +28,8 @@
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
+#include "neural/xla/onnx2hlo.h"
+#include "neural/xla/xla_runner.h"
 
 namespace lczero {
 namespace {
@@ -58,9 +60,14 @@ class XlaNetwork : public Network {
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict&) {
   if (!w) throw Exception("The XLA backend requires a network file.");
-  if (!w->has_onnx_model()) {
+  auto runner = std::make_unique<XlaRunner>();
+  if (w->has_onnx_model()) {
+    LoadOnnxIntoXlaRunner(runner.get(), w->onnx_model().model());
+  } else {
+    CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions converter_options;
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
+    LoadOnnxIntoXlaRunner(runner.get(), converted.onnx_model().model());
   }
 
   return std::make_unique<XlaNetwork>();
