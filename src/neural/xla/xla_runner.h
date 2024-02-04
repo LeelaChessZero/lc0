@@ -41,7 +41,8 @@ class XlaTensor {};
 
 class XlaModule {
  public:
-  void AddSharedTensor(size_t idx, const XlaTensor& buffer);
+  size_t AddPlaceholder(const pblczero::XlaShapeProto& shape);
+  size_t AddSharedTensor(const XlaTensor& buffer);
   void Compile(const pblczero::HloModuleProto& hlo_module);
   std::vector<XlaTensor> Run(std::vector<XlaTensor> inputs);
 };

@@ -34,6 +34,7 @@
 
 namespace lczero {
 
+// PJRT_Error_Code as enum class.
 enum class PjrtErrorCode {
   CANCELLED = 1,
   UNKNOWN = 2,
@@ -53,6 +54,21 @@ enum class PjrtErrorCode {
   UNAUTHENTICATED = 16
 };
 
+// PJRT errors as exceptions.
+class PjrtException : public std::exception {
+ public:
+  explicit PjrtException(PjrtErrorCode code, const std::string& message)
+      : message_(message), code_(code) {}
+
+  const char* what() const noexcept override { return message_.data(); }
+  PjrtErrorCode code() const { return code_; }
+
+ private:
+  std::string message_;
+  PjrtErrorCode code_;
+};
+
+// PJRT_NamedValue wrapper.
 class PjrtKeyValue {
  public:
   const std::string& key() const { return key_; }
@@ -70,25 +86,14 @@ class PjrtKeyValue {
   std::variant<std::string, int64_t, std::vector<int64_t>, float, bool> value_;
 };
 
-class PjrtException : public std::exception {
- public:
-  explicit PjrtException(PjrtErrorCode code, const std::string& message)
-      : message_(message), code_(code) {}
-
-  const char* what() const noexcept override { return message_.data(); }
-  PjrtErrorCode code() const { return code_; }
-
- private:
-  std::string message_;
-  PjrtErrorCode code_;
-};
-
 class Pjrt {
  public:
   virtual ~Pjrt() = default;
+  // PJRT_Plugin_Attributes wrapper.
   virtual std::vector<PjrtKeyValue> GetAttributes() const = 0;
 };
 
+// Loads the PJRT plugin from the given library path.
 std::unique_ptr<Pjrt> MakePjrt(const char* library_path);
 
 }  // namespace lczero

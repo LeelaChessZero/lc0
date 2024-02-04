@@ -28,12 +28,18 @@
 #pragma once
 
 #include <string_view>
+#include <vector>
 
 #include "neural/xla/xla_runner.h"
 
 namespace lczero {
 
-void LoadOnnxIntoXlaRunner(XlaRunner* runner,
-                           const std::string_view& onnx_model);
+struct Onnx2HloConverterOptions {
+  std::vector<size_t> minibatch_sizes = {64, 128, 256, 512};
+  size_t max_inline_constant_size = 1024;
+};
+
+void LoadOnnxIntoXlaRunner(XlaRunner* runner, std::string_view onnx_model,
+                           const Onnx2HloConverterOptions& options);
 
 }  // namespace lczero

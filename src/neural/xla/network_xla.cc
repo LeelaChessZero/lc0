@@ -61,13 +61,16 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict&) {
   if (!w) throw Exception("The XLA backend requires a network file.");
   auto runner = std::make_unique<XlaRunner>();
+  Onnx2HloConverterOptions converter_options;
   if (w->has_onnx_model()) {
-    LoadOnnxIntoXlaRunner(runner.get(), w->onnx_model().model());
+    LoadOnnxIntoXlaRunner(runner.get(), w->onnx_model().model(),
+                          converter_options);
   } else {
     CERR << "Converting weights to ONNX first.";
-    WeightsToOnnxConverterOptions converter_options;
-    auto converted = ConvertWeightsToOnnx(*w, converter_options);
-    LoadOnnxIntoXlaRunner(runner.get(), converted.onnx_model().model());
+    WeightsToOnnxConverterOptions onnx_converter_options;
+    auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
+    LoadOnnxIntoXlaRunner(runner.get(), converted.onnx_model().model(),
+                          converter_options);
   }
 
   return std::make_unique<XlaNetwork>();

@@ -626,6 +626,7 @@ if get_option('build_backends')
   if get_option('xla')
       files += [
         'src/neural/xla/network_xla.cc',
+        'src/neural/xla/onnx2hlo.cc',
         'src/neural/xla/pjrt.cc',
       ]
       files += gen_proto_src.process('src/neural/xla/hlo.proto',
