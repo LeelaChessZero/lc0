@@ -26,8 +26,8 @@
 */
 
 #import "CoreML.h"
-#import <Foundation/Foundation.h>
 #import <CoreML/CoreML.h>
+#import <Foundation/Foundation.h>
 #import "CoreMLModel.h"
 
 namespace lczero {
@@ -49,10 +49,12 @@ CoreML::CoreML() {
                NSLog(@"Initializing model with the compiled model URL...");
                NSError* modelInitError = nil;
                MLModelConfiguration* configuration = [[MLModelConfiguration alloc] init];
+               /* FIXME: MLComputeUnitsAll */
+               configuration.computeUnits = MLComputeUnitsCPUAndGPU;
                MLModel* mlmodel = [MLModel modelWithContentsOfURL:compiledModelURL
                                                     configuration:configuration
                                                             error:&modelInitError];
-              [CoreMLModel setMLModel:mlmodel];
+               [CoreMLModel setMLModel:mlmodel];
 
                if (modelInitError) {
                  NSLog(@"Error initializing model: %@", modelInitError.localizedDescription);
@@ -73,7 +75,53 @@ CoreML::~CoreML() {}
 
 void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> output_mems) {
   NSLog(@">>> CoreML::forwardEval");
-  MLModel* mlmodel = [CoreMLModel getMLModel];
+  int inputChannels = 112;
+  int inputLength = 8;
+  int spatialSize = inputChannels * inputLength * inputLength;
+  NSArray<NSNumber*>* inputShape = @[ @1, @(inputChannels), @(inputLength), @(inputLength) ];
+  MLMultiArrayDataType inputDataType = MLMultiArrayDataTypeFloat;
+  NSArray<NSNumber*>* spatialStrides = @[
+    @(inputChannels * inputLength * inputLength), @(inputLength * inputLength), @(inputLength), @1
+  ];
+  NSMutableArray<CoreMLInput*>* inputArray =
+      [NSMutableArray arrayWithCapacity:(NSUInteger)batchSize];
+
+  for (NSInteger i = 0; i < batchSize; i++) {
+    NSError* arrayInitError = nil;
+    MLMultiArray* input_planes =
+        [[MLMultiArray alloc] initWithDataPointer:inputs + (i * spatialSize)
+                                            shape:inputShape
+                                         dataType:inputDataType
+                                          strides:spatialStrides
+                                      deallocator:nil
+                                            error:&arrayInitError];
+
+    if (arrayInitError) {
+      NSLog(@"Error initializing array: %@", arrayInitError.localizedDescription);
+      break;
+    }
+
+    CoreMLInput* input = [[CoreMLInput alloc] initWithInput_planes:input_planes];
+    [inputArray addObject:input];
+  }
+
+  MLPredictionOptions* options = [[MLPredictionOptions alloc] init];
+  NSError* predictionError = nil;
+  NSArray<CoreMLOutput*>* results = [CoreMLModel predictionsFromInputs:inputArray
+                                                               options:options
+                                                                 error:&predictionError];
+
+  if (predictionError) {
+    NSLog(@"Error predicting output: %@", predictionError.localizedDescription);
+  } else {
+    MLMultiArray* output_policy = results[0].output_policy;
+    NSLog(@"CoreML::output_policy[0]: %f", [output_policy objectAtIndexedSubscript:0].floatValue);
+    NSLog(@"CoreML::output_policy[1]: %f", [output_policy objectAtIndexedSubscript:1].floatValue);
+    NSLog(@"CoreML::output_policy[2]: %f", [output_policy objectAtIndexedSubscript:2].floatValue);
+    NSLog(@"CoreML::output_policy[3]: %f", [output_policy objectAtIndexedSubscript:3].floatValue);
+    NSLog(@"CoreML::output_policy[4]: %f", [output_policy objectAtIndexedSubscript:4].floatValue);
+  }
+
   NSLog(@"<<< CoreML::forwardEval");
 }
 
