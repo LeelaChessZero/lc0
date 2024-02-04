@@ -27,6 +27,62 @@
 
 #import "CoreMLModel.h"
 
+@implementation CoreMLInput
+
+- (instancetype)initWithInput_planes:(MLMultiArray*)input_planes {
+  self = [super init];
+  if (self) {
+    _input_planes = input_planes;
+  }
+  return self;
+}
+
+- (NSSet<NSString*>*)featureNames {
+  return [NSSet setWithArray:@[ @"input_planes" ]];
+}
+
+- (nullable MLFeatureValue*)featureValueForName:(NSString*)featureName {
+  if ([featureName isEqualToString:@"input_planes"]) {
+    return [MLFeatureValue featureValueWithMultiArray:self.input_planes];
+  }
+  return nil;
+}
+
+@end
+
+@implementation CoreMLOutput
+
+- (instancetype)initWithOutput_policy:(MLMultiArray*)output_policy
+                         output_value:(MLMultiArray*)output_value
+                    output_moves_left:(MLMultiArray*)output_moves_left {
+  self = [super init];
+  if (self) {
+    _output_policy = output_policy;
+    _output_value = output_value;
+    _output_moves_left = output_moves_left;
+  }
+  return self;
+}
+
+- (NSSet<NSString*>*)featureNames {
+  return [NSSet setWithArray:@[ @"output_policy", @"output_value", @"output_moves_left" ]];
+}
+
+- (nullable MLFeatureValue*)featureValueForName:(NSString*)featureName {
+  if ([featureName isEqualToString:@"output_policy"]) {
+    return [MLFeatureValue featureValueWithMultiArray:self.output_policy];
+  }
+  if ([featureName isEqualToString:@"output_value"]) {
+    return [MLFeatureValue featureValueWithMultiArray:self.output_value];
+  }
+  if ([featureName isEqualToString:@"output_moves_left"]) {
+    return [MLFeatureValue featureValueWithMultiArray:self.output_moves_left];
+  }
+  return nil;
+}
+
+@end
+
 @implementation CoreMLModel
 
 static MLModel* _Nullable sharedMLModel = nil;
@@ -41,6 +97,34 @@ static MLModel* _Nullable sharedMLModel = nil;
   @synchronized(self) {
     sharedMLModel = mlmodel;
   }
+}
+
++ (nullable NSArray<CoreMLOutput*>*)
+    predictionsFromInputs:(NSArray<CoreMLInput*>* _Nonnull)inputArray
+                  options:(MLPredictionOptions* _Nonnull)options
+                    error:(NSError* _Nullable __autoreleasing* _Nullable)error {
+  MLModel* mlmodel = [CoreMLModel getMLModel];
+  id<MLBatchProvider> inBatch =
+      [[MLArrayBatchProvider alloc] initWithFeatureProviderArray:inputArray];
+  id<MLBatchProvider> outBatch = [mlmodel predictionsFromBatch:inBatch options:options error:error];
+  if (!outBatch) {
+    return nil;
+  }
+  NSMutableArray<CoreMLOutput*>* results =
+      [NSMutableArray arrayWithCapacity:(NSUInteger)outBatch.count];
+  for (NSInteger i = 0; i < outBatch.count; i++) {
+    id<MLFeatureProvider> resultProvider = [outBatch featuresAtIndex:i];
+    CoreMLOutput* result = [[CoreMLOutput alloc]
+        initWithOutput_policy:(MLMultiArray*)[resultProvider featureValueForName:@"output_policy"]
+                                  .multiArrayValue
+                 output_value:(MLMultiArray*)[resultProvider featureValueForName:@"output_value"]
+                                  .multiArrayValue
+            output_moves_left:(MLMultiArray*)[resultProvider
+                                  featureValueForName:@"output_moves_left"]
+                                  .multiArrayValue];
+    [results addObject:result];
+  }
+  return results;
 }
 
 @end
