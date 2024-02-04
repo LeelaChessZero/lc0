@@ -620,6 +620,14 @@ if get_option('build_backends')
   endif
 
 
+  ## ~~~~~~~~
+  ## XLA
+  ## ~~~~~~~~
+  if get_option('xla')
+      files += gen_proto_src.process('src/neural/xla/hlo.proto',
+          preserve_path_from : meson.current_source_dir() + '/src/')
+
+  endif
 
 endif # if get_option('build_backends')
 
