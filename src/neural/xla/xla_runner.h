@@ -39,21 +39,14 @@ namespace lczero {
 
 class XlaTensor {};
 
-class XlaModule {
- public:
-  size_t AddPlaceholder(const pblczero::XlaShapeProto& shape);
-  size_t AddSharedTensor(const XlaTensor& buffer);
-  void Compile(const pblczero::HloModuleProto& hlo_module);
-  std::vector<XlaTensor> Run(std::vector<XlaTensor> inputs);
-};
-
 class XlaRunner {
  public:
-  void AddModule(size_t max_batch_size, std::unique_ptr<XlaModule> module);
+  void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
+  std::vector<XlaTensor> ExecuteBlocking(const std::vector<XlaTensor>& inputs);
 
-  void AddSharedTensor(const std::string& name,
-                       std::unique_ptr<XlaTensor> buffer);
-  std::optional<XlaTensor*> GetSharedTensor(const std::string& name);
+  // Network weights are passed as inputs, but the buffer is transferred once
+  // before any inference.
+  void SetFrozenInput(size_t idx, const XlaTensor& tensor);
 
  private:
 };

@@ -57,20 +57,19 @@ class XlaNetwork : public Network {
   NetworkCapabilities capabilities_;
 };
 
+void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {}
+
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict&) {
   if (!w) throw Exception("The XLA backend requires a network file.");
   auto runner = std::make_unique<XlaRunner>();
-  Onnx2HloConverterOptions converter_options;
   if (w->has_onnx_model()) {
-    LoadOnnxIntoXlaRunner(runner.get(), w->onnx_model().model(),
-                          converter_options);
+    FillXlaRunnerFromOnnx(w->onnx_model().model(), runner.get());
   } else {
     CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions onnx_converter_options;
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
-    LoadOnnxIntoXlaRunner(runner.get(), converted.onnx_model().model(),
-                          converter_options);
+    FillXlaRunnerFromOnnx(converted.onnx_model().model(), runner.get());
   }
 
   return std::make_unique<XlaNetwork>();

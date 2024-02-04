@@ -81,34 +81,24 @@ pblczero::XlaShapeProto OnnxTypeProtoToXlaShape(
 
 class Onnx2HloConverter {
  public:
-  Onnx2HloConverter(XlaRunner* runner, const Onnx2HloConverterOptions& options)
-      : runner_(runner),
-        options_(options),
-        module_(std::make_unique<XlaModule>()) {}
+  Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {}
+  void Convert(const pblczero::ModelProto& onnx_model, size_t minibatch_size) {}
 
+ private:
   void BuildInputs() {
     // for (const auto& input : onnx_model.graph().input()) {
     //   ///...
     // }
   }
 
-  void Convert(const pblczero::ModelProto& onnx_model, size_t minibatch_size) {}
-
- private:
   std::unordered_map<std::string, size_t> onnx_to_xla_name_;
-  XlaRunner* runner_;
-  Onnx2HloConverterOptions options_;
-  std::unique_ptr<XlaModule> module_;
+  Onnx2HloResult result_;
+  const Onnx2HloOptions& options_;
 };
 
 }  // namespace
 
-void LoadOnnxIntoXlaRunner(XlaRunner* runner, std::string_view model,
-                           const Onnx2HloConverterOptions& options) {
-  pblczero::ModelProto onnx_model;
-  onnx_model.ParseFromString(model);
-  for (size_t minibatch_size : options.minibatch_sizes) {
-  }
-}
+Onnx2HloResult ConvertOnnxToHlo(std::string_view onnx_model,
+                                const Onnx2HloOptions& options);
 
 }  // namespace lczero
