@@ -75,24 +75,26 @@ CoreML::~CoreML() {}
 
 void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> output_mems) {
   NSLog(@">>> CoreML::forwardEval");
+
+  // Setup input array
   int inputChannels = 112;
   int inputLength = 8;
   int spatialSize = inputChannels * inputLength * inputLength;
   NSArray<NSNumber*>* inputShape = @[ @1, @(inputChannels), @(inputLength), @(inputLength) ];
   MLMultiArrayDataType inputDataType = MLMultiArrayDataTypeFloat;
-  NSArray<NSNumber*>* spatialStrides = @[
+  NSArray<NSNumber*>* inputStrides = @[
     @(inputChannels * inputLength * inputLength), @(inputLength * inputLength), @(inputLength), @1
   ];
   NSMutableArray<CoreMLInput*>* inputArray =
       [NSMutableArray arrayWithCapacity:(NSUInteger)batchSize];
 
-  for (NSInteger i = 0; i < batchSize; i++) {
+  for (int i = 0; i < batchSize; i++) {
     NSError* arrayInitError = nil;
     MLMultiArray* input_planes =
         [[MLMultiArray alloc] initWithDataPointer:inputs + (i * spatialSize)
                                             shape:inputShape
                                          dataType:inputDataType
-                                          strides:spatialStrides
+                                          strides:inputStrides
                                       deallocator:nil
                                             error:&arrayInitError];
 
@@ -105,12 +107,14 @@ void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> outpu
     [inputArray addObject:input];
   }
 
+  // Setup prediction
   MLPredictionOptions* options = [[MLPredictionOptions alloc] init];
   NSError* predictionError = nil;
   NSArray<CoreMLOutput*>* results = [CoreMLModel predictionsFromInputs:inputArray
                                                                options:options
                                                                  error:&predictionError];
 
+  // Check error
   if (predictionError) {
     NSLog(@"Error predicting output: %@", predictionError.localizedDescription);
   } else {
@@ -120,6 +124,22 @@ void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> outpu
     NSLog(@"CoreML::output_policy[2]: %f", [output_policy objectAtIndexedSubscript:2].floatValue);
     NSLog(@"CoreML::output_policy[3]: %f", [output_policy objectAtIndexedSubscript:3].floatValue);
     NSLog(@"CoreML::output_policy[4]: %f", [output_policy objectAtIndexedSubscript:4].floatValue);
+    MLMultiArray* output_value = results[0].output_value;
+    float w = [output_value objectAtIndexedSubscript:0].floatValue;
+    float d = [output_value objectAtIndexedSubscript:1].floatValue;
+    float l = [output_value objectAtIndexedSubscript:2].floatValue;
+    float m = std::max({w, d, l});
+    w = std::exp(w - m);
+    d = std::exp(d - m);
+    l = std::exp(l - m);
+    float sum = w + d + l;
+    w /= sum;
+    d /= sum;
+    l /= sum;
+    NSLog(@"CoreML::w=%f d=%f l=%f", w, d, l);
+    MLMultiArray* output_moves_left = results[0].output_moves_left;
+    NSLog(@"CoreML::output_moves_left[0]: %f",
+          [output_moves_left objectAtIndexedSubscript:0].floatValue);
   }
 
   NSLog(@"<<< CoreML::forwardEval");
