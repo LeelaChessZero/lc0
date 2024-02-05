@@ -44,6 +44,7 @@
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
 #include "onnxruntime_cxx_api.h"
+#include "utils/bf16_utils.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
@@ -87,6 +88,8 @@ class OnnxNetwork : public Network {
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
+    } else if (bf16_) {
+      return std::make_unique<OnnxComputation<Ort::BFloat16_t>>(this);
     } else {
       return std::make_unique<OnnxComputation<float>>(this);
     }
@@ -117,6 +120,7 @@ class OnnxNetwork : public Network {
   int mlh_head_ = -1;
   NetworkCapabilities capabilities_;
   bool fp16_;
+  bool bf16_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
   static constexpr int max_batch_size_ = 1024;
@@ -165,6 +169,11 @@ float AsFloat(Ort::Float16_t x) {
   std::memcpy(&tmp, reinterpret_cast<uint16_t*>(&x), sizeof(uint16_t));
   return FP16toFP32(tmp);
 }
+float AsFloat(Ort::BFloat16_t x) {
+  uint16_t tmp;
+  std::memcpy(&tmp, reinterpret_cast<uint16_t*>(&x), sizeof(uint16_t));
+  return BF16toFP32(tmp);
+}
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
@@ -200,6 +209,10 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
 void AsDataType(float x, float* y) { *y = x; }
 void AsDataType(float x, Ort::Float16_t* y) {
   uint16_t tmp = FP32toFP16(x);
+  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
+}
+void AsDataType(float x, Ort::BFloat16_t* y) {
+  uint16_t tmp = FP32toBF16(x);
   std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
 }
 
@@ -333,6 +346,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
       fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
+      bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
       batch_size_(batch_size),
       provider_(provider) {
   // Sanity checks.
@@ -412,6 +426,11 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
+
+    if (opts.GetOrDefault<bool>("bf16", false)) {
+      converter_options.data_type_ =
+          WeightsToOnnxConverterOptions::DataType::kBFloat16;
+    }
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
