@@ -71,6 +71,12 @@ class PjrtException : public std::exception {
 // PJRT_NamedValue wrapper.
 class PjrtKeyValue {
  public:
+  PjrtKeyValue() = default;
+  PjrtKeyValue(const PjrtKeyValue&) = default;
+  PjrtKeyValue(PjrtKeyValue&&) = default;
+  template <typename T>
+  PjrtKeyValue(const std::string& k, const T& v) : key_(k), value_(v) {}
+
   const std::string& key() const { return key_; }
   std::string value_as_string() const;
 
@@ -86,11 +92,24 @@ class PjrtKeyValue {
   std::variant<std::string, int64_t, std::vector<int64_t>, float, bool> value_;
 };
 
+class PjrtExecutable {
+ public:
+  virtual ~PjrtExecutable() = default;
+};
+
+class PjrtClient {
+ public:
+  virtual ~PjrtClient() = default;
+  virtual std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) = 0;
+};
+
 class Pjrt {
  public:
   virtual ~Pjrt() = default;
   // PJRT_Plugin_Attributes wrapper.
   virtual std::vector<PjrtKeyValue> GetAttributes() const = 0;
+  // PJRT_Client_Create wrapper.
+  virtual std::unique_ptr<PjrtClient> CreateClient() = 0;
 };
 
 // Loads the PJRT plugin from the given library path.

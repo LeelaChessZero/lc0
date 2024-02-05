@@ -98,7 +98,9 @@ class Onnx2HloConverter {
 
 }  // namespace
 
-Onnx2HloResult ConvertOnnxToHlo(std::string_view onnx_model,
-                                const Onnx2HloOptions& options);
+Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
+                                const Onnx2HloOptions& options) {
+  return {};
+}
 
 }  // namespace lczero

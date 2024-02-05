@@ -25,33 +25,16 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
-
-#include <memory>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <vector>
-
-#include "neural/xla/hlo.pb.h"
-#include "neural/xla/pjrt.h"
+#include "neural/xla/xla_runner.h"
 
 namespace lczero {
 
-class XlaTensor {};
+XlaRunner::XlaRunner(const char* library_path)
+    : pjrt_client_(MakePjrt(library_path)->CreateClient()) {}
 
-class XlaRunner {
- public:
-  XlaRunner(const char* library_path);
-  void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
-  std::vector<XlaTensor> ExecuteBlocking(const std::vector<XlaTensor>& inputs);
-
-  // Network weights are passed as inputs, but the buffer is transferred once
-  // before any inference.
-  void SetFrozenInput(size_t idx, const XlaTensor& tensor);
-
- private:
-  std::unique_ptr<PjrtClient> pjrt_client_;
-};
+void XlaRunner::AddModule(size_t minibatch_size,
+                          const pblczero::HloModuleProto& module) {
+  pjrt_client_->CompileHlo(module.OutputAsString());
+}
 
 }  // namespace lczero

@@ -95,9 +95,57 @@ PjrtKeyValue MakeKeyValue(const PJRT_NamedValue* kv) {
   return result;
 }
 
-class PjrtImpl : public Pjrt {
+class PjrtCommonImpl {
  public:
-  explicit PjrtImpl(const char* library_path) {
+  PjrtCommonImpl(const PJRT_Api* api) : api_(api) {}
+  virtual ~PjrtCommonImpl() = default;
+
+ protected:
+  std::string GetErrorMessage(PJRT_Error* error) const {
+    auto args = MakeStruct<PJRT_Error_Message_Args>();
+    args.error = error;
+    api_->PJRT_Error_Message(&args);
+    return std::string(args.message, args.message_size);
+  }
+  PJRT_Error_Code GetErrorCode(PJRT_Error* error) const {
+    auto args = MakeStruct<PJRT_Error_GetCode_Args>();
+    args.error = error;
+    api_->PJRT_Error_GetCode(&args);
+    return args.code;
+  }
+  void DestroyErrorMessage(PJRT_Error* error) const {
+    assert(error);
+    auto args = MakeStruct<PJRT_Error_Destroy_Args>();
+    args.error = error;
+    api_->PJRT_Error_Destroy(&args);
+  }
+  void CheckError(PJRT_Error* error) const {
+    if (!error) return;
+    PjrtException exception(static_cast<PjrtErrorCode>(GetErrorCode(error)),
+                            GetErrorMessage(error));
+    DestroyErrorMessage(error);
+    throw exception;
+  }
+
+  const PJRT_Api* api_;
+};
+
+class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
+ public:
+  explicit PjrtClientImpl(const PJRT_Api* api) : PjrtCommonImpl(api) {}
+  ~PjrtClientImpl() override {
+    auto args = MakeStruct<PJRT_Client_Destroy_Args>();
+    args.client = client_;
+    CheckError(api_->PJRT_Client_Destroy(&args));
+  }
+
+ private:
+  PJRT_Client* client_;
+};
+
+class PjrtImpl : public Pjrt, public PjrtCommonImpl {
+ public:
+  explicit PjrtImpl(const char* library_path) : PjrtCommonImpl(nullptr) {
     void* handle = dlopen(library_path, RTLD_LAZY);
     if (!handle) {
       throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
@@ -140,6 +188,12 @@ class PjrtImpl : public Pjrt {
     return result;
   }
 
+  std::unique_ptr<PjrtClient> CreateClient() override {
+    auto args = MakeStruct<PJRT_Client_Create_Args>();
+    CheckError(api_->PJRT_Client_Create(&args));
+    return std::make_unique<PjrtClientImpl>(api_);
+  }
+
  private:
   std::pair<int, int> ApiVersion() const {
     return std::make_pair(api_->pjrt_api_version.major_version,
@@ -149,32 +203,6 @@ class PjrtImpl : public Pjrt {
   void Initialize() {
     auto args = MakeStruct<PJRT_Plugin_Initialize_Args>();
     CheckError(api_->PJRT_Plugin_Initialize(&args));
-  }
-
-  std::string GetErrorMessage(PJRT_Error* error) const {
-    auto args = MakeStruct<PJRT_Error_Message_Args>();
-    args.error = error;
-    api_->PJRT_Error_Message(&args);
-    return std::string(args.message, args.message_size);
-  }
-  PJRT_Error_Code GetErrorCode(PJRT_Error* error) const {
-    auto args = MakeStruct<PJRT_Error_GetCode_Args>();
-    args.error = error;
-    api_->PJRT_Error_GetCode(&args);
-    return args.code;
-  }
-  void DestroyErrorMessage(PJRT_Error* error) const {
-    assert(error);
-    auto args = MakeStruct<PJRT_Error_Destroy_Args>();
-    args.error = error;
-    api_->PJRT_Error_Destroy(&args);
-  }
-  void CheckError(PJRT_Error* error) const {
-    if (!error) return;
-    PjrtException exception(static_cast<PjrtErrorCode>(GetErrorCode(error)),
-                            GetErrorMessage(error));
-    DestroyErrorMessage(error);
-    throw exception;
   }
 
   const PJRT_Api* api_;

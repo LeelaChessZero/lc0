@@ -57,12 +57,47 @@ class XlaNetwork : public Network {
   NetworkCapabilities capabilities_;
 };
 
-void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {}
+void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {
+  pblczero::ModelProto onnx;
+  onnx.ParseFromString(onnx_model);
+
+  std::unordered_map<std::string, size_t> constant_to_parameter_idx;
+  std::unordered_map<std::string, size_t> input_to_parameter_idx;
+  std::unordered_map<std::string, size_t> output_to_parameter_idx;
+
+  auto add_tensors = [](const std::vector<Onnx2HloResult::NamedTensor>& tensors,
+                        std::unordered_map<std::string, size_t>& map) {
+    for (const auto& tensor : tensors) {
+      auto iter = map.find(tensor.name);
+      if (iter == map.end()) {
+        map[tensor.name] = tensor.param_idx;
+      } else if (iter->second != tensor.param_idx) {
+        throw Exception("Inconsistent index for " + tensor.name);
+      }
+    }
+  };
+
+  for (size_t batch_size : {512, 256, 128, 64}) {
+    auto conversion = ConvertOnnxToHlo(onnx, {batch_size});
+    add_tensors(conversion.constants, constant_to_parameter_idx);
+    add_tensors(conversion.inputs, input_to_parameter_idx);
+    add_tensors(conversion.outputs, output_to_parameter_idx);
+    runner->AddModule(batch_size, conversion.hlo_module);
+  }
+
+  // Uncomment to get linker errors.
+  /*
+  for (const auto& [name, idx] : constant_to_parameter_idx) {
+    runner->SetFrozenInput(idx, OnnxConstantToXlaTensor(onnx, name));
+  }
+  */
+}
 
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict&) {
   if (!w) throw Exception("The XLA backend requires a network file.");
-  auto runner = std::make_unique<XlaRunner>();
+  auto runner = std::make_unique<XlaRunner>(
+      "/home/crem/dev/xla/bazel-bin/xla/pjrt/c/pjrt_c_api_gpu_plugin.so");
   if (w->has_onnx_model()) {
     FillXlaRunnerFromOnnx(w->onnx_model().model(), runner.get());
   } else {

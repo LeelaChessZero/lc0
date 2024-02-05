@@ -30,6 +30,8 @@
 #include <string_view>
 #include <vector>
 
+#include "neural/onnx/onnx.pb.h"
+#include "neural/xla/hlo.pb.h"
 #include "neural/xla/xla_runner.h"
 
 namespace lczero {
@@ -48,10 +50,13 @@ struct Onnx2HloResult {
   std::vector<NamedTensor> constants;
   std::vector<NamedTensor> inputs;
   std::vector<NamedTensor> outputs;
-  std::string hlo_module;
+  pblczero::HloModuleProto hlo_module;
 };
 
-Onnx2HloResult ConvertOnnxToHlo(std::string_view onnx_model,
+Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
                                 const Onnx2HloOptions& options);
+
+XlaTensor OnnxConstantToXlaTensor(const pblczero::ModelProto& onnx_model,
+                                  std::string_view name);
 
 }  // namespace lczero
