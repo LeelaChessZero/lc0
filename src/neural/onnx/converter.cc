@@ -252,6 +252,14 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
     case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
     case ACTIVATION_SELU:
+      if (options_.data_type_ ==
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+        auto flow = builder->Cast(name + "/to_float", input,
+                                  pblczero::TensorProto::FLOAT);
+        flow = builder->Selu(name + "/selu", flow);
+        return builder->Cast(name + "/to_bf16", flow,
+                             pblczero::TensorProto::BFLOAT16);
+      }
       return builder->Selu(name + "/selu", input);
     case ACTIVATION_SWISH:
       return MakeSwish(builder, input, name + "/swish");
@@ -274,7 +282,18 @@ std::string Converter::MakeSqueezeAndExcite(
                             Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
     se_reshape_init_ = true;
   }
-  auto flow = builder->GlobalAveragePool(name + "/pooled", input);
+  auto flow = input;
+  if (options_.data_type_ ==
+      WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    flow =
+        builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
+  }
+  flow = builder->GlobalAveragePool(name + "/pooled", flow);
+  if (options_.data_type_ ==
+      WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    flow =
+        builder->Cast(name + "/to_bf16", flow, pblczero::TensorProto::BFLOAT16);
+  }
   flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
   flow = builder->MatMul(
       name + "/matmul1", flow,
