@@ -123,6 +123,11 @@ option('metal',
        value: 'auto',
        description: 'Enable Metal backend')
 
+option('coreml',
+       type: 'feature',
+       value: 'auto',
+       description: 'Enable CoreML backend')
+
 option('malloc',
        type : 'string',
        value: '',

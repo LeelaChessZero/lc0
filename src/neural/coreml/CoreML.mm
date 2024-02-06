@@ -49,8 +49,10 @@ CoreML::CoreML() {
                NSLog(@"Initializing model with the compiled model URL...");
                NSError* modelInitError = nil;
                MLModelConfiguration* configuration = [[MLModelConfiguration alloc] init];
-               /* FIXME: MLComputeUnitsAll */
-               configuration.computeUnits = MLComputeUnitsCPUAndGPU;
+               // configuration.computeUnits = MLComputeUnitsCPUOnly;
+               // configuration.computeUnits = MLComputeUnitsCPUAndGPU;
+               // configuration.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
+               configuration.computeUnits = MLComputeUnitsAll;
                MLModel* mlmodel = [MLModel modelWithContentsOfURL:compiledModelURL
                                                     configuration:configuration
                                                             error:&modelInitError];
@@ -73,9 +75,8 @@ CoreML::CoreML() {
 
 CoreML::~CoreML() {}
 
-void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> output_mems) {
-  NSLog(@">>> CoreML::forwardEval");
-
+void CoreML::forwardEval(float* inputs, int batchSize, float* output_policy, float* output_value,
+                         float* output_moves_left) {
   // Setup input array
   int inputChannels = 112;
   int inputLength = 8;
@@ -118,31 +119,32 @@ void CoreML::forwardEval(float* inputs, int batchSize, std::vector<float*> outpu
   if (predictionError) {
     NSLog(@"Error predicting output: %@", predictionError.localizedDescription);
   } else {
-    MLMultiArray* output_policy = results[0].output_policy;
-    NSLog(@"CoreML::output_policy[0]: %f", [output_policy objectAtIndexedSubscript:0].floatValue);
-    NSLog(@"CoreML::output_policy[1]: %f", [output_policy objectAtIndexedSubscript:1].floatValue);
-    NSLog(@"CoreML::output_policy[2]: %f", [output_policy objectAtIndexedSubscript:2].floatValue);
-    NSLog(@"CoreML::output_policy[3]: %f", [output_policy objectAtIndexedSubscript:3].floatValue);
-    NSLog(@"CoreML::output_policy[4]: %f", [output_policy objectAtIndexedSubscript:4].floatValue);
-    MLMultiArray* output_value = results[0].output_value;
-    float w = [output_value objectAtIndexedSubscript:0].floatValue;
-    float d = [output_value objectAtIndexedSubscript:1].floatValue;
-    float l = [output_value objectAtIndexedSubscript:2].floatValue;
-    float m = std::max({w, d, l});
-    w = std::exp(w - m);
-    d = std::exp(d - m);
-    l = std::exp(l - m);
-    float sum = w + d + l;
-    w /= sum;
-    d /= sum;
-    l /= sum;
-    NSLog(@"CoreML::w=%f d=%f l=%f", w, d, l);
-    MLMultiArray* output_moves_left = results[0].output_moves_left;
-    NSLog(@"CoreML::output_moves_left[0]: %f",
-          [output_moves_left objectAtIndexedSubscript:0].floatValue);
-  }
+    for (int i = 0; i < batchSize; i++) {
+      MLMultiArray* policy = results[i].output_policy;
+      for (int j = 0; j < policy.count; j++) {
+        output_policy[j + (i * policy.count)] = [policy objectAtIndexedSubscript:j].floatValue;
+      }
 
-  NSLog(@"<<< CoreML::forwardEval");
+      MLMultiArray* value = results[i].output_value;
+      float w = [value objectAtIndexedSubscript:0].floatValue;
+      float d = [value objectAtIndexedSubscript:1].floatValue;
+      float l = [value objectAtIndexedSubscript:2].floatValue;
+      float m = std::max({w, d, l});
+      w = std::exp(w - m);
+      d = std::exp(d - m);
+      l = std::exp(l - m);
+      float sum = w + d + l;
+      w /= sum;
+      d /= sum;
+      l /= sum;
+      output_value[(i * 3)] = w;
+      output_value[1 + (i * 3)] = d;
+      output_value[2 + (i * 3)] = l;
+
+      MLMultiArray* moves_left = results[i].output_moves_left;
+      output_moves_left[i] = [moves_left objectAtIndexedSubscript:0].floatValue;
+    }
+  }
 }
 
 }  // namespace coreml_backend

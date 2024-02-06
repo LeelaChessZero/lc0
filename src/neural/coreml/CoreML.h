@@ -36,8 +36,8 @@ class CoreML {
   CoreML(void);
   ~CoreML(void);
 
-  void forwardEval(float* inputs, int batchSize,
-                   std::vector<float*> output_mems);
+  void forwardEval(float* inputs, int batchSize, float* output_policy,
+                   float* output_value, float* output_moves_left);
 };
 
 }  // namespace coreml_backend

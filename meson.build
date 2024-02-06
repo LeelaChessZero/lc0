@@ -619,6 +619,29 @@ if get_option('build_backends')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
   endif
 
+  ## ~~~~~~~~
+  ## CoreML
+  ## ~~~~~~~~
+  # CoreML backend only available on MacOS.
+  # Check for required frameworks - Foundation, CoreML.
+  coreml_frameworks = dependency('appleframeworks',
+                                 modules : ['Foundation', 'CoreML'],
+                                 required: get_option('coreml'))
+
+  if (coreml_frameworks.found() and add_languages('objc', 'objcpp'))
+    deps += coreml_frameworks
+
+    files += [
+      'src/neural/coreml/network_coreml.cc',
+      'src/neural/coreml/CoreML.mm',
+      'src/neural/coreml/CoreMLModel.mm',
+    ]
+
+    has_backends = true
+    add_project_arguments('-fobjc-arc', language : 'objc')
+    add_project_arguments('-fobjc-arc', language : 'objcpp')
+  endif
+
 
 
 endif # if get_option('build_backends')
