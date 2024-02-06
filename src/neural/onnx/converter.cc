@@ -285,16 +285,11 @@ std::string Converter::MakeSqueezeAndExcite(
   auto flow = input;
   if (options_.data_type_ ==
       WeightsToOnnxConverterOptions::DataType::kBFloat16) {
-    flow =
-        builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
+    flow = builder->ReduceMean(name + "/reduce_mean", flow, {2, 3}, false);
+  } else {
+    flow = builder->GlobalAveragePool(name + "/pooled", flow);
+    flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
   }
-  flow = builder->GlobalAveragePool(name + "/pooled", flow);
-  if (options_.data_type_ ==
-      WeightsToOnnxConverterOptions::DataType::kBFloat16) {
-    flow =
-        builder->Cast(name + "/to_bf16", flow, pblczero::TensorProto::BFLOAT16);
-  }
-  flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
   flow = builder->MatMul(
       name + "/matmul1", flow,
       *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
