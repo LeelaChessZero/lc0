@@ -3,4 +3,8 @@ Language: Cpp
 BasedOnStyle: Google
 DerivePointerAlignment: false
 ---
+Language: ObjC
+BasedOnStyle: Google
+DerivePointerAlignment: false
+---
 Language: Proto
