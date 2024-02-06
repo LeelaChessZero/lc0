@@ -146,6 +146,8 @@ class Converter {
       const std::vector<float>&, std::initializer_list<int> dims,
       std::initializer_list<int> order = {});
 
+  std::unique_ptr<OnnxConst> GetScalarConverter(float in);
+
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
   ActivationFunction default_activation_;
@@ -179,6 +181,22 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type_)) +
                   " is not supported in weights converter");
+}
+
+std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
+  switch (options_.data_type_) {
+    case WeightsToOnnxConverterOptions::DataType::kFloat32:
+      return std::make_unique<FloatOnnxConst>(FloatOnnxConst({in}, {1}));
+    case WeightsToOnnxConverterOptions::DataType::kFloat16:
+      return std::make_unique<Float16OnnxConst>(
+          Float16OnnxConst({FP32toFP16(in)}, {1}));
+    case WeightsToOnnxConverterOptions::DataType::kBFloat16:
+      return std::make_unique<BFloat16OnnxConst>(
+          BFloat16OnnxConst({FP32toBF16(in)}, {1}));
+  }
+  throw Exception("Data type " +
+                  std::to_string(static_cast<int>(options_.data_type_)) +
+                  " is not supported in scalar converter");
 }
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
@@ -448,18 +466,8 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Reshape(name + "/mha/V/reshape", flow, mha_shape);
   auto V = builder->Transpose(name + "/mha/V/transpose", flow, {0, 2, 1, 3});
   flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
-  std::unique_ptr<OnnxConst> scale;
-  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-    scale = std::make_unique<Float16OnnxConst>(
-        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(depth))}, {1}));
-  } else if (GetDataType() == pblczero::TensorProto::BFLOAT16) {
-    scale = std::make_unique<BFloat16OnnxConst>(
-        BFloat16OnnxConst({FP32toBF16(1.0f / sqrtf(depth))}, {1}));
-  } else {
-    scale = std::make_unique<FloatOnnxConst>(
-        FloatOnnxConst({1.0f / sqrtf(depth)}, {1}));
-  }
-  flow = builder->Mul(name + "/mha/QK/scale", flow, *scale);
+  flow = builder->Mul(name + "/mha/QK/scale", flow,
+                      *GetScalarConverter(1.0f / sqrtf(depth)));
   if (layer.mha.has_smolgen) {
     auto smolgen_weights =
         MakeSmolgen(builder, layer, embedding_size, heads, encoder_in, name);
@@ -480,20 +488,10 @@ std::string Converter::MakeEncoderLayer(
                                           {d_model, embedding_size}, {1, 0}));
   flow = builder->Add(name + "/mha/out/dense/b", flow,
                       *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
-  std::unique_ptr<OnnxConst> alpha_onnx;
   std::string alpha_in;
   if (alpha != 1.0) {
-    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-      alpha_onnx = std::make_unique<Float16OnnxConst>(
-          Float16OnnxConst({FP32toFP16(alpha)}, {1}));
-    } else if (GetDataType() == pblczero::TensorProto::BFLOAT16) {
-      alpha_onnx = std::make_unique<BFloat16OnnxConst>(
-          BFloat16OnnxConst({FP32toBF16(alpha)}, {1}));
-    } else {
-      alpha_onnx =
-          std::make_unique<FloatOnnxConst>(FloatOnnxConst({alpha}, {1}));
-    }
-    alpha_in = builder->Mul(name + "/alpha*input", encoder_in, *alpha_onnx);
+    alpha_in = builder->Mul(name + "/alpha*input", encoder_in,
+                            *GetScalarConverter(alpha));
   } else {
     alpha_in = encoder_in;
   }
@@ -524,7 +522,8 @@ std::string Converter::MakeEncoderLayer(
                    *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
   std::string alpha_ffn_in;
   if (alpha != 1.0) {
-    alpha_ffn_in = builder->Mul(name + "/alpha*out1", ffn_in, *alpha_onnx);
+    alpha_ffn_in =
+        builder->Mul(name + "/alpha*out1", ffn_in, *GetScalarConverter(alpha));
   } else {
     alpha_ffn_in = ffn_in;
   }
@@ -567,17 +566,8 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
           builder->AddInitializer("/const/pad_in_shape",
                                   Int64OnnxConst({-1, 1}, {2})));
       pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
-      std::unique_ptr<OnnxConst> one;
-      if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-        one = std::make_unique<Float16OnnxConst>(
-            Float16OnnxConst({FP32toFP16(1.0f)}, {1}));
-      } else if (GetDataType() == pblczero::TensorProto::BFLOAT16) {
-        one = std::make_unique<BFloat16OnnxConst>(
-            BFloat16OnnxConst({FP32toBF16(1.0f)}, {1}));
-      } else {
-        one = std::make_unique<FloatOnnxConst>(FloatOnnxConst({1.0f}, {1}));
-      }
-      pad = builder->Add("/attn_body/pad/one_vec", pad, *one);
+      pad = builder->Add("/attn_body/pad/one_vec", pad,
+                         *GetScalarConverter(1.0f));
       pad = builder->MatMul(
           "/attn_body/pad/expand", pad,
           builder->AddInitializer(
@@ -736,18 +726,8 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
   auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
   flow = builder->Transpose("/policy/K/transpose", K, {0, 2, 1});
   flow = builder->MatMul("/policy/matmul", Q, flow);
-  std::unique_ptr<OnnxConst> scale;
-  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-    scale = std::make_unique<Float16OnnxConst>(
-        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(policy_d_model))}, {1}));
-  } else if (GetDataType() == pblczero::TensorProto::BFLOAT16) {
-    scale = std::make_unique<BFloat16OnnxConst>(
-        BFloat16OnnxConst({FP32toBF16(1.0f / sqrtf(policy_d_model))}, {1}));
-  } else {
-    scale = std::make_unique<FloatOnnxConst>(
-        FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
-  }
-  flow = builder->Mul("/policy/scale", flow, *scale);
+  flow = builder->Mul("/policy/scale", flow,
+                      *GetScalarConverter(1.0f / sqrtf(policy_d_model)));
   auto prom = builder->Slice("policy/promotion/slice", K, {0, 56, 0},
                              {INT_MAX, 64, policy_d_model});
   prom = builder->MatMul(
