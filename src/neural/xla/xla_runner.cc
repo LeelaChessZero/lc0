@@ -37,10 +37,12 @@ XlaRunner::XlaRunner(const char* library_path)
   for (const auto& device : pjrt_client_->GetDevices()) {
     CERR << "  " << device->ToString();
   }
+  CERR << "Done!";
 }
 
 void XlaRunner::AddModule(size_t minibatch_size,
                           const pblczero::HloModuleProto& module) {
+  CERR << "Compiling!";
   pjrt_client_->CompileHlo(module.OutputAsString());
 }
 

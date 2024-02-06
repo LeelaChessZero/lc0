@@ -34,6 +34,7 @@
 #include <iostream>
 
 #include "pjrt_c_api.h"
+#include "utils/logging.h"
 
 namespace lczero {
 namespace {
@@ -145,22 +146,6 @@ class PjrtExecutableImpl : public PjrtExecutable, public PjrtCommonImpl {
   PJRT_LoadedExecutable* executable_;
 };
 
-/*
-
-class PjrtDevice {
- public:
-  virtual ~PjrtDevice() = default;
-  virtual std::unique_ptr<PjrtDeviceDescription> GetDescription() const = 0;
-};
-
-class PjrtClient {
- public:
-  virtual ~PjrtClient() = default;
-  virtual std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) = 0;
-  virtual std::vector<std::unique_ptr<PjrtDevice>> GetDevices() = 0;
-};
-*/
-
 class PjrtDeviceImpl : public PjrtDevice, public PjrtCommonImpl {
  public:
   explicit PjrtDeviceImpl(const PJRT_Api* api, PJRT_Device* device)
@@ -185,7 +170,8 @@ class PjrtDeviceImpl : public PjrtDevice, public PjrtCommonImpl {
 
 class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
  public:
-  explicit PjrtClientImpl(const PJRT_Api* api) : PjrtCommonImpl(api) {}
+  explicit PjrtClientImpl(const PJRT_Api* api, PJRT_Client* client)
+      : PjrtCommonImpl(api), client_(client) {}
   ~PjrtClientImpl() override {
     auto args = MakeStruct<PJRT_Client_Destroy_Args>();
     args.client = client_;
@@ -193,12 +179,12 @@ class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
   }
 
   std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) override {
-    constexpr const char* kFormat = "HLO";
+    constexpr std::string_view kFormat = "hlo";
     auto program = MakeStruct<PJRT_Program>();
     program.code = const_cast<char*>(hlo.data());
     program.code_size = hlo.size();
-    program.format = kFormat;
-    program.format_size = sizeof(kFormat) - 1;
+    program.format = kFormat.data();
+    program.format_size = kFormat.size();
 
     auto args = MakeStruct<PJRT_Client_Compile_Args>();
     args.client = client_;
@@ -271,7 +257,7 @@ class PjrtImpl : public Pjrt, public PjrtCommonImpl {
   std::unique_ptr<PjrtClient> CreateClient() override {
     auto args = MakeStruct<PJRT_Client_Create_Args>();
     CheckError(api_->PJRT_Client_Create(&args));
-    return std::make_unique<PjrtClientImpl>(api_);
+    return std::make_unique<PjrtClientImpl>(api_, args.client);
   }
 
  private:
