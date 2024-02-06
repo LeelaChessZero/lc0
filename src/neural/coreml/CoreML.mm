@@ -75,56 +75,72 @@ CoreML::CoreML() {
 
 CoreML::~CoreML() {}
 
-void CoreML::forwardEval(float* inputs, int batchSize, float* output_policy, float* output_value,
-                         float* output_moves_left) {
-  // Setup input array
-  int inputChannels = 112;
-  int inputLength = 8;
-  int spatialSize = inputChannels * inputLength * inputLength;
-  NSArray<NSNumber*>* inputShape = @[ @1, @(inputChannels), @(inputLength), @(inputLength) ];
-  MLMultiArrayDataType inputDataType = MLMultiArrayDataTypeFloat;
-  NSArray<NSNumber*>* inputStrides = @[
-    @(inputChannels * inputLength * inputLength), @(inputLength * inputLength), @(inputLength), @1
-  ];
-  NSMutableArray<CoreMLInput*>* inputArray =
-      [NSMutableArray arrayWithCapacity:(NSUInteger)batchSize];
-
-  for (int i = 0; i < batchSize; i++) {
-    NSError* arrayInitError = nil;
-    MLMultiArray* input_planes =
-        [[MLMultiArray alloc] initWithDataPointer:inputs + (i * spatialSize)
-                                            shape:inputShape
-                                         dataType:inputDataType
-                                          strides:inputStrides
-                                      deallocator:nil
-                                            error:&arrayInitError];
-
-    if (arrayInitError) {
-      NSLog(@"Error initializing array: %@", arrayInitError.localizedDescription);
-      break;
+NSMutableArray<CoreMLInput*>* setupInputArray(float* inputs, int batchSize) {
+    // Define the parameters for the input MLMultiArray
+    int inputChannels = 112;
+    int inputLength = 8;
+    int spatialSize = inputChannels * inputLength * inputLength;
+    NSArray<NSNumber*>* inputShape = @[ @1, @(inputChannels), @(inputLength), @(inputLength) ];
+    MLMultiArrayDataType inputDataType = MLMultiArrayDataTypeFloat;
+    NSArray<NSNumber*>* inputStrides = @[ @(spatialSize), @(inputLength * inputLength), @(inputLength), @1 ];
+    
+    // Initialize an array to hold CoreMLInput objects
+    NSMutableArray<CoreMLInput*>* inputArray = [NSMutableArray arrayWithCapacity:(NSUInteger)batchSize];
+    
+    for (int i = 0; i < batchSize; i++) {
+        NSError* arrayInitError = nil;
+        
+        // Calculate the pointer offset for the current batch item
+        float* inputPointer = inputs + (i * spatialSize);
+        
+        // Initialize an MLMultiArray with the input data
+        MLMultiArray* inputPlanes = [[MLMultiArray alloc] initWithDataPointer:inputPointer
+                                                                       shape:inputShape
+                                                                    dataType:inputDataType
+                                                                     strides:inputStrides
+                                                                 deallocator:nil
+                                                                       error:&arrayInitError];
+        
+        if (arrayInitError) {
+            NSLog(@"Error initializing MLMultiArray for input: %@", arrayInitError.localizedDescription);
+            return nil;
+        }
+        
+        // Wrap the MLMultiArray in a CoreMLInput object and add it to the inputArray
+        CoreMLInput* input = [[CoreMLInput alloc] initWithInput_planes:inputPlanes];
+        [inputArray addObject:input];
     }
+    
+    return inputArray;
+}
 
-    CoreMLInput* input = [[CoreMLInput alloc] initWithInput_planes:input_planes];
-    [inputArray addObject:input];
-  }
-
-  // Setup prediction
+NSArray<CoreMLOutput*>* performPredictions(NSMutableArray<CoreMLInput*>* inputArray) {
+  // Setup prediction options if necessary
   MLPredictionOptions* options = [[MLPredictionOptions alloc] init];
   NSError* predictionError = nil;
+  // Perform the prediction using the CoreML model
   NSArray<CoreMLOutput*>* results = [CoreMLModel predictionsFromInputs:inputArray
                                                                options:options
                                                                  error:&predictionError];
 
-  // Check error
   if (predictionError) {
-    NSLog(@"Error predicting output: %@", predictionError.localizedDescription);
+    NSLog(@"Error during prediction: %@", predictionError.localizedDescription);
+    return nil;
   } else {
+    return results;
+  }
+}
+
+void processOutputs(NSArray<CoreMLOutput*>* results, int batchSize, float* output_policy, float* output_value, float* output_moves_left) {
+  if (results) {
     for (int i = 0; i < batchSize; i++) {
+      // Process policy output
       MLMultiArray* policy = results[i].output_policy;
       for (int j = 0; j < policy.count; j++) {
         output_policy[j + (i * policy.count)] = [policy objectAtIndexedSubscript:j].floatValue;
       }
 
+      // Process value output
       MLMultiArray* value = results[i].output_value;
       float w = [value objectAtIndexedSubscript:0].floatValue;
       float d = [value objectAtIndexedSubscript:1].floatValue;
@@ -137,14 +153,23 @@ void CoreML::forwardEval(float* inputs, int batchSize, float* output_policy, flo
       w /= sum;
       d /= sum;
       l /= sum;
+
       output_value[(i * 3)] = w;
       output_value[1 + (i * 3)] = d;
       output_value[2 + (i * 3)] = l;
 
+      // Process moves left output
       MLMultiArray* moves_left = results[i].output_moves_left;
       output_moves_left[i] = [moves_left objectAtIndexedSubscript:0].floatValue;
     }
   }
+}
+
+void CoreML::forwardEval(float* inputs, int batchSize, float* output_policy, float* output_value,
+                         float* output_moves_left) {
+  NSMutableArray<CoreMLInput*>* inputArray = setupInputArray(inputs, batchSize);
+  NSArray<CoreMLOutput*>* results = performPredictions(inputArray);
+  processOutputs(results, batchSize, output_policy, output_value, output_moves_left);
 }
 
 }  // namespace coreml_backend
