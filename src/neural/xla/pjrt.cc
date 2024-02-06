@@ -130,6 +130,59 @@ class PjrtCommonImpl {
   const PJRT_Api* api_;
 };
 
+class PjrtExecutableImpl : public PjrtExecutable, public PjrtCommonImpl {
+ public:
+  explicit PjrtExecutableImpl(const PJRT_Api* api,
+                              PJRT_LoadedExecutable* executable)
+      : PjrtCommonImpl(api), executable_(executable) {}
+  ~PjrtExecutableImpl() override {
+    auto args = MakeStruct<PJRT_LoadedExecutable_Destroy_Args>();
+    args.executable = executable_;
+    CheckError(api_->PJRT_LoadedExecutable_Destroy(&args));
+  }
+
+ private:
+  PJRT_LoadedExecutable* executable_;
+};
+
+/*
+
+class PjrtDevice {
+ public:
+  virtual ~PjrtDevice() = default;
+  virtual std::unique_ptr<PjrtDeviceDescription> GetDescription() const = 0;
+};
+
+class PjrtClient {
+ public:
+  virtual ~PjrtClient() = default;
+  virtual std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) = 0;
+  virtual std::vector<std::unique_ptr<PjrtDevice>> GetDevices() = 0;
+};
+*/
+
+class PjrtDeviceImpl : public PjrtDevice, public PjrtCommonImpl {
+ public:
+  explicit PjrtDeviceImpl(const PJRT_Api* api, PJRT_Device* device)
+      : PjrtCommonImpl(api), device_(device) {
+    auto args = MakeStruct<PJRT_Device_GetDescription_Args>();
+    args.device = device_;
+    CheckError(api_->PJRT_Device_GetDescription(&args));
+    description_ = args.device_description;
+  }
+
+  std::string ToString() const override {
+    auto args = MakeStruct<PJRT_DeviceDescription_ToString_Args>();
+    args.device_description = description_;
+    CheckError(api_->PJRT_DeviceDescription_ToString(&args));
+    return {args.to_string, args.to_string_size};
+  }
+
+ private:
+  PJRT_Device* device_;
+  PJRT_DeviceDescription* description_;
+};
+
 class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
  public:
   explicit PjrtClientImpl(const PJRT_Api* api) : PjrtCommonImpl(api) {}
@@ -137,6 +190,33 @@ class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
     auto args = MakeStruct<PJRT_Client_Destroy_Args>();
     args.client = client_;
     CheckError(api_->PJRT_Client_Destroy(&args));
+  }
+
+  std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) override {
+    constexpr const char* kFormat = "HLO";
+    auto program = MakeStruct<PJRT_Program>();
+    program.code = const_cast<char*>(hlo.data());
+    program.code_size = hlo.size();
+    program.format = kFormat;
+    program.format_size = sizeof(kFormat) - 1;
+
+    auto args = MakeStruct<PJRT_Client_Compile_Args>();
+    args.client = client_;
+    args.program = &program;
+    CheckError(api_->PJRT_Client_Compile(&args));
+    return std::make_unique<PjrtExecutableImpl>(api_, args.executable);
+  }
+
+  std::vector<std::unique_ptr<PjrtDevice>> GetDevices() override {
+    auto args = MakeStruct<PJRT_Client_Devices_Args>();
+    args.client = client_;
+    CheckError(api_->PJRT_Client_Devices(&args));
+    std::vector<std::unique_ptr<PjrtDevice>> result;
+    result.reserve(args.num_devices);
+    for (size_t i = 0; i < args.num_devices; ++i) {
+      result.push_back(std::make_unique<PjrtDeviceImpl>(api_, args.devices[i]));
+    }
+    return result;
   }
 
  private:

@@ -27,10 +27,17 @@
 
 #include "neural/xla/xla_runner.h"
 
+#include "utils/logging.h"
+
 namespace lczero {
 
 XlaRunner::XlaRunner(const char* library_path)
-    : pjrt_client_(MakePjrt(library_path)->CreateClient()) {}
+    : pjrt_client_(MakePjrt(library_path)->CreateClient()) {
+  CERR << "Devices:";
+  for (const auto& device : pjrt_client_->GetDevices()) {
+    CERR << "  " << device->ToString();
+  }
+}
 
 void XlaRunner::AddModule(size_t minibatch_size,
                           const pblczero::HloModuleProto& module) {

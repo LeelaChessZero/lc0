@@ -97,10 +97,17 @@ class PjrtExecutable {
   virtual ~PjrtExecutable() = default;
 };
 
+class PjrtDevice {
+ public:
+  virtual ~PjrtDevice() = default;
+  virtual std::string ToString() const = 0;
+};
+
 class PjrtClient {
  public:
   virtual ~PjrtClient() = default;
   virtual std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) = 0;
+  virtual std::vector<std::unique_ptr<PjrtDevice>> GetDevices() = 0;
 };
 
 class Pjrt {
