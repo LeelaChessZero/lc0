@@ -33,7 +33,10 @@
 namespace lczero {
 namespace coreml_backend {
 
-CoreML::CoreML() {
+CoreML::CoreML(bool wdl, bool moves_left) {
+  wdl_ = wdl;
+  moves_left_ = moves_left;
+
   NSString* modelPath = @"lc0.mlpackage";
   NSURL* modelURL = [NSURL fileURLWithPath:modelPath];
   dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
@@ -133,8 +136,8 @@ NSArray<CoreMLOutput*>* performPredictions(NSMutableArray<CoreMLInput*>* inputAr
   }
 }
 
-void processOutputs(NSArray<CoreMLOutput*>* results, int batchSize, float* output_policy,
-                    float* output_value, float* output_moves_left) {
+void processOutputs(CoreML* coreml, NSArray<CoreMLOutput*>* results, int batchSize,
+                    float* output_policy, float* output_value, float* output_moves_left) {
   if (results) {
     for (int i = 0; i < batchSize; i++) {
       // Process policy output
@@ -146,24 +149,31 @@ void processOutputs(NSArray<CoreMLOutput*>* results, int batchSize, float* outpu
       // Process value output
       MLMultiArray* value = results[i].output_value;
       float w = [value objectAtIndexedSubscript:0].floatValue;
-      float d = [value objectAtIndexedSubscript:1].floatValue;
-      float l = [value objectAtIndexedSubscript:2].floatValue;
-      float m = std::max({w, d, l});
-      w = std::exp(w - m);
-      d = std::exp(d - m);
-      l = std::exp(l - m);
-      float sum = w + d + l;
-      w /= sum;
-      d /= sum;
-      l /= sum;
 
-      output_value[(i * 3)] = w;
-      output_value[1 + (i * 3)] = d;
-      output_value[2 + (i * 3)] = l;
+      if (coreml->isWdl()) {
+        float d = [value objectAtIndexedSubscript:1].floatValue;
+        float l = [value objectAtIndexedSubscript:2].floatValue;
+        float m = std::max({w, d, l});
+        w = std::exp(w - m);
+        d = std::exp(d - m);
+        l = std::exp(l - m);
+        float sum = w + d + l;
+        w /= sum;
+        d /= sum;
+        l /= sum;
 
-      // Process moves left output
-      MLMultiArray* moves_left = results[i].output_moves_left;
-      output_moves_left[i] = [moves_left objectAtIndexedSubscript:0].floatValue;
+        output_value[(i * 3)] = w;
+        output_value[1 + (i * 3)] = d;
+        output_value[2 + (i * 3)] = l;
+      } else {
+        output_value[i] = w;
+      }
+
+      if (coreml->isMovesLeft()) {
+        // Process moves left output
+        MLMultiArray* moves_left = results[i].output_moves_left;
+        output_moves_left[i] = [moves_left objectAtIndexedSubscript:0].floatValue;
+      }
     }
   }
 }
@@ -172,8 +182,12 @@ void CoreML::forwardEval(float* inputs, int batchSize, float* output_policy, flo
                          float* output_moves_left) {
   NSMutableArray<CoreMLInput*>* inputArray = setupInputArray(inputs, batchSize);
   NSArray<CoreMLOutput*>* results = performPredictions(inputArray);
-  processOutputs(results, batchSize, output_policy, output_value, output_moves_left);
+  processOutputs(this, results, batchSize, output_policy, output_value, output_moves_left);
 }
+
+bool CoreML::isWdl() { return wdl_; }
+
+bool CoreML::isMovesLeft() { return moves_left_; }
 
 }  // namespace coreml_backend
 }  // namespace lczero

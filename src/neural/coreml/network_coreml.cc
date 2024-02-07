@@ -67,7 +67,7 @@ CoreMLNetwork::CoreMLNetwork(const WeightsFile& file,
                  pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
 
-  coreml_ = std::make_unique<CoreML>();
+  coreml_ = std::make_unique<CoreML>(wdl_, moves_left_);
 }
 
 void CoreMLNetwork::forwardEval(InputsOutputs* io, int batchSize) {

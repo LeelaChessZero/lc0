@@ -33,11 +33,18 @@ namespace coreml_backend {
 
 class CoreML {
  public:
-  CoreML(void);
+  CoreML(bool wdl, bool moves_left);
   ~CoreML(void);
 
   void forwardEval(float* inputs, int batchSize, float* output_policy,
                    float* output_value, float* output_moves_left);
+
+  bool isWdl(void);
+  bool isMovesLeft(void);
+
+ private:
+  bool wdl_;
+  bool moves_left_;
 };
 
 }  // namespace coreml_backend
