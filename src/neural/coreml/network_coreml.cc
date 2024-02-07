@@ -98,7 +98,7 @@ std::unique_ptr<Network> MakeCoreMLNetwork(const std::optional<WeightsFile>& w,
   return std::make_unique<CoreMLNetwork>(weights, options);
 }
 
-REGISTER_NETWORK("coreml", MakeCoreMLNetwork, 106)
+REGISTER_NETWORK("coreml", MakeCoreMLNetwork, 104)
 
 }  // namespace coreml_backend
 }  // namespace lczero
