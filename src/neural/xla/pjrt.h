@@ -106,7 +106,8 @@ class PjrtDevice {
 class PjrtClient {
  public:
   virtual ~PjrtClient() = default;
-  virtual std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) = 0;
+  virtual std::unique_ptr<PjrtExecutable> CompileHlo(
+      std::string_view hlo, std::string_view config) = 0;
   virtual std::vector<std::unique_ptr<PjrtDevice>> GetDevices() = 0;
 };
 

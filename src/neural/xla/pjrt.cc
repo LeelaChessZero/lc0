@@ -178,7 +178,8 @@ class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
     CheckError(api_->PJRT_Client_Destroy(&args));
   }
 
-  std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo) override {
+  std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo,
+                                             std::string_view config) override {
     constexpr std::string_view kFormat = "hlo";
     auto program = MakeStruct<PJRT_Program>();
     program.code = const_cast<char*>(hlo.data());
@@ -189,6 +190,8 @@ class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
     auto args = MakeStruct<PJRT_Client_Compile_Args>();
     args.client = client_;
     args.program = &program;
+    args.compile_options = const_cast<char*>(config.data());
+    args.compile_options_size = config.size();
     CheckError(api_->PJRT_Client_Compile(&args));
     return std::make_unique<PjrtExecutableImpl>(api_, args.executable);
   }

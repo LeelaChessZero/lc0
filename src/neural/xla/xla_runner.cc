@@ -43,7 +43,10 @@ XlaRunner::XlaRunner(const char* library_path)
 void XlaRunner::AddModule(size_t minibatch_size,
                           const pblczero::HloModuleProto& module) {
   CERR << "Compiling!";
-  pjrt_client_->CompileHlo(module.OutputAsString());
+  pblczero::CompileOptionsProto options;
+  options.mutable_executable_build_options()->set_num_replicas(1);
+  options.mutable_executable_build_options()->set_num_partitions(1);
+  pjrt_client_->CompileHlo(module.OutputAsString(), options.OutputAsString());
 }
 
 }  // namespace lczero
