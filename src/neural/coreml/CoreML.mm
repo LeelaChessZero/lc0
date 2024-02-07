@@ -45,31 +45,42 @@ CoreML::CoreML(bool wdl, bool moves_left) {
   [MLModel compileModelAtURL:modelURL
            completionHandler:^(NSURL* compiledModelURL, NSError* error) {
              // Completion Handler
-             if (error) {
-               NSLog(@"Error compiling model: %@", error.localizedDescription);
-             } else {
-               NSLog(@"Compiled model URL: %@", compiledModelURL);
-               NSLog(@"Initializing model with the compiled model URL...");
-               NSError* modelInitError = nil;
-               MLModelConfiguration* configuration = [[MLModelConfiguration alloc] init];
-               // configuration.computeUnits = MLComputeUnitsCPUOnly;
-               // configuration.computeUnits = MLComputeUnitsCPUAndGPU;
-               // configuration.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
-               configuration.computeUnits = MLComputeUnitsAll;
-               MLModel* mlmodel = [MLModel modelWithContentsOfURL:compiledModelURL
-                                                    configuration:configuration
-                                                            error:&modelInitError];
-               [CoreMLModel setMLModel:mlmodel];
-
-               if (modelInitError) {
-                 NSLog(@"Error initializing model: %@", modelInitError.localizedDescription);
+             @try {
+               if (error) {
+                 NSString* exceptionReason = [NSString
+                     stringWithFormat:@"Failed to compile model: %@", error.localizedDescription];
+                 @throw [NSException exceptionWithName:@"ModelCompilationException"
+                                                reason:exceptionReason
+                                              userInfo:@{@"error" : error}];
                } else {
-                 NSLog(@"Model successfully initialized");
-               }
-             }
+                 NSLog(@"Compiled model URL: %@", compiledModelURL);
+                 NSLog(@"Initializing model with the compiled model URL...");
+                 NSError* modelInitError = nil;
+                 MLModelConfiguration* configuration = [[MLModelConfiguration alloc] init];
+                 // configuration.computeUnits = MLComputeUnitsCPUOnly;
+                 // configuration.computeUnits = MLComputeUnitsCPUAndGPU;
+                 // configuration.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
+                 configuration.computeUnits = MLComputeUnitsAll;
+                 MLModel* mlmodel = [MLModel modelWithContentsOfURL:compiledModelURL
+                                                      configuration:configuration
+                                                              error:&modelInitError];
+                 [CoreMLModel setMLModel:mlmodel];
 
-             // Signal the semaphore to indicate that the task is complete
-             dispatch_semaphore_signal(semaphore);
+                 if (modelInitError) {
+                   NSString* exceptionReason =
+                       [NSString stringWithFormat:@"Failed to initialize model: %@",
+                                                  modelInitError.localizedDescription];
+                   @throw [NSException exceptionWithName:@"ModelInitializationException"
+                                                  reason:exceptionReason
+                                                userInfo:@{@"error" : modelInitError}];
+                 } else {
+                   NSLog(@"Model successfully initialized");
+                 }
+               }
+             } @finally {
+               // Signal the semaphore to indicate that the task is complete
+               dispatch_semaphore_signal(semaphore);
+             }
            }];
 
   // Wait for the semaphore
@@ -107,8 +118,12 @@ NSMutableArray<CoreMLInput*>* setupInputArray(float* inputs, int batchSize) {
                                                                     error:&arrayInitError];
 
     if (arrayInitError) {
-      NSLog(@"Error initializing MLMultiArray for input: %@", arrayInitError.localizedDescription);
-      return nil;
+      NSString* exceptionReason =
+          [NSString stringWithFormat:@"Failed to initialize MLMultiArray for input: %@",
+                                     arrayInitError.localizedDescription];
+      @throw [NSException exceptionWithName:@"MLMultiArrayInitializationException"
+                                     reason:exceptionReason
+                                   userInfo:@{@"error" : arrayInitError}];
     }
 
     // Wrap the MLMultiArray in a CoreMLInput object and add it to the inputArray
@@ -129,8 +144,11 @@ NSArray<CoreMLOutput*>* performPredictions(NSMutableArray<CoreMLInput*>* inputAr
                                                                  error:&predictionError];
 
   if (predictionError) {
-    NSLog(@"Error during prediction: %@", predictionError.localizedDescription);
-    return nil;
+    NSString* exceptionReason =
+        [NSString stringWithFormat:@"Prediction failed: %@", predictionError.localizedDescription];
+    @throw [NSException exceptionWithName:@"PredictionException"
+                                   reason:exceptionReason
+                                 userInfo:@{@"error" : predictionError}];
   } else {
     return results;
   }
