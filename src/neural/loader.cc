@@ -214,7 +214,7 @@ void FixOlderWeightsFile(WeightsFile* file) {
   network_format = file->format().network_format().network();
   auto embedding_type = file->format().network_format().input_embedding();
   bool multihead_format = (network_format & 128) == 128;
-  if (!multihead_format) {
+  if (!multihead_format && network_format != nf::NETWORK_ONNX) {
     auto weights = file->weights();
     if (weights.has_policy_heads() && weights.has_value_heads()) {
       CERR << "Weights file has multihead format, updating format flag";
@@ -235,7 +235,7 @@ void FixOlderWeightsFile(WeightsFile* file) {
           net->set_input_embedding(pblczero::NetworkFormat::INPUT_EMBEDDING_NONE);
       }
     }
-  } else {
+  } else if (network_format != nf::NETWORK_ONNX) {
     if (embedding_type != pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE) {
       net->set_input_embedding(pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE);
     }
