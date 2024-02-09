@@ -58,6 +58,10 @@ class Converter {
                 pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
             ? ACTIVATION_MISH
             : ACTIVATION_RELU;
+    default_eps_ = net.format().network_format().input_embedding() ==
+                           pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE
+                       ? 1e-3
+                       : 1e-6;
   }
 
   void Convert(pblczero::Net* dst);
@@ -148,6 +152,7 @@ class Converter {
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
   ActivationFunction default_activation_;
+  float default_eps_;
   bool se_reshape_init_ = false;
 };
 
@@ -463,10 +468,10 @@ std::string Converter::MakeEncoderLayer(
     alpha_in = encoder_in;
   }
   flow = builder->Add(name + "/mha/out/skip", flow, alpha_in);
-  auto ffn_in =
-      MakeLayerNorm(builder, flow, name + "/ln1",
-                    *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
-                    *GetWeghtsConverter(layer.ln1_betas, {embedding_size}));
+  auto ffn_in = MakeLayerNorm(
+      builder, flow, name + "/ln1",
+      *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
+      *GetWeghtsConverter(layer.ln1_betas, {embedding_size}), default_eps_);
   const int dff_size = layer.ffn.dense1_b.size();
   flow =
       builder->MatMul(name + "/ffn/dense1/w", ffn_in,
@@ -496,7 +501,8 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Add(name + "/ffn/skip", flow, alpha_ffn_in);
   flow = MakeLayerNorm(builder, flow, name + "/ln2",
                        *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
-                       *GetWeghtsConverter(layer.ln2_betas, {embedding_size}));
+                       *GetWeghtsConverter(layer.ln2_betas, {embedding_size}),
+                       default_eps_);
   return flow;
 }
 
