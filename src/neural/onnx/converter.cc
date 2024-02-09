@@ -510,15 +510,18 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
             weights.smolgen_w,
             {static_cast<int>(weights.smolgen_w.size() / 4096), 4096}, {1, 0}));
   }
-
+  auto input_embedding = src_.format().network_format().input_embedding();
+  using network_format = pblczero::NetworkFormat;
   auto flow = builder->Transpose("/attn_body/transpose", input, {0, 2, 3, 1});
+  int fist_stage_out_C = 0;
 
   if (NumResBlocks() > 0) {
     flow = builder->Reshape(
         "/attn_body/reshape", flow,
         builder->AddInitializer("/const/att_body_shape",
                                 Int64OnnxConst({-1, NumFilters()}, {2})));
-  } else {
+    fist_stage_out_C = NumFilters();
+  } else if (input_embedding == network_format::INPUT_EMBEDDING_PE_MAP) {
     flow = builder->Reshape(
         "/attn_body/reshape", flow,
         builder->AddInitializer("/const/att_body_shape",
@@ -586,17 +589,61 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
         "/attn_body/reshape2", flow,
         builder->AddInitializer("/const/att_body_shape2",
                                 Int64OnnxConst({-1, 176}, {2})));
+    fist_stage_out_C = 176;
+  } else if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
+    int embedding_dense_size = weights.ip_emb_preproc_b.size() / 64;
+    flow = builder->Reshape(
+        "/attn_body/reshape", flow,
+        builder->AddInitializer("/const/att_body_shape",
+                                Int64OnnxConst({-1, 64, 112}, {3})));
+    auto pos_info = builder->Slice("/attn_body/embedding/slice", flow,
+                                   {0, 0, 0}, {INT_MAX, 64, 12});
+    pos_info = builder->Reshape(
+        "/attn_body/embedding/reshape", pos_info,
+        builder->AddInitializer("/const/pos_info_shape",
+                                Int64OnnxConst({-1, 64 * 12}, {2})));
+
+    pos_info = builder->MatMul(
+        "/attn_body/embedding/preprocess/matmul", pos_info,
+        *GetWeghtsConverter(weights.ip_emb_preproc_w,
+                            {64 * 12, 64 * embedding_dense_size}, {1, 0}));
+    pos_info = builder->Add("/attn_body/embedding/preprocess/add", pos_info,
+                            *GetWeghtsConverter(weights.ip_emb_preproc_b,
+                                                {64 * embedding_dense_size}));
+
+    pos_info = builder->Reshape(
+        "/attn_body/embedding/preprocess/reshape", pos_info,
+        builder->AddInitializer(
+            "/const/pos_info_processed_shape",
+            Int64OnnxConst({-1, 64, embedding_dense_size}, {3})));
+
+    flow = builder->Concat("/attn_body/embedding/concat", {flow, pos_info}, 2);
+
+    flow = builder->Reshape(
+        "/attn_body/embedding/out/reshape", flow,
+        builder->AddInitializer(
+            "/const/embedding/out_shape",
+            Int64OnnxConst({-1, 112 + embedding_dense_size}, {2})));
+    fist_stage_out_C = 112 + embedding_dense_size;
+  } else {
+    throw Exception("Attention body missing input embedding.");
   }
 
   int embedding_size = weights.ip_emb_b.size();
   flow = builder->MatMul(
       "/attn_body/matmul", flow,
-      *GetWeghtsConverter(
-          weights.ip_emb_w,
-          {NumResBlocks() > 0 ? NumFilters() : 176, embedding_size}, {1, 0}));
+      *GetWeghtsConverter(weights.ip_emb_w, {fist_stage_out_C, embedding_size},
+                          {1, 0}));
   flow = builder->Add("/attn_body/add", flow,
                       *GetWeghtsConverter(weights.ip_emb_b, {embedding_size}));
   flow = MakeActivation(builder, flow, "/attn_body", default_activation_);
+
+  if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
+    flow = MakeLayerNorm(
+        builder, flow, "/attn_body/ln",
+        *GetWeghtsConverter(weights.ip_emb_ln_gammas, {embedding_size}),
+        *GetWeghtsConverter(weights.ip_emb_ln_betas, {embedding_size}), 1e-3);
+  }
 
   if (weights.ip_mult_gate.size() > 0 || weights.ip_add_gate.size() > 0) {
     flow = builder->Reshape(
@@ -617,6 +664,44 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
         "/attn_body/ma_gating/rehape2", flow,
         builder->AddInitializer("/const/ma_gating/shape2",
                                 Int64OnnxConst({-1, embedding_size}, {2})));
+  }
+
+  if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
+    const int dff_size = weights.ip_emb_ffn.dense1_b.size();
+    auto skip = flow;
+    flow = builder->MatMul(
+        "/attn_body/ffn/dense1/w", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense1_w,
+                            {embedding_size, dff_size}, {1, 0}));
+    flow = builder->Add(
+        "/attn_body/ffn/dense1/b", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense1_b, {dff_size}));
+    flow = MakeActivation(builder, flow, "/attn_body/ffn/dense1",
+                          default_activation_);
+    flow = builder->MatMul(
+        "/attn_body/ffn/dense2/w", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense2_w,
+                            {dff_size, embedding_size}, {1, 0}));
+    flow = builder->Add(
+        "/attn_body/ffn/dense2/b", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense2_b, {embedding_size}));
+
+    float ffn_alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
+    std::unique_ptr<OnnxConst> alpha_onnx;
+    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
+      alpha_onnx = std::make_unique<Float16OnnxConst>(
+          Float16OnnxConst({FP32toFP16(ffn_alpha)}, {1}));
+    } else {
+      alpha_onnx =
+          std::make_unique<FloatOnnxConst>(FloatOnnxConst({ffn_alpha}, {1}));
+    }
+    flow = builder->Mul("/attn_body/ffn/alpha", flow, *alpha_onnx);
+    flow = builder->Add("/attn_body/ffn/skip", flow, skip);
+    flow = MakeLayerNorm(
+        builder, flow, "/attn_body/ffn/ln",
+        *GetWeghtsConverter(weights.ip_emb_ffn_ln_gammas, {embedding_size}),
+        *GetWeghtsConverter(weights.ip_emb_ffn_ln_betas, {embedding_size}),
+        1e-3);
   }
 
   float alpha = std::pow(2.0f * NumEncBlocks(), 0.25f);
@@ -1013,6 +1098,7 @@ void CheckSrcFormat(const pblczero::NetworkFormat& nf) {
   switch (nf.input_embedding()) {
     case pblczero::NetworkFormat::INPUT_EMBEDDING_NONE:
     case pblczero::NetworkFormat::INPUT_EMBEDDING_PE_MAP:
+    case pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE:
       break;
     default:
       throw Exception("Input embedding " +
