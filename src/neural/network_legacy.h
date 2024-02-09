@@ -206,7 +206,6 @@ struct LegacyWeights {
   Vec ip2_val_w;
   Vec ip2_val_b;
 
-
   // Policy and value multiheads
   ValueHeads value_heads;
   PolicyHeads policy_heads;
@@ -223,7 +222,6 @@ struct LegacyWeights {
 
   // Smolgen global weights
   Vec smolgen_w;
-  Vec smolgen_b;
   bool has_smolgen;
 };
 

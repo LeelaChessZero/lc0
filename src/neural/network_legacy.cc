@@ -57,6 +57,8 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip1_val_b(LayerAdapter(weights.ip1_val_b()).as_vector()),
       ip2_val_w(LayerAdapter(weights.ip2_val_w()).as_vector()),
       ip2_val_b(LayerAdapter(weights.ip2_val_b()).as_vector()),
+      value_heads(weights.value_heads()),
+      policy_heads(weights.policy_heads()),
       moves_left(weights.moves_left()),
       ip_mov_w(LayerAdapter(weights.ip_mov_w()).as_vector()),
       ip_mov_b(LayerAdapter(weights.ip_mov_b()).as_vector()),
@@ -65,9 +67,7 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
       ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
       ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()),
       smolgen_w(LayerAdapter(weights.smolgen_w()).as_vector()),
-      has_smolgen(weights.has_smolgen_w()),
-      policy_heads(weights.policy_heads()),
-      value_heads(weights.value_heads()) {
+      has_smolgen(weights.has_smolgen_w()) {
   has_multiheads = weights.has_policy_heads() && weights.policy_heads().has_optimistic_st()
                 && weights.has_value_heads() && weights.value_heads().has_q();
   for (const auto& res : weights.residual()) {
