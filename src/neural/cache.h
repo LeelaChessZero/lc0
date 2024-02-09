@@ -38,7 +38,6 @@ struct CachedNNRequest {
   float q;
   float d;
   float m;
-  float e;
   // TODO(mooskagh) Don't really need index if using perfect hash.
   SmallArray<IdxAndProb> p;
 };
@@ -79,8 +78,6 @@ class CachingComputation {
   float GetQVal(int sample) const;
   // Returns probability of draw if NN has WDL value head.
   float GetDVal(int sample) const;
-  // Returns E (value error) value for @sample.
-  float GetEVal(int sample) const;
   // Returns estimated remaining moves.
   float GetMVal(int sample) const;
   // Returns P value @move_id of @sample.

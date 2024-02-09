@@ -100,10 +100,6 @@ class BlasComputation : public NetworkComputation {
     }
   }
 
-  float GetEVal(int sample) const override {
-    return 0.0f;
-  }
-
   float GetMVal(int sample) const override {
     if (moves_left_) {
       return m_values_[sample];
