@@ -45,6 +45,8 @@ struct WeightsToOnnxConverterOptions {
   int opset = 17;
   bool alt_mish = false;
   bool alternative_layer_normalization = false;
+  std::string policy_head = "vanilla";
+  std::string value_head = "winner";
 };
 
 // Converts "classical" weights file to weights file with embedded ONNX model.

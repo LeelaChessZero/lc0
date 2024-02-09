@@ -130,7 +130,8 @@ class Converter {
 
   std::string MakeAttentionPolicy(OnnxBuilder* builder,
                                   const std::string& input,
-                                  const LegacyWeights& weights);
+                                  const LegacyWeights& weights,
+                                  const LegacyWeights::PolicyHead& head);
 
   void MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                       const std::string& input, const LegacyWeights& weights);
@@ -731,10 +732,13 @@ std::vector<int> MakePolicyMap(const short* map, int size) {
 }
 }  // namespace
 
-std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
-                                           const std::string& input,
-                                           const LegacyWeights& weights) {
-  const LegacyWeights::PolicyHead& head = weights.policy_heads.vanilla;
+std::string Converter::MakeAttentionPolicy(
+    OnnxBuilder* builder, const std::string& input,
+    const LegacyWeights& weights, const LegacyWeights::PolicyHead& head) {
+  if (head.ip2_pol_b.empty()) {
+    throw Exception("The policy head selected '" + options_.policy_head + "'" +
+                    " is empty.");
+  }
   const int embedding_size = weights.ip_emb_b.size();
   const int policy_embedding_size = weights.policy_heads.ip_pol_b.size();
   const int policy_d_model = head.ip2_pol_b.size();
@@ -846,12 +850,21 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
 void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                                const std::string& input,
                                const LegacyWeights& weights) {
-  const LegacyWeights::PolicyHead& head = weights.policy_heads.vanilla;
+  const LegacyWeights::PolicyHead& head =
+      (options_.policy_head == "vanilla")
+          ? weights.policy_heads.vanilla
+          : (options_.policy_head == "optimistic")
+                ? weights.policy_heads.optimistic_st
+                : weights.policy_heads.soft;
   if (src_.format().network_format().policy() ==
       pblczero::NetworkFormat::POLICY_ATTENTION) {
-    auto output = MakeAttentionPolicy(builder, input, weights);
+    auto output = MakeAttentionPolicy(builder, input, weights, head);
     builder->AddOutput(output, {-1, 1858}, GetDataType());
     onnx->set_output_policy(output);
+    return;
+  } else if (head.policy.weights.empty()) {
+    throw Exception("The policy head selected '" + options_.policy_head + "'" +
+                    " is empty.");
   } else if (!head.policy1.weights.empty()) {
     // Conv policy head.
     if (NumEncBlocks() > 0) {
@@ -903,8 +916,16 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
 void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                               const std::string& input,
                               const LegacyWeights& weights) {
+  const LegacyWeights::ValueHead& head = (options_.value_head == "winner")
+                                             ? weights.value_heads.winner
+                                             : (options_.value_head == "q")
+                                                   ? weights.value_heads.q
+                                                   : weights.value_heads.st;
+  if (head.ip1_val_b.empty()) {
+    throw Exception("The value head selected '" + options_.value_head + "'" +
+                    " is empty.");
+  }
   std::string flow;
-  const LegacyWeights::ValueHead& head = weights.value_heads.winner;
   const int val_channels = NumEncBlocks() > 0 ? head.ip_val_b.size() : 32;
   if (NumEncBlocks() > 0) {
     int embedding_size = weights.ip_emb_b.size();
@@ -1127,6 +1148,19 @@ void Converter::Convert(pblczero::Net* dst) {
     throw Exception("The network already has ONNX section.");
   }
   CheckSrcFormat(src_.format().network_format());
+  // Check that selected policy head exists.
+  if (options_.policy_head != "vanilla" &&
+      options_.policy_head != "optimistic" && options_.policy_head != "soft") {
+    throw Exception("The policy head you specified '" + options_.policy_head +
+                    "'" + " does not exist in this net.");
+  }
+  // Check that selected value head exists.
+  if (options_.value_head != "winner" && options_.value_head != "q" &&
+      options_.value_head != "st") {
+    throw Exception("The value head you specified '" + options_.value_head +
+                    "'" + " does not exist in this net.");
+  }
+
   CopyGenericFields(dst);
   GenerateOnnx(dst->mutable_onnx_model());
 }
