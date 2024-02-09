@@ -31,6 +31,7 @@
 
 #include "neural/onnx/onnx.pb.h"
 #include "neural/xla/hlo.pb.h"
+#include "neural/xla/hlo_builder.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -76,31 +77,62 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
   }
 }
 
+pblczero::XlaShapeProto OnnxShapeToXlaShape(
+    const pblczero::TypeProto& type,
+    std::optional<size_t> batch_size = std::nullopt) {
+  pblczero::XlaShapeProto shape;
+  shape.set_element_type(OnnxTypeToXlaType(type.tensor_type().elem_type()));
+  for (const auto& dim : type.tensor_type().shape().dim()) {
+    if (dim.has_dim_value()) {
+      shape.add_dimensions(dim.dim_value());
+      continue;
+    }
+    if (dim.dim_param() == "batch") {
+      if (batch_size.has_value()) {
+        shape.add_dimensions(batch_size.value());
+        continue;
+      }
+      throw Exception("Batch size not provided");
+    }
+    throw Exception("Unsupported dimension type " + type.OutputAsJson());
+  }
+  return shape;
+}
+
 pblczero::XlaShapeProto OnnxTypeProtoToXlaShape(
     const pblczero::TypeProto& type) {}
 
 class Onnx2HloConverter {
  public:
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {}
-  void Convert(const pblczero::ModelProto& onnx_model, size_t minibatch_size) {}
+  void Convert(const pblczero::ModelProto& onnx_model, size_t minibatch_size) {
+    BuildInputs(onnx_model.graph().input());
+  }
 
  private:
-  void BuildInputs() {
-    // for (const auto& input : onnx_model.graph().input()) {
-    //   ///...
-    // }
+  void BuildInputs(const std::vector<pblczero::ValueInfoProto>& inputs) {
+    for (const auto& input : inputs) {
+      auto ctx = builder_.ScopedContext().OpType("input").OpName(input.name());
+      auto out_shape = OnnxShapeToXlaShape(input.type());
+      auto in_shape = out_shape;
+      in_shape.set_element_type(options_.io_type);
+      auto* flow = builder_.Parameter(in_shape);
+      flow = builder_.Convert(flow, out_shape.element_type());
+    }
   }
 
   std::unordered_map<std::string, size_t> onnx_to_xla_name_;
-  Onnx2HloResult result_;
-  const Onnx2HloOptions& options_;
+  HloBuilder builder_;
+  Onnx2HloOptions options_;
 };
 
 }  // namespace
 
 Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
+                                size_t minibatch_size,
                                 const Onnx2HloOptions& options) {
-  return {};
+  Onnx2HloConverter converter(options);
+  converter.Convert(onnx_model, minibatch_size);
 }
 
 }  // namespace lczero

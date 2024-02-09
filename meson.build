@@ -625,6 +625,7 @@ if get_option('build_backends')
   ## ~~~~~~~~
   if get_option('xla')
       files += [
+        'src/neural/xla/hlo_builder.cc',
         'src/neural/xla/network_xla.cc',
         'src/neural/xla/onnx2hlo.cc',
         'src/neural/xla/pjrt.cc',

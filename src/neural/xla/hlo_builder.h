@@ -25,33 +25,60 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <memory>
 #include <optional>
+#include <vector>
 
 #include "neural/xla/hlo.pb.h"
 
 namespace lczero {
 
+class HloContext;
+class HloBuilder;
+
+using HloFlow = pblczero::HloInstructionProto;
+
+using HloComputation = std::vector<std::unique_ptr<HloFlow>>;
+
 class HloBuilder {
  public:
-  class Context;
-  friend class Context;
+  HloContext ScopedContext();
+
+  HloFlow* Parameter(const pblczero::XlaShapeProto& shape);
+  HloFlow* Constant(const pblczero::XlaShapeProto& shape,
+                    const std::string& raw_data);
+  HloFlow* Convert(HloFlow* input, const pblczero::XlaShapeProto::Type type);
+
+  pblczero::HloModuleProto Build(std::string_view name);
 
  private:
+  HloFlow* MakeInstruction(std::string_view opcode,
+                           const pblczero::XlaShapeProto& shape);
+  void AssignInstructionNames();
+
+  HloComputation entry_computation_;
+  std::unordered_map<std::string, pblczero::HloComputationProto>
+      dependent_computations_;
   pblczero::XlaOpMetadata metadata_;
+  friend class HloContext;
 };
 
-class HloBuilder::Context {
+class HloContext {
  public:
-  Context(HloBuilder* builder);
-  Context(const Context&) = delete;
-  Context& operator=(const Context&) = delete;
-  Context(Context&&);
-  Context& operator=(Context&&);
-  virtual ~Context();
+  HloContext(HloBuilder* builder) : builder_(builder) {}
+  ~HloContext() { builder_->metadata_ = saved_metadata_; }
+  const HloContext& OpType(std::string_view op_type) const {
+    builder_->metadata_.set_op_type(op_type);
+    return *this;
+  }
+  const HloContext& OpName(std::string_view op_name) const {
+    builder_->metadata_.set_op_name(op_name);
+    return *this;
+  }
 
  private:
   HloBuilder* builder_;
-  pblczero::XlaOpMetadata metadata_;
+  pblczero::XlaOpMetadata saved_metadata_;
 };
 
 }  // namespace lczero

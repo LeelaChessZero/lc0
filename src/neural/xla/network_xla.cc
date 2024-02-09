@@ -78,7 +78,7 @@ void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {
   };
 
   for (size_t batch_size : {512, 256, 128, 64}) {
-    auto conversion = ConvertOnnxToHlo(onnx, {batch_size});
+    auto conversion = ConvertOnnxToHlo(onnx, batch_size, {});
     add_tensors(conversion.constants, constant_to_parameter_idx);
     add_tensors(conversion.inputs, input_to_parameter_idx);
     add_tensors(conversion.outputs, output_to_parameter_idx);

@@ -37,8 +37,8 @@
 namespace lczero {
 
 struct Onnx2HloOptions {
-  size_t minibatch_size;
   size_t max_inline_constant_size = 1024;
+  pblczero::XlaShapeProto::Type io_type = pblczero::XlaShapeProto::F32;
 };
 
 struct Onnx2HloResult {
@@ -54,6 +54,7 @@ struct Onnx2HloResult {
 };
 
 Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
+                                size_t minibatch_size,
                                 const Onnx2HloOptions& options);
 
 XlaTensor OnnxConstantToXlaTensor(const pblczero::ModelProto& onnx_model,
