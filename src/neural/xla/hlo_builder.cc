@@ -84,8 +84,8 @@ pblczero::HloComputationProto MakeComputation(const HloComputation& comp,
   pblczero::HloComputationProto ret;
   ret.set_id(id);
   ret.set_name(name);
-  for (auto& instr : comp) *ret.add_instructions() = *instr;
   auto [shapes, names] = AssignParameterIndices(comp);
+  for (auto& instr : comp) *ret.add_instructions() = *instr;
   *ret.mutable_program_shape()->mutable_parameters() = shapes;
   *ret.mutable_program_shape()->mutable_parameter_names() = names;
   *ret.mutable_program_shape()->mutable_result() = comp.back()->shape();
