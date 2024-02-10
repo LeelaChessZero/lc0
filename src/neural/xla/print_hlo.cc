@@ -211,6 +211,39 @@ class HloPrettyPrinter {
     s_ << ")";
   }
 
+  void PrintWindow(const pblczero::XlaWindow& window) {
+    s_ << "size=";
+    for (size_t i = 0; i < window.dimensions_size(); ++i) {
+      if (i > 0) s_ << "x";
+      s_ << window.dimensions(i).size();
+    }
+    s_ << " pads=";
+    for (size_t i = 0; i < window.dimensions_size(); ++i) {
+      if (i > 0) s_ << "x";
+      s_ << window.dimensions(i).padding_low() << "_"
+         << window.dimensions(i).padding_high();
+    }
+  }
+
+  void PrintConvolutionDimensionNumbers(
+      const pblczero::XlaConvolutionDimensionNumbers& dn) {
+    std::string input_dims(dn.input_spatial_dimensions_size() + 2, '?');
+    std::string kernel_dims(dn.kernel_spatial_dimensions_size() + 2, '?');
+    std::string output_dims(dn.output_spatial_dimensions_size() + 2, '?');
+    input_dims[dn.input_batch_dimension()] = 'b';
+    input_dims[dn.input_feature_dimension()] = 'f';
+    kernel_dims[dn.kernel_output_feature_dimension()] = 'o';
+    kernel_dims[dn.kernel_input_feature_dimension()] = 'i';
+    output_dims[dn.output_batch_dimension()] = 'b';
+    output_dims[dn.output_feature_dimension()] = 'f';
+    for (size_t i = 0; i < dn.input_spatial_dimensions_size(); ++i) {
+      input_dims[dn.input_spatial_dimensions(i)] = '0' + i;
+      kernel_dims[dn.kernel_spatial_dimensions(i)] = '0' + i;
+      output_dims[dn.output_spatial_dimensions(i)] = '0' + i;
+    }
+    s_ << input_dims << "_" << kernel_dims << "->" << output_dims;
+  }
+
   void PrintInstructionAttributes(
       const pblczero::HloInstructionProto& instruction) {
     if (instruction.called_computation_ids_size() > 0) {
@@ -223,11 +256,21 @@ class HloPrettyPrinter {
       }
       s_ << "}";
     }
+    if (instruction.has_window()) {
+      s_ << ", window={";
+      PrintWindow(instruction.window());
+      s_ << "}";
+    }
+    if (instruction.has_convolution_dimension_numbers()) {
+      s_ << ", dim_labels=";
+      PrintConvolutionDimensionNumbers(
+          instruction.convolution_dimension_numbers());
+    }
   }
 
   void PrintInstructionMetadata(
       const pblczero::HloInstructionProto& instruction) {
-    if (instruction.has_metadata() > 0) {
+    if (instruction.has_metadata()) {
       const auto& m = instruction.metadata();
       s_ << ", metadata={";
       bool first = true;
