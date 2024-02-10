@@ -24,8 +24,8 @@
 
 namespace lczero {
 
-struct LegacyWeights {
-  explicit LegacyWeights(const pblczero::Weights& weights);
+struct BaseWeights {
+  explicit BaseWeights(const pblczero::Weights& weights);
 
   using Vec = std::vector<float>;
   struct ConvBlock {
@@ -106,8 +106,6 @@ struct LegacyWeights {
     // Extra convolution for AZ-style policy head
     ConvBlock policy1;
     ConvBlock policy;
-    Vec ip_pol_w;
-    Vec ip_pol_b;
     // Extra params for attention policy head
     Vec ip2_pol_w;
     Vec ip2_pol_b;
@@ -181,6 +179,26 @@ struct LegacyWeights {
   // Residual tower.
   std::vector<Residual> residual;
 
+  // Policy and value multiheads
+  bool has_multiheads;
+
+  // Moves left head
+  ConvBlock moves_left;
+  Vec ip_mov_w;
+  Vec ip_mov_b;
+  Vec ip1_mov_w;
+  Vec ip1_mov_b;
+  Vec ip2_mov_w;
+  Vec ip2_mov_b;
+
+  // Smolgen global weights
+  Vec smolgen_w;
+  bool has_smolgen;
+};
+
+struct LegacyWeights : public BaseWeights {
+  explicit LegacyWeights(const pblczero::Weights& weights);
+
   // Policy head
   // Extra convolution for AZ-style policy head
   ConvBlock policy1;
@@ -196,7 +214,6 @@ struct LegacyWeights {
   int pol_encoder_head_count;
   std::vector<EncoderLayer> pol_encoder;
 
-
   // Value head
   ConvBlock value;
   Vec ip_val_w;
@@ -205,24 +222,13 @@ struct LegacyWeights {
   Vec ip1_val_b;
   Vec ip2_val_w;
   Vec ip2_val_b;
+};
 
+struct MultiHeadWeights : public BaseWeights {
+  explicit MultiHeadWeights(const pblczero::Weights& weights);
   // Policy and value multiheads
   ValueHeads value_heads;
   PolicyHeads policy_heads;
-  bool has_multiheads;
-
-  // Moves left head
-  ConvBlock moves_left;
-  Vec ip_mov_w;
-  Vec ip_mov_b;
-  Vec ip1_mov_w;
-  Vec ip1_mov_b;
-  Vec ip2_mov_w;
-  Vec ip2_mov_b;
-
-  // Smolgen global weights
-  Vec smolgen_w;
-  bool has_smolgen;
 };
 
 enum InputEmbedding {
