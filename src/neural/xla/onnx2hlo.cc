@@ -32,6 +32,7 @@
 #include "neural/onnx/onnx.pb.h"
 #include "neural/xla/hlo.pb.h"
 #include "neural/xla/hlo_builder.h"
+#include "neural/xla/print_hlo.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -76,10 +77,8 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
                       pblczero::TensorProto::DataType_Name(type));
   }
 }
-
-pblczero::XlaShapeProto OnnxShapeToXlaShape(
-    const pblczero::TypeProto& type,
-    std::optional<size_t> batch_size = std::nullopt) {
+pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
+                                            std::optional<size_t> batch_size) {
   pblczero::XlaShapeProto shape;
   shape.set_element_type(OnnxTypeToXlaType(type.tensor_type().elem_type()));
   for (const auto& dim : type.tensor_type().shape().dim()) {
@@ -106,14 +105,18 @@ class Onnx2HloConverter {
  public:
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {}
   void Convert(const pblczero::ModelProto& onnx_model, size_t minibatch_size) {
+    batch_size_ = minibatch_size;
     BuildInputs(onnx_model.graph().input());
+
+    // TO DELETE, DEBUG ONLY
+    PrettyPrintHlo(builder_.Build("main"), {}, std::cout);
   }
 
  private:
   void BuildInputs(const std::vector<pblczero::ValueInfoProto>& inputs) {
     for (const auto& input : inputs) {
       auto ctx = builder_.ScopedContext().OpType("input").OpName(input.name());
-      auto out_shape = OnnxShapeToXlaShape(input.type());
+      auto out_shape = OnnxShapeToXlaShape(input.type(), batch_size_);
       auto in_shape = out_shape;
       in_shape.set_element_type(options_.io_type);
       auto* flow = builder_.Parameter(in_shape);
@@ -123,6 +126,7 @@ class Onnx2HloConverter {
 
   std::unordered_map<std::string, size_t> onnx_to_xla_name_;
   HloBuilder builder_;
+  size_t batch_size_ = 0;
   Onnx2HloOptions options_;
 };
 

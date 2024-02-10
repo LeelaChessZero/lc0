@@ -628,6 +628,7 @@ if get_option('build_backends')
         'src/neural/xla/hlo_builder.cc',
         'src/neural/xla/network_xla.cc',
         'src/neural/xla/onnx2hlo.cc',
+        'src/neural/xla/print_hlo.cc',
         'src/neural/xla/pjrt.cc',
         'src/neural/xla/xla_runner.cc',
       ]
