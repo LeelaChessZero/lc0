@@ -53,8 +53,6 @@ HloFlow* HloBuilder::MakeInstruction(std::string_view opcode,
   return ret;
 }
 
-HloContext HloBuilder::ScopedContext() { return HloContext(this); }
-
 namespace {
 
 std::pair<std::vector<pblczero::XlaShapeProto>, std::vector<std::string>>
@@ -82,6 +80,7 @@ pblczero::HloComputationProto MakeComputation(const HloComputation& comp,
   auto [shapes, names] = AssignParameterIndices(comp);
   *ret.mutable_program_shape()->mutable_parameters() = shapes;
   *ret.mutable_program_shape()->mutable_parameter_names() = names;
+  *ret.mutable_program_shape()->mutable_result() = comp.back()->shape();
   ret.set_root_id(comp.back()->id());
   return ret;
 }
@@ -98,11 +97,12 @@ pblczero::HloModuleProto HloBuilder::Build(std::string_view name) {
   for (auto& [name, comp] : dependent_computations_) {
     *module.add_computations() = comp;
   }
+  *module.mutable_host_program_shape() = module.computations(0).program_shape();
   return module;
 }
 
 void HloBuilder::AssignInstructionNames() {
-  // Every instruction in the module should have a unique name, numeric names
+  // Every instruction in the module should have an unique name, numeric names
   // are allowed.
   size_t idx = 0;
   for (auto& instr : entry_computation_) instr->set_name(std::to_string(idx++));

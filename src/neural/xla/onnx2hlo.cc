@@ -95,6 +95,10 @@ pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
     }
     throw Exception("Unsupported dimension type " + type.OutputAsJson());
   }
+  for (size_t i = 0; i < shape.dimensions_size(); ++i) {
+    shape.add_is_dynamic_dimension(false);
+  }
+
   return shape;
 }
 
@@ -104,18 +108,24 @@ pblczero::XlaShapeProto OnnxTypeProtoToXlaShape(
 class Onnx2HloConverter {
  public:
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {}
-  void Convert(const pblczero::ModelProto& onnx_model, size_t minibatch_size) {
+  Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
+                         size_t minibatch_size) {
     batch_size_ = minibatch_size;
     BuildInputs(onnx_model.graph().input());
 
+    Onnx2HloResult result;
+    result.hlo_module = builder_.Build("onnx_model");
     // TO DELETE, DEBUG ONLY
-    PrettyPrintHlo(builder_.Build("main"), {}, std::cout);
+    PrettyPrintHlo(result.hlo_module, {}, std::cout);
+    return result;
   }
 
  private:
   void BuildInputs(const std::vector<pblczero::ValueInfoProto>& inputs) {
     for (const auto& input : inputs) {
-      auto ctx = builder_.ScopedContext().OpType("input").OpName(input.name());
+      auto ctx = HloContext(&builder_);
+      ctx.SetOpType("input");
+      ctx.SetOpName(input.name());
       auto out_shape = OnnxShapeToXlaShape(input.type(), batch_size_);
       auto in_shape = out_shape;
       in_shape.set_element_type(options_.io_type);
@@ -136,7 +146,7 @@ Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
                                 size_t minibatch_size,
                                 const Onnx2HloOptions& options) {
   Onnx2HloConverter converter(options);
-  converter.Convert(onnx_model, minibatch_size);
+  return converter.Convert(onnx_model, minibatch_size);
 }
 
 }  // namespace lczero

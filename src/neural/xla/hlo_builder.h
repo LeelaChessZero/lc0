@@ -42,8 +42,6 @@ using HloComputation = std::vector<std::unique_ptr<HloFlow>>;
 
 class HloBuilder {
  public:
-  HloContext ScopedContext();
-
   HloFlow* Parameter(const pblczero::XlaShapeProto& shape);
   HloFlow* Constant(const pblczero::XlaShapeProto& shape,
                     const std::string& raw_data);
@@ -67,13 +65,11 @@ class HloContext {
  public:
   HloContext(HloBuilder* builder) : builder_(builder) {}
   ~HloContext() { builder_->metadata_ = saved_metadata_; }
-  const HloContext& OpType(std::string_view op_type) const {
+  void SetOpType(std::string_view op_type) const {
     builder_->metadata_.set_op_type(op_type);
-    return *this;
   }
-  const HloContext& OpName(std::string_view op_name) const {
+  void SetOpName(std::string_view op_name) const {
     builder_->metadata_.set_op_name(op_name);
-    return *this;
   }
 
  private:

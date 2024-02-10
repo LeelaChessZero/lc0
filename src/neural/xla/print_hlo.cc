@@ -29,6 +29,42 @@
 
 namespace lczero {
 namespace {
+
+std::string CEscape(std::string_view str) {
+  std::string result = "\"";
+  for (char c : str) {
+    switch (c) {
+      case '\n':
+        result += "\\n";
+        break;
+      case '\t':
+        result += "\\t";
+        break;
+      case '\r':
+        result += "\\r";
+        break;
+      case '\v':
+        result += "\\v";
+        break;
+      case '\f':
+        result += "\\f";
+        break;
+      case '\\':
+        result += "\\\\";
+        break;
+      case '\"':
+        result += "\\\"";
+        break;
+      case '\'':
+        result += "\\\'";
+        break;
+      default:
+        result += c;
+    }
+  }
+  return result + "\"";
+}
+
 class HloPrettyPrinter {
  public:
   HloPrettyPrinter(PrettyPrintHloOptions options, std::ostream& stream)
@@ -200,9 +236,10 @@ class HloPrettyPrinter {
         return s_;
       };
       std::vector<std::string> bits;
-      if (m.has_op_type()) sep() << "op_type=" << m.op_type();
-      if (m.has_op_name()) sep() << "op_name=" << m.op_name();
-      if (m.has_source_file()) sep() << "source_file=" << m.source_file();
+      if (m.has_op_type()) sep() << "op_type=" << CEscape(m.op_type());
+      if (m.has_op_name()) sep() << "op_name=" << CEscape(m.op_name());
+      if (m.has_source_file())
+        sep() << "source_file=" << CEscape(m.source_file());
       if (m.has_source_line()) sep() << "source_line=" << m.source_line();
       s_ << "}";
     }
