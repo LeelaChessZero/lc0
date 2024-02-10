@@ -195,7 +195,7 @@ class Onnx2HloConverter {
     ctx.SetOpType("initializer");
     ctx.SetOpName(name);
 
-    HloFlow* flow = nullptr;
+    const HloFlow* flow = nullptr;
     if (iter2->second->raw_data().size() <= options_.max_inline_constant_size) {
       flow = builder_.Constant(OnnxTensorToXlaLiteral(*iter2->second));
     } else {
@@ -215,11 +215,60 @@ class Onnx2HloConverter {
     return GetFlowByName(std::string(node.input(idx)));
   }
 
+  const pblczero::AttributeProto* GetAttribute(const pblczero::NodeProto& node,
+                                               std::string_view name,
+                                               bool optional = false) {
+    for (const auto& attribute : node.attribute()) {
+      if (attribute.name() == name) return &attribute;
+    }
+    if (optional) return nullptr;
+    throw Exception("Attribute " + std::string(name) + " not set");
+  }
+
   void OpConv(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, {"pads", "kernel_shape"});
     auto* input = GetInput(node, 0);
     auto* kernel = GetInput(node, 1);
     auto* bias = GetInput(node, 2, true);
+
+    pblczero::XlaConvolutionDimensionNumbers dn;
+    dn.set_input_batch_dimension(0);
+    dn.set_input_feature_dimension(1);
+    dn.set_kernel_input_feature_dimension(1);
+    dn.set_kernel_output_feature_dimension(0);
+    dn.set_output_batch_dimension(0);
+    dn.set_output_feature_dimension(1);
+    const size_t num_dims = input->shape().dimensions_size() - 2;
+    for (size_t i = 0; i < num_dims; ++i) {
+      dn.add_input_spatial_dimensions(i + 2);
+      dn.add_kernel_spatial_dimensions(i + 2);
+      dn.add_output_spatial_dimensions(i + 2);
+    }
+
+    const auto* pads = GetAttribute(node, "pads");
+    const auto* kernel_shape = GetAttribute(node, "kernel_shape");
+    if (!pads || pads->ints_size() != 2 * num_dims) {
+      throw Exception("'pads' attribute not set or wrong size");
+    }
+    if (!kernel_shape || kernel_shape->ints_size() != num_dims) {
+      throw Exception("'kernel_shape' attribute not set or wrong size");
+    }
+    pblczero::XlaWindow window;
+    for (size_t i = 0; i < input->shape().dimensions_size() - 2; ++i) {
+      auto* dim = window.add_dimensions();
+      dim->set_size(kernel_shape->ints(i));
+      dim->set_stride(1);
+      dim->set_padding_low(pads->ints(i));
+      dim->set_padding_high(pads->ints(i + num_dims));
+      dim->set_window_dilation(1);
+      dim->set_base_dilation(1);
+    }
+
+    auto* conv = builder_.Convolution(input, kernel, window, dn);
+
+    if (!bias) return;
+
+    // Add bias!!!1! DO NOT SUBMIT
   }
 
   void BuildInputs(const std::vector<pblczero::ValueInfoProto>& inputs) {
@@ -230,15 +279,16 @@ class Onnx2HloConverter {
       auto out_shape = OnnxShapeToXlaShape(input.type(), batch_size_);
       auto in_shape = out_shape;
       in_shape.set_element_type(options_.io_type);
-      auto* flow = MakeParameter(std::string(input.name()), in_shape, false);
+      const auto* flow =
+          MakeParameter(std::string(input.name()), in_shape, false);
       flow = builder_.Convert(flow, out_shape.element_type());
       onnx_name_to_hlo_flow_[std::string(input.name())] = flow;
     }
   }
 
-  HloFlow* MakeParameter(const std::string& name,
-                         const pblczero::XlaShapeProto& shape,
-                         bool is_constant) {
+  const HloFlow* MakeParameter(const std::string& name,
+                               const pblczero::XlaShapeProto& shape,
+                               bool is_constant) {
     auto* res = builder_.Parameter(shape);
     params_.push_back({name, res, is_constant});
     return res;
@@ -277,7 +327,7 @@ class Onnx2HloConverter {
   Onnx2HloOptions options_;
   struct Param {
     std::string name;
-    HloFlow* flow;
+    const HloFlow* flow;
     bool is_constant;
   };
   std::vector<Param> params_;

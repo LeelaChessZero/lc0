@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "neural/xla/hlo.pb.h"
+#include "utils/logging.h"
 
 namespace lczero {
 
@@ -42,9 +43,14 @@ using HloComputation = std::vector<std::unique_ptr<HloFlow>>;
 
 class HloBuilder {
  public:
-  HloFlow* Parameter(const pblczero::XlaShapeProto& shape);
-  HloFlow* Constant(const pblczero::XlaLiteralProto& literal);
-  HloFlow* Convert(HloFlow* input, const pblczero::XlaShapeProto::Type type);
+  const HloFlow* Parameter(const pblczero::XlaShapeProto& shape);
+  const HloFlow* Constant(const pblczero::XlaLiteralProto& literal);
+  const HloFlow* Convert(const HloFlow* input,
+                         const pblczero::XlaShapeProto::Type type);
+  const HloFlow* Convolution(
+      const HloFlow* input, const HloFlow* filter,
+      const pblczero::XlaWindow& window,
+      const pblczero::XlaConvolutionDimensionNumbers& dimension_numbers);
 
   pblczero::HloModuleProto Build(std::string_view name);
 
@@ -62,7 +68,8 @@ class HloBuilder {
 
 class HloContext {
  public:
-  HloContext(HloBuilder* builder) : builder_(builder) {}
+  HloContext(HloBuilder* builder)
+      : builder_(builder), saved_metadata_(builder->metadata_) {}
   ~HloContext() { builder_->metadata_ = saved_metadata_; }
   void SetOpType(std::string_view op_type) const {
     builder_->metadata_.set_op_type(op_type);

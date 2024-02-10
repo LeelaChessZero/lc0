@@ -27,25 +27,57 @@
 
 #include "neural/xla/hlo_builder.h"
 
+#include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
 
-HloFlow* HloBuilder::Parameter(const pblczero::XlaShapeProto& shape) {
+const HloFlow* HloBuilder::Parameter(const pblczero::XlaShapeProto& shape) {
   return MakeInstruction("parameter", shape);
 }
 
-HloFlow* HloBuilder::Convert(HloFlow* input,
-                             const pblczero::XlaShapeProto::Type type) {
+const HloFlow* HloBuilder::Convert(const HloFlow* input,
+                                   const pblczero::XlaShapeProto::Type type) {
   if (input->shape().element_type() == type) return input;
   pblczero::XlaShapeProto shape = input->shape();
   shape.set_element_type(type);
   return MakeInstruction("convert", shape);
 }
 
-HloFlow* HloBuilder::Constant(const pblczero::XlaLiteralProto& literal) {
+const HloFlow* HloBuilder::Constant(const pblczero::XlaLiteralProto& literal) {
   auto* flow = MakeInstruction("constant", literal.shape());
   *flow->mutable_literal() = literal;
+  return flow;
+}
+
+const HloFlow* HloBuilder::Convolution(
+    const HloFlow* input, const HloFlow* filter,
+    const pblczero::XlaWindow& window,
+    const pblczero::XlaConvolutionDimensionNumbers& dn) {
+  if (input->shape().dimensions_size() != filter->shape().dimensions_size()) {
+    throw Exception(
+        "Convolution input and filter shapes must have the "
+        "same number of dimensions");
+  }
+
+  pblczero::XlaShapeProto shape = input->shape();
+  auto* out_dims = shape.mutable_dimensions();
+  const auto& in_dims = input->shape().dimensions();
+  const auto& filter_dims = filter->shape().dimensions();
+  (*out_dims)[dn.output_batch_dimension()] =
+      in_dims[dn.input_batch_dimension()];
+  (*out_dims)[dn.output_feature_dimension()] =
+      filter_dims[dn.kernel_output_feature_dimension()];
+  for (size_t i = 0; i < dn.input_spatial_dimensions_size(); ++i) {
+    (*out_dims)[dn.output_spatial_dimensions(i)] =
+        in_dims[dn.input_spatial_dimensions(i)];
+  }
+
+  auto* flow = MakeInstruction("convolution", shape);
+  flow->add_operand_ids(input->id());
+  flow->add_operand_ids(filter->id());
+  *flow->mutable_window() = window;
+  *flow->mutable_convolution_dimension_numbers() = dn;
   return flow;
 }
 
