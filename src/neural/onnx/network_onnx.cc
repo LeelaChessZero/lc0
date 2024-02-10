@@ -155,7 +155,11 @@ void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
 }
 
 float AsFloat(float x) { return x; }
-float AsFloat(Ort::Float16_t x) { return FP16toFP32(x); }
+float AsFloat(Ort::Float16_t x) {
+  uint16_t tmp;
+  std::memcpy(&tmp, reinterpret_cast<uint16_t*>(&x), sizeof(uint16_t));
+  return FP16toFP32(tmp);
+}
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
@@ -188,6 +192,12 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
   return AsFloat(data[sample]);
 }
 
+void AsDataType(float x, float* y) { *y = x; }
+void AsDataType(float x, Ort::Float16_t* y) {
+  uint16_t tmp = FP32toFP16(x);
+  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
+}
+
 template <typename DataType>
 Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   input_tensor_data_.clear();
@@ -196,9 +206,8 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
   for (int i = start; i < end; i++) {
     for (const auto& plane : raw_input_[i]) {
-      DataType value = std::is_same<Ort::Float16_t, DataType>::value
-                           ? FP32toFP16(plane.value)
-                           : plane.value;
+      DataType value;
+      AsDataType(plane.value, &value);
       for (auto bit : IterateBits(plane.mask)) {
         *(iter + bit) = value;
       }
@@ -207,7 +216,7 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   }
   for (int i = end; i < start + batch_size; i++) {
     for (int j = 0; j < kInputPlanes * 64; j++) {
-      *iter++ = 0;
+      *iter++ = DataType();
     }
   }
 
