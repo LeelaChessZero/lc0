@@ -125,6 +125,88 @@ void Xgemv(const int m, const int n,
   }
 }
 
+__kernel __attribute__((reqd_work_group_size(WGS1, 1, 1)))
+void Xgemv_mish(const int m, const int n,
+                    const __global real* restrict agm, const int a_offset, const int a_ld,
+                    const __global real* restrict x, const int x_offset,
+                    __global real* y, const int y_offset,
+                    __global real* bias, const int relu) {
+
+  const int batch = get_global_id(1);
+  __global real* xgm=x + batch*n;
+  __global real* ygm=y + batch*m;
+
+  // Local memory for the vector X
+  __local real xlm[WGS1];
+
+  // Initializes the accumulation register
+  #pragma promote_to_registers
+  real acc1[WPT1];
+  #pragma unroll
+  for (int _w = 0; _w < WPT1; _w += 1) {
+    SetToZero(acc1[_w]);
+  }
+
+  // Divides the work in a main and tail section
+  const int n_tail = n % WGS1;
+  const int n_floor = n - n_tail;
+
+  // Loops over work-group sized portions of the work
+  for (int kwg=0; kwg<n_floor; kwg+=WGS1) {
+
+    // Loads the vector X into local memory
+    const int lid = get_local_id(0);
+    xlm[lid] = xgm[(kwg + lid) + x_offset];
+
+    // Synchronizes all threads in a workgroup
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    // Loops over the work per thread, and checks whether in bounds
+    #pragma unroll
+    for (int _w = 0; _w < WPT1; _w += 1) {
+      const int gid = _w*get_global_size(0) + get_global_id(0);
+      if (gid < m) {
+
+        // The multiply-add function for the main part (divisable by WGS1)
+	    for (int kloop=0; kloop<WGS1; kloop+=UNROLL1) {
+		  #pragma unroll
+		  for (int _kunroll = 0; _kunroll < UNROLL1; _kunroll += 1) {
+		    const int k = kwg + kloop + _kunroll;
+		    real value = LoadMatrixA(agm, k, gid, a_ld, a_offset);
+		    MultiplyAdd(acc1[_w], xlm[kloop + _kunroll], value);
+		  }
+	    }
+      }
+    }
+
+    // Synchronizes all threads in a workgroup
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }
+
+  // Loops over the work per thread, and checks whether in bounds
+  #pragma unroll
+  for (int _w = 0; _w < WPT1; _w += 1) {
+    const int gid = _w*get_global_size(0) + get_global_id(0);
+    if (gid < m) {
+
+      // The multiply-add function for the remainder part (not divisable by WGS1)
+      for (int k=n_floor; k<n; ++k) {
+        real value = LoadMatrixA(agm, k, gid, a_ld, a_offset);
+        MultiplyAdd(acc1[_w], xgm[k + x_offset], value);
+      }
+
+      // Stores the final result
+	  real out = acc1[_w] + bias[gid];
+	  if (relu) {
+	    const float e = exp(out);
+	    const float n = e * e + 2.0f * e;
+	    const float d = out / (n + 2.0f);
+	    out = out <= -0.125f ? n * d : out - 2.0f * d;
+	  }
+      ygm[gid + y_offset] = out;
+    }
+  }
+}
 // =================================================================================================
 
 // End of the C++11 raw string literal

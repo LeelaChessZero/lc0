@@ -83,9 +83,13 @@ class OpenCL_Network {
 
   OpenCL& getOpenCL() const { return m_opencl; }
 
-  size_t getMaxMatchSize() const { return m_max_batch_size; }
+  size_t getMaxBatchSize() const { return m_max_batch_size; }
 
-  void setMaxMatchSize(size_t new_value) { m_max_batch_size = new_value; }
+  void setMaxBatchSize(size_t new_value) { m_max_batch_size = new_value; }
+
+  void setDefaultMish(bool mish = true) { m_is_mish = mish; }
+
+  bool getDefaultMish() const { return m_is_mish; }
 
   void push_input_convolution(unsigned int filter_size, unsigned int channels,
                               unsigned int outputs,
@@ -221,6 +225,7 @@ class OpenCL_Network {
 
   OpenCL& m_opencl;
   size_t m_max_batch_size;
+  bool m_is_mish = false;
 
   std::vector<Layer> m_layers;
 

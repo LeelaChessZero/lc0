@@ -66,5 +66,40 @@ R"(
             }
         }
     }
+
+
+    __kernel void apply_se_mish(
+                  const int channels,
+                  const int batch_size,
+                  __global const net_t * restrict input,
+                  __global net_t * restrict residual,
+                  __global const net_t * restrict fc_out) {
+
+        const int col = get_global_id(0);  // column
+        const int c = get_global_id(1);  // channel
+
+        const int batch = c / channels;
+
+        if (c < batch_size * channels && col < BOARD_SIZE) {
+            net_t gamma = vload_net_t(c + batch * channels, fc_out);
+            gamma = 1.0f/(1.0f + exp(-gamma)); // Sigmoid
+            net_t beta = vload_net_t(c + batch * channels + channels, fc_out);
+
+            for ( int i = 0; i < BOARD_SIZE; i++) {
+                const int idx = c * BOARD_SQUARES + i * BOARD_SIZE + col;
+                const net_t in = vload_net_t(idx, input);
+                const net_t res = vload_net_t(idx, residual);
+
+                net_t val = gamma * in + res + beta;
+
+                const float e = exp(val);
+                const float n = e * e + 2.0f * e;
+                const float d = val / (n + 2.0f);
+                val = val <= -0.125f ? n * d : val - 2.0f * d;
+
+                vstore_net_t(val, idx, residual);
+            }
+        }
+    }
 // End of the C++11 raw string literal
 )"

@@ -27,17 +27,20 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
   auto& context = m_opencl.m_context;
   auto& device = m_opencl.m_device;
 
+  bool mish = opencl_net.getDefaultMish();
   m_convolve1_kernel = cl::Kernel(program, "convolve1");
-  m_merge_kernel = cl::Kernel(program, "merge_bn");
+  m_merge_kernel = cl::Kernel(program, mish ? "merge_bn_mish" : "merge_bn");
   m_in_transform_kernel = cl::Kernel(program, "in_transform");
   m_sgemm_kernel = cl::Kernel(program, "XgemmBatched");
-  m_out_transform_bn_kernel = cl::Kernel(program, "out_transform_fused_bn");
+  m_out_transform_bn_kernel = cl::Kernel(
+      program, mish ? "out_transform_fused_bn_mish" : "out_transform_fused_bn");
   m_out_transform_bn_in_kernel =
-      cl::Kernel(program, "out_transform_fused_bn_in");
+      cl::Kernel(program, mish ? "out_transform_fused_bn_in_mish"
+                               : "out_transform_fused_bn_in");
   m_global_avg_pooling_kernel = cl::Kernel(program, "global_avg_pooling");
-  m_apply_se_kernel = cl::Kernel(program, "apply_se");
+  m_apply_se_kernel = cl::Kernel(program, mish ? "apply_se_mish" : "apply_se");
   m_policymap_kernel = cl::Kernel(program, "policymap");
-  m_sgemv_kernel = cl::Kernel(program, "Xgemv");
+  m_sgemv_kernel = cl::Kernel(program, mish ? "Xgemv_mish" : "Xgemv");
   m_commandqueue = cl::CommandQueue(context, device);
 
   auto& layers = m_opencl_net.m_layers;
@@ -73,7 +76,7 @@ OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
   const auto m_ceil = ceilMultiple(ceilMultiple(max_channels, mwg), vwm);
   const auto n_ceil = ceilMultiple(ceilMultiple(tiles, nwg), vwn);
 
-  const auto max_batch_size = m_opencl_net.getMaxMatchSize();
+  const auto max_batch_size = m_opencl_net.getMaxBatchSize();
   const auto alloc_inSize =
       max_batch_size * width * height * max_channels * sizeof(net_t);
   const auto alloc_vm_size =

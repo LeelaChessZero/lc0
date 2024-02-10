@@ -115,5 +115,37 @@ __kernel void merge_bn(
   vstore_net_t(sum, batch * outputs * boardsize + o * boardsize + b, out);
 }
 
+__kernel void merge_bn_mish(
+                       __global const net_t * restrict in,
+                       __global net_t * restrict out,
+                       __private const int channels,
+                       __constant const net_t * restrict biases) {
+  // cl::NDRange global(outputs, 8*8);
+  const int gx = get_global_id(0);
+  const int gy = get_global_id(1);
+  const int batch = get_global_id(2);
+  const int output = gx;
+  const int b = gy;
+  const int outputs = get_global_size(0);
+  const int width = 8;
+  const int height = 8;
+  const int boardsize = width * height;
+  const int o = output;
+  float sum = 0;
+  for (int c = 0; c < channels; c++) {
+    sum += vload_net_t(batch * channels * boardsize * outputs +
+	    (c * boardsize + b) * outputs + o, in);
+  }
+  if (biases) {
+    const float bias = vload_net_t(o, biases);
+
+    sum = sum + bias;
+    const float e = exp(sum);
+    const float n = e * e + 2.0f * e;
+    const float d = sum / (n + 2.0f);
+    sum = sum <= -0.125f ? n * d : sum - 2.0f * d;
+  }
+  vstore_net_t(sum, batch * outputs * boardsize + o * boardsize + b, out);
+}
 // End of the C++11 raw string literal
 )"
