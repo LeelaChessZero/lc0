@@ -27,6 +27,8 @@
 
 #include "neural/xla/hlo_builder.h"
 
+#include "utils/logging.h"
+
 namespace lczero {
 
 HloFlow* HloBuilder::Parameter(const pblczero::XlaShapeProto& shape) {
@@ -39,6 +41,12 @@ HloFlow* HloBuilder::Convert(HloFlow* input,
   pblczero::XlaShapeProto shape = input->shape();
   shape.set_element_type(type);
   return MakeInstruction("convert", shape);
+}
+
+HloFlow* HloBuilder::Constant(const pblczero::XlaLiteralProto& literal) {
+  auto* flow = MakeInstruction("constant", literal.shape());
+  *flow->mutable_literal() = literal;
+  return flow;
 }
 
 HloFlow* HloBuilder::MakeInstruction(std::string_view opcode,
@@ -60,7 +68,7 @@ AssignParameterIndices(const HloComputation& comp) {
   std::vector<pblczero::XlaShapeProto> parameter_shapes;
   std::vector<std::string> parameter_names;
   size_t idx = 0;
-  for (auto& instr : comp) {
+  for (const std::unique_ptr<HloFlow>& instr : comp) {
     if (instr->opcode() == "parameter") {
       instr->set_parameter_number(idx++);
       parameter_shapes.push_back(instr->shape());

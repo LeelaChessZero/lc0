@@ -43,8 +43,7 @@ using HloComputation = std::vector<std::unique_ptr<HloFlow>>;
 class HloBuilder {
  public:
   HloFlow* Parameter(const pblczero::XlaShapeProto& shape);
-  HloFlow* Constant(const pblczero::XlaShapeProto& shape,
-                    const std::string& raw_data);
+  HloFlow* Constant(const pblczero::XlaLiteralProto& literal);
   HloFlow* Convert(HloFlow* input, const pblczero::XlaShapeProto::Type type);
 
   pblczero::HloModuleProto Build(std::string_view name);
