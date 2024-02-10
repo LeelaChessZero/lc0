@@ -77,6 +77,7 @@ class HloPrettyPrinter {
   }
 
   void PrintLayout(const pblczero::XlaLayoutProto& layout) {
+    if (!options_.print_layout) return;
     s_ << "{";
     for (size_t i = 0; i < layout.minor_to_major_size(); ++i) {
       if (i > 0) s_ << ",";

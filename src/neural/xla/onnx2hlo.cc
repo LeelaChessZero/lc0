@@ -97,6 +97,7 @@ pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
   }
   for (size_t i = 0; i < shape.dimensions_size(); ++i) {
     shape.add_is_dynamic_dimension(false);
+    shape.mutable_layout()->add_minor_to_major(shape.dimensions_size() - i - 1);
   }
 
   return shape;

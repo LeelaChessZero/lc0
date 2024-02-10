@@ -113,10 +113,12 @@ void HloBuilder::AssignInstructionNames() {
   // Every instruction in the module should have an unique name, numeric names
   // are allowed.
   size_t idx = 0;
-  for (auto& instr : entry_computation_) instr->set_name(std::to_string(idx++));
+  for (auto& instr : entry_computation_) {
+    instr->set_name("i" + std::to_string(idx++));
+  }
   for (auto& [_, comp] : dependent_computations_) {
     for (auto& instr : *comp.mutable_instructions()) {
-      instr.set_name(std::to_string(idx++));
+      instr.set_name("i" + std::to_string(idx++));
     }
   }
 }

@@ -31,7 +31,9 @@
 
 namespace lczero {
 
-struct PrettyPrintHloOptions {};
+struct PrettyPrintHloOptions {
+  bool print_layout = false;
+};
 
 void PrettyPrintHlo(const pblczero::HloModuleProto& module,
                     PrettyPrintHloOptions options, std::ostream& stream);
