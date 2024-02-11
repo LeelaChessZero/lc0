@@ -171,6 +171,7 @@ class Onnx2HloConverter {
   void PopulateOpMapping() {
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
+    onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
   }
 
   void CheckKnownAttributes(
@@ -280,6 +281,14 @@ class Onnx2HloConverter {
     return {builder_.Maximum(input, zero)};
   }
 
+  std::vector<HloFlow> OpAdd(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, {});
+    auto* lhs = GetInput(node, 0);
+    auto* rhs = GetInput(node, 1);
+    std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
+    return {builder_.Add(lhs, rhs)};
+  }
+
   template <typename T>
   HloFlow MakeScalar(T value, pblczero::XlaShapeProto::Type type) {
     pblczero::XlaLiteralProto literal;
@@ -295,8 +304,41 @@ class Onnx2HloConverter {
     return builder_.Constant(literal);
   }
 
-  // std::pair<HloFlow, HloFlow> EqualizeShape(
-  //     HloFlow lhs, HloFlow rhs);
+  std::pair<HloFlow, HloFlow> EqualizeShape(HloFlow lhs, HloFlow rhs) {
+    const auto& lhs_dims = lhs->shape().dimensions();
+    const auto& rhs_dims = rhs->shape().dimensions();
+
+    const size_t num_dims = std::max(lhs_dims.size(), rhs_dims.size());
+    std::vector<int64_t> output_dims(num_dims);
+    std::vector<int64_t> lhs_broadcast_dims;
+    std::vector<int64_t> rhs_broadcast_dims;
+    bool lhs_broadcast = lhs_dims.size() < num_dims;
+    bool rhs_broadcast = rhs_dims.size() < num_dims;
+
+    for (size_t i = 0; i < num_dims; ++i) {
+      int lhs_idx = i + lhs_dims.size() - num_dims;
+      int rhs_idx = i + rhs_dims.size() - num_dims;
+      const auto lhs_dim = (lhs_idx < 0) ? 1 : lhs_dims[lhs_idx];
+      const auto rhs_dim = (rhs_idx < 0) ? 1 : rhs_dims[rhs_idx];
+      if (lhs_dim != rhs_dim) {
+        if (lhs_dim != 1 && rhs_dim != 1) {
+          throw Exception("Incompatible shapes for broadcast");
+        }
+        if (lhs_dim == 1) lhs_broadcast = true;
+        if (rhs_dim == 1) rhs_broadcast = true;
+      }
+      if (lhs_idx >= 0) lhs_broadcast_dims.push_back(i);
+      if (rhs_idx >= 0) rhs_broadcast_dims.push_back(i);
+    }
+
+    if (lhs_broadcast) {
+      lhs = builder_.Broadcast(lhs, rhs->shape(), lhs_broadcast_dims);
+    }
+    if (rhs_broadcast) {
+      rhs = builder_.Broadcast(rhs, lhs->shape(), rhs_broadcast_dims);
+    }
+    return {lhs, rhs};
+  }
 
   void BuildInputs(const std::vector<pblczero::ValueInfoProto>& inputs) {
     for (const auto& input : inputs) {
