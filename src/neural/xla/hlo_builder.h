@@ -52,6 +52,7 @@ class HloBuilder {
   HloFlow Broadcast(HloFlow input, const pblczero::XlaShapeProto& target_shape,
                     const std::vector<int64_t>& broadcast_dimensions);
   HloFlow Add(HloFlow lhs, HloFlow rhs);
+  HloFlow Maximum(HloFlow lhs, HloFlow rhs);
 
   pblczero::HloModuleProto Build(std::string_view name);
 

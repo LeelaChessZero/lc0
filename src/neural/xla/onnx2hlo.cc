@@ -170,6 +170,7 @@ class Onnx2HloConverter {
 
   void PopulateOpMapping() {
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
   }
 
   void CheckKnownAttributes(
@@ -269,6 +270,29 @@ class Onnx2HloConverter {
     if (!bias) return {conv};
     auto* flow = builder_.Broadcast(bias, conv->shape(), {1});
     return {builder_.Add(conv, flow)};
+  }
+
+  std::vector<HloFlow> OpRelu(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, {});
+    auto* input = GetInput(node, 0);
+    auto* zero = MakeScalar(0, input->shape().element_type());
+    zero = builder_.Broadcast(zero, input->shape(), {});
+    return {builder_.Maximum(input, zero)};
+  }
+
+  template <typename T>
+  HloFlow MakeScalar(T value, pblczero::XlaShapeProto::Type type) {
+    pblczero::XlaLiteralProto literal;
+    literal.mutable_shape()->set_element_type(type);
+    literal.mutable_shape()->mutable_layout();
+    switch (type) {
+      case pblczero::XlaShapeProto::F32:
+        literal.add_f32s(value);
+        break;
+      default:
+        throw Exception("Unsupported type for zero constant");
+    }
+    return builder_.Constant(literal);
   }
 
   // std::pair<HloFlow, HloFlow> EqualizeShape(

@@ -82,11 +82,8 @@ HloFlow HloBuilder::Broadcast(
     HloFlow input, const pblczero::XlaShapeProto& target_shape,
     const std::vector<int64_t>& broadcast_dimensions) {
   auto flow = MakeInstruction("broadcast", target_shape, {input});
-  if (broadcast_dimensions.empty() ||
-      broadcast_dimensions.size() != input->shape().dimensions_size()) {
-    throw Exception(
-        "Broadcast dimensions must be non-empty and have the same size as the "
-        "input shape");
+  if (broadcast_dimensions.size() != input->shape().dimensions_size()) {
+    throw Exception("Broadcast must have the same size as the input shape");
   }
   const auto& input_shape = input->shape();
   for (size_t i = 0; i < broadcast_dimensions.size(); ++i) {
@@ -105,6 +102,10 @@ HloFlow HloBuilder::Broadcast(
 
 HloFlow HloBuilder::Add(HloFlow lhs, HloFlow rhs) {
   return MakeElementwiseInstruction("add", lhs, rhs);
+}
+
+HloFlow HloBuilder::Maximum(HloFlow lhs, HloFlow rhs) {
+  return MakeElementwiseInstruction("maximum", lhs, rhs);
 }
 
 pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
