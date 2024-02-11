@@ -57,6 +57,7 @@ class HloBuilder {
   HloFlow Dot(HloFlow lhs, HloFlow rhs,
               const pblczero::XlaDotDimensionNumbers& dimension_numbers);
   HloFlow Tanh(HloFlow input);
+  HloFlow Tuple(const std::vector<HloFlow>& elements);
 
   pblczero::HloModuleProto Build(std::string_view name);
 

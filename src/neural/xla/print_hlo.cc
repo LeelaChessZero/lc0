@@ -114,6 +114,12 @@ class HloPrettyPrinter {
   }
 
   void PrintShape(const pblczero::XlaShapeProto& shape) {
+    if (shape.element_type() == pblczero::XlaShapeProto::TUPLE) {
+      PrintDelimeted(
+          shape.tuple_shapes(), [&](const auto& s) { PrintShape(s); }, ", ",
+          "(", ")");
+      return;
+    }
     s_ << GetTypeLiteral(shape.element_type());
     PrintDelimeted(
         shape.dimensions(), [&](int64_t dim) { s_ << dim; }, ",", "[", "]");

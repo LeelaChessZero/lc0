@@ -149,15 +149,40 @@ class Onnx2HloConverter {
     BuildInitializerMapping(onnx_model);
     BuildInputs(onnx_model.graph().input());
     BuildGraph(onnx_model.graph());
-
     Onnx2HloResult result;
+    result.outputs = BuildOutputs(onnx_model.graph().output());
     result.hlo_module = builder_.Build("onnx_model");
+    for (size_t i = 0; i < params_.size(); ++i) {
+      const auto& param = params_[i];
+      auto& dst = param.is_constant ? result.constants : result.inputs;
+      dst.push_back({i, param.name, param.flow->shape()});
+    }
     // TO DELETE, DEBUG ONLY, DO NOT SUBMIT
     PrettyPrintHlo(result.hlo_module, {}, std::cout);
     return result;
   }
 
  private:
+  std::vector<Onnx2HloResult::NamedTensor> BuildOutputs(
+      const std::vector<pblczero::ValueInfoProto>& graph_output) {
+    std::vector<Onnx2HloResult::NamedTensor> result;
+    std::vector<HloFlow> outputs;
+    for (size_t i = 0; i < graph_output.size(); ++i) {
+      const auto& output = graph_output[i];
+      auto flow = GetFlowByName(std::string(output.name()));
+      if (flow->shape().element_type() != options_.io_type) {
+        auto ctx = HloContext(&builder_);
+        ctx.SetOpType("output");
+        ctx.SetOpName(output.name());
+        flow = builder_.Convert(flow, options_.io_type);
+      }
+      result.push_back({0, std::string(output.name()), flow->shape()});
+      outputs.push_back(flow);
+    }
+    builder_.Tuple(outputs);
+    return result;
+  }
+
   void BuildInitializerMapping(const pblczero::ModelProto& onnx_model) {
     for (const auto& tensor : onnx_model.graph().initializer()) {
       initializers_[std::string(tensor.name())] = &tensor;

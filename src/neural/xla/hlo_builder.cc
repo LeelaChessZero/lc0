@@ -188,6 +188,15 @@ HloFlow HloBuilder::Tanh(HloFlow input) {
   return MakeInstruction("tanh", input->shape(), {input});
 }
 
+HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
+  pblczero::XlaShapeProto shape;
+  shape.set_element_type(pblczero::XlaShapeProto::TUPLE);
+  for (const auto& element : elements) {
+    *shape.add_tuple_shapes() = element->shape();
+  }
+  return MakeInstruction("tuple", shape, elements);
+}
+
 pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
     std::string_view opcode, HloFlow lhs, HloFlow rhs) {
   if (lhs->shape().dimensions() != rhs->shape().dimensions()) {
