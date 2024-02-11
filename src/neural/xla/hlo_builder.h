@@ -53,7 +53,9 @@ class HloBuilder {
                     const std::vector<int64_t>& broadcast_dimensions);
   HloFlow Add(HloFlow lhs, HloFlow rhs);
   HloFlow Maximum(HloFlow lhs, HloFlow rhs);
-  HloFlow Reshape(HloFlow input, const std::vector<int64_t>& dimensions);
+  HloFlow Reshape(HloFlow input, const pblczero::XlaShapeProto& new_shape);
+  HloFlow Dot(HloFlow lhs, HloFlow rhs,
+              const pblczero::XlaDotDimensionNumbers& dimension_numbers);
 
   pblczero::HloModuleProto Build(std::string_view name);
 
@@ -88,5 +90,7 @@ class HloContext {
   HloBuilder* builder_;
   pblczero::XlaOpMetadata saved_metadata_;
 };
+
+void ResetXlaShapeProtoLayout(pblczero::XlaShapeProto* shape);
 
 }  // namespace lczero

@@ -232,9 +232,7 @@ message XlaWindowDimension {
   optional bool window_reversal = 7;
 }
 
-message XlaWindow {
-  repeated XlaWindowDimension dimensions = 1;
-}
+message XlaWindow { repeated XlaWindowDimension dimensions = 1; }
 
 message XlaConvolutionDimensionNumbers {
   optional int64 input_batch_dimension = 7;
@@ -246,6 +244,13 @@ message XlaConvolutionDimensionNumbers {
   optional int64 output_batch_dimension = 9;
   optional int64 output_feature_dimension = 10;
   repeated int64 output_spatial_dimensions = 12;
+}
+
+message XlaDotDimensionNumbers {
+  repeated int64 lhs_contracting_dimensions = 1;
+  repeated int64 rhs_contracting_dimensions = 2;
+  repeated int64 lhs_batch_dimensions = 3;
+  repeated int64 rhs_batch_dimensions = 4;
 }
 
 message HloInstructionProto {
@@ -269,6 +274,8 @@ message HloInstructionProto {
 
   // Describes the dimension numbers used for a convolution.
   optional XlaConvolutionDimensionNumbers convolution_dimension_numbers = 16;
+
+  optional XlaDotDimensionNumbers dot_dimension_numbers = 30;
 
   // Dimensions present for some operations that require reshaping or
   // broadcasting, including Reshape, Reduce, ReduceWindow, and Reverse.

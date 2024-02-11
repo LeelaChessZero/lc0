@@ -96,11 +96,7 @@ pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
     }
     throw Exception("Unsupported dimension type " + type.OutputAsJson());
   }
-  for (size_t i = 0; i < shape.dimensions_size(); ++i) {
-    shape.add_is_dynamic_dimension(false);
-    shape.mutable_layout()->add_minor_to_major(shape.dimensions_size() - i - 1);
-  }
-
+  ResetXlaShapeProtoLayout(&shape);
   return shape;
 }
 
@@ -175,6 +171,7 @@ class Onnx2HloConverter {
   void PopulateOpMapping() {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
   }
@@ -305,16 +302,35 @@ class Onnx2HloConverter {
       throw Exception("Reshape only supports constant shape");
     }
     auto new_dims = OnnxTensorToXlaLiteral(*dims_tensor->second).s64s();
+    pblczero::XlaShapeProto new_shape;
+    new_shape.set_element_type(input->shape().element_type());
     for (size_t i = 0; i < new_dims.size(); ++i) {
-      if (new_dims[i] == -1) new_dims[i] = batch_size_;
-      if (new_dims[i] == 0) {
+      auto dim = new_dims[i];
+      if (dim == -1) dim = batch_size_;
+      if (dim == 0) {
         if (new_dims.size() != input->shape().dimensions_size()) {
           throw Exception("Reshape cannot infer shape when rank changes");
         }
-        new_dims[i] = input->shape().dimensions(i);
+        dim = input->shape().dimensions(i);
       }
+      new_shape.add_dimensions(dim);
     }
-    return {builder_.Reshape(input, new_dims)};
+    ResetXlaShapeProtoLayout(&new_shape);
+    return {builder_.Reshape(input, new_shape)};
+  }
+
+  std::vector<HloFlow> OpMatMul(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, {});
+    auto* lhs = GetInput(node, 0);
+    auto* rhs = GetInput(node, 1);
+    if (lhs->shape().dimensions_size() != 2 ||
+        rhs->shape().dimensions_size() != 2) {
+      throw Exception("MatMul only implemented for 2D inputs so far");
+    }
+    pblczero::XlaDotDimensionNumbers dn;
+    dn.add_lhs_contracting_dimensions(1);
+    dn.add_rhs_contracting_dimensions(0);
+    return {builder_.Dot(lhs, rhs, dn)};
   }
 
   template <typename T>

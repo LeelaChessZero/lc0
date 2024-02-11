@@ -245,6 +245,21 @@ class HloPrettyPrinter {
         "x", " pads=");
   }
 
+  void PrintDotDimensionNumbers(const pblczero::XlaDotDimensionNumbers& dn) {
+    PrintDelimeted(
+        dn.lhs_batch_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
+        " lhs_batch_dims={", "}");
+    PrintDelimeted(
+        dn.rhs_batch_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
+        " rhs_batch_dims={", "}");
+    PrintDelimeted(
+        dn.lhs_contracting_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
+        " lhs_contracting_dims={", "}");
+    PrintDelimeted(
+        dn.rhs_contracting_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
+        " rhs_contracting_dims={", "}");
+  }
+
   void PrintConvolutionDimensionNumbers(
       const pblczero::XlaConvolutionDimensionNumbers& dn) {
     std::string input_dims(dn.input_spatial_dimensions_size() + 2, '?');
@@ -286,6 +301,9 @@ class HloPrettyPrinter {
       PrintDelimeted(
           instruction.dimensions(), [&](int64_t dim) { s_ << dim; }, ", ",
           ", dimensions={", "}");
+    }
+    if (instruction.has_dot_dimension_numbers()) {
+      PrintDotDimensionNumbers(instruction.dot_dimension_numbers());
     }
   }
 

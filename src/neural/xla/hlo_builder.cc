@@ -109,20 +109,79 @@ HloFlow HloBuilder::Maximum(HloFlow lhs, HloFlow rhs) {
 }
 
 HloFlow HloBuilder::Reshape(HloFlow input,
-                            const std::vector<int64_t>& dimensions) {
+                            const pblczero::XlaShapeProto& new_shape) {
+  if (input->shape().element_type() != new_shape.element_type()) {
+    throw Exception("Reshape must have the same element type");
+  }
+
   size_t old_elements = std::accumulate(input->shape().dimensions().begin(),
                                         input->shape().dimensions().end(), 1,
                                         std::multiplies<int64_t>());
-  size_t new_elements = std::accumulate(dimensions.begin(), dimensions.end(), 1,
+  size_t new_elements = std::accumulate(new_shape.dimensions().begin(),
+                                        new_shape.dimensions().end(), 1,
                                         std::multiplies<int64_t>());
   if (old_elements != new_elements) {
     throw Exception("Reshape must have the same number of elements: " +
                     std::to_string(old_elements) + " vs " +
                     std::to_string(new_elements));
   }
-  pblczero::XlaShapeProto shape = input->shape();
-  *shape.mutable_dimensions() = dimensions;
-  return MakeInstruction("reshape", shape, {input});
+  return MakeInstruction("reshape", new_shape, {input});
+}
+
+HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
+                        const pblczero::XlaDotDimensionNumbers& dn) {
+  pblczero::XlaShapeProto new_shape;
+  if (lhs->shape().element_type() != rhs->shape().element_type()) {
+    throw Exception("Dot operands must have the same element type");
+  }
+  new_shape.set_element_type(lhs->shape().element_type());
+  if (dn.lhs_batch_dimensions_size() != dn.rhs_batch_dimensions_size()) {
+    throw Exception("Dot batch dimensions must have the same size");
+  }
+  for (size_t i = 0; i < dn.lhs_batch_dimensions_size(); ++i) {
+    auto lhs_dim = lhs->shape().dimensions(dn.lhs_batch_dimensions(i));
+    auto rhs_dim = rhs->shape().dimensions(dn.rhs_batch_dimensions(i));
+    if (lhs_dim != rhs_dim) {
+      throw Exception("Dot batch dimensions must have the same size");
+    }
+    new_shape.add_dimensions(lhs_dim);
+  }
+  if (dn.lhs_contracting_dimensions_size() !=
+      dn.rhs_contracting_dimensions_size()) {
+    throw Exception("Dot contracting dimensions must have the same size");
+  }
+  for (size_t i = 0; i < dn.lhs_contracting_dimensions_size(); ++i) {
+    auto lhs_dim = lhs->shape().dimensions(dn.lhs_contracting_dimensions(i));
+    auto rhs_dim = rhs->shape().dimensions(dn.rhs_contracting_dimensions(i));
+    if (lhs_dim != rhs_dim) {
+      throw Exception("Dot contracting dimensions must have the same size");
+    }
+  }
+  // Sorry, github copilot generated the code below (well, above too). Enjoy!
+  for (size_t i = 0; i < lhs->shape().dimensions_size(); ++i) {
+    if (std::find(dn.lhs_batch_dimensions().begin(),
+                  dn.lhs_batch_dimensions().end(),
+                  i) == dn.lhs_batch_dimensions().end() &&
+        std::find(dn.lhs_contracting_dimensions().begin(),
+                  dn.lhs_contracting_dimensions().end(),
+                  i) == dn.lhs_contracting_dimensions().end()) {
+      new_shape.add_dimensions(lhs->shape().dimensions(i));
+    }
+  }
+  for (size_t i = 0; i < rhs->shape().dimensions_size(); ++i) {
+    if (std::find(dn.rhs_batch_dimensions().begin(),
+                  dn.rhs_batch_dimensions().end(),
+                  i) == dn.rhs_batch_dimensions().end() &&
+        std::find(dn.rhs_contracting_dimensions().begin(),
+                  dn.rhs_contracting_dimensions().end(),
+                  i) == dn.rhs_contracting_dimensions().end()) {
+      new_shape.add_dimensions(rhs->shape().dimensions(i));
+    }
+  }
+  ResetXlaShapeProtoLayout(&new_shape);
+  auto flow = MakeInstruction("dot", new_shape, {lhs, rhs});
+  *flow->mutable_dot_dimension_numbers() = dn;
+  return flow;
 }
 
 pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
@@ -208,6 +267,17 @@ void HloBuilder::AssignInstructionNames() {
     for (auto& instr : *comp.mutable_instructions()) {
       instr.set_name("i" + std::to_string(idx++));
     }
+  }
+}
+
+void ResetXlaShapeProtoLayout(pblczero::XlaShapeProto* shape) {
+  shape->mutable_layout()->mutable_minor_to_major()->clear();
+  shape->mutable_is_dynamic_dimension()->clear();
+
+  for (size_t i = 0; i < shape->dimensions_size(); ++i) {
+    shape->add_is_dynamic_dimension(false);
+    shape->mutable_layout()->add_minor_to_major(shape->dimensions_size() - i -
+                                                1);
   }
 }
 
