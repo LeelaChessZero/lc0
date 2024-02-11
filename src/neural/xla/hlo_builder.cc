@@ -32,27 +32,26 @@
 
 namespace lczero {
 
-const HloFlow* HloBuilder::Parameter(const pblczero::XlaShapeProto& shape) {
-  return MakeInstruction("parameter", shape);
+HloFlow HloBuilder::Parameter(const pblczero::XlaShapeProto& shape) {
+  return MakeInstruction("parameter", shape, {});
 }
 
-const HloFlow* HloBuilder::Convert(const HloFlow* input,
-                                   const pblczero::XlaShapeProto::Type type) {
+HloFlow HloBuilder::Convert(HloFlow input,
+                            const pblczero::XlaShapeProto::Type type) {
   if (input->shape().element_type() == type) return input;
   pblczero::XlaShapeProto shape = input->shape();
   shape.set_element_type(type);
-  return MakeInstruction("convert", shape);
+  return MakeInstruction("convert", shape, {input});
 }
 
-const HloFlow* HloBuilder::Constant(const pblczero::XlaLiteralProto& literal) {
-  auto* flow = MakeInstruction("constant", literal.shape());
+HloFlow HloBuilder::Constant(const pblczero::XlaLiteralProto& literal) {
+  auto* flow = MakeInstruction("constant", literal.shape(), {});
   *flow->mutable_literal() = literal;
   return flow;
 }
 
-const HloFlow* HloBuilder::Convolution(
-    const HloFlow* input, const HloFlow* filter,
-    const pblczero::XlaWindow& window,
+HloFlow HloBuilder::Convolution(
+    HloFlow input, HloFlow filter, const pblczero::XlaWindow& window,
     const pblczero::XlaConvolutionDimensionNumbers& dn) {
   if (input->shape().dimensions_size() != filter->shape().dimensions_size()) {
     throw Exception(
@@ -73,22 +72,61 @@ const HloFlow* HloBuilder::Convolution(
         in_dims[dn.input_spatial_dimensions(i)];
   }
 
-  auto* flow = MakeInstruction("convolution", shape);
-  flow->add_operand_ids(input->id());
-  flow->add_operand_ids(filter->id());
+  auto* flow = MakeInstruction("convolution", shape, {input, filter});
   *flow->mutable_window() = window;
   *flow->mutable_convolution_dimension_numbers() = dn;
   return flow;
 }
 
-HloFlow* HloBuilder::MakeInstruction(std::string_view opcode,
-                                     const pblczero::XlaShapeProto& shape) {
-  auto instr = std::make_unique<HloFlow>();
+HloFlow HloBuilder::Broadcast(
+    HloFlow input, const pblczero::XlaShapeProto& target_shape,
+    const std::vector<int64_t>& broadcast_dimensions) {
+  auto flow = MakeInstruction("broadcast", target_shape, {input});
+  if (broadcast_dimensions.empty() ||
+      broadcast_dimensions.size() != input->shape().dimensions_size()) {
+    throw Exception(
+        "Broadcast dimensions must be non-empty and have the same size as the "
+        "input shape");
+  }
+  const auto& input_shape = input->shape();
+  for (size_t i = 0; i < broadcast_dimensions.size(); ++i) {
+    auto dim = broadcast_dimensions[i];
+    const auto& input_dim = input_shape.dimensions(i);
+    if (input_dim != 1 && input_dim != target_shape.dimensions(dim)) {
+      throw Exception(
+          "Broadcast dimension must be 1 or equal to the target shape "
+          "dimension");
+    }
+    flow->add_dimensions(dim);
+  }
+
+  return flow;
+}
+
+HloFlow HloBuilder::Add(HloFlow lhs, HloFlow rhs) {
+  return MakeElementwiseInstruction("add", lhs, rhs);
+}
+
+pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
+    std::string_view opcode, HloFlow lhs, HloFlow rhs) {
+  if (lhs->shape().dimensions() != rhs->shape().dimensions()) {
+    throw Exception("Elementwise operands must have the same shape");
+  }
+  return MakeInstruction(opcode, lhs->shape(), {lhs, rhs});
+}
+
+pblczero::HloInstructionProto* HloBuilder::MakeInstruction(
+    std::string_view opcode, const pblczero::XlaShapeProto& shape,
+    const std::vector<const pblczero::HloInstructionProto*> operands) {
+  auto instr = std::make_unique<pblczero::HloInstructionProto>();
   auto ret = instr.get();
   ret->set_opcode(opcode);
   *ret->mutable_shape() = shape;
   *ret->mutable_metadata() = metadata_;
   ret->set_id(entry_computation_.size());
+  for (const auto& operand : operands) {
+    ret->add_operand_ids(operand->id());
+  }
   entry_computation_.push_back(std::move(instr));
   return ret;
 }
@@ -100,7 +138,7 @@ AssignParameterIndices(const HloComputation& comp) {
   std::vector<pblczero::XlaShapeProto> parameter_shapes;
   std::vector<std::string> parameter_names;
   size_t idx = 0;
-  for (const std::unique_ptr<HloFlow>& instr : comp) {
+  for (const auto& instr : comp) {
     if (instr->opcode() == "parameter") {
       instr->set_parameter_number(idx++);
       parameter_shapes.push_back(instr->shape());

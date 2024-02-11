@@ -70,6 +70,36 @@ class HloPrettyPrinter {
   HloPrettyPrinter(PrettyPrintHloOptions options, std::ostream& stream)
       : options_(options), s_(stream) {}
 
+  void PrintModule(const pblczero::HloModuleProto& module) {
+    current_module_ = &module;
+    s_ << "HloModule " << module.name();
+    if (module.has_host_program_shape()) {
+      s_ << ", entry_computation_layout=";
+      PrintProgramShape(module.host_program_shape());
+    }
+    s_ << "\n";
+
+    for (const auto& computation : module.computations()) {
+      s_ << "\n";
+      if (module.entry_computation_id() == computation.id()) s_ << "ENTRY ";
+      PrintComputation(computation);
+    }
+    current_module_ = nullptr;
+  }
+
+ private:
+  template <typename T, typename F>
+  void PrintDelimeted(const T& vec, F print_fn, std::string_view delim,
+                      std::string_view prefix = "",
+                      std::string_view suffix = "") {
+    s_ << prefix;
+    for (size_t i = 0; i < vec.size(); ++i) {
+      if (i > 0) s_ << delim;
+      print_fn(vec[i]);
+    }
+    s_ << suffix;
+  }
+
   std::string GetTypeLiteral(pblczero::XlaShapeProto::Type type) {
     std::string name = pblczero::XlaShapeProto::Type_Name(type);
     for (char& c : name) c = std::tolower(c);
@@ -78,22 +108,15 @@ class HloPrettyPrinter {
 
   void PrintLayout(const pblczero::XlaLayoutProto& layout) {
     if (!options_.print_layout) return;
-    s_ << "{";
-    for (size_t i = 0; i < layout.minor_to_major_size(); ++i) {
-      if (i > 0) s_ << ",";
-      s_ << layout.minor_to_major(i);
-    }
-    s_ << "}";
+    PrintDelimeted(
+        layout.minor_to_major(), [&](const auto& dim) { s_ << dim; }, ",", " {",
+        "}");
   }
 
   void PrintShape(const pblczero::XlaShapeProto& shape) {
     s_ << GetTypeLiteral(shape.element_type());
-    s_ << "[";
-    for (size_t i = 0; i < shape.dimensions_size(); ++i) {
-      if (i > 0) s_ << ",";
-      s_ << shape.dimensions(i);
-    }
-    s_ << "]";
+    PrintDelimeted(
+        shape.dimensions(), [&](int64_t dim) { s_ << dim; }, ",", "[", "]");
     if (shape.has_layout()) PrintLayout(shape.layout());
   }
 
@@ -116,24 +139,23 @@ class HloPrettyPrinter {
     // For now just print as a flat array with sometimes wrong encoding (i.e. in
     // bf16 case).
     auto print_array = [&](const auto& array) {
-      for (size_t i = 0; i < array.size(); ++i) {
-        if (i > 0) s_ << ",";
-        if constexpr (std::is_same_v<std::decay_t<decltype(array[0])>, char> ||
-                      std::is_same_v<std::decay_t<decltype(array[0])>, bool>) {
-          s_ << static_cast<int>(array[i]);
-        } else {
-          s_ << array[i];
-        }
-      }
+      PrintDelimeted(
+          array,
+          [&](const auto& x) {
+            if constexpr (std::is_same_v<std::decay_t<decltype(x)>, char> ||
+                          std::is_same_v<std::decay_t<decltype(x)>, bool>) {
+              s_ << static_cast<int>(x);
+            } else {
+              s_ << x;
+            }
+          },
+          ",");
     };
     switch (literal.shape().element_type()) {
       case pblczero::XlaShapeProto::TUPLE:
-        s_ << "(";
-        for (size_t i = 0; i < literal.tuple_literals_size(); ++i) {
-          if (i > 0) s_ << ", ";
-          PrintLiteral(literal.tuple_literals(i));
-        }
-        s_ << ")";
+        PrintDelimeted(
+            literal.tuple_literals(), [&](const auto& l) { PrintLiteral(l); },
+            ", ", "(", ")");
         break;
       case pblczero::XlaShapeProto::TOKEN:
         s_ << "token";
@@ -201,28 +223,26 @@ class HloPrettyPrinter {
     } else if (instruction.opcode() == "constant") {
       PrintLiteral(instruction.literal());
     } else {
-      for (size_t i = 0; i < instruction.operand_ids_size(); ++i) {
-        if (i > 0) s_ << ", ";
-        s_ << "%"
-           << current_computation_->instructions(instruction.operand_ids(i))
-                  .name();
-      }
+      PrintDelimeted(
+          instruction.operand_ids(),
+          [&](int64_t id) {
+            s_ << "%" << current_computation_->instructions(id).name();
+          },
+          ", ");
     }
     s_ << ")";
   }
 
   void PrintWindow(const pblczero::XlaWindow& window) {
-    s_ << "size=";
-    for (size_t i = 0; i < window.dimensions_size(); ++i) {
-      if (i > 0) s_ << "x";
-      s_ << window.dimensions(i).size();
-    }
-    s_ << " pads=";
-    for (size_t i = 0; i < window.dimensions_size(); ++i) {
-      if (i > 0) s_ << "x";
-      s_ << window.dimensions(i).padding_low() << "_"
-         << window.dimensions(i).padding_high();
-    }
+    PrintDelimeted(
+        window.dimensions(), [&](const auto& d) { s_ << d.size(); }, "x",
+        "size=");
+    PrintDelimeted(
+        window.dimensions(),
+        [&](const auto& d) {
+          s_ << d.padding_low() << "_" << d.padding_high();
+        },
+        "x", " pads=");
   }
 
   void PrintConvolutionDimensionNumbers(
@@ -247,14 +267,10 @@ class HloPrettyPrinter {
   void PrintInstructionAttributes(
       const pblczero::HloInstructionProto& instruction) {
     if (instruction.called_computation_ids_size() > 0) {
-      s_ << ", calls={";
-      for (size_t i = 0; i < instruction.called_computation_ids_size(); ++i) {
-        if (i > 0) s_ << ", ";
-        s_ << current_module_
-                  ->computations(instruction.called_computation_ids(i))
-                  .name();
-      }
-      s_ << "}";
+      PrintDelimeted(
+          instruction.called_computation_ids(),
+          [&](int64_t id) { s_ << current_module_->computations(id).name(); },
+          ",", ", calls={", "}");
     }
     if (instruction.has_window()) {
       s_ << ", window={";
@@ -265,6 +281,11 @@ class HloPrettyPrinter {
       s_ << ", dim_labels=";
       PrintConvolutionDimensionNumbers(
           instruction.convolution_dimension_numbers());
+    }
+    if (instruction.dimensions_size() > 0) {
+      PrintDelimeted(
+          instruction.dimensions(), [&](int64_t dim) { s_ << dim; }, ", ",
+          ", dimensions={", "}");
     }
   }
 
@@ -311,24 +332,6 @@ class HloPrettyPrinter {
     current_computation_ = nullptr;
   }
 
-  void PrintModule(const pblczero::HloModuleProto& module) {
-    current_module_ = &module;
-    s_ << "HloModule " << module.name();
-    if (module.has_host_program_shape()) {
-      s_ << ", entry_computation_layout=";
-      PrintProgramShape(module.host_program_shape());
-    }
-    s_ << "\n";
-
-    for (const auto& computation : module.computations()) {
-      s_ << "\n";
-      if (module.entry_computation_id() == computation.id()) s_ << "ENTRY ";
-      PrintComputation(computation);
-    }
-    current_module_ = nullptr;
-  }
-
- private:
   PrettyPrintHloOptions options_;
   const pblczero::HloModuleProto* current_module_ = nullptr;
   const pblczero::HloComputationProto* current_computation_ = nullptr;

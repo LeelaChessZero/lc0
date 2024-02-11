@@ -183,7 +183,7 @@ class Onnx2HloConverter {
     }
   }
 
-  const HloFlow* GetFlowByName(const std::string& name) {
+  HloFlow GetFlowByName(const std::string& name) {
     auto iter = onnx_name_to_hlo_flow_.find(name);
     if (iter != onnx_name_to_hlo_flow_.end()) return iter->second;
 
@@ -195,7 +195,7 @@ class Onnx2HloConverter {
     ctx.SetOpType("initializer");
     ctx.SetOpName(name);
 
-    const HloFlow* flow = nullptr;
+    HloFlow flow = nullptr;
     if (iter2->second->raw_data().size() <= options_.max_inline_constant_size) {
       flow = builder_.Constant(OnnxTensorToXlaLiteral(*iter2->second));
     } else {
@@ -206,8 +206,8 @@ class Onnx2HloConverter {
     return flow;
   }
 
-  const HloFlow* GetInput(const pblczero::NodeProto& node, size_t idx,
-                          bool optional = false) {
+  HloFlow GetInput(const pblczero::NodeProto& node, size_t idx,
+                   bool optional = false) {
     if (idx >= node.input_size()) {
       if (optional) return nullptr;
       throw Exception("Input " + std::to_string(idx) + " not set");
@@ -225,7 +225,7 @@ class Onnx2HloConverter {
     throw Exception("Attribute " + std::string(name) + " not set");
   }
 
-  void OpConv(const pblczero::NodeProto& node) {
+  std::vector<HloFlow> OpConv(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, {"pads", "kernel_shape"});
     auto* input = GetInput(node, 0);
     auto* kernel = GetInput(node, 1);
@@ -266,10 +266,13 @@ class Onnx2HloConverter {
 
     auto* conv = builder_.Convolution(input, kernel, window, dn);
 
-    if (!bias) return;
-
-    // Add bias!!!1! DO NOT SUBMIT
+    if (!bias) return {conv};
+    auto* flow = builder_.Broadcast(bias, conv->shape(), {1});
+    return {builder_.Add(conv, flow)};
   }
+
+  // std::pair<HloFlow, HloFlow> EqualizeShape(
+  //     HloFlow lhs, HloFlow rhs);
 
   void BuildInputs(const std::vector<pblczero::ValueInfoProto>& inputs) {
     for (const auto& input : inputs) {
@@ -286,9 +289,9 @@ class Onnx2HloConverter {
     }
   }
 
-  const HloFlow* MakeParameter(const std::string& name,
-                               const pblczero::XlaShapeProto& shape,
-                               bool is_constant) {
+  HloFlow MakeParameter(const std::string& name,
+                        const pblczero::XlaShapeProto& shape,
+                        bool is_constant) {
     auto* res = builder_.Parameter(shape);
     params_.push_back({name, res, is_constant});
     return res;
@@ -310,16 +313,22 @@ class Onnx2HloConverter {
                       "] name=[" + std::string(node.name()) + "]");
     }
     try {
-      (this->*iter->second)(node);
+      auto outputs = (this->*iter->second)(node);
+      if (outputs.size() != node.output_size()) {
+        throw Exception("Node produced wrong number of outputs");
+      }
+      for (size_t i = 0; i < outputs.size(); ++i) {
+        onnx_name_to_hlo_flow_[std::string(node.output(i))] = outputs[i];
+      }
     } catch (Exception& e) {
       throw Exception("Error in ONNX op[" + std::string(node.op_type()) +
                       "] name=[" + std::string(node.name()) + "]: " + e.what());
     }
   }
 
-  std::unordered_map<std::string, const HloFlow*> onnx_name_to_hlo_flow_;
-  std::unordered_map<std::string,
-                     void (Onnx2HloConverter::*)(const pblczero::NodeProto&)>
+  std::unordered_map<std::string, HloFlow> onnx_name_to_hlo_flow_;
+  std::unordered_map<std::string, std::vector<HloFlow> (Onnx2HloConverter::*)(
+                                      const pblczero::NodeProto&)>
       onnx_op_to_builder_;
   std::unordered_map<std::string, const pblczero::TensorProto*> initializers_;
   HloBuilder builder_;
@@ -327,7 +336,7 @@ class Onnx2HloConverter {
   Onnx2HloOptions options_;
   struct Param {
     std::string name;
-    const HloFlow* flow;
+    HloFlow flow;
     bool is_constant;
   };
   std::vector<Param> params_;

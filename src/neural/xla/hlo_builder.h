@@ -37,26 +37,30 @@ namespace lczero {
 class HloContext;
 class HloBuilder;
 
-using HloFlow = pblczero::HloInstructionProto;
-
-using HloComputation = std::vector<std::unique_ptr<HloFlow>>;
+using HloFlow = const pblczero::HloInstructionProto*;
+using HloComputation =
+    std::vector<std::unique_ptr<pblczero::HloInstructionProto>>;
 
 class HloBuilder {
  public:
-  const HloFlow* Parameter(const pblczero::XlaShapeProto& shape);
-  const HloFlow* Constant(const pblczero::XlaLiteralProto& literal);
-  const HloFlow* Convert(const HloFlow* input,
-                         const pblczero::XlaShapeProto::Type type);
-  const HloFlow* Convolution(
-      const HloFlow* input, const HloFlow* filter,
-      const pblczero::XlaWindow& window,
+  HloFlow Parameter(const pblczero::XlaShapeProto& shape);
+  HloFlow Constant(const pblczero::XlaLiteralProto& literal);
+  HloFlow Convert(HloFlow input, const pblczero::XlaShapeProto::Type type);
+  HloFlow Convolution(
+      HloFlow input, HloFlow filter, const pblczero::XlaWindow& window,
       const pblczero::XlaConvolutionDimensionNumbers& dimension_numbers);
+  HloFlow Broadcast(HloFlow input, const pblczero::XlaShapeProto& target_shape,
+                    const std::vector<int64_t>& broadcast_dimensions);
+  HloFlow Add(HloFlow lhs, HloFlow rhs);
 
   pblczero::HloModuleProto Build(std::string_view name);
 
  private:
-  HloFlow* MakeInstruction(std::string_view opcode,
-                           const pblczero::XlaShapeProto& shape);
+  pblczero::HloInstructionProto* MakeInstruction(
+      std::string_view opcode, const pblczero::XlaShapeProto& shape,
+      const std::vector<const pblczero::HloInstructionProto*> operands);
+  pblczero::HloInstructionProto* MakeElementwiseInstruction(
+      std::string_view opcode, HloFlow lhs, HloFlow rhs);
   void AssignInstructionNames();
 
   HloComputation entry_computation_;
