@@ -27,6 +27,8 @@
 
 #include "neural/xla/hlo_builder.h"
 
+#include <numeric>
+
 #include "utils/exception.h"
 #include "utils/logging.h"
 
@@ -58,7 +60,6 @@ HloFlow HloBuilder::Convolution(
         "Convolution input and filter shapes must have the "
         "same number of dimensions");
   }
-
   pblczero::XlaShapeProto shape = input->shape();
   auto* out_dims = shape.mutable_dimensions();
   const auto& in_dims = input->shape().dimensions();
@@ -71,7 +72,6 @@ HloFlow HloBuilder::Convolution(
     (*out_dims)[dn.output_spatial_dimensions(i)] =
         in_dims[dn.input_spatial_dimensions(i)];
   }
-
   auto* flow = MakeInstruction("convolution", shape, {input, filter});
   *flow->mutable_window() = window;
   *flow->mutable_convolution_dimension_numbers() = dn;
@@ -106,6 +106,23 @@ HloFlow HloBuilder::Add(HloFlow lhs, HloFlow rhs) {
 
 HloFlow HloBuilder::Maximum(HloFlow lhs, HloFlow rhs) {
   return MakeElementwiseInstruction("maximum", lhs, rhs);
+}
+
+HloFlow HloBuilder::Reshape(HloFlow input,
+                            const std::vector<int64_t>& dimensions) {
+  size_t old_elements = std::accumulate(input->shape().dimensions().begin(),
+                                        input->shape().dimensions().end(), 1,
+                                        std::multiplies<int64_t>());
+  size_t new_elements = std::accumulate(dimensions.begin(), dimensions.end(), 1,
+                                        std::multiplies<int64_t>());
+  if (old_elements != new_elements) {
+    throw Exception("Reshape must have the same number of elements: " +
+                    std::to_string(old_elements) + " vs " +
+                    std::to_string(new_elements));
+  }
+  pblczero::XlaShapeProto shape = input->shape();
+  *shape.mutable_dimensions() = dimensions;
+  return MakeInstruction("reshape", shape, {input});
 }
 
 pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(

@@ -77,6 +77,7 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
                       pblczero::TensorProto::DataType_Name(type));
   }
 }
+
 pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
                                             std::optional<size_t> batch_size) {
   pblczero::XlaShapeProto shape;
@@ -129,6 +130,9 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
     case pblczero::TensorProto::FLOAT:
       convert(tensor.raw_data(), literal.mutable_f32s());
       break;
+    case pblczero::TensorProto::INT64:
+      convert(tensor.raw_data(), literal.mutable_s64s());
+      break;
     default:
       throw Exception("Cannot convert ONNX tensor to XLA literal for type " +
                       pblczero::XlaShapeProto::Type_Name(
@@ -169,9 +173,10 @@ class Onnx2HloConverter {
   }
 
   void PopulateOpMapping() {
+    onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
-    onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
+    onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
   }
 
   void CheckKnownAttributes(
@@ -287,6 +292,29 @@ class Onnx2HloConverter {
     auto* rhs = GetInput(node, 1);
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
     return {builder_.Add(lhs, rhs)};
+  }
+
+  std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, {});
+    auto* input = GetInput(node, 0);
+    if (node.input_size() < 2) {
+      throw Exception("Reshape requires a shape input");
+    }
+    auto dims_tensor = initializers_.find(std::string(node.input(1)));
+    if (dims_tensor == initializers_.end()) {
+      throw Exception("Reshape only supports constant shape");
+    }
+    auto new_dims = OnnxTensorToXlaLiteral(*dims_tensor->second).s64s();
+    for (size_t i = 0; i < new_dims.size(); ++i) {
+      if (new_dims[i] == -1) new_dims[i] = batch_size_;
+      if (new_dims[i] == 0) {
+        if (new_dims.size() != input->shape().dimensions_size()) {
+          throw Exception("Reshape cannot infer shape when rank changes");
+        }
+        new_dims[i] = input->shape().dimensions(i);
+      }
+    }
+    return {builder_.Reshape(input, new_dims)};
   }
 
   template <typename T>
