@@ -248,16 +248,16 @@ class HloPrettyPrinter {
   void PrintDotDimensionNumbers(const pblczero::XlaDotDimensionNumbers& dn) {
     PrintDelimeted(
         dn.lhs_batch_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
-        " lhs_batch_dims={", "}");
+        ", lhs_batch_dims={", "}");
     PrintDelimeted(
         dn.rhs_batch_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
-        " rhs_batch_dims={", "}");
+        ", rhs_batch_dims={", "}");
     PrintDelimeted(
         dn.lhs_contracting_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
-        " lhs_contracting_dims={", "}");
+        ", lhs_contracting_dims={", "}");
     PrintDelimeted(
         dn.rhs_contracting_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
-        " rhs_contracting_dims={", "}");
+        ", rhs_contracting_dims={", "}");
   }
 
   void PrintConvolutionDimensionNumbers(

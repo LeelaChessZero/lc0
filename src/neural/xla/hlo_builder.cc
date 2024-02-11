@@ -184,6 +184,10 @@ HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
   return flow;
 }
 
+HloFlow HloBuilder::Tanh(HloFlow input) {
+  return MakeInstruction("tanh", input->shape(), {input});
+}
+
 pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
     std::string_view opcode, HloFlow lhs, HloFlow rhs) {
   if (lhs->shape().dimensions() != rhs->shape().dimensions()) {

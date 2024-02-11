@@ -56,6 +56,7 @@ class HloBuilder {
   HloFlow Reshape(HloFlow input, const pblczero::XlaShapeProto& new_shape);
   HloFlow Dot(HloFlow lhs, HloFlow rhs,
               const pblczero::XlaDotDimensionNumbers& dimension_numbers);
+  HloFlow Tanh(HloFlow input);
 
   pblczero::HloModuleProto Build(std::string_view name);
 

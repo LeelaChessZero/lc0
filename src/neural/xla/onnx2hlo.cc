@@ -148,15 +148,11 @@ class Onnx2HloConverter {
     batch_size_ = minibatch_size;
     BuildInitializerMapping(onnx_model);
     BuildInputs(onnx_model.graph().input());
-    try {
-      BuildGraph(onnx_model.graph());
-    } catch (Exception& e) {
-      CERR << "Error in ONNX graph: " << e.what();  // DO NOT SUBMIT
-    }
+    BuildGraph(onnx_model.graph());
 
     Onnx2HloResult result;
     result.hlo_module = builder_.Build("onnx_model");
-    // TO DELETE, DEBUG ONLY
+    // TO DELETE, DEBUG ONLY, DO NOT SUBMIT
     PrettyPrintHlo(result.hlo_module, {}, std::cout);
     return result;
   }
@@ -174,6 +170,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
+    onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
   }
 
   void CheckKnownAttributes(
@@ -281,6 +278,12 @@ class Onnx2HloConverter {
     auto* zero = MakeScalar(0, input->shape().element_type());
     zero = builder_.Broadcast(zero, input->shape(), {});
     return {builder_.Maximum(input, zero)};
+  }
+
+  std::vector<HloFlow> OpTanh(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, {});
+    auto* input = GetInput(node, 0);
+    return {builder_.Tanh(input)};
   }
 
   std::vector<HloFlow> OpAdd(const pblczero::NodeProto& node) {
