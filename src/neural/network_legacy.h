@@ -179,9 +179,6 @@ struct BaseWeights {
   // Residual tower.
   std::vector<Residual> residual;
 
-  // Policy and value multiheads
-  bool has_multiheads;
-
   // Moves left head
   ConvBlock moves_left;
   Vec ip_mov_w;
