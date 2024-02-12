@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <cassert>
+
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
@@ -86,12 +88,18 @@ void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {
     runner->AddModule(batch_size, conversion.hlo_module);
   }
 
-  // Uncomment to get linker errors.
-  /*
-  for (const auto& [name, idx] : constant_to_parameter_idx) {
-    runner->SetFrozenInput(idx, OnnxConstantToXlaTensor(onnx, name));
+  std::vector<std::unique_ptr<XlaTensor>> constants;
+  constants.resize(constant_to_parameter_idx.size() +
+                   input_to_parameter_idx.size());
+  for (const auto& initializer : onnx.graph().initializer()) {
+    auto iter = constant_to_parameter_idx.find(std::string(initializer.name()));
+    if (iter == constant_to_parameter_idx.end()) continue;
+    auto idx = iter->second;
+    assert(idx < constants.size());
+    constants[idx] = OnnxTensorToXlaTensor(initializer);
   }
-  */
+
+  runner->SetFrozenInputs(std::move(constants));
 }
 
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,

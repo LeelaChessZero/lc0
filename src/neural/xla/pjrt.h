@@ -54,6 +54,32 @@ enum class PjrtErrorCode {
   UNAUTHENTICATED = 16
 };
 
+enum class PjrtType {
+  INVALID,
+  PRED,
+  S8,
+  S16,
+  S32,
+  S64,
+  U8,
+  U16,
+  U32,
+  U64,
+  F16,
+  F32,
+  F64,
+  BF16,
+  C64,
+  C128,
+  F8E5M2,
+  F8E4M3FN,
+  F8E4M3B11FNUZ,
+  F8E5M2FNUZ,
+  F8E4M3FNUZ,
+  S4,
+  U4,
+};
+
 // PJRT errors as exceptions.
 class PjrtException : public std::exception {
  public:
@@ -92,6 +118,11 @@ class PjrtKeyValue {
   std::variant<std::string, int64_t, std::vector<int64_t>, float, bool> value_;
 };
 
+class PjrtDeviceBuffer {
+ public:
+  virtual ~PjrtDeviceBuffer() = default;
+};
+
 class PjrtExecutable {
  public:
   virtual ~PjrtExecutable() = default;
@@ -103,12 +134,22 @@ class PjrtDevice {
   virtual std::string ToString() const = 0;
 };
 
+class PjrtHostToDeviceTransfer {
+ public:
+  virtual ~PjrtHostToDeviceTransfer() = default;
+  virtual void WaitUntilDone() = 0;
+  virtual std::unique_ptr<PjrtDeviceBuffer> WaitAndReleaseBuffer() = 0;
+};
+
 class PjrtClient {
  public:
   virtual ~PjrtClient() = default;
   virtual std::unique_ptr<PjrtExecutable> CompileHlo(
       std::string_view hlo, std::string_view config) = 0;
   virtual std::vector<std::unique_ptr<PjrtDevice>> GetDevices() = 0;
+  virtual std::unique_ptr<PjrtHostToDeviceTransfer> HostToDevice(
+      std::string_view buffer, PjrtType type, const std::vector<int64_t>& dims,
+      const PjrtDevice* device);
 };
 
 class Pjrt {

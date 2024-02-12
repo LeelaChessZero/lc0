@@ -27,6 +27,7 @@
 
 #include "neural/xla/xla_runner.h"
 
+#include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
@@ -34,19 +35,51 @@ namespace lczero {
 XlaRunner::XlaRunner(const char* library_path)
     : pjrt_client_(MakePjrt(library_path)->CreateClient()) {
   CERR << "Devices:";
-  for (const auto& device : pjrt_client_->GetDevices()) {
+  devices_ = pjrt_client_->GetDevices();
+  for (const auto& device : devices_) {
     CERR << "  " << device->ToString();
   }
-  CERR << "Done!";
+  if (devices_.empty()) {
+    throw Exception("No devices available");
+  }
 }
 
 void XlaRunner::AddModule(size_t minibatch_size,
                           const pblczero::HloModuleProto& module) {
-  CERR << "Compiling!";
+  CERR << "Compiling for minibatch size=" << minibatch_size << "...";
   pblczero::CompileOptionsProto options;
   options.mutable_executable_build_options()->set_num_replicas(1);
   options.mutable_executable_build_options()->set_num_partitions(1);
-  pjrt_client_->CompileHlo(module.OutputAsString(), options.OutputAsString());
+  auto executable = pjrt_client_->CompileHlo(module.OutputAsString(),
+                                             options.OutputAsString());
+  executables_.push_back({minibatch_size, std::move(executable)});
+  std::sort(executables_.begin(), executables_.end());
+}
+
+void XlaRunner::SetFrozenInputs(
+    const std::vector<std::unique_ptr<XlaTensor>> inputs) {
+  param_idxs_.clear();
+  std::vector<std::unique_ptr<PjrtHostToDeviceTransfer>> transfers_;
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    const auto* input = inputs[i].get();
+    if (!input) {
+      param_idxs_.push_back(i);
+      continue;
+    }
+    transfers_.push_back(pjrt_client_->HostToDevice(
+        input->data(), static_cast<PjrtType>(input->type()), input->shape(),
+        devices_[0].get()));
+  }
+
+  owned_buffers_.clear();
+  buffers_.clear();
+  buffers_.resize(inputs.size());
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    if (inputs[i]) {
+      owned_buffers_.push_back(transfers_[i]->WaitAndReleaseBuffer());
+      buffers_[i] = owned_buffers_.back().get();
+    }
+  }
 }
 
 }  // namespace lczero

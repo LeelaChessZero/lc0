@@ -38,20 +38,32 @@
 
 namespace lczero {
 
-class XlaTensor {};
+class XlaTensor {
+ public:
+  virtual ~XlaTensor() = default;
+  virtual const std::vector<int64_t>& shape() const = 0;
+  virtual std::string_view data() const = 0;
+  virtual pblczero::XlaShapeProto::Type type() const = 0;
+};
 
 class XlaRunner {
  public:
   XlaRunner(const char* library_path);
   void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
-  std::vector<XlaTensor> ExecuteBlocking(const std::vector<XlaTensor>& inputs);
+  std::vector<XlaTensor> ExecuteBlocking(
+      const std::vector<const XlaTensor*>& inputs);
 
   // Network weights are passed as inputs, but the buffer is transferred once
   // before any inference.
-  void SetFrozenInput(size_t idx, const XlaTensor& tensor);
+  void SetFrozenInputs(const std::vector<std::unique_ptr<XlaTensor>> inputs);
 
  private:
   std::unique_ptr<PjrtClient> pjrt_client_;
+  std::vector<std::unique_ptr<PjrtDevice>> devices_;
+  std::vector<std::pair<size_t, std::unique_ptr<PjrtExecutable>>> executables_;
+  std::vector<std::unique_ptr<PjrtDeviceBuffer>> owned_buffers_;
+  std::vector<PjrtDeviceBuffer*> buffers_;
+  std::vector<size_t> param_idxs_;
 };
 
 }  // namespace lczero

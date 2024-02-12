@@ -489,4 +489,36 @@ Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
   return converter.Convert(onnx_model, minibatch_size);
 }
 
+namespace {
+class XlaTensorNotOwned : public XlaTensor {
+ public:
+  XlaTensorNotOwned(const std::vector<int64_t>& shape, std::string_view data,
+                    pblczero::XlaShapeProto::Type type)
+      : shape_(&shape), data_(data), type_(type) {}
+
+  const std::vector<int64_t>& shape() const override { return *shape_; }
+  std::string_view data() const override { return data_; }
+  pblczero::XlaShapeProto::Type type() const override { return type_; }
+
+ private:
+  const std::vector<int64_t>* shape_;
+  std::string_view data_;
+  pblczero::XlaShapeProto::Type type_;
+};
+}  // namespace
+
+std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
+    const pblczero::TensorProto& onnx_tensor) {
+  switch (onnx_tensor.data_type()) {
+    case pblczero::TensorProto::FLOAT:
+      return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
+                                                 onnx_tensor.raw_data(),
+                                                 pblczero::XlaShapeProto::F32);
+    default:
+      throw Exception(
+          "Unsupported ONNX tensor type for buffer conversion " +
+          pblczero::TensorProto::DataType_Name(onnx_tensor.data_type()));
+  }
+}
+
 }  // namespace lczero

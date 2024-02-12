@@ -57,7 +57,7 @@ Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
                                 size_t minibatch_size,
                                 const Onnx2HloOptions& options);
 
-XlaTensor OnnxConstantToXlaTensor(const pblczero::ModelProto& onnx_model,
-                                  std::string_view name);
+std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
+    const pblczero::TensorProto& onnx_tensor);
 
 }  // namespace lczero
