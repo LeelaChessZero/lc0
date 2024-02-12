@@ -45,6 +45,7 @@ struct WeightsToOnnxConverterOptions {
   int opset = 17;
   bool alt_mish = false;
   bool alternative_layer_normalization = false;
+  bool fix_bf16 = false; // Work around missing bf16 support in onnx operators.
 };
 
 // Converts "classical" weights file to weights file with embedded ONNX model.

@@ -205,7 +205,17 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
       options_.data_type_ !=
           WeightsToOnnxConverterOptions::DataType::kFloat32) {
     if (options_.opset >= 18) return builder->Mish(name, input);
-    auto flow = builder->Softplus(name + "/softplus", input);
+    std::string flow;
+    if (options_.data_type_ ==
+        WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+      flow = builder->Cast(name + "/to_float", input,
+                           pblczero::TensorProto::FLOAT);
+      flow = builder->Softplus(name + "/softplus", flow);
+      flow = builder->Cast(name + "/to_bf16", flow,
+                           pblczero::TensorProto::BFLOAT16);
+    } else {
+      flow = builder->Softplus(name + "/softplus", input);
+    }
     flow = builder->Tanh(name + "/tanh", flow);
     return builder->Mul(name, flow, input);
   } else {
@@ -242,6 +252,14 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
     case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
     case ACTIVATION_SELU:
+      if (options_.data_type_ ==
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+        auto flow = builder->Cast(name + "/to_float", input,
+                                  pblczero::TensorProto::FLOAT);
+        flow = builder->Selu(name + "/selu", flow);
+        return builder->Cast(name + "/to_bf16", flow,
+                             pblczero::TensorProto::BFLOAT16);
+      }
       return builder->Selu(name + "/selu", input);
     case ACTIVATION_SWISH:
       return MakeSwish(builder, input, name + "/swish");
@@ -264,8 +282,8 @@ std::string Converter::MakeSqueezeAndExcite(
                             Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
     se_reshape_init_ = true;
   }
-  auto flow = builder->GlobalAveragePool(name + "/pooled", input);
-  flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
+  auto flow = input;
+  flow = builder->ReduceMean(name + "/reduce_mean", flow, {2, 3}, false);
   flow = builder->MatMul(
       name + "/matmul1", flow,
       *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
@@ -291,13 +309,29 @@ std::string Converter::MakeConvBlock(
     int input_channels, int output_channels, const std::string& input,
     const std::string& name, const LegacyWeights::SEunit* seunit,
     const std::string& mixin, bool activation, int filters) {
-  auto flow = builder->Conv(
-      name, input,
-      *GetWeghtsConverter(weights.weights,
-                          {output_channels, input_channels, filters, filters}),
-      *GetWeghtsConverter(weights.biases, {output_channels}),
-      (filters - 1) / 2);
-
+  auto flow = input;
+  if (options_.data_type_ ==
+      WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    flow =
+        builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
+    flow = builder->Conv(
+        name, flow, *std::make_unique<FloatOnnxWeightsAdapter>(
+                        weights.weights, std::initializer_list<int>(
+                                             {output_channels, input_channels,
+                                              filters, filters})),
+        *std::make_unique<FloatOnnxWeightsAdapter>(
+            weights.biases, std::initializer_list<int>({output_channels})),
+        (filters - 1) / 2);
+    flow =
+        builder->Cast(name + "/to_bf16", flow, pblczero::TensorProto::BFLOAT16);
+  } else {
+    flow = builder->Conv(
+        name, flow,
+        *GetWeghtsConverter(weights.weights, {output_channels, input_channels,
+                                              filters, filters}),
+        *GetWeghtsConverter(weights.biases, {output_channels}),
+        (filters - 1) / 2);
+  }
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
   if (activation) {
