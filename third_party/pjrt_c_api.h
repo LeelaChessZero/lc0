@@ -2036,7 +2036,7 @@ typedef struct PJRT_Structure_Base {
 #define _PJRT_API_STRUCT_FIELD(fn_type) fn_type* fn_type
 
 // Please modify PJRT_Api_STRUCT_SIZE if the last field of PJRT_Api is changed.
-typedef struct {
+typedef struct PJRT_Api {
   size_t struct_size;
   void* extension_start;
 

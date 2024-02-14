@@ -37,6 +37,7 @@
 #include "utils/logging.h"
 
 namespace lczero {
+
 namespace {
 static std::string value_to_string(const std::string& value) { return value; }
 static std::string value_to_string(int64_t value) {
@@ -56,19 +57,27 @@ static std::string value_to_string(float value) {
 static std::string value_to_string(bool value) {
   return value ? "true" : "false";
 }
-}  // namespace
-std::string PjrtKeyValue::value_as_string() const {
-  return std::visit([&](const auto& arg) { return value_to_string(arg); },
-                    value_);
-}
 
-namespace {
 template <typename T>
 T MakeStruct() {
   T t;
   memset(&t, 0, sizeof(t));
   t.struct_size = sizeof(t);
   return t;
+}
+
+PJRT_Error_Code GetErrorCode(const PJRT_Api* api, PJRT_Error* error) {
+  auto args = MakeStruct<PJRT_Error_GetCode_Args>();
+  args.error = error;
+  api->PJRT_Error_GetCode(&args);
+  return args.code;
+}
+
+}  // namespace
+
+std::string PjrtKeyValue::value_as_string() const {
+  return std::visit([&](const auto& arg) { return value_to_string(arg); },
+                    value_);
 }
 
 PjrtKeyValue MakeKeyValue(const PJRT_NamedValue* kv) {
@@ -96,191 +105,152 @@ PjrtKeyValue MakeKeyValue(const PJRT_NamedValue* kv) {
   return result;
 }
 
-class PjrtCommonImpl {
- public:
-  PjrtCommonImpl(const PJRT_Api* api) : api_(api) {}
-  virtual ~PjrtCommonImpl() = default;
+std::string PjrtCommon::GetErrorMessage(PJRT_Error* error) const {
+  auto args = MakeStruct<PJRT_Error_Message_Args>();
+  args.error = error;
+  api_->PJRT_Error_Message(&args);
+  return std::string(args.message, args.message_size);
+}
+void PjrtCommon::DestroyErrorMessage(PJRT_Error* error) const {
+  assert(error);
+  auto args = MakeStruct<PJRT_Error_Destroy_Args>();
+  args.error = error;
+  api_->PJRT_Error_Destroy(&args);
+}
 
- protected:
-  std::string GetErrorMessage(PJRT_Error* error) const {
-    auto args = MakeStruct<PJRT_Error_Message_Args>();
-    args.error = error;
-    api_->PJRT_Error_Message(&args);
-    return std::string(args.message, args.message_size);
+void PjrtCommon::CheckError(PJRT_Error* error) const {
+  if (!error) return;
+  PjrtException exception(static_cast<PjrtErrorCode>(GetErrorCode(api_, error)),
+                          GetErrorMessage(error));
+  DestroyErrorMessage(error);
+  throw exception;
+}
+
+PjrtExecutable::PjrtExecutable(const PJRT_Api* api,
+                               PJRT_LoadedExecutable* executable)
+    : PjrtCommon(api), executable_(executable) {}
+
+PjrtExecutable::~PjrtExecutable() {
+  auto args = MakeStruct<PJRT_LoadedExecutable_Destroy_Args>();
+  args.executable = executable_;
+  CheckError(api_->PJRT_LoadedExecutable_Destroy(&args));
+}
+
+PjrtDevice::PjrtDevice(const PJRT_Api* api, PJRT_Device* device)
+    : PjrtCommon(api), device_(device) {
+  auto args = MakeStruct<PJRT_Device_GetDescription_Args>();
+  args.device = device_;
+  CheckError(api_->PJRT_Device_GetDescription(&args));
+  description_ = args.device_description;
+}
+
+std::string PjrtDevice::ToString() const {
+  auto args = MakeStruct<PJRT_DeviceDescription_ToString_Args>();
+  args.device_description = description_;
+  CheckError(api_->PJRT_DeviceDescription_ToString(&args));
+  return {args.to_string, args.to_string_size};
+}
+
+PjrtClient::PjrtClient(const PJRT_Api* api, PJRT_Client* client)
+    : PjrtCommon(api), client_(client) {}
+
+PjrtClient::~PjrtClient() {
+  auto args = MakeStruct<PJRT_Client_Destroy_Args>();
+  args.client = client_;
+  CheckError(api_->PJRT_Client_Destroy(&args));
+}
+
+std::unique_ptr<PjrtExecutable> PjrtClient::CompileHlo(
+    std::string_view hlo, std::string_view config) {
+  constexpr std::string_view kFormat = "hlo";
+  auto program = MakeStruct<PJRT_Program>();
+  program.code = const_cast<char*>(hlo.data());
+  program.code_size = hlo.size();
+  program.format = kFormat.data();
+  program.format_size = kFormat.size();
+
+  auto args = MakeStruct<PJRT_Client_Compile_Args>();
+  args.client = client_;
+  args.program = &program;
+  args.compile_options = const_cast<char*>(config.data());
+  args.compile_options_size = config.size();
+  CheckError(api_->PJRT_Client_Compile(&args));
+  return std::make_unique<PjrtExecutable>(api_, args.executable);
+}
+
+std::vector<std::unique_ptr<PjrtDevice>> PjrtClient::GetDevices() {
+  auto args = MakeStruct<PJRT_Client_Devices_Args>();
+  args.client = client_;
+  CheckError(api_->PJRT_Client_Devices(&args));
+  std::vector<std::unique_ptr<PjrtDevice>> result;
+  result.reserve(args.num_devices);
+  for (size_t i = 0; i < args.num_devices; ++i) {
+    result.push_back(std::make_unique<PjrtDevice>(api_, args.devices[i]));
   }
-  PJRT_Error_Code GetErrorCode(PJRT_Error* error) const {
-    auto args = MakeStruct<PJRT_Error_GetCode_Args>();
-    args.error = error;
-    api_->PJRT_Error_GetCode(&args);
-    return args.code;
+  return result;
+}
+
+Pjrt::Pjrt(const char* library_path) : PjrtCommon(nullptr) {
+  void* handle = dlopen(library_path, RTLD_LAZY);
+  if (!handle) {
+    throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
+                        "Unable to load PJRT library " +
+                            std::string(library_path) + ": " + dlerror());
   }
-  void DestroyErrorMessage(PJRT_Error* error) const {
-    assert(error);
-    auto args = MakeStruct<PJRT_Error_Destroy_Args>();
-    args.error = error;
-    api_->PJRT_Error_Destroy(&args);
+  typedef const PJRT_Api* (*PjrtApiFunc)();
+  auto func = reinterpret_cast<PjrtApiFunc>(dlsym(handle, "GetPjrtApi"));
+  if (!func) {
+    throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
+                        "Unable to find GetPjrtApi() in PJRT library " +
+                            std::string(library_path) + ": " + dlerror());
   }
-  void CheckError(PJRT_Error* error) const {
-    if (!error) return;
-    PjrtException exception(static_cast<PjrtErrorCode>(GetErrorCode(error)),
-                            GetErrorMessage(error));
-    DestroyErrorMessage(error);
-    throw exception;
+  api_ = func();
+  if (!api_) {
+    throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
+                        "GetPjrtApi() returned nullptr in PJRT library " +
+                            std::string(library_path));
   }
-
-  const PJRT_Api* api_;
-};
-
-class PjrtExecutableImpl : public PjrtExecutable, public PjrtCommonImpl {
- public:
-  explicit PjrtExecutableImpl(const PJRT_Api* api,
-                              PJRT_LoadedExecutable* executable)
-      : PjrtCommonImpl(api), executable_(executable) {}
-  ~PjrtExecutableImpl() override {
-    auto args = MakeStruct<PJRT_LoadedExecutable_Destroy_Args>();
-    args.executable = executable_;
-    CheckError(api_->PJRT_LoadedExecutable_Destroy(&args));
+  auto [major, minor] = ApiVersion();
+  if (major != PJRT_API_MAJOR || minor < PJRT_API_MINOR) {
+    throw PjrtException(
+        PjrtErrorCode::INVALID_ARGUMENT,
+        "PJRT library " + std::string(library_path) +
+            " has incompatible API version: " + std::to_string(major) + "." +
+            std::to_string(minor) + " vs " + std::to_string(PJRT_API_MAJOR) +
+            "." + std::to_string(PJRT_API_MINOR));
   }
+  Initialize();
+}
 
- private:
-  PJRT_LoadedExecutable* executable_;
-};
-
-class PjrtDeviceImpl : public PjrtDevice, public PjrtCommonImpl {
- public:
-  explicit PjrtDeviceImpl(const PJRT_Api* api, PJRT_Device* device)
-      : PjrtCommonImpl(api), device_(device) {
-    auto args = MakeStruct<PJRT_Device_GetDescription_Args>();
-    args.device = device_;
-    CheckError(api_->PJRT_Device_GetDescription(&args));
-    description_ = args.device_description;
+std::vector<PjrtKeyValue> Pjrt::GetAttributes() const {
+  auto args = MakeStruct<PJRT_Plugin_Attributes_Args>();
+  CheckError(api_->PJRT_Plugin_Attributes(&args));
+  std::vector<PjrtKeyValue> result;
+  result.reserve(args.num_attributes);
+  for (size_t i = 0; i < args.num_attributes; ++i) {
+    result.push_back(MakeKeyValue(args.attributes + i));
   }
+  return result;
+}
 
-  std::string ToString() const override {
-    auto args = MakeStruct<PJRT_DeviceDescription_ToString_Args>();
-    args.device_description = description_;
-    CheckError(api_->PJRT_DeviceDescription_ToString(&args));
-    return {args.to_string, args.to_string_size};
-  }
+std::unique_ptr<PjrtClient> Pjrt::CreateClient() {
+  auto args = MakeStruct<PJRT_Client_Create_Args>();
+  CheckError(api_->PJRT_Client_Create(&args));
+  return std::make_unique<PjrtClient>(api_, args.client);
+}
 
- private:
-  PJRT_Device* device_;
-  PJRT_DeviceDescription* description_;
-};
+std::pair<int, int> Pjrt::ApiVersion() const {
+  return std::make_pair(api_->pjrt_api_version.major_version,
+                        api_->pjrt_api_version.minor_version);
+}
 
-class PjrtClientImpl : public PjrtClient, public PjrtCommonImpl {
- public:
-  explicit PjrtClientImpl(const PJRT_Api* api, PJRT_Client* client)
-      : PjrtCommonImpl(api), client_(client) {}
-  ~PjrtClientImpl() override {
-    auto args = MakeStruct<PJRT_Client_Destroy_Args>();
-    args.client = client_;
-    CheckError(api_->PJRT_Client_Destroy(&args));
-  }
-
-  std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo,
-                                             std::string_view config) override {
-    constexpr std::string_view kFormat = "hlo";
-    auto program = MakeStruct<PJRT_Program>();
-    program.code = const_cast<char*>(hlo.data());
-    program.code_size = hlo.size();
-    program.format = kFormat.data();
-    program.format_size = kFormat.size();
-
-    auto args = MakeStruct<PJRT_Client_Compile_Args>();
-    args.client = client_;
-    args.program = &program;
-    args.compile_options = const_cast<char*>(config.data());
-    args.compile_options_size = config.size();
-    CheckError(api_->PJRT_Client_Compile(&args));
-    return std::make_unique<PjrtExecutableImpl>(api_, args.executable);
-  }
-
-  std::vector<std::unique_ptr<PjrtDevice>> GetDevices() override {
-    auto args = MakeStruct<PJRT_Client_Devices_Args>();
-    args.client = client_;
-    CheckError(api_->PJRT_Client_Devices(&args));
-    std::vector<std::unique_ptr<PjrtDevice>> result;
-    result.reserve(args.num_devices);
-    for (size_t i = 0; i < args.num_devices; ++i) {
-      result.push_back(std::make_unique<PjrtDeviceImpl>(api_, args.devices[i]));
-    }
-    return result;
-  }
-
- private:
-  PJRT_Client* client_;
-};
-
-class PjrtImpl : public Pjrt, public PjrtCommonImpl {
- public:
-  explicit PjrtImpl(const char* library_path) : PjrtCommonImpl(nullptr) {
-    void* handle = dlopen(library_path, RTLD_LAZY);
-    if (!handle) {
-      throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
-                          "Unable to load PJRT library " +
-                              std::string(library_path) + ": " + dlerror());
-    }
-    typedef const PJRT_Api* (*PjrtApiFunc)();
-    auto func = reinterpret_cast<PjrtApiFunc>(dlsym(handle, "GetPjrtApi"));
-    if (!func) {
-      throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
-                          "Unable to find GetPjrtApi() in PJRT library " +
-                              std::string(library_path) + ": " + dlerror());
-    }
-    api_ = func();
-    if (!api_) {
-      throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
-                          "GetPjrtApi() returned nullptr in PJRT library " +
-                              std::string(library_path));
-    }
-    auto [major, minor] = ApiVersion();
-    if (major != PJRT_API_MAJOR || minor < PJRT_API_MINOR) {
-      throw PjrtException(
-          PjrtErrorCode::INVALID_ARGUMENT,
-          "PJRT library " + std::string(library_path) +
-              " has incompatible API version: " + std::to_string(major) + "." +
-              std::to_string(minor) + " vs " + std::to_string(PJRT_API_MAJOR) +
-              "." + std::to_string(PJRT_API_MINOR));
-    }
-    Initialize();
-  }
-
-  std::vector<PjrtKeyValue> GetAttributes() const override {
-    auto args = MakeStruct<PJRT_Plugin_Attributes_Args>();
-    CheckError(api_->PJRT_Plugin_Attributes(&args));
-    std::vector<PjrtKeyValue> result;
-    result.reserve(args.num_attributes);
-    for (size_t i = 0; i < args.num_attributes; ++i) {
-      result.push_back(MakeKeyValue(args.attributes + i));
-    }
-    return result;
-  }
-
-  std::unique_ptr<PjrtClient> CreateClient() override {
-    auto args = MakeStruct<PJRT_Client_Create_Args>();
-    CheckError(api_->PJRT_Client_Create(&args));
-    return std::make_unique<PjrtClientImpl>(api_, args.client);
-  }
-
- private:
-  std::pair<int, int> ApiVersion() const {
-    return std::make_pair(api_->pjrt_api_version.major_version,
-                          api_->pjrt_api_version.minor_version);
-  }
-
-  void Initialize() {
-    auto args = MakeStruct<PJRT_Plugin_Initialize_Args>();
-    CheckError(api_->PJRT_Plugin_Initialize(&args));
-  }
-
-  const PJRT_Api* api_;
-};
-
-}  // namespace
+void Pjrt::Initialize() {
+  auto args = MakeStruct<PJRT_Plugin_Initialize_Args>();
+  CheckError(api_->PJRT_Plugin_Initialize(&args));
+}
 
 std::unique_ptr<Pjrt> MakePjrt(const char* library_path) {
-  return std::make_unique<PjrtImpl>(library_path);
+  return std::make_unique<Pjrt>(library_path);
 }
 
 }  // namespace lczero

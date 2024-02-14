@@ -32,6 +32,13 @@
 #include <variant>
 #include <vector>
 
+struct PJRT_Api;
+struct PJRT_Client;
+struct PJRT_Device;
+struct PJRT_DeviceDescription;
+struct PJRT_Error;
+struct PJRT_LoadedExecutable;
+
 namespace lczero {
 
 // PJRT_Error_Code as enum class.
@@ -118,47 +125,74 @@ class PjrtKeyValue {
   std::variant<std::string, int64_t, std::vector<int64_t>, float, bool> value_;
 };
 
-class PjrtDeviceBuffer {
- public:
-  virtual ~PjrtDeviceBuffer() = default;
+class PjrtCommon {
+ protected:
+  PjrtCommon(const PJRT_Api* api) : api_(api) {}
+  virtual ~PjrtCommon() = default;
+
+  std::string GetErrorMessage(PJRT_Error* error) const;
+  void DestroyErrorMessage(PJRT_Error* error) const;
+  void CheckError(PJRT_Error* error) const;
+
+  const PJRT_Api* api_;
 };
 
-class PjrtExecutable {
+class PjrtDeviceBuffer : protected PjrtCommon {
  public:
-  virtual ~PjrtExecutable() = default;
+  ~PjrtDeviceBuffer() = default;
 };
 
-class PjrtDevice {
+class PjrtExecutable : protected PjrtCommon {
  public:
-  virtual ~PjrtDevice() = default;
-  virtual std::string ToString() const = 0;
+  PjrtExecutable(const PJRT_Api* api, PJRT_LoadedExecutable* executable);
+  ~PjrtExecutable();
+
+ private:
+  PJRT_LoadedExecutable* executable_;
 };
 
-class PjrtHostToDeviceTransfer {
+class PjrtDevice : protected PjrtCommon {
  public:
-  virtual ~PjrtHostToDeviceTransfer() = default;
-  virtual void WaitUntilDone() = 0;
-  virtual std::unique_ptr<PjrtDeviceBuffer> WaitAndReleaseBuffer() = 0;
+  PjrtDevice(const PJRT_Api* api, PJRT_Device* device);
+  std::string ToString() const;
+
+ private:
+  PJRT_Device* device_;
+  PJRT_DeviceDescription* description_;
 };
 
-class PjrtClient {
+class PjrtHostToDeviceTransfer : protected PjrtCommon {
  public:
-  virtual ~PjrtClient() = default;
-  virtual std::unique_ptr<PjrtExecutable> CompileHlo(
-      std::string_view hlo, std::string_view config) = 0;
-  virtual std::vector<std::unique_ptr<PjrtDevice>> GetDevices() = 0;
-  virtual std::unique_ptr<PjrtHostToDeviceTransfer> HostToDevice(
+  ~PjrtHostToDeviceTransfer();
+  void WaitUntilDone();
+  std::unique_ptr<PjrtDeviceBuffer> WaitAndReleaseBuffer();
+};
+
+class PjrtClient : protected PjrtCommon {
+ public:
+  PjrtClient(const PJRT_Api* api, PJRT_Client* client);
+  ~PjrtClient();
+  std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo,
+                                             std::string_view config);
+  std::vector<std::unique_ptr<PjrtDevice>> GetDevices();
+  std::unique_ptr<PjrtHostToDeviceTransfer> HostToDevice(
       std::string_view buffer, PjrtType type, const std::vector<int64_t>& dims,
       const PjrtDevice* device);
+
+ private:
+  PJRT_Client* client_;
 };
 
-class Pjrt {
+class Pjrt : protected PjrtCommon {
  public:
-  virtual ~Pjrt() = default;
-  // PJRT_Plugin_Attributes wrapper.
-  virtual std::vector<PjrtKeyValue> GetAttributes() const = 0;
-  // PJRT_Client_Create wrapper.
-  virtual std::unique_ptr<PjrtClient> CreateClient() = 0;
+  Pjrt(const char* library_path);
+  ~Pjrt();
+  std::vector<PjrtKeyValue> GetAttributes() const;
+  std::unique_ptr<PjrtClient> CreateClient();
+  std::pair<int, int> ApiVersion() const;
+
+ private:
+  void Initialize();
 };
 
 // Loads the PJRT plugin from the given library path.
