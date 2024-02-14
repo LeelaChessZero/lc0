@@ -490,6 +490,7 @@ Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
 }
 
 namespace {
+// Not-owned XLA tensor, used when ONNX buffer can be used directly.
 class XlaTensorNotOwned : public XlaTensor {
  public:
   XlaTensorNotOwned(const std::vector<int64_t>& shape, std::string_view data,
