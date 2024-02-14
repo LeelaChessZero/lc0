@@ -45,6 +45,7 @@ struct GoParams {
   std::optional<std::int64_t> binc;
   std::optional<int> movestogo;
   std::optional<int> depth;
+  std::optional<int> mate;
   std::optional<int> nodes;
   std::optional<std::int64_t> movetime;
   bool infinite = false;

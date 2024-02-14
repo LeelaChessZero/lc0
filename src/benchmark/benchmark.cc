@@ -106,8 +106,8 @@ void Benchmark::Run() {
           std::make_unique<CallbackUciResponder>(
               std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),
               std::bind(&Benchmark::OnInfo, this, std::placeholders::_1)),
-          MoveList(), start, std::move(stopper), false, option_dict, &cache,
-          nullptr);
+          MoveList(), start, std::move(stopper), false, false, option_dict,
+          &cache, nullptr);
       search->StartThreads(option_dict.Get<int>(kThreadsOptionId));
       search->Wait();
       const auto end = std::chrono::steady_clock::now();

@@ -448,9 +448,9 @@ if get_option('build_backends')
     if get_option('cudnn') and cu_dnn.found()
       deps += cu_dnn
       cuda_files += 'src/neural/cuda/network_cudnn.cc'
+      cuda_files += 'src/neural/cuda/network_cuda.cc' # To support newer nets.
       add_project_arguments('-DUSE_CUDNN', language : 'cpp')
-    endif
-    if get_option('plain_cuda')
+    elif get_option('plain_cuda')
       cuda_files += 'src/neural/cuda/network_cuda.cc'
     endif
     foreach d : get_option('cudnn_include')
@@ -462,6 +462,7 @@ if get_option('build_backends')
 
     cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
+    nvcc_help = run_command(nvcc, '-h').stdout()
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
         cuda_arguments += ['-Xcompiler', '-MT']
@@ -482,6 +483,8 @@ if get_option('build_backends')
     nvcc_extra_args = []
     if cuda_cc != ''
       nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
+    elif get_option('native_cuda') and nvcc_help.contains('-arch=native')
+      nvcc_extra_args = ['-arch=native']
     endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
@@ -499,23 +502,24 @@ if get_option('build_backends')
       command : [nvcc, nvcc_extra_args, cuda_arguments]
     )
 
-    # Handling of fp16 cuda code.
-    nvcc_sm_list = ['80', '75', '86', '70', '89', '90']
-    if host_machine.system() != 'windows'
-      nvcc_sm_list += ['60']
-      if ['arm', 'aarch64'].contains(host_machine.cpu_family())
-        # Add Jetson versions to the list.
-        message('Jetson support enabled.')
-        nvcc_sm_list += ['72', '62', '53', '87']
+    # Handling of fp16 cuda code: If nvcc_extra_args is empty add options to
+    # generate code for the major fp16 capable architectures.
+    if nvcc_extra_args == []
+      nvcc_arch = '-arch=compute_70'
+      nvcc_sm_list = ['sm_70', 'sm_75', 'sm_80', 'sm_90']
+      if host_machine.system() != 'windows'
+        nvcc_arch = '-arch=compute_60'
+        nvcc_sm_list += ['sm_60']
+        if ['arm', 'aarch64'].contains(host_machine.cpu_family())
+          message('Compiling for Jetson.')
+          nvcc_arch = '-arch=compute_53'
+          nvcc_sm_list = ['sm_53', 'sm_62', 'sm_72', 'sm_87']
+        endif
       endif
-    endif
-    # Ignore the given CC for fp16 when it is not in the supported list.
-    if cuda_cc == '' or not nvcc_sm_list.contains('sm_' + cuda_cc)
-      nvcc_extra_args = []
-      nvcc_help = run_command(nvcc, '-h').stdout()
+      nvcc_extra_args = [nvcc_arch]
       foreach x : nvcc_sm_list
-        if nvcc_help.contains('sm_' + x)
-          nvcc_extra_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
+        if nvcc_help.contains(x)
+          nvcc_extra_args += '-code=' + x
         endif
       endforeach
       # For forward compatibility.
@@ -572,19 +576,23 @@ if get_option('build_backends')
   ## ONNX
   ## ~~~~~~~~~~
   if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
-    onnx_lib = cc.find_library('onnxruntime',
-                               dirs: get_option('onnx_libdir'),
-                               required: true)
+    deps += cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
+                            required: true)
     includes += include_directories(get_option('onnx_include'), is_system: true)
-    cc.has_header('onnxruntime_cxx_api.h',
-                  required: true,
+    cc.has_header('onnxruntime_cxx_api.h', required: true,
                   args: '-I' + get_option('onnx_include'))
-    deps += [onnx_lib]
-
-    files += [
-      'src/neural/onnx/network_onnx.cc',
-    ]
-
+    if not cc.has_header('cpu_provider_factory.h',
+                         args: '-I' + get_option('onnx_include'))
+      cc.has_header('../providers/cpu/cpu_provider_factory.h', required: true,
+                    args: '-I' + get_option('onnx_include'))
+      includes += include_directories(get_option('onnx_include') + '/../providers/cpu',
+                                      is_system: true)
+    endif
+    files += 'src/neural/onnx/network_onnx.cc'
+    if cc.find_library('onnxruntime_providers_rocm',
+                       dirs: get_option('onnx_libdir'), required: false).found()
+      add_project_arguments('-DUSE_ROCM', language : 'cpp')
+    endif
     has_backends = true
   endif
 

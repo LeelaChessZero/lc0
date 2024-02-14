@@ -27,6 +27,11 @@
 
 #include "cuda_common.h"
 #include "neural/shared/activation.h"
+
+// Allow building on an old architecture.
+#if __CUDA_ARCH__ < 530
+#define SKIP_FP16_BITS 1
+#endif
 #include "winograd_helper.inc"
 
 namespace lczero {
@@ -51,6 +56,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
                               const half* w1, const half* b1, const half* w2,
                               const half* b2, const half* bPrev,
                               ActivationFunction activation) {
+#if __CUDA_ARCH__ >= 530
   const int elementsPerThread = 64;  // 8x8 board
   const int se_K = K;
 
@@ -125,6 +131,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
     output[inputIndex] = val;
   }
+#endif
 }
 
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
@@ -220,6 +227,7 @@ __global__ __launch_bounds__(
                                                         const half* b1,
                                                         const half* w2,
                                                         const half* b2) {
+#if __CUDA_ARCH__ >= 530
   int k = threadIdx.x;
   int n = blockIdx.x;
 
@@ -422,6 +430,7 @@ __global__ __launch_bounds__(
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
   }
+#endif
 }
 
 template <typename T = half, bool use_se, ActivationFunction activation,
