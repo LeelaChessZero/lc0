@@ -69,11 +69,30 @@ class XlaTensorNotOwned : public XlaTensor {
   pblczero::XlaShapeProto::Type type_;
 };
 
+class XlaTensorOwned : public XlaTensor {
+ public:
+  XlaTensorOwned(const std::vector<int64_t>& shape,
+                 pblczero::XlaShapeProto::Type type, std::string data)
+      : shape_(shape), type_(type), data_(data) {}
+
+  const std::vector<int64_t>& shape() const override { return shape_; }
+  const void* data() const override { return data_.data(); }
+  size_t size() const override { return data_.size(); }
+  size_t capacity() const override { return data_.size(); }
+  pblczero::XlaShapeProto::Type type() const override { return type_; }
+
+ private:
+  std::vector<int64_t> shape_;
+  pblczero::XlaShapeProto::Type type_;
+  std::string data_;
+};
+
 class XlaRunner {
  public:
   XlaRunner(const char* library_path);
   void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
-  std::vector<XlaTensor> ExecuteBlocking(const std::vector<XlaTensor*>& inputs);
+  std::vector<std::unique_ptr<XlaTensor>> ExecuteBlocking(
+      const std::vector<XlaTensor*>& inputs);
 
   // Network weights are passed as inputs, but the buffer is transferred once
   // before any inference.

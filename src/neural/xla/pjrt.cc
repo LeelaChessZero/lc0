@@ -180,7 +180,8 @@ std::vector<std::unique_ptr<PjrtDeviceBuffer>> PjrtExecutable::ExecuteBlocking(
   std::vector<std::unique_ptr<PjrtDeviceBuffer>> output_buffers;
   output_buffers.reserve(num_outputs_);
   for (size_t i = 0; i < num_outputs_; ++i) {
-    output_buffers.push_back(std::make_unique<PjrtDeviceBuffer>(api_, outputs[i]));
+    output_buffers.push_back(
+        std::make_unique<PjrtDeviceBuffer>(api_, outputs[i]));
   }
   return output_buffers;
 }
@@ -261,6 +262,35 @@ PjrtDeviceBuffer::~PjrtDeviceBuffer() {
   auto args = MakeStruct<PJRT_Buffer_Destroy_Args>();
   args.buffer = buffer_;
   CheckError(api_->PJRT_Buffer_Destroy(&args));
+}
+
+size_t PjrtDeviceBuffer::GetSize() const {
+  auto args = MakeStruct<PJRT_Buffer_ToHostBuffer_Args>();
+  args.src = buffer_;
+  CheckError(api_->PJRT_Buffer_ToHostBuffer(&args));
+  return args.dst_size;
+}
+
+PjrtType PjrtDeviceBuffer::GetType() const {
+  auto args = MakeStruct<PJRT_Buffer_ElementType_Args>();
+  args.buffer = buffer_;
+  CheckError(api_->PJRT_Buffer_ElementType(&args));
+  return static_cast<PjrtType>(args.type);
+}
+
+std::vector<int64_t> PjrtDeviceBuffer::GetDimensions() const {
+  auto args = MakeStruct<PJRT_Buffer_Dimensions_Args>();
+  args.buffer = buffer_;
+  CheckError(api_->PJRT_Buffer_Dimensions(&args));
+  return {args.dims, args.dims + args.num_dims};
+}
+
+void PjrtDeviceBuffer::DeviceToHostBlocking(void* dst, size_t size) {
+  auto args = MakeStruct<PJRT_Buffer_ToHostBuffer_Args>();
+  args.src = buffer_;
+  args.dst = dst;
+  args.dst_size = size;
+  CheckError(api_->PJRT_Buffer_ToHostBuffer(&args));
 }
 
 PjrtHostToDeviceTransfer::PjrtHostToDeviceTransfer(

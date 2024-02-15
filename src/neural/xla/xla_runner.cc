@@ -106,7 +106,7 @@ void XlaRunner::SetFrozenInputs(
 
 size_t XlaRunner::GetMaxBatchSize() const { return executables_.back().first; }
 
-std::vector<XlaTensor> XlaRunner::ExecuteBlocking(
+std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
     const std::vector<XlaTensor*>& inputs) {
   if (inputs.size() != 1) {
     throw Exception("Only one input is kinda supported.");
@@ -138,10 +138,21 @@ std::vector<XlaTensor> XlaRunner::ExecuteBlocking(
   // Make a copy to support multiple concurrent calls, not sure if it's needed.
   auto buffers = buffers_;
   buffers[param_idxs_[0]] = input_buffer.get();
-  iter->second->ExecuteBlocking(buffers);
+  auto outputs = iter->second->ExecuteBlocking(buffers);
 
-  // DO NOT SUBMIT
-  return {};
+  std::vector<std::unique_ptr<XlaTensor>> result;
+  result.reserve(outputs.size());
+
+  for (const auto& output : outputs) {
+    std::string buffer;
+    buffer.resize(output->GetSize());
+    output->DeviceToHostBlocking(&buffer[0], buffer.size());
+    result.push_back(std::make_unique<XlaTensorOwned>(
+        output->GetDimensions(),
+        static_cast<pblczero::XlaShapeProto::Type>(output->GetType()),
+        std::move(buffer)));
+  }
+  return result;
 }
 
 }  // namespace lczero

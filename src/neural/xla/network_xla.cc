@@ -168,7 +168,9 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   };
 
   // DO NOT SUBMIT, pass the correct batch size.
-  for (size_t batch_size : {512}) {
+  for (size_t batch_size : {/*64, 128, 192, 256, 320, 384, 448, 512, 576, 640,
+                            704, 768, 832, 896, 960, */
+                            1024}) {
     CERR << "Building HLO for batch size " << batch_size << "...";
     auto conversion = ConvertOnnxToHlo(onnx, batch_size, {});
     add_tensors(conversion.constants, constant_to_parameter_idx);

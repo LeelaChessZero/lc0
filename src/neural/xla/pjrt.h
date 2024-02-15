@@ -165,6 +165,12 @@ class PjrtDeviceBuffer : protected PjrtCommon {
  public:
   PjrtDeviceBuffer(const PJRT_Api* api, PJRT_Buffer* buffer);
   ~PjrtDeviceBuffer();
+  size_t GetSize() const;
+  // Not very nice API, but too lazy to wrap it properly for now.
+  // TODO Make it at least parallelizable.
+  void DeviceToHostBlocking(void* dst, size_t size);
+  PjrtType GetType() const;
+  std::vector<int64_t> GetDimensions() const;
 
  private:
   PJRT_Buffer* buffer_;
