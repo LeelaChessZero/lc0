@@ -32,6 +32,7 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <numeric>
 
 #include "pjrt_c_api.h"
 #include "utils/logging.h"
@@ -128,12 +129,60 @@ void PjrtCommon::CheckError(PJRT_Error* error) const {
 
 PjrtExecutable::PjrtExecutable(const PJRT_Api* api,
                                PJRT_LoadedExecutable* executable)
-    : PjrtCommon(api), executable_(executable) {}
+    : PjrtCommon(api), executable_(executable) {
+  auto args = MakeStruct<PJRT_LoadedExecutable_GetExecutable_Args>();
+  args.loaded_executable = executable_;
+  CheckError(api_->PJRT_LoadedExecutable_GetExecutable(&args));
+
+  auto args2 = MakeStruct<PJRT_Executable_NumOutputs_Args>();
+  args2.executable = args.executable;
+  CheckError(api_->PJRT_Executable_NumOutputs(&args2));
+  num_outputs_ = args2.num_outputs;
+}
 
 PjrtExecutable::~PjrtExecutable() {
   auto args = MakeStruct<PJRT_LoadedExecutable_Destroy_Args>();
   args.executable = executable_;
   CheckError(api_->PJRT_LoadedExecutable_Destroy(&args));
+}
+
+size_t PjrtExecutable::GetNumOutputs() const { return num_outputs_; }
+
+std::vector<std::unique_ptr<PjrtDeviceBuffer>> PjrtExecutable::ExecuteBlocking(
+    const std::vector<PjrtDeviceBuffer*>& inputs) {
+  auto options = MakeStruct<PJRT_ExecuteOptions>();
+  options.num_non_donatable_input_indices = inputs.size();
+  std::vector<int64_t> non_donatable_indices(inputs.size());
+  // TODO the buffer 0 is actually donatable.
+  std::iota(non_donatable_indices.begin(), non_donatable_indices.end(), 0);
+  options.non_donatable_input_indices = non_donatable_indices.data();
+
+  auto args = MakeStruct<PJRT_LoadedExecutable_Execute_Args>();
+  args.executable = executable_;
+  args.options = &options;
+  args.num_devices = 1;
+  std::vector<PJRT_Buffer*> buffers(inputs.size());
+  for (size_t i = 0; i < inputs.size(); ++i) buffers[i] = inputs[i]->buffer_;
+  PJRT_Buffer* const* buffers_ptr = buffers.data();
+  args.num_args = inputs.size();
+  args.argument_lists = &buffers_ptr;
+
+  std::vector<PJRT_Buffer*> outputs(num_outputs_);
+  PJRT_Buffer** outputs_ptr = outputs.data();
+  PJRT_Event* event_ptr;
+  args.output_lists = &outputs_ptr;
+  args.device_complete_events = &event_ptr;
+  CheckError(api_->PJRT_LoadedExecutable_Execute(&args));
+
+  PjrtEvent event(api_, event_ptr);
+  event.Await();
+
+  std::vector<std::unique_ptr<PjrtDeviceBuffer>> output_buffers;
+  output_buffers.reserve(num_outputs_);
+  for (size_t i = 0; i < num_outputs_; ++i) {
+    output_buffers.push_back(std::make_unique<PjrtDeviceBuffer>(api_, outputs[i]));
+  }
+  return output_buffers;
 }
 
 PjrtDevice::PjrtDevice(const PJRT_Api* api, PJRT_Device* device)
@@ -220,7 +269,8 @@ PjrtHostToDeviceTransfer::PjrtHostToDeviceTransfer(
 
 void PjrtHostToDeviceTransfer::Await() { event_->Await(); }
 
-std::unique_ptr<PjrtDeviceBuffer> PjrtHostToDeviceTransfer::AwaitAndReleaseBuffer() {
+std::unique_ptr<PjrtDeviceBuffer>
+PjrtHostToDeviceTransfer::AwaitAndReleaseBuffer() {
   if (!buffer_) {
     throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
                         "Buffer already released");

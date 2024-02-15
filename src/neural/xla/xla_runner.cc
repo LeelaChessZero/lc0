@@ -27,10 +27,30 @@
 
 #include "neural/xla/xla_runner.h"
 
+#include <numeric>
+
 #include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
+namespace {
+
+size_t GetTypeSize(pblczero::XlaShapeProto::Type type) {
+  switch (type) {
+    case pblczero::XlaShapeProto::F32:
+      return sizeof(float);
+    case pblczero::XlaShapeProto::F64:
+      return sizeof(double);
+    case pblczero::XlaShapeProto::S32:
+      return sizeof(int32_t);
+    case pblczero::XlaShapeProto::S64:
+      return sizeof(int64_t);
+    default:
+      throw Exception("Add size for type " +
+                      pblczero::XlaShapeProto::Type_Name(type));
+  }
+}
+}  // namespace
 
 XlaRunner::XlaRunner(const char* library_path)
     : pjrt_client_(MakePjrt(library_path)->CreateClient()) {
@@ -66,7 +86,8 @@ void XlaRunner::SetFrozenInputs(
       continue;
     }
     transfers_.push_back(pjrt_client_->HostToDevice(
-        input->data(), static_cast<PjrtType>(input->type()), input->shape(),
+        {static_cast<const char*>(input->data()), input->size()},
+        static_cast<PjrtType>(input->type()), input->shape(),
         devices_[0].get()));
   }
 
@@ -81,6 +102,46 @@ void XlaRunner::SetFrozenInputs(
       buffers_[i] = owned_buffers_.back().get();
     }
   }
+}
+
+size_t XlaRunner::GetMaxBatchSize() const { return executables_.back().first; }
+
+std::vector<XlaTensor> XlaRunner::ExecuteBlocking(
+    const std::vector<XlaTensor*>& inputs) {
+  if (inputs.size() != 1) {
+    throw Exception("Only one input is kinda supported.");
+  }
+  auto iter = std::find_if(
+      executables_.begin(), executables_.end(), [&](const auto& e) {
+        return e.first >= static_cast<size_t>(inputs[0]->shape()[0]);
+      });
+  if (iter == executables_.end()) {
+    throw Exception("No executable found for batch size " +
+                    std::to_string(inputs[0]->shape()[0]));
+  }
+  const size_t batch_size = iter->first;
+  std::vector<int64_t> new_shape = inputs[0]->shape();
+  new_shape[0] = batch_size;
+  const size_t input_size = std::accumulate(new_shape.begin(), new_shape.end(),
+                                            1, std::multiplies<size_t>()) *
+                            GetTypeSize(inputs[0]->type());
+  if (input_size > inputs[0]->capacity()) {
+    throw Exception("Input buffer too small");
+  }
+  auto input_buffer =
+      pjrt_client_
+          ->HostToDevice(
+              {static_cast<const char*>(inputs[0]->data()), input_size},
+              static_cast<PjrtType>(inputs[0]->type()), new_shape,
+              devices_[0].get())
+          ->AwaitAndReleaseBuffer();
+  // Make a copy to support multiple concurrent calls, not sure if it's needed.
+  auto buffers = buffers_;
+  buffers[param_idxs_[0]] = input_buffer.get();
+  iter->second->ExecuteBlocking(buffers);
+
+  // DO NOT SUBMIT
+  return {};
 }
 
 }  // namespace lczero

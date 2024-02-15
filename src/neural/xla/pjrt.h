@@ -147,6 +147,7 @@ class PjrtDevice : protected PjrtCommon {
  private:
   PJRT_Device* device_;
   PJRT_DeviceDescription* description_;
+  friend class PjrtExecutable;
   friend class PjrtClient;
 };
 
@@ -167,15 +168,20 @@ class PjrtDeviceBuffer : protected PjrtCommon {
 
  private:
   PJRT_Buffer* buffer_;
+  friend class PjrtExecutable;
 };
 
 class PjrtExecutable : protected PjrtCommon {
  public:
   PjrtExecutable(const PJRT_Api* api, PJRT_LoadedExecutable* executable);
   ~PjrtExecutable();
+  std::vector<std::unique_ptr<PjrtDeviceBuffer>> ExecuteBlocking(
+      const std::vector<PjrtDeviceBuffer*>& inputs);
+  size_t GetNumOutputs() const;
 
  private:
   PJRT_LoadedExecutable* executable_;
+  size_t num_outputs_;
 };
 
 class PjrtHostToDeviceTransfer : protected PjrtCommon {

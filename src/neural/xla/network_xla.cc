@@ -37,11 +37,48 @@
 namespace lczero {
 namespace {
 
+class Lc0InputTensor : public XlaTensor {
+ public:
+  Lc0InputTensor(size_t max_batch_size)
+      // TODO replace with make_unique_for_overwrite() once C++20 is available.
+      : max_batch_size_(max_batch_size),
+        data_(new float[GetSizeBytes(max_batch_size)]),
+        shape_{0, kInputPlanes, 8, 8} {}
+
+  const std::vector<int64_t>& shape() const override { return shape_; }
+  const void* data() const override { return data_.get(); }
+  size_t size() const override { return GetSizeBytes(shape_[0]); }
+  size_t capacity() const override { return GetSizeBytes(max_batch_size_); }
+  pblczero::XlaShapeProto::Type type() const override {
+    return pblczero::XlaShapeProto::F32;
+  }
+
+  float* AddBatch() {
+    assert(size_t(shape_[0]) < max_batch_size_);
+    auto ret = data_.get() + shape_[0] * kSingleInputSize;
+    ++shape_[0];
+    return ret;
+  }
+  size_t GetBatchSize() const { return shape_[0]; }
+
+ private:
+  static constexpr size_t kSingleInputSize = kInputPlanes * 8 * 8;
+  static size_t GetSize(size_t batch_size) {
+    return batch_size * kSingleInputSize;
+  }
+  static size_t GetSizeBytes(size_t batch_size) {
+    return GetSize(batch_size) * sizeof(float);
+  }
+
+  const size_t max_batch_size_;
+  std::unique_ptr<float[]> data_;
+  std::vector<int64_t> shape_;
+};
+
 class XlaNetwork;
 class XlaComputation : public NetworkComputation {
  public:
-  XlaComputation();
-
+  XlaComputation(const XlaNetwork* network);
   void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override;
   void ComputeBlocking() override;
@@ -52,9 +89,7 @@ class XlaComputation : public NetworkComputation {
 
  private:
   const XlaNetwork* network_;
-  constexpr static size_t kBatchSize = kInputPlanes * 8 * 8;
-  size_t batch_size_ = 0;
-  std::vector<float> raw_input_planes_;
+  Lc0InputTensor input_tensor_;
 };
 
 struct XlaNetworkOptions {
@@ -74,7 +109,7 @@ class XlaNetwork : public Network {
     return capabilities_;
   }
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<XlaComputation>();
+    return std::make_unique<XlaComputation>(this);
   }
 
  private:
@@ -85,24 +120,23 @@ class XlaNetwork : public Network {
   friend class XlaComputation;
 };
 
-XlaComputation::XlaComputation() {
-  raw_input_planes_.reserve(GetBatchSize() * kBatchSize);
+XlaComputation::XlaComputation(const XlaNetwork* network)
+    : network_(network), input_tensor_(network->runner_->GetMaxBatchSize()) {}
+
+void XlaComputation::AddInput(InputPlanes&& input) {
+  float* ptr = input_tensor_.AddBatch();
+  for (const auto& plane : input) {
+    for (auto bit : IterateBits(plane.mask)) ptr[bit] = plane.value;
+    ptr += 8 * 8;
+  }
 }
 
 int XlaComputation::GetBatchSize() const {
-  return network_->runner_->GetMaxBatchSize();
+  return input_tensor_.GetBatchSize();
 }
 
-void XlaComputation::AddInput(InputPlanes&& input) {
-  assert(batch_size_ < (size_t)GetBatchSize());
-  ++batch_size_;
-  float* start = raw_input_planes_.data() + raw_input_planes_.size();
-  raw_input_planes_.resize(raw_input_planes_.size() + kBatchSize);
-  for (const auto& plane : input) {
-    float* ptr = start;
-    for (auto bit : IterateBits(plane.mask)) ptr[bit] = plane.value;
-    start += 8 * 8;
-  }
+void XlaComputation::ComputeBlocking() {
+  network_->runner_->ExecuteBlocking({&input_tensor_});
 }
 
 XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
@@ -202,7 +236,7 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                       w->format().network_format());
 }
 
-REGISTER_NETWORK("xla", MakeXlaNetwork, 143)
+REGISTER_NETWORK("xla", MakeXlaNetwork, -34)
 
 }  // namespace
 }  // namespace lczero

@@ -42,16 +42,38 @@ class XlaTensor {
  public:
   virtual ~XlaTensor() = default;
   virtual const std::vector<int64_t>& shape() const = 0;
-  virtual std::string_view data() const = 0;
+  virtual const void* data() const = 0;
+  // Returns amount of valid data in bytes.
+  virtual size_t size() const = 0;
+  // Returns amount of memory that are allowed to address in bytes.
+  virtual size_t capacity() const = 0;
   virtual pblczero::XlaShapeProto::Type type() const = 0;
+};
+
+// Not-owned XLA tensor, used when ONNX buffer can be used directly.
+class XlaTensorNotOwned : public XlaTensor {
+ public:
+  XlaTensorNotOwned(const std::vector<int64_t>& shape, std::string_view data,
+                    pblczero::XlaShapeProto::Type type)
+      : shape_(&shape), data_(data), type_(type) {}
+
+  const std::vector<int64_t>& shape() const override { return *shape_; }
+  const void* data() const override { return data_.data(); }
+  size_t size() const override { return data_.size(); }
+  size_t capacity() const override { return data_.size(); }
+  pblczero::XlaShapeProto::Type type() const override { return type_; }
+
+ private:
+  const std::vector<int64_t>* shape_;
+  std::string_view data_;
+  pblczero::XlaShapeProto::Type type_;
 };
 
 class XlaRunner {
  public:
   XlaRunner(const char* library_path);
   void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
-  std::vector<XlaTensor> ExecuteBlocking(
-      const std::vector<const XlaTensor*>& inputs);
+  std::vector<XlaTensor> ExecuteBlocking(const std::vector<XlaTensor*>& inputs);
 
   // Network weights are passed as inputs, but the buffer is transferred once
   // before any inference.
