@@ -47,7 +47,19 @@ class XlaComputation : public NetworkComputation {
   float GetMVal(int sample) const override { return 0.0f; }
 };
 
+struct XlaNetworkOptions {
+  std::optional<size_t> output_value_idx;
+  std::optional<size_t> output_wdl_idx;
+  std::optional<size_t> output_policy_idx;
+  std::optional<size_t> output_mlh_idx;
+};
+
 class XlaNetwork : public Network {
+ public:
+  XlaNetwork(std::unique_ptr<XlaRunner> runner,
+             const XlaNetworkOptions& options,
+             const pblczero::NetworkFormat& format);
+
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
@@ -56,12 +68,22 @@ class XlaNetwork : public Network {
   }
 
  private:
+  std::unique_ptr<XlaRunner> runner_;
+  XlaNetworkOptions options_;
   NetworkCapabilities capabilities_;
 };
 
-void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {
+XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
+                       const XlaNetworkOptions& options,
+                       const pblczero::NetworkFormat& format)
+    : runner_(std::move(runner)),
+      options_(options),
+      capabilities_{format.input(), format.moves_left()} {}
+
+XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
+                                        XlaRunner* runner) {
   pblczero::ModelProto onnx;
-  onnx.ParseFromString(onnx_model);
+  onnx.ParseFromString(onnx_model.model());
 
   std::unordered_map<std::string, size_t> constant_to_parameter_idx;
   std::unordered_map<std::string, size_t> input_to_parameter_idx;
@@ -81,6 +103,7 @@ void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {
 
   // DO NOT SUBMIT, pass the correct batch size.
   for (size_t batch_size : {512}) {
+    CERR << "Building HLO for batch size " << batch_size << "...";
     auto conversion = ConvertOnnxToHlo(onnx, batch_size, {});
     add_tensors(conversion.constants, constant_to_parameter_idx);
     add_tensors(conversion.inputs, input_to_parameter_idx);
@@ -99,7 +122,33 @@ void FillXlaRunnerFromOnnx(std::string_view onnx_model, XlaRunner* runner) {
     constants[idx] = OnnxTensorToXlaTensor(initializer);
   }
 
+  CERR << "Transferring constants...";
   runner->SetFrozenInputs(std::move(constants));
+  CERR << "Done.";
+
+  XlaNetworkOptions options;
+  if (input_to_parameter_idx.size() != 1 ||
+      input_to_parameter_idx.begin()->first != onnx_model.input_planes()) {
+    throw Exception("Expected a single input named " +
+                    std::string(onnx_model.input_planes()));
+  }
+  if (onnx_model.has_output_value()) {
+    options.output_value_idx =
+        output_to_parameter_idx.at(std::string(onnx_model.output_value()));
+  }
+  if (onnx_model.has_output_wdl()) {
+    options.output_wdl_idx =
+        output_to_parameter_idx.at(std::string(onnx_model.output_wdl()));
+  }
+  if (onnx_model.has_output_policy()) {
+    options.output_policy_idx =
+        output_to_parameter_idx.at(std::string(onnx_model.output_policy()));
+  }
+  if (onnx_model.has_output_mlh()) {
+    options.output_mlh_idx =
+        output_to_parameter_idx.at(std::string(onnx_model.output_mlh()));
+  }
+  return options;
 }
 
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
@@ -107,16 +156,18 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The XLA backend requires a network file.");
   auto runner = std::make_unique<XlaRunner>(
       "/home/crem/dev/xla/bazel-bin/xla/pjrt/c/pjrt_c_api_gpu_plugin.so");
+  XlaNetworkOptions options;
   if (w->has_onnx_model()) {
-    FillXlaRunnerFromOnnx(w->onnx_model().model(), runner.get());
+    options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get());
   } else {
     CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions onnx_converter_options;
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
-    FillXlaRunnerFromOnnx(converted.onnx_model().model(), runner.get());
+    options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get());
   }
 
-  return std::make_unique<XlaNetwork>();
+  return std::make_unique<XlaNetwork>(std::move(runner), options,
+                                      w->format().network_format());
 }
 
 REGISTER_NETWORK("xla", MakeXlaNetwork, 143)
