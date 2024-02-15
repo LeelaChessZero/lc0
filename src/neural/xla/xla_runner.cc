@@ -74,9 +74,11 @@ void XlaRunner::SetFrozenInputs(
   owned_buffers_.clear();
   buffers_.clear();
   buffers_.resize(inputs.size());
+  size_t transfer_idx = 0;
   for (size_t i = 0; i < inputs.size(); ++i) {
     if (inputs[i]) {
-      owned_buffers_.push_back(transfers_[i]->WaitAndReleaseBuffer());
+      owned_buffers_.push_back(
+          transfers_[transfer_idx++]->AwaitAndReleaseBuffer());
       buffers_[i] = owned_buffers_.back().get();
     }
   }

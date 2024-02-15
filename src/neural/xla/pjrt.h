@@ -33,10 +33,12 @@
 #include <vector>
 
 struct PJRT_Api;
+struct PJRT_Buffer;
 struct PJRT_Client;
 struct PJRT_Device;
 struct PJRT_DeviceDescription;
 struct PJRT_Error;
+struct PJRT_Event;
 struct PJRT_LoadedExecutable;
 
 namespace lczero {
@@ -137,9 +139,34 @@ class PjrtCommon {
   const PJRT_Api* api_;
 };
 
+class PjrtDevice : protected PjrtCommon {
+ public:
+  PjrtDevice(const PJRT_Api* api, PJRT_Device* device);
+  std::string ToString() const;
+
+ private:
+  PJRT_Device* device_;
+  PJRT_DeviceDescription* description_;
+  friend class PjrtClient;
+};
+
+class PjrtEvent : protected PjrtCommon {
+ public:
+  PjrtEvent(const PJRT_Api* api, PJRT_Event* event);
+  void Await();
+  ~PjrtEvent();
+
+ private:
+  PJRT_Event* event_;
+};
+
 class PjrtDeviceBuffer : protected PjrtCommon {
  public:
-  ~PjrtDeviceBuffer() = default;
+  PjrtDeviceBuffer(const PJRT_Api* api, PJRT_Buffer* buffer);
+  ~PjrtDeviceBuffer();
+
+ private:
+  PJRT_Buffer* buffer_;
 };
 
 class PjrtExecutable : protected PjrtCommon {
@@ -151,21 +178,17 @@ class PjrtExecutable : protected PjrtCommon {
   PJRT_LoadedExecutable* executable_;
 };
 
-class PjrtDevice : protected PjrtCommon {
- public:
-  PjrtDevice(const PJRT_Api* api, PJRT_Device* device);
-  std::string ToString() const;
-
- private:
-  PJRT_Device* device_;
-  PJRT_DeviceDescription* description_;
-};
-
 class PjrtHostToDeviceTransfer : protected PjrtCommon {
  public:
+  PjrtHostToDeviceTransfer(const PJRT_Api* api, PJRT_Buffer* buffer,
+                           std::unique_ptr<PjrtEvent> event);
   ~PjrtHostToDeviceTransfer();
-  void WaitUntilDone();
-  std::unique_ptr<PjrtDeviceBuffer> WaitAndReleaseBuffer();
+  void Await();
+  std::unique_ptr<PjrtDeviceBuffer> AwaitAndReleaseBuffer();
+
+ private:
+  PJRT_Buffer* buffer_;
+  std::unique_ptr<PjrtEvent> event_;
 };
 
 class PjrtClient : protected PjrtCommon {
@@ -186,7 +209,6 @@ class PjrtClient : protected PjrtCommon {
 class Pjrt : protected PjrtCommon {
  public:
   Pjrt(const char* library_path);
-  ~Pjrt();
   std::vector<PjrtKeyValue> GetAttributes() const;
   std::unique_ptr<PjrtClient> CreateClient();
   std::pair<int, int> ApiVersion() const;

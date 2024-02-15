@@ -190,6 +190,74 @@ std::vector<std::unique_ptr<PjrtDevice>> PjrtClient::GetDevices() {
   return result;
 }
 
+PjrtEvent::PjrtEvent(const PJRT_Api* api, PJRT_Event* event)
+    : PjrtCommon(api), event_(event) {}
+
+PjrtEvent::~PjrtEvent() {
+  auto args = MakeStruct<PJRT_Event_Destroy_Args>();
+  args.event = event_;
+  CheckError(api_->PJRT_Event_Destroy(&args));
+}
+
+void PjrtEvent::Await() {
+  auto args = MakeStruct<PJRT_Event_Await_Args>();
+  args.event = event_;
+  CheckError(api_->PJRT_Event_Await(&args));
+}
+
+PjrtDeviceBuffer::PjrtDeviceBuffer(const PJRT_Api* api, PJRT_Buffer* buffer)
+    : PjrtCommon(api), buffer_(buffer) {}
+
+PjrtDeviceBuffer::~PjrtDeviceBuffer() {
+  auto args = MakeStruct<PJRT_Buffer_Destroy_Args>();
+  args.buffer = buffer_;
+  CheckError(api_->PJRT_Buffer_Destroy(&args));
+}
+
+PjrtHostToDeviceTransfer::PjrtHostToDeviceTransfer(
+    const PJRT_Api* api, PJRT_Buffer* buffer, std::unique_ptr<PjrtEvent> event)
+    : PjrtCommon(api), buffer_(buffer), event_(std::move(event)) {}
+
+void PjrtHostToDeviceTransfer::Await() { event_->Await(); }
+
+std::unique_ptr<PjrtDeviceBuffer> PjrtHostToDeviceTransfer::AwaitAndReleaseBuffer() {
+  if (!buffer_) {
+    throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
+                        "Buffer already released");
+  }
+  Await();
+  auto res = std::make_unique<PjrtDeviceBuffer>(api_, buffer_);
+  buffer_ = nullptr;
+  return res;
+}
+
+PjrtHostToDeviceTransfer::~PjrtHostToDeviceTransfer() {
+  Await();
+  if (buffer_) {
+    auto args = MakeStruct<PJRT_Buffer_Destroy_Args>();
+    args.buffer = buffer_;
+    CheckError(api_->PJRT_Buffer_Destroy(&args));
+  }
+}
+
+std::unique_ptr<PjrtHostToDeviceTransfer> PjrtClient::HostToDevice(
+    std::string_view buffer, PjrtType type, const std::vector<int64_t>& dims,
+    const PjrtDevice* device) {
+  auto args = MakeStruct<PJRT_Client_BufferFromHostBuffer_Args>();
+  args.client = client_;
+  args.data = buffer.data();
+  args.type = static_cast<PJRT_Buffer_Type>(type);
+  args.dims = dims.data();
+  args.num_dims = dims.size();
+  args.host_buffer_semantics =
+      PJRT_HostBufferSemantics_kImmutableUntilTransferCompletes;
+  args.device = device->device_;
+  CheckError(api_->PJRT_Client_BufferFromHostBuffer(&args));
+  auto event = std::make_unique<PjrtEvent>(api_, args.done_with_host_buffer);
+  return std::make_unique<PjrtHostToDeviceTransfer>(api_, args.buffer,
+                                                    std::move(event));
+}
+
 Pjrt::Pjrt(const char* library_path) : PjrtCommon(nullptr) {
   void* handle = dlopen(library_path, RTLD_LAZY);
   if (!handle) {

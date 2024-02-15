@@ -157,8 +157,6 @@ class Onnx2HloConverter {
       auto& dst = param.is_constant ? result.constants : result.inputs;
       dst.push_back({i, param.name, param.flow->shape()});
     }
-    // TO DELETE, DEBUG ONLY, DO NOT SUBMIT
-    PrettyPrintHlo(result.hlo_module, {}, std::cout);
     return result;
   }
 
