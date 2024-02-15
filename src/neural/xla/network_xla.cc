@@ -82,14 +82,15 @@ class XlaComputation : public NetworkComputation {
   void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override;
   void ComputeBlocking() override;
-  float GetQVal(int sample) const override { return 0.0f; }
-  float GetDVal(int sample) const override { return 0.0f; }
-  float GetPVal(int sample, int move_id) const override { return 0.0f; }
-  float GetMVal(int sample) const override { return 0.0f; }
+  float GetQVal(int sample) const override;
+  float GetDVal(int sample) const override;
+  float GetPVal(int sample, int move_id) const override;
+  float GetMVal(int sample) const override;
 
  private:
   const XlaNetwork* network_;
   Lc0InputTensor input_tensor_;
+  std::vector<std::unique_ptr<XlaTensor>> outputs_;
 };
 
 struct XlaNetworkOptions {
@@ -131,12 +132,48 @@ void XlaComputation::AddInput(InputPlanes&& input) {
   }
 }
 
+float XlaComputation::GetQVal(int sample) const {
+  if (network_->options_.output_wdl_idx) {
+    const float* data = reinterpret_cast<const float*>(
+        outputs_[*network_->options_.output_wdl_idx]->data());
+    return data[sample * 3 + 0] - data[sample * 3 + 2];
+  } else {
+    const float* data = reinterpret_cast<const float*>(
+        outputs_[*network_->options_.output_value_idx]->data());
+    return data[sample];
+  }
+}
+
+float XlaComputation::GetDVal(int sample) const {
+  if (network_->options_.output_wdl_idx) {
+    const float* data = reinterpret_cast<const float*>(
+        outputs_[*network_->options_.output_wdl_idx]->data());
+    return data[sample * 3 + 1];
+  }
+  return 0.0f;
+}
+
+float XlaComputation::GetPVal(int sample, int move_id) const {
+  const float* data = reinterpret_cast<const float*>(
+      outputs_[*network_->options_.output_policy_idx]->data());
+  return data[sample * 1858 + move_id];
+}
+
+float XlaComputation::GetMVal(int sample) const {
+  if (network_->options_.output_mlh_idx) {
+    const float* data = reinterpret_cast<const float*>(
+        outputs_[*network_->options_.output_mlh_idx]->data());
+    return data[sample];
+  }
+  return 0.0f;
+}
+
 int XlaComputation::GetBatchSize() const {
   return input_tensor_.GetBatchSize();
 }
 
 void XlaComputation::ComputeBlocking() {
-  network_->runner_->ExecuteBlocking({&input_tensor_});
+  outputs_ = network_->runner_->ExecuteBlocking({&input_tensor_});
 }
 
 XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
