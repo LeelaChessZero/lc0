@@ -32,19 +32,29 @@
 #include "neural/onnx/converter.h"
 #include "neural/xla/onnx2hlo.h"
 #include "neural/xla/xla_runner.h"
+#include "utils/bititer.h"
 
 namespace lczero {
 namespace {
 
+class XlaNetwork;
 class XlaComputation : public NetworkComputation {
  public:
-  void AddInput(InputPlanes&& input) override {}
-  int GetBatchSize() const override { return 0; }
-  void ComputeBlocking() override {}
+  XlaComputation();
+
+  void AddInput(InputPlanes&& input) override;
+  int GetBatchSize() const override;
+  void ComputeBlocking() override;
   float GetQVal(int sample) const override { return 0.0f; }
   float GetDVal(int sample) const override { return 0.0f; }
   float GetPVal(int sample, int move_id) const override { return 0.0f; }
   float GetMVal(int sample) const override { return 0.0f; }
+
+ private:
+  const XlaNetwork* network_;
+  constexpr static size_t kBatchSize = kInputPlanes * 8 * 8;
+  size_t batch_size_ = 0;
+  std::vector<float> raw_input_planes_;
 };
 
 struct XlaNetworkOptions {
@@ -71,7 +81,29 @@ class XlaNetwork : public Network {
   std::unique_ptr<XlaRunner> runner_;
   XlaNetworkOptions options_;
   NetworkCapabilities capabilities_;
+
+  friend class XlaComputation;
 };
+
+XlaComputation::XlaComputation() {
+  raw_input_planes_.reserve(GetBatchSize() * kBatchSize);
+}
+
+int XlaComputation::GetBatchSize() const {
+  return network_->runner_->GetMaxBatchSize();
+}
+
+void XlaComputation::AddInput(InputPlanes&& input) {
+  assert(batch_size_ < (size_t)GetBatchSize());
+  ++batch_size_;
+  float* start = raw_input_planes_.data() + raw_input_planes_.size();
+  raw_input_planes_.resize(raw_input_planes_.size() + kBatchSize);
+  for (const auto& plane : input) {
+    float* ptr = start;
+    for (auto bit : IterateBits(plane.mask)) ptr[bit] = plane.value;
+    start += 8 * 8;
+  }
+}
 
 XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
                        const XlaNetworkOptions& options,

@@ -56,6 +56,7 @@ class XlaRunner {
   // Network weights are passed as inputs, but the buffer is transferred once
   // before any inference.
   void SetFrozenInputs(const std::vector<std::unique_ptr<XlaTensor>> inputs);
+  size_t GetMaxBatchSize() const;
 
  private:
   std::unique_ptr<PjrtClient> pjrt_client_;
