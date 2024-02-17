@@ -129,6 +129,7 @@ XlaComputation::XlaComputation(const XlaNetwork* network)
 
 void XlaComputation::AddInput(InputPlanes&& input) {
   float* ptr = input_tensor_.AddBatch();
+  memset(ptr, 0, 8 * 8 * kInputPlanes * sizeof(float));
   for (const auto& plane : input) {
     for (auto bit : IterateBits(plane.mask)) ptr[bit] = plane.value;
     ptr += 8 * 8;
