@@ -157,6 +157,7 @@ class Onnx2HloConverter {
       auto& dst = param.is_constant ? result.constants : result.inputs;
       dst.push_back({i, param.name, param.flow->shape()});
     }
+    // PrettyPrintHlo(result.hlo_module, {}, std::cout);
     return result;
   }
 
@@ -174,7 +175,7 @@ class Onnx2HloConverter {
         ctx.SetOpName(output.name());
         flow = builder_.Convert(flow, options_.io_type);
       }
-      result.push_back({0, std::string(output.name()), flow->shape()});
+      result.push_back({i, std::string(output.name()), flow->shape()});
       outputs.push_back(flow);
     }
     builder_.Tuple(outputs);
