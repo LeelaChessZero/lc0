@@ -48,6 +48,8 @@ class XlaTensor {
   // Returns amount of memory that are allowed to address in bytes.
   virtual size_t capacity() const = 0;
   virtual pblczero::XlaShapeProto::Type type() const = 0;
+
+  std::string DebugString();
 };
 
 // Not-owned XLA tensor, used when ONNX buffer can be used directly.

@@ -96,7 +96,6 @@ PjrtKeyValue MakeKeyValue(const PJRT_NamedValue* kv) {
           kv->int64_array_value, kv->int64_array_value + kv->value_size));
       break;
     case PJRT_NamedValue_kFloat:
-
       result.set_value(kv->float_value);
       break;
     case PJRT_NamedValue_kBool:
@@ -291,6 +290,8 @@ void PjrtDeviceBuffer::DeviceToHostBlocking(void* dst, size_t size) {
   args.dst = dst;
   args.dst_size = size;
   CheckError(api_->PJRT_Buffer_ToHostBuffer(&args));
+  PjrtEvent event(api_, args.event);
+  event.Await();
 }
 
 PjrtHostToDeviceTransfer::PjrtHostToDeviceTransfer(

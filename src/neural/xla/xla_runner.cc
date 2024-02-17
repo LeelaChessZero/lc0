@@ -50,7 +50,44 @@ size_t GetTypeSize(pblczero::XlaShapeProto::Type type) {
                       pblczero::XlaShapeProto::Type_Name(type));
   }
 }
+
+std::string AsHexString(std::string_view buf) {
+  std::string result;
+  result.reserve(buf.size() * 2);
+  constexpr char hex[] = "0123456789abcdef";
+  for (unsigned char c : buf) {
+    result.push_back(hex[c >> 4]);
+    result.push_back(hex[c & 0xf]);
+  }
+  return result;
+}
+
 }  // namespace
+
+std::string XlaTensor::DebugString() {
+  constexpr size_t kMaxSize = 1000;
+  constexpr size_t kSuffixSize = 200;
+  std::string result = "XlaTensor(";
+  result += "shape=[";
+  for (size_t i = 0; i < shape().size(); ++i) {
+    if (i > 0) result += ", ";
+    result += std::to_string(shape()[i]);
+  }
+  result += "], type=";
+  result += pblczero::XlaShapeProto::Type_Name(type());
+  result += ") size=" + std::to_string(size());
+  result += " data=";
+  if (size() <= kMaxSize) {
+    result += AsHexString({static_cast<const char*>(data()), size()});
+  } else {
+    result += AsHexString(
+        {static_cast<const char*>(data()), kMaxSize - kSuffixSize - 2});
+    result += "....";
+    result += AsHexString(
+        {static_cast<const char*>(data()) + size() - kSuffixSize, kSuffixSize});
+  }
+  return result;
+}
 
 XlaRunner::XlaRunner(const char* library_path)
     : pjrt_client_(MakePjrt(library_path)->CreateClient()) {
