@@ -966,10 +966,52 @@ void Converter::CopyGenericFields(pblczero::Net* dst) {
   *dst->mutable_training_params() = src_.training_params();
 }
 
+void CheckSrcFormat(const pblczero::NetworkFormat& nf) {
+  switch (nf.network()) {
+    case pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT:
+    case pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT:
+    case pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
+      break;
+    default:
+      throw Exception(
+          "Network format " +
+          pblczero::NetworkFormat::NetworkStructure_Name(nf.network()) +
+          " is not supported by the ONNX converter.");
+  }
+  switch (nf.policy()) {
+    case pblczero::NetworkFormat::POLICY_CLASSICAL:
+    case pblczero::NetworkFormat::POLICY_CONVOLUTION:
+    case pblczero::NetworkFormat::POLICY_ATTENTION:
+      break;
+    default:
+      throw Exception("Policy format " +
+                      pblczero::NetworkFormat::PolicyFormat_Name(nf.policy()) +
+                      " is not supported by the ONNX converter.");
+  }
+  switch (nf.value()) {
+    case pblczero::NetworkFormat::VALUE_CLASSICAL:
+    case pblczero::NetworkFormat::VALUE_WDL:
+      break;
+    default:
+      throw Exception("Value format " +
+                      pblczero::NetworkFormat::ValueFormat_Name(nf.value()) +
+                      " is not supported by the ONNX converter.");
+  }
+  switch (nf.default_activation()) {
+    case pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU:
+    case pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH:
+      break;
+    default:
+      throw Exception("Default activation " +
+                      pblczero::NetworkFormat::DefaultActivation_Name(
+                          nf.default_activation()) +
+                      " is not supported by the ONNX converter.");
+  }
+}
+
 void Converter::Convert(pblczero::Net* dst) {
-  if (src_.has_onnx_model() &&
-      src_.format().network_format().network() ==
-          pblczero::NetworkFormat::NETWORK_ONNX) {
+  if (src_.has_onnx_model() && src_.format().network_format().network() ==
+                                   pblczero::NetworkFormat::NETWORK_ONNX) {
     *dst = src_;
     return;
   }
@@ -979,6 +1021,7 @@ void Converter::Convert(pblczero::Net* dst) {
   if (src_.has_onnx_model()) {
     throw Exception("The network already has ONNX section.");
   }
+  CheckSrcFormat(src_.format().network_format());
   CopyGenericFields(dst);
   GenerateOnnx(dst->mutable_onnx_model());
 }
