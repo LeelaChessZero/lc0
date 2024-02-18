@@ -101,8 +101,18 @@ struct BaseWeights {
   };
 
   struct PolicyHead {
-    explicit PolicyHead(const pblczero::Weights::PolicyHead& policyhead);
+    explicit PolicyHead(const pblczero::Weights::PolicyHead& policyhead, Vec& w,
+                        Vec& b);
     // Policy head
+   private:
+    // Storage in case _ip_pol_w/b are not shared among heads.
+    Vec _ip_pol_w;
+    Vec _ip_pol_b;
+
+   public:
+    // Reference to possibly shared value (to avoid unnecessary copies).
+    Vec& ip_pol_w;
+    Vec& ip_pol_b;
     // Extra convolution for AZ-style policy head
     ConvBlock policy1;
     ConvBlock policy;
@@ -132,8 +142,16 @@ struct BaseWeights {
 
   struct PolicyHeads {
     explicit PolicyHeads(const pblczero::Weights::PolicyHeads& policyheads);
-    Vec ip_pol_w;
-    Vec ip_pol_b;
+    void SetIpPol(Vec w, Vec b) {
+      _ip_pol_w = w;
+      _ip_pol_b = b;
+    }
+
+   private:
+    Vec _ip_pol_w;
+    Vec _ip_pol_b;
+
+   public:
     PolicyHead vanilla;
     PolicyHead optimistic_st;
     PolicyHead soft;
