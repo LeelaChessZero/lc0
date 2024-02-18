@@ -141,15 +141,14 @@ struct BaseWeights {
   };
 
   struct PolicyHeads {
-    explicit PolicyHeads(const pblczero::Weights::PolicyHeads& policyheads);
-    void SetIpPol(Vec w, Vec b) {
-      _ip_pol_w = w;
-      _ip_pol_b = b;
-    }
+    explicit PolicyHeads(const pblczero::Weights::PolicyHeads& policyheads,
+                         Vec& w, Vec& b);
 
    private:
     Vec _ip_pol_w;
     Vec _ip_pol_b;
+    Vec& ip_pol_w;
+    Vec& ip_pol_b;
 
    public:
     PolicyHead vanilla;
@@ -241,6 +240,12 @@ struct LegacyWeights : public BaseWeights {
 
 struct MultiHeadWeights : public BaseWeights {
   explicit MultiHeadWeights(const pblczero::Weights& weights);
+
+ private:
+  Vec _ip_pol_w;
+  Vec _ip_pol_b;
+
+ public:
   // Policy and value multiheads
   ValueHeads value_heads;
   PolicyHeads policy_heads;

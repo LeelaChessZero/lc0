@@ -198,13 +198,15 @@ BaseWeights::ValueHead::ValueHead(const pblczero::Weights::ValueHead& valuehead)
       ip_val_err_b(LayerAdapter(valuehead.ip_val_err_b()).as_vector()) {}
 
 BaseWeights::PolicyHeads::PolicyHeads(
-    const pblczero::Weights::PolicyHeads& policyheads)
+    const pblczero::Weights::PolicyHeads& policyheads, Vec& w, Vec& b)
     : _ip_pol_w(LayerAdapter(policyheads.ip_pol_w()).as_vector()),
       _ip_pol_b(LayerAdapter(policyheads.ip_pol_b()).as_vector()),
-      vanilla(policyheads.vanilla(), _ip_pol_w, _ip_pol_b),
-      optimistic_st(policyheads.optimistic_st(), _ip_pol_w, _ip_pol_b),
-      soft(policyheads.soft(), _ip_pol_w, _ip_pol_b),
-      opponent(policyheads.opponent(), _ip_pol_w, _ip_pol_b) {}
+      ip_pol_w(_ip_pol_w.empty() ? w : _ip_pol_w),
+      ip_pol_b(_ip_pol_b.empty() ? b : _ip_pol_b),
+      vanilla(policyheads.vanilla(), ip_pol_w, ip_pol_b),
+      optimistic_st(policyheads.optimistic_st(), ip_pol_w, ip_pol_b),
+      soft(policyheads.soft(), ip_pol_w, ip_pol_b),
+      opponent(policyheads.opponent(), ip_pol_w, ip_pol_b) {}
 
 BaseWeights::ValueHeads::ValueHeads(
     const pblczero::Weights::ValueHeads& valueheads)
@@ -238,15 +240,15 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
 
 MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
     : BaseWeights(weights),
+      _ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
+      _ip_pol_b(LayerAdapter(weights.ip_pol_b()).as_vector()),
       value_heads(weights.value_heads()),
-      policy_heads(weights.policy_heads()) {
+      policy_heads(weights.policy_heads(), _ip_pol_w, _ip_pol_b) {
   if (!weights.has_policy_heads()) {
     if (weights.has_policy() || weights.has_policy1() ||
         weights.has_ip_pol_w()) {
       policy_heads.vanilla.policy1 = ConvBlock(weights.policy1());
       policy_heads.vanilla.policy = ConvBlock(weights.policy());
-      policy_heads.SetIpPol(LayerAdapter(weights.ip_pol_w()).as_vector(),
-                            LayerAdapter(weights.ip_pol_b()).as_vector());
       policy_heads.vanilla.ip2_pol_w =
           LayerAdapter(weights.ip2_pol_w()).as_vector();
       policy_heads.vanilla.ip2_pol_b =
