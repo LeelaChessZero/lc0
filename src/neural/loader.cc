@@ -139,6 +139,8 @@ void FixOlderWeightsFile(WeightsFile* file) {
       net->set_ffn_activation(nf::ACTIVATION_RELU_2);
       net->set_smolgen_activation(nf::ACTIVATION_SWISH);
     }
+  } else if (network_format == nf::NETWORK_AB_LEGACY_WITH_MULTIHEADFORMAT) {
+    net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT);
   }
 
   // Get updated network format.
