@@ -253,6 +253,10 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
           LayerAdapter(weights.ip3_pol_b()).as_vector();
       policy_heads.vanilla.ip4_pol_w =
           LayerAdapter(weights.ip4_pol_w()).as_vector();
+      policy_heads.vanilla.pol_encoder_head_count = weights.pol_headcount();
+      for (const auto& enc : weights.pol_encoder()) {
+        policy_heads.vanilla.pol_encoder.emplace_back(enc);
+      }
     } else {
       throw Exception("Could not find valid policy head weights.");
     }

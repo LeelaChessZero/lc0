@@ -142,27 +142,17 @@ void FixOlderWeightsFile(WeightsFile* file) {
   }
 
   // Get updated network format.
-  network_format = file->format().network_format().network();
-  auto embedding_type = file->format().network_format().input_embedding();
-  bool multihead_format = (network_format & 128) == 128;
-  if (!multihead_format) {
+  if (file->format().network_format().network() ==
+      nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
     auto weights = file->weights();
     if (weights.has_policy_heads() && weights.has_value_heads()) {
       CERR << "Weights file has multihead format, updating format flag";
-      net->set_network(static_cast<nf::NetworkStructure>(network_format | 128));
+      net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT);
       net->set_input_embedding(nf::INPUT_EMBEDDING_PE_DENSE);
     }
-    else {
-      switch (network_format) {
-        case nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
-          net->set_input_embedding(nf::INPUT_EMBEDDING_PE_MAP);
-          break;
-        default:
-          net->set_input_embedding(nf::INPUT_EMBEDDING_NONE);
-      }
+    if (!file->format().network_format().has_input_embedding()) {
+      net->set_input_embedding(nf::INPUT_EMBEDDING_PE_MAP);
     }
-  } else if (embedding_type != nf::INPUT_EMBEDDING_PE_DENSE) {
-    net->set_input_embedding(nf::INPUT_EMBEDDING_PE_DENSE);
   }
 }
 
