@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+// This file contains set of C++ wrappers around the PJRT C API.
+
 #pragma once
 
 #include <memory>
@@ -43,7 +45,8 @@ struct PJRT_LoadedExecutable;
 
 namespace lczero {
 
-// PJRT_Error_Code as enum class.
+// PJRT_Error_Code as enum class. Coincidentally, the error codes are the same
+// as in absl Status module.
 enum class PjrtErrorCode {
   CANCELLED = 1,
   UNKNOWN = 2,
@@ -63,6 +66,8 @@ enum class PjrtErrorCode {
   UNAUTHENTICATED = 16
 };
 
+// PJRT_Type as enum class. Conincidentally, the types are the same as in XLA
+// and HloModuleProto, so simple cast works.
 enum class PjrtType {
   INVALID,
   PRED,
@@ -103,7 +108,8 @@ class PjrtException : public std::exception {
   PjrtErrorCode code_;
 };
 
-// PJRT_NamedValue wrapper.
+// PJRT_NamedValue wrapper. PJRT_NamedValue is a string-keyed values that are
+// used for auxiliary functionality like plugin attributes.
 class PjrtKeyValue {
  public:
   PjrtKeyValue() = default;
@@ -113,6 +119,7 @@ class PjrtKeyValue {
   PjrtKeyValue(const std::string& k, const T& v) : key_(k), value_(v) {}
 
   const std::string& key() const { return key_; }
+  // Converts the value to string. This is useful for logging and debugging.
   std::string value_as_string() const;
 
   void set_key(const std::string& key) { key_ = key; }
@@ -127,6 +134,8 @@ class PjrtKeyValue {
   std::variant<std::string, int64_t, std::vector<int64_t>, float, bool> value_;
 };
 
+// A shared base class for all wrappers. Keeps the API pointer and auxiliary
+// functions like error checking.
 class PjrtCommon {
  protected:
   PjrtCommon(const PJRT_Api* api) : api_(api) {}
@@ -151,9 +160,11 @@ class PjrtDevice : protected PjrtCommon {
   friend class PjrtClient;
 };
 
+// An event for waiting for asynchronous operations.
 class PjrtEvent : protected PjrtCommon {
  public:
   PjrtEvent(const PJRT_Api* api, PJRT_Event* event);
+  // Blocks until the operation is complete.
   void Await();
   ~PjrtEvent();
 
@@ -161,11 +172,14 @@ class PjrtEvent : protected PjrtCommon {
   PJRT_Event* event_;
 };
 
+// A buffer in the device memory.
 class PjrtDeviceBuffer : protected PjrtCommon {
  public:
   PjrtDeviceBuffer(const PJRT_Api* api, PJRT_Buffer* buffer);
   ~PjrtDeviceBuffer();
+  // Returns the size of the buffer in bytes.
   size_t GetSize() const;
+  // Starts an asynchronous copy from the device to the host memory.
   [[nodiscard]] std::unique_ptr<PjrtEvent> DeviceToHost(void* dst, size_t size);
   PjrtType GetType() const;
   std::vector<int64_t> GetDimensions() const;
@@ -179,6 +193,8 @@ class PjrtExecutable : protected PjrtCommon {
  public:
   PjrtExecutable(const PJRT_Api* api, PJRT_LoadedExecutable* executable);
   ~PjrtExecutable();
+  // Executes the executable with the given inputs. The inputs are not owned or
+  // modified. The function allocates the output buffers and returns them.
   std::vector<std::unique_ptr<PjrtDeviceBuffer>> ExecuteBlocking(
       const std::vector<PjrtDeviceBuffer*>& inputs);
   size_t GetNumOutputs() const;
@@ -188,12 +204,18 @@ class PjrtExecutable : protected PjrtCommon {
   size_t num_outputs_;
 };
 
+// Ongoing host-to-device transfer. After the transfer is complete, it's
+// possible to fetch the device buffer.
 class PjrtHostToDeviceTransfer : protected PjrtCommon {
  public:
   PjrtHostToDeviceTransfer(const PJRT_Api* api, PJRT_Buffer* buffer,
                            std::unique_ptr<PjrtEvent> event);
   ~PjrtHostToDeviceTransfer();
+  // Blocks until the transfer is complete. (not really necessary as
+  // AwaitAndReleaseBuffer() waits anyway)
   void Await();
+  // Waits for the transfer to complete and releases the ownership of the
+  // buffer.
   std::unique_ptr<PjrtDeviceBuffer> AwaitAndReleaseBuffer();
 
  private:
@@ -226,8 +248,5 @@ class Pjrt : protected PjrtCommon {
  private:
   void Initialize();
 };
-
-// Loads the PJRT plugin from the given library path.
-std::unique_ptr<Pjrt> MakePjrt(const char* library_path);
 
 }  // namespace lczero

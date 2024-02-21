@@ -340,6 +340,8 @@ std::unique_ptr<PjrtHostToDeviceTransfer> PjrtClient::HostToDevice(
 }
 
 Pjrt::Pjrt(const char* library_path) : PjrtCommon(nullptr) {
+  // TODO factor out the dlopen/dlsym code into a separate function, and
+  // implement for other OSes.
   void* handle = dlopen(library_path, RTLD_LAZY);
   if (!handle) {
     throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
@@ -396,10 +398,6 @@ std::pair<int, int> Pjrt::ApiVersion() const {
 void Pjrt::Initialize() {
   auto args = MakeStruct<PJRT_Plugin_Initialize_Args>();
   CheckError(api_->PJRT_Plugin_Initialize(&args));
-}
-
-std::unique_ptr<Pjrt> MakePjrt(const char* library_path) {
-  return std::make_unique<Pjrt>(library_path);
 }
 
 }  // namespace lczero

@@ -90,7 +90,7 @@ std::string XlaTensor::DebugString() {
 }
 
 XlaRunner::XlaRunner(const char* library_path)
-    : pjrt_client_(MakePjrt(library_path)->CreateClient()) {
+    : pjrt_client_(Pjrt(library_path).CreateClient()) {
   CERR << "Devices:";
   devices_ = pjrt_client_->GetDevices();
   for (const auto& device : devices_) {
