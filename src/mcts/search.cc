@@ -313,7 +313,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
           contempt_mode_ == ContemptMode::NONE
               ? 0
               : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
-          sign, true, params_.GetWDLMaxReasonableS());
+          sign, true, params_.GetWDLMaxS());
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -2217,7 +2217,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                search_->contempt_mode_ == ContemptMode::NONE
                    ? 0
                    : params_.GetWDLRescaleDiff(),
-               sign, false, params_.GetWDLMaxReasonableS());
+               sign, false, params_.GetWDLMaxS());
   }
   node_to_process->v = v;
   node_to_process->d = d;

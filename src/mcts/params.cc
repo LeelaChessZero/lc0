@@ -395,8 +395,8 @@ const OptionId SearchParams::kWDLContemptAttenuationId{
     "wdl-contempt-attenuation", "WDLContemptAttenuation",
     "Scales how Elo advantage is applied for contempt. Use 1.0 for realistic "
     "analysis, and 0.5-0.6 for optimal match performance."};
-const OptionId SearchParams::kWDLMaxReasonableSId{
-    "wdl-max-reasonable-s", "WDLMaxReasonableS",
+const OptionId SearchParams::kWDLMaxSId{
+    "wdl-max-s", "WDLMaxS",
     "Limits the WDL derived sharpness s to a reasonable value to avoid "
     "erratic behavior at high contempt values. Default recommended for "
     "regular chess, increase value for more volatile positions like DFRC "
@@ -557,7 +557,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
   options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
-  options->Add<FloatOption>(kWDLMaxReasonableSId, 0.0f, 10.0f) = 1.4f;
+  options->Add<FloatOption>(kWDLMaxSId, 0.0f, 10.0f) = 1.4f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
@@ -595,7 +595,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kContemptMaxValueId);
   options->HideOption(kWDLContemptAttenuationId);
-  options->HideOption(kWDLMaxReasonableSId);
+  options->HideOption(kWDLMaxSId);
   options->HideOption(kWDLDrawRateTargetId);
   options->HideOption(kWDLBookExitBiasId);
 }
@@ -661,7 +661,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                     options.Get<float>(kWDLCalibrationEloId),
                     options.Get<float>(kContemptMaxValueId),
                     options.Get<float>(kWDLContemptAttenuationId))),
-      kWDLMaxReasonableS(options.Get<float>(kWDLMaxReasonableSId)),
+      kWDLMaxS(options.Get<float>(kWDLMaxSId)),
       kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvalsFactor(
           options.Get<float>(kMaxOutOfOrderEvalsFactorId)),
