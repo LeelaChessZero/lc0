@@ -263,7 +263,7 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict& opts) {
   if (!w) throw Exception("The XLA backend requires a network file.");
   auto runner = std::make_unique<XlaRunner>(opts.GetOrDefault<std::string>(
-      "plugin_path", "pjrt_c_api_gpu_plugin.so"));
+      "plugin_path", "./pjrt_c_api_gpu_plugin.so").c_str());
   XlaNetworkOptions options;
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get());

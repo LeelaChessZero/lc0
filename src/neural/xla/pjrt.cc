@@ -284,14 +284,14 @@ std::vector<int64_t> PjrtDeviceBuffer::GetDimensions() const {
   return {args.dims, args.dims + args.num_dims};
 }
 
-void PjrtDeviceBuffer::DeviceToHostBlocking(void* dst, size_t size) {
+std::unique_ptr<PjrtEvent> PjrtDeviceBuffer::DeviceToHost(void* dst,
+                                                          size_t size) {
   auto args = MakeStruct<PJRT_Buffer_ToHostBuffer_Args>();
   args.src = buffer_;
   args.dst = dst;
   args.dst_size = size;
   CheckError(api_->PJRT_Buffer_ToHostBuffer(&args));
-  PjrtEvent event(api_, args.event);
-  event.Await();
+  return std::make_unique<PjrtEvent>(api_, args.event);
 }
 
 PjrtHostToDeviceTransfer::PjrtHostToDeviceTransfer(
