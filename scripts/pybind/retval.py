@@ -103,7 +103,7 @@ class NumericRetVal(RetVal):
     def parse_tuple_format(self):
         return {
             'i': 'i',
-            'u64': 'k',
+            'u64': 'K',
             'f32': 'f',
         }[self.type]
 
