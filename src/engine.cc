@@ -365,6 +365,10 @@ void EngineLoop::CmdIsReady() {
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   options_.SetUciOption(name, value, context);
+  if (context.empty()) {
+    options_.SetUciOption(name, value, "white");
+    options_.SetUciOption(name, value, "black");
+  }
   // Set the log filename for the case it was set in UCI option.
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId));
