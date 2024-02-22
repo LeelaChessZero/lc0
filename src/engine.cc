@@ -95,6 +95,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
   const bool is_simple =
       CommandLine::BinaryName().find("simple") != std::string::npos;
+  options->AddContext("white");
+  options->AddContext("black");
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
@@ -288,18 +290,21 @@ void EngineController::Go(const GoParams& params) {
     SetupPosition(current_position_.fen, current_position_.moves);
   }
 
-  if (!options_.Get<bool>(kUciChess960)) {
+  auto& options =
+      options_.GetSubdict(tree_->IsBlackToMove() ? "black" : "white");
+
+  if (!options.Get<bool>(kUciChess960)) {
     // Remap FRC castling to legacy castling.
     responder = std::make_unique<Chess960Transformer>(
         std::move(responder), tree_->HeadPosition().GetBoard());
   }
 
-  if (!options_.Get<bool>(kShowWDL)) {
+  if (!options.Get<bool>(kShowWDL)) {
     // Strip WDL information from the response.
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
-  if (!options_.Get<bool>(kShowMovesleft)) {
+  if (!options.Get<bool>(kShowMovesleft)) {
     // Strip movesleft information from the response.
     responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
   }
@@ -309,11 +314,11 @@ void EngineController::Go(const GoParams& params) {
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
-      options_, &cache_, syzygy_tb_.get());
+      options, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
-  search_->StartThreads(options_.Get<int>(kThreadsOptionId));
+  search_->StartThreads(options.Get<int>(kThreadsOptionId));
 }
 
 void EngineController::PonderHit() {
