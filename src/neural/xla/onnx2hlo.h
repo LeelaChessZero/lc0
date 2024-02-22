@@ -37,26 +37,36 @@
 namespace lczero {
 
 struct Onnx2HloOptions {
+  // Constants larger that this size in bytes will be passed as parameters
+  // instead. This allows them to be shared between different modules.
   size_t max_inline_constant_size = 1024;
+  // The types of input/output tensors (does not affect constants passed as
+  // parameters).
   pblczero::XlaShapeProto::Type io_type = pblczero::XlaShapeProto::F32;
 };
 
 struct Onnx2HloResult {
   struct NamedTensor {
+    // Index of the tensor in the input or output tuple.
     size_t param_idx;
+    // Name of the tensor from the ONNX model.
     std::string name;
     pblczero::XlaShapeProto shape;
   };
+  // Constants that are passed as inputs to the module.
   std::vector<NamedTensor> constants;
   std::vector<NamedTensor> inputs;
   std::vector<NamedTensor> outputs;
   pblczero::HloModuleProto hlo_module;
 };
 
+// Converts an ONNX model to an HLO module.
 Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
                                 size_t minibatch_size,
                                 const Onnx2HloOptions& options);
 
+// Converts an ONNX tensor to an XLA tensor (thanks GitHub Copilot for the
+// comment suggestion).
 std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
     const pblczero::TensorProto& onnx_tensor);
 

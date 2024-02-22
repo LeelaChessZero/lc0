@@ -78,6 +78,8 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
   }
 }
 
+// Converts an ONNX shape to an XLA shape, replacing the batch dimension with
+// the provided batch size.
 pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
                                             std::optional<size_t> batch_size) {
   pblczero::XlaShapeProto shape;
@@ -100,6 +102,8 @@ pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
   return shape;
 }
 
+// Type is not a field of the ONNX tensor, so this function extracts the shape
+// and converts it (discarding the data).
 pblczero::XlaShapeProto OnnxTensorToXlaShape(
     const pblczero::TensorProto& tensor) {
   pblczero::TypeProto type;
@@ -110,6 +114,7 @@ pblczero::XlaShapeProto OnnxTensorToXlaShape(
   return OnnxShapeToXlaShape(type, std::nullopt);
 }
 
+// Converts an ONNX tensor to an XLA literal (which is a shape and a data).
 pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
     const pblczero::TensorProto& tensor) {
   pblczero::XlaLiteralProto literal;
@@ -140,16 +145,25 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
 class Onnx2HloConverter {
  public:
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
-    PopulateOpMapping();
+    onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
+    onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
+    onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
+    onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
+    onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
                          size_t minibatch_size) {
     batch_size_ = minibatch_size;
+    // Populate the set of ONNX initializers (constants), but not emit them for
+    // now. They are emitted lazily so that they appear close to the first use.
     BuildInitializerMapping(onnx_model);
+    // Convert ONNX inputs to HLO parameters.
     BuildInputs(onnx_model.graph().input());
     BuildGraph(onnx_model.graph());
     Onnx2HloResult result;
+    // Convert ONNX outputs to HLO result.
     result.outputs = BuildOutputs(onnx_model.graph().output());
     result.hlo_module = builder_.Build("onnx_model");
     for (size_t i = 0; i < params_.size(); ++i) {
@@ -164,6 +178,8 @@ class Onnx2HloConverter {
  private:
   std::vector<Onnx2HloResult::NamedTensor> BuildOutputs(
       const std::vector<pblczero::ValueInfoProto>& graph_output) {
+    // Gathers outputs into the root tuple, optionally converting their type if
+    // I/O type is different from the instruction output.
     std::vector<Onnx2HloResult::NamedTensor> result;
     std::vector<HloFlow> outputs;
     for (size_t i = 0; i < graph_output.size(); ++i) {
@@ -188,15 +204,7 @@ class Onnx2HloConverter {
     }
   }
 
-  void PopulateOpMapping() {
-    onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
-    onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
-    onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
-    onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
-    onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
-    onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
-  }
-
+  // Checks that the ONNX node doesn't have any unknown attributes.
   void CheckKnownAttributes(
       const pblczero::NodeProto& node,
       const std::initializer_list<std::string_view> attributes) {
@@ -208,6 +216,9 @@ class Onnx2HloConverter {
     }
   }
 
+  // Fetches an HloFlow by name. If the name is not in the map, check whether
+  // there is an initializer for it, and either create a constant or a parameter
+  // depending on its size.
   HloFlow GetFlowByName(const std::string& name) {
     auto iter = onnx_name_to_hlo_flow_.find(name);
     if (iter != onnx_name_to_hlo_flow_.end()) return iter->second;
@@ -231,6 +242,7 @@ class Onnx2HloConverter {
     return flow;
   }
 
+  // A helper function to fetch an input of ONNX node by index.
   HloFlow GetInput(const pblczero::NodeProto& node, size_t idx,
                    bool optional = false) {
     if (idx >= node.input_size()) {
@@ -240,6 +252,7 @@ class Onnx2HloConverter {
     return GetFlowByName(std::string(node.input(idx)));
   }
 
+  // A helper function to fetch an attribute of ONNX node by name.
   const pblczero::AttributeProto* GetAttribute(const pblczero::NodeProto& node,
                                                std::string_view name,
                                                bool optional = false) {
@@ -249,6 +262,10 @@ class Onnx2HloConverter {
     if (optional) return nullptr;
     throw Exception("Attribute " + std::string(name) + " not set");
   }
+
+  /////////////////////////////////////////////////////////////////////////////
+  // ONNX operations
+  /////////////////////////////////////////////////////////////////////////////
 
   std::vector<HloFlow> OpConv(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, {"pads", "kernel_shape"});
@@ -360,6 +377,9 @@ class Onnx2HloConverter {
     return {builder_.Dot(lhs, rhs, dn)};
   }
 
+  /////////////////////////////////////////////////////////////////////////////
+
+  // Makes a scalar constant (usually 0 or 1) of a given type.
   template <typename T>
   HloFlow MakeScalar(T value, pblczero::XlaShapeProto::Type type) {
     pblczero::XlaLiteralProto literal;
@@ -375,6 +395,8 @@ class Onnx2HloConverter {
     return builder_.Constant(literal);
   }
 
+  // Take two inputs and optionally performs numpy-style broadcasting to make
+  // them equal shape.
   std::pair<HloFlow, HloFlow> EqualizeShape(HloFlow lhs, HloFlow rhs) {
     const auto& lhs_dims = lhs->shape().dimensions();
     const auto& rhs_dims = rhs->shape().dimensions();
@@ -411,6 +433,7 @@ class Onnx2HloConverter {
     return {lhs, rhs};
   }
 
+  // Convert ONNX inputs to HLO parameters.
   void BuildInputs(const std::vector<pblczero::ValueInfoProto>& inputs) {
     for (const auto& input : inputs) {
       auto ctx = HloContext(&builder_);
@@ -426,6 +449,7 @@ class Onnx2HloConverter {
     }
   }
 
+  // Makes a parameter instruction (for inputs or large constants).
   HloFlow MakeParameter(const std::string& name,
                         const pblczero::XlaShapeProto& shape,
                         bool is_constant) {
@@ -436,6 +460,7 @@ class Onnx2HloConverter {
 
   void BuildGraph(const pblczero::GraphProto& graph) {
     for (const auto& node : graph.node()) {
+      // Set up the context so that nodes have metadata from the original ONNX.
       auto ctx = HloContext(&builder_);
       ctx.SetOpType(node.op_type());
       ctx.SetOpName(node.name());
@@ -443,6 +468,8 @@ class Onnx2HloConverter {
     }
   }
 
+  // Calls the correct function to handle the ONNX node, and stores output in
+  // the map.
   void DispatchNode(const pblczero::NodeProto& node) {
     auto iter = onnx_op_to_builder_.find(std::string(node.op_type()));
     if (iter == onnx_op_to_builder_.end()) {
