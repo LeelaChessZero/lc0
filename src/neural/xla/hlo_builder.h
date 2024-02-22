@@ -41,8 +41,10 @@ using HloFlow = const pblczero::HloInstructionProto*;
 using HloComputation =
     std::vector<std::unique_ptr<pblczero::HloInstructionProto>>;
 
+// A builder class for constructing HloModuleProto.
 class HloBuilder {
  public:
+  // HLO operations.
   HloFlow Parameter(const pblczero::XlaShapeProto& shape);
   HloFlow Constant(const pblczero::XlaLiteralProto& literal);
   HloFlow Convert(HloFlow input, const pblczero::XlaShapeProto::Type type);
@@ -59,6 +61,7 @@ class HloBuilder {
   HloFlow Tanh(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
 
+  // Build the HloModuleProto with a given name.
   pblczero::HloModuleProto Build(std::string_view name);
 
  private:
@@ -76,6 +79,10 @@ class HloBuilder {
   friend class HloContext;
 };
 
+// A context class for annotating parts of the HLO computation with metadata,
+// like original ONNX op, its name, and source file name and line.
+// The class saves the current metadata in constructor and restores it in
+// destructor, making it possible to use it in a scoped way.
 class HloContext {
  public:
   HloContext(HloBuilder* builder)
@@ -93,6 +100,8 @@ class HloContext {
   pblczero::XlaOpMetadata saved_metadata_;
 };
 
+// A helper function to reset a shape of a layout. Marks all dimensions as
+// non-dynamic, and sets layout to major_to_minor.
 void ResetXlaShapeProtoLayout(pblczero::XlaShapeProto* shape);
 
 }  // namespace lczero

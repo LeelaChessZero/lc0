@@ -34,10 +34,44 @@
 
 namespace lczero {
 
+// Creates an instruction and populates required fields of the
+// HloInstructionProto: result shape, opcode and operands.
+// Appends the instruction to the entry computation.
+pblczero::HloInstructionProto* HloBuilder::MakeInstruction(
+    std::string_view opcode, const pblczero::XlaShapeProto& shape,
+    const std::vector<const pblczero::HloInstructionProto*> operands) {
+  auto instr = std::make_unique<pblczero::HloInstructionProto>();
+  auto ret = instr.get();
+  ret->set_opcode(opcode);
+  *ret->mutable_shape() = shape;
+  *ret->mutable_metadata() = metadata_;
+  ret->set_id(entry_computation_.size());
+  for (const auto& operand : operands) {
+    ret->add_operand_ids(operand->id());
+  }
+  entry_computation_.push_back(std::move(instr));
+  return ret;
+}
+
+// Creates an elementwise instruction, which always have two operands of the
+// same shape.
+pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
+    std::string_view opcode, HloFlow lhs, HloFlow rhs) {
+  if (lhs->shape().dimensions() != rhs->shape().dimensions()) {
+    throw Exception("Elementwise operands must have the same shape");
+  }
+  return MakeInstruction(opcode, lhs->shape(), {lhs, rhs});
+}
+
+////////////////////////////////////////////////////////////////////////////
+// Instructions.
+////////////////////////////////////////////////////////////////////////////
+
 HloFlow HloBuilder::Parameter(const pblczero::XlaShapeProto& shape) {
   return MakeInstruction("parameter", shape, {});
 }
 
+// Converts the element types while keeping the shape.
 HloFlow HloBuilder::Convert(HloFlow input,
                             const pblczero::XlaShapeProto::Type type) {
   if (input->shape().element_type() == type) return input;
@@ -96,7 +130,6 @@ HloFlow HloBuilder::Broadcast(
     }
     flow->add_dimensions(dim);
   }
-
   return flow;
 }
 
@@ -113,7 +146,6 @@ HloFlow HloBuilder::Reshape(HloFlow input,
   if (input->shape().element_type() != new_shape.element_type()) {
     throw Exception("Reshape must have the same element type");
   }
-
   size_t old_elements = std::accumulate(input->shape().dimensions().begin(),
                                         input->shape().dimensions().end(), 1,
                                         std::multiplies<int64_t>());
@@ -197,32 +229,11 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
   return MakeInstruction("tuple", shape, elements);
 }
 
-pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
-    std::string_view opcode, HloFlow lhs, HloFlow rhs) {
-  if (lhs->shape().dimensions() != rhs->shape().dimensions()) {
-    throw Exception("Elementwise operands must have the same shape");
-  }
-  return MakeInstruction(opcode, lhs->shape(), {lhs, rhs});
-}
-
-pblczero::HloInstructionProto* HloBuilder::MakeInstruction(
-    std::string_view opcode, const pblczero::XlaShapeProto& shape,
-    const std::vector<const pblczero::HloInstructionProto*> operands) {
-  auto instr = std::make_unique<pblczero::HloInstructionProto>();
-  auto ret = instr.get();
-  ret->set_opcode(opcode);
-  *ret->mutable_shape() = shape;
-  *ret->mutable_metadata() = metadata_;
-  ret->set_id(entry_computation_.size());
-  for (const auto& operand : operands) {
-    ret->add_operand_ids(operand->id());
-  }
-  entry_computation_.push_back(std::move(instr));
-  return ret;
-}
-
 namespace {
-
+// Go over all "parameter" instructions of the computation and assign
+// "parameter_number" field with increasing numbers.
+// Normally it's not requiredm but in our case it's simpler.
+// Outputs shapes and instruction names of parameters.
 std::pair<std::vector<pblczero::XlaShapeProto>, std::vector<std::string>>
 AssignParameterIndices(const HloComputation& comp) {
   std::vector<pblczero::XlaShapeProto> parameter_shapes;
@@ -238,6 +249,8 @@ AssignParameterIndices(const HloComputation& comp) {
   return {parameter_shapes, parameter_names};
 }
 
+// Finalizes HloComputationProto (sets name, renumbers parameters, adds
+// computation shape and root instruction).
 pblczero::HloComputationProto MakeComputation(const HloComputation& comp,
                                               std::string_view name,
                                               size_t id) {
@@ -252,8 +265,24 @@ pblczero::HloComputationProto MakeComputation(const HloComputation& comp,
   ret.set_root_id(comp.back()->id());
   return ret;
 }
-
 }  // namespace
+
+// Assigns unique names to all instructions in the module.
+// In StableHLO instructions are allowed to have numeric names, but in XLA HLO
+// they are not, so we use "i"+number.
+void HloBuilder::AssignInstructionNames() {
+  // Every instruction in the module should have an unique name, numeric names
+  // are allowed.
+  size_t idx = 0;
+  for (auto& instr : entry_computation_) {
+    instr->set_name("i" + std::to_string(idx++));
+  }
+  for (auto& [_, comp] : dependent_computations_) {
+    for (auto& instr : *comp.mutable_instructions()) {
+      instr.set_name("i" + std::to_string(idx++));
+    }
+  }
+}
 
 pblczero::HloModuleProto HloBuilder::Build(std::string_view name) {
   AssignInstructionNames();
@@ -267,20 +296,6 @@ pblczero::HloModuleProto HloBuilder::Build(std::string_view name) {
   }
   *module.mutable_host_program_shape() = module.computations(0).program_shape();
   return module;
-}
-
-void HloBuilder::AssignInstructionNames() {
-  // Every instruction in the module should have an unique name, numeric names
-  // are allowed.
-  size_t idx = 0;
-  for (auto& instr : entry_computation_) {
-    instr->set_name("i" + std::to_string(idx++));
-  }
-  for (auto& [_, comp] : dependent_computations_) {
-    for (auto& instr : *comp.mutable_instructions()) {
-      instr.set_name("i" + std::to_string(idx++));
-    }
-  }
 }
 
 void ResetXlaShapeProtoLayout(pblczero::XlaShapeProto* shape) {
