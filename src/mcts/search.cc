@@ -198,10 +198,9 @@ Search::Search(const NodeTree& tree, Network* network,
   }
   wdl_rescale_ratio_ = params_.GetWDLRescaleRatio();
   wdl_rescale_diff_ =
-      contempt_mode_ == ContemptMode::NONE
-          ? 0
-          : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity();
-  max_reasonable_s_ = params_.GetWDLMaxS();
+      contempt_mode_ == ContemptMode::NONE ? 0 : params_.GetWDLRescaleDiff();
+  wdl_eval_objectivity_ = params_.GetWDLEvalObjectivity();
+  wdl_max_s_ = params_.GetWDLMaxS();
 }
 
 namespace {
@@ -229,7 +228,8 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 inline double Search::WDLRescale(float& v, float& d, float sign, bool invert) {
   float wdl_rescale_ratio =
       invert ? 1.0f / wdl_rescale_ratio_ : wdl_rescale_ratio_;
-  float wdl_rescale_diff = invert ? -wdl_rescale_diff_ : wdl_rescale_diff_;
+  float wdl_rescale_diff =
+      invert ? -wdl_rescale_diff_ * wdl_eval_objectivity_ : wdl_rescale_diff_;
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
   // Safeguard against numerical issues; skip WDL transformation if WDL is too
@@ -242,12 +242,12 @@ inline double Search::WDLRescale(float& v, float& d, float sign, bool invert) {
     auto s = 2 / (a + b);
     // Safeguard against unrealistically broad WDL distributions coming from
     // the NN. Originally hardcoded, made into a parameter for piece odds.
-    if (!invert) s = std::min(max_reasonable_s_, s);
+    if (!invert) s = std::min(wdl_max_s_, s);
     auto mu = (a - b) / (a + b);
     auto s_new = s * wdl_rescale_ratio;
     if (invert) {
       std::swap(s, s_new);
-      s = std::min(max_reasonable_s_, s);
+      s = std::min(wdl_max_s_, s);
     }
     auto mu_new = mu + sign * s * s * wdl_rescale_diff;
     auto w_new = FastLogistic((-1.0f + mu_new) / s_new);

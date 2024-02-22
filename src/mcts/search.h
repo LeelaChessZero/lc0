@@ -206,7 +206,8 @@ class Search {
   ContemptMode contempt_mode_;
   float wdl_rescale_ratio_;
   float wdl_rescale_diff_;
-  float max_reasonable_s_;
+  float wdl_eval_objectivity_;
+  float wdl_max_s_;
   friend class SearchWorker;
 };
 
