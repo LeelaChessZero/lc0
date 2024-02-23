@@ -40,34 +40,35 @@ namespace {
 class Lc0InputTensor : public XlaTensor {
  public:
   Lc0InputTensor(size_t max_batch_size)
-      // TODO replace with make_unique_for_overwrite() once C++20 is available.
       : max_batch_size_(max_batch_size),
-        data_(new float[GetSizeBytes(max_batch_size)]),
+        // TODO replace with make_unique_for_overwrite() once C++20 is
+        // available.
+        data_(new float[GetTensorByteSizeForBatch(max_batch_size)]),
         shape_{0, kInputPlanes, 8, 8} {}
 
   const std::vector<int64_t>& shape() const override { return shape_; }
   const void* data() const override { return data_.get(); }
-  size_t size() const override { return GetSizeBytes(shape_[0]); }
-  size_t capacity() const override { return GetSizeBytes(max_batch_size_); }
+  size_t size() const override { return GetTensorByteSizeForBatch(shape_[0]); }
+  size_t capacity() const override {
+    return GetTensorByteSizeForBatch(max_batch_size_);
+  }
   pblczero::XlaShapeProto::Type type() const override {
     return pblczero::XlaShapeProto::F32;
   }
 
+  // Adds a batch to the tensor and returns a pointer to the start of the its
+  // part in the buffer. Does NOT initialize the data with zeros.
   float* AddBatch() {
     assert(size_t(shape_[0]) < max_batch_size_);
-    auto ret = data_.get() + shape_[0] * kSingleInputSize;
+    auto ret = data_.get() + shape_[0] * GetTensorByteSizeForBatch(1);
     ++shape_[0];
     return ret;
   }
   size_t GetBatchSize() const { return shape_[0]; }
 
  private:
-  static constexpr size_t kSingleInputSize = kInputPlanes * 8 * 8;
-  static size_t GetSize(size_t batch_size) {
-    return batch_size * kSingleInputSize;
-  }
-  static size_t GetSizeBytes(size_t batch_size) {
-    return GetSize(batch_size) * sizeof(float);
+  static size_t GetTensorByteSizeForBatch(size_t batch_size) {
+    return kInputPlanes * 8 * 8 * batch_size * sizeof(float);
   }
 
   const size_t max_batch_size_;
@@ -93,6 +94,7 @@ class XlaComputation : public NetworkComputation {
   std::vector<std::unique_ptr<XlaTensor>> outputs_;
 };
 
+// Indices of various heads in the HLO output.
 struct XlaNetworkOptions {
   std::optional<size_t> output_value_idx;
   std::optional<size_t> output_wdl_idx;
@@ -113,6 +115,9 @@ class XlaNetwork : public Network {
     return std::make_unique<XlaComputation>(this);
   }
   int GetMiniBatchSize() const override {
+    // 32 is the default prefetch size, subtract it so that backend doesn't
+    // crash.
+    // TODO make it better when we have a proper way to query the batch size.
     return runner_->GetMaxBatchSize() - 32;
   }
 
@@ -187,6 +192,8 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
       options_(options),
       capabilities_{format.input(), format.moves_left()} {}
 
+// Converts ONNX model to HLO (for various batch sizes) and adds them to the
+// XlaRunner.
 XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
                                         XlaRunner* runner,
                                         size_t max_batch_size, size_t steps) {
@@ -259,10 +266,15 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   return options;
 }
 
+// Makes an XLA network. First converts the weights to ONNX, and then calls
+// FillXlaRunnerFromOnnx to convert them further to HLO and them compile them.
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict& opts) {
   if (!w) throw Exception("The XLA backend requires a network file.");
   int device = opts.GetOrDefault<int>("device", 0);
+  // Note: if the plugin_path does NOT contain a slash, it's looked up in the
+  // LD_LIBRARY_PATH (and a few other system defined places). If it does contain
+  // a slash, it's looked up at the exact relative or absolute path.
   auto runner = std::make_unique<XlaRunner>(
       opts.GetOrDefault<std::string>("plugin_path",
                                      "./pjrt_c_api_gpu_plugin.so")
