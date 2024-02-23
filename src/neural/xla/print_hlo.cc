@@ -30,6 +30,7 @@
 namespace lczero {
 namespace {
 
+// C-escapes the given string, and appends double quotes around it.
 std::string CEscape(std::string_view str) {
   std::string result = "\"";
   for (char c : str) {
@@ -88,6 +89,9 @@ class HloPrettyPrinter {
   }
 
  private:
+  // Prints delimeted list, with value rendering function and with optional
+  // prefix and suffix. E.g. for vec=[1,2,3] and f=(x) -> print(x, x), delim=","
+  // and prefix="{" and suffix="}" it will print "{11,22,33}".
   template <typename T, typename F>
   void PrintDelimeted(const T& vec, F print_fn, std::string_view delim,
                       std::string_view prefix = "",
@@ -100,12 +104,14 @@ class HloPrettyPrinter {
     s_ << suffix;
   }
 
+  // Returns the name of the type, which is the lowercase enum value name.
   std::string GetTypeLiteral(pblczero::XlaShapeProto::Type type) {
     std::string name = pblczero::XlaShapeProto::Type_Name(type);
     for (char& c : name) c = std::tolower(c);
     return name;
   }
 
+  // Prints the tensor layout (e.g. {3,2,1,0} for major-to-minor layout).
   void PrintLayout(const pblczero::XlaLayoutProto& layout) {
     if (!options_.print_layout) return;
     PrintDelimeted(
@@ -113,6 +119,7 @@ class HloPrettyPrinter {
         "}");
   }
 
+  // Prints the shape of a tensor, including the type (e.g. f32[112,8,8]).
   void PrintShape(const pblczero::XlaShapeProto& shape) {
     if (shape.element_type() == pblczero::XlaShapeProto::TUPLE) {
       PrintDelimeted(
@@ -126,6 +133,7 @@ class HloPrettyPrinter {
     if (shape.has_layout()) PrintLayout(shape.layout());
   }
 
+  // Prints the program shape (i.e. shapes of parameters and output).
   void PrintProgramShape(const pblczero::XlaProgramShapeProto& shape) {
     s_ << "{(";
     for (size_t i = 0; i < shape.parameters_size(); ++i) {
@@ -141,6 +149,7 @@ class HloPrettyPrinter {
     s_ << "}";
   }
 
+  // Prints the literal (i.e. constant value).
   void PrintLiteral(const pblczero::XlaLiteralProto& literal) {
     // For now just print as a flat array with sometimes wrong encoding (i.e. in
     // bf16 case).
@@ -219,6 +228,8 @@ class HloPrettyPrinter {
     }
   }
 
+  // Prints the operands of the given instruction. Usually operands are stored
+  // in operands() fields, but some opcodes have operands in the other fields.
   void PrintInstructionOperands(
       const pblczero::HloInstructionProto& instruction) {
     s_ << "(";
@@ -239,6 +250,7 @@ class HloPrettyPrinter {
     s_ << ")";
   }
 
+  // Prints the "window" attribute (for convolution opcodes).
   void PrintWindow(const pblczero::XlaWindow& window) {
     PrintDelimeted(
         window.dimensions(), [&](const auto& d) { s_ << d.size(); }, "x",
@@ -251,6 +263,7 @@ class HloPrettyPrinter {
         "x", " pads=");
   }
 
+  // Prints the "dimension numbers" attribute (for dot opcodes).
   void PrintDotDimensionNumbers(const pblczero::XlaDotDimensionNumbers& dn) {
     PrintDelimeted(
         dn.lhs_batch_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
@@ -266,6 +279,7 @@ class HloPrettyPrinter {
         ", rhs_contracting_dims={", "}");
   }
 
+  // Prints the "dimension numbers" attribute (for convolution opcodes).
   void PrintConvolutionDimensionNumbers(
       const pblczero::XlaConvolutionDimensionNumbers& dn) {
     std::string input_dims(dn.input_spatial_dimensions_size() + 2, '?');
@@ -285,6 +299,7 @@ class HloPrettyPrinter {
     s_ << input_dims << "_" << kernel_dims << "->" << output_dims;
   }
 
+  // Prints the attributes of the given instruction.
   void PrintInstructionAttributes(
       const pblczero::HloInstructionProto& instruction) {
     if (instruction.called_computation_ids_size() > 0) {
@@ -313,6 +328,7 @@ class HloPrettyPrinter {
     }
   }
 
+  // Prints the metadata of the given instruction (source file, line, etc).
   void PrintInstructionMetadata(
       const pblczero::HloInstructionProto& instruction) {
     if (instruction.has_metadata()) {
@@ -334,6 +350,7 @@ class HloPrettyPrinter {
     }
   }
 
+  // Prints the given instruction line.
   void PrintInstruction(const pblczero::HloInstructionProto& instruction) {
     s_ << "%" << instruction.name() << " = ";
     PrintShape(instruction.shape());
@@ -343,6 +360,7 @@ class HloPrettyPrinter {
     PrintInstructionMetadata(instruction);
   }
 
+  // Prints the given computation.
   void PrintComputation(const pblczero::HloComputationProto& computation) {
     current_computation_ = &computation;
     s_ << computation.name() << " {\n";

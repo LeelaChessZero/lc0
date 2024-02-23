@@ -32,9 +32,12 @@
 namespace lczero {
 
 struct PrettyPrintHloOptions {
+  // Print layout information (which is always major-to-minor now, e.g.
+  // {3,2,1,0}. Switched off by default as it's just noise.
   bool print_layout = false;
 };
 
+// Pretty-prints the given HLO module to the given stream.
 void PrettyPrintHlo(const pblczero::HloModuleProto& module,
                     PrettyPrintHloOptions options, std::ostream& stream);
 
