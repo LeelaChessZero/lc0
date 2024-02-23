@@ -38,6 +38,7 @@
 
 namespace lczero {
 
+// An interface for in-host-memory tensor in XLA format.
 class XlaTensor {
  public:
   virtual ~XlaTensor() = default;
@@ -45,14 +46,17 @@ class XlaTensor {
   virtual const void* data() const = 0;
   // Returns amount of valid data in bytes.
   virtual size_t size() const = 0;
-  // Returns amount of memory that are allowed to address in bytes.
+  // Returns amount of memory that are allowed to address in bytes. This is
+  // useful when the size of the buffer has to be increased to match the
+  // supported batch size.
   virtual size_t capacity() const = 0;
   virtual pblczero::XlaShapeProto::Type type() const = 0;
 
   std::string DebugString();
 };
 
-// Not-owned XLA tensor, used when ONNX buffer can be used directly.
+// Not-owned XLA tensor, used e.g. when ONNX buffer can be used directly, to
+// avoid unnecessary copy.
 class XlaTensorNotOwned : public XlaTensor {
  public:
   XlaTensorNotOwned(const std::vector<int64_t>& shape, std::string_view data,
@@ -71,6 +75,7 @@ class XlaTensorNotOwned : public XlaTensor {
   pblczero::XlaShapeProto::Type type_;
 };
 
+// Tensor that owns data, used e.g. for XLA output.
 class XlaTensorOwned : public XlaTensor {
  public:
   XlaTensorOwned(const std::vector<int64_t>& shape,
@@ -89,23 +94,37 @@ class XlaTensorOwned : public XlaTensor {
   std::string data_;
 };
 
+// A class that keeps several XLA executables (for different batch sizes),
+// manages common buffers among them, and chooses the right executable for a
+// batch size.
 class XlaRunner {
  public:
+  // The library_path is the path to the PJRT library, and device indx.
   XlaRunner(const char* library_path, int device);
+  // Compiles and adds a module for the given batch size.
   void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
+  // Transfers inputs to the device and execute the executable corresponding to
+  // the batch size. Only non-frozen inputs are passed as arguments.
   std::vector<std::unique_ptr<XlaTensor>> ExecuteBlocking(
       const std::vector<XlaTensor*>& inputs);
-
-  // Network weights are passed as inputs, but the buffer is transferred once
-  // before any inference.
+  // Inputs that are shared between all calls (i.e. network weights passed as
+  // parameters). These inputs are transferred to device immediately (and not
+  // for each inference).
   void SetFrozenInputs(const std::vector<std::unique_ptr<XlaTensor>> inputs);
+  // Maximum supported batch size. It's expected that the capacity (not size) of
+  // the input tensors would be able to fit this size.
   size_t GetMaxBatchSize() const;
 
  private:
   std::unique_ptr<PjrtClient> pjrt_client_;
   std::vector<std::unique_ptr<PjrtDevice>> devices_;
+  // Compiled executables per batch size.
   std::vector<std::pair<size_t, std::unique_ptr<PjrtExecutable>>> executables_;
+  // Frozen inputs, in no particular order, kept for ownership.
   std::vector<std::unique_ptr<PjrtDeviceBuffer>> owned_buffers_;
+  // Vector of pointers to all input buffers, that is passed to PJRT. Frozen
+  // parameters (constants) are pre-filled in SetFrozenInputs(), and non-frozen
+  // inputs (input planes) are created and filled in every request.
   std::vector<PjrtDeviceBuffer*> buffers_;
   std::vector<size_t> param_idxs_;
   int device_;

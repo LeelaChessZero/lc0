@@ -185,6 +185,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   std::vector<std::unique_ptr<PjrtEvent>> done_events;
   output_buffers.reserve(outputs.size());
   done_events.reserve(outputs.size());
+  // Initialte transfers from device to host.
   for (size_t i = 0; i < outputs.size(); ++i) {
     const auto& output = outputs[i];
     output_buffers.emplace_back();
@@ -192,6 +193,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
     buffer.resize(output->GetSize());
     done_events.push_back(output->DeviceToHost(&buffer[0], buffer.size()));
   }
+  // Wait for the transfers to complete.
   for (size_t i = 0; i < outputs.size(); ++i) {
     const auto& output = outputs[i];
     done_events[i]->Await();
