@@ -91,7 +91,7 @@ class XlaTensorOwned : public XlaTensor {
 
 class XlaRunner {
  public:
-  XlaRunner(const char* library_path);
+  XlaRunner(const char* library_path, int device);
   void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
   std::vector<std::unique_ptr<XlaTensor>> ExecuteBlocking(
       const std::vector<XlaTensor*>& inputs);
@@ -108,6 +108,7 @@ class XlaRunner {
   std::vector<std::unique_ptr<PjrtDeviceBuffer>> owned_buffers_;
   std::vector<PjrtDeviceBuffer*> buffers_;
   std::vector<size_t> param_idxs_;
+  int device_;
 };
 
 }  // namespace lczero

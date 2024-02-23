@@ -262,10 +262,12 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict& opts) {
   if (!w) throw Exception("The XLA backend requires a network file.");
+  int device = opts.GetOrDefault<int>("device", 0);
   auto runner = std::make_unique<XlaRunner>(
       opts.GetOrDefault<std::string>("plugin_path",
                                      "./pjrt_c_api_gpu_plugin.so")
-          .c_str());
+          .c_str(),
+      device);
   int max_batch_size = opts.GetOrDefault<int>("max_batch", 739);
   int steps = opts.GetOrDefault<int>("steps", 13);
 

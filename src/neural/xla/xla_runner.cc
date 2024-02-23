@@ -89,8 +89,8 @@ std::string XlaTensor::DebugString() {
   return result;
 }
 
-XlaRunner::XlaRunner(const char* library_path)
-    : pjrt_client_(Pjrt(library_path).CreateClient()) {
+XlaRunner::XlaRunner(const char* library_path, int device)
+    : pjrt_client_(Pjrt(library_path).CreateClient()), device_(device) {
   CERR << "Devices:";
   devices_ = pjrt_client_->GetDevices();
   for (const auto& device : devices_) {
@@ -106,6 +106,7 @@ void XlaRunner::AddModule(size_t minibatch_size,
   pblczero::CompileOptionsProto options;
   options.mutable_executable_build_options()->set_num_replicas(1);
   options.mutable_executable_build_options()->set_num_partitions(1);
+  options.mutable_executable_build_options()->set_device_ordinal(device_);
   auto executable = pjrt_client_->CompileHlo(module.OutputAsString(),
                                              options.OutputAsString());
   executables_.push_back({minibatch_size, std::move(executable)});
@@ -125,7 +126,7 @@ void XlaRunner::SetFrozenInputs(
     transfers_.push_back(pjrt_client_->HostToDevice(
         {static_cast<const char*>(input->data()), input->size()},
         static_cast<PjrtType>(input->type()), input->shape(),
-        devices_[0].get()));
+        devices_.at(device_).get()));
   }
 
   owned_buffers_.clear();
