@@ -105,6 +105,7 @@ class XlaRunner {
   void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
   // Transfers inputs to the device and execute the executable corresponding to
   // the batch size. Only non-frozen inputs are passed as arguments.
+  // Currnetly only single input is supported (just because we don't need more).
   std::vector<std::unique_ptr<XlaTensor>> ExecuteBlocking(
       const std::vector<XlaTensor*>& inputs);
   // Inputs that are shared between all calls (i.e. network weights passed as

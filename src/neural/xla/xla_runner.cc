@@ -149,6 +149,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   if (inputs.size() != 1) {
     throw Exception("Only one input is kinda supported.");
   }
+  // Find the smallest batch size that fits the input.
   auto iter = std::find_if(
       executables_.begin(), executables_.end(), [&](const auto& e) {
         return e.first >= static_cast<size_t>(inputs[0]->shape()[0]);
@@ -158,6 +159,9 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
                     std::to_string(inputs[0]->shape()[0]));
   }
   const size_t batch_size = iter->first;
+  // Update the shape to match the rounded up batch size. After growing, the
+  // batch size must fit within tensor buffer capacity (it's fine to have
+  // garbage in the tail of that buffer).
   std::vector<int64_t> new_shape = inputs[0]->shape();
   new_shape[0] = batch_size;
   const size_t input_size = std::accumulate(new_shape.begin(), new_shape.end(),
@@ -166,6 +170,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   if (input_size > inputs[0]->capacity()) {
     throw Exception("Input buffer too small");
   }
+  // Transfer the input to the device.
   auto input_buffer =
       pjrt_client_
           ->HostToDevice(
@@ -176,11 +181,12 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   // Make a copy to support multiple concurrent calls, not sure if it's needed.
   auto input_buffers = buffers_;
   input_buffers[param_idxs_[0]] = input_buffer.get();
+  // Execute!
   auto outputs = iter->second->ExecuteBlocking(input_buffers);
 
+  // Now we need to transfer the outputs back to the host.
   std::vector<std::unique_ptr<XlaTensor>> result;
   result.reserve(outputs.size());
-
   std::vector<std::string> output_buffers;
   std::vector<std::unique_ptr<PjrtEvent>> done_events;
   output_buffers.reserve(outputs.size());
