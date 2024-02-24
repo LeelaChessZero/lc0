@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "utils/exception.h"
 #include "utils/weights_adapter.h"
@@ -167,7 +168,7 @@ BaseWeights::Smolgen::Smolgen(const pblczero::Weights::Smolgen& smolgen)
       ln2_gammas(LayerAdapter(smolgen.ln2_gammas()).as_vector()),
       ln2_betas(LayerAdapter(smolgen.ln2_betas()).as_vector()) {}
 
-BaseWeights::PolicyHead::PolicyHead(
+MultiHeadWeights::PolicyHead::PolicyHead(
     const pblczero::Weights::PolicyHead& policyhead, Vec& w, Vec& b)
     : _ip_pol_w(LayerAdapter(policyhead.ip_pol_w()).as_vector()),
       _ip_pol_b(LayerAdapter(policyhead.ip_pol_b()).as_vector()),
@@ -186,7 +187,8 @@ BaseWeights::PolicyHead::PolicyHead(
   }
 }
 
-BaseWeights::ValueHead::ValueHead(const pblczero::Weights::ValueHead& valuehead)
+MultiHeadWeights::ValueHead::ValueHead(
+    const pblczero::Weights::ValueHead& valuehead)
     : value(valuehead.value()),
       ip_val_w(LayerAdapter(valuehead.ip_val_w()).as_vector()),
       ip_val_b(LayerAdapter(valuehead.ip_val_b()).as_vector()),
@@ -196,23 +198,6 @@ BaseWeights::ValueHead::ValueHead(const pblczero::Weights::ValueHead& valuehead)
       ip2_val_b(LayerAdapter(valuehead.ip2_val_b()).as_vector()),
       ip_val_err_w(LayerAdapter(valuehead.ip_val_err_w()).as_vector()),
       ip_val_err_b(LayerAdapter(valuehead.ip_val_err_b()).as_vector()) {}
-
-BaseWeights::PolicyHeads::PolicyHeads(
-    const pblczero::Weights::PolicyHeads& policyheads, Vec& w, Vec& b)
-    : _ip_pol_w(LayerAdapter(policyheads.ip_pol_w()).as_vector()),
-      _ip_pol_b(LayerAdapter(policyheads.ip_pol_b()).as_vector()),
-      ip_pol_w(_ip_pol_w.empty() ? w : _ip_pol_w),
-      ip_pol_b(_ip_pol_b.empty() ? b : _ip_pol_b),
-      vanilla(policyheads.vanilla(), ip_pol_w, ip_pol_b),
-      optimistic_st(policyheads.optimistic_st(), ip_pol_w, ip_pol_b),
-      soft(policyheads.soft(), ip_pol_w, ip_pol_b),
-      opponent(policyheads.opponent(), ip_pol_w, ip_pol_b) {}
-
-BaseWeights::ValueHeads::ValueHeads(
-    const pblczero::Weights::ValueHeads& valueheads)
-    : winner(valueheads.winner()),
-      q(valueheads.q()),
-      st(valueheads.st()) {}
 
 LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
     : BaseWeights(weights),
@@ -240,48 +225,75 @@ LegacyWeights::LegacyWeights(const pblczero::Weights& weights)
 
 MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
     : BaseWeights(weights),
-      _ip_pol_w(LayerAdapter(weights.ip_pol_w()).as_vector()),
-      _ip_pol_b(LayerAdapter(weights.ip_pol_b()).as_vector()),
-      value_heads(weights.value_heads()),
-      policy_heads(weights.policy_heads(), _ip_pol_w, _ip_pol_b) {
-  if (!weights.has_policy_heads()) {
+      ip_pol_w(LayerAdapter(weights.policy_heads().has_ip_pol_w()
+                                ? weights.policy_heads().ip_pol_w()
+                                : weights.ip_pol_w())
+                   .as_vector()),
+      ip_pol_b(LayerAdapter(weights.policy_heads().has_ip_pol_b()
+                                ? weights.policy_heads().ip_pol_b()
+                                : weights.ip_pol_b())
+                   .as_vector()) {
+  policy_heads.emplace(std::piecewise_construct,
+                       std::forward_as_tuple("vanilla"),
+                       std::forward_as_tuple(weights.policy_heads().vanilla(),
+                                             ip_pol_w, ip_pol_b));
+  if (weights.has_policy_heads()) {
+    if (weights.policy_heads().has_optimistic_st()) {
+      policy_heads.emplace(
+          std::piecewise_construct, std::forward_as_tuple("optimistic_st"),
+          std::forward_as_tuple(weights.policy_heads().optimistic_st(),
+                                ip_pol_w, ip_pol_b));
+    }
+    if (weights.policy_heads().has_soft()) {
+      policy_heads.emplace(std::piecewise_construct,
+                           std::forward_as_tuple("soft"),
+                           std::forward_as_tuple(weights.policy_heads().soft(),
+                                                 ip_pol_w, ip_pol_b));
+    }
+    if (weights.policy_heads().has_opponent()) {
+      policy_heads.emplace(
+          std::piecewise_construct, std::forward_as_tuple("opponent"),
+          std::forward_as_tuple(weights.policy_heads().opponent(), ip_pol_w,
+                                ip_pol_b));
+    }
+  } else {
     if (weights.has_policy() || weights.has_policy1() ||
         weights.has_ip_pol_w()) {
-      policy_heads.vanilla.policy1 = ConvBlock(weights.policy1());
-      policy_heads.vanilla.policy = ConvBlock(weights.policy());
-      policy_heads.vanilla.ip2_pol_w =
-          LayerAdapter(weights.ip2_pol_w()).as_vector();
-      policy_heads.vanilla.ip2_pol_b =
-          LayerAdapter(weights.ip2_pol_b()).as_vector();
-      policy_heads.vanilla.ip3_pol_w =
-          LayerAdapter(weights.ip3_pol_w()).as_vector();
-      policy_heads.vanilla.ip3_pol_b =
-          LayerAdapter(weights.ip3_pol_b()).as_vector();
-      policy_heads.vanilla.ip4_pol_w =
-          LayerAdapter(weights.ip4_pol_w()).as_vector();
-      policy_heads.vanilla.pol_encoder_head_count = weights.pol_headcount();
+      auto& vanilla = policy_heads.at("vanilla");
+      vanilla.policy1 = ConvBlock(weights.policy1());
+      vanilla.policy = ConvBlock(weights.policy());
+      vanilla.ip2_pol_w = LayerAdapter(weights.ip2_pol_w()).as_vector();
+      vanilla.ip2_pol_b = LayerAdapter(weights.ip2_pol_b()).as_vector();
+      vanilla.ip3_pol_w = LayerAdapter(weights.ip3_pol_w()).as_vector();
+      vanilla.ip3_pol_b = LayerAdapter(weights.ip3_pol_b()).as_vector();
+      vanilla.ip4_pol_w = LayerAdapter(weights.ip4_pol_w()).as_vector();
+      vanilla.pol_encoder_head_count = weights.pol_headcount();
       for (const auto& enc : weights.pol_encoder()) {
-        policy_heads.vanilla.pol_encoder.emplace_back(enc);
+        vanilla.pol_encoder.emplace_back(enc);
       }
     } else {
       throw Exception("Could not find valid policy head weights.");
     }
   }
-  if (!weights.has_value_heads()) {
+
+  value_heads.emplace("winner", weights.value_heads().winner());
+  if (weights.has_value_heads()) {
+    if (weights.value_heads().has_q()) {
+      value_heads.emplace("q", weights.value_heads().q());
+    }
+    if (weights.value_heads().has_st()) {
+      value_heads.emplace("st", weights.value_heads().st());
+    }
+  } else {
     if (weights.has_value() || weights.has_ip_val_w()) {
-      value_heads.winner.value = ConvBlock(weights.value());
-      value_heads.winner.ip_val_w =
-          LayerAdapter(weights.ip_val_w()).as_vector();
-      value_heads.winner.ip_val_b =
-          LayerAdapter(weights.ip_val_b()).as_vector();
-      value_heads.winner.ip1_val_w =
-          LayerAdapter(weights.ip1_val_w()).as_vector();
-      value_heads.winner.ip1_val_b =
-          LayerAdapter(weights.ip1_val_b()).as_vector();
-      value_heads.winner.ip2_val_w =
-          LayerAdapter(weights.ip2_val_w()).as_vector();
-      value_heads.winner.ip2_val_b =
-          LayerAdapter(weights.ip2_val_b()).as_vector();
+      auto& winner = value_heads.at("winner");
+      winner.value = ConvBlock(weights.value());
+      winner.ip_val_w = LayerAdapter(weights.ip_val_w()).as_vector();
+      winner.ip_val_b = LayerAdapter(weights.ip_val_b()).as_vector();
+      winner.ip1_val_w = LayerAdapter(weights.ip1_val_w()).as_vector();
+      winner.ip1_val_b = LayerAdapter(weights.ip1_val_b()).as_vector();
+      winner.ip2_val_w = LayerAdapter(weights.ip2_val_w()).as_vector();
+      winner.ip2_val_b = LayerAdapter(weights.ip2_val_b()).as_vector();
     } else {
       throw Exception("Could not find valid value head weights.");
     }

@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include "proto/net.pb.h"
@@ -100,70 +101,6 @@ struct BaseWeights {
     Vec ln2_betas;
   };
 
-  struct PolicyHead {
-    explicit PolicyHead(const pblczero::Weights::PolicyHead& policyhead, Vec& w,
-                        Vec& b);
-    // Policy head
-   private:
-    // Storage in case _ip_pol_w/b are not shared among heads.
-    Vec _ip_pol_w;
-    Vec _ip_pol_b;
-
-   public:
-    // Reference to possibly shared value (to avoid unnecessary copies).
-    Vec& ip_pol_w;
-    Vec& ip_pol_b;
-    // Extra convolution for AZ-style policy head
-    ConvBlock policy1;
-    ConvBlock policy;
-    // Extra params for attention policy head
-    Vec ip2_pol_w;
-    Vec ip2_pol_b;
-    Vec ip3_pol_w;
-    Vec ip3_pol_b;
-    Vec ip4_pol_w;
-    int pol_encoder_head_count;
-    std::vector<EncoderLayer> pol_encoder;
-  };
-
-  struct ValueHead {
-    explicit ValueHead(const pblczero::Weights::ValueHead& valuehead);
-    // Value head
-    ConvBlock value;
-    Vec ip_val_w;
-    Vec ip_val_b;
-    Vec ip1_val_w;
-    Vec ip1_val_b;
-    Vec ip2_val_w;
-    Vec ip2_val_b;
-    Vec ip_val_err_w;
-    Vec ip_val_err_b;
-  };
-
-  struct PolicyHeads {
-    explicit PolicyHeads(const pblczero::Weights::PolicyHeads& policyheads,
-                         Vec& w, Vec& b);
-
-   private:
-    Vec _ip_pol_w;
-    Vec _ip_pol_b;
-    Vec& ip_pol_w;
-    Vec& ip_pol_b;
-
-   public:
-    PolicyHead vanilla;
-    PolicyHead optimistic_st;
-    PolicyHead soft;
-    PolicyHead opponent;
-  };
-
-  struct ValueHeads {
-    explicit ValueHeads(const pblczero::Weights::ValueHeads& valueheads);
-    ValueHead winner;
-    ValueHead q;
-    ValueHead st;
-  };
-
   // Input convnet.
   ConvBlock input;
 
@@ -241,14 +178,54 @@ struct LegacyWeights : public BaseWeights {
 struct MultiHeadWeights : public BaseWeights {
   explicit MultiHeadWeights(const pblczero::Weights& weights);
 
+  struct PolicyHead {
+    explicit PolicyHead(const pblczero::Weights::PolicyHead& policyhead, Vec& w,
+                        Vec& b);
+    // Policy head
+   private:
+    // Storage in case _ip_pol_w/b are not shared among heads.
+    Vec _ip_pol_w;
+    Vec _ip_pol_b;
+
+   public:
+    // Reference to possibly shared value (to avoid unnecessary copies).
+    Vec& ip_pol_w;
+    Vec& ip_pol_b;
+    // Extra convolution for AZ-style policy head
+    ConvBlock policy1;
+    ConvBlock policy;
+    // Extra params for attention policy head
+    Vec ip2_pol_w;
+    Vec ip2_pol_b;
+    Vec ip3_pol_w;
+    Vec ip3_pol_b;
+    Vec ip4_pol_w;
+    int pol_encoder_head_count;
+    std::vector<EncoderLayer> pol_encoder;
+  };
+
+  struct ValueHead {
+    explicit ValueHead(const pblczero::Weights::ValueHead& valuehead);
+    // Value head
+    ConvBlock value;
+    Vec ip_val_w;
+    Vec ip_val_b;
+    Vec ip1_val_w;
+    Vec ip1_val_b;
+    Vec ip2_val_w;
+    Vec ip2_val_b;
+    Vec ip_val_err_w;
+    Vec ip_val_err_b;
+  };
+
  private:
-  Vec _ip_pol_w;
-  Vec _ip_pol_b;
+  Vec ip_pol_w;
+  Vec ip_pol_b;
 
  public:
   // Policy and value multiheads
-  ValueHeads value_heads;
-  PolicyHeads policy_heads;
+  std::unordered_map<std::string, ValueHead> value_heads;
+  std::unordered_map<std::string, PolicyHead> policy_heads;
 };
 
 enum InputEmbedding {

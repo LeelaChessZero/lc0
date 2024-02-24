@@ -457,8 +457,8 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
 template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
-  const auto& value_head = weights_.value_heads.winner;
-  const auto& policy_head = weights_.policy_heads.vanilla;
+  const auto& value_head = weights_.value_heads.at("winner");
+  const auto& policy_head = weights_.policy_heads.at("vanilla");
   // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = value_head.ip1_val_b.size();
   const auto num_moves_channels = weights_.ip1_mov_b.size();
@@ -958,7 +958,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   }
 
   if (conv_policy_) {
-    auto& policy_head = weights_.policy_heads.vanilla;
+    auto& policy_head = weights_.policy_heads.at("vanilla");
     policy_head.policy1.weights = WinogradFilterTransformF(
         policy_head.policy1.weights, channels, channels);
     auto pol_channels = policy_head.policy.biases.size();
