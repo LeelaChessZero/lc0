@@ -68,8 +68,12 @@ __device__ __forceinline__ float activate(float cVal,
     case ACTIVATION_SWISH:
       cVal /= (1.0f + __expf(-cVal));
       break;
-    default:
+    case ACTIVATION_NONE:
       break;
+    case ACTIVATION_DEFAULT:
+    case ACTIVATION_SOFTMAX:
+      // Trigger an error if we ever get here.
+      __trap();
   }
   return cVal;
 }
