@@ -885,11 +885,11 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 void Search::StartThreads(size_t how_many) {
+  Mutex::Lock lock(threads_mutex_);
   if (how_many == 0 && threads_.size() == 0) {
     how_many = network_->GetThreads() + !network_->IsCpu();
   }
   thread_count_.store(how_many, std::memory_order_release);
-  Mutex::Lock lock(threads_mutex_);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
     threads_.emplace_back([this]() { WatchdogThread(); });
