@@ -637,8 +637,6 @@ if get_option('build_backends')
         'src/neural/xla/pjrt.cc',
         'src/neural/xla/xla_runner.cc',
       ]
-      files += gen_proto_src.process('src/neural/xla/hlo.proto',
-          preserve_path_from : meson.current_source_dir() + '/src/')
       deps += cc.find_library('dl', required: false)
   endif
 
