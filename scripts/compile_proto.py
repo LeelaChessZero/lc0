@@ -64,6 +64,7 @@ RESERVED_WORDS = [
     'package',
     'message',
     'optional',
+    'required',
     'repeated',
     'enum',
 ] + list(TYPES.keys())
