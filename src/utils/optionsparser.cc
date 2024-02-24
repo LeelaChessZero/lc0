@@ -80,6 +80,17 @@ void OptionsParser::HideOption(const OptionId& id) {
   if (option) option->hidden_ = true;
 }
 
+void OptionsParser::HideAllOptions() {
+  for (const auto& option : options_) {
+    option->hidden_ = true;
+  }
+}
+
+void OptionsParser::UnhideOption(const OptionId& id) {
+  const auto option = FindOptionById(id);
+  if (option) option->hidden_ = false;
+}
+
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
@@ -324,8 +335,12 @@ bool StringOption::ProcessShortFlagWithValue(char flag,
 }
 
 std::string StringOption::GetHelp(const OptionsDict& dict) const {
-  return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetHelpText(),
-                    GetUciOption(), GetVal(dict));
+  std::string long_flag = GetLongFlag();
+  if (!long_flag.empty()) {
+    long_flag += "=STRING";
+  }
+  return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
+                    GetVal(dict));
 }
 
 std::string StringOption::GetOptionString(const OptionsDict& dict) const {

@@ -26,10 +26,28 @@ Program grant you additional permission to convey the resulting work.
 */
 
 #include "neural/onnx/adapters.h"
+#include <algorithm>
 
+#include "utils/fp16_utils.h"
 #include "utils/transpose.h"
 
 namespace lczero {
+namespace {
+template <class T>
+std::string TransposeAndReturnRaw(const std::vector<int>& dims,
+                                  std::vector<int> order,
+                                  const std::vector<T>& from) {
+  if (order.empty()) {
+    return {reinterpret_cast<const char*>(from.data()),
+            reinterpret_cast<const char*>(from.data() + from.size())};
+  } else {
+    std::vector<T> dst(from.size());
+    TransposeTensor(dims, order, from, &dst[0]);
+    return {reinterpret_cast<const char*>(dst.data()),
+            reinterpret_cast<const char*>(dst.data() + dst.size())};
+  }
+}
+}
 
 FloatOnnxWeightsAdapter::FloatOnnxWeightsAdapter(
     const std::vector<float>& weights, std::initializer_list<int> dims,
@@ -45,16 +63,19 @@ std::vector<int> FloatOnnxWeightsAdapter::GetDimensions() const {
   // than FloatOnnxWeightsAdapter.
   return dims_;
 }
+
 std::string FloatOnnxWeightsAdapter::GetRawData() const {
-  if (order_.empty()) {
-    return {reinterpret_cast<const char*>(weights_.data()),
-            reinterpret_cast<const char*>(weights_.data() + weights_.size())};
-  } else {
-    std::vector<float> dst(weights_.size());
-    TransposeTensor(dims_, order_, weights_, &dst[0]);
-    return {reinterpret_cast<const char*>(dst.data()),
-            reinterpret_cast<const char*>(dst.data() + dst.size())};
-  }
+  return TransposeAndReturnRaw<float>(dims_, order_, weights_);
+}
+
+pblczero::TensorProto::DataType Float16OnnxWeightsAdapter::GetDataType() const {
+  return pblczero::TensorProto::FLOAT16;
+}
+
+std::string Float16OnnxWeightsAdapter::GetRawData() const {
+  std::vector<uint16_t> fp16(weights_.size());
+  std::transform(weights_.begin(), weights_.end(), fp16.begin(), FP32toFP16);
+  return TransposeAndReturnRaw<uint16_t>(dims_, order_, fp16);
 }
 
 }  // namespace lczero

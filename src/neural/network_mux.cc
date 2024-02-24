@@ -31,7 +31,6 @@
 
 #include "neural/factory.h"
 #include "utils/exception.h"
-#include "utils/numa.h"
 
 namespace lczero {
 namespace {
@@ -110,13 +109,20 @@ class MuxingNetwork : public Network {
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
-    const int nn_threads = opts.GetOrDefault<int>("threads", 1);
     const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
     Network* net = networks_.back().get();
+
+    int nn_threads = opts.GetOrDefault<int>("threads", 0);
+    if (nn_threads == 0) {
+      nn_threads = net->GetThreads();
+    }
+
+    min_batch_size_ = std::min(min_batch_size_, net->GetMiniBatchSize());
+    is_cpu_ &= net->IsCpu();
 
     if (networks_.size() == 1) {
       capabilities_ = net->GetCapabilities();
@@ -126,7 +132,7 @@ class MuxingNetwork : public Network {
 
     for (int i = 0; i < nn_threads; ++i) {
       threads_.emplace_back(
-          [this, net, max_batch, i]() { Worker(net, max_batch, i); });
+          [this, net, max_batch]() { Worker(net, max_batch); });
     }
   }
 
@@ -137,6 +143,12 @@ class MuxingNetwork : public Network {
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
+
+  int GetMiniBatchSize() const override { return min_batch_size_; }
+
+  int GetThreads() const override { return threads_.size(); }
+
+  bool IsCpu() const override { return is_cpu_; }
 
   void Enqueue(MuxingComputation* computation) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -154,9 +166,7 @@ class MuxingNetwork : public Network {
     }
   }
 
-  void Worker(Network* network, const int max_batch, int id) {
-    // Add one to the id in order to leave space for an active search thread.
-    Numa::BindThread(id + 1);
+  void Worker(Network* network, const int max_batch) {
     // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       std::vector<MuxingComputation*> children;
@@ -214,6 +224,8 @@ class MuxingNetwork : public Network {
   std::queue<MuxingComputation*> queue_;
   bool abort_ = false;
   NetworkCapabilities capabilities_;
+  int min_batch_size_ = std::numeric_limits<int>::max();
+  bool is_cpu_ = true;
 
   std::mutex mutex_;
   std::condition_variable cv_;
