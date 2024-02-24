@@ -634,7 +634,7 @@ if get_option('build_backends')
       ]
       files += gen_proto_src.process('src/neural/xla/hlo.proto',
           preserve_path_from : meson.current_source_dir() + '/src/')
-
+      deps += cc.find_library('dl', required: false)
   endif
 
 endif # if get_option('build_backends')
