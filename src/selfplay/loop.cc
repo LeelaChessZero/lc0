@@ -1223,8 +1223,6 @@ void RescoreLoop::RunLoop() {
   options_.Add<BoolOption>(kNnueBestMoveId) = false;
   options_.Add<BoolOption>(kDeleteFilesId) = true;
 
-  SelfPlayTournament::PopulateOptions(&options_);
-
   if (!options_.ProcessAllFlags()) return;
 
   if (options_.GetOptionsDict().IsDefault<std::string>(kOutputDirId) &&
