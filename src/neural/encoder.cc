@@ -100,7 +100,6 @@ int ChooseTransform(const ChessBoard& board) {
   }
   return transform;
 }
-
 }  // namespace
 
 bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format) {
