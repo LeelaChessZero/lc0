@@ -284,6 +284,29 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
   return MakeInstruction("tuple", shape, elements);
 }
 
+HloFlow HloBuilder::Slice(
+    HloFlow input,
+    const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice) {
+  HloTensorType current_shape(input->shape());
+  if (slice.size() != current_shape.Rank()) {
+    throw Exception(
+        "Slice dimensions must have the same size as the input shape");
+  }
+  HloTensorType new_shape(current_shape.GetElementType());
+  for (size_t i = 0; i < slice.size(); ++i) {
+    const auto& dim = slice[i];
+    if (dim.start() < 0 || dim.start() >= current_shape.GetDimension(i) ||
+        dim.limit() < 0 || dim.limit() > current_shape.GetDimension(i) ||
+        dim.start() >= dim.limit()) {
+      throw Exception("Invalid slice dimensions");
+    }
+    new_shape.AddDimension(dim.limit() - dim.start());
+  }
+  auto flow = MakeInstruction("slice", new_shape.ToProto(), {input});
+  *flow->mutable_slice_dimensions() = slice;
+  return flow;
+}
+
 namespace {
 // Go over all "parameter" instructions of the computation and assign
 // "parameter_number" field with increasing numbers.

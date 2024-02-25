@@ -328,6 +328,16 @@ class HloPrettyPrinter {
     if (instruction.has_dot_dimension_numbers()) {
       PrintDotDimensionNumbers(instruction.dot_dimension_numbers());
     }
+    if (instruction.slice_dimensions_size()) {
+      PrintDelimeted(
+          instruction.slice_dimensions(),
+          [&](const auto& d) {
+            s_ << "[" << d.start() << ":";
+            if (d.has_stride()) s_ << d.stride() << ":";
+            s_ << d.limit() << "]";
+          },
+          ",", ", slice={", "}");
+    }
   }
 
   // Prints the metadata of the given instruction (source file, line, etc).

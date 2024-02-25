@@ -150,6 +150,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
+    onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
   }
@@ -355,6 +356,42 @@ class Onnx2HloConverter {
     auto* rhs = GetInput(node, 1);
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
     return {builder_.Add(lhs, rhs)};
+  }
+
+  std::vector<HloFlow> OpSplit(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"axis", "num_outputs"});
+    auto* input = GetInput(node, 0);
+    const auto* axis_attr = GetAttribute(node, "axis");
+    const auto* num_outputs_attr = GetAttribute(node, "num_outputs", true);
+    if (!axis_attr) throw Exception("Attribute 'axis' not set");
+    size_t axis = axis_attr->i();
+    size_t num_outputs = num_outputs_attr ? num_outputs_attr->i() : 2;
+    size_t chunk_size =
+        (input->shape().dimensions(axis) + num_outputs - 1) / num_outputs;
+    std::vector<HloFlow> flows;
+
+    auto make_slice_dim = [](int64_t start, int64_t end) {
+      pblczero::HloInstructionProto::SliceDimensions slice;
+      slice.set_start(start);
+      slice.set_limit(end);
+      return slice;
+    };
+
+    for (size_t i = 0; i < num_outputs; ++i) {
+      std::vector<pblczero::HloInstructionProto::SliceDimensions> slice;
+      for (size_t j = 0; j < input->shape().dimensions_size(); ++j) {
+        if (j == axis) {
+          size_t begin = i * chunk_size;
+          size_t end = std::min<int64_t>((i + 1) * chunk_size,
+                                         input->shape().dimensions(j));
+          slice.push_back(make_slice_dim(begin, end));
+        } else {
+          slice.push_back(make_slice_dim(0, input->shape().dimensions(j)));
+        }
+      }
+      flows.push_back(builder_.Slice(input, slice));
+    }
+    return flows;
   }
 
   std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {

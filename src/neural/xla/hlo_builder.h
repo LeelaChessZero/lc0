@@ -108,6 +108,9 @@ class HloBuilder {
   HloFlow Reshape(HloFlow input, const HloTensorType& new_shape);
   HloFlow Dot(HloFlow lhs, HloFlow rhs,
               const pblczero::XlaDotDimensionNumbers& dimension_numbers);
+  HloFlow Slice(
+      HloFlow input,
+      const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice);
   HloFlow Tanh(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
   HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
