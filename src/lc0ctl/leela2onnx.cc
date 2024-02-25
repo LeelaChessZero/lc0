@@ -39,35 +39,33 @@
 namespace lczero {
 namespace {
 
-const OptionId kInputFilenameId{"input", "InputFile",
+const OptionId kInputFilenameId{"input", "",
                                 "Path of the input Lc0 weights file."};
-const OptionId kOutputFilenameId{"output", "OutputFile",
-                                 "Path of the output ONNX file."};
-const OptionId kHloTextOutputFilenameId = {
-    "hlo-text-output", "HloTextOutputFile", "Path of the output HLO file."};
+const OptionId kOutputFilenameId{"output", "", "Path of the output ONNX file."};
+const OptionId kHloTextOutputFilenameId = {"hlo-text-output", "",
+                                           "Path of the output HLO file."};
 const OptionId kHloProtoOutputFilenameId = {
-    "hlo-proto-output", "HloProtoOutputFile",
-    "Path of the output HLO proto file."};
-const OptionId kHloBatchSizeId{"hlo-batch-size", "HloBatchSize",
+    "hlo-proto-output", "", "Path of the output HLO proto file."};
+const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
 const OptionId kHloAllowPartialResultId = {
-    "hlo-allow-partial-result", "HloAllowPartialResult",
+    "hlo-allow-partial-result", "",
     "Allow partial result in case of HLO conversion failure (DEBUG ONLY!)."};
 
-const OptionId kInputPlanesName{"input-planes-name", "InputPlanesName",
+const OptionId kInputPlanesName{"input-planes-name", "",
                                 "ONNX name to use for the input planes node."};
 const OptionId kOutputPolicyHead{
-    "policy-head-name", "PolicyHeadName",
+    "policy-head-name", "",
     "ONNX name to use for the policy head output node."};
 const OptionId kOutputWdl{"wdl-head-name", "WdlHeadName",
                           "ONNX name to use for the WDL head output node."};
 const OptionId kOutputValue{
-    "value-head-name", "ValueHeadName",
+    "value-head-name", "",
     "ONNX name to use for value policy head output node."};
 const OptionId kOutputMlh{"mlh-head-name", "MlhHeadName",
                           "ONNX name to use for the MLH head output node."};
 const OptionId kOnnxToPytorch{
-    "onnx2pytorch", "Onnx2Pytorch",
+    "onnx2pytorch", "",
     "Only use layer definitions supported by onnx2pytorch."};
 
 bool ProcessParameters(OptionsParser* options) {
@@ -77,6 +75,7 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kHloProtoOutputFilenameId);
   options->Add<IntOption>(kHloBatchSizeId, 1, 2048) = 333;
   options->Add<BoolOption>(kHloAllowPartialResultId);
+  options->HideOption(kHloAllowPartialResultId);
 
   options->Add<StringOption>(kInputPlanesName) = "/input/planes";
   options->Add<StringOption>(kOutputPolicyHead) = "/output/policy";
