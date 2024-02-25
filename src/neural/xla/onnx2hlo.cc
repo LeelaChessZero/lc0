@@ -150,6 +150,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
+    onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
@@ -342,6 +343,15 @@ class Onnx2HloConverter {
     auto* zero = MakeScalar(0, input->shape().element_type());
     zero = builder_.Broadcast(zero, HloTensorType(input->shape()), {});
     return {builder_.Maximum(input, zero)};
+  }
+
+  std::vector<HloFlow> OpSigmoid(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {});
+    auto* input = GetInput(node, 0);
+    auto* one = MakeScalar(1, input->shape().element_type());
+    one = builder_.Broadcast(one, HloTensorType(input->shape()), {});
+    return {builder_.Divide(
+        one, builder_.Add(one, builder_.Exponential(builder_.Negate(input))))};
   }
 
   std::vector<HloFlow> OpTanh(const pblczero::NodeProto& node) {

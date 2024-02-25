@@ -275,6 +275,14 @@ HloFlow HloBuilder::Tanh(HloFlow input) {
   return MakeInstruction("tanh", input->shape(), {input});
 }
 
+HloFlow HloBuilder::Negate(HloFlow input) {
+  return MakeInstruction("negate", input->shape(), {input});
+}
+
+HloFlow HloBuilder::Exponential(HloFlow input) {
+  return MakeInstruction("exponential", input->shape(), {input});
+}
+
 HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
   pblczero::XlaShapeProto shape;
   shape.set_element_type(pblczero::XlaShapeProto::TUPLE);
