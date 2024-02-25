@@ -32,6 +32,7 @@
 #include "lc0ctl/describenet.h"
 #include "lc0ctl/leela2onnx.h"
 #include "lc0ctl/onnx2leela.h"
+#include "rescorer/rescoreloop.h"
 #include "selfplay/loop.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"

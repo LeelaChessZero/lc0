@@ -190,6 +190,7 @@ files += [
   'src/neural/onnx/adapters.cc',
   'src/neural/onnx/builder.cc',
   'src/neural/onnx/converter.cc',
+  'src/rescorer/rescoreloop.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/tournament.cc',

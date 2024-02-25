@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,33 +28,22 @@
 #pragma once
 
 #include <thread>
+
 #include "chess/uciloop.h"
-#include "selfplay/tournament.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
 
-class SelfPlayLoop : public UciLoop {
+class RescoreLoop : public UciLoop {
  public:
-  SelfPlayLoop();
-  ~SelfPlayLoop();
+  RescoreLoop();
+  ~RescoreLoop();
 
   void RunLoop() override;
-  void CmdStart() override;
-  void CmdStop() override;
-  void CmdUci() override;
-  void CmdSetOption(const std::string& name, const std::string& value,
-                    const std::string& context) override;
 
  private:
-  void SendGameInfo(const GameInfo& move);
-  void SendTournament(const TournamentInfo& info);
-
-  void EnsureOptionsSent();
   OptionsParser options_;
 
-  std::unique_ptr<SelfPlayTournament> tournament_;
-  std::unique_ptr<std::thread> thread_;
 };
 
 }  // namespace lczero
