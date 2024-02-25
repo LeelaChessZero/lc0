@@ -146,6 +146,7 @@ HloFlow HloBuilder::Reduce(HloFlow input, HloFlow initial,
       target_shape.add_dimensions(input->shape().dimensions(i));
     }
   }
+  ResetXlaShapeProtoLayout(&target_shape);
   auto flow = MakeInstruction("reduce", target_shape, {input, initial});
   *flow->mutable_dimensions() = {reduction_dimensions.begin(),
                                  reduction_dimensions.end()};

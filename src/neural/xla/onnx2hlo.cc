@@ -147,12 +147,13 @@ class Onnx2HloConverter {
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["GlobalAveragePool"] =
+        &Onnx2HloConverter::OpGlobalAveragePool;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
+    onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
-    onnx_op_to_builder_["GlobalAveragePool"] =
-        &Onnx2HloConverter::OpGlobalAveragePool;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -212,8 +213,11 @@ class Onnx2HloConverter {
 
   // Checks that the ONNX node doesn't have any unknown attributes.
   void CheckKnownAttributes(
-      const pblczero::NodeProto& node,
+      const pblczero::NodeProto& node, size_t max_inputs,
       const std::initializer_list<std::string_view> attributes) {
+    if (node.input_size() > max_inputs) {
+      throw Exception("Too many inputs for " + std::string(node.op_type()));
+    }
     for (const auto& attribute : node.attribute()) {
       if (std::find(attributes.begin(), attributes.end(), attribute.name()) ==
           attributes.end()) {
@@ -258,6 +262,20 @@ class Onnx2HloConverter {
     return GetFlowByName(std::string(node.input(idx)));
   }
 
+  std::optional<pblczero::XlaLiteralProto> GetConstantInput(
+      const pblczero::NodeProto& node, size_t idx, bool optional = false) {
+    if (idx >= node.input_size()) {
+      if (optional) return std::nullopt;
+      throw Exception("Input " + std::to_string(idx) + " not set");
+    }
+    auto tensor = initializers_.find(std::string(node.input(1)));
+    if (tensor == initializers_.end()) {
+      throw Exception("Constant input " + std::string(node.input(1)) +
+                      " not found");
+    }
+    return OnnxTensorToXlaLiteral(*tensor->second);
+  }
+
   // A helper function to fetch an attribute of ONNX node by name.
   const pblczero::AttributeProto* GetAttribute(const pblczero::NodeProto& node,
                                                std::string_view name,
@@ -274,7 +292,7 @@ class Onnx2HloConverter {
   /////////////////////////////////////////////////////////////////////////////
 
   std::vector<HloFlow> OpConv(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, {"pads", "kernel_shape"});
+    CheckKnownAttributes(node, 3, {"pads", "kernel_shape"});
     auto* input = GetInput(node, 0);
     auto* kernel = GetInput(node, 1);
     auto* bias = GetInput(node, 2, true);
@@ -320,7 +338,7 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpRelu(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, {});
+    CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
     auto* zero = MakeScalar(0, input->shape().element_type());
     zero = builder_.Broadcast(zero, input->shape(), {});
@@ -328,13 +346,13 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpTanh(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, {});
+    CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
     return {builder_.Tanh(input)};
   }
 
   std::vector<HloFlow> OpAdd(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, {});
+    CheckKnownAttributes(node, 2, {});
     auto* lhs = GetInput(node, 0);
     auto* rhs = GetInput(node, 1);
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
@@ -342,16 +360,9 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, {});
+    CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
-    if (node.input_size() < 2) {
-      throw Exception("Reshape requires a shape input");
-    }
-    auto dims_tensor = initializers_.find(std::string(node.input(1)));
-    if (dims_tensor == initializers_.end()) {
-      throw Exception("Reshape only supports constant shape");
-    }
-    auto new_dims = OnnxTensorToXlaLiteral(*dims_tensor->second).s64s();
+    auto new_dims = GetConstantInput(node, 1)->s64s();
     pblczero::XlaShapeProto new_shape;
     new_shape.set_element_type(input->shape().element_type());
     for (size_t i = 0; i < new_dims.size(); ++i) {
@@ -370,7 +381,7 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpMatMul(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, {});
+    CheckKnownAttributes(node, 2, {});
     auto* lhs = GetInput(node, 0);
     auto* rhs = GetInput(node, 1);
     if (lhs->shape().dimensions_size() != 2 ||
@@ -384,7 +395,7 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpGlobalAveragePool(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, {});
+    CheckKnownAttributes(node, 1, {});
     auto* lhs = GetInput(node, 0);
     if (lhs->shape().dimensions_size() < 2) {
       throw Exception("GlobalAveragePool requires at least 2D input");
@@ -407,6 +418,36 @@ class Onnx2HloConverter {
       output_shape.add_dimensions(1);
     }
     return {builder_.Reshape(flow, output_shape)};
+  }
+
+  std::vector<HloFlow> OpSqueeze(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* input = GetInput(node, 0);
+    auto squeeze_dims = GetConstantInput(node, 1, true);
+
+    pblczero::XlaShapeProto new_shape;
+    new_shape.set_element_type(input->shape().element_type());
+    if (squeeze_dims) {
+      for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
+        bool should_squeeze =
+            std::any_of(squeeze_dims->s64s().begin(),
+                        squeeze_dims->s64s().end(), [&](int64_t dim) {
+                          return dim == static_cast<int64_t>(i) ||
+                                 dim + input->shape().dimensions_size() == i;
+                        });
+        if (!should_squeeze) {
+          new_shape.add_dimensions(input->shape().dimensions(i));
+        }
+      }
+    } else {
+      for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
+        if (input->shape().dimensions(i) != 1) {
+          new_shape.add_dimensions(input->shape().dimensions(i));
+        }
+      }
+    }
+    ResetXlaShapeProtoLayout(&new_shape);
+    return {builder_.Reshape(input, new_shape)};
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -537,7 +578,7 @@ class Onnx2HloConverter {
         onnx_name_to_hlo_flow_[std::string(node.output(i))] = outputs[i];
       }
     } catch (Exception& e) {
-      throw Exception("Error in ONNX op[" + std::string(node.op_type()) +
+      throw Exception("Error in ONNX op=[" + std::string(node.op_type()) +
                       "] name=[" + std::string(node.name()) + "]: " + e.what());
     }
   }
