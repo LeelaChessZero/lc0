@@ -103,6 +103,7 @@ class HloBuilder {
   HloFlow Broadcast(HloFlow input, const HloTensorType& target_shape,
                     const std::vector<int64_t>& broadcast_dimensions);
   HloFlow Add(HloFlow lhs, HloFlow rhs);
+  HloFlow Multiply(HloFlow lhs, HloFlow rhs);
   HloFlow Divide(HloFlow lhs, HloFlow rhs);
   HloFlow Maximum(HloFlow lhs, HloFlow rhs);
   HloFlow Reshape(HloFlow input, const HloTensorType& new_shape);

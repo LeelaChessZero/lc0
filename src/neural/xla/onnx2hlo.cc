@@ -148,6 +148,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
+    onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
@@ -366,6 +367,14 @@ class Onnx2HloConverter {
     auto* rhs = GetInput(node, 1);
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
     return {builder_.Add(lhs, rhs)};
+  }
+
+  std::vector<HloFlow> OpMul(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* lhs = GetInput(node, 0);
+    auto* rhs = GetInput(node, 1);
+    std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
+    return {builder_.Multiply(lhs, rhs)};
   }
 
   std::vector<HloFlow> OpSplit(const pblczero::NodeProto& node) {

@@ -195,6 +195,10 @@ HloFlow HloBuilder::Add(HloFlow lhs, HloFlow rhs) {
   return MakeElementwiseInstruction("add", lhs, rhs);
 }
 
+HloFlow HloBuilder::Multiply(HloFlow lhs, HloFlow rhs) {
+  return MakeElementwiseInstruction("multiply", lhs, rhs);
+}
+
 HloFlow HloBuilder::Divide(HloFlow lhs, HloFlow rhs) {
   return MakeElementwiseInstruction("divide", lhs, rhs);
 }
