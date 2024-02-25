@@ -42,6 +42,18 @@ using HloFlow = const pblczero::HloInstructionProto*;
 using InstructionList =
     std::vector<std::unique_ptr<pblczero::HloInstructionProto>>;
 
+class HloComputation {
+ public:
+  HloComputation(const HloComputation&) = default;
+  HloComputation& operator=(const HloComputation&) = default;
+  size_t idx() const { return idx_; }
+
+ private:
+  explicit HloComputation(size_t idx) : idx_(idx) {}
+  size_t idx_;
+  friend class HloBuilder;
+};
+
 // A builder class for constructing HloModuleProto.
 class HloBuilder {
  public:
@@ -55,17 +67,21 @@ class HloBuilder {
   HloFlow Broadcast(HloFlow input, const pblczero::XlaShapeProto& target_shape,
                     const std::vector<int64_t>& broadcast_dimensions);
   HloFlow Add(HloFlow lhs, HloFlow rhs);
+  HloFlow Divide(HloFlow lhs, HloFlow rhs);
   HloFlow Maximum(HloFlow lhs, HloFlow rhs);
   HloFlow Reshape(HloFlow input, const pblczero::XlaShapeProto& new_shape);
   HloFlow Dot(HloFlow lhs, HloFlow rhs,
               const pblczero::XlaDotDimensionNumbers& dimension_numbers);
   HloFlow Tanh(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
+  HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
+                 const std::vector<int64_t>& reduction_dimensions);
 
   // Insert a computation a computation into the module, under given name.
   // Dependent computations are also merged into the module.
-  size_t AddComputation(std::string_view name, const HloBuilder& builder);
-  std::optional<size_t> GetComputationId(std::string_view name) const;
+  HloComputation AddComputation(std::string_view name,
+                                const HloBuilder& builder);
+  std::optional<HloComputation> GetComputationId(std::string_view name) const;
   // Build the HloModuleProto with a given name.
   pblczero::HloModuleProto BuildModule(std::string_view name);
 

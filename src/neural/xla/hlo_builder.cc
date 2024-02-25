@@ -44,7 +44,9 @@ pblczero::HloInstructionProto* HloBuilder::MakeInstruction(
   auto ret = instr.get();
   ret->set_opcode(opcode);
   *ret->mutable_shape() = shape;
-  *ret->mutable_metadata() = metadata_;
+  if (!metadata_.OutputAsString().empty()) {
+    *ret->mutable_metadata() = metadata_;
+  }
   ret->set_id(entry_computation_.size());
   for (const auto& operand : operands) {
     ret->add_operand_ids(operand->id());
@@ -133,8 +135,30 @@ HloFlow HloBuilder::Broadcast(
   return flow;
 }
 
+HloFlow HloBuilder::Reduce(HloFlow input, HloFlow initial,
+                           HloComputation function,
+                           const std::vector<int64_t>& reduction_dimensions) {
+  pblczero::XlaShapeProto target_shape;
+  target_shape.set_element_type(input->shape().element_type());
+  for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
+    if (std::find(reduction_dimensions.begin(), reduction_dimensions.end(),
+                  i) == reduction_dimensions.end()) {
+      target_shape.add_dimensions(input->shape().dimensions(i));
+    }
+  }
+  auto flow = MakeInstruction("reduce", target_shape, {input, initial});
+  *flow->mutable_dimensions() = {reduction_dimensions.begin(),
+                                 reduction_dimensions.end()};
+  flow->add_called_computation_ids(function.idx());
+  return flow;
+}
+
 HloFlow HloBuilder::Add(HloFlow lhs, HloFlow rhs) {
   return MakeElementwiseInstruction("add", lhs, rhs);
+}
+
+HloFlow HloBuilder::Divide(HloFlow lhs, HloFlow rhs) {
+  return MakeElementwiseInstruction("divide", lhs, rhs);
 }
 
 HloFlow HloBuilder::Maximum(HloFlow lhs, HloFlow rhs) {
@@ -284,31 +308,24 @@ void HloBuilder::AssignInstructionNames() {
   }
 }
 
-std::optional<size_t> HloBuilder::GetComputationId(
+std::optional<HloComputation> HloBuilder::GetComputationId(
     std::string_view name) const {
   auto iter = computation_names_.find(std::string(name));
   if (iter == computation_names_.end()) return std::nullopt;
-  return iter->second;
+  return HloComputation(iter->second);
 }
 
-size_t HloBuilder::AddComputation(std::string_view name,
-                                  const HloBuilder& builder) {
+HloComputation HloBuilder::AddComputation(std::string_view name,
+                                          const HloBuilder& builder) {
   std::unordered_map<size_t, size_t> id_map;
   if (computation_names_.count(std::string(name))) {
     throw Exception("Computation with name " + std::string(name) +
                     " already exists");
   }
-  // Insert root of the passed computation as current builder's dependent
-  // computation.
-  const size_t old_root_id = dependent_computations_.size();
-  {
-    id_map[0] = old_root_id;
-    computation_names_[std::string(name)] = old_root_id;
-    dependent_computations_.push_back(
-        MakeComputation(builder.entry_computation_, name, old_root_id));
-  }
 
-  // Insert all dependent computations of the passed computation.
+  const size_t computation_add_idx = dependent_computations_.size();
+
+  // Insert all dependent computations of the passed builder.
   for (const auto& [name, id] : builder.computation_names_) {
     auto iter = computation_names_.find(name);
     if (iter != computation_names_.end()) {
@@ -323,8 +340,18 @@ size_t HloBuilder::AddComputation(std::string_view name,
     dependent_computations_.back().set_id(new_id);
   }
 
+  // Insert passed builder's entry computation as current builder's dependent
+  // computation.
+  {
+    const size_t new_id = dependent_computations_.size();
+    computation_names_[std::string(name)] = new_id;
+    dependent_computations_.push_back(
+        MakeComputation(builder.entry_computation_, name, new_id));
+  }
+
   // Remap operand ids in the dependent computations.
-  for (size_t i = old_root_id; i < dependent_computations_.size(); ++i) {
+  for (size_t i = computation_add_idx; i < dependent_computations_.size();
+       ++i) {
     auto* comp = &dependent_computations_[i];
     for (auto& instr : *comp->mutable_instructions()) {
       for (int64_t& called_id : *instr.mutable_called_computation_ids()) {
@@ -333,22 +360,23 @@ size_t HloBuilder::AddComputation(std::string_view name,
     }
   }
 
-  return old_root_id;
+  return HloComputation(dependent_computations_.back().id());
 }
 
 pblczero::HloModuleProto HloBuilder::BuildModule(std::string_view name) {
   AssignInstructionNames();
   pblczero::HloModuleProto module;
+  for (auto& comp : dependent_computations_) {
+    *module.add_computations() = comp;
+  }
   module.set_name(name);
   module.set_entry_computation_name("main");
   const size_t entry_computation_id = dependent_computations_.size();
   module.set_entry_computation_id(entry_computation_id);
   *module.add_computations() =
       MakeComputation(entry_computation_, "main", entry_computation_id);
-  for (auto& comp : dependent_computations_) {
-    *module.add_computations() = comp;
-  }
-  *module.mutable_host_program_shape() = module.computations(0).program_shape();
+  *module.mutable_host_program_shape() =
+      module.computations().back().program_shape();
   return module;
 }
 

@@ -151,6 +151,8 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
+    onnx_op_to_builder_["GlobalAveragePool"] =
+        &Onnx2HloConverter::OpGlobalAveragePool;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -381,7 +383,53 @@ class Onnx2HloConverter {
     return {builder_.Dot(lhs, rhs, dn)};
   }
 
+  std::vector<HloFlow> OpGlobalAveragePool(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, {});
+    auto* lhs = GetInput(node, 0);
+    if (lhs->shape().dimensions_size() < 2) {
+      throw Exception("GlobalAveragePool requires at least 2D input");
+    }
+    HloFlow zero = MakeScalar(0, lhs->shape().element_type());
+    std::vector<int64_t> reduction_dims;
+    size_t num_elements = 1;
+    for (size_t i = 2; i < lhs->shape().dimensions_size(); ++i) {
+      reduction_dims.push_back(i);
+      num_elements *= lhs->shape().dimensions(i);
+    }
+    auto flow = builder_.Reduce(lhs, zero,
+                                MakeAddComputation(lhs->shape().element_type()),
+                                reduction_dims);
+    auto denominator = MakeScalar(num_elements, lhs->shape().element_type());
+    std::tie(flow, denominator) = EqualizeShape(flow, denominator);
+    flow = builder_.Divide(flow, denominator);
+    auto output_shape = flow->shape();
+    while (output_shape.dimensions_size() < lhs->shape().dimensions_size()) {
+      output_shape.add_dimensions(1);
+    }
+    return {builder_.Reshape(flow, output_shape)};
+  }
+
   /////////////////////////////////////////////////////////////////////////////
+  // Helper computations
+  /////////////////////////////////////////////////////////////////////////////
+
+  HloComputation MakeAddComputation(pblczero::XlaShapeProto::Type type) {
+    std::string name = "add_" + pblczero::XlaShapeProto::Type_Name(type);
+    if (auto id = builder_.GetComputationId(name)) return *id;
+    pblczero::XlaShapeProto shape = MakeScalarShape(type);
+    auto builder = HloBuilder();
+    builder.Add(builder.Parameter(MakeScalarShape(type)),
+                builder.Parameter(MakeScalarShape(type)));
+    return builder_.AddComputation(name, builder);
+  }
+
+  /////////////////////////////////////////////////////////////////////////////
+
+  pblczero::XlaShapeProto MakeScalarShape(pblczero::XlaShapeProto::Type type) {
+    pblczero::XlaShapeProto shape;
+    shape.set_element_type(type);
+    return shape;
+  }
 
   // Makes a scalar constant (usually 0 or 1) of a given type.
   template <typename T>
