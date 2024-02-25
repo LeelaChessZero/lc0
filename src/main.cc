@@ -25,17 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "benchmark/backendbench.h"
-#include "benchmark/benchmark.h"
+#include <iostream>
+
 #include "chess/board.h"
-#include "engine.h"
-#include "lc0ctl/describenet.h"
-#include "lc0ctl/leela2onnx.h"
-#include "lc0ctl/onnx2leela.h"
 #include "rescorer/rescoreloop.h"
-#include "selfplay/loop.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
+#include "utils/exception.h"
 #include "utils/logging.h"
 #include "version.h"
 
@@ -52,47 +48,13 @@ int main(int argc, const char** argv) {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
-    CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-    CommandLine::RegisterMode("selfplay", "Play games with itself");
-    CommandLine::RegisterMode("benchmark", "Quick benchmark");
-    CommandLine::RegisterMode("rescore",
-                              "Update data scores with tablebase support");
-    CommandLine::RegisterMode("backendbench",
-                              "Quick benchmark of backend only");
-    CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
-    CommandLine::RegisterMode("onnx2leela",
-                              "Convert ONNX network to Leela net.");
-    CommandLine::RegisterMode("describenet",
-                              "Shows details about the Leela network.");
+    CommandLine::RegisterMode(
+        "rescore", "(default) Update data scores with tablebase support");
 
-    if (CommandLine::ConsumeCommand("rescore")) {
-      RescoreLoop loop;
-      loop.RunLoop();
-    } else if (CommandLine::ConsumeCommand("selfplay")) {
-      // Selfplay mode.
-      SelfPlayLoop loop;
-      loop.RunLoop();
-    } else if (CommandLine::ConsumeCommand("benchmark")) {
-      // Benchmark mode.
-      Benchmark benchmark;
-      benchmark.Run();
-    } else if (CommandLine::ConsumeCommand("backendbench")) {
-      // Backend Benchmark mode.
-      BackendBenchmark benchmark;
-      benchmark.Run();
-    } else if (CommandLine::ConsumeCommand("leela2onnx")) {
-      lczero::ConvertLeelaToOnnx();
-    } else if (CommandLine::ConsumeCommand("onnx2leela")) {
-      lczero::ConvertOnnxToLeela();
-    } else if (CommandLine::ConsumeCommand("describenet")) {
-      lczero::DescribeNetworkCmd();
-    } else {
-      // Consuming optional "uci" mode.
-      CommandLine::ConsumeCommand("uci");
-      // Ordinary UCI engine.
-      EngineLoop loop;
-      loop.RunLoop();
-    }
+    // Consuming optional "rescore" mode.
+    CommandLine::ConsumeCommand("rescore");
+    RescoreLoop loop;
+    loop.RunLoop();
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;
     abort();
