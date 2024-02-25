@@ -80,45 +80,43 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
 
 // Converts an ONNX shape to an XLA shape, replacing the batch dimension with
 // the provided batch size.
-pblczero::XlaShapeProto OnnxShapeToXlaShape(const pblczero::TypeProto& type,
-                                            std::optional<size_t> batch_size) {
-  pblczero::XlaShapeProto shape;
-  shape.set_element_type(OnnxTypeToXlaType(type.tensor_type().elem_type()));
+HloTensorType OnnxShapeToHloTensorType(const pblczero::TypeProto& type,
+                                       std::optional<size_t> batch_size) {
+  HloTensorType shape;
+  shape.SetElementType(OnnxTypeToXlaType(type.tensor_type().elem_type()));
   for (const auto& dim : type.tensor_type().shape().dim()) {
     if (dim.has_dim_value()) {
-      shape.add_dimensions(dim.dim_value());
+      shape.AddDimension(dim.dim_value());
       continue;
     }
     if (dim.dim_param() == "batch") {
       if (batch_size.has_value()) {
-        shape.add_dimensions(batch_size.value());
+        shape.AddDimension(batch_size.value());
         continue;
       }
       throw Exception("Batch size not provided");
     }
     throw Exception("Unsupported dimension type " + type.OutputAsJson());
   }
-  ResetXlaShapeProtoLayout(&shape);
   return shape;
 }
 
 // Type is not a field of the ONNX tensor, so this function extracts the shape
 // and converts it (discarding the data).
-pblczero::XlaShapeProto OnnxTensorToXlaShape(
-    const pblczero::TensorProto& tensor) {
+HloTensorType OnnxTensorToHloTensorType(const pblczero::TensorProto& tensor) {
   pblczero::TypeProto type;
   type.mutable_tensor_type()->set_elem_type(tensor.data_type());
   for (const auto& dim : tensor.dims()) {
     type.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(dim);
   }
-  return OnnxShapeToXlaShape(type, std::nullopt);
+  return OnnxShapeToHloTensorType(type, std::nullopt);
 }
 
 // Converts an ONNX tensor to an XLA literal (which is a shape and a data).
 pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
     const pblczero::TensorProto& tensor) {
   pblczero::XlaLiteralProto literal;
-  *literal.mutable_shape() = OnnxTensorToXlaShape(tensor);
+  *literal.mutable_shape() = OnnxTensorToHloTensorType(tensor).ToProto();
 
   auto convert = [&](std::string_view src, /*std::vector<T>*/ auto* dst) {
     using value_type =
@@ -245,7 +243,7 @@ class Onnx2HloConverter {
     if (iter2->second->raw_data().size() <= options_.max_inline_constant_size) {
       flow = builder_.Constant(OnnxTensorToXlaLiteral(*iter2->second));
     } else {
-      const auto shape = OnnxTensorToXlaShape(*iter2->second);
+      const auto shape = OnnxTensorToHloTensorType(*iter2->second);
       flow = MakeParameter(name, shape, true);
     }
     onnx_name_to_hlo_flow_[name] = flow;
@@ -333,7 +331,7 @@ class Onnx2HloConverter {
     auto* conv = builder_.Convolution(input, kernel, window, dn);
 
     if (!bias) return {conv};
-    auto* flow = builder_.Broadcast(bias, conv->shape(), {1});
+    auto* flow = builder_.Broadcast(bias, HloTensorType(conv->shape()), {1});
     return {builder_.Add(conv, flow)};
   }
 
@@ -341,7 +339,7 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
     auto* zero = MakeScalar(0, input->shape().element_type());
-    zero = builder_.Broadcast(zero, input->shape(), {});
+    zero = builder_.Broadcast(zero, HloTensorType(input->shape()), {});
     return {builder_.Maximum(input, zero)};
   }
 
@@ -363,8 +361,7 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
     auto new_dims = GetConstantInput(node, 1)->s64s();
-    pblczero::XlaShapeProto new_shape;
-    new_shape.set_element_type(input->shape().element_type());
+    HloTensorType new_shape(input->shape().element_type());
     for (size_t i = 0; i < new_dims.size(); ++i) {
       auto dim = new_dims[i];
       if (dim == -1) dim = batch_size_;
@@ -374,9 +371,8 @@ class Onnx2HloConverter {
         }
         dim = input->shape().dimensions(i);
       }
-      new_shape.add_dimensions(dim);
+      new_shape.AddDimension(dim);
     }
-    ResetXlaShapeProtoLayout(&new_shape);
     return {builder_.Reshape(input, new_shape)};
   }
 
@@ -413,9 +409,9 @@ class Onnx2HloConverter {
     auto denominator = MakeScalar(num_elements, lhs->shape().element_type());
     std::tie(flow, denominator) = EqualizeShape(flow, denominator);
     flow = builder_.Divide(flow, denominator);
-    auto output_shape = flow->shape();
-    while (output_shape.dimensions_size() < lhs->shape().dimensions_size()) {
-      output_shape.add_dimensions(1);
+    HloTensorType output_shape(flow->shape());
+    while (output_shape.Rank() < lhs->shape().dimensions_size()) {
+      output_shape.AddDimension(1);
     }
     return {builder_.Reshape(flow, output_shape)};
   }
@@ -425,8 +421,7 @@ class Onnx2HloConverter {
     auto* input = GetInput(node, 0);
     auto squeeze_dims = GetConstantInput(node, 1, true);
 
-    pblczero::XlaShapeProto new_shape;
-    new_shape.set_element_type(input->shape().element_type());
+    HloTensorType new_shape(input->shape().element_type());
     if (squeeze_dims) {
       for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
         bool should_squeeze =
@@ -436,17 +431,16 @@ class Onnx2HloConverter {
                                  dim + input->shape().dimensions_size() == i;
                         });
         if (!should_squeeze) {
-          new_shape.add_dimensions(input->shape().dimensions(i));
+          new_shape.AddDimension(input->shape().dimensions(i));
         }
       }
     } else {
       for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
         if (input->shape().dimensions(i) != 1) {
-          new_shape.add_dimensions(input->shape().dimensions(i));
+          new_shape.AddDimension(input->shape().dimensions(i));
         }
       }
     }
-    ResetXlaShapeProtoLayout(&new_shape);
     return {builder_.Reshape(input, new_shape)};
   }
 
@@ -457,7 +451,6 @@ class Onnx2HloConverter {
   HloComputation MakeAddComputation(pblczero::XlaShapeProto::Type type) {
     std::string name = "add_" + pblczero::XlaShapeProto::Type_Name(type);
     if (auto id = builder_.GetComputationId(name)) return *id;
-    pblczero::XlaShapeProto shape = MakeScalarShape(type);
     auto builder = HloBuilder();
     builder.Add(builder.Parameter(MakeScalarShape(type)),
                 builder.Parameter(MakeScalarShape(type)));
@@ -466,10 +459,8 @@ class Onnx2HloConverter {
 
   /////////////////////////////////////////////////////////////////////////////
 
-  pblczero::XlaShapeProto MakeScalarShape(pblczero::XlaShapeProto::Type type) {
-    pblczero::XlaShapeProto shape;
-    shape.set_element_type(type);
-    return shape;
+  HloTensorType MakeScalarShape(pblczero::XlaShapeProto::Type type) {
+    return HloTensorType(type);
   }
 
   // Makes a scalar constant (usually 0 or 1) of a given type.
@@ -491,21 +482,21 @@ class Onnx2HloConverter {
   // Take two inputs and optionally performs numpy-style broadcasting to make
   // them equal shape.
   std::pair<HloFlow, HloFlow> EqualizeShape(HloFlow lhs, HloFlow rhs) {
-    const auto& lhs_dims = lhs->shape().dimensions();
-    const auto& rhs_dims = rhs->shape().dimensions();
+    HloTensorType lhs_shape(lhs->shape());
+    HloTensorType rhs_shape(rhs->shape());
 
-    const size_t num_dims = std::max(lhs_dims.size(), rhs_dims.size());
-    std::vector<int64_t> output_dims(num_dims);
+    const size_t num_dims = std::max(lhs_shape.Rank(), rhs_shape.Rank());
     std::vector<int64_t> lhs_broadcast_dims;
     std::vector<int64_t> rhs_broadcast_dims;
-    bool lhs_broadcast = lhs_dims.size() < num_dims;
-    bool rhs_broadcast = rhs_dims.size() < num_dims;
+    std::vector<int64_t> output_dims;
+    bool lhs_broadcast = lhs_shape.Rank() < num_dims;
+    bool rhs_broadcast = rhs_shape.Rank() < num_dims;
 
     for (size_t i = 0; i < num_dims; ++i) {
-      int lhs_idx = i + lhs_dims.size() - num_dims;
-      int rhs_idx = i + rhs_dims.size() - num_dims;
-      const auto lhs_dim = (lhs_idx < 0) ? 1 : lhs_dims[lhs_idx];
-      const auto rhs_dim = (rhs_idx < 0) ? 1 : rhs_dims[rhs_idx];
+      int lhs_idx = i + lhs_shape.Rank() - num_dims;
+      int rhs_idx = i + rhs_shape.Rank() - num_dims;
+      const auto lhs_dim = (lhs_idx < 0) ? 1 : lhs_shape.GetDimension(lhs_idx);
+      const auto rhs_dim = (rhs_idx < 0) ? 1 : rhs_shape.GetDimension(rhs_idx);
       if (lhs_dim != rhs_dim) {
         if (lhs_dim != 1 && rhs_dim != 1) {
           throw Exception("Incompatible shapes for broadcast");
@@ -515,13 +506,18 @@ class Onnx2HloConverter {
       }
       if (lhs_idx >= 0) lhs_broadcast_dims.push_back(i);
       if (rhs_idx >= 0) rhs_broadcast_dims.push_back(i);
+      output_dims.push_back(std::max(lhs_dim, rhs_dim));
     }
 
     if (lhs_broadcast) {
-      lhs = builder_.Broadcast(lhs, rhs->shape(), lhs_broadcast_dims);
+      lhs = builder_.Broadcast(
+          lhs, HloTensorType(lhs_shape.GetElementType(), output_dims),
+          lhs_broadcast_dims);
     }
     if (rhs_broadcast) {
-      rhs = builder_.Broadcast(rhs, lhs->shape(), rhs_broadcast_dims);
+      rhs = builder_.Broadcast(
+          rhs, HloTensorType(rhs_shape.GetElementType(), output_dims),
+          rhs_broadcast_dims);
     }
     return {lhs, rhs};
   }
@@ -532,19 +528,18 @@ class Onnx2HloConverter {
       auto ctx = HloContext(&builder_);
       ctx.SetOpType("input");
       ctx.SetOpName(input.name());
-      auto out_shape = OnnxShapeToXlaShape(input.type(), batch_size_);
+      auto out_shape = OnnxShapeToHloTensorType(input.type(), batch_size_);
       auto in_shape = out_shape;
-      in_shape.set_element_type(options_.io_type);
+      in_shape.SetElementType(options_.io_type);
       const auto* flow =
           MakeParameter(std::string(input.name()), in_shape, false);
-      flow = builder_.Convert(flow, out_shape.element_type());
+      flow = builder_.Convert(flow, out_shape.GetElementType());
       onnx_name_to_hlo_flow_[std::string(input.name())] = flow;
     }
   }
 
   // Makes a parameter instruction (for inputs or large constants).
-  HloFlow MakeParameter(const std::string& name,
-                        const pblczero::XlaShapeProto& shape,
+  HloFlow MakeParameter(const std::string& name, const HloType& shape,
                         bool is_constant) {
     auto* res = builder_.Parameter(shape);
     params_.push_back({name, res, is_constant});

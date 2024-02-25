@@ -34,6 +34,44 @@
 
 namespace lczero {
 
+HloTensorType::HloTensorType(const pblczero::XlaShapeProto& proto)
+    : type_(proto.element_type()), dimensions_(proto.dimensions()) {
+  switch (type_) {
+    case pblczero::XlaShapeProto::PRIMITIVE_TYPE_INVALID:
+    case pblczero::XlaShapeProto::TUPLE:
+    case pblczero::XlaShapeProto::OPAQUE_TYPE:
+    case pblczero::XlaShapeProto::TOKEN:
+      throw Exception("Invalid element type for tensor type");
+    default:
+      break;
+  }
+}
+
+pblczero::XlaShapeProto HloTensorType::ToProto() const {
+  pblczero::XlaShapeProto ret;
+  ret.set_element_type(type_);
+  *ret.mutable_dimensions() = dimensions_;
+  for (size_t i = 0; i < dimensions_.size(); ++i) {
+    ret.add_is_dynamic_dimension(false);
+    ret.mutable_layout()->add_minor_to_major(dimensions_.size() - i - 1);
+  }
+  return ret;
+}
+
+std::string HloTensorType::ToString() const {
+  std::string ret = pblczero::XlaShapeProto::Type_Name(type_);
+  ret += "[";
+  for (size_t i = 0; i < dimensions_.size(); ++i) {
+    ret += (i == 0 ? "" : ", ") + std::to_string(dimensions_[i]);
+  }
+  return ret + "]";
+}
+
+size_t HloTensorType::NumElements() const {
+  return std::accumulate(dimensions_.begin(), dimensions_.end(), 1,
+                         std::multiplies<int64_t>());
+}
+
 // Creates an instruction and populates required fields of the
 // HloInstructionProto: result shape, opcode and operands.
 // Appends the instruction to the entry computation.
@@ -69,8 +107,8 @@ pblczero::HloInstructionProto* HloBuilder::MakeElementwiseInstruction(
 // Instructions.
 ////////////////////////////////////////////////////////////////////////////
 
-HloFlow HloBuilder::Parameter(const pblczero::XlaShapeProto& shape) {
-  return MakeInstruction("parameter", shape, {});
+HloFlow HloBuilder::Parameter(const HloType& shape) {
+  return MakeInstruction("parameter", shape.ToProto(), {});
 }
 
 // Converts the element types while keeping the shape.
@@ -115,9 +153,9 @@ HloFlow HloBuilder::Convolution(
 }
 
 HloFlow HloBuilder::Broadcast(
-    HloFlow input, const pblczero::XlaShapeProto& target_shape,
+    HloFlow input, const HloTensorType& target_shape,
     const std::vector<int64_t>& broadcast_dimensions) {
-  auto flow = MakeInstruction("broadcast", target_shape, {input});
+  auto flow = MakeInstruction("broadcast", target_shape.ToProto(), {input});
   if (broadcast_dimensions.size() != input->shape().dimensions_size()) {
     throw Exception("Broadcast must have the same size as the input shape");
   }
@@ -125,7 +163,7 @@ HloFlow HloBuilder::Broadcast(
   for (size_t i = 0; i < broadcast_dimensions.size(); ++i) {
     auto dim = broadcast_dimensions[i];
     const auto& input_dim = input_shape.dimensions(i);
-    if (input_dim != 1 && input_dim != target_shape.dimensions(dim)) {
+    if (input_dim != 1 && input_dim != target_shape.GetDimension(dim)) {
       throw Exception(
           "Broadcast dimension must be 1 or equal to the target shape "
           "dimension");
@@ -138,16 +176,15 @@ HloFlow HloBuilder::Broadcast(
 HloFlow HloBuilder::Reduce(HloFlow input, HloFlow initial,
                            HloComputation function,
                            const std::vector<int64_t>& reduction_dimensions) {
-  pblczero::XlaShapeProto target_shape;
-  target_shape.set_element_type(input->shape().element_type());
+  HloTensorType target_shape(input->shape().element_type());
   for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
     if (std::find(reduction_dimensions.begin(), reduction_dimensions.end(),
                   i) == reduction_dimensions.end()) {
-      target_shape.add_dimensions(input->shape().dimensions(i));
+      target_shape.AddDimension(input->shape().dimensions(i));
     }
   }
-  ResetXlaShapeProtoLayout(&target_shape);
-  auto flow = MakeInstruction("reduce", target_shape, {input, initial});
+  auto flow =
+      MakeInstruction("reduce", target_shape.ToProto(), {input, initial});
   *flow->mutable_dimensions() = {reduction_dimensions.begin(),
                                  reduction_dimensions.end()};
   flow->add_called_computation_ids(function.idx());
@@ -166,50 +203,44 @@ HloFlow HloBuilder::Maximum(HloFlow lhs, HloFlow rhs) {
   return MakeElementwiseInstruction("maximum", lhs, rhs);
 }
 
-HloFlow HloBuilder::Reshape(HloFlow input,
-                            const pblczero::XlaShapeProto& new_shape) {
-  if (input->shape().element_type() != new_shape.element_type()) {
+HloFlow HloBuilder::Reshape(HloFlow input, const HloTensorType& new_shape) {
+  if (input->shape().element_type() != new_shape.GetElementType()) {
     throw Exception("Reshape must have the same element type");
   }
-  size_t old_elements = std::accumulate(input->shape().dimensions().begin(),
-                                        input->shape().dimensions().end(), 1,
-                                        std::multiplies<int64_t>());
-  size_t new_elements = std::accumulate(new_shape.dimensions().begin(),
-                                        new_shape.dimensions().end(), 1,
-                                        std::multiplies<int64_t>());
-  if (old_elements != new_elements) {
+  auto old_shape = HloTensorType(input->shape());
+  if (old_shape.NumElements() != new_shape.NumElements()) {
     throw Exception("Reshape must have the same number of elements: " +
-                    std::to_string(old_elements) + " vs " +
-                    std::to_string(new_elements));
+                    old_shape.ToString() + " vs " + new_shape.ToString());
   }
-  return MakeInstruction("reshape", new_shape, {input});
+  return MakeInstruction("reshape", new_shape.ToProto(), {input});
 }
 
 HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
                         const pblczero::XlaDotDimensionNumbers& dn) {
-  pblczero::XlaShapeProto new_shape;
-  if (lhs->shape().element_type() != rhs->shape().element_type()) {
+  HloTensorType lhs_shape(lhs->shape());
+  HloTensorType rhs_shape(rhs->shape());
+  HloTensorType new_shape(lhs_shape.GetElementType());
+  if (lhs_shape.GetElementType() != rhs_shape.GetElementType()) {
     throw Exception("Dot operands must have the same element type");
   }
-  new_shape.set_element_type(lhs->shape().element_type());
   if (dn.lhs_batch_dimensions_size() != dn.rhs_batch_dimensions_size()) {
     throw Exception("Dot batch dimensions must have the same size");
   }
   for (size_t i = 0; i < dn.lhs_batch_dimensions_size(); ++i) {
-    auto lhs_dim = lhs->shape().dimensions(dn.lhs_batch_dimensions(i));
-    auto rhs_dim = rhs->shape().dimensions(dn.rhs_batch_dimensions(i));
+    auto lhs_dim = lhs_shape.GetDimension(dn.lhs_batch_dimensions(i));
+    auto rhs_dim = rhs_shape.GetDimension(dn.rhs_batch_dimensions(i));
     if (lhs_dim != rhs_dim) {
       throw Exception("Dot batch dimensions must have the same size");
     }
-    new_shape.add_dimensions(lhs_dim);
+    new_shape.AddDimension(lhs_dim);
   }
   if (dn.lhs_contracting_dimensions_size() !=
       dn.rhs_contracting_dimensions_size()) {
     throw Exception("Dot contracting dimensions must have the same size");
   }
   for (size_t i = 0; i < dn.lhs_contracting_dimensions_size(); ++i) {
-    auto lhs_dim = lhs->shape().dimensions(dn.lhs_contracting_dimensions(i));
-    auto rhs_dim = rhs->shape().dimensions(dn.rhs_contracting_dimensions(i));
+    auto lhs_dim = lhs_shape.GetDimension(dn.lhs_contracting_dimensions(i));
+    auto rhs_dim = rhs_shape.GetDimension(dn.rhs_contracting_dimensions(i));
     if (lhs_dim != rhs_dim) {
       throw Exception("Dot contracting dimensions must have the same size");
     }
@@ -222,7 +253,7 @@ HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
         std::find(dn.lhs_contracting_dimensions().begin(),
                   dn.lhs_contracting_dimensions().end(),
                   i) == dn.lhs_contracting_dimensions().end()) {
-      new_shape.add_dimensions(lhs->shape().dimensions(i));
+      new_shape.AddDimension(lhs_shape.GetDimension(i));
     }
   }
   for (size_t i = 0; i < rhs->shape().dimensions_size(); ++i) {
@@ -232,11 +263,10 @@ HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
         std::find(dn.rhs_contracting_dimensions().begin(),
                   dn.rhs_contracting_dimensions().end(),
                   i) == dn.rhs_contracting_dimensions().end()) {
-      new_shape.add_dimensions(rhs->shape().dimensions(i));
+      new_shape.AddDimension(rhs_shape.GetDimension(i));
     }
   }
-  ResetXlaShapeProtoLayout(&new_shape);
-  auto flow = MakeInstruction("dot", new_shape, {lhs, rhs});
+  auto flow = MakeInstruction("dot", new_shape.ToProto(), {lhs, rhs});
   *flow->mutable_dot_dimension_numbers() = dn;
   return flow;
 }
@@ -379,17 +409,6 @@ pblczero::HloModuleProto HloBuilder::BuildModule(std::string_view name) {
   *module.mutable_host_program_shape() =
       module.computations().back().program_shape();
   return module;
-}
-
-void ResetXlaShapeProtoLayout(pblczero::XlaShapeProto* shape) {
-  shape->mutable_layout()->mutable_minor_to_major()->clear();
-  shape->mutable_is_dynamic_dimension()->clear();
-
-  for (size_t i = 0; i < shape->dimensions_size(); ++i) {
-    shape->add_is_dynamic_dimension(false);
-    shape->mutable_layout()->add_minor_to_major(shape->dimensions_size() - i -
-                                                1);
-  }
 }
 
 }  // namespace lczero

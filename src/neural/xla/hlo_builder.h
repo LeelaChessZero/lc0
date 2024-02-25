@@ -54,22 +54,58 @@ class HloComputation {
   friend class HloBuilder;
 };
 
+class HloType {
+ public:
+  virtual ~HloType() = default;
+  virtual pblczero::XlaShapeProto ToProto() const = 0;
+  virtual std::string ToString() const = 0;
+};
+
+class HloTensorType : public HloType {
+ public:
+  HloTensorType() = default;
+  HloTensorType(const HloTensorType&) = default;
+  explicit HloTensorType(pblczero::XlaShapeProto::Type el_type)
+      : type_(el_type) {}
+  explicit HloTensorType(pblczero::XlaShapeProto::Type el_type,
+                         const std::vector<int64_t>& dimensions)
+      : type_(el_type), dimensions_(dimensions) {}
+  explicit HloTensorType(const pblczero::XlaShapeProto&);
+  pblczero::XlaShapeProto ToProto() const override;
+  std::string ToString() const override;
+
+  void SetElementType(pblczero::XlaShapeProto::Type el_type) {
+    type_ = el_type;
+  }
+  pblczero::XlaShapeProto::Type GetElementType() const { return type_; }
+  void AddDimension(int64_t size) { dimensions_.push_back(size); }
+  const std::vector<int64_t>& GetDimensions() const { return dimensions_; }
+  int64_t GetDimension(size_t idx) const { return dimensions_[idx]; }
+  size_t Rank() const { return dimensions_.size(); }
+  size_t NumElements() const;
+
+ private:
+  pblczero::XlaShapeProto::Type type_ =
+      pblczero::XlaShapeProto::PRIMITIVE_TYPE_INVALID;
+  std::vector<int64_t> dimensions_;
+};
+
 // A builder class for constructing HloModuleProto.
 class HloBuilder {
  public:
   // HLO operations.
-  HloFlow Parameter(const pblczero::XlaShapeProto& shape);
+  HloFlow Parameter(const HloType& shape);
   HloFlow Constant(const pblczero::XlaLiteralProto& literal);
   HloFlow Convert(HloFlow input, const pblczero::XlaShapeProto::Type type);
   HloFlow Convolution(
       HloFlow input, HloFlow filter, const pblczero::XlaWindow& window,
       const pblczero::XlaConvolutionDimensionNumbers& dimension_numbers);
-  HloFlow Broadcast(HloFlow input, const pblczero::XlaShapeProto& target_shape,
+  HloFlow Broadcast(HloFlow input, const HloTensorType& target_shape,
                     const std::vector<int64_t>& broadcast_dimensions);
   HloFlow Add(HloFlow lhs, HloFlow rhs);
   HloFlow Divide(HloFlow lhs, HloFlow rhs);
   HloFlow Maximum(HloFlow lhs, HloFlow rhs);
-  HloFlow Reshape(HloFlow input, const pblczero::XlaShapeProto& new_shape);
+  HloFlow Reshape(HloFlow input, const HloTensorType& new_shape);
   HloFlow Dot(HloFlow lhs, HloFlow rhs,
               const pblczero::XlaDotDimensionNumbers& dimension_numbers);
   HloFlow Tanh(HloFlow input);
@@ -120,9 +156,5 @@ class HloContext {
   HloBuilder* builder_;
   pblczero::XlaOpMetadata saved_metadata_;
 };
-
-// A helper function to reset a shape of a layout. Marks all dimensions as
-// non-dynamic, and sets layout to major_to_minor.
-void ResetXlaShapeProtoLayout(pblczero::XlaShapeProto* shape);
 
 }  // namespace lczero
