@@ -175,7 +175,7 @@ class Onnx2HloConverter {
       if (!options_.debugging_allow_partial_result) throw;
       CERR << "Ignoring error in ONNX to HLO conversion: " << e.what();
     }
-    result.hlo_module = builder_.Build("onnx_model");
+    result.hlo_module = builder_.BuildModule("onnx_model");
     return result;
   }
 

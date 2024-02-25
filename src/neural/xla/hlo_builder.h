@@ -39,7 +39,7 @@ class HloContext;
 class HloBuilder;
 
 using HloFlow = const pblczero::HloInstructionProto*;
-using HloComputation =
+using InstructionList =
     std::vector<std::unique_ptr<pblczero::HloInstructionProto>>;
 
 // A builder class for constructing HloModuleProto.
@@ -62,8 +62,12 @@ class HloBuilder {
   HloFlow Tanh(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
 
+  // Insert a computation a computation into the module, under given name.
+  // Dependent computations are also merged into the module.
+  size_t AddComputation(std::string_view name, const HloBuilder& builder);
+  std::optional<size_t> GetComputationId(std::string_view name) const;
   // Build the HloModuleProto with a given name.
-  pblczero::HloModuleProto Build(std::string_view name);
+  pblczero::HloModuleProto BuildModule(std::string_view name);
 
  private:
   pblczero::HloInstructionProto* MakeInstruction(
@@ -73,9 +77,9 @@ class HloBuilder {
       std::string_view opcode, HloFlow lhs, HloFlow rhs);
   void AssignInstructionNames();
 
-  HloComputation entry_computation_;
-  std::unordered_map<std::string, pblczero::HloComputationProto>
-      dependent_computations_;
+  InstructionList entry_computation_;
+  std::unordered_map<std::string, size_t> computation_names_;
+  std::vector<pblczero::HloComputationProto> dependent_computations_;
   pblczero::XlaOpMetadata metadata_;
   friend class HloContext;
 };

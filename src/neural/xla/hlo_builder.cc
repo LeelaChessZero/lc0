@@ -235,7 +235,7 @@ namespace {
 // Normally it's not requiredm but in our case it's simpler.
 // Outputs shapes and instruction names of parameters.
 std::pair<std::vector<pblczero::XlaShapeProto>, std::vector<std::string>>
-AssignParameterIndices(const HloComputation& comp) {
+AssignParameterIndices(const InstructionList& comp) {
   std::vector<pblczero::XlaShapeProto> parameter_shapes;
   std::vector<std::string> parameter_names;
   size_t idx = 0;
@@ -251,7 +251,7 @@ AssignParameterIndices(const HloComputation& comp) {
 
 // Finalizes HloComputationProto (sets name, renumbers parameters, adds
 // computation shape and root instruction).
-pblczero::HloComputationProto MakeComputation(const HloComputation& comp,
+pblczero::HloComputationProto MakeComputation(const InstructionList& comp,
                                               std::string_view name,
                                               size_t id) {
   pblczero::HloComputationProto ret;
@@ -277,21 +277,75 @@ void HloBuilder::AssignInstructionNames() {
   for (auto& instr : entry_computation_) {
     instr->set_name("i" + std::to_string(idx++));
   }
-  for (auto& [_, comp] : dependent_computations_) {
+  for (auto& comp : dependent_computations_) {
     for (auto& instr : *comp.mutable_instructions()) {
       instr.set_name("i" + std::to_string(idx++));
     }
   }
 }
 
-pblczero::HloModuleProto HloBuilder::Build(std::string_view name) {
+std::optional<size_t> HloBuilder::GetComputationId(
+    std::string_view name) const {
+  auto iter = computation_names_.find(std::string(name));
+  if (iter == computation_names_.end()) return std::nullopt;
+  return iter->second;
+}
+
+size_t HloBuilder::AddComputation(std::string_view name,
+                                  const HloBuilder& builder) {
+  std::unordered_map<size_t, size_t> id_map;
+  if (computation_names_.count(std::string(name))) {
+    throw Exception("Computation with name " + std::string(name) +
+                    " already exists");
+  }
+  // Insert root of the passed computation as current builder's dependent
+  // computation.
+  const size_t old_root_id = dependent_computations_.size();
+  {
+    id_map[0] = old_root_id;
+    computation_names_[std::string(name)] = old_root_id;
+    dependent_computations_.push_back(
+        MakeComputation(builder.entry_computation_, name, old_root_id));
+  }
+
+  // Insert all dependent computations of the passed computation.
+  for (const auto& [name, id] : builder.computation_names_) {
+    auto iter = computation_names_.find(name);
+    if (iter != computation_names_.end()) {
+      // TODO check that the computation is the same.
+      id_map[id] = iter->second;
+      continue;
+    }
+    const size_t new_id = dependent_computations_.size();
+    id_map[id] = new_id;
+    computation_names_[name] = new_id;
+    dependent_computations_.push_back(builder.dependent_computations_[id]);
+    dependent_computations_.back().set_id(new_id);
+  }
+
+  // Remap operand ids in the dependent computations.
+  for (size_t i = old_root_id; i < dependent_computations_.size(); ++i) {
+    auto* comp = &dependent_computations_[i];
+    for (auto& instr : *comp->mutable_instructions()) {
+      for (int64_t& called_id : *instr.mutable_called_computation_ids()) {
+        called_id = id_map.at(called_id);
+      }
+    }
+  }
+
+  return old_root_id;
+}
+
+pblczero::HloModuleProto HloBuilder::BuildModule(std::string_view name) {
   AssignInstructionNames();
   pblczero::HloModuleProto module;
   module.set_name(name);
   module.set_entry_computation_name("main");
-  module.set_entry_computation_id(0);
-  *module.add_computations() = MakeComputation(entry_computation_, "main", 0);
-  for (auto& [name, comp] : dependent_computations_) {
+  const size_t entry_computation_id = dependent_computations_.size();
+  module.set_entry_computation_id(entry_computation_id);
+  *module.add_computations() =
+      MakeComputation(entry_computation_, "main", entry_computation_id);
+  for (auto& comp : dependent_computations_) {
     *module.add_computations() = comp;
   }
   *module.mutable_host_program_shape() = module.computations(0).program_shape();
