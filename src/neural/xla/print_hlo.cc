@@ -27,6 +27,8 @@
 
 #include "neural/xla/print_hlo.h"
 
+#include <cctype>
+
 namespace lczero {
 namespace {
 
