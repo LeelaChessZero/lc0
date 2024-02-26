@@ -161,17 +161,21 @@ class Onnx2HloConverter {
     BuildInitializerMapping(onnx_model);
     // Convert ONNX inputs to HLO parameters.
     BuildInputs(onnx_model.graph().input());
-    BuildGraph(onnx_model.graph());
     Onnx2HloResult result;
-    // Convert ONNX outputs to HLO result.
-    result.outputs = BuildOutputs(onnx_model.graph().output());
-    result.hlo_module = builder_.Build("onnx_model");
-    for (size_t i = 0; i < params_.size(); ++i) {
-      const auto& param = params_[i];
-      auto& dst = param.is_constant ? result.constants : result.inputs;
-      dst.push_back({i, param.name, param.flow->shape()});
+    try {
+      BuildGraph(onnx_model.graph());
+      // Convert ONNX outputs to HLO result.
+      result.outputs = BuildOutputs(onnx_model.graph().output());
+      for (size_t i = 0; i < params_.size(); ++i) {
+        const auto& param = params_[i];
+        auto& dst = param.is_constant ? result.constants : result.inputs;
+        dst.push_back({i, param.name, param.flow->shape()});
+      }
+    } catch (Exception& e) {
+      if (!options_.debugging_allow_partial_result) throw;
+      CERR << "Ignoring error in ONNX to HLO conversion: " << e.what();
     }
-    // PrettyPrintHlo(result.hlo_module, {}, std::cout);
+    result.hlo_module = builder_.Build("onnx_model");
     return result;
   }
 
