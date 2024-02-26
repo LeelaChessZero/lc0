@@ -733,9 +733,12 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                   tablebase->max_cardinality()) {
             MoveList to_boost;
             MoveList maybe_boost;
-            tablebase->root_probe(history.Last(),
-                                  history.DidRepeatSinceLastZeroingMove(), true,
-                                  &to_boost, &maybe_boost);
+            tablebase->root_probe(history.Last(), true, true, &to_boost);
+            if (history.DidRepeatSinceLastZeroingMove()) {
+              maybe_boost = to_boost;
+            } else {
+              tablebase->root_probe(history.Last(), false, true, &maybe_boost);
+            }
             // If there is only one move, dtm fixup is not helpful.
             // This code assumes all gaviota 3-4-5 tbs are present, as checked
             // at startup.
