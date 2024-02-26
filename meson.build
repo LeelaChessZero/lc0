@@ -620,6 +620,22 @@ if get_option('build_backends')
   endif
 
 
+  ## ~~~~~~~~
+  ## XLA
+  ## ~~~~~~~~
+  if get_option('xla')
+      files += [
+        'src/neural/xla/hlo_builder.cc',
+        'src/neural/xla/network_xla.cc',
+        'src/neural/xla/onnx2hlo.cc',
+        'src/neural/xla/print_hlo.cc',
+        'src/neural/xla/pjrt.cc',
+        'src/neural/xla/xla_runner.cc',
+      ]
+      files += gen_proto_src.process('src/neural/xla/hlo.proto',
+          preserve_path_from : meson.current_source_dir() + '/src/')
+      deps += cc.find_library('dl', required: false)
+  endif
 
 endif # if get_option('build_backends')
 

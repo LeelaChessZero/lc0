@@ -187,3 +187,8 @@ option('onnx_include',
        type: 'string',
        value: '',
        description: 'Paths to ONNX runtime includes')
+
+option('xla',
+       type: 'boolean',
+       value: false,
+       description: 'Enable XLA backend')
