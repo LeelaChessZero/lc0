@@ -694,6 +694,10 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+if not get_option('gpus_opt')
+  add_project_arguments('-DNO_GPUS_OPT', language : 'cpp')
+endif
+
 executable('lc0', 'src/main.cc',
        files, include_directories: includes, dependencies: deps, install: true)
 

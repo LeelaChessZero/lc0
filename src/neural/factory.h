@@ -74,6 +74,7 @@ class NetworkFactory {
   static const OptionId kWeightsId;
   static const OptionId kBackendId;
   static const OptionId kBackendOptionsId;
+  static const OptionId kGpusId;
 
   struct BackendConfiguration {
     BackendConfiguration() = default;
@@ -81,6 +82,7 @@ class NetworkFactory {
     std::string weights_path;
     std::string backend;
     std::string backend_options;
+    int gpus = 0;
     bool operator==(const BackendConfiguration& other) const;
     bool operator!=(const BackendConfiguration& other) const {
       return !operator==(other);

@@ -48,6 +48,8 @@ const OptionId NetworkFactory::kBackendOptionsId{
     "Parameters of neural network backend. "
     "Exact parameters differ per backend.",
     'o'};
+const OptionId NetworkFactory::kGpusId{
+    "gpus", "Gpus", "Number of gpus to use. Can be overriden by backend-opts."};
 const char* kAutoDiscover = "<autodiscover>";
 const char* kEmbed = "<built in>";
 
@@ -71,6 +73,9 @@ void NetworkFactory::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(NetworkFactory::kBackendOptionsId);
+#if !defined(NO_GPUS_OPT)
+  options->Add<IntOption>(NetworkFactory::kGpusId, 0, 8) = 1;
+#endif
 }
 
 void NetworkFactory::RegisterNetwork(const std::string& name,
@@ -101,20 +106,23 @@ NetworkFactory::BackendConfiguration::BackendConfiguration(
     const OptionsDict& options)
     : weights_path(options.Get<std::string>(kWeightsId)),
       backend(options.Get<std::string>(kBackendId)),
-      backend_options(options.Get<std::string>(kBackendOptionsId)) {}
+      backend_options(options.Get<std::string>(kBackendOptionsId)) {
+#if !defined(NO_GPUS_OPT)
+  gpus = options.Get<int>(kGpusId);
+#endif
+}
 
 bool NetworkFactory::BackendConfiguration::operator==(
     const BackendConfiguration& other) const {
   return (weights_path == other.weights_path && backend == other.backend &&
-          backend_options == other.backend_options);
+          backend_options == other.backend_options && gpus == other.gpus);
 }
 
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
   std::string net_path = options.Get<std::string>(kWeightsId);
-  const std::string backend = options.Get<std::string>(kBackendId);
-  const std::string backend_options =
-      options.Get<std::string>(kBackendOptionsId);
+  std::string backend = options.Get<std::string>(kBackendId);
+  std::string backend_options = options.Get<std::string>(kBackendOptionsId);
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
@@ -126,6 +134,31 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   std::optional<WeightsFile> weights;
   if (!net_path.empty()) {
     weights = LoadWeightsFromFile(net_path);
+  }
+
+  if (backend_options.empty()) {
+    if (backend == "check") {
+      throw Exception("The check backend needs backend options");
+    }
+#if !defined(NO_GPUS_OPT)
+    int gpus = options.Get<int>(kGpusId);
+    if (gpus == 1) {
+      backend_options = "gpu=0";
+    } else if (gpus > 1) {
+      std::string gpu_backend = backend;
+      if (backend == "multiplexing" || backend == "demux" ||
+          backend == "roundrobin") {
+        gpu_backend = NetworkFactory::Get()->GetBackendsList()[0];
+      } else {
+        backend = "multiplexing";
+      }
+      for (int i = 0; i < gpus; i++) {
+        backend_options += "(backend=" + gpu_backend + ",";
+        backend_options += "gpu=" + std::to_string(i) + "),";
+      }
+      backend_options.pop_back();
+    }
+#endif
   }
 
   OptionsDict network_options(&options);

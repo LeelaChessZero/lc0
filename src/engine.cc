@@ -105,6 +105,9 @@ void EngineController::PopulateOptions(OptionsParser* options) {
     options->HideAllOptions();
     options->UnhideOption(kThreadsOptionId);
     options->UnhideOption(NetworkFactory::kWeightsId);
+#if !defined(NO_GPUS_OPT)
+    options->UnhideOption(NetworkFactory::kGpusId);
+#endif
     options->UnhideOption(SearchParams::kContemptId);
     options->UnhideOption(SearchParams::kMultiPvId);
   }

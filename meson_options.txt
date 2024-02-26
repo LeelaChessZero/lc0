@@ -148,6 +148,11 @@ option('pext',
        value: false,
        description: 'Use the pext instruction')
 
+option('gpus_opt',
+       type: 'boolean',
+       value: true,
+       description: 'Add support for the --gpus command line option')
+
 option('neon',
        type: 'boolean',
        value: true,
