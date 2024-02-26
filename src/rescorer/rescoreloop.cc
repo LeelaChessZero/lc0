@@ -541,7 +541,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
               fileContents[i].probabilities[j] = rootNode->policy[j];
             }
           }
-          if (i <= fileContents.size()) {
+          if (i + 1 < fileContents.size()) {
             int transform = TransformForPosition(input_format, history);
             int idx = moves[i].as_nn_index(transform);
             if (rootNode->children[idx] == nullptr) {
