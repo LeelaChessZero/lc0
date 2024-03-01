@@ -234,11 +234,17 @@ SelfPlayTournament::SelfPlayTournament(
       limits.visits = dict.Get<int>(kVisitsId);
       limits.movetime = dict.Get<int>(kTimeMsId);
 
-      if (limits.playouts == -1 && limits.visits == -1 &&
-          limits.movetime == -1) {
+      if (kPolicyGamesSize == 0 && limits.playouts == -1 &&
+          limits.visits == -1 && limits.movetime == -1) {
         throw Exception(
             "Please define --visits, --playouts or --movetime, otherwise it's "
             "not clear when to stop search.");
+      } else if (kPolicyGamesSize > 0 &&
+                 (limits.playouts != -1 || limits.visits != -1 ||
+                  limits.movetime != -1)) {
+        throw Exception(
+            "Policy mode does not need --visits, --playouts or --movetime as "
+            "it has fixed 1 node behaviour.");
       }
     }
   }
