@@ -166,7 +166,7 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
       break;
     case pblczero::TensorProto::INT32:
       convert(tensor.raw_data(), literal.mutable_s32s());
-      break;    
+      break;
     default:
       throw Exception("Cannot convert ONNX tensor to XLA literal for type " +
                       pblczero::XlaShapeProto::Type_Name(
@@ -183,11 +183,13 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
+    onnx_op_to_builder_["Identity"] = &Onnx2HloConverter::OpIdentity;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
+    onnx_op_to_builder_["Softmax"] = &Onnx2HloConverter::OpSoftmax;
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
@@ -382,6 +384,33 @@ class Onnx2HloConverter {
     return {builder_.Maximum(input, zero)};
   }
 
+  std::vector<HloFlow> OpIdentity(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {});
+    return {GetInput(node, 0)};
+  } 
+
+  std::vector<HloFlow> OpSoftmax(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"axis"});
+    const auto axis = GetAttribute(node, "axis")->i();
+    auto* input = GetInput(node, 0);
+
+    // Normalize each batch by subtracting the maximum value.
+    auto* max = builder_.Reduce(
+        input,
+        MakeScalar(-std::numeric_limits<float>::infinity(),
+                   input->shape().element_type()),
+        MakeMaxComputation(input->shape().element_type()), {axis});
+    max = builder_.Broadcast(max, HloTensorType(input->shape()), {0});
+    input = builder_.Subtract(input, max);
+
+    auto exp = builder_.Exponential(input);
+    auto sum = builder_.Reduce(
+        exp, MakeScalar(0, input->shape().element_type()),
+        MakeAddComputation(input->shape().element_type()), {axis});
+    sum = builder_.Broadcast(sum, HloTensorType(input->shape()), {0});
+    return {builder_.Divide(exp, sum)};
+  }
+
   std::vector<HloFlow> OpGather(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {"axis"});
     auto* input = GetInput(node, 0);
@@ -565,6 +594,15 @@ class Onnx2HloConverter {
     auto builder = HloBuilder();
     builder.Add(builder.Parameter(MakeScalarShape(type)),
                 builder.Parameter(MakeScalarShape(type)));
+    return builder_.AddComputation(name, builder);
+  }
+
+  HloComputation MakeMaxComputation(pblczero::XlaShapeProto::Type type) {
+    std::string name = "max_" + pblczero::XlaShapeProto::Type_Name(type);
+    if (auto id = builder_.GetComputationId(name)) return *id;
+    auto builder = HloBuilder();
+    builder.Maximum(builder.Parameter(MakeScalarShape(type)),
+                    builder.Parameter(MakeScalarShape(type)));
     return builder_.AddComputation(name, builder);
   }
 
