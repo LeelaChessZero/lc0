@@ -246,10 +246,7 @@ class HloPrettyPrinter {
     } else {
       PrintDelimeted(
           instruction.operand_ids(),
-          [&](int64_t id) {
-            s_ << "%" << current_computation_->instructions(id).name();
-          },
-          ", ");
+          [&](int64_t id) { s_ << "%" << instructions_.at(id)->name(); }, ", ");
     }
     s_ << ")";
   }
@@ -348,9 +345,8 @@ class HloPrettyPrinter {
       PrintDelimeted(
           instruction.slice_dimensions(),
           [&](const auto& d) {
-            s_ << "[" << d.start() << ":";
-            if (d.has_stride()) s_ << d.stride() << ":";
-            s_ << d.limit() << "]";
+            s_ << "[" << d.start() << ":" << d.limit() << ":" << d.stride()
+               << "]";
           },
           ",", ", slice={", "}");
     }
@@ -405,7 +401,9 @@ class HloPrettyPrinter {
 
   // Prints the given computation.
   void PrintComputation(const pblczero::HloComputationProto& computation) {
-    current_computation_ = &computation;
+    for (const auto& instruction : computation.instructions()) {
+      instructions_[instruction.id()] = &instruction;
+    }
     s_ << computation.name() << " {\n";
     for (const auto& instruction : computation.instructions()) {
       s_ << "    ";
@@ -414,12 +412,13 @@ class HloPrettyPrinter {
       s_ << "\n";
     }
     s_ << "}\n";
-    current_computation_ = nullptr;
+    instructions_.clear();
   }
 
   PrettyPrintHloOptions options_;
   const pblczero::HloModuleProto* current_module_ = nullptr;
-  const pblczero::HloComputationProto* current_computation_ = nullptr;
+  std::unordered_map<size_t, const pblczero::HloInstructionProto*>
+      instructions_;
   std::ostream& s_;
 };
 

@@ -387,7 +387,7 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpIdentity(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {});
     return {GetInput(node, 0)};
-  } 
+  }
 
   std::vector<HloFlow> OpSoftmax(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {"axis"});
@@ -477,6 +477,7 @@ class Onnx2HloConverter {
       pblczero::HloInstructionProto::SliceDimensions slice;
       slice.set_start(start);
       slice.set_limit(end);
+      slice.set_stride(1);
       return slice;
     };
 

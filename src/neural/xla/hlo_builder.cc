@@ -85,7 +85,7 @@ pblczero::HloInstructionProto* HloBuilder::MakeInstruction(
   if (!metadata_.OutputAsString().empty()) {
     *ret->mutable_metadata() = metadata_;
   }
-  ret->set_id(entry_computation_.size());
+  ret->set_id(next_instruction_id_++);
   for (const auto& operand : operands) {
     ret->add_operand_ids(operand->id());
   }
@@ -363,10 +363,12 @@ HloFlow HloBuilder::Slice(
     const auto& dim = slice[i];
     if (dim.start() < 0 || dim.start() >= current_shape.GetDimension(i) ||
         dim.limit() < 0 || dim.limit() > current_shape.GetDimension(i) ||
-        dim.start() >= dim.limit()) {
+        dim.start() >= dim.limit() || dim.stride() != 1) {
       throw Exception("Invalid slice dimensions");
     }
-    new_shape.AddDimension(dim.limit() - dim.start());
+    // This / dim.stride() is pretty approximate, therefore there's a check
+    // above.
+    new_shape.AddDimension((dim.limit() - dim.start()) / dim.stride());
   }
   auto flow = MakeInstruction("slice", new_shape.ToProto(), {input});
   *flow->mutable_slice_dimensions() = slice;
@@ -456,7 +458,8 @@ HloComputation HloBuilder::AddComputation(std::string_view name,
     const size_t new_id = dependent_computations_.size();
     id_map[id] = new_id;
     computation_names_[name] = new_id;
-    dependent_computations_.push_back(builder.dependent_computations_[id]);
+    dependent_computations_.push_back(
+        ReassignInstructionIds(builder.dependent_computations_[id]));
     dependent_computations_.back().set_id(new_id);
   }
 
@@ -465,8 +468,8 @@ HloComputation HloBuilder::AddComputation(std::string_view name,
   {
     const size_t new_id = dependent_computations_.size();
     computation_names_[std::string(name)] = new_id;
-    dependent_computations_.push_back(
-        MakeComputation(builder.entry_computation_, name, new_id));
+    dependent_computations_.push_back(ReassignInstructionIds(
+        MakeComputation(builder.entry_computation_, name, new_id)));
   }
 
   // Remap operand ids in the dependent computations.
@@ -481,6 +484,22 @@ HloComputation HloBuilder::AddComputation(std::string_view name,
   }
 
   return HloComputation(dependent_computations_.back().id());
+}
+
+pblczero::HloComputationProto HloBuilder::ReassignInstructionIds(
+    pblczero::HloComputationProto computation) {
+  std::unordered_map<size_t, size_t> id_map;
+  for (auto& instr : *computation.mutable_instructions()) {
+    id_map[instr.id()] = next_instruction_id_++;
+  }
+  for (auto& instr : *computation.mutable_instructions()) {
+    instr.set_id(id_map.at(instr.id()));
+    for (int64_t& operand_id : *instr.mutable_operand_ids()) {
+      operand_id = id_map.at(operand_id);
+    }
+  }
+  computation.set_root_id(id_map.at(computation.root_id()));
+  return computation;
 }
 
 pblczero::HloModuleProto HloBuilder::BuildModule(std::string_view name) {

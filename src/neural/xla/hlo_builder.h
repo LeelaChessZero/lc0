@@ -119,8 +119,7 @@ class HloBuilder {
   HloFlow Tuple(const std::vector<HloFlow>& elements);
   HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
                  const std::vector<int64_t>& reduction_dimensions);
-  HloFlow Gather(HloFlow input, HloFlow indices,
-                 size_t index_vector_dim,
+  HloFlow Gather(HloFlow input, HloFlow indices, size_t index_vector_dim,
                  const std::vector<int64_t>& offset_dims,
                  const std::vector<int64_t>& slice_sizes,
                  const std::vector<int64_t>& collapsed_slice_dims,
@@ -141,7 +140,10 @@ class HloBuilder {
   pblczero::HloInstructionProto* MakeElementwiseInstruction(
       std::string_view opcode, HloFlow lhs, HloFlow rhs);
   void AssignInstructionNames();
+  pblczero::HloComputationProto ReassignInstructionIds(
+      pblczero::HloComputationProto computation);
 
+  size_t next_instruction_id_ = 0;
   InstructionList entry_computation_;
   std::unordered_map<std::string, size_t> computation_names_;
   std::vector<pblczero::HloComputationProto> dependent_computations_;
