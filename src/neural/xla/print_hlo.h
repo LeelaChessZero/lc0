@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2021 The LCZero Authors
+  Copyright (C) 2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,38 +25,20 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include <iostream>
 
-#include <fstream>
-#include <zlib.h>
+#include "neural/xla/hlo.pb.h"
 
 namespace lczero {
 
-struct V6TrainingData;
-
-class TrainingDataWriter {
- public:
-  // Creates a new file to write in data directory. It will has @game_id
-  // somewhere in the filename.
-  TrainingDataWriter(int game_id);
-  TrainingDataWriter(std::string filename);
-
-  ~TrainingDataWriter() {
-    if (fout_) Finalize();
-  }
-
-  // Writes a chunk.
-  void WriteChunk(const V6TrainingData& data);
-
-  // Flushes file and closes it.
-  void Finalize();
-
-  // Gets full filename of the file written.
-  std::string GetFileName() const { return filename_; }
-
- private:
-  std::string filename_;
-  gzFile fout_;
+struct PrettyPrintHloOptions {
+  // Print layout information (which is always major-to-minor now, e.g.
+  // {3,2,1,0}. Switched off by default as it's just noise.
+  bool print_layout = false;
 };
+
+// Pretty-prints the given HLO module to the given stream.
+void PrettyPrintHlo(const pblczero::HloModuleProto& module,
+                    PrettyPrintHloOptions options, std::ostream& stream);
 
 }  // namespace lczero

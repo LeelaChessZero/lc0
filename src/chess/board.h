@@ -60,7 +60,10 @@ class KingAttackInfo {
 class ChessBoard {
  public:
   ChessBoard() = default;
+  ChessBoard(const ChessBoard&) = default;
   ChessBoard(const std::string& fen) { SetFromFen(fen); }
+
+  ChessBoard& operator=(const ChessBoard&) = default;
 
   static const char* kStartposFen;
   static const ChessBoard kStartposBoard;

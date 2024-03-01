@@ -25,38 +25,38 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include <iostream>
 
-#include <fstream>
-#include <zlib.h>
+#include "chess/board.h"
+#include "rescorer/rescoreloop.h"
+#include "utils/commandline.h"
+#include "utils/esc_codes.h"
+#include "utils/exception.h"
+#include "utils/logging.h"
+#include "version.h"
 
-namespace lczero {
+int main(int argc, const char** argv) {
+  using namespace lczero;
+  EscCodes::Init();
+  LOGFILE << "Lc0 started.";
+  CERR << EscCodes::Bold() << EscCodes::Red() << "    _  _  _  _     _";
+  CERR << " _ |_ |_ |  | | _ |_  _";
+  CERR << "|  |_  _||_ |_||  |_ | " << EscCodes::Reset() << " v"
+       << GetVersionStr() << " built " << __DATE__;
 
-struct V6TrainingData;
+  try {
+    InitializeMagicBitboards();
 
-class TrainingDataWriter {
- public:
-  // Creates a new file to write in data directory. It will has @game_id
-  // somewhere in the filename.
-  TrainingDataWriter(int game_id);
-  TrainingDataWriter(std::string filename);
+    CommandLine::Init(argc, argv);
+    CommandLine::RegisterMode(
+        "rescore", "(default) Update data scores with tablebase support");
 
-  ~TrainingDataWriter() {
-    if (fout_) Finalize();
+    // Consuming optional "rescore" mode.
+    CommandLine::ConsumeCommand("rescore");
+    RescoreLoop loop;
+    loop.RunLoop();
+  } catch (std::exception& e) {
+    std::cerr << "Unhandled exception: " << e.what() << std::endl;
+    abort();
   }
-
-  // Writes a chunk.
-  void WriteChunk(const V6TrainingData& data);
-
-  // Flushes file and closes it.
-  void Finalize();
-
-  // Gets full filename of the file written.
-  std::string GetFileName() const { return filename_; }
-
- private:
-  std::string filename_;
-  gzFile fout_;
-};
-
-}  // namespace lczero
+}
