@@ -185,9 +185,16 @@ SelfPlayTournament::SelfPlayTournament(
     }
   }
   if (kPolicyGamesSize > 0 && openings_.size() == 0) {
-    std::cerr
-        << "Policy games are deterministic, needs opening book to be useful."
-        << std::endl;
+    throw Exception(
+        "Policy games are deterministic, needs opening book to be useful.");
+  }
+  if (kPolicyGamesSize > 0 &&
+      (kTotalGames == -1 ||
+       (kTotalGames > 0 &&
+        static_cast<size_t>(kTotalGames) > openings_.size() * 2))) {
+    throw Exception(
+        "Policy games are deterministic, you do not want to go through the "
+        "opening book more than once.");
   }
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
@@ -418,12 +425,7 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   openings.reserve(game_count / 2);
   size_t opening_basis = game_id / 2;
   for (size_t i = 0; i < game_count / 2; i++) {
-    // TODO: modulo?
-    if (opening_basis + i < openings_.size()) {
-      openings.push_back(openings_[opening_basis + i]);
-    } else {
-      openings.emplace_back();
-    }
+    openings.push_back(openings_[opening_basis + i % openings_.size()]);
   }
 
   PlayerOptions options[2];
@@ -531,15 +533,18 @@ void SelfPlayTournament::Worker() {
       if (kPolicyGamesSize) {
         if (!player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
           throw Exception(
-              "Policy multi games mode only supports mirrored openings..");
+              "Policy multi games mode only supports mirrored openings.");
+        }
+        if (kTotalGames > 0 && kTotalGames % 2 == 1) {
+          throw Exception(
+              "Policy multi games can't support mirrored with an odd number "
+              "of games.");
         }
         int to_take = 2 * kPolicyGamesSize;
         int max_take = 2 * kPolicyGamesSize;
         if (kTotalGames != -1) {
-          to_take = std::min(max_take, kTotalGames - games_count_);
-        } else if (openings_.size() > 0) {
-          to_take = std::min(
-              max_take, static_cast<int>(openings_.size()) * 2 - games_count_);
+          int cap = kTotalGames == -2 ? openings_.size() * 2 : kTotalGames;
+          to_take = std::min(max_take, cap - games_count_);
         }
         if (to_take <= 0) {
           break;
