@@ -118,7 +118,13 @@ class HloBuilder {
   HloFlow Tuple(const std::vector<HloFlow>& elements);
   HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
                  const std::vector<int64_t>& reduction_dimensions);
-
+  HloFlow Gather(HloFlow input, HloFlow indices,
+                 size_t index_vector_dim,
+                 const std::vector<int64_t>& offset_dims,
+                 const std::vector<int64_t>& slice_sizes,
+                 const std::vector<int64_t>& collapsed_slice_dims,
+                 const std::vector<int64_t>& start_index_map,
+                 bool indices_are_sorted, bool unique_indicies);
   // Insert a computation a computation into the module, under given name.
   // Dependent computations are also merged into the module.
   HloComputation AddComputation(std::string_view name,

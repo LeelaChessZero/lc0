@@ -28,6 +28,7 @@
 #include "neural/xla/onnx2hlo.h"
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "neural/onnx/onnx.pb.h"
 #include "neural/xla/hlo.pb.h"
@@ -75,6 +76,37 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
     default:
       throw Exception("Unsupported ONNX type " +
                       pblczero::TensorProto::DataType_Name(type));
+  }
+}
+
+std::pair<bool, bool> IsConstantSortedUnique(
+    const pblczero::XlaLiteralProto& literal) {
+  auto is_sorted_unique = [](const auto& values) {
+    using type =
+        typename std::remove_reference<decltype(values)>::type::value_type;
+    std::unordered_set<type> seen;
+    type prev = values[0];
+    bool sorted = true;
+    bool unique = true;
+    for (const auto& value : values) {
+      if (value < prev) {
+        sorted = false;
+      }
+      prev = value;
+      if (seen.insert(value).second == false) {
+        unique = false;
+      }
+    }
+    return std::make_pair(sorted, unique);
+  };
+
+  switch (literal.shape().element_type()) {
+    case pblczero::XlaShapeProto::S32:
+      return is_sorted_unique(literal.s32s());
+    default:
+      throw Exception(
+          "Unsupported type for constant input " +
+          pblczero::XlaShapeProto::Type_Name(literal.shape().element_type()));
   }
 }
 
@@ -132,6 +164,9 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
     case pblczero::TensorProto::INT64:
       convert(tensor.raw_data(), literal.mutable_s64s());
       break;
+    case pblczero::TensorProto::INT32:
+      convert(tensor.raw_data(), literal.mutable_s32s());
+      break;    
     default:
       throw Exception("Cannot convert ONNX tensor to XLA literal for type " +
                       pblczero::XlaShapeProto::Type_Name(
@@ -145,6 +180,7 @@ class Onnx2HloConverter {
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
@@ -344,6 +380,25 @@ class Onnx2HloConverter {
     auto* zero = MakeScalar(0, input->shape().element_type());
     zero = builder_.Broadcast(zero, HloTensorType(input->shape()), {});
     return {builder_.Maximum(input, zero)};
+  }
+
+  std::vector<HloFlow> OpGather(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {"axis"});
+    auto* input = GetInput(node, 0);
+    const auto axis = GetAttribute(node, "axis")->i();
+    bool is_sorted = false;
+    bool is_unique = false;
+    HloFlow indices;
+    if (auto indices_constant = GetConstantInput(node, 1)) {
+      std::tie(is_sorted, is_unique) =
+          IsConstantSortedUnique(*indices_constant);
+      indices = builder_.Constant(*indices_constant);
+    } else {
+      indices = GetInput(node, 1);
+    }
+    return {builder_.Gather(input, indices, axis, {0},
+                            {input->shape().dimensions(0), 1}, {1}, {1},
+                            is_sorted, is_unique)};
   }
 
   std::vector<HloFlow> OpSigmoid(const pblczero::NodeProto& node) {

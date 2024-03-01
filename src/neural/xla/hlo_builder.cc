@@ -219,6 +219,56 @@ HloFlow HloBuilder::Reshape(HloFlow input, const HloTensorType& new_shape) {
   return MakeInstruction("reshape", new_shape.ToProto(), {input});
 }
 
+HloFlow HloBuilder::Gather(HloFlow input, HloFlow indices,
+                           size_t index_vector_dim,
+                           const std::vector<int64_t>& offset_dims,
+                           const std::vector<int64_t>& slice_sizes,
+                           const std::vector<int64_t>& collapsed_slice_dims,
+                           const std::vector<int64_t>& start_index_map,
+                           bool indices_are_sorted, bool unique_indicies) {
+  HloTensorType input_shape(input->shape());
+  HloTensorType indices_shape(indices->shape());
+
+  if (indices_shape.Rank() == index_vector_dim) {
+    indices_shape.AddDimension(1);
+  }
+
+  HloTensorType output_shape(input_shape.GetElementType());
+  size_t output_rank = offset_dims.size() + indices_shape.Rank() - 1;
+  size_t offset_dims_idx = 0;
+  size_t gather_dims_idx = 0;
+
+  for (size_t i = 0; i < output_rank; ++i) {
+    const bool is_in_offset = std::find(offset_dims.begin(), offset_dims.end(),
+                                        i) != offset_dims.end();
+    if (is_in_offset) {
+      while (std::find(collapsed_slice_dims.begin(), collapsed_slice_dims.end(),
+                       offset_dims_idx) != collapsed_slice_dims.end()) {
+        offset_dims_idx++;
+      }
+      output_shape.AddDimension(slice_sizes[offset_dims_idx++]);
+    } else {
+      if (gather_dims_idx == index_vector_dim) ++gather_dims_idx;
+      output_shape.AddDimension(indices_shape.GetDimension(gather_dims_idx++));
+    }
+  }
+
+  auto flow =
+      MakeInstruction("gather", output_shape.ToProto(), {input, indices});
+  *flow->mutable_gather_slice_sizes() = slice_sizes;
+  *flow->mutable_gather_dimension_numbers()->mutable_offset_dims() =
+      offset_dims;
+  *flow->mutable_gather_dimension_numbers()->mutable_collapsed_slice_dims() =
+      collapsed_slice_dims;
+  *flow->mutable_gather_dimension_numbers()->mutable_start_index_map() =
+      start_index_map;
+  flow->mutable_gather_dimension_numbers()->set_index_vector_dim(
+      index_vector_dim);
+  flow->set_indices_are_sorted(indices_are_sorted);
+  flow->set_unique_indices(unique_indicies);
+  return flow;
+}
+
 HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
                         const pblczero::XlaDotDimensionNumbers& dn) {
   HloTensorType lhs_shape(lhs->shape());

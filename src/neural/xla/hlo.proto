@@ -253,6 +253,13 @@ message XlaDotDimensionNumbers {
   repeated int64 rhs_batch_dimensions = 4;
 }
 
+message XlaGatherDimensionNumbers {
+  repeated int64 offset_dims = 1;
+  repeated int64 collapsed_slice_dims = 2;
+  repeated int64 start_index_map = 3;
+  optional int64 index_vector_dim = 4;
+}
+
 message HloInstructionProto {
   required string name = 1;
   required string opcode = 2;
@@ -289,12 +296,17 @@ message HloInstructionProto {
   // broadcasting, including Reshape, Reduce, ReduceWindow, and Reverse.
   repeated int64 dimensions = 14;
 
+  // Gather dimension numbers.
+  optional XlaGatherDimensionNumbers gather_dimension_numbers = 33;
+  repeated int64 gather_slice_sizes = 34;
+  optional bool indices_are_sorted = 67;
+  optional bool unique_indices = 69;
+
   // The id of this instruction.
   required int64 id = 35;
 
   repeated int64 operand_ids = 36;
   repeated int64 called_computation_ids = 38;
-
 }
 
 message HloComputationProto {

@@ -68,6 +68,8 @@ std::string CEscape(std::string_view str) {
   return result + "\"";
 }
 
+const char* BoolValue(bool value) { return value ? "yah" : "nope"; }
+
 class HloPrettyPrinter {
  public:
   HloPrettyPrinter(PrettyPrintHloOptions options, std::ostream& stream)
@@ -281,6 +283,20 @@ class HloPrettyPrinter {
         ", rhs_contracting_dims={", "}");
   }
 
+  void PrintGatherDimensionNumbers(
+      const pblczero::XlaGatherDimensionNumbers& dn) {
+    PrintDelimeted(
+        dn.offset_dims(), [&](int64_t dim) { s_ << dim; }, ",",
+        ", offset_dims={", "}");
+    PrintDelimeted(
+        dn.collapsed_slice_dims(), [&](int64_t dim) { s_ << dim; }, ",",
+        ", collapsed_slice_dims={", "}");
+    PrintDelimeted(
+        dn.start_index_map(), [&](int64_t dim) { s_ << dim; }, ",",
+        ", start_index_map={", "}");
+    s_ << ", index_vector_dim=" << dn.index_vector_dim();
+  }
+
   // Prints the "dimension numbers" attribute (for convolution opcodes).
   void PrintConvolutionDimensionNumbers(
       const pblczero::XlaConvolutionDimensionNumbers& dn) {
@@ -337,6 +353,21 @@ class HloPrettyPrinter {
             s_ << d.limit() << "]";
           },
           ",", ", slice={", "}");
+    }
+    if (instruction.has_gather_dimension_numbers()) {
+      PrintGatherDimensionNumbers(instruction.gather_dimension_numbers());
+    }
+    if (instruction.gather_slice_sizes_size() > 0) {
+      PrintDelimeted(
+          instruction.gather_slice_sizes(), [&](int64_t size) { s_ << size; },
+          ",", ", slice_sizes={", "}");
+    }
+    if (instruction.has_indices_are_sorted()) {
+      s_ << ", indices_are_sorted="
+         << BoolValue(instruction.indices_are_sorted());
+    }
+    if (instruction.has_unique_indices()) {
+      s_ << ", unique_indices=" << BoolValue(instruction.unique_indices());
     }
   }
 
