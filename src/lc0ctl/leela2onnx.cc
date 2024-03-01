@@ -68,9 +68,9 @@ const OptionId kOnnxToPytorch{
     "onnx2pytorch", "",
     "Only use layer definitions supported by onnx2pytorch."};
 const OptionId kValueHead{
-    "value-head", "", "Choose value head to be used in the generated model."};
+    "value-head", "", "Value head to be used in the generated model."};
 const OptionId kPolicyHead{
-    "policy-head", "", "Choose policy head to be used in the generated model."};
+    "policy-head", "", "Policy head to be used in the generated model."};
 
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
