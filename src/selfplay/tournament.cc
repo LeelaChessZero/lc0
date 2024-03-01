@@ -547,7 +547,6 @@ void SelfPlayTournament::Worker() {
         game_id = games_count_;
         count = to_take;
         games_count_ += to_take;
-        PlayMultiGames(game_id, count);
       } else {
         bool mirrored = player_options_[0][0].Get<bool>(kOpeningsMirroredId);
         if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
@@ -555,8 +554,12 @@ void SelfPlayTournament::Worker() {
              games_count_ >=
                  static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
           break;
-        PlayOneGame(game_id);
       }
+    }
+    if (kPolicyGamesSize) {
+      PlayMultiGames(game_id, count);
+    } else {
+      PlayOneGame(game_id);
     }
   }
 }
