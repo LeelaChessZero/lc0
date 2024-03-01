@@ -192,3 +192,13 @@ option('xla',
        type: 'boolean',
        value: false,
        description: 'Enable XLA backend')
+
+option('lc0',
+       type: 'boolean',
+       value: true,
+       description: 'Build Lc0')
+
+option('rescorer',
+       type: 'boolean',
+       value: false,
+       description: 'Build rescorer')

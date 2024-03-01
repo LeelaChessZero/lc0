@@ -66,7 +66,7 @@ MoveList MakeRootMoveFilter(const MoveList& searchmoves,
   }
   if (syzygy_tb->root_probe(
           history.Last(), fast_play || history.DidRepeatSinceLastZeroingMove(),
-          &root_moves)) {
+          false, &root_moves)) {
     *dtz_success = true;
     tb_hits->fetch_add(1, std::memory_order_acq_rel);
   } else if (syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
