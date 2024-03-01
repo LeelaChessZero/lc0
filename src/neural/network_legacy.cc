@@ -41,8 +41,10 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
       ip_mult_gate(LayerAdapter(weights.ip_mult_gate()).as_vector()),
       ip_add_gate(LayerAdapter(weights.ip_add_gate()).as_vector()),
       ip_emb_ffn(weights.ip_emb_ffn()),
-      ip_emb_ffn_ln_gammas(LayerAdapter(weights.ip_emb_ffn_ln_gammas()).as_vector()),
-      ip_emb_ffn_ln_betas(LayerAdapter(weights.ip_emb_ffn_ln_betas()).as_vector()),
+      ip_emb_ffn_ln_gammas(
+          LayerAdapter(weights.ip_emb_ffn_ln_gammas()).as_vector()),
+      ip_emb_ffn_ln_betas(
+          LayerAdapter(weights.ip_emb_ffn_ln_betas()).as_vector()),
       moves_left(weights.moves_left()),
       ip_mov_w(LayerAdapter(weights.ip_mov_w()).as_vector()),
       ip_mov_b(LayerAdapter(weights.ip_mov_b()).as_vector()),
