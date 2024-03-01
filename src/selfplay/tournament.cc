@@ -528,32 +528,35 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      if (!player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
-        throw Exception("This binary only supports mirrored mode.");
+      if (kPolicyGamesSize) {
+        if (!player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
+          throw Exception(
+              "Policy multi games mode only supports mirrored openings..");
+        }
+        int to_take = 2 * kPolicyGamesSize;
+        int max_take = 2 * kPolicyGamesSize;
+        if (kTotalGames != -1) {
+          to_take = std::min(max_take, kTotalGames - games_count_);
+        } else if (openings_.size() > 0) {
+          to_take = std::min(
+              max_take, static_cast<int>(openings_.size()) * 2 - games_count_);
+        }
+        if (to_take <= 0) {
+          break;
+        }
+        game_id = games_count_;
+        count = to_take;
+        games_count_ += to_take;
+        PlayMultiGames(game_id, count);
+      } else {
+        bool mirrored = player_options_[0][0].Get<bool>(kOpeningsMirroredId);
+        if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
+            (kTotalGames == -2 && !openings_.empty() &&
+             games_count_ >=
+                 static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
+          break;
+        PlayOneGame(game_id);
       }
-      int to_take = 1;
-      int max_take = 1;
-      if (kPolicyGamesSize > 0) {
-        to_take = 2 * kPolicyGamesSize;
-        max_take = 2 * kPolicyGamesSize;
-      }
-      if (kTotalGames != -1) {
-        to_take = std::min(max_take, kTotalGames - games_count_);
-      } else if (openings_.size() > 0) {
-        to_take = std::min(
-            max_take, static_cast<int>(openings_.size()) * 2 - games_count_);
-      }
-      if (to_take <= 0) {
-        break;
-      }
-      game_id = games_count_;
-      count = to_take;
-      games_count_ += to_take;
-    }
-    if (kPolicyGamesSize) {
-      PlayMultiGames(game_id, count);
-    } else {
-      PlayOneGame(game_id);
     }
   }
 }
