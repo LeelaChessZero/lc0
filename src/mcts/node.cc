@@ -243,7 +243,7 @@ std::string Node::DebugString() const {
 
 bool Node::MakeSolid() {
   if (solid_children_ || num_edges_ == 0 || IsTerminal()) return false;
-  // Can only make solid if no immediate leaf childredn are in flight since we
+  // Can only make solid if no immediate leaf children are in flight since we
   // allow the search code to hold references to leaf nodes across locks.
   Node* old_child_to_check = child_.get();
   uint32_t total_in_flight = 0;

@@ -209,6 +209,14 @@ class CudaNetwork : public Network {
                  pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    // min_batch_size_ is chosen as 4 as it is common that for sizes less than
+    // 4 that there is no performance gain, but there is variance in the
+    // outputs, which means that there is extra non-determinism in some
+    // scenarios, including using the multiplexing backend.
+    min_batch_size_ =
+        options.GetOrDefault<int>("min_batch", std::min(4, max_batch_size_));
+    if (max_batch_size_ < min_batch_size_)
+      throw Exception("Max batch must not be less than min_batch setting.");
 
     showInfo();
 
@@ -223,6 +231,7 @@ class CudaNetwork : public Network {
     showDeviceInfo(deviceProp);
 
     l2_cache_size_ = deviceProp.l2CacheSize;
+    sm_count_ = deviceProp.multiProcessorCount;
 
     allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
 
@@ -636,6 +645,10 @@ class CudaNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
+    // It is safe to evaluate larger than the batchSize
+    // as all buffers are designed to handle max_batch_size
+    // and the extra invalid results are never read.
+    if (batchSize < min_batch_size_) batchSize = min_batch_size_;
     if (!multi_stream_) lock_.lock();
 
 #ifdef DEBUG_RAW_NPS
@@ -935,6 +948,13 @@ class CudaNetwork : public Network {
     return capabilities_;
   }
 
+  int GetMiniBatchSize() const override {
+    // Simple heuristic that seems to work for a wide range of GPUs.
+    return 2 * sm_count_;
+  }
+
+  int GetThreads() const override { return 1 + multi_stream_; }
+
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
@@ -972,7 +992,9 @@ class CudaNetwork : public Network {
   const NetworkCapabilities capabilities_;
   int gpu_id_;
   int l2_cache_size_;
+  int sm_count_;
   int max_batch_size_;
+  int min_batch_size_;
   bool wdl_;
   bool wdl_err_;
   bool moves_left_;

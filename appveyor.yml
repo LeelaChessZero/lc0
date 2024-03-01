@@ -109,8 +109,8 @@ cache:
   - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: IF %BLAS%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
-- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
+- cmd: IF %BLAS%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
+- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: SET BUILD_BLAS=%BLAS%
 - cmd: IF %OPENCL%==true SET BUILD_BLAS=true
 - cmd: IF %DX%==true SET BUILD_BLAS=true
