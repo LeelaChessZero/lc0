@@ -659,15 +659,35 @@ class Onnx2HloConverter {
       output_dims.push_back(std::max(lhs_dim, rhs_dim));
     }
 
+    auto do_broadcast = [&](HloFlow flow,
+                            const std::vector<int64_t>& broadcast_dims) {
+      HloTensorType shape(flow->shape());
+      HloTensorType intermediate_shape(shape.GetElementType());
+
+      std::vector<int64_t> new_broadcast_dims;
+      bool need_reshape = false;
+
+      for (size_t i = 0; i < shape.Rank(); ++i) {
+        if (shape.GetDimension(i) == 1) {
+          need_reshape = true;
+        } else {
+          new_broadcast_dims.push_back(broadcast_dims[i]);
+          intermediate_shape.AddDimension(output_dims[i]);
+        }
+      }
+      if (need_reshape) {
+        flow = builder_.Reshape(flow, intermediate_shape);
+      }
+      return builder_.Broadcast(
+          flow, HloTensorType(flow->shape().element_type(), output_dims),
+          new_broadcast_dims);
+    };
+
     if (lhs_broadcast) {
-      lhs = builder_.Broadcast(
-          lhs, HloTensorType(lhs_shape.GetElementType(), output_dims),
-          lhs_broadcast_dims);
+      lhs = do_broadcast(lhs, lhs_broadcast_dims);
     }
     if (rhs_broadcast) {
-      rhs = builder_.Broadcast(
-          rhs, HloTensorType(rhs_shape.GetElementType(), output_dims),
-          rhs_broadcast_dims);
+      rhs = do_broadcast(rhs, rhs_broadcast_dims);
     }
     return {lhs, rhs};
   }
