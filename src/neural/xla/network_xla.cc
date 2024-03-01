@@ -280,8 +280,8 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                      "./pjrt_c_api_gpu_plugin.so")
           .c_str(),
       device);
-  int max_batch_size = opts.GetOrDefault<int>("max_batch", 739);
-  int steps = opts.GetOrDefault<int>("steps", 13);
+  int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
+  int steps = opts.GetOrDefault<int>("steps", 16);
 
   XlaNetworkOptions options;
   if (w->has_onnx_model()) {
