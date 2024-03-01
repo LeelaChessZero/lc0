@@ -48,7 +48,8 @@ void TestValidRootExpectation(SyzygyTablebase* tablebase,
   board.SetFromFen(fen, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   MoveList allowed_moves_dtz;
-  tablebase->root_probe(history.Last(), has_repeated, &allowed_moves_dtz);
+  tablebase->root_probe(history.Last(), has_repeated, false,
+                        &allowed_moves_dtz);
   MoveList allowed_moves_wdl;
   tablebase->root_probe_wdl(history.Last(), &allowed_moves_wdl);
   for (auto move : valid_moves) {

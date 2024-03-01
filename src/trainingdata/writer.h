@@ -39,6 +39,7 @@ class TrainingDataWriter {
   // Creates a new file to write in data directory. It will has @game_id
   // somewhere in the filename.
   TrainingDataWriter(int game_id);
+  TrainingDataWriter(std::string filename);
 
   ~TrainingDataWriter() {
     if (fout_) Finalize();

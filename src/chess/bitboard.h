@@ -298,4 +298,7 @@ class Move {
 
 using MoveList = std::vector<Move>;
 
+// Gets the move from the NN move index, undoing the given transform.
+Move MoveFromNNIndex(int idx, int transform);
+
 }  // namespace lczero
