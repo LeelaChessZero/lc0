@@ -34,6 +34,7 @@
 #include "mcts/stoppers/factory.h"
 #include "neural/factory.h"
 #include "selfplay/game.h"
+#include "selfplay/multigame.h"
 #include "utils/optionsparser.h"
 #include "utils/random.h"
 
@@ -119,7 +120,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
-  options->Add<IntOption>(kPolicyModeSizeId, 0, 512) = 0;
+  options->Add<IntOption>(kPolicyModeSizeId, 0, 1024) = 0;
   options->Add<StringOption>(kTournamentResultsFileId) = "";
   options->Add<BoolOption>(kMoveThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
@@ -170,10 +171,10 @@ SelfPlayTournament::SelfPlayTournament(
       kParallelism(options.Get<int>(kParallelGamesId)),
       kTraining(options.Get<bool>(kTrainingId)),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId)),
-      kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)),
       kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId)),
       kTournamentResultsFile(
-          options.Get<std::string>(kTournamentResultsFileId)) {
+          options.Get<std::string>(kTournamentResultsFileId)),
+      kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)) {
   std::string book = options.Get<std::string>(kOpeningsFileId);
   if (!book.empty()) {
     PgnReader book_reader;
@@ -395,9 +396,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     // Update tournament stats.
     {
       Mutex::Lock lock(mutex_);
-      int result = game.GetGameResult() == GameResult::DRAW
-                       ? 1
-                       : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
+      int result = game.GetGameResult() == GameResult::DRAW        ? 1
+                   : game.GetGameResult() == GameResult::WHITE_WON ? 0
+                                                                   : 2;
       if (player1_black) result = 2 - result;
       ++tournament_info_.results[result][player1_black ? 1 : 0];
       tournament_info_.move_count_ += game.move_count_;
@@ -412,11 +413,11 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
 }
 
-void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
+void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   std::vector<Opening> openings;
   openings.reserve(game_count / 2);
-  int opening_basis = game_id / 2;
-  for (int i = 0; i < game_count / 2; i++) {
+  size_t opening_basis = game_id / 2;
+  for (size_t i = 0; i < game_count / 2; i++) {
     // TODO: modulo?
     if (opening_basis + i < openings_.size()) {
       openings.push_back(openings_[opening_basis + i]);
@@ -426,36 +427,55 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
   }
 
   PlayerOptions options[2];
-  // This doesn't support separate network configurations for white vs black games.
   options[0].network =
       networks_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
+          .get();
+  options[1].network =
+      networks_[NetworkFactory::BackendConfiguration(player_options_[1][1])]
+          .get();
+
+  std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game1_iter;
+  auto aborted = false;
+  {
+    Mutex::Lock lock(mutex_);
+    multigames_.emplace_front(std::make_unique<MultiSelfPlayGames>(
+        options[0], options[1], openings, syzygy_tb_.get()));
+    game1_iter = multigames_.begin();
+    aborted = abort_;
+  }
+  auto& game1 = **game1_iter;
+
+  // PLAY GAMEs!
+  if (!aborted) game1.Play();
+
+  options[0].network =
+      networks_[NetworkFactory::BackendConfiguration(player_options_[0][1])]
           .get();
   options[1].network =
       networks_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
           .get();
 
-  // TODO - add game to the abortable queue.
-  auto game1 = std::make_unique<PolicySelfPlayGames>(
-      options[0], options[1], openings, syzygy_tb_.get());
-
-  // PLAY GAMEs!
-  game1->Play();
-
-  auto game2 = std::make_unique<PolicySelfPlayGames>(
-      options[1], options[0], openings, syzygy_tb_.get());
-
+  std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game2_iter;
+  {
+    Mutex::Lock lock(mutex_);
+    multigames_.emplace_front(std::make_unique<MultiSelfPlayGames>(
+        options[1], options[0], openings, syzygy_tb_.get()));
+    game2_iter = multigames_.begin();
+    aborted = abort_;
+  }
+  auto& game2 = **game2_iter;
   // PLAY reverse GAMEs!
-  game2->Play();
+  if (!aborted) game2.Play();
 
-  for (int i = 0; i < openings.size(); i++) {
-    auto game1_res = game1->GetGameResult(i);
+  for (size_t i = 0; i < openings.size(); i++) {
+    auto game1_res = game1.GetGameResult(i);
     if (game1_res != GameResult::UNDECIDED) {
       // Game callback.
       GameInfo game_info;
       game_info.game_result = game1_res;
       game_info.is_black = false;
       game_info.game_id = game_id + 2 * i;
-      game_info.moves = game1->GetMoves(i);
+      game_info.moves = game1.GetMoves(i);
       game_info.initial_fen = openings[i].start_fen;
       game_info.play_start_ply = openings[i].moves.size();
       game_callback_(game_info);
@@ -463,21 +483,21 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
       // Update tournament stats.
       {
         Mutex::Lock lock(mutex_);
-        int result = game1_res == GameResult::DRAW
-                         ? 1
-                         : game1_res == GameResult::WHITE_WON ? 0 : 2;
+        int result = game1_res == GameResult::DRAW        ? 1
+                     : game1_res == GameResult::WHITE_WON ? 0
+                                                          : 2;
         ++tournament_info_.results[result][0];
         tournament_callback_(tournament_info_);
       }
     }
-    auto game2_res = game2->GetGameResult(i);
+    auto game2_res = game2.GetGameResult(i);
     if (game2_res != GameResult::UNDECIDED) {
       // Game callback.
       GameInfo game_info;
       game_info.game_result = game2_res;
       game_info.is_black = true;
       game_info.game_id = game_id + 2 * i + 1;
-      game_info.moves = game2->GetMoves(i);
+      game_info.moves = game2.GetMoves(i);
       game_info.initial_fen = openings[i].start_fen;
       game_info.play_start_ply = openings[i].moves.size();
       game_callback_(game_info);
@@ -485,13 +505,18 @@ void SelfPlayTournament::PlayMultiPolicyGames(int game_id, int game_count) {
       // Update tournament stats.
       {
         Mutex::Lock lock(mutex_);
-        int result = game2_res == GameResult::DRAW
-                         ? 1
-                         : game2_res == GameResult::WHITE_WON ? 2 : 0;
+        int result = game2_res == GameResult::DRAW        ? 1
+                     : game2_res == GameResult::WHITE_WON ? 2
+                                                          : 0;
         ++tournament_info_.results[result][1];
         tournament_callback_(tournament_info_);
       }
     }
+  }
+  {
+    Mutex::Lock lock(mutex_);
+    multigames_.erase(game2_iter);
+    multigames_.erase(game1_iter);
   }
 }
 
@@ -526,7 +551,7 @@ void SelfPlayTournament::Worker() {
       games_count_ += to_take;
     }
     if (kPolicyGamesSize) {
-      PlayMultiPolicyGames(game_id, count);
+      PlayMultiGames(game_id, count);
     } else {
       PlayOneGame(game_id);
     }
@@ -579,6 +604,8 @@ void SelfPlayTournament::Abort() {
   abort_ = true;
   for (auto& game : games_)
     if (game) game->Abort();
+  for (auto& game : multigames_)
+    if (game) game->Abort();
 }
 
 void SelfPlayTournament::Stop() {
@@ -594,8 +621,10 @@ SelfPlayTournament::~SelfPlayTournament() {
 void SelfPlayTournament::SaveResults() {
   if (kTournamentResultsFile.empty()) return;
   std::ofstream output(kTournamentResultsFile, std::ios_base::app);
-  auto p1name = player_options_[0][0].Get<std::string>(NetworkFactory::kWeightsId);
-  auto p2name = player_options_[1][0].Get<std::string>(NetworkFactory::kWeightsId);
+  auto p1name =
+      player_options_[0][0].Get<std::string>(NetworkFactory::kWeightsId);
+  auto p2name =
+      player_options_[1][0].Get<std::string>(NetworkFactory::kWeightsId);
 
   output << std::endl;
   output << "[White \"" << p1name << "\"]" << std::endl;

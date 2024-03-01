@@ -79,122 +79,6 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
 }
 
-PolicySelfPlayGames::PolicySelfPlayGames(PlayerOptions player1,
-                                         PlayerOptions player2,
-                                         const std::vector<Opening>& openings,
-                                         SyzygyTablebase* syzygy_tb)
-    : options_{player1, player2}, syzygy_tb_(syzygy_tb) {
-  trees_.reserve(openings.size());
-  for (auto opening : openings) {
-    trees_.push_back(std::make_shared<NodeTree>());
-    trees_.back()->ResetToPosition(opening.start_fen, {});
-    results_.push_back(GameResult::UNDECIDED);
-
-    for (Move m : opening.moves) {
-      trees_.back()->MakeMove(m);
-    }
-  }
-}
-
-void PolicySelfPlayGames::Abort() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  abort_ = true;
-}
-
-void PolicySelfPlayGames::Play() {
-  while (true) {
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      if (abort_) break;
-    }
-    bool all_done = true;
-    bool blacks_move = false;
-    for (int i = 0; i < trees_.size(); i++) {
-      const auto& tree = trees_[i];
-      if (results_[i] == GameResult::UNDECIDED) {
-        if (tree->GetPositionHistory().ComputeGameResult() !=
-            GameResult::UNDECIDED) {
-          results_[i] = tree->GetPositionHistory().ComputeGameResult();
-          continue;
-        }
-        if (syzygy_tb_ != nullptr) {
-          auto board = tree->GetPositionHistory().Last().GetBoard();
-          if (board.castlings().no_legal_castle() &&
-              (board.ours() | board.theirs()).count() <=
-                  syzygy_tb_->max_cardinality()) {
-            auto tb_side_black = (tree->GetPlyCount() % 2) == 1;
-            ProbeState state;
-            const WDLScore wdl = syzygy_tb_->probe_wdl(
-                tree->GetPositionHistory().Last(), &state);
-            // Only fail state means the WDL is wrong, probe_wdl may produce
-            // correct result with a stat other than OK.
-            if (state != FAIL) {
-              if (wdl == WDL_WIN) {
-                results_[i] = tb_side_black ? GameResult::BLACK_WON
-                                            : GameResult::WHITE_WON;
-              } else if (wdl == WDL_LOSS) {
-                results_[i] = tb_side_black ? GameResult::WHITE_WON
-                                            : GameResult::BLACK_WON;
-              } else {  // Cursed wins and blessed losses count as draws.
-                results_[i] = GameResult::DRAW;
-              }
-              continue;
-            }
-          }
-        }
-        if (all_done) {
-          all_done = false;
-          blacks_move = (tree->GetPlyCount() % 2) == 1;
-          // Don't break as we need to update result state for everything.
-        }
-      }
-    }
-    if (all_done) break;
-    const int idx = blacks_move ? 1 : 0;
-    auto comp = options_[idx].network->NewComputation();
-    std::vector<int> transforms;
-    transforms.reserve(trees_.size());
-    for (int i = 0; i < trees_.size(); i++) {
-      const auto& tree = trees_[i];
-      if (results_[i] != GameResult::UNDECIDED) {
-        continue;
-      }
-      if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
-      const auto& board = tree->GetPositionHistory().Last().GetBoard();
-      auto legal_moves = board.GenerateLegalMoves();
-      tree->GetCurrentHead()->CreateEdges(legal_moves);
-      int transform;
-      auto planes = EncodePositionForNN(
-          options_[idx].network->GetCapabilities().input_format,
-          tree->GetPositionHistory(), 8, FillEmptyHistory::FEN_ONLY,
-          &transform);
-      transforms[i] = transform;
-      comp->AddInput(std::move(planes));
-    }
-    comp->ComputeBlocking();
-    int comp_idx = 0;
-    for (int i = 0; i < trees_.size(); i++) {
-      const auto& tree = trees_[i];
-      if (results_[i] != GameResult::UNDECIDED) {
-        continue;
-      }
-      if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
-      Move best;
-      float max_p = std::numeric_limits<float>::lowest();
-      for (auto edge : tree->GetCurrentHead()->Edges()) {
-        float p =
-            comp->GetPVal(comp_idx, edge.GetMove().as_nn_index(transforms[i]));
-        if (p >= max_p) {
-          max_p = p;
-          best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
-        }
-      }
-      tree->MakeMove(best);
-      comp_idx++;
-    }
-  }
-}
-
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
                            bool shared_tree, const Opening& opening)
     : options_{white, black},
@@ -248,9 +132,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
   bool blacks_move = tree_[0]->IsBlackToMove();
 
   // If we are training, verify that input formats are consistent.
-  if (training &&
-      options_[0].network->GetCapabilities().input_format !=
-          options_[1].network->GetCapabilities().input_format) {
+  if (training && options_[0].network->GetCapabilities().input_format !=
+                      options_[1].network->GetCapabilities().input_format) {
     throw Exception("Can't mix networks with different input format!");
   }
   // Take syzygy tablebases from player1 options.
@@ -321,9 +204,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign &&
-        move_number >=
-            options_[idx].uci_options->Get<int>(kResignEarliestMoveId)) {
+    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
+                                            kResignEarliestMoveId)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
