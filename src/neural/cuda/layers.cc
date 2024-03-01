@@ -1677,7 +1677,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                             num_inputs, 0.0f, buffer1, num_outputs);
 
       LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense1_b,
-                          buffer1, smol_ln1_gammas, smol_ln1_betas, 1e-6,
+                          buffer1, smol_ln1_gammas, smol_ln1_betas, 1e-3,
                           0.0, /* alpha = 0 since we don't need skip */
                           smolgen_activation_, stream);
     }
@@ -1695,7 +1695,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                             num_inputs, 0.0f, buffer1, num_outputs);
 
       LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense2_b,
-                          buffer1, smol_ln2_gammas, smol_ln2_betas, 1e-6,
+                          buffer1, smol_ln2_gammas, smol_ln2_betas, 1e-3,
                           0.0, /* alpha = 0 since we don't need skip */
                           smolgen_activation_, stream);
     }

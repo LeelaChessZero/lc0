@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2021-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA, DML };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM };
 
 class OnnxNetwork;
 
@@ -82,8 +82,8 @@ class OnnxComputation : public NetworkComputation {
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider, int gpu, int threads, bool fp16,
-              int batch_size, int steps);
+              OnnxProvider provider, int gpu, int threads, int batch_size,
+              int steps);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
@@ -94,6 +94,11 @@ class OnnxNetwork : public Network {
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
+  int GetMiniBatchSize() const override {
+    return batch_size_ == -1 ? Network::GetMiniBatchSize()
+                             : batch_size_ * steps_;
+  }
+  bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;
@@ -155,7 +160,11 @@ void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
 }
 
 float AsFloat(float x) { return x; }
-float AsFloat(Ort::Float16_t x) { return FP16toFP32(x); }
+float AsFloat(Ort::Float16_t x) {
+  uint16_t tmp;
+  std::memcpy(&tmp, reinterpret_cast<uint16_t*>(&x), sizeof(uint16_t));
+  return FP16toFP32(tmp);
+}
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
@@ -188,6 +197,12 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
   return AsFloat(data[sample]);
 }
 
+void AsDataType(float x, float* y) { *y = x; }
+void AsDataType(float x, Ort::Float16_t* y) {
+  uint16_t tmp = FP32toFP16(x);
+  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
+}
+
 template <typename DataType>
 Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   input_tensor_data_.clear();
@@ -196,9 +211,8 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
   for (int i = start; i < end; i++) {
     for (const auto& plane : raw_input_[i]) {
-      DataType value = std::is_same<Ort::Float16_t, DataType>::value
-                           ? FP32toFP16(plane.value)
-                           : plane.value;
+      DataType value;
+      AsDataType(plane.value, &value);
       for (auto bit : IterateBits(plane.mask)) {
         *(iter + bit) = value;
       }
@@ -207,7 +221,7 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
   }
   for (int i = end; i < start + batch_size; i++) {
     for (int j = 0; j < kInputPlanes * 64; j++) {
-      *iter++ = 0;
+      *iter++ = DataType();
     }
   }
 
@@ -240,12 +254,22 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     int batch = batch_size * step;
 
     auto input_tensor = PrepareInputs(i, batch);
-    if (network_->provider_ == OnnxProvider::DML) network_->lock_.lock();
+    // The DML onnxruntime execution provider is documented as not supporting
+    // multi-threaded calls to Run on the same inference session. We found the
+    // same to be true for the ROCm execution provider (at least for CNNs).
+    // TODO: This may be a onnxruntime/ROCm bug, check onnxruntime 1.16 release.
+    if (network_->provider_ == OnnxProvider::DML ||
+        network_->provider_ == OnnxProvider::ROCM) {
+      network_->lock_.lock();
+    }
     network_->session_[step - 1].Run(
         {}, network_->inputs_cstr_.data(), &input_tensor, 1,
         network_->outputs_cstr_.data(), output_tensors_.data(),
         output_tensors_.size());
-    if (network_->provider_ == OnnxProvider::DML) network_->lock_.unlock();
+    if (network_->provider_ == OnnxProvider::DML ||
+        network_->provider_ == OnnxProvider::ROCM) {
+      network_->lock_.unlock();
+    }
     i += batch;
   }
 }
@@ -253,7 +277,6 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
                                int batch_size) {
   Ort::SessionOptions options;
-  OrtCUDAProviderOptions cuda_options;
   options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
@@ -276,10 +299,18 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
       throw Exception("ONNX backend internal error.");
 #endif
       break;
-    case OnnxProvider::CUDA:
+    case OnnxProvider::ROCM: {
+      OrtROCMProviderOptions rocm_options;
+      rocm_options.device_id = gpu;
+      options.AppendExecutionProvider_ROCM(rocm_options);
+      break;
+    }
+    case OnnxProvider::CUDA: {
+      OrtCUDAProviderOptions cuda_options;
       cuda_options.device_id = gpu;
       options.AppendExecutionProvider_CUDA(cuda_options);
       break;
+    }
     case OnnxProvider::CPU:
       auto status = OrtSessionOptionsAppendExecutionProvider_CPU(options, 0);
       if (status) {
@@ -295,13 +326,13 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
 }
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
-                         OnnxProvider provider, int gpu, int threads, bool fp16,
+                         OnnxProvider provider, int gpu, int threads,
                          int batch_size, int steps)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       steps_(steps),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()},
-      fp16_(fp16),
+      fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
       batch_size_(batch_size),
       provider_(provider) {
   // Sanity checks.
@@ -358,7 +389,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
       opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML ? 16 : -1);
 
   int steps =
-      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 8 : 1);
+      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 4 : 1);
 
   int threads =
       opts.GetOrDefault<int>("threads", kProvider == OnnxProvider::CPU ? 1 : 0);
@@ -370,62 +401,27 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
-                                         false, batch_size, steps);
+                                         batch_size, steps);
   } else {
-    if (w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-        w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-        w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
-      throw Exception("Network format " +
-                      pblczero::NetworkFormat::NetworkStructure_Name(
-                          w->format().network_format().network()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CLASSICAL &&
-        w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CONVOLUTION &&
-        w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_ATTENTION) {
-      throw Exception("Policy format " +
-                      pblczero::NetworkFormat::PolicyFormat_Name(
-                          w->format().network_format().policy()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().value() !=
-            pblczero::NetworkFormat::VALUE_CLASSICAL &&
-        w->format().network_format().value() !=
-            pblczero::NetworkFormat::VALUE_WDL) {
-      throw Exception("Value format " +
-                      pblczero::NetworkFormat::ValueFormat_Name(
-                          w->format().network_format().value()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().default_activation() !=
-            pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
-        w->format().network_format().default_activation() !=
-            pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
-      throw Exception("Default activation " +
-                      pblczero::NetworkFormat::DefaultActivation_Name(
-                          w->format().network_format().default_activation()) +
-                      " is not supported by the ONNX backend.");
-    }
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
+    converter_options.alternative_layer_normalization =
+        opts.GetOrDefault<bool>("alternative_layer_normalization", true);
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
-                                         threads, fp16, batch_size, steps);
+                                         threads, batch_size, steps);
   }
 }
 
+#ifdef USE_ROCM
+REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
+#endif
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
