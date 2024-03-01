@@ -206,8 +206,9 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
           WeightsToOnnxConverterOptions::DataType::kFloat32) {
     if (options_.opset >= 18) return builder->Mish(name, input);
     std::string flow;
-    if (options_.data_type_ ==
-        WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    if (options_.fix_bf16 &&
+        options_.data_type_ ==
+            WeightsToOnnxConverterOptions::DataType::kBFloat16) {
       flow = builder->Cast(name + "/to_float", input,
                            pblczero::TensorProto::FLOAT);
       flow = builder->Softplus(name + "/softplus", flow);
@@ -252,8 +253,9 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
     case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
     case ACTIVATION_SELU:
-      if (options_.data_type_ ==
-          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+      if (options_.fix_bf16 &&
+          options_.data_type_ ==
+              WeightsToOnnxConverterOptions::DataType::kBFloat16) {
         auto flow = builder->Cast(name + "/to_float", input,
                                   pblczero::TensorProto::FLOAT);
         flow = builder->Selu(name + "/selu", flow);
@@ -310,8 +312,9 @@ std::string Converter::MakeConvBlock(
     const std::string& name, const LegacyWeights::SEunit* seunit,
     const std::string& mixin, bool activation, int filters) {
   auto flow = input;
-  if (options_.data_type_ ==
-      WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+  if (options_.fix_bf16 &&
+      options_.data_type_ ==
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
     flow =
         builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
     flow = builder->Conv(
