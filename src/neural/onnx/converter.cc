@@ -91,6 +91,14 @@ class Converter {
                                 const std::string& input,
                                 const std::string& name);
 
+  std::string AttentionBodyMapEmbedding(OnnxBuilder* builder,
+                                        const std::string& input);
+
+  std::string AttentionBodyDenseEmbedding(OnnxBuilder* builder,
+                                          const std::string& input,
+                                          const MultiHeadWeights& weights,
+                                          int embedding_dense_size);
+
   std::string MakeAttentionBody(OnnxBuilder* builder, const std::string& input,
                                 const MultiHeadWeights& weights);
 
@@ -508,6 +516,120 @@ std::string Converter::MakeEncoderLayer(
   return flow;
 }
 
+std::string Converter::AttentionBodyMapEmbedding(OnnxBuilder* builder,
+                                                 const std::string& input) {
+  auto flow = input;
+  flow = builder->Reshape(
+      "/attn_body/reshape", flow,
+      builder->AddInitializer("/const/att_body_shape",
+                              Int64OnnxConst({-1, 64, 112}, {3})));
+  std::string pad;
+  if (options_.opset < 8) {
+    pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
+                         {INT_MAX, 1, 1});
+    pad =
+        builder->Reshape("/attn_body/pad/reshape_in", pad,
+                         builder->AddInitializer("/const/pad_in_shape",
+                                                 Int64OnnxConst({-1, 1}, {2})));
+    pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
+    std::unique_ptr<OnnxConst> one;
+    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
+      one = std::make_unique<Float16OnnxConst>(
+          Float16OnnxConst({FP32toFP16(1.0f)}, {1}));
+    } else {
+      one = std::make_unique<FloatOnnxConst>(FloatOnnxConst({1.0f}, {1}));
+    }
+    pad = builder->Add("/attn_body/pad/one_vec", pad, *one);
+    pad = builder->MatMul(
+        "/attn_body/pad/expand", pad,
+        builder->AddInitializer(
+            "/const/pos_encoding",
+            *GetWeghtsConverter(
+                std::vector<float>(kPosEncoding[0], kPosEncoding[0] + 64 * 64),
+                {1, 64 * 64})));
+
+    pad = builder->Reshape(
+        "/attn_body/pad/reshape_out", pad,
+        builder->AddInitializer("/const/pad_out_shape",
+                                Int64OnnxConst({-1, 64, 64}, {3})));
+  } else if (options_.batch_size < 0) {
+    pad = builder->Shape("/attn_body/shape", flow);
+    pad = builder->Slice("/attn_body/batch", pad, {0}, {1});
+    pad = builder->Concat(
+        "/attn_body/pos_encoding_shape",
+        {pad, builder->AddInitializer("/const/pos_encoding_shape",
+                                      Int64OnnxConst({64, 64}, {2}))},
+        0);
+    pad = builder->Expand(
+        "/attn_body/expand",
+        builder->AddInitializer(
+            "/const/pos_encoding",
+            *GetWeghtsConverter(
+                std::vector<float>(kPosEncoding[0], kPosEncoding[0] + 64 * 64),
+                {1, 64, 64})),
+        pad);
+  } else {
+    pad = builder->AddInitializer(
+        "/const/pos_encoding_shape",
+        Int64OnnxConst({options_.batch_size, 64, 64}, {3}));
+    pad = builder->Expand(
+        "/attn_body/expand",
+        builder->AddInitializer(
+            "/const/pos_encoding",
+            *GetWeghtsConverter(
+                std::vector<float>(kPosEncoding[0], kPosEncoding[0] + 64 * 64),
+                {1, 64, 64})),
+        pad);
+  }
+  flow = builder->Concat("/attn_body/padded_input", {flow, pad}, 2);
+  flow =
+      builder->Reshape("/attn_body/reshape2", flow,
+                       builder->AddInitializer("/const/att_body_shape2",
+                                               Int64OnnxConst({-1, 176}, {2})));
+  return flow;
+}
+
+std::string Converter::AttentionBodyDenseEmbedding(
+    OnnxBuilder* builder, const std::string& input,
+    const MultiHeadWeights& weights, int embedding_dense_size) {
+  auto flow = input;
+
+  flow = builder->Reshape(
+      "/attn_body/reshape", flow,
+      builder->AddInitializer("/const/att_body_shape",
+                              Int64OnnxConst({-1, 64, 112}, {3})));
+  auto pos_info = builder->Slice("/attn_body/embedding/slice", flow, {0, 0, 0},
+                                 {INT_MAX, 64, 12});
+  pos_info = builder->Reshape(
+      "/attn_body/embedding/reshape", pos_info,
+      builder->AddInitializer("/const/pos_info_shape",
+                              Int64OnnxConst({-1, 64 * 12}, {2})));
+
+  pos_info = builder->MatMul(
+      "/attn_body/embedding/preprocess/matmul", pos_info,
+      *GetWeghtsConverter(weights.ip_emb_preproc_w,
+                          {64 * 12, 64 * embedding_dense_size}, {1, 0}));
+  pos_info = builder->Add("/attn_body/embedding/preprocess/add", pos_info,
+                          *GetWeghtsConverter(weights.ip_emb_preproc_b,
+                                              {64 * embedding_dense_size}));
+
+  pos_info = builder->Reshape(
+      "/attn_body/embedding/preprocess/reshape", pos_info,
+      builder->AddInitializer(
+          "/const/pos_info_processed_shape",
+          Int64OnnxConst({-1, 64, embedding_dense_size}, {3})));
+
+  flow = builder->Concat("/attn_body/embedding/concat", {flow, pos_info}, 2);
+
+  flow = builder->Reshape(
+      "/attn_body/embedding/out/reshape", flow,
+      builder->AddInitializer(
+          "/const/embedding/out_shape",
+          Int64OnnxConst({-1, 112 + embedding_dense_size}, {2})));
+
+  return flow;
+}
+
 std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                          const std::string& input,
                                          const MultiHeadWeights& weights) {
@@ -530,108 +652,12 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                 Int64OnnxConst({-1, NumFilters()}, {2})));
     fist_stage_out_C = NumFilters();
   } else if (input_embedding == network_format::INPUT_EMBEDDING_PE_MAP) {
-    flow = builder->Reshape(
-        "/attn_body/reshape", flow,
-        builder->AddInitializer("/const/att_body_shape",
-                                Int64OnnxConst({-1, 64, 112}, {3})));
-    std::string pad;
-    if (options_.opset < 8) {
-      pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
-                           {INT_MAX, 1, 1});
-      pad = builder->Reshape(
-          "/attn_body/pad/reshape_in", pad,
-          builder->AddInitializer("/const/pad_in_shape",
-                                  Int64OnnxConst({-1, 1}, {2})));
-      pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
-      std::unique_ptr<OnnxConst> one;
-      if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-        one = std::make_unique<Float16OnnxConst>(
-            Float16OnnxConst({FP32toFP16(1.0f)}, {1}));
-      } else {
-        one = std::make_unique<FloatOnnxConst>(FloatOnnxConst({1.0f}, {1}));
-      }
-      pad = builder->Add("/attn_body/pad/one_vec", pad, *one);
-      pad = builder->MatMul(
-          "/attn_body/pad/expand", pad,
-          builder->AddInitializer(
-              "/const/pos_encoding",
-              *GetWeghtsConverter(std::vector<float>(kPosEncoding[0],
-                                                     kPosEncoding[0] + 64 * 64),
-                                  {1, 64 * 64})));
-
-      pad = builder->Reshape(
-          "/attn_body/pad/reshape_out", pad,
-          builder->AddInitializer("/const/pad_out_shape",
-                                  Int64OnnxConst({-1, 64, 64}, {3})));
-    } else if (options_.batch_size < 0) {
-      pad = builder->Shape("/attn_body/shape", flow);
-      pad = builder->Slice("/attn_body/batch", pad, {0}, {1});
-      pad = builder->Concat(
-          "/attn_body/pos_encoding_shape",
-          {pad, builder->AddInitializer("/const/pos_encoding_shape",
-                                        Int64OnnxConst({64, 64}, {2}))},
-          0);
-      pad = builder->Expand(
-          "/attn_body/expand",
-          builder->AddInitializer(
-              "/const/pos_encoding",
-              *GetWeghtsConverter(std::vector<float>(kPosEncoding[0],
-                                                     kPosEncoding[0] + 64 * 64),
-                                  {1, 64, 64})),
-          pad);
-    } else {
-      pad = builder->AddInitializer(
-          "/const/pos_encoding_shape",
-          Int64OnnxConst({options_.batch_size, 64, 64}, {3}));
-      pad = builder->Expand(
-          "/attn_body/expand",
-          builder->AddInitializer(
-              "/const/pos_encoding",
-              *GetWeghtsConverter(std::vector<float>(kPosEncoding[0],
-                                                     kPosEncoding[0] + 64 * 64),
-                                  {1, 64, 64})),
-          pad);
-    }
-    flow = builder->Concat("/attn_body/padded_input", {flow, pad}, 2);
-    flow = builder->Reshape(
-        "/attn_body/reshape2", flow,
-        builder->AddInitializer("/const/att_body_shape2",
-                                Int64OnnxConst({-1, 176}, {2})));
+    flow = AttentionBodyMapEmbedding(builder, flow);
     fist_stage_out_C = 176;
   } else if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
     int embedding_dense_size = weights.ip_emb_preproc_b.size() / 64;
-    flow = builder->Reshape(
-        "/attn_body/reshape", flow,
-        builder->AddInitializer("/const/att_body_shape",
-                                Int64OnnxConst({-1, 64, 112}, {3})));
-    auto pos_info = builder->Slice("/attn_body/embedding/slice", flow,
-                                   {0, 0, 0}, {INT_MAX, 64, 12});
-    pos_info = builder->Reshape(
-        "/attn_body/embedding/reshape", pos_info,
-        builder->AddInitializer("/const/pos_info_shape",
-                                Int64OnnxConst({-1, 64 * 12}, {2})));
-
-    pos_info = builder->MatMul(
-        "/attn_body/embedding/preprocess/matmul", pos_info,
-        *GetWeghtsConverter(weights.ip_emb_preproc_w,
-                            {64 * 12, 64 * embedding_dense_size}, {1, 0}));
-    pos_info = builder->Add("/attn_body/embedding/preprocess/add", pos_info,
-                            *GetWeghtsConverter(weights.ip_emb_preproc_b,
-                                                {64 * embedding_dense_size}));
-
-    pos_info = builder->Reshape(
-        "/attn_body/embedding/preprocess/reshape", pos_info,
-        builder->AddInitializer(
-            "/const/pos_info_processed_shape",
-            Int64OnnxConst({-1, 64, embedding_dense_size}, {3})));
-
-    flow = builder->Concat("/attn_body/embedding/concat", {flow, pos_info}, 2);
-
-    flow = builder->Reshape(
-        "/attn_body/embedding/out/reshape", flow,
-        builder->AddInitializer(
-            "/const/embedding/out_shape",
-            Int64OnnxConst({-1, 112 + embedding_dense_size}, {2})));
+    flow = AttentionBodyDenseEmbedding(builder, flow, weights,
+                                       embedding_dense_size);
     fist_stage_out_C = 112 + embedding_dense_size;
   } else {
     throw Exception("Attention body missing input embedding.");
