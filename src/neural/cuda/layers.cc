@@ -2069,16 +2069,16 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
   if (new_encoding_) {
     allocAndUpload<DataType>(&ip_emb_pre_w_, weights.ip_emb_preproc_w, scratch);
     allocAndUpload<DataType>(&ip_emb_pre_b_, weights.ip_emb_preproc_b, scratch);
-  
+
     allocAndUpload<DataType>(&ip_emb_ln_g_, weights.ip_emb_ln_gammas, scratch);
     allocAndUpload<DataType>(&ip_emb_ln_b_, weights.ip_emb_ln_betas, scratch);
-  
+
     allocAndUpload<DataType>(&ip_emb_ffn_d1_w_, weights.ip_emb_ffn.dense1_w, scratch);
     allocAndUpload<DataType>(&ip_emb_ffn_d1_b_, weights.ip_emb_ffn.dense1_b, scratch);
-  
+
     allocAndUpload<DataType>(&ip_emb_ffn_d2_w_, weights.ip_emb_ffn.dense2_w, scratch);
     allocAndUpload<DataType>(&ip_emb_ffn_d2_b_, weights.ip_emb_ffn.dense2_b, scratch);
-  
+
     allocAndUpload<DataType>(&ip_emb_ffn_ln_g_, weights.ip_emb_ffn_ln_gammas, scratch);
     allocAndUpload<DataType>(&ip_emb_ffn_ln_b_, weights.ip_emb_ffn_ln_betas, scratch);
 
@@ -2179,7 +2179,7 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
         (const DataType*)ip_emb_pre_w_, num_inputs,
         (const DataType*)scratch, num_inputs,
         0.0f, buffer1, num_outputs);
-      
+
       // addBiasBatched(buffer1, buffer1, ip_emb_pre_b_, batch, N, num_outputs,
       //               ACTIVATION_NONE, stream);
       const int size = num_outputs * N;

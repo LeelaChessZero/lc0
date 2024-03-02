@@ -53,11 +53,7 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
       ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
       ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()),
       smolgen_w(LayerAdapter(weights.smolgen_w()).as_vector()),
-      has_smolgen(weights.has_smolgen_w()),
-      policy_heads(weights.policy_heads()),
-      value_heads(weights.value_heads()) {
-  has_multiheads = weights.has_policy_heads() && weights.policy_heads().has_optimistic_st()
-                && weights.has_value_heads() && weights.value_heads().has_q();
+      has_smolgen(weights.has_smolgen_w()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
