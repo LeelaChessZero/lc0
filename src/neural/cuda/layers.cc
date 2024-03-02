@@ -1471,12 +1471,12 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_heads_, embedding_op_size_,
-        1.0f,  // using alpha = 1 for now (TODO: may change?)
-        nullptr, 0, max_batch_size,
-        ACTIVATION_SWISH,  // smolgen weights not implemented in policy encoder
-                           // heads yet.
-        act_, 1e-6);  // attentionbody nets don't have encoders, so using old
-                      // epsilon for backward compatibility.
+        1.0f,        // using alpha = 1 for now (TODO: may change?)
+        nullptr, 0,  // smolgen weights not implemented in
+                     // policy encoder heads yet.
+        max_batch_size, ACTIVATION_SWISH, act_,
+        1e-6);  // attentionbody nets don't have policy encoders, so using old
+                // epsilon for backward compatibility with T78.
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -2163,9 +2163,10 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
     */
     if (new_encoding_) {
       // New encoding is made of dense layer fed with input from a 12-channel
-      // slice of the input tensor. pos_info = flow[..., :12] pos_info_flat =
-      // tf.reshape(pos_info, [-1, 64 * 12]) pos_info_processed =
-      // tf.keras.layers.Dense(64*self.embedding_dense_sz,
+      // slice of the input tensor.
+      // pos_info = flow[..., :12]
+      // pos_info_flat = tf.reshape(pos_info, [-1, 64 * 12])
+      // pos_info_processed = tf.keras.layers.Dense(64*self.embedding_dense_sz,
       //                                            name=name+"embedding/preprocess")(pos_info_flat)
       const int num_outputs = 64 * embedding_dense_size_;
       const int num_inputs = 64 * 12;
