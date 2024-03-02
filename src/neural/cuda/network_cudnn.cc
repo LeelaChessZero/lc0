@@ -521,7 +521,7 @@ class CudnnNetwork : public Network {
 
     // Policy head.
     {
-      auto head = weights.policy_heads.at("vanilla");
+      MultiHeadWeights::PolicyHead& head = weights.policy_heads.at("vanilla");
       if (attn_policy_) {
         auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
             getLastLayer(), head, scratch_mem_, false, ACTIVATION_SELU,
@@ -573,7 +573,7 @@ class CudnnNetwork : public Network {
 
     // Value head.
     {
-      auto& head = weights.value_heads.at("winner");
+      MultiHeadWeights::ValueHead& head = weights.value_heads.at("winner");
       auto convVal = std::make_unique<ConvLayer<DataType>>(
           resi_last_, head.value.biases.size(), 8, 8, 1, kNumFilters,
           mish_net ? ACTIVATION_MISH : ACTIVATION_RELU, true);

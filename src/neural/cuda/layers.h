@@ -340,7 +340,7 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act);
+               ActivationFunction ffn_act, float default_eps);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -380,6 +380,7 @@ class EncoderBlock {
   int encoder_heads_;
 
   float alpha_;  // scale to apply to skip connection add
+  float default_eps_;  // value of epsilon where it wasn't specified in training
 
   const bool has_smolgen_;
   const ActivationFunction smolgen_activation_;

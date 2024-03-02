@@ -1472,8 +1472,11 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_heads_, embedding_op_size_,
         1.0f,  // using alpha = 1 for now (TODO: may change?)
-        nullptr, 0, max_batch_size, ACTIVATION_SWISH,
-        act_);  // smolgen weights not implemented in policy encoder heads yet.
+        nullptr, 0, max_batch_size,
+        ACTIVATION_SWISH,  // smolgen weights not implemented in policy encoder
+                           // heads yet.
+        act_, 1e-6);  // attentionbody nets don't have encoders, so using old
+                      // epsilon for backward compatibility.
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1483,14 +1486,15 @@ EncoderBlock<DataType>::EncoderBlock(
     const MultiHeadWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
-    ActivationFunction ffn_act)
+    ActivationFunction ffn_act, float default_eps)
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
       has_smolgen_(cpu_weights.mha.has_smolgen),
       smolgen_activation_(smolgen_act),
       ffn_activation_(ffn_act),
-      max_batch_size_(max_batch_size) {
+      max_batch_size_(max_batch_size),
+      default_eps_(default_eps) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1847,8 +1851,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // LN1: skip connection and layer normalization (also bias add of prev gemm)
   // buffer1/in_out_tensor -> scratch
   LayerNorm<DataType>(N * 64, embedding_op_size_, scratch, buffer1, mha_dense_b,
-                      in_out_tensor, ln1_gammas, ln1_betas, 1e-3, alpha_,
-                      ACTIVATION_NONE, stream);
+                      in_out_tensor, ln1_gammas, ln1_betas, default_eps_,
+                      alpha_, ACTIVATION_NONE, stream);
 
   // #FFN dense 1, scratch -> in_out_tensor
   {
@@ -1875,8 +1879,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
   // buffer1/scratch -> in_out_tensor
   LayerNorm<DataType>(N * 64, embedding_op_size_, in_out_tensor, buffer1,
-                      ffn_dense2_b, scratch, ln2_gammas, ln2_betas, 1e-3,
-                      alpha_, ACTIVATION_NONE, stream);
+                      ffn_dense2_b, scratch, ln2_gammas, ln2_betas,
+                      default_eps_, alpha_, ACTIVATION_NONE, stream);
 }
 
 template <typename DataType>
@@ -2105,7 +2109,8 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
-        activations_.smolgen_activation, activations_.ffn_activation);
+        activations_.smolgen_activation, activations_.ffn_activation,
+        new_encoding_ ? 1e-3 : 1e-6);
     encoder_weights_.emplace_back(pW);
   }
 }
