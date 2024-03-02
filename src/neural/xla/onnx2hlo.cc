@@ -198,6 +198,7 @@ class Onnx2HloConverter {
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
                          size_t minibatch_size) {
     batch_size_ = minibatch_size;
+    opset_version_ = onnx_model.opset_import(0).version();
     // Populate the set of ONNX initializers (constants), but not emit them for
     // now. They are emitted lazily so that they appear close to the first use.
     BuildInitializerMapping(onnx_model);
@@ -462,6 +463,9 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpSplit(const pblczero::NodeProto& node) {
+    if (opset_version_ < 13) {
+      throw Exception("Split not supported in ONNX opset < 13");
+    }
     CheckKnownAttributes(node, 1, {"axis", "num_outputs"});
     auto* input = GetInput(node, 0);
     const auto* axis_attr = GetAttribute(node, "axis");
@@ -558,6 +562,9 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpSqueeze(const pblczero::NodeProto& node) {
+    if (opset_version_ < 13) {
+      throw Exception("Squeeze not supported in ONNX opset < 13");
+    }
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
     auto squeeze_dims = GetConstantInput(node, 1, true);
@@ -755,6 +762,7 @@ class Onnx2HloConverter {
   std::unordered_map<std::string, const pblczero::TensorProto*> initializers_;
   HloBuilder builder_;
   size_t batch_size_ = 0;
+  size_t opset_version_ = 0;
   Onnx2HloOptions options_;
   struct Param {
     std::string name;
