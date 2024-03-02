@@ -565,6 +565,7 @@ void SelfPlayTournament::Worker() {
              games_count_ >=
                  static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
           break;
+        game_id = games_count_++;
       }
     }
     if (kPolicyGamesSize) {
