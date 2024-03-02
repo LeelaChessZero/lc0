@@ -101,55 +101,6 @@ struct BaseWeights {
     Vec ln2_betas;
   };
 
-  struct PolicyHead {
-    explicit PolicyHead(const pblczero::Weights::PolicyHead& policyhead);
-    // Policy head
-    // Extra convolution for AZ-style policy head
-    ConvBlock policy1;
-    ConvBlock policy;
-    Vec ip_pol_w;
-    Vec ip_pol_b;
-    // Extra params for attention policy head
-    Vec ip2_pol_w;
-    Vec ip2_pol_b;
-    Vec ip3_pol_w;
-    Vec ip3_pol_b;
-    Vec ip4_pol_w;
-    int pol_encoder_head_count;
-    std::vector<EncoderLayer> pol_encoder;
-  };
-
-  struct ValueHead {
-    explicit ValueHead(const pblczero::Weights::ValueHead& valuehead);
-    // Value head
-    ConvBlock value;
-    Vec ip_val_w;
-    Vec ip_val_b;
-    Vec ip1_val_w;
-    Vec ip1_val_b;
-    Vec ip2_val_w;
-    Vec ip2_val_b;
-    Vec ip_val_err_w;
-    Vec ip_val_err_b;
-  };
-
-  struct PolicyHeads {
-    explicit PolicyHeads(const pblczero::Weights::PolicyHeads& policyheads);
-    Vec ip_pol_w;
-    Vec ip_pol_b;
-    PolicyHead vanilla;
-    PolicyHead optimistic_st;
-    PolicyHead soft;
-    PolicyHead opponent;
-  };
-
-  struct ValueHeads {
-    explicit ValueHeads(const pblczero::Weights::ValueHeads& valueheads);
-    ValueHead winner;
-    ValueHead q;
-    ValueHead st;
-  };
-
   // Input convnet.
   ConvBlock input;
 
