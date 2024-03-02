@@ -333,6 +333,10 @@ HloFlow HloBuilder::Tanh(HloFlow input) {
   return MakeInstruction("tanh", input->shape(), {input});
 }
 
+HloFlow HloBuilder::LogPlusOne(HloFlow input) {
+  return MakeInstruction("log-plus-one", input->shape(), {input});
+}
+
 HloFlow HloBuilder::Negate(HloFlow input) {
   return MakeInstruction("negate", input->shape(), {input});
 }

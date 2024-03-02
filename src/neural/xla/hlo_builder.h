@@ -114,6 +114,7 @@ class HloBuilder {
       HloFlow input,
       const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice);
   HloFlow Tanh(HloFlow input);
+  HloFlow LogPlusOne(HloFlow input);
   HloFlow Negate(HloFlow input);
   HloFlow Exponential(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
