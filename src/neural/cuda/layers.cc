@@ -39,7 +39,7 @@
 
 namespace lczero {
 
-#if 1
+#if 0
 // debug code to dump allocation in GPU memory
 template <typename T>
 void dumpTensor(T* memory, int elements, const char* message, bool only_summary = false) {
@@ -1421,45 +1421,34 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
 
 template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(
-    BaseLayer<DataType>* ip, const LegacyWeights& weights, void* scratch,
-    bool attention_body, ActivationFunction act, std::string policy_head, int max_batch_size)
+    BaseLayer<DataType>* ip, const MultiHeadWeights::PolicyHead& weights,
+    void* scratch, bool attention_body, ActivationFunction act,
+    int max_batch_size)
     : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
       attention_body_(attention_body),
       // Old networks without attention body (e.g. T79) use hardcoded SELU
       // activations.
       act_(attention_body ? act : ACTIVATION_SELU) {
-  // Selected head to construct, use vanilla as default head.
-  LegacyWeights::PolicyHead head = weights.policy_heads.vanilla;
-  if (policy_head == "optimistic") {
-      head = weights.policy_heads.optimistic_st;
-  }
-  else if (policy_head == "soft") {
-      head = weights.policy_heads.soft;
-  }
-  else if (policy_head == "opponent") {
-      head = weights.policy_heads.opponent;
-  }
+  embedding_op_size_ = weights.ip_pol_b.size();
+  wq_op_size_ = weights.ip2_pol_b.size();
+  wk_op_size_ = weights.ip3_pol_b.size();
 
-  embedding_op_size_ = weights.policy_heads.ip_pol_b.size();
-  wq_op_size_ = head.ip2_pol_b.size();
-  wk_op_size_ = head.ip3_pol_b.size();
-
-  encoder_heads_ = head.pol_encoder_head_count;
+  encoder_heads_ = weights.pol_encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
-  allocAndUpload<DataType>(&ip_pol_w_, weights.policy_heads.ip_pol_w, scratch);
-  allocAndUpload<DataType>(&ip_pol_b_, weights.policy_heads.ip_pol_b, scratch);
+  allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
+  allocAndUpload<DataType>(&ip_pol_b_, weights.ip_pol_b, scratch);
 
-  allocAndUpload<DataType>(&ip2_pol_w_, head.ip2_pol_w, scratch);
-  allocAndUpload<DataType>(&ip2_pol_b_, head.ip2_pol_b, scratch);
+  allocAndUpload<DataType>(&ip2_pol_w_, weights.ip2_pol_w, scratch);
+  allocAndUpload<DataType>(&ip2_pol_b_, weights.ip2_pol_b, scratch);
 
-  allocAndUpload<DataType>(&ip3_pol_w_, head.ip3_pol_w, scratch);
-  allocAndUpload<DataType>(&ip3_pol_b_, head.ip3_pol_b, scratch);
+  allocAndUpload<DataType>(&ip3_pol_w_, weights.ip3_pol_w, scratch);
+  allocAndUpload<DataType>(&ip3_pol_b_, weights.ip3_pol_b, scratch);
 
   // big allocation to hold wq and wk weights one after the other
   {
-    size_t elements = head.ip2_pol_w.size();
-    assert(elements == head.ip3_pol_w.size());
+    size_t elements = weights.ip2_pol_w.size();
+    assert(elements == weights.ip3_pol_w.size());
 
     size_t size = elements * sizeof(DataType) * 2;
     ReportCUDAErrors(cudaMalloc(&wqk_w_, size));
@@ -1468,7 +1457,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
     ReportCUDAErrors(cudaMemcpy(wqk_w_ + elements, ip3_pol_w_, size / 2,
                                 cudaMemcpyDeviceToDevice));
 
-    elements = head.ip2_pol_b.size();
+    elements = weights.ip2_pol_b.size();
     size = elements * sizeof(DataType) * 2;
     ReportCUDAErrors(cudaMalloc(&wqk_b_, size));
     ReportCUDAErrors(
@@ -1477,9 +1466,9 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
                                 cudaMemcpyDeviceToDevice));
   }
 
-  allocAndUpload<DataType>(&ip4_pol_w_, head.ip4_pol_w, scratch);
+  allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
 
-  for (const auto& enc : head.pol_encoder) {
+  for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_heads_, embedding_op_size_,
         1.0f,  // using alpha = 1 for now (TODO: may change?)
@@ -1491,7 +1480,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
 
 template <typename DataType>
 EncoderBlock<DataType>::EncoderBlock(
-    const LegacyWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
+    const MultiHeadWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
     ActivationFunction ffn_act)
@@ -2049,7 +2038,7 @@ void EmbeddingLayer<DataType>::Eval(
 }
 
 template <typename DataType>
-AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
+AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                                        void* scratch, Activations activations,
                                        int num_res_blocks, int input_c,
                                        int max_batch_size, bool new_encoding)
@@ -2294,14 +2283,14 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
 
 template <typename DataType>
 ValueHead<DataType>::ValueHead(BaseLayer<DataType>* ip,
-                               const LegacyWeights::ValueHead& weights,
-                               void* scratch, bool attention_body,
-                               bool wdl, bool wdl_err,
-                               ActivationFunction act,
+                               const MultiHeadWeights::ValueHead& weights,
+                               void* scratch, bool attention_body, bool wdl,
+                               bool wdl_err, ActivationFunction act,
                                int max_batch_size, bool use_gemm_ex)
     : BaseLayer<DataType>(weights.ip_val_b.size(), 8, 8, ip),
       attention_body_(attention_body),
-      embedding_size_(attention_body ? weights.ip_val_b.size() : weights.value.biases.size()),
+      embedding_size_(attention_body ? weights.ip_val_b.size()
+                                     : weights.value.biases.size()),
       value_hidden_size_(weights.ip1_val_b.size()),
       act_(act),
       wdl_(wdl),
