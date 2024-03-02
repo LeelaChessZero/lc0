@@ -431,7 +431,7 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   openings.reserve(game_count / 2);
   size_t opening_basis = game_id / 2;
   for (size_t i = 0; i < game_count / 2; i++) {
-    openings.push_back(openings_[opening_basis + i % openings_.size()]);
+    openings.push_back(openings_[(opening_basis + i) % openings_.size()]);
   }
 
   PlayerOptions options[2];
