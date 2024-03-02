@@ -320,8 +320,6 @@ class SearchWorker {
     float v;
     // Draw probability for NN's with WDL value head.
     float d;
-    // Value error from NN's with value error head.
-    float e;
     // Estimated remaining plies left.
     float m;
     int multivisit = 0;
@@ -366,8 +364,6 @@ class SearchWorker {
     float GetQVal(int) const { return lock->q; }
 
     float GetDVal(int) const { return lock->d; }
-
-    float GetEVal(int) const { return lock->e; }
 
     float GetMVal(int) const { return lock->m; }
 

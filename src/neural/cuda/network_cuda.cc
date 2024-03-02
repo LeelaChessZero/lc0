@@ -160,13 +160,6 @@ class CudaNetworkComputation : public NetworkComputation {
     return 0.0f;
   }
 
-  float GetEVal(int sample) const override {
-    if (wdl_err_) {
-      return inputs_outputs_->op_value_err_mem_[sample];
-    }
-    return 0.0f;
-  }
-
   float GetPVal(int sample, int move_id) const override {
     return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
   }
