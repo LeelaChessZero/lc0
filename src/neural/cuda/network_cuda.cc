@@ -121,8 +121,8 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
-  CudaNetworkComputation(CudaNetwork<DataType>* network, bool wdl,
-                         bool wdl_err, bool moves_left);
+  CudaNetworkComputation(CudaNetwork<DataType>* network, bool wdl, bool wdl_err,
+                         bool moves_left);
   ~CudaNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -356,7 +356,8 @@ class CudaNetwork : public Network {
 
     ActivationFunction act = mish_net ? ACTIVATION_MISH : ACTIVATION_RELU;
 
-    std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
+    std::string policy_head =
+        options.GetOrDefault<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
     if (policy_head == "optimistic") policy_head = "optimistic_st";
     if (weights.policy_heads.count(policy_head) == 0) {
@@ -364,7 +365,8 @@ class CudaNetwork : public Network {
                       "' does not exist in this net.");
     }
 
-    std::string value_head = options.GetOrDefault<std::string>("value_head", "winner");
+    std::string value_head =
+        options.GetOrDefault<std::string>("value_head", "winner");
     // Check that selected value head exists.
     if (weights.value_heads.count(value_head) == 0) {
       throw Exception("The value head you specified '" + value_head +
@@ -450,9 +452,10 @@ class CudaNetwork : public Network {
               : static_cast<ActivationFunction>(ffn_activation);
       activations.default_activation = act;
 
-      auto new_encoding = static_cast<InputEmbedding>(
-        file.format().network_format().input_embedding())
-        == InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
+      auto new_encoding =
+          static_cast<InputEmbedding>(
+              file.format().network_format().input_embedding()) ==
+          InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, activations, numBlocks_,
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
@@ -528,9 +531,8 @@ class CudaNetwork : public Network {
              pblczero::NetworkFormat::VALUE_WDL;
       BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
       auto value_main = std::make_unique<ValueHead<DataType>>(
-        lastlayer, head, scratch_mem_, attn_body_, wdl_, false,
-        act, max_batch_size_, use_gemm_ex
-      );
+          lastlayer, head, scratch_mem_, attn_body_, wdl_, false, act,
+          max_batch_size_, use_gemm_ex);
       network_.emplace_back(std::move(value_main));
 
       wdl_err_ = weights.value_heads.count("st") > 0;
@@ -920,16 +922,16 @@ class CudaNetwork : public Network {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
-    return std::make_unique<CudaNetworkComputation<DataType>>(this, wdl_,
-                                                              wdl_err_,
-                                                              moves_left_);
+    return std::make_unique<CudaNetworkComputation<DataType>>(
+        this, wdl_, wdl_err_, moves_left_);
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(
-          max_batch_size_, wdl_, wdl_err_, moves_left_, tensor_mem_size_, scratch_size_,
+          max_batch_size_, wdl_, wdl_err_, moves_left_, tensor_mem_size_,
+          scratch_size_,
           !has_tensor_cores_ && std::is_same<half, DataType>::value);
     } else {
       std::unique_ptr<InputsOutputs> resource =
@@ -947,7 +949,9 @@ class CudaNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false, false); }
+  void UglyFunctionToSilenceNvccWarning() {
+    InputsOutputs io(0, false, false, false);
+  }
 
  private:
   const NetworkCapabilities capabilities_;

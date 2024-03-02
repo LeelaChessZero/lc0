@@ -1678,8 +1678,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                             num_inputs, 0.0f, buffer1, num_outputs);
 
       LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense1_b,
-                          (DataType*)nullptr, smol_ln1_gammas, smol_ln1_betas, 1e-3,
-                          1.0, smolgen_activation_, stream);
+                          (DataType*)nullptr, smol_ln1_gammas, smol_ln1_betas,
+                          1e-3, 1.0, smolgen_activation_, stream);
     }
 
     {
@@ -1695,8 +1695,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                             num_inputs, 0.0f, buffer1, num_outputs);
 
       LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense2_b,
-                          (DataType*)nullptr, smol_ln2_gammas, smol_ln2_betas, 1e-3,
-                          1.0, smolgen_activation_, stream);
+                          (DataType*)nullptr, smol_ln2_gammas, smol_ln2_betas,
+                          1e-3, 1.0, smolgen_activation_, stream);
     }
 
     {
@@ -2062,21 +2062,26 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
     allocAndUpload<DataType>(&ip_emb_ln_g_, weights.ip_emb_ln_gammas, scratch);
     allocAndUpload<DataType>(&ip_emb_ln_b_, weights.ip_emb_ln_betas, scratch);
 
-    allocAndUpload<DataType>(&ip_emb_ffn_d1_w_, weights.ip_emb_ffn.dense1_w, scratch);
-    allocAndUpload<DataType>(&ip_emb_ffn_d1_b_, weights.ip_emb_ffn.dense1_b, scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_d1_w_, weights.ip_emb_ffn.dense1_w,
+                             scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_d1_b_, weights.ip_emb_ffn.dense1_b,
+                             scratch);
 
-    allocAndUpload<DataType>(&ip_emb_ffn_d2_w_, weights.ip_emb_ffn.dense2_w, scratch);
-    allocAndUpload<DataType>(&ip_emb_ffn_d2_b_, weights.ip_emb_ffn.dense2_b, scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_d2_w_, weights.ip_emb_ffn.dense2_w,
+                             scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_d2_b_, weights.ip_emb_ffn.dense2_b,
+                             scratch);
 
-    allocAndUpload<DataType>(&ip_emb_ffn_ln_g_, weights.ip_emb_ffn_ln_gammas, scratch);
-    allocAndUpload<DataType>(&ip_emb_ffn_ln_b_, weights.ip_emb_ffn_ln_betas, scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_ln_g_, weights.ip_emb_ffn_ln_gammas,
+                             scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_ln_b_, weights.ip_emb_ffn_ln_betas,
+                             scratch);
 
     // 12 is the number of input channels used for the input encoding.
     embedding_dense_size_ = weights.ip_emb_preproc_b.size() / 64;
     embedding_ffn_size_ = weights.ip_emb_ffn.dense2_b.size();
     embedding_ffn_dff_ = weights.ip_emb_ffn.dense1_b.size();
-  }
-  else {
+  } else {
     size_t size = 64 * kNumPosEncodingChannels * sizeof(float);
     ReportCUDAErrors(cudaMalloc(&pos_encoding_, size));
     ReportCUDAErrors(
@@ -2120,8 +2125,7 @@ AttentionBody<DataType>::~AttentionBody() {
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d2_b_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_ln_g_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_ln_b_));
-  }
-  else {
+  } else {
     ReportCUDAErrors(cudaFree(pos_encoding_));
   }
   if (has_gating_) {
@@ -2153,10 +2157,10 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       processing
     */
     if (new_encoding_) {
-      // New encoding is made of dense layer fed with input from a 12-channel slice of the input tensor.
-      // pos_info = flow[..., :12]
-      // pos_info_flat = tf.reshape(pos_info, [-1, 64 * 12])
-      // pos_info_processed = tf.keras.layers.Dense(64*self.embedding_dense_sz,
+      // New encoding is made of dense layer fed with input from a 12-channel
+      // slice of the input tensor. pos_info = flow[..., :12] pos_info_flat =
+      // tf.reshape(pos_info, [-1, 64 * 12]) pos_info_processed =
+      // tf.keras.layers.Dense(64*self.embedding_dense_sz,
       //                                            name=name+"embedding/preprocess")(pos_info_flat)
       const int num_outputs = 64 * embedding_dense_size_;
       const int num_inputs = 64 * 12;
@@ -2164,21 +2168,21 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
 
       convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, 12, 8, 8);
       cublasXgemm<DataType>(
-        cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
-        (const DataType*)ip_emb_pre_w_, num_inputs,
-        (const DataType*)scratch, num_inputs,
-        0.0f, buffer1, num_outputs);
+          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
+          1.0f, (const DataType*)ip_emb_pre_w_, num_inputs,
+          (const DataType*)scratch, num_inputs, 0.0f, buffer1, num_outputs);
 
       // addBiasBatched(buffer1, buffer1, ip_emb_pre_b_, batch, N, num_outputs,
       //               ACTIVATION_NONE, stream);
       const int size = num_outputs * N;
       // @todo addBiasBatched has a 4096 channel limit, needs refactoring.
-      addVectors(buffer1, buffer1, ip_emb_pre_b_, size, size, num_outputs, ACTIVATION_NONE, stream);
-      inputPreprocessForAttentionBody((DataType*)scratch, input, buffer1, N, kInputPlanes,
-                                      embedding_dense_size_, true, stream);
+      addVectors(buffer1, buffer1, ip_emb_pre_b_, size, size, num_outputs,
+                 ACTIVATION_NONE, stream);
+      inputPreprocessForAttentionBody((DataType*)scratch, input, buffer1, N,
+                                      kInputPlanes, embedding_dense_size_, true,
+                                      stream);
       inputC += embedding_dense_size_;
-    }
-    else {
+    } else {
       /*
       flow = tf.transpose(inputs, perm=[0, 2, 3, 1])
       flow = tf.reshape(flow, [-1, 64, tf.shape(inputs)[1]])
@@ -2188,8 +2192,9 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       tf.shape(self.POS_ENC)[2]]) flow = tf.concat([flow, positional_encoding],
       axis=2)
       */
-      inputPreprocessForAttentionBody((DataType*)scratch, input, pos_encoding_, N,
-                                      kInputPlanes, kNumPosEncodingChannels, false, stream);
+      inputPreprocessForAttentionBody((DataType*)scratch, input, pos_encoding_,
+                                      N, kInputPlanes, kNumPosEncodingChannels,
+                                      false, stream);
       inputC += kNumPosEncodingChannels;
     }
   } else {
@@ -2208,20 +2213,21 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       const int num_outputs = embedding_op_size_;
       const int num_inputs = inputC;
       const int batch = N * 64;
-      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                            num_inputs, 1.0f, (const DataType*)ip_emb_w_,
-                            num_inputs, temp, num_inputs, 0.0f,
-                            embedding, num_outputs);
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f, (const DataType*)ip_emb_w_,
+                            num_inputs, temp, num_inputs, 0.0f, embedding,
+                            num_outputs);
       // embedding layer norm with fused in bias add of previous gemm.
-      LayerNorm<DataType>(N * 64, embedding_op_size_, temp, embedding, ip_emb_b_,
-                      (DataType*)nullptr, ip_emb_ln_g_, ip_emb_ln_b_, 1e-3, 1.0,
-                      activations_.default_activation, stream);
+      LayerNorm<DataType>(N * 64, embedding_op_size_, temp, embedding,
+                          ip_emb_b_, (DataType*)nullptr, ip_emb_ln_g_,
+                          ip_emb_ln_b_, 1e-3, 1.0,
+                          activations_.default_activation, stream);
     }
 
     // Input gating
     if (has_gating_) {
-      applyInputGating<DataType>(temp, temp, ip_mult_gate_,
-                                ip_add_gate_, N, 64, embedding_op_size_, stream);
+      applyInputGating<DataType>(temp, temp, ip_mult_gate_, ip_add_gate_, N, 64,
+                                 embedding_op_size_, stream);
     }
 
     // embedding FFN dense 1
@@ -2230,10 +2236,10 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       const int num_outputs = embedding_ffn_dff_;  // encoder_dff
       const int batch = N * 64;
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                  num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d1_w_, num_inputs,
-                  temp, num_inputs, 0.0f, buffer1, num_outputs);
-      addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch,
-                    num_outputs, activations_.ffn_activation, stream);
+                  num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d1_w_,
+                  num_inputs, temp, num_inputs, 0.0f, buffer1, num_outputs);
+      addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch, num_outputs,
+                     activations_.ffn_activation, stream);
     }
 
     // embedding FFN dense 2
@@ -2242,14 +2248,15 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       const int num_outputs = embedding_ffn_size_;
       const int batch = N * 64;
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                  num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d2_w_, num_inputs,
-                  buffer1, num_inputs, 0.0f, buffer2, num_outputs);
-      // Embedding LN: skip connection and layer normilization (also bias add of prev gemm)
-      // buffer2 -> embedding
+                  num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d2_w_,
+                  num_inputs, buffer1, num_inputs, 0.0f, buffer2, num_outputs);
+      // Embedding LN: skip connection and layer normilization (also bias add of
+      // prev gemm) buffer2 -> embedding
       float alpha = (float)pow(2. * encoder_weights_.size(), -0.25);
       LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
-                          ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_, ip_emb_ffn_ln_b_,
-                          1e-3, alpha, ACTIVATION_NONE, stream);
+                          ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_,
+                          ip_emb_ffn_ln_b_, 1e-3, alpha, ACTIVATION_NONE,
+                          stream);
     }
 
   } else {
@@ -2260,17 +2267,18 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       const int num_outputs = embedding_op_size_;
       const int num_inputs = inputC;
       const int batch = N * 64;
-      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                            num_inputs, 1.0f, (const DataType*)ip_emb_w_,
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f, (const DataType*)ip_emb_w_,
                             num_inputs, (DataType*)scratch, num_inputs, 0.0f,
                             embedding, num_outputs);
       addBiasBatched(embedding, embedding, ip_emb_b_, 1, batch, num_outputs,
-                    activations_.default_activation, stream);
+                     activations_.default_activation, stream);
     }
     // Input gating
     if (has_gating_) {
       applyInputGating<DataType>(embedding, embedding, ip_mult_gate_,
-                                ip_add_gate_, N, 64, embedding_op_size_, stream);
+                                 ip_add_gate_, N, 64, embedding_op_size_,
+                                 stream);
     }
   }
 
@@ -2300,10 +2308,10 @@ ValueHead<DataType>::ValueHead(BaseLayer<DataType>* ip,
     allocAndUpload<DataType>(&ip_val_b_, weights.ip_val_b, scratch);
   } else {
     conv_ = std::make_unique<Conv1Layer<DataType>>(
-        ip, weights.value.biases.size(), 8, 8, ip->GetC(), act,
-        true, use_gemm_ex);
+        ip, weights.value.biases.size(), 8, 8, ip->GetC(), act, true,
+        use_gemm_ex);
     conv_->LoadWeights((float*)&weights.value.weights[0],
-                      (float*)&weights.value.biases[0], scratch);
+                       (float*)&weights.value.biases[0], scratch);
   }
 
   allocAndUpload<DataType>(&ip1_val_w_, weights.ip1_val_w, scratch);
@@ -2346,14 +2354,16 @@ void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
     const int num_outputs = embedding_size_;
     const int batch = N * 64;
     if (attention_body_) {
-      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                            num_inputs, 1.0f, (const DataType*)ip_val_w_, num_inputs,
-                            input, num_inputs, 0.0f, buffer, num_outputs);
-      addBiasBatched<DataType>(buffer, buffer, ip_val_b_, 1, batch, num_outputs, act_, stream);
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f, (const DataType*)ip_val_w_,
+                            num_inputs, input, num_inputs, 0.0f, buffer,
+                            num_outputs);
+      addBiasBatched<DataType>(buffer, buffer, ip_val_b_, 1, batch, num_outputs,
+                               act_, stream);
 
     } else {
-      conv_->Eval(N, buffer, input, nullptr, scratch,
-                  scratch_size, nullptr, cublas, stream);
+      conv_->Eval(N, buffer, input, nullptr, scratch, scratch_size, nullptr,
+                  cublas, stream);
     }
   }
 
@@ -2364,8 +2374,9 @@ void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
     const int batch = N;
     DataType* layer_out = (DataType*)scratch;
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                          num_inputs, 1.0f, (const DataType*)ip1_val_w_, num_inputs,
-                          buffer, num_inputs, 0.0f, layer_out, num_outputs);
+                          num_inputs, 1.0f, (const DataType*)ip1_val_w_,
+                          num_inputs, buffer, num_inputs, 0.0f, layer_out,
+                          num_outputs);
     addBiasBatched<DataType>(layer_out, layer_out, ip1_val_b_, 1, batch,
                              num_outputs, act_, stream);
   }
@@ -2377,11 +2388,12 @@ void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
     const int batch = N;
     DataType* layer_out = wdl_err_ ? (DataType*)buffer : (DataType*)output;
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                      num_inputs, 1.0f, (const DataType*)ip2_val_w_, num_inputs,
-                      (DataType*)scratch, num_inputs, 0.0f, layer_out, num_outputs);
+                          num_inputs, 1.0f, (const DataType*)ip2_val_w_,
+                          num_inputs, (DataType*)scratch, num_inputs, 0.0f,
+                          layer_out, num_outputs);
     addVectors(layer_out, layer_out, ip2_val_b_, num_outputs * batch,
-               num_outputs * batch, num_outputs, wdl_ ? ACTIVATION_NONE : ACTIVATION_TANH,
-               stream);
+               num_outputs * batch, num_outputs,
+               wdl_ ? ACTIVATION_NONE : ACTIVATION_TANH, stream);
   }
 
   if (wdl_err_) {
@@ -2390,10 +2402,11 @@ void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
     const int num_outputs = 1;
     const int batch = N;
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                      num_inputs, 1.0f, (const DataType*)ip_val_err_w_, num_inputs,
-                      (DataType*)scratch, num_inputs, 0.0f, output, num_outputs);
-    addVectors(output, output, ip_val_err_b_, N,
-               N, 1, ACTIVATION_SIGMOID, stream);
+                          num_inputs, 1.0f, (const DataType*)ip_val_err_w_,
+                          num_inputs, (DataType*)scratch, num_inputs, 0.0f,
+                          output, num_outputs);
+    addVectors(output, output, ip_val_err_b_, N, N, 1, ACTIVATION_SIGMOID,
+               stream);
   }
 }
 
