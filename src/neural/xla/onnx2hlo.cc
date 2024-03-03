@@ -188,6 +188,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
+    onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
     onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
     onnx_op_to_builder_["Softmax"] = &Onnx2HloConverter::OpSoftmax;
     onnx_op_to_builder_["Softplus"] = &Onnx2HloConverter::OpSoftplus;
@@ -385,6 +386,28 @@ class Onnx2HloConverter {
     auto* zero = MakeScalar(0, input->shape().element_type());
     zero = builder_.Broadcast(zero, HloTensorType(input->shape()), {});
     return {builder_.Maximum(input, zero)};
+  }
+
+  std::vector<HloFlow> OpSelu(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"alpha", "gamma"});
+    auto* input = GetInput(node, 0);
+    auto* palpha = GetAttribute(node, "alpha", true);
+    double alpha = palpha ? palpha->f() : 1.6732632423543772848170429916717;
+    auto* pgamma = GetAttribute(node, "gamma", true);
+    double gamma = pgamma ? pgamma->f() : 1.0507009873554804934193349852946;
+    auto* neg = builder_.Multiply(
+        builder_.Broadcast(MakeScalar(alpha, input->shape().element_type()),
+                           HloTensorType(input->shape()), {}),
+        builder_.ExponentialMinusOne(input));
+    auto* zeros =
+        builder_.Broadcast(MakeScalar(0, input->shape().element_type()),
+                           HloTensorType(input->shape()), {});
+    auto* preds = builder_.Compare(input, zeros, "GE");
+    auto* flow = builder_.Select(preds, input, neg);
+    return {builder_.Multiply(
+        flow,
+        builder_.Broadcast(MakeScalar(gamma, input->shape().element_type()),
+                           HloTensorType(input->shape()), {}))};
   }
 
   std::vector<HloFlow> OpIdentity(const pblczero::NodeProto& node) {

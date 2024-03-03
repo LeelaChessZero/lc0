@@ -337,6 +337,39 @@ HloFlow HloBuilder::LogPlusOne(HloFlow input) {
   return MakeInstruction("log-plus-one", input->shape(), {input});
 }
 
+HloFlow HloBuilder::ExponentialMinusOne(HloFlow input) {
+  return MakeInstruction("exponential-minus-one", input->shape(), {input});
+}
+HloFlow HloBuilder::Compare(HloFlow lhs, HloFlow rhs,
+                            std::string_view direction) {
+  if (lhs->shape().dimensions() != rhs->shape().dimensions()) {
+    throw Exception("Elementwise operands must have the same shape");
+  }
+  HloTensorType shape(lhs->shape());
+  shape.SetElementType(pblczero::XlaShapeProto::PRED);
+  auto* flow = MakeInstruction("compare", shape.ToProto(), {lhs, rhs});
+  flow->set_comparison_direction(direction);
+  return flow;
+}
+
+HloFlow HloBuilder::Select(HloFlow condition, HloFlow on_true,
+                           HloFlow on_false) {
+  if (condition->shape().element_type() != pblczero::XlaShapeProto::PRED) {
+    throw Exception("Select condition must have the PRED element type");
+  }
+  if (on_true->shape().dimensions() != on_false->shape().dimensions()) {
+    throw Exception("Select operands must have the same shape");
+  }
+  if (on_true->shape().element_type() != on_false->shape().element_type()) {
+    throw Exception("Select operands must have the same element type");
+  }
+  if (condition->shape().dimensions() != on_true->shape().dimensions()) {
+    throw Exception("Select condition and operands must have the same shape");
+  }
+  return MakeInstruction("select", on_true->shape(),
+                         {condition, on_true, on_false});
+}
+
 HloFlow HloBuilder::Negate(HloFlow input) {
   return MakeInstruction("negate", input->shape(), {input});
 }
