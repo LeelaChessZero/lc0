@@ -79,6 +79,7 @@ class HloTensorType : public HloType {
   }
   pblczero::XlaShapeProto::Type GetElementType() const { return type_; }
   void AddDimension(int64_t size) { dimensions_.push_back(size); }
+  void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
   const std::vector<int64_t>& GetDimensions() const { return dimensions_; }
   int64_t GetDimension(size_t idx) const { return dimensions_[idx]; }
   size_t Rank() const { return dimensions_.size(); }
@@ -126,6 +127,7 @@ class HloBuilder {
                  const std::vector<int64_t>& collapsed_slice_dims,
                  const std::vector<int64_t>& start_index_map,
                  bool indices_are_sorted, bool unique_indicies);
+  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);
   // Insert a computation into the module, under given name. Dependent
   // computations are also merged into the module.
   HloComputation AddComputation(std::string_view name,

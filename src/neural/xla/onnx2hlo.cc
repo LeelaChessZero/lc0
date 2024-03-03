@@ -194,6 +194,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
+    onnx_op_to_builder_["Transpose"] = &Onnx2HloConverter::OpTranspose;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -509,21 +510,44 @@ class Onnx2HloConverter {
     return flows;
   }
 
+  std::vector<HloFlow> OpTranspose(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"perm"});
+    auto* input = GetInput(node, 0);
+    const auto* perm = GetAttribute(node, "perm");
+    if (!perm) throw Exception("Attribute 'perm' not set");
+    return {builder_.Transpose(input, perm->ints())};
+  }
+
   std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
     auto new_dims = GetConstantInput(node, 1)->s64s();
-    HloTensorType new_shape(input->shape().element_type());
+    HloTensorType input_shape(input->shape());
+    HloTensorType new_shape(input_shape.GetElementType());
+    std::optional<int64_t> infer_dim;
+    size_t num_elements = 1;
     for (size_t i = 0; i < new_dims.size(); ++i) {
       auto dim = new_dims[i];
-      if (dim == -1) dim = batch_size_;
+      if (dim == -1) {
+        if (infer_dim.has_value()) {
+          throw Exception("Reshape cannot infer shape when multiple -1s");
+        }
+        infer_dim = i;
+        dim = 1;
+      }
       if (dim == 0) {
-        if (new_dims.size() != input->shape().dimensions_size()) {
+        if (new_dims.size() != input_shape.Rank()) {
           throw Exception("Reshape cannot infer shape when rank changes");
         }
-        dim = input->shape().dimensions(i);
+        dim = input_shape.GetDimension(i);
       }
+      num_elements *= dim;
       new_shape.AddDimension(dim);
+    }
+    if (infer_dim.has_value()) {
+      new_shape.SetElementType(input->shape().element_type());
+      new_shape.SetDimension(infer_dim.value(),
+                             input_shape.NumElements() / num_elements);
     }
     return {builder_.Reshape(input, new_shape)};
   }
