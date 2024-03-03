@@ -498,15 +498,44 @@ class Onnx2HloConverter {
     if (opset_version_ < 13) {
       throw Exception("Split not supported in ONNX opset < 13");
     }
-    CheckKnownAttributes(node, 1, {"axis", "num_outputs"});
+    CheckKnownAttributes(node, 2, {"axis", "num_outputs"});
     auto* input = GetInput(node, 0);
+    auto split = GetConstantInput(node, 1, true);
     const auto* axis_attr = GetAttribute(node, "axis");
     const auto* num_outputs_attr = GetAttribute(node, "num_outputs", true);
     if (!axis_attr) throw Exception("Attribute 'axis' not set");
-    size_t axis = axis_attr->i();
-    size_t num_outputs = num_outputs_attr ? num_outputs_attr->i() : 2;
-    size_t chunk_size =
-        (input->shape().dimensions(axis) + num_outputs - 1) / num_outputs;
+
+    if (split && num_outputs_attr) {
+      throw Exception("Split cannot have both 'split' and 'num_outputs'");
+    }
+
+    const size_t axis = axis_attr->i();
+    std::vector<size_t> splits;
+
+    if (split) {
+      size_t offset = 0;
+      for (size_t i = 0; i < split->s64s().size(); ++i) {
+        offset += split->s64s(i);
+        splits.push_back(offset);
+      }
+    } else {
+      size_t num_outputs =
+          num_outputs_attr ? num_outputs_attr->i() : node.output_size();
+      size_t chunk_size =
+          (input->shape().dimensions(axis) + num_outputs - 1) / num_outputs;
+      int64_t offset = 0;
+      for (size_t i = 0; i < num_outputs; ++i) {
+        offset += chunk_size;
+        if (offset > input->shape().dimensions(axis)) {
+          offset = input->shape().dimensions(axis);
+        }
+        splits.push_back(offset);
+      }
+      if (offset != input->shape().dimensions(axis)) {
+        throw Exception("Split sizes do not add up to input size");
+      }
+    }
+
     std::vector<HloFlow> flows;
 
     auto make_slice_dim = [](int64_t start, int64_t end) {
@@ -517,13 +546,14 @@ class Onnx2HloConverter {
       return slice;
     };
 
-    for (size_t i = 0; i < num_outputs; ++i) {
+    size_t offset = 0;
+    for (size_t split : splits) {
       std::vector<pblczero::HloInstructionProto::SliceDimensions> slice;
       for (size_t j = 0; j < input->shape().dimensions_size(); ++j) {
         if (j == axis) {
-          size_t begin = i * chunk_size;
-          size_t end = std::min<int64_t>((i + 1) * chunk_size,
-                                         input->shape().dimensions(j));
+          size_t begin = offset;
+          size_t end = split;
+          offset = split;
           slice.push_back(make_slice_dim(begin, end));
         } else {
           slice.push_back(make_slice_dim(0, input->shape().dimensions(j)));
