@@ -109,6 +109,21 @@ SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
   return SearchParams::WDLRescaleParams(ratio, diff);
 }
 
+// Converts regular Elo into ideal UHO game pair Elo based on the same Elo
+// dependent draw rate model used below. Necessary because regular Elo doesn't
+// behave well at higher level, while the ideal UHO game pair Elo calculated
+// from the decisive game pair ratio underestimates Elo differences by a
+// factor of 2 at lower levels.
+
+float ConvertRegularToGamePairElo(float elo_regular) {
+  const float transition_sharpness = 250.0f;
+  const float transition_midpoint = 2737.0f;
+  return elo_regular +
+         0.5f * transition_sharpness *
+             std::log(1.0f + std::exp((transition_midpoint - elo_regular) /
+                                      transition_sharpness));
+}
+
 // Calculate ratio and diff for WDL conversion from the contempt settings.
 // Less accurate Elo model, but automatically chooses draw rate and accuracy
 // based on the absolute Elo of both sides. Doesn't require clamping, but still
@@ -129,6 +144,10 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
                                           (1.0f - draw_rate_reference));
   float elo_opp =
       elo_active - std::clamp(contempt, -contempt_max, contempt_max);
+  // Convert regular Elo input into internally used game pair Elo.
+  elo_active = ConvertRegularToGamePairElo(elo_active);
+  elo_opp = ConvertRegularToGamePairElo(elo_opp);
+  // Estimate draw rate from given Elo.
   float scale_active =
       1.0f / (1.0f / scale_zero + std::exp(elo_active / elo_slope - offset));
   float scale_opp =
@@ -144,7 +163,8 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
   float mu_opp =
       -std::log(10) / 200 * scale_zero * elo_slope *
       std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
-  float diff = (mu_active - mu_opp) * contempt_attenuation;
+  float diff = 1.0f / (scale_reference * scale_reference) *
+               (mu_active - mu_opp) * contempt_attenuation;
   return SearchParams::WDLRescaleParams(ratio, diff);
 }
 }  // namespace
@@ -375,6 +395,12 @@ const OptionId SearchParams::kWDLContemptAttenuationId{
     "wdl-contempt-attenuation", "WDLContemptAttenuation",
     "Scales how Elo advantage is applied for contempt. Use 1.0 for realistic "
     "analysis, and 0.5-0.6 for optimal match performance."};
+const OptionId SearchParams::kWDLMaxSId{
+    "wdl-max-s", "WDLMaxS",
+    "Limits the WDL derived sharpness s to a reasonable value to avoid "
+    "erratic behavior at high contempt values. Default recommended for "
+    "regular chess, increase value for more volatile positions like DFRC "
+    "or piece odds."};
 const OptionId SearchParams::kWDLEvalObjectivityId{
     "wdl-eval-objectivity", "WDLEvalObjectivity",
     "When calculating the centipawn eval output, decides how objective/"
@@ -531,6 +557,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kContemptMaxValueId, 0, 10000.0f) = 420.0f;
   options->Add<FloatOption>(kWDLCalibrationEloId, 0, 10000.0f) = 0.0f;
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
+  options->Add<FloatOption>(kWDLMaxSId, 0.0f, 10.0f) = 1.4f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
   options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
@@ -568,6 +595,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kTemperatureVisitOffsetId);
   options->HideOption(kContemptMaxValueId);
   options->HideOption(kWDLContemptAttenuationId);
+  options->HideOption(kWDLMaxSId);
   options->HideOption(kWDLDrawRateTargetId);
   options->HideOption(kWDLBookExitBiasId);
 }
@@ -633,6 +661,7 @@ SearchParams::SearchParams(const OptionsDict& options)
                     options.Get<float>(kWDLCalibrationEloId),
                     options.Get<float>(kContemptMaxValueId),
                     options.Get<float>(kWDLContemptAttenuationId))),
+      kWDLMaxS(options.Get<float>(kWDLMaxSId)),
       kWDLEvalObjectivity(options.Get<float>(kWDLEvalObjectivityId)),
       kMaxOutOfOrderEvalsFactor(
           options.Get<float>(kMaxOutOfOrderEvalsFactorId)),
