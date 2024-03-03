@@ -601,13 +601,11 @@ class Onnx2HloConverter {
     if (lhs_shape.Rank() == 1 || rhs_shape.Rank() == 1) {
       throw Exception("1D MatMul not yet");
     }
-    if (lhs_shape.Rank() != rhs_shape.Rank()) {
-      throw Exception("MatMul only implemented for equal rank");
-    }
     pblczero::XlaDotDimensionNumbers dn;
     dn.add_lhs_contracting_dimensions(lhs_shape.Rank() - 1);
     dn.add_rhs_contracting_dimensions(rhs_shape.Rank() - 2);
-    for (size_t i = 0; i < lhs_shape.Rank() - 2; ++i) {
+    for (size_t i = 0; i < std::min(lhs_shape.Rank(), rhs_shape.Rank()) - 2;
+         ++i) {
       dn.add_lhs_batch_dimensions(i);
       dn.add_rhs_batch_dimensions(i);
     }
