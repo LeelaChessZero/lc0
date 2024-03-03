@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -44,7 +44,6 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
-#include "utils/numa.h"
 
 namespace lczero {
 
@@ -54,7 +53,7 @@ class Search {
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
-         std::unique_ptr<SearchStopper> stopper, bool infinite,
+         std::unique_ptr<SearchStopper> stopper, bool infinite, bool ponder,
          const OptionsDict& options, NNCache* cache,
          SyzygyTablebase* syzygy_tb);
 
@@ -201,7 +200,7 @@ class Search {
       GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
-
+  ContemptMode contempt_mode_;
   friend class SearchWorker;
 };
 
@@ -216,14 +215,31 @@ class SearchWorker {
         params_(params),
         moves_left_support_(search_->network_->GetCapabilities().moves_left !=
                             pblczero::NetworkFormat::MOVES_LEFT_NONE) {
-    Numa::BindThread(id);
-    for (int i = 0; i < params.GetTaskWorkersPerSearchWorker(); i++) {
+    search_->network_->InitThread(id);
+    task_workers_ = params.GetTaskWorkersPerSearchWorker();
+    if (task_workers_ < 0) {
+      if (search_->network_->IsCpu()) {
+        task_workers_ = 0;
+      } else {
+        int working_threads = std::max(
+            search_->thread_count_.load(std::memory_order_acquire) - 1, 1);
+        task_workers_ = std::min(
+            std::thread::hardware_concurrency() / working_threads - 1, 4U);
+      }
+    }
+    for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
       task_threads_.emplace_back([this, i]() {
-        Numa::BindThread(i);
         this->RunTasks(i);
       });
     }
+    target_minibatch_size_ = params_.GetMiniBatchSize();
+    if (target_minibatch_size_ == 0) {
+      target_minibatch_size_ = search_->network_->GetMiniBatchSize();
+    }
+    max_out_of_order_ =
+        std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvalsFactor() *
+                                     target_minibatch_size_));
   }
 
   ~SearchWorker() {
@@ -454,6 +470,9 @@ class SearchWorker {
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
+  int task_workers_;
+  int target_minibatch_size_;
+  int max_out_of_order_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
   int number_out_of_order_ = 0;

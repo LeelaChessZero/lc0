@@ -144,6 +144,17 @@ bool DepthStopper::ShouldStop(const IterationStats& stats, StoppersHints*) {
 }
 
 ///////////////////////////
+// MateStopper
+///////////////////////////
+bool MateStopper::ShouldStop(const IterationStats& stats, StoppersHints*) {
+  if (stats.mate_depth <= mate_) {
+    LOGFILE << "Stopped search: Found mate.";
+    return true;
+  }
+  return false;
+}
+
+///////////////////////////
 // KldGainStopper
 ///////////////////////////
 
@@ -195,7 +206,8 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     LOGFILE << "Only one possible move. Moving immediately.";
     return true;
   }
-  if (stats.edge_n.size() <= static_cast<size_t>(stats.num_losing_edges + 1)) {
+  if (stats.edge_n.size() <= static_cast<size_t>(stats.num_losing_edges) +
+                                 (stats.may_resign ? 0 : 1)) {
     LOGFILE << "At most one non losing move, stopping search.";
     return true;
   }
@@ -242,8 +254,9 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   }
 
   if (remaining_playouts < (largest_n - second_largest_n)) {
-    LOGFILE << remaining_playouts << " playouts remaining. Best move has "
-            << largest_n << " visits, second best -- " << second_largest_n
+    LOGFILE << std::fixed << remaining_playouts
+            << " playouts remaining. Best move has " << largest_n
+            << " visits, second best -- " << second_largest_n
             << ". Difference is " << (largest_n - second_largest_n)
             << ", so stopping the search after "
             << stats.batches_since_movestart << " batches.";
