@@ -352,6 +352,33 @@ HloFlow HloBuilder::Compare(HloFlow lhs, HloFlow rhs,
   return flow;
 }
 
+HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
+                                int64_t dimension) {
+  if (inputs.empty()) {
+    throw Exception("Concatenate must have at least one input");
+  }
+  HloTensorType shape(inputs[0]->shape());
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    if (inputs[i]->shape().element_type() != shape.GetElementType()) {
+      throw Exception("Concatenate operands must have the same element type");
+    }
+    if (inputs[i]->shape().dimensions_size() != shape.Rank()) {
+      throw Exception("Concatenate operands must have the same rank");
+    }
+    for (size_t j = 0; j < shape.Rank(); ++j) {
+      if (j == dimension) {
+        shape.SetDimension(
+            j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
+      } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
+        throw Exception("Concatenate operands must have the same shape");
+      }
+    }
+  }
+  auto flow = MakeInstruction("concatenate", shape.ToProto(), inputs);
+  flow->add_dimensions(dimension);
+  return flow;
+}
+
 HloFlow HloBuilder::Select(HloFlow condition, HloFlow on_true,
                            HloFlow on_false) {
   if (condition->shape().element_type() != pblczero::XlaShapeProto::PRED) {

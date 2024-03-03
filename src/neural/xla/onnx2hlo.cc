@@ -180,6 +180,7 @@ class Onnx2HloConverter {
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
@@ -455,6 +456,16 @@ class Onnx2HloConverter {
     return {builder_.Gather(input, indices, axis, {0},
                             {input->shape().dimensions(0), 1}, {1}, {1},
                             is_sorted, is_unique)};
+  }
+
+  std::vector<HloFlow> OpConcat(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, std::numeric_limits<size_t>::max(), {"axis"});
+    std::vector<HloFlow> inputs;
+    for (size_t i = 0; i < node.input_size(); ++i) {
+      inputs.push_back(GetInput(node, i));
+    }
+    const auto axis = GetAttribute(node, "axis")->i();
+    return {builder_.Concatenate(inputs, axis)};
   }
 
   std::vector<HloFlow> OpSigmoid(const pblczero::NodeProto& node) {
