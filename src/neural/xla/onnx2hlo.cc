@@ -190,6 +190,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
     onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
+    onnx_op_to_builder_["Slice"] = &Onnx2HloConverter::OpSlice;
     onnx_op_to_builder_["Softmax"] = &Onnx2HloConverter::OpSoftmax;
     onnx_op_to_builder_["Softplus"] = &Onnx2HloConverter::OpSoftplus;
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
@@ -311,9 +312,9 @@ class Onnx2HloConverter {
       if (optional) return std::nullopt;
       throw Exception("Input " + std::to_string(idx) + " not set");
     }
-    auto tensor = initializers_.find(std::string(node.input(1)));
+    auto tensor = initializers_.find(std::string(node.input(idx)));
     if (tensor == initializers_.end()) {
-      throw Exception("Constant input " + std::string(node.input(1)) +
+      throw Exception("Constant input " + std::string(node.input(idx)) +
                       " not found");
     }
     return OnnxTensorToXlaLiteral(*tensor->second);
@@ -531,6 +532,22 @@ class Onnx2HloConverter {
       flows.push_back(builder_.Slice(input, slice));
     }
     return flows;
+  }
+
+  std::vector<HloFlow> OpSlice(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 3, {});
+    auto* input = GetInput(node, 0);
+    auto starts = GetConstantInput(node, 1)->s32s();
+    auto ends = GetConstantInput(node, 2)->s32s();
+    std::vector<pblczero::HloInstructionProto::SliceDimensions> slices;
+    for (size_t i = 0; i < starts.size(); ++i) {
+      pblczero::HloInstructionProto::SliceDimensions slice;
+      slice.set_start(starts[i]);
+      slice.set_limit(std::min<int64_t>(ends[i], input->shape().dimensions(i)));
+      slice.set_stride(1);
+      slices.push_back(slice);
+    }
+    return {builder_.Slice(input, slices)};
   }
 
   std::vector<HloFlow> OpTranspose(const pblczero::NodeProto& node) {
