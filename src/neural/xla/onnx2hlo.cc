@@ -579,13 +579,21 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 2, {});
     auto* lhs = GetInput(node, 0);
     auto* rhs = GetInput(node, 1);
-    if (lhs->shape().dimensions_size() != 2 ||
-        rhs->shape().dimensions_size() != 2) {
-      throw Exception("MatMul only implemented for 2D inputs so far");
+    HloTensorType lhs_shape(lhs->shape());
+    HloTensorType rhs_shape(rhs->shape());
+    if (lhs_shape.Rank() == 1 || rhs_shape.Rank() == 1) {
+      throw Exception("1D MatMul not yet");
+    }
+    if (lhs_shape.Rank() != rhs_shape.Rank()) {
+      throw Exception("MatMul only implemented for equal rank");
     }
     pblczero::XlaDotDimensionNumbers dn;
-    dn.add_lhs_contracting_dimensions(1);
-    dn.add_rhs_contracting_dimensions(0);
+    dn.add_lhs_contracting_dimensions(lhs_shape.Rank() - 1);
+    dn.add_rhs_contracting_dimensions(rhs_shape.Rank() - 2);
+    for (size_t i = 0; i < lhs_shape.Rank() - 2; ++i) {
+      dn.add_lhs_batch_dimensions(i);
+      dn.add_rhs_batch_dimensions(i);
+    }
     return {builder_.Dot(lhs, rhs, dn)};
   }
 
