@@ -354,6 +354,21 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
   return MakeInstruction("tuple", shape, elements);
 }
 
+HloFlow HloBuilder::Transpose(HloFlow input,
+                              const std::vector<int64_t>& permutation) {
+  if (permutation.size() != input->shape().dimensions_size()) {
+    throw Exception(
+        "Transpose permutation must have the same size as the input shape");
+  }
+  HloTensorType shape(input->shape().element_type());
+  for (size_t i = 0; i < permutation.size(); ++i) {
+    shape.AddDimension(input->shape().dimensions(permutation[i]));
+  }
+  auto* flow = MakeInstruction("transpose", shape.ToProto(), {input});
+  *flow->mutable_dimensions() = permutation;
+  return flow;
+}
+
 HloFlow HloBuilder::Slice(
     HloFlow input,
     const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice) {

@@ -194,6 +194,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
+    onnx_op_to_builder_["Transpose"] = &Onnx2HloConverter::OpTranspose;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -507,6 +508,14 @@ class Onnx2HloConverter {
       flows.push_back(builder_.Slice(input, slice));
     }
     return flows;
+  }
+
+  std::vector<HloFlow> OpTranspose(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"perm"});
+    auto* input = GetInput(node, 0);
+    const auto* perm = GetAttribute(node, "perm");
+    if (!perm) throw Exception("Attribute 'perm' not set");
+    return {builder_.Transpose(input, perm->ints())};
   }
 
   std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {

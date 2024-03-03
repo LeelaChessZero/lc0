@@ -126,6 +126,7 @@ class HloBuilder {
                  const std::vector<int64_t>& collapsed_slice_dims,
                  const std::vector<int64_t>& start_index_map,
                  bool indices_are_sorted, bool unique_indicies);
+  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);
   // Insert a computation into the module, under given name. Dependent
   // computations are also merged into the module.
   HloComputation AddComputation(std::string_view name,
