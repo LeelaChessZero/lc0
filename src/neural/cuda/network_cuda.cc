@@ -359,7 +359,6 @@ class CudaNetwork : public Network {
     std::string policy_head =
         options.GetOrDefault<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
-    if (policy_head == "optimistic") policy_head = "optimistic_st";
     if (weights.policy_heads.count(policy_head) == 0) {
       throw Exception("The policy head you specified '" + policy_head +
                       "' does not exist in this net.");
