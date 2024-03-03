@@ -28,6 +28,7 @@
 #include "neural/xla/print_hlo.h"
 
 #include <cctype>
+#include <unordered_map>
 
 namespace lczero {
 namespace {
@@ -67,6 +68,8 @@ std::string CEscape(std::string_view str) {
   }
   return result + "\"";
 }
+
+const char* BoolValue(bool value) { return value ? "yah" : "nope"; }
 
 class HloPrettyPrinter {
  public:
@@ -244,10 +247,7 @@ class HloPrettyPrinter {
     } else {
       PrintDelimeted(
           instruction.operand_ids(),
-          [&](int64_t id) {
-            s_ << "%" << current_computation_->instructions(id).name();
-          },
-          ", ");
+          [&](int64_t id) { s_ << "%" << instructions_.at(id)->name(); }, ", ");
     }
     s_ << ")";
   }
@@ -279,6 +279,20 @@ class HloPrettyPrinter {
     PrintDelimeted(
         dn.rhs_contracting_dimensions(), [&](int64_t dim) { s_ << dim; }, ",",
         ", rhs_contracting_dims={", "}");
+  }
+
+  void PrintGatherDimensionNumbers(
+      const pblczero::XlaGatherDimensionNumbers& dn) {
+    PrintDelimeted(
+        dn.offset_dims(), [&](int64_t dim) { s_ << dim; }, ",",
+        ", offset_dims={", "}");
+    PrintDelimeted(
+        dn.collapsed_slice_dims(), [&](int64_t dim) { s_ << dim; }, ",",
+        ", collapsed_slice_dims={", "}");
+    PrintDelimeted(
+        dn.start_index_map(), [&](int64_t dim) { s_ << dim; }, ",",
+        ", start_index_map={", "}");
+    s_ << ", index_vector_dim=" << dn.index_vector_dim();
   }
 
   // Prints the "dimension numbers" attribute (for convolution opcodes).
@@ -328,6 +342,30 @@ class HloPrettyPrinter {
     if (instruction.has_dot_dimension_numbers()) {
       PrintDotDimensionNumbers(instruction.dot_dimension_numbers());
     }
+    if (instruction.slice_dimensions_size()) {
+      PrintDelimeted(
+          instruction.slice_dimensions(),
+          [&](const auto& d) {
+            s_ << "[" << d.start() << ":" << d.limit() << ":" << d.stride()
+               << "]";
+          },
+          ",", ", slice={", "}");
+    }
+    if (instruction.has_gather_dimension_numbers()) {
+      PrintGatherDimensionNumbers(instruction.gather_dimension_numbers());
+    }
+    if (instruction.gather_slice_sizes_size() > 0) {
+      PrintDelimeted(
+          instruction.gather_slice_sizes(), [&](int64_t size) { s_ << size; },
+          ",", ", slice_sizes={", "}");
+    }
+    if (instruction.has_indices_are_sorted()) {
+      s_ << ", indices_are_sorted="
+         << BoolValue(instruction.indices_are_sorted());
+    }
+    if (instruction.has_unique_indices()) {
+      s_ << ", unique_indices=" << BoolValue(instruction.unique_indices());
+    }
   }
 
   // Prints the metadata of the given instruction (source file, line, etc).
@@ -364,7 +402,9 @@ class HloPrettyPrinter {
 
   // Prints the given computation.
   void PrintComputation(const pblczero::HloComputationProto& computation) {
-    current_computation_ = &computation;
+    for (const auto& instruction : computation.instructions()) {
+      instructions_[instruction.id()] = &instruction;
+    }
     s_ << computation.name() << " {\n";
     for (const auto& instruction : computation.instructions()) {
       s_ << "    ";
@@ -373,12 +413,13 @@ class HloPrettyPrinter {
       s_ << "\n";
     }
     s_ << "}\n";
-    current_computation_ = nullptr;
+    instructions_.clear();
   }
 
   PrettyPrintHloOptions options_;
   const pblczero::HloModuleProto* current_module_ = nullptr;
-  const pblczero::HloComputationProto* current_computation_ = nullptr;
+  std::unordered_map<size_t, const pblczero::HloInstructionProto*>
+      instructions_;
   std::ostream& s_;
 };
 
