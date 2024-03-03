@@ -1096,6 +1096,7 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
     case pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT:
       break;
     case pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
+    case pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT:
       CERR << "Network format not supported by CuDNN backend, switching to "
               "CUDA.";
       return NetworkFactory::Get()->Create(
