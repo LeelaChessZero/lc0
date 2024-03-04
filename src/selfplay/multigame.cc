@@ -41,7 +41,7 @@ class Evaluator {
   virtual void MakeBestMove(NodeTree* tree) = 0;
 };
 
-class PolicyEvaluator : Evaluator {
+class PolicyEvaluator : public Evaluator {
  public:
   void Reset(const PlayerOptions& player) override {
     comp = player.network->NewComputation();
@@ -102,8 +102,7 @@ void MultiSelfPlayGames::Abort() {
 }
 
 void MultiSelfPlayGames::Play() {
-  std::unique_ptr<PolicyEvaluator> evaluator =
-      std::make_unique<PolicyEvaluator>();
+  std::unique_ptr<Evaluator> evaluator = std::make_unique<PolicyEvaluator>();
   while (true) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -111,7 +110,7 @@ void MultiSelfPlayGames::Play() {
     }
     bool all_done = true;
     bool blacks_move = false;
-    for (int i = 0; i < trees_.size(); i++) {
+    for (size_t i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] == GameResult::UNDECIDED) {
         if (tree->GetPositionHistory().ComputeGameResult() !=
@@ -154,7 +153,7 @@ void MultiSelfPlayGames::Play() {
     if (all_done) break;
     const int idx = blacks_move ? 1 : 0;
     evaluator->Reset(options_[idx]);
-    for (int i = 0; i < trees_.size(); i++) {
+    for (size_t i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
         continue;
@@ -166,7 +165,7 @@ void MultiSelfPlayGames::Play() {
       evaluator->Gather(tree.get());
     }
     evaluator->Run();
-    for (int i = 0; i < trees_.size(); i++) {
+    for (size_t i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
         continue;
