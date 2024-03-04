@@ -67,6 +67,62 @@ class PolicyEvaluator : public Evaluator {
   std::vector<int> transforms;
 };
 
+class ValueEvaluator : public Evaluator {
+ public:
+  void Reset(const PlayerOptions& player) override {
+    comp = player.network->NewComputation();
+    input_format = player.network->GetCapabilities().input_format;
+    comp_idx = 0;
+  }
+  void Gather(NodeTree* tree) override {
+    PositionHistory history = tree->GetPositionHistory();
+    for (auto edge : tree->GetCurrentHead()->Edges()) {
+      history.Append(edge.GetMove());
+      if (history.ComputeGameResult() == GameResult::UNDECIDED) {
+        int transform;
+        auto planes = EncodePositionForNN(
+            input_format, history, 8, FillEmptyHistory::FEN_ONLY, &transform);
+        comp->AddInput(std::move(planes));
+      }
+      history.Pop();
+    }
+  }
+  void Run() override { comp->ComputeBlocking(); }
+  void MakeBestMove(NodeTree* tree) override {
+    Move best;
+    float max_q = std::numeric_limits<float>::lowest();
+    PositionHistory history = tree->GetPositionHistory();
+    for (auto edge : tree->GetCurrentHead()->Edges()) {
+      history.Append(edge.GetMove());
+      auto result = history.ComputeGameResult();
+      float q = -1;
+      if (result == GameResult::UNDECIDED) {
+        // NN eval is for side to move perspective - so if its good, its bad for
+        // us.
+        q = -comp->GetQVal(comp_idx);
+        comp_idx++;
+      } else if (result == GameResult::DRAW) {
+        q = 0;
+      } else {
+        // A legal move to a non-drawn terminal without tablebases must be a
+        // win.
+        q = 1;
+      }
+      if (q >= max_q) {
+        max_q = q;
+        best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
+      }
+      history.Pop();
+    }
+    tree->MakeMove(best);
+  }
+
+  std::unique_ptr<NetworkComputation> comp;
+  pblczero::NetworkFormat::InputFormat input_format;
+  int comp_idx;
+  std::vector<int> transforms;
+};
+
 MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
                                        PlayerOptions player2,
                                        const std::vector<Opening>& openings,
