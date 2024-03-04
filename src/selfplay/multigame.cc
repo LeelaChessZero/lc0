@@ -29,18 +29,6 @@
 
 namespace lczero {
 
-class Evaluator {
- public:
-  // Run before each batch before any Gather.
-  virtual void Reset(const PlayerOptions& player) = 0;
-  // Run for each tree.
-  virtual void Gather(NodeTree* tree) = 0;
-  // Run once between Gather and Move.
-  virtual void Run() = 0;
-  // Run for each tree in the same order as Gather.
-  virtual void MakeBestMove(NodeTree* tree) = 0;
-};
-
 class PolicyEvaluator : public Evaluator {
  public:
   void Reset(const PlayerOptions& player) override {
@@ -84,6 +72,7 @@ MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
                                        const std::vector<Opening>& openings,
                                        SyzygyTablebase* syzygy_tb)
     : options_{player1, player2}, syzygy_tb_(syzygy_tb) {
+  eval_ = std::make_unique<PolicyEvaluator>();
   trees_.reserve(openings.size());
   for (auto opening : openings) {
     trees_.push_back(std::make_shared<NodeTree>());
@@ -152,7 +141,7 @@ void MultiSelfPlayGames::Play() {
     }
     if (all_done) break;
     const int idx = blacks_move ? 1 : 0;
-    evaluator->Reset(options_[idx]);
+    eval_->Reset(options_[idx]);
     for (size_t i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
@@ -162,16 +151,16 @@ void MultiSelfPlayGames::Play() {
       const auto& board = tree->GetPositionHistory().Last().GetBoard();
       auto legal_moves = board.GenerateLegalMoves();
       tree->GetCurrentHead()->CreateEdges(legal_moves);
-      evaluator->Gather(tree.get());
+      eval_->Gather(tree.get());
     }
-    evaluator->Run();
+    eval_->Run();
     for (size_t i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
         continue;
       }
       if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
-      evaluator->MakeBestMove(tree.get());
+      eval_->MakeBestMove(tree.get());
     }
   }
 }

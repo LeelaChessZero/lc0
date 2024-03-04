@@ -31,6 +31,18 @@
 
 namespace lczero {
 
+class Evaluator {
+ public:
+  // Run before each batch before any Gather.
+  virtual void Reset(const PlayerOptions& player) = 0;
+  // Run for each tree.
+  virtual void Gather(NodeTree* tree) = 0;
+  // Run once between Gather and Move.
+  virtual void Run() = 0;
+  // Run for each tree in the same order as Gather.
+  virtual void MakeBestMove(NodeTree* tree) = 0;
+};
+
 // Plays a bunch of games vs itself.
 class MultiSelfPlayGames {
  public:
@@ -69,6 +81,7 @@ class MultiSelfPlayGames {
   bool abort_ = false;
   std::mutex mutex_;
   SyzygyTablebase* syzygy_tb_;
+  std::unique_ptr<Evaluator> eval_;
 };
 
 }  // namespace lczero
