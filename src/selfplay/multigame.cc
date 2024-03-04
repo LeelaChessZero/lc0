@@ -29,6 +29,56 @@
 
 namespace lczero {
 
+class Evaluator {
+ public:
+  // Run before each batch before any Gather.
+  virtual void Reset(const PlayerOptions& player) = 0;
+  // Run for each tree.
+  virtual void Gather(NodeTree* tree) = 0;
+  // Run once between Gather and Move.
+  virtual void Run() = 0;
+  // Run for each tree in the same order as Gather.
+  virtual void MakeBestMove(NodeTree* tree) = 0;
+};
+
+class PolicyEvaluator : Evaluator {
+ public:
+  void Reset(const PlayerOptions& player) override {
+    comp = player.network->NewComputation();
+    input_format = player.network->GetCapabilities().input_format;
+    transforms.clear();
+    comp_idx = 0;
+  }
+  void Gather(NodeTree* tree) override {
+    int transform;
+    auto planes =
+        EncodePositionForNN(input_format, tree->GetPositionHistory(), 8,
+                            FillEmptyHistory::FEN_ONLY, &transform);
+    transforms.push_back(transform);
+    comp->AddInput(std::move(planes));
+  }
+  void Run() override { comp->ComputeBlocking(); }
+  void MakeBestMove(NodeTree* tree) override {
+    Move best;
+    float max_p = std::numeric_limits<float>::lowest();
+    for (auto edge : tree->GetCurrentHead()->Edges()) {
+      float p = comp->GetPVal(comp_idx,
+                              edge.GetMove().as_nn_index(transforms[comp_idx]));
+      if (p >= max_p) {
+        max_p = p;
+        best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
+      }
+    }
+    tree->MakeMove(best);
+    comp_idx++;
+  }
+
+  std::unique_ptr<NetworkComputation> comp;
+  pblczero::NetworkFormat::InputFormat input_format;
+  int comp_idx;
+  std::vector<int> transforms;
+};
+
 MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
                                        PlayerOptions player2,
                                        const std::vector<Opening>& openings,
@@ -52,6 +102,8 @@ void MultiSelfPlayGames::Abort() {
 }
 
 void MultiSelfPlayGames::Play() {
+  std::unique_ptr<PolicyEvaluator> evaluator =
+      std::make_unique<PolicyEvaluator>();
   while (true) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -101,9 +153,7 @@ void MultiSelfPlayGames::Play() {
     }
     if (all_done) break;
     const int idx = blacks_move ? 1 : 0;
-    auto comp = options_[idx].network->NewComputation();
-    std::vector<int> transforms;
-    transforms.reserve(trees_.size());
+    evaluator->Reset(options_[idx]);
     for (int i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
@@ -113,34 +163,16 @@ void MultiSelfPlayGames::Play() {
       const auto& board = tree->GetPositionHistory().Last().GetBoard();
       auto legal_moves = board.GenerateLegalMoves();
       tree->GetCurrentHead()->CreateEdges(legal_moves);
-      int transform;
-      auto planes = EncodePositionForNN(
-          options_[idx].network->GetCapabilities().input_format,
-          tree->GetPositionHistory(), 8, FillEmptyHistory::FEN_ONLY,
-          &transform);
-      transforms[i] = transform;
-      comp->AddInput(std::move(planes));
+      evaluator->Gather(tree.get());
     }
-    comp->ComputeBlocking();
-    int comp_idx = 0;
+    evaluator->Run();
     for (int i = 0; i < trees_.size(); i++) {
       const auto& tree = trees_[i];
       if (results_[i] != GameResult::UNDECIDED) {
         continue;
       }
       if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
-      Move best;
-      float max_p = std::numeric_limits<float>::lowest();
-      for (auto edge : tree->GetCurrentHead()->Edges()) {
-        float p =
-            comp->GetPVal(comp_idx, edge.GetMove().as_nn_index(transforms[i]));
-        if (p >= max_p) {
-          max_p = p;
-          best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
-        }
-      }
-      tree->MakeMove(best);
-      comp_idx++;
+      evaluator->MakeBestMove(tree.get());
     }
   }
 }
