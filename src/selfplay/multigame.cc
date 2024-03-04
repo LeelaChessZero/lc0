@@ -147,7 +147,6 @@ void MultiSelfPlayGames::Abort() {
 }
 
 void MultiSelfPlayGames::Play() {
-  std::unique_ptr<Evaluator> evaluator = std::make_unique<PolicyEvaluator>();
   while (true) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
