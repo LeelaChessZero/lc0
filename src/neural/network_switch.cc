@@ -136,6 +136,9 @@ class SwitchNetwork : public Network {
         LoadWeightsFromFile(endgame_net);
     endgame_net_ =
         NetworkFactory::Get()->Create(backend, endgame_weights, options);
+
+    capabilities_ = main_net_->GetCapabilities();
+    capabilities_.Merge(endgame_net_->GetCapabilities());
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -147,13 +150,28 @@ class SwitchNetwork : public Network {
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
-    return main_net_->GetCapabilities();
+    return capabilities_;
+  }
+
+  int GetMiniBatchSize() const override {
+    return std::min(main_net_->GetMiniBatchSize(),
+                    endgame_net_->GetMiniBatchSize());
+  }
+
+  bool IsCpu() const override {
+    return main_net_->GetMiniBatchSize() | endgame_net_->GetMiniBatchSize();
+  }
+
+  void InitThread(int id) override {
+    main_net_->InitThread(id);
+    endgame_net_->InitThread(id);
   }
 
  private:
   std::unique_ptr<Network> main_net_;
   std::unique_ptr<Network> endgame_net_;
   int threads_;
+  NetworkCapabilities capabilities_;
 };
 
 std::unique_ptr<Network> MakeSwitchNetwork(
