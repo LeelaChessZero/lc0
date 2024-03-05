@@ -25,9 +25,11 @@
   Program grant you additional permission to convey the resulting work.
  */
 
-#include "neural/network.h"
+#include <thread>
+
 #include "chess/bitboard.h"
 #include "neural/factory.h"
+#include "neural/network.h"
 #include "utils/logging.h"
 
 namespace lczero {
@@ -39,9 +41,11 @@ class SwitchNetwork;
 class SwitchComputation : public NetworkComputation {
  public:
   SwitchComputation(std::unique_ptr<NetworkComputation> main_comp,
-                    std::unique_ptr<NetworkComputation> endgame_comp)
+                    std::unique_ptr<NetworkComputation> endgame_comp,
+                    int threads)
       : main_comp_(std::move(main_comp)),
-        endgame_comp_(std::move(endgame_comp)) {}
+        endgame_comp_(std::move(endgame_comp)),
+        threads_(threads) {}
 
   void AddInput(InputPlanes&& input) override {
     auto pieces = input[1].mask | input[2].mask | input[3].mask |
@@ -61,8 +65,16 @@ class SwitchComputation : public NetworkComputation {
   }
 
   void ComputeBlocking() override {
-    if (main_idx_.size() > 0) main_comp_->ComputeBlocking();
-    if (endgame_idx_.size() > 0) endgame_comp_->ComputeBlocking();
+    if (threads_ > 1 && main_idx_.size() > 0 && endgame_idx_.size() > 0) {
+      std::thread main(
+          [](NetworkComputation* comp) { comp->ComputeBlocking(); },
+          main_comp_.get());
+      endgame_comp_->ComputeBlocking();
+      main.join();
+    } else {
+      if (main_idx_.size() > 0) main_comp_->ComputeBlocking();
+      if (endgame_idx_.size() > 0) endgame_comp_->ComputeBlocking();
+    }
   }
 
   int GetBatchSize() const override {
@@ -105,6 +117,7 @@ class SwitchComputation : public NetworkComputation {
   std::vector<size_t> endgame_idx_;
   std::vector<size_t> rev_idx_;
   std::vector<bool> is_endgame_;
+  int threads_;
 };
 
 class SwitchNetwork : public Network {
@@ -114,6 +127,7 @@ class SwitchNetwork : public Network {
     auto backends = NetworkFactory::Get()->GetBackendsList();
     auto backend = options.GetOrDefault<std::string>("backend", backends[0]);
     auto endgame_net = options.Get<std::string>("endgame_weights");
+    threads_ = options.GetOrDefault<int>("threads", 1);
 
     main_net_ = NetworkFactory::Get()->Create(backend, weights, options);
 
@@ -128,8 +142,8 @@ class SwitchNetwork : public Network {
     std::unique_ptr<NetworkComputation> main_comp = main_net_->NewComputation();
     std::unique_ptr<NetworkComputation> endgame_comp =
         endgame_net_->NewComputation();
-    return std::make_unique<SwitchComputation>(std::move(main_comp),
-                                               std::move(endgame_comp));
+    return std::make_unique<SwitchComputation>(
+        std::move(main_comp), std::move(endgame_comp), threads_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -139,6 +153,7 @@ class SwitchNetwork : public Network {
  private:
   std::unique_ptr<Network> main_net_;
   std::unique_ptr<Network> endgame_net_;
+  int threads_;
 };
 
 std::unique_ptr<Network> MakeSwitchNetwork(
