@@ -42,16 +42,17 @@ class SwitchComputation : public NetworkComputation {
  public:
   SwitchComputation(std::unique_ptr<NetworkComputation> main_comp,
                     std::unique_ptr<NetworkComputation> endgame_comp,
-                    int threads)
+                    int threshold, int threads)
       : main_comp_(std::move(main_comp)),
         endgame_comp_(std::move(endgame_comp)),
+        threshold_(threshold),
         threads_(threads) {}
 
   void AddInput(InputPlanes&& input) override {
     auto pieces = input[1].mask | input[2].mask | input[3].mask |
                   input[4].mask | input[7].mask | input[8].mask |
                   input[9].mask | input[10].mask;
-    if (BitBoard(pieces).count() > 6) {
+    if (BitBoard(pieces).count() > threshold_) {
       is_endgame_.push_back(false);
       rev_idx_.push_back(main_idx_.size());
       main_idx_.push_back(main_idx_.size());
@@ -117,6 +118,7 @@ class SwitchComputation : public NetworkComputation {
   std::vector<size_t> endgame_idx_;
   std::vector<size_t> rev_idx_;
   std::vector<bool> is_endgame_;
+  int threshold_;
   int threads_;
 };
 
@@ -126,6 +128,7 @@ class SwitchNetwork : public Network {
                 const OptionsDict& options) {
     auto backends = NetworkFactory::Get()->GetBackendsList();
 
+    threshold_ = options.GetOrDefault<int>("threshold", 6);
     threads_ = options.GetOrDefault<int>("threads", 1);
 
     auto& main_options =
@@ -158,7 +161,7 @@ class SwitchNetwork : public Network {
     std::unique_ptr<NetworkComputation> endgame_comp =
         endgame_net_->NewComputation();
     return std::make_unique<SwitchComputation>(
-        std::move(main_comp), std::move(endgame_comp), threads_);
+        std::move(main_comp), std::move(endgame_comp), threshold_, threads_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -182,6 +185,7 @@ class SwitchNetwork : public Network {
  private:
   std::unique_ptr<Network> main_net_;
   std::unique_ptr<Network> endgame_net_;
+  int threshold_;
   int threads_;
   NetworkCapabilities capabilities_;
 };
