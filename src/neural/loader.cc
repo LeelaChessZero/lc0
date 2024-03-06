@@ -104,75 +104,6 @@ std::string DecompressGzip(const std::string& filename) {
   return buffer;
 }
 
-void MovePolicyHead(WeightsFile* file) {
-  bool attn_policy = file->format().network_format().policy() ==
-    pblczero::NetworkFormat::POLICY_ATTENTION;
-  auto vanilla = file->mutable_weights()->mutable_policy_heads()->mutable_vanilla();
-  auto mutable_weights = file->mutable_weights();
-  if (attn_policy && file->weights().has_ip_pol_b()) {
-    // For attention policy weights, ip_pol_w and ip_pol_b (embedding weights)
-    // are moved to the main "policy_heads" struct, where all policy heads
-    // share them.
-    auto heads = file->mutable_weights()->mutable_policy_heads();
-    *heads->mutable_ip_pol_w() = file->weights().ip_pol_w();
-    *heads->mutable_ip_pol_b() = file->weights().ip_pol_b();
-    mutable_weights->mutable_ip_pol_w()->Clear();
-    mutable_weights->mutable_ip_pol_b()->Clear();
-
-    // Some older attention policy nets have policy encoders.
-    for (auto enc : file->weights().pol_encoder()) {
-      *vanilla->add_pol_encoder() = enc;
-    }
-    vanilla->set_pol_headcount(file->weights().pol_headcount());
-  }
-
-  // Macro to move remaining shared weights around.
-  #define MOVE(name)                                     \
-  if (file->weights().has_##name()) {                    \
-    *vanilla->mutable_##name() = file->weights().name(); \
-    mutable_weights->mutable_##name()->Clear();          \
-  }
-  if (!attn_policy) {
-    // These weights are used by older style policy heads.
-    MOVE(policy1);
-    MOVE(policy);
-    MOVE(ip_pol_w);
-    MOVE(ip_pol_b);
-  }
-  // Weights common to all policy implementations.
-  MOVE(ip2_pol_w);
-  MOVE(ip2_pol_b);
-  MOVE(ip3_pol_w);
-  MOVE(ip3_pol_b);
-  MOVE(ip4_pol_w);
-
-  #undef MOVE
-}
-
-void MoveValueHead(WeightsFile* file) {
-  bool attn_body = file->format().network_format().network() ==
-    pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
-  auto winner = file->mutable_weights()->mutable_value_heads()->mutable_winner();
-  auto mutable_weights = file->mutable_weights();
-  // Macro to move weights around.
-  #define MOVE(name)                                     \
-  if (file->weights().has_##name()) {                    \
-    *winner->mutable_##name() = file->weights().name();  \
-    mutable_weights->mutable_##name()->Clear();          \
-  }
-  if (!attn_body) {
-    MOVE(value);
-  }
-  MOVE(ip2_val_w);
-  MOVE(ip2_val_b);
-  MOVE(ip1_val_w);
-  MOVE(ip1_val_b);
-  MOVE(ip_val_w);
-  MOVE(ip_val_b);
-
-  #undef MOVE
-}
-
 void FixOlderWeightsFile(WeightsFile* file) {
   using nf = pblczero::NetworkFormat;
   auto network_format = file->format().network_format().network();
@@ -186,58 +117,43 @@ void FixOlderWeightsFile(WeightsFile* file) {
     net->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
-  } else if (network_format == pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+  } else if (network_format == nf::NETWORK_CLASSICAL) {
     // Populate policyFormat and valueFormat fields in old protobufs
     // without these fields.
     net->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
-  } else if (network_format == pblczero::NetworkFormat::NETWORK_SE) {
+  } else if (network_format == nf::NETWORK_SE) {
     net->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
   } else if (network_format ==
-                 pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+                 nf::NETWORK_SE_WITH_HEADFORMAT &&
              file->weights().encoder().size() > 0) {
     // Attention body network made with old protobuf.
     auto* net = file->mutable_format()->mutable_network_format();
     net->set_network(
-        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+        nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
     if (file->weights().has_smolgen_w()) {
       // Need to override activation defaults for smolgen.
-      net->set_ffn_activation(pblczero::NetworkFormat::ACTIVATION_RELU_2);
-      net->set_smolgen_activation(pblczero::NetworkFormat::ACTIVATION_SWISH);
+      net->set_ffn_activation(nf::ACTIVATION_RELU_2);
+      net->set_smolgen_activation(nf::ACTIVATION_SWISH);
     }
+  } else if (network_format == nf::NETWORK_AB_LEGACY_WITH_MULTIHEADFORMAT) {
+    net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT);
   }
 
   // Get updated network format.
-  network_format = file->format().network_format().network();
-  auto embedding_type = file->format().network_format().input_embedding();
-  bool multihead_format = (network_format & 128) == 128;
-  if (!multihead_format) {
+  if (file->format().network_format().network() ==
+      nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
     auto weights = file->weights();
     if (weights.has_policy_heads() && weights.has_value_heads()) {
       CERR << "Weights file has multihead format, updating format flag";
-      net->set_network(static_cast<pblczero::NetworkFormat::NetworkStructure>(network_format | 128));
-      net->set_input_embedding(pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE);
+      net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT);
+      net->set_input_embedding(nf::INPUT_EMBEDDING_PE_DENSE);
     }
-    else {
-      CERR << "Weights file has single head format, rewriting to multihead format";
-      // Move policy and value heads.
-      MovePolicyHead(file);
-      MoveValueHead(file);
-      net->set_network(static_cast<pblczero::NetworkFormat::NetworkStructure>(network_format | 128));
-      switch (network_format) {
-        case pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
-          net->set_input_embedding(pblczero::NetworkFormat::INPUT_EMBEDDING_PE_MAP);
-          break;
-        default:
-          net->set_input_embedding(pblczero::NetworkFormat::INPUT_EMBEDDING_NONE);
-      }
-    }
-  } else {
-    if (embedding_type != pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE) {
-      net->set_input_embedding(pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE);
+    if (!file->format().network_format().has_input_embedding()) {
+      net->set_input_embedding(nf::INPUT_EMBEDDING_PE_MAP);
     }
   }
 }

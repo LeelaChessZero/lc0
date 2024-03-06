@@ -706,10 +706,8 @@ template <typename T>
 void globalAvgPool(int N, int C, T* output, const T* input,
                    const T* prevLayerBias, bool nhwc) {
   const int kPlaneSize = 64;
-
-  const bool fp16 = std::is_same<half, T>::value;
   if (nhwc) {
-    assert(fp16);
+    assert((std::is_same<half, T>::value));
     // For NHWC fp16, simply launch N blocks, each with C threads.
     globalAvgPool_kernel_NHWC_fp16<<<N, C>>>((half*)output, (half*)input,
                                              (half*)prevLayerBias,
@@ -734,14 +732,12 @@ template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                  const T* prevLayerBias, bool nhwc,
                  ActivationFunction activation) {
-  const bool fp16 = std::is_same<half, T>::value;
-
   // Each thread writes one output.
   const int kBlockSize = 256;
   const int kBlocks = DivUp(N * 8 * 8 * C, kBlockSize);
 
   if (nhwc) {
-    assert(fp16);
+    assert((std::is_same<half, T>::value));
     globalScale_kernel_fp16_nhwc<<<kBlocks, kBlockSize>>>(
         (half*)output, (half*)input, (half*)scaleBias, (half*)prevLayerBias,
         N * C * 8 * 8, C, 8 * 8 * C, activation);

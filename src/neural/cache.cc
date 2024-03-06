@@ -89,7 +89,6 @@ void CachingComputation::ComputeBlocking() {
     req->q = parent_->GetQVal(item.idx_in_parent);
     req->d = parent_->GetDVal(item.idx_in_parent);
     req->m = parent_->GetMVal(item.idx_in_parent);
-    req->e = parent_->GetEVal(item.idx_in_parent);
     int idx = 0;
     for (auto x : item.probabilities_to_cache) {
       req->p[idx++] =
@@ -109,12 +108,6 @@ float CachingComputation::GetDVal(int sample) const {
   const auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) return parent_->GetDVal(item.idx_in_parent);
   return item.lock->d;
-}
-
-float CachingComputation::GetEVal(int sample) const {
-  const auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0) return parent_->GetEVal(item.idx_in_parent);
-  return item.lock->e;
 }
 
 float CachingComputation::GetMVal(int sample) const {
