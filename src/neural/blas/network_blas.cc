@@ -228,11 +228,7 @@ BlasComputation<use_eigen>::BlasComputation(
       ffn_activation_(ffn_activation),
       attn_policy_(attn_policy),
       attn_body_(attn_body),
-      network_(network) {
-#ifdef USE_DNNL
-  omp_set_num_threads(1);
-#endif
-}
+      network_(network) { }
 
 template <typename T>
 using EigenMatrixMap =
@@ -457,6 +453,9 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
 template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
+#ifdef USE_DNNL
+  if (!use_eigen) omp_set_num_threads(1);
+#endif
   const auto& value_head = weights_.value_heads.at("winner");
   const auto& policy_head = weights_.policy_heads.at("vanilla");
   // Retrieve network key dimensions from the weights structure.
@@ -967,6 +966,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   }
 
   if (use_eigen) {
+    Eigen::setNbThreads(1);
     CERR << "Using Eigen version " << EIGEN_WORLD_VERSION << "."
          << EIGEN_MAJOR_VERSION << "." << EIGEN_MINOR_VERSION;
     CERR << "Eigen max batch size is " << max_batch_size_ << ".";
