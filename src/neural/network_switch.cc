@@ -126,7 +126,6 @@ class SwitchNetwork : public Network {
                 const OptionsDict& options) {
     auto backends = NetworkFactory::Get()->GetBackendsList();
 
-    auto endgame_net = options.Get<std::string>("endgame_weights");
     threads_ = options.GetOrDefault<int>("threads", 1);
 
     auto& main_options =
@@ -136,16 +135,19 @@ class SwitchNetwork : public Network {
         main_options.GetOrDefault<std::string>("backend", backends[0]), weights,
         main_options);
 
-    CERR << "Loading endgame weights file from: " << endgame_net;
-    std::optional<WeightsFile> endgame_weights =
-        LoadWeightsFromFile(endgame_net);
+    std::optional<WeightsFile> endgame_weights;
+    if (!options.IsDefault<std::string>("endgame_weights")) {
+      auto name = options.Get<std::string>("endgame_weights");
+      CERR << "Loading endgame weights file from: " << name;
+      endgame_weights = LoadWeightsFromFile(name);
+    }
 
     auto& endgame_options =
         options.HasSubdict("endgame") ? options.GetSubdict("endgame") : options;
 
     endgame_net_ = NetworkFactory::Get()->Create(
         endgame_options.GetOrDefault<std::string>("backend", backends[0]),
-        endgame_weights, endgame_options);
+        endgame_weights ? endgame_weights : weights, endgame_options);
 
     capabilities_ = main_net_->GetCapabilities();
     capabilities_.Merge(endgame_net_->GetCapabilities());
