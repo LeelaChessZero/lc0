@@ -191,6 +191,17 @@ HloFlow HloBuilder::Reduce(HloFlow input, HloFlow initial,
   return flow;
 }
 
+HloFlow HloBuilder::Transpose(HloFlow input,
+                              const std::vector<int64_t>& permutation) {
+  HloTensorType target_shape(input->shape().element_type());
+  for (size_t i = 0; i < permutation.size(); ++i) {
+    target_shape.AddDimension(input->shape().dimensions(permutation[i]));
+  }
+  auto flow = MakeInstruction("transpose", target_shape.ToProto(), {input});
+  *flow->mutable_dimensions() = permutation;
+  return flow;
+}
+
 HloFlow HloBuilder::Add(HloFlow lhs, HloFlow rhs) {
   return MakeElementwiseInstruction("add", lhs, rhs);
 }

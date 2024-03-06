@@ -123,6 +123,7 @@ class HloBuilder {
   HloFlow Tuple(const std::vector<HloFlow>& elements);
   HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
                  const std::vector<int64_t>& reduction_dimensions);
+  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);                 
   HloFlow Gather(HloFlow input, HloFlow indices, size_t index_vector_dim,
                  const std::vector<int64_t>& offset_dims,
                  const std::vector<int64_t>& slice_sizes,

@@ -417,6 +417,13 @@ class Onnx2HloConverter {
     return {GetInput(node, 0)};
   }
 
+  std::vector<HloFlow> OpTranspose(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"perm"});
+    auto* input = GetInput(node, 0);
+    auto perm = GetAttribute(node, "perm")->ints();
+    return {builder_.Transpose(input, perm)};
+  }
+
   std::vector<HloFlow> OpSoftmax(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {"axis"});
     const auto axis = GetAttribute(node, "axis")->i();
