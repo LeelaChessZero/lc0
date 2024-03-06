@@ -454,7 +454,10 @@ HloFlow HloBuilder::Slice(
     if (dim.start() < 0 || dim.start() >= current_shape.GetDimension(i) ||
         dim.limit() < 0 || dim.limit() > current_shape.GetDimension(i) ||
         dim.start() >= dim.limit() || dim.stride() != 1) {
-      throw Exception("Invalid slice dimensions");
+      throw Exception("Invalid slice dimensions, input shape=" +
+                      current_shape.ToString() + ", dim=" + std::to_string(i) +
+                      ", slice_start=" + std::to_string(dim.start()) +
+                      ", slice_limit=" + std::to_string(dim.limit()));
     }
     // This / dim.stride() is pretty approximate, therefore there's a check
     // above.

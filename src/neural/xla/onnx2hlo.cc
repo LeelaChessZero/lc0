@@ -191,6 +191,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
     onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
+    onnx_op_to_builder_["Slice"] = &Onnx2HloConverter::OpSlice;
     onnx_op_to_builder_["Shape"] = &Onnx2HloConverter::OpShape;
     onnx_op_to_builder_["Slice"] = &Onnx2HloConverter::OpSlice;
     onnx_op_to_builder_["Softmax"] = &Onnx2HloConverter::OpSoftmax;
@@ -433,7 +434,9 @@ class Onnx2HloConverter {
     HloTensorType shape(pblczero::XlaShapeProto::S64);
     shape.AddDimension(input->shape().dimensions_size());
     *literal.mutable_shape() = shape.ToProto();
-    *literal.mutable_s64s() = input->shape().dimensions();
+    for (auto dim : input->shape().dimensions()) {
+      literal.add_s64s(dim == -1 ? batch_size_ : dim);
+    }
     return {builder_.Constant(literal)};
   }
 
