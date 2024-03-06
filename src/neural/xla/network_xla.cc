@@ -43,7 +43,7 @@ class Lc0InputTensor : public XlaTensor {
       : max_batch_size_(max_batch_size),
         // TODO replace with make_unique_for_overwrite() once C++20 is
         // available.
-        data_(new float[GetTensorByteSizeForBatch(max_batch_size)]),
+        data_(new char[GetTensorByteSizeForBatch(max_batch_size)]),
         shape_{0, kInputPlanes, 8, 8} {}
 
   const std::vector<int64_t>& shape() const override { return shape_; }
@@ -62,7 +62,7 @@ class Lc0InputTensor : public XlaTensor {
     assert(size_t(shape_[0]) < max_batch_size_);
     auto ret = data_.get() + shape_[0] * GetTensorByteSizeForBatch(1);
     ++shape_[0];
-    return ret;
+    return reinterpret_cast<float*>(ret);
   }
   size_t GetBatchSize() const { return shape_[0]; }
 
@@ -72,7 +72,7 @@ class Lc0InputTensor : public XlaTensor {
   }
 
   const size_t max_batch_size_;
-  std::unique_ptr<float[]> data_;
+  std::unique_ptr<char[]> data_;
   std::vector<int64_t> shape_;
 };
 
@@ -280,8 +280,8 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                      "./pjrt_c_api_gpu_plugin.so")
           .c_str(),
       device);
-  int max_batch_size = opts.GetOrDefault<int>("max_batch", 739);
-  int steps = opts.GetOrDefault<int>("steps", 13);
+  int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
+  int steps = opts.GetOrDefault<int>("steps", 16);
 
   XlaNetworkOptions options;
   if (w->has_onnx_model()) {
