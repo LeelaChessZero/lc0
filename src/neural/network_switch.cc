@@ -54,34 +54,31 @@ class SwitchComputation : public NetworkComputation {
                   input[9].mask | input[10].mask;
     if (BitBoard(pieces).count() > threshold_) {
       is_endgame_.push_back(false);
-      rev_idx_.push_back(main_idx_.size());
-      main_idx_.push_back(main_idx_.size());
+      rev_idx_.push_back(main_cnt_);
+      main_cnt_++;
       main_comp_->AddInput(std::move(input));
     } else {
       is_endgame_.push_back(true);
-      rev_idx_.push_back(endgame_idx_.size());
-      endgame_idx_.push_back(endgame_idx_.size());
+      rev_idx_.push_back(endgame_cnt_);
+      endgame_cnt_++;
       endgame_comp_->AddInput(std::move(input));
     }
   }
 
   void ComputeBlocking() override {
-    if (threads_ > 1 && main_idx_.size() > 0 && endgame_idx_.size() > 0) {
+    if (threads_ > 1 && main_cnt_ > 0 && endgame_cnt_ > 0) {
       std::thread main(
           [](NetworkComputation* comp) { comp->ComputeBlocking(); },
           main_comp_.get());
       endgame_comp_->ComputeBlocking();
       main.join();
     } else {
-      if (main_idx_.size() > 0) main_comp_->ComputeBlocking();
-      if (endgame_idx_.size() > 0) endgame_comp_->ComputeBlocking();
+      if (main_cnt_ > 0) main_comp_->ComputeBlocking();
+      if (endgame_cnt_ > 0) endgame_comp_->ComputeBlocking();
     }
   }
 
-  int GetBatchSize() const override {
-    return static_cast<int>(main_comp_->GetBatchSize() +
-                            endgame_comp_->GetBatchSize());
-  }
+  int GetBatchSize() const override { return main_cnt_ + endgame_cnt_; }
 
   float GetQVal(int sample) const override {
     if (is_endgame_[sample]) {
@@ -114,8 +111,8 @@ class SwitchComputation : public NetworkComputation {
  private:
   std::unique_ptr<NetworkComputation> main_comp_;
   std::unique_ptr<NetworkComputation> endgame_comp_;
-  std::vector<size_t> main_idx_;
-  std::vector<size_t> endgame_idx_;
+  int main_cnt_ = 0;
+  int endgame_cnt_ = 0;
   std::vector<size_t> rev_idx_;
   std::vector<bool> is_endgame_;
   int threshold_;
