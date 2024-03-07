@@ -126,9 +126,12 @@ class ValueEvaluator : public Evaluator {
 MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
                                        PlayerOptions player2,
                                        const std::vector<Opening>& openings,
-                                       SyzygyTablebase* syzygy_tb)
+                                       SyzygyTablebase* syzygy_tb,
+                                       bool use_value)
     : options_{player1, player2}, syzygy_tb_(syzygy_tb) {
-  eval_ = std::make_unique<PolicyEvaluator>();
+  eval_ = use_value
+              ? std::unique_ptr<Evaluator>(std::make_unique<ValueEvaluator>())
+              : std::unique_ptr<Evaluator>(std::make_unique<PolicyEvaluator>());
   trees_.reserve(openings.size());
   for (auto opening : openings) {
     trees_.push_back(std::make_shared<NodeTree>());

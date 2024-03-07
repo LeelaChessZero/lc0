@@ -67,6 +67,9 @@ const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
 const OptionId kPolicyModeSizeId{"policy-mode-size", "PolicyModeSize",
                                  "Number of games per thread in policy only "
                                  "mode. Set to 0 to not use policy only mode."};
+const OptionId kValueModeSizeId{"value-mode-size", "ValueModeSize",
+                                "Number of games per thread in value only "
+                                "mode. Set to 0 to not use value only mode."};
 const OptionId kTournamentResultsFileId{
     "tournament-results-file", "TournamentResultsFile",
     "Name of file to append the tournament results in fake pgn format."};
@@ -121,6 +124,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
   options->Add<IntOption>(kPolicyModeSizeId, 0, 1024) = 0;
+  options->Add<IntOption>(kValueModeSizeId, 0, 64) = 0;
   options->Add<StringOption>(kTournamentResultsFileId) = "";
   options->Add<BoolOption>(kMoveThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
@@ -172,9 +176,11 @@ SelfPlayTournament::SelfPlayTournament(
       kTraining(options.Get<bool>(kTrainingId)),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId)),
       kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId)),
+      kValueGamesSize(options.Get<int>(kValueModeSizeId)),
       kTournamentResultsFile(
           options.Get<std::string>(kTournamentResultsFileId)),
       kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)) {
+  multi_games_size_ = std::max(kPolicyGamesSize, kValueGamesSize);
   std::string book = options.Get<std::string>(kOpeningsFileId);
   if (!book.empty()) {
     PgnReader book_reader;
@@ -184,16 +190,21 @@ SelfPlayTournament::SelfPlayTournament(
       Random::Get().Shuffle(openings_.begin(), openings_.end());
     }
   }
-  if (kPolicyGamesSize > 0 && openings_.size() == 0) {
-    throw Exception(
-        "Policy games are deterministic, needs opening book to be useful.");
+  if (kPolicyGamesSize > 0 && kValueGamesSize > 0) {
+    throw Exception("Can't do both policy and value games at the same time.");
   }
-  if (kPolicyGamesSize > 0 &&
+  if (multi_games_size_ > 0 && openings_.size() == 0) {
+    throw Exception(
+        "Policy/Value games are deterministic, needs opening book to be "
+        "useful.");
+  }
+  if (multi_games_size_ > 0 &&
       (kTotalGames == -1 ||
        (kTotalGames > 0 &&
         static_cast<size_t>(kTotalGames) > openings_.size() * 2))) {
     throw Exception(
-        "Policy games are deterministic, you do not want to go through the "
+        "Policy/Value games are deterministic, you do not want to go through "
+        "the "
         "opening book more than once.");
   }
   // If playing just one game, the player1 is white, otherwise randomize.
@@ -234,12 +245,12 @@ SelfPlayTournament::SelfPlayTournament(
       limits.visits = dict.Get<int>(kVisitsId);
       limits.movetime = dict.Get<int>(kTimeMsId);
 
-      if (kPolicyGamesSize == 0 && limits.playouts == -1 &&
+      if (multi_games_size_ == 0 && limits.playouts == -1 &&
           limits.visits == -1 && limits.movetime == -1) {
         throw Exception(
             "Please define --visits, --playouts or --movetime, otherwise it's "
             "not clear when to stop search.");
-      } else if (kPolicyGamesSize > 0 &&
+      } else if (multi_games_size_ > 0 &&
                  (limits.playouts != -1 || limits.visits != -1 ||
                   limits.movetime != -1)) {
         throw Exception(
@@ -365,11 +376,13 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   // delete it. Need to expose it in games_ member variable only because
   // of possible Abort() that should stop them all.
   std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
+  SyzygyTablebase* syzygy_tb;
   {
     Mutex::Lock lock(mutex_);
     games_.emplace_front(std::make_unique<SelfPlayGame>(options[0], options[1],
                                                         kShareTree, opening));
     game_iter = games_.begin();
+    syzygy_tb = syzygy_tb_.get();
   }
   auto& game = **game_iter;
 
@@ -380,7 +393,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   // PLAY GAME!
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
-  game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
+  game.Play(player1_threads, player2_threads, kTraining, syzygy_tb,
             enable_resign);
 
   // If game was aborted, it's still undecided.
@@ -427,11 +440,15 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
 }
 
 void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
+  bool use_value = kValueGamesSize > 0;
   std::vector<Opening> openings;
   openings.reserve(game_count / 2);
   size_t opening_basis = game_id / 2;
-  for (size_t i = 0; i < game_count / 2; i++) {
-    openings.push_back(openings_[(opening_basis + i) % openings_.size()]);
+  {
+    Mutex::Lock lock(mutex_);
+    for (size_t i = 0; i < game_count / 2; i++) {
+      openings.push_back(openings_[(opening_basis + i) % openings_.size()]);
+    }
   }
 
   PlayerOptions options[2];
@@ -447,7 +464,7 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   {
     Mutex::Lock lock(mutex_);
     multigames_.emplace_front(std::make_unique<MultiSelfPlayGames>(
-        options[0], options[1], openings, syzygy_tb_.get()));
+        options[0], options[1], openings, syzygy_tb_.get(), use_value));
     game1_iter = multigames_.begin();
     aborted = abort_;
   }
@@ -467,7 +484,7 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   {
     Mutex::Lock lock(mutex_);
     multigames_.emplace_front(std::make_unique<MultiSelfPlayGames>(
-        options[1], options[0], openings, syzygy_tb_.get()));
+        options[1], options[0], openings, syzygy_tb_.get(), use_value));
     game2_iter = multigames_.begin();
     aborted = abort_;
   }
@@ -536,18 +553,19 @@ void SelfPlayTournament::Worker() {
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      if (kPolicyGamesSize) {
+      if (multi_games_size_) {
         if (!player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
           throw Exception(
-              "Policy multi games mode only supports mirrored openings.");
+              "Policy/Value multi games mode only supports mirrored openings.");
         }
         if (kTotalGames > 0 && kTotalGames % 2 == 1) {
           throw Exception(
-              "Policy multi games can't support mirrored with an odd number "
+              "Policy/Value multi games can't support mirrored with an odd "
+              "number "
               "of games.");
         }
-        int to_take = 2 * kPolicyGamesSize;
-        int max_take = 2 * kPolicyGamesSize;
+        int to_take = 2 * multi_games_size_;
+        int max_take = 2 * multi_games_size_;
         if (kTotalGames != -1) {
           int cap = kTotalGames == -2 ? openings_.size() * 2 : kTotalGames;
           to_take = std::min(max_take, cap - games_count_);
@@ -568,7 +586,7 @@ void SelfPlayTournament::Worker() {
         game_id = games_count_++;
       }
     }
-    if (kPolicyGamesSize) {
+    if (multi_games_size_) {
       PlayMultiGames(game_id, count);
     } else {
       PlayOneGame(game_id);

@@ -49,7 +49,7 @@ class MultiSelfPlayGames {
   // Player options may point to the same network/cache/etc.
   MultiSelfPlayGames(PlayerOptions player1, PlayerOptions player2,
                      const std::vector<Opening>& openings,
-                     SyzygyTablebase* syzygy_tb);
+                     SyzygyTablebase* syzygy_tb, bool use_value);
 
   // Starts the games and blocks until all games are finished.
   void Play();
