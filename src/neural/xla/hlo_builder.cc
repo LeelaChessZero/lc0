@@ -425,6 +425,34 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
   return MakeInstruction("tuple", shape, elements);
 }
 
+HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
+                                size_t dimension) {
+  if (inputs.empty()) {
+    throw Exception("Concatenate must have at least one input");
+  }
+  HloTensorType output_shape(inputs[0]->shape());
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    HloTensorType current_shape(inputs[i]->shape());
+    if (output_shape.Rank() != current_shape.Rank()) {
+      throw Exception("Concatenate inputs must have the same rank");
+    }
+    for (size_t j = 0; j < output_shape.Rank(); ++j) {
+      if (j == dimension) {
+        output_shape.SetDimension(
+            j, output_shape.GetDimension(j) + current_shape.GetDimension(j));
+      } else if (current_shape.GetDimension(j) !=
+                 current_shape.GetDimension(j)) {
+        throw Exception(
+            "Concatenate inputs must have the same size on all "
+            "dimensions except the concatenation dimension");
+      }
+    }
+  }
+  auto flow = MakeInstruction("concatenate", output_shape.ToProto(), inputs);
+  flow->add_dimensions(dimension);
+  return flow;
+}
+
 HloFlow HloBuilder::Transpose(HloFlow input,
                               const std::vector<int64_t>& permutation) {
   if (permutation.size() != input->shape().dimensions_size()) {

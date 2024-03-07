@@ -179,6 +179,7 @@ class Onnx2HloConverter {
  public:
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
+    onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
     onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
@@ -424,6 +425,16 @@ class Onnx2HloConverter {
     auto* input = GetInput(node, 0);
     auto perm = GetAttribute(node, "perm")->ints();
     return {builder_.Transpose(input, perm)};
+  }
+
+  std::vector<HloFlow> OpConcat(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {"axis"});
+    const auto axis = GetAttribute(node, "axis")->i();
+    std::vector<HloFlow> flows;
+    for (size_t i = 0; i < node.input_size(); ++i) {
+      flows.push_back(GetInput(node, i));
+    }
+    return {builder_.Concatenate(flows, axis)};
   }
 
   std::vector<HloFlow> OpShape(const pblczero::NodeProto& node) {

@@ -82,6 +82,7 @@ class HloTensorType : public HloType {
   void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
   const std::vector<int64_t>& GetDimensions() const { return dimensions_; }
   int64_t GetDimension(size_t idx) const { return dimensions_[idx]; }
+  void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
   size_t Rank() const { return dimensions_.size(); }
   size_t NumElements() const;
 
@@ -97,6 +98,7 @@ class HloBuilder {
   // HLO operations.
   HloFlow Parameter(const HloType& shape);
   HloFlow Constant(const pblczero::XlaLiteralProto& literal);
+  HloFlow Concatenate(const std::vector<HloFlow>& inputs, size_t dimension);
   HloFlow Convert(HloFlow input, const pblczero::XlaShapeProto::Type type);
   HloFlow Convolution(
       HloFlow input, HloFlow filter, const pblczero::XlaWindow& window,
@@ -123,7 +125,7 @@ class HloBuilder {
   HloFlow Tuple(const std::vector<HloFlow>& elements);
   HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
                  const std::vector<int64_t>& reduction_dimensions);
-  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);                 
+  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);
   HloFlow Gather(HloFlow input, HloFlow indices, size_t index_vector_dim,
                  const std::vector<int64_t>& offset_dims,
                  const std::vector<int64_t>& slice_sizes,
