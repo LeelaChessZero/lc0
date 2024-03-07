@@ -127,8 +127,8 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
-  CudaNetworkComputation(CudaNetwork<DataType>* network, bool wdl, bool wdl_err,
-                         bool moves_left);
+  CudaNetworkComputation(CudaNetwork<DataType>* network,
+                         bool wdl, bool moves_left);
   ~CudaNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -183,7 +183,6 @@ class CudaNetworkComputation : public NetworkComputation {
   std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
   bool wdl_;
-  bool wdl_err_;
   bool moves_left_;
 
   CudaNetwork<DataType>* network_;
@@ -629,17 +628,9 @@ class CudaNetwork : public Network {
              pblczero::NetworkFormat::VALUE_WDL;
       BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
       auto value_main = std::make_unique<ValueHead<DataType>>(
-          lastlayer, head, scratch_mem_, attn_body_, wdl_, false, act,
+          lastlayer, head, scratch_mem_, attn_body_, wdl_, act,
           max_batch_size_, use_gemm_ex);
       network_.emplace_back(std::move(value_main));
-
-      wdl_err_ = weights.value_heads.count("st") > 0;
-      if (wdl_err_) {
-        auto value_err = std::make_unique<ValueHead<DataType>>(
-            lastlayer, weights.value_heads.at("st"), scratch_mem_, attn_body_,
-            wdl_, true, act, max_batch_size_, use_gemm_ex);
-        network_.emplace_back(std::move(value_err));
-      }
     }
 
     // Moves left head
@@ -756,7 +747,6 @@ class CudaNetwork : public Network {
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
     float* opMov = io->op_moves_left_mem_gpu_;
-    float* opValErr = io->op_value_err_mem_gpu_;
 
     // Figure out if the memory requirment for running the res block would fit
     // in the L2 cache.
@@ -926,20 +916,6 @@ class CudaNetwork : public Network {
                           stream);  // value head
     }
 
-    if (wdl_err_) {
-      // value error head
-      if (fp16) {
-        network_[l++]->Eval(batchSize, spare1, flow, spare2, scratch_mem,
-                            scratch_size_, nullptr, cublas,
-                            stream);  // value error head
-        copyTypeConverted(opValErr, (half*)spare1, batchSize, stream);
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opValErr, flow, spare2,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value error head
-      }
-    }
-
     if (moves_left_) {
       // Moves left head
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
@@ -1030,16 +1006,15 @@ class CudaNetwork : public Network {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
-    return std::make_unique<CudaNetworkComputation<DataType>>(
-        this, wdl_, wdl_err_, moves_left_);
+    return std::make_unique<CudaNetworkComputation<DataType>>(this, wdl_,
+                                                              moves_left_);
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(
-          max_batch_size_, wdl_, wdl_err_, moves_left_, tensor_mem_size_,
-          scratch_size_,
+          max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
           !has_tensor_cores_ && std::is_same<half, DataType>::value);
     } else {
       std::unique_ptr<InputsOutputs> resource =
@@ -1069,7 +1044,6 @@ class CudaNetwork : public Network {
   int max_batch_size_;
   int min_batch_size_;
   bool wdl_;
-  bool wdl_err_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
                                           // tower
@@ -1167,8 +1141,8 @@ class CudaNetwork : public Network {
 
 template <typename DataType>
 CudaNetworkComputation<DataType>::CudaNetworkComputation(
-    CudaNetwork<DataType>* network, bool wdl, bool wdl_err, bool moves_left)
-    : wdl_(wdl), wdl_err_(wdl_err), moves_left_(moves_left), network_(network) {
+    CudaNetwork<DataType>* network, bool wdl, bool moves_left)
+    : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
   inputs_outputs_ = network_->GetInputsOutputs();
 }
