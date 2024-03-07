@@ -125,8 +125,9 @@ void ProtoMessage::AppendString(int field_id, std::string_view value,
 void ProtoMessage::AppendJsonFieldPrefix(const std::string& name,
                                          bool* is_first, std::string* out) {
   if (*is_first) {
-    out->append(",");
     *is_first = false;
+  } else {
+    out->append(",");
   }
   AppendJsonValue(name, out);
   out->append(":");
