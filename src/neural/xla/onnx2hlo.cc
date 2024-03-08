@@ -81,6 +81,27 @@ pblczero::XlaLiteralProto ConstOpConcat(
   return result;
 }
 
+pblczero::XlaLiteralProto ConstOpSlice(
+    const pblczero::XlaLiteralProto& input,
+    const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice) {
+  if (input.shape().dimensions_size() != 1 || slice.size() != 1) {
+    throw Exception(
+        "For constant slices, only 1D inputs are supported for now");
+  }
+  if (slice[0].stride() != 1) {
+    throw Exception("For constant slices, only stride 1 is supported for now");
+  }
+  HloTensorType shape(input.shape().element_type());
+  shape.AddDimension(slice[0].limit() - slice[0].start());
+  pblczero::XlaLiteralProto result;
+  LiteralOp2(&result, input, [&slice](auto* dst, const auto& src) {
+    dst->insert(dst->end(), src.begin() + slice[0].start(),
+                src.begin() + slice[0].limit());
+  });
+  *result.mutable_shape() = shape.ToProto();
+  return result;
+}
+
 pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
     const pblczero::TensorProto::DataType& type) {
   switch (type) {
@@ -234,7 +255,6 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
     onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
-    onnx_op_to_builder_["Slice"] = &Onnx2HloConverter::OpSlice;
     onnx_op_to_builder_["Shape"] = &Onnx2HloConverter::OpShape;
     onnx_op_to_builder_["Slice"] = &Onnx2HloConverter::OpSlice;
     onnx_op_to_builder_["Softmax"] = &Onnx2HloConverter::OpSoftmax;
@@ -678,7 +698,7 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpSlice(const pblczero::NodeProto& node) {
     if (opset_version_ < 10) {
-      throw Exception("Split not supported in ONNX opset < 10");
+      throw Exception("Slice not supported in ONNX opset < 10");
     }
     CheckKnownAttributes(node, 3, {});
     auto* input = GetInput(node, 0);
@@ -691,6 +711,9 @@ class Onnx2HloConverter {
       slice.set_limit(std::min<int64_t>(ends[i], input->shape().dimensions(i)));
       slice.set_stride(1);
       slices.push_back(slice);
+    }
+    if (AllInputsConstant(node)) {
+      return {builder_.Constant(ConstOpSlice(input->literal(), slices))};
     }
     return {builder_.Slice(input, slices)};
   }
