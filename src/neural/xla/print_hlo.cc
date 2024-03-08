@@ -366,6 +366,9 @@ class HloPrettyPrinter {
     if (instruction.has_unique_indices()) {
       s_ << ", unique_indices=" << BoolValue(instruction.unique_indices());
     }
+    if (instruction.has_comparison_direction()) {
+      s_ << ", direction=" << instruction.comparison_direction();
+    }
   }
 
   // Prints the metadata of the given instruction (source file, line, etc).

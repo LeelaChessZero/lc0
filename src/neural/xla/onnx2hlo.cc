@@ -180,6 +180,7 @@ class Onnx2HloConverter {
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
@@ -188,11 +189,15 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
+    onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
     onnx_op_to_builder_["Sigmoid"] = &Onnx2HloConverter::OpSigmoid;
+    onnx_op_to_builder_["Slice"] = &Onnx2HloConverter::OpSlice;
     onnx_op_to_builder_["Softmax"] = &Onnx2HloConverter::OpSoftmax;
+    onnx_op_to_builder_["Softplus"] = &Onnx2HloConverter::OpSoftplus;
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
+    onnx_op_to_builder_["Transpose"] = &Onnx2HloConverter::OpTranspose;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -308,9 +313,9 @@ class Onnx2HloConverter {
       if (optional) return std::nullopt;
       throw Exception("Input " + std::to_string(idx) + " not set");
     }
-    auto tensor = initializers_.find(std::string(node.input(1)));
+    auto tensor = initializers_.find(std::string(node.input(idx)));
     if (tensor == initializers_.end()) {
-      throw Exception("Constant input " + std::string(node.input(1)) +
+      throw Exception("Constant input " + std::string(node.input(idx)) +
                       " not found");
     }
     return OnnxTensorToXlaLiteral(*tensor->second);
@@ -385,6 +390,28 @@ class Onnx2HloConverter {
     return {builder_.Maximum(input, zero)};
   }
 
+  std::vector<HloFlow> OpSelu(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"alpha", "gamma"});
+    auto* input = GetInput(node, 0);
+    auto* palpha = GetAttribute(node, "alpha", true);
+    double alpha = palpha ? palpha->f() : 1.6732632423543772848170429916717;
+    auto* pgamma = GetAttribute(node, "gamma", true);
+    double gamma = pgamma ? pgamma->f() : 1.0507009873554804934193349852946;
+    auto* neg = builder_.Multiply(
+        builder_.Broadcast(MakeScalar(alpha, input->shape().element_type()),
+                           HloTensorType(input->shape()), {}),
+        builder_.ExponentialMinusOne(input));
+    auto* zeros =
+        builder_.Broadcast(MakeScalar(0, input->shape().element_type()),
+                           HloTensorType(input->shape()), {});
+    auto* preds = builder_.Compare(input, zeros, "GE");
+    auto* flow = builder_.Select(preds, input, neg);
+    return {builder_.Multiply(
+        flow,
+        builder_.Broadcast(MakeScalar(gamma, input->shape().element_type()),
+                           HloTensorType(input->shape()), {}))};
+  }
+
   std::vector<HloFlow> OpIdentity(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {});
     return {GetInput(node, 0)};
@@ -431,6 +458,16 @@ class Onnx2HloConverter {
                             is_sorted, is_unique)};
   }
 
+  std::vector<HloFlow> OpConcat(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, std::numeric_limits<size_t>::max(), {"axis"});
+    std::vector<HloFlow> inputs;
+    for (size_t i = 0; i < node.input_size(); ++i) {
+      inputs.push_back(GetInput(node, i));
+    }
+    const auto axis = GetAttribute(node, "axis")->i();
+    return {builder_.Concatenate(inputs, axis)};
+  }
+
   std::vector<HloFlow> OpSigmoid(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
@@ -444,6 +481,12 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
     return {builder_.Tanh(input)};
+  }
+
+  std::vector<HloFlow> OpSoftplus(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {});
+    auto* input = GetInput(node, 0);
+    return {builder_.LogPlusOne(builder_.Exponential(input))};
   }
 
   std::vector<HloFlow> OpAdd(const pblczero::NodeProto& node) {
@@ -466,15 +509,44 @@ class Onnx2HloConverter {
     if (opset_version_ < 13) {
       throw Exception("Split not supported in ONNX opset < 13");
     }
-    CheckKnownAttributes(node, 1, {"axis", "num_outputs"});
+    CheckKnownAttributes(node, 2, {"axis", "num_outputs"});
     auto* input = GetInput(node, 0);
+    auto split = GetConstantInput(node, 1, true);
     const auto* axis_attr = GetAttribute(node, "axis");
     const auto* num_outputs_attr = GetAttribute(node, "num_outputs", true);
     if (!axis_attr) throw Exception("Attribute 'axis' not set");
-    size_t axis = axis_attr->i();
-    size_t num_outputs = num_outputs_attr ? num_outputs_attr->i() : 2;
-    size_t chunk_size =
-        (input->shape().dimensions(axis) + num_outputs - 1) / num_outputs;
+
+    if (split && num_outputs_attr) {
+      throw Exception("Split cannot have both 'split' and 'num_outputs'");
+    }
+
+    const size_t axis = axis_attr->i();
+    std::vector<size_t> splits;
+
+    if (split) {
+      size_t offset = 0;
+      for (size_t i = 0; i < split->s64s().size(); ++i) {
+        offset += split->s64s(i);
+        splits.push_back(offset);
+      }
+    } else {
+      size_t num_outputs =
+          num_outputs_attr ? num_outputs_attr->i() : node.output_size();
+      size_t chunk_size =
+          (input->shape().dimensions(axis) + num_outputs - 1) / num_outputs;
+      int64_t offset = 0;
+      for (size_t i = 0; i < num_outputs; ++i) {
+        offset += chunk_size;
+        if (offset > input->shape().dimensions(axis)) {
+          offset = input->shape().dimensions(axis);
+        }
+        splits.push_back(offset);
+      }
+      if (offset != input->shape().dimensions(axis)) {
+        throw Exception("Split sizes do not add up to input size");
+      }
+    }
+
     std::vector<HloFlow> flows;
 
     auto make_slice_dim = [](int64_t start, int64_t end) {
@@ -485,13 +557,14 @@ class Onnx2HloConverter {
       return slice;
     };
 
-    for (size_t i = 0; i < num_outputs; ++i) {
+    size_t offset = 0;
+    for (size_t split : splits) {
       std::vector<pblczero::HloInstructionProto::SliceDimensions> slice;
       for (size_t j = 0; j < input->shape().dimensions_size(); ++j) {
         if (j == axis) {
-          size_t begin = i * chunk_size;
-          size_t end = std::min<int64_t>((i + 1) * chunk_size,
-                                         input->shape().dimensions(j));
+          size_t begin = offset;
+          size_t end = split;
+          offset = split;
           slice.push_back(make_slice_dim(begin, end));
         } else {
           slice.push_back(make_slice_dim(0, input->shape().dimensions(j)));
@@ -502,21 +575,63 @@ class Onnx2HloConverter {
     return flows;
   }
 
+  std::vector<HloFlow> OpSlice(const pblczero::NodeProto& node) {
+    if (opset_version_ < 10) {
+      throw Exception("Split not supported in ONNX opset < 10");
+    }
+    CheckKnownAttributes(node, 3, {});
+    auto* input = GetInput(node, 0);
+    auto starts = GetConstantInput(node, 1)->s32s();
+    auto ends = GetConstantInput(node, 2)->s32s();
+    std::vector<pblczero::HloInstructionProto::SliceDimensions> slices;
+    for (size_t i = 0; i < starts.size(); ++i) {
+      pblczero::HloInstructionProto::SliceDimensions slice;
+      slice.set_start(starts[i]);
+      slice.set_limit(std::min<int64_t>(ends[i], input->shape().dimensions(i)));
+      slice.set_stride(1);
+      slices.push_back(slice);
+    }
+    return {builder_.Slice(input, slices)};
+  }
+
+  std::vector<HloFlow> OpTranspose(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"perm"});
+    auto* input = GetInput(node, 0);
+    const auto* perm = GetAttribute(node, "perm");
+    if (!perm) throw Exception("Attribute 'perm' not set");
+    return {builder_.Transpose(input, perm->ints())};
+  }
+
   std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
     auto new_dims = GetConstantInput(node, 1)->s64s();
-    HloTensorType new_shape(input->shape().element_type());
+    HloTensorType input_shape(input->shape());
+    HloTensorType new_shape(input_shape.GetElementType());
+    std::optional<int64_t> infer_dim;
+    size_t num_elements = 1;
     for (size_t i = 0; i < new_dims.size(); ++i) {
       auto dim = new_dims[i];
-      if (dim == -1) dim = batch_size_;
+      if (dim == -1) {
+        if (infer_dim.has_value()) {
+          throw Exception("Reshape cannot infer shape when multiple -1s");
+        }
+        infer_dim = i;
+        dim = 1;
+      }
       if (dim == 0) {
-        if (new_dims.size() != input->shape().dimensions_size()) {
+        if (new_dims.size() != input_shape.Rank()) {
           throw Exception("Reshape cannot infer shape when rank changes");
         }
-        dim = input->shape().dimensions(i);
+        dim = input_shape.GetDimension(i);
       }
+      num_elements *= dim;
       new_shape.AddDimension(dim);
+    }
+    if (infer_dim.has_value()) {
+      new_shape.SetElementType(input->shape().element_type());
+      new_shape.SetDimension(infer_dim.value(),
+                             input_shape.NumElements() / num_elements);
     }
     return {builder_.Reshape(input, new_shape)};
   }
@@ -525,13 +640,19 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 2, {});
     auto* lhs = GetInput(node, 0);
     auto* rhs = GetInput(node, 1);
-    if (lhs->shape().dimensions_size() != 2 ||
-        rhs->shape().dimensions_size() != 2) {
-      throw Exception("MatMul only implemented for 2D inputs so far");
+    HloTensorType lhs_shape(lhs->shape());
+    HloTensorType rhs_shape(rhs->shape());
+    if (lhs_shape.Rank() == 1 || rhs_shape.Rank() == 1) {
+      throw Exception("1D MatMul not yet");
     }
     pblczero::XlaDotDimensionNumbers dn;
-    dn.add_lhs_contracting_dimensions(1);
-    dn.add_rhs_contracting_dimensions(0);
+    dn.add_lhs_contracting_dimensions(lhs_shape.Rank() - 1);
+    dn.add_rhs_contracting_dimensions(rhs_shape.Rank() - 2);
+    for (size_t i = 0; i < std::min(lhs_shape.Rank(), rhs_shape.Rank()) - 2;
+         ++i) {
+      dn.add_lhs_batch_dimensions(i);
+      dn.add_rhs_batch_dimensions(i);
+    }
     return {builder_.Dot(lhs, rhs, dn)};
   }
 
