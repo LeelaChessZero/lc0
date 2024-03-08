@@ -184,6 +184,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
+    onnx_op_to_builder_["Expand"] = &Onnx2HloConverter::OpExpand;
     onnx_op_to_builder_["Identity"] = &Onnx2HloConverter::OpIdentity;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
@@ -438,6 +439,13 @@ class Onnx2HloConverter {
       literal.add_s64s(dim == -1 ? batch_size_ : dim);
     }
     return {builder_.Constant(literal)};
+  }
+
+  std::vector<HloFlow> OpExpand(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* input = GetInput(node, 0);
+    auto shape = GetConstantInput(node, 1)->s64s();
+    return {DoBroadcast(input, shape)};
   }
 
   std::vector<HloFlow> OpSoftmax(const pblczero::NodeProto& node) {
@@ -819,9 +827,9 @@ class Onnx2HloConverter {
   // Take two inputs and optionally performs numpy-style broadcasting to make
   // them equal shape.
   std::pair<HloFlow, HloFlow> EqualizeShape(HloFlow lhs, HloFlow rhs) {
-    auto common_dims = BuildCommonDims(lhs->shape().dimensions(),
-                                       rhs->shape().dimensions());
-    return {DoBroadcast(lhs, common_dims), DoBroadcast(rhs, common_dims)};                                       
+    auto common_dims =
+        BuildCommonDims(lhs->shape().dimensions(), rhs->shape().dimensions());
+    return {DoBroadcast(lhs, common_dims), DoBroadcast(rhs, common_dims)};
   }
 
   // Convert ONNX inputs to HLO parameters.
