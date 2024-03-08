@@ -66,6 +66,11 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "only then starts timing."};
 const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
+const OptionId kValueOnly{
+    "value-only", "ValueOnly",
+    "In value only mode all search parameters are ignored and the position is "
+    "evaluated by getting the valuation of every child position and choosing "
+    "the worst for the opponent."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -123,6 +128,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->HideOption(kStrictUciTiming);
 
   options->Add<BoolOption>(kPreload) = false;
+  options->Add<BoolOption>(kValueOnly) = false;
 }
 
 void EngineController::ResetMoveTimer() {
@@ -262,6 +268,62 @@ class PonderResponseTransformer : public TransformingUciResponder {
   std::string ponder_move_;
 };
 
+void ValueOnlyGo(NodeTree* tree, Network* network,
+                 std::unique_ptr<UciResponder> responder) {
+  auto comp = network->NewComputation();
+  auto input_format = network->GetCapabilities().input_format;
+  int comp_idx = 0;
+
+  const auto& board = tree->GetPositionHistory().Last().GetBoard();
+  auto legal_moves = board.GenerateLegalMoves();
+  tree->GetCurrentHead()->CreateEdges(legal_moves);
+  PositionHistory history = tree->GetPositionHistory();
+  for (auto edge : tree->GetCurrentHead()->Edges()) {
+    history.Append(edge.GetMove());
+    if (history.ComputeGameResult() == GameResult::UNDECIDED) {
+      int transform;
+      auto planes = EncodePositionForNN(input_format, history, 8,
+                                        FillEmptyHistory::FEN_ONLY, &transform);
+      comp->AddInput(std::move(planes));
+    }
+    history.Pop();
+  }
+
+  comp->ComputeBlocking();
+
+  Move best;
+  float max_q = std::numeric_limits<float>::lowest();
+  for (auto edge : tree->GetCurrentHead()->Edges()) {
+    history.Append(edge.GetMove());
+    auto result = history.ComputeGameResult();
+    float q = -1;
+    if (result == GameResult::UNDECIDED) {
+      // NN eval is for side to move perspective - so if its good, its bad for
+      // us.
+      q = -comp->GetQVal(comp_idx);
+      comp_idx++;
+    } else if (result == GameResult::DRAW) {
+      q = 0;
+    } else {
+      // A legal move to a non-drawn terminal without tablebases must be a
+      // win.
+      q = 1;
+    }
+    if (q >= max_q) {
+      max_q = q;
+      best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
+    }
+    history.Pop();
+  }
+  std::vector<ThinkingInfo> infos;
+  ThinkingInfo thinking;
+  thinking.depth = 1;
+  infos.push_back(thinking);
+  responder->OutputThinkingInfo(&infos);
+  BestMoveInfo info(best);
+  responder->OutputBestMove(&info);
+}
+
 }  // namespace
 
 void EngineController::Go(const GoParams& params) {
@@ -302,6 +364,10 @@ void EngineController::Go(const GoParams& params) {
   if (!options_.Get<bool>(kShowMovesleft)) {
     // Strip movesleft information from the response.
     responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
+  }
+  if (options_.Get<bool>(kValueOnly)) {
+    ValueOnlyGo(tree_.get(), network_.get(), std::move(responder));
+    return;
   }
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
