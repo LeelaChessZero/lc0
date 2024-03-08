@@ -79,7 +79,6 @@ class HloTensorType : public HloType {
   }
   pblczero::XlaShapeProto::Type GetElementType() const { return type_; }
   void AddDimension(int64_t size) { dimensions_.push_back(size); }
-  void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
   const std::vector<int64_t>& GetDimensions() const { return dimensions_; }
   int64_t GetDimension(size_t idx) const { return dimensions_[idx]; }
   void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
@@ -135,7 +134,6 @@ class HloBuilder {
                  const std::vector<int64_t>& collapsed_slice_dims,
                  const std::vector<int64_t>& start_index_map,
                  bool indices_are_sorted, bool unique_indicies);
-  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);
   // Direction is one of "EQ", "NE", "LT", "LE", "GT", "GE".
   HloFlow Compare(HloFlow lhs, HloFlow rhs, std::string_view direction);
   HloFlow Select(HloFlow condition, HloFlow on_true, HloFlow on_false);

@@ -376,7 +376,7 @@ HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
       throw Exception("Concatenate operands must have the same rank");
     }
     for (size_t j = 0; j < shape.Rank(); ++j) {
-      if (j == dimension) {
+      if (j == static_cast<size_t>(dimension)) {
         shape.SetDimension(
             j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
       } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
@@ -449,21 +449,6 @@ HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
   }
   auto flow = MakeInstruction("concatenate", output_shape.ToProto(), inputs);
   flow->add_dimensions(dimension);
-  return flow;
-}
-
-HloFlow HloBuilder::Transpose(HloFlow input,
-                              const std::vector<int64_t>& permutation) {
-  if (permutation.size() != input->shape().dimensions_size()) {
-    throw Exception(
-        "Transpose permutation must have the same size as the input shape");
-  }
-  HloTensorType shape(input->shape().element_type());
-  for (size_t i = 0; i < permutation.size(); ++i) {
-    shape.AddDimension(input->shape().dimensions(permutation[i]));
-  }
-  auto* flow = MakeInstruction("transpose", shape.ToProto(), {input});
-  *flow->mutable_dimensions() = permutation;
   return flow;
 }
 

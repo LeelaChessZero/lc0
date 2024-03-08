@@ -181,7 +181,6 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
     onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
-    onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
@@ -427,16 +426,6 @@ class Onnx2HloConverter {
     return {builder_.Transpose(input, perm)};
   }
 
-  std::vector<HloFlow> OpConcat(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 2, {"axis"});
-    const auto axis = GetAttribute(node, "axis")->i();
-    std::vector<HloFlow> flows;
-    for (size_t i = 0; i < node.input_size(); ++i) {
-      flows.push_back(GetInput(node, i));
-    }
-    return {builder_.Concatenate(flows, axis)};
-  }
-
   std::vector<HloFlow> OpShape(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
@@ -626,14 +615,6 @@ class Onnx2HloConverter {
       slices.push_back(slice);
     }
     return {builder_.Slice(input, slices)};
-  }
-
-  std::vector<HloFlow> OpTranspose(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 1, {"perm"});
-    auto* input = GetInput(node, 0);
-    const auto* perm = GetAttribute(node, "perm");
-    if (!perm) throw Exception("Attribute 'perm' not set");
-    return {builder_.Transpose(input, perm->ints())};
   }
 
   std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {
