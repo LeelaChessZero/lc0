@@ -46,6 +46,8 @@ const OptionId kHloTextOutputFilenameId = {"hlo-text-output", "",
                                            "Path of the output HLO file."};
 const OptionId kHloProtoOutputFilenameId = {
     "hlo-proto-output", "", "Path of the output HLO proto file."};
+const OptionId kOnnxBatchSizeId{"onnx-batch-size", "",
+                               "Batch size to use for ONNX conversion."};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
 const OptionId kHloAllowPartialResultId = {
@@ -73,8 +75,10 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kOutputFilenameId);
   options->Add<StringOption>(kHloTextOutputFilenameId);
   options->Add<StringOption>(kHloProtoOutputFilenameId);
+  options->Add<IntOption>(kOnnxBatchSizeId, -1, 2048) = -1;
   options->Add<IntOption>(kHloBatchSizeId, 1, 2048) = 333;
   options->Add<BoolOption>(kHloAllowPartialResultId);
+  options->HideOption(kOnnxBatchSizeId);
   options->HideOption(kHloAllowPartialResultId);
 
   options->Add<StringOption>(kInputPlanesName) = "/input/planes";
@@ -119,6 +123,7 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
+    onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
     // onnx2pytorch only needs an alternate layernorm-implementation, so it's
     // currently only enables that. Might need to be extended in the future.
     onnx_options.alternative_layer_normalization =
