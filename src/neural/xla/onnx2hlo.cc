@@ -576,6 +576,9 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpSlice(const pblczero::NodeProto& node) {
+    if (opset_version_ < 10) {
+      throw Exception("Split not supported in ONNX opset < 10");
+    }
     CheckKnownAttributes(node, 3, {});
     auto* input = GetInput(node, 0);
     auto starts = GetConstantInput(node, 1)->s32s();
