@@ -39,6 +39,48 @@
 namespace lczero {
 namespace {
 
+template <typename T>
+void LiteralOp2(pblczero::XlaLiteralProto* dst,
+                const pblczero::XlaLiteralProto& lhs, T&& func) {
+  switch (lhs.shape().element_type()) {
+    case pblczero::XlaShapeProto::S64:
+      func(dst->mutable_s64s(), lhs.s64s());
+      break;
+    default:
+      throw Exception(
+          "Unsupported type for constant input " +
+          pblczero::XlaShapeProto::Type_Name(lhs.shape().element_type()));
+  }
+}
+
+pblczero::XlaLiteralProto ConstOpConcat(
+    const std::vector<pblczero::XlaLiteralProto>& inputs, int axis) {
+  if (inputs.empty()) {
+    throw Exception("Concat requires at least one input");
+  }
+  if (axis != 0) {
+    throw Exception("Concat only supports axis 0 for now");
+  }
+  HloTensorType shape(inputs[0].shape());
+  shape.AddDimension(0);
+  pblczero::XlaLiteralProto result;
+  for (const auto& input : inputs) {
+    if (input.shape().dimensions_size() != 1) {
+      throw Exception(
+          "For constant concat, only 1D inputs are supported for now");
+    }
+    if (input.shape().element_type() != shape.GetElementType()) {
+      throw Exception("All inputs must have the same type");
+    }
+    shape.SetDimension(0, shape.GetDimension(0) + input.shape().dimensions(0));
+    LiteralOp2(&result, input, [](auto* dst, const auto& src) {
+      dst->insert(dst->end(), src.begin(), src.end());
+    });
+  }
+  *result.mutable_shape() = shape.ToProto();
+  return result;
+}
+
 pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
     const pblczero::TensorProto::DataType& type) {
   switch (type) {
@@ -278,8 +320,10 @@ class Onnx2HloConverter {
   // there is an initializer for it, and either create a constant or a parameter
   // depending on its size.
   HloFlow GetFlowByName(const std::string& name) {
-    auto iter = onnx_name_to_hlo_flow_.find(name);
-    if (iter != onnx_name_to_hlo_flow_.end()) return iter->second;
+    if (auto iter = onnx_name_to_hlo_flow_.find(name);
+        iter != onnx_name_to_hlo_flow_.end()) {
+      return iter->second;
+    }
 
     auto iter2 = initializers_.find(name);
     if (iter2 == initializers_.end()) {
@@ -316,12 +360,31 @@ class Onnx2HloConverter {
       if (optional) return std::nullopt;
       throw Exception("Input " + std::to_string(idx) + " not set");
     }
-    auto tensor = initializers_.find(std::string(node.input(idx)));
-    if (tensor == initializers_.end()) {
-      throw Exception("Constant input " + std::string(node.input(idx)) +
-                      " not found");
+    const std::string name(node.input(idx));
+    if (auto tensor = initializers_.find(name); tensor != initializers_.end()) {
+      return OnnxTensorToXlaLiteral(*tensor->second);
     }
-    return OnnxTensorToXlaLiteral(*tensor->second);
+    if (auto iter = onnx_name_to_hlo_flow_.find(name);
+        iter != onnx_name_to_hlo_flow_.end() &&
+        iter->second->opcode() == "constant") {
+      return iter->second->literal();
+    }
+    throw Exception("Constant input " + std::string(node.input(idx)) +
+                    " not found");
+  }
+
+  bool AllInputsConstant(const pblczero::NodeProto& node) {
+    for (const auto& input : node.input()) {
+      const std::string name(input);
+      if (initializers_.count(name)) continue;
+      if (auto iter = onnx_name_to_hlo_flow_.find(name);
+          iter != onnx_name_to_hlo_flow_.end() &&
+          iter->second->opcode() == "constant") {
+        continue;
+      }
+      return false;
+    }
+    return true;
   }
 
   // A helper function to fetch an attribute of ONNX node by name.
@@ -491,11 +554,18 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpConcat(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, std::numeric_limits<size_t>::max(), {"axis"});
+    const auto axis = GetAttribute(node, "axis")->i();
+    if (AllInputsConstant(node)) {
+      std::vector<pblczero::XlaLiteralProto> constants;
+      for (size_t i = 0; i < node.input_size(); ++i) {
+        constants.push_back(*GetConstantInput(node, i));
+      }
+      return {builder_.Constant(ConstOpConcat(constants, axis))};
+    }
     std::vector<HloFlow> inputs;
     for (size_t i = 0; i < node.input_size(); ++i) {
       inputs.push_back(GetInput(node, i));
     }
-    const auto axis = GetAttribute(node, "axis")->i();
     return {builder_.Concatenate(inputs, axis)};
   }
 
