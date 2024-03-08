@@ -791,67 +791,56 @@ class Onnx2HloConverter {
     return builder_.Constant(literal);
   }
 
+  static std::vector<int64_t> BuildCommonDims(
+      const std::vector<int64_t>& lhs_dims,
+      const std::vector<int64_t>& rhs_dims) {
+    const size_t num_dims = std::max(lhs_dims.size(), rhs_dims.size());
+    std::vector<int64_t> common_dims;
+    common_dims.reserve(num_dims);
+    for (size_t i = 0; i < num_dims; ++i) {
+      int lhs_idx = i + lhs_dims.size() - num_dims;
+      int rhs_idx = i + rhs_dims.size() - num_dims;
+      const auto lhs_dim = (lhs_idx < 0) ? 1 : lhs_dims[lhs_idx];
+      const auto rhs_dim = (rhs_idx < 0) ? 1 : rhs_dims[rhs_idx];
+      if (lhs_dim != rhs_dim && lhs_dim != 1 && rhs_dim != 1) {
+        throw Exception("Incompatible shapes for broadcast");
+      }
+      common_dims.push_back(std::max(lhs_dim, rhs_dim));
+    }
+    return common_dims;
+  }
+
+  HloFlow DoBroadcast(HloFlow flow, const std::vector<int64_t>& target_dims) {
+    if (flow->shape().dimensions() == target_dims) return flow;
+
+    HloTensorType src_shape(flow->shape());
+    HloTensorType target_shape(flow->shape().element_type(), target_dims);
+    HloTensorType intermediate_shape(flow->shape().element_type());
+
+    std::vector<int64_t> broadcast_dims;
+    bool need_reshape = false;
+
+    for (size_t i = 0; i < src_shape.Rank(); ++i) {
+      int target_idx = i + target_shape.Rank() - src_shape.Rank();
+      if (src_shape.GetDimension(i) == 1) {
+        need_reshape = true;
+      } else {
+        intermediate_shape.AddDimension(src_shape.GetDimension(i));
+        broadcast_dims.push_back(target_idx);
+      }
+    }
+    if (need_reshape) {
+      flow = builder_.Reshape(flow, intermediate_shape);
+    }
+    return builder_.Broadcast(flow, target_shape, broadcast_dims);
+  }
+
   // Take two inputs and optionally performs numpy-style broadcasting to make
   // them equal shape.
   std::pair<HloFlow, HloFlow> EqualizeShape(HloFlow lhs, HloFlow rhs) {
-    HloTensorType lhs_shape(lhs->shape());
-    HloTensorType rhs_shape(rhs->shape());
-
-    const size_t num_dims = std::max(lhs_shape.Rank(), rhs_shape.Rank());
-    std::vector<int64_t> lhs_broadcast_dims;
-    std::vector<int64_t> rhs_broadcast_dims;
-    std::vector<int64_t> output_dims;
-    bool lhs_broadcast = lhs_shape.Rank() < num_dims;
-    bool rhs_broadcast = rhs_shape.Rank() < num_dims;
-
-    for (size_t i = 0; i < num_dims; ++i) {
-      int lhs_idx = i + lhs_shape.Rank() - num_dims;
-      int rhs_idx = i + rhs_shape.Rank() - num_dims;
-      const auto lhs_dim = (lhs_idx < 0) ? 1 : lhs_shape.GetDimension(lhs_idx);
-      const auto rhs_dim = (rhs_idx < 0) ? 1 : rhs_shape.GetDimension(rhs_idx);
-      if (lhs_dim != rhs_dim) {
-        if (lhs_dim != 1 && rhs_dim != 1) {
-          throw Exception("Incompatible shapes for broadcast");
-        }
-        if (lhs_dim == 1) lhs_broadcast = true;
-        if (rhs_dim == 1) rhs_broadcast = true;
-      }
-      if (lhs_idx >= 0) lhs_broadcast_dims.push_back(i);
-      if (rhs_idx >= 0) rhs_broadcast_dims.push_back(i);
-      output_dims.push_back(std::max(lhs_dim, rhs_dim));
-    }
-
-    auto do_broadcast = [&](HloFlow flow,
-                            const std::vector<int64_t>& broadcast_dims) {
-      HloTensorType shape(flow->shape());
-      HloTensorType intermediate_shape(shape.GetElementType());
-
-      std::vector<int64_t> new_broadcast_dims;
-      bool need_reshape = false;
-
-      for (size_t i = 0; i < shape.Rank(); ++i) {
-        if (shape.GetDimension(i) == 1) {
-          need_reshape = true;
-        } else {
-          new_broadcast_dims.push_back(broadcast_dims[i]);
-          intermediate_shape.AddDimension(output_dims[i]);
-        }
-      }
-      if (need_reshape) {
-        flow = builder_.Reshape(flow, intermediate_shape);
-      }
-      return builder_.Broadcast(
-          flow, HloTensorType(flow->shape().element_type(), output_dims),
-          new_broadcast_dims);
-    };
-
-    if (lhs_broadcast) {
-      lhs = do_broadcast(lhs, lhs_broadcast_dims);
-    }
-    if (rhs_broadcast) {
-      rhs = do_broadcast(rhs, rhs_broadcast_dims);
-    }
-    return {lhs, rhs};
+    auto common_dims = BuildCommonDims(lhs->shape().dimensions(),
+                                       rhs->shape().dimensions());
+    return {DoBroadcast(lhs, common_dims), DoBroadcast(rhs, common_dims)};                                       
   }
 
   // Convert ONNX inputs to HLO parameters.

@@ -165,8 +165,7 @@ HloFlow HloBuilder::Broadcast(
     const auto& input_dim = input_shape.dimensions(i);
     if (input_dim != target_shape.GetDimension(dim)) {
       throw Exception(
-          "Broadcast dimension must be 1 or equal to the target shape "
-          "dimension");
+          "Broadcast dimension must be equal to the target shape dimension");
     }
     flow->add_dimensions(dim);
   }

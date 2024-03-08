@@ -83,6 +83,9 @@ class HloTensorType : public HloType {
   const std::vector<int64_t>& GetDimensions() const { return dimensions_; }
   int64_t GetDimension(size_t idx) const { return dimensions_[idx]; }
   void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
+  void SetDimensions(const std::vector<int64_t>& dimensions) {
+    dimensions_ = dimensions;
+  }
   size_t Rank() const { return dimensions_.size(); }
   size_t NumElements() const;
 
