@@ -124,6 +124,8 @@ class HloBuilder {
   HloFlow ExponentialMinusOne(HloFlow input);
   HloFlow Negate(HloFlow input);
   HloFlow Exponential(HloFlow input);
+  HloFlow Sqrt(HloFlow input);
+  HloFlow Reciprocal(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
   HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
                  const std::vector<int64_t>& reduction_dimensions);

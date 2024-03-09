@@ -343,6 +343,14 @@ HloFlow HloBuilder::Tanh(HloFlow input) {
   return MakeInstruction("tanh", input->shape(), {input});
 }
 
+HloFlow HloBuilder::Sqrt(HloFlow input) {
+  return MakeInstruction("sqrt", input->shape(), {input});
+}
+
+HloFlow HloBuilder::Reciprocal(HloFlow input) {
+  return MakeInstruction("reciprocal", input->shape(), {input});
+}
+
 HloFlow HloBuilder::LogPlusOne(HloFlow input) {
   return MakeInstruction("log-plus-one", input->shape(), {input});
 }
