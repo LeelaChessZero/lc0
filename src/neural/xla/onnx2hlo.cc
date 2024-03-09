@@ -243,6 +243,7 @@ class Onnx2HloConverter {
  public:
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
+    onnx_op_to_builder_["Cast"] = &Onnx2HloConverter::OpCast;
     onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
@@ -592,6 +593,16 @@ class Onnx2HloConverter {
     HloTensorType target_shape(input->shape());
     target_shape.SetDimension(axis, 1);
     return builder_.Reshape(flow, target_shape);
+  }
+
+  std::vector<HloFlow> OpCast(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"to"});
+    auto* input = GetInput(node, 0);
+    const auto onnx_type = static_cast<pblczero::TensorProto::DataType>(
+        GetAttribute(node, "to")->i());
+    const auto hlo_type = OnnxTypeToXlaType(onnx_type);
+    if (input->shape().element_type() == hlo_type) return {input};
+    return {builder_.Convert(input, hlo_type)};
   }
 
   std::vector<HloFlow> OpLayerNormalization(const pblczero::NodeProto& node) {
