@@ -266,6 +266,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Softmax"] = &Onnx2HloConverter::OpSoftmax;
     onnx_op_to_builder_["Softplus"] = &Onnx2HloConverter::OpSoftplus;
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
+    onnx_op_to_builder_["Sqrt"] = &Onnx2HloConverter::OpSqrt;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Sub"] = &Onnx2HloConverter::OpSub;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
@@ -683,6 +684,12 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
     return {builder_.Tanh(input)};
+  }
+
+  std::vector<HloFlow> OpSqrt(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {});
+    auto* input = GetInput(node, 0);
+    return {builder_.Sqrt(input)};
   }
 
   std::vector<HloFlow> OpSoftplus(const pblczero::NodeProto& node) {
