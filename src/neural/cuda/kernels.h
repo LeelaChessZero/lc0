@@ -154,7 +154,12 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
-                      int N, int HW, int C, cudaStream_t stream);
+                                int N, int HW, int C, cudaStream_t stream);
+
+void cutlassMatrixMulBTransposed(const half* A, const half* B, half* Out, int M,
+                                 int N, int K, int batchSize, int AStride,
+                                 int BStride, int OutStride, bool useInt8 = true);
+
 }  // namespace cudnn_backend
 }  // namespace lczero
 

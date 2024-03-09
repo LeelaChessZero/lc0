@@ -333,6 +333,20 @@ class ResidualBlock : public BaseLayer<DataType> {
   DataType* b2_;
 };
 
+// calibration factors and weights for INT8
+// (in GPU memory when int8_inf_ is set, otherwise in CPU memory)
+struct MatMulQuantizationData {
+  int8_t* weights_int8;            // int8 quantized weights
+  float* input_scaling_factors;    // per-column scaling factors for input
+                                   // quantization
+  float* output_scaling_factors;   // per-column scaling factors for output
+                                   // dequantization
+  float* output_deq_factors;       // per-tensor. Always in cpu memory (passed as constants to dequantization kernels)
+  float* input_matrix_max_values;  // max values of input matrix (always in CPU memory)
+  float* output_matrix_max_values; // max values in output matrix (always in CPU memory)
+};
+
+
 template <typename DataType>
 class EncoderBlock {
  public:
@@ -340,7 +354,8 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act, float default_eps, bool fused_mha);
+               ActivationFunction ffn_act, float default_eps, bool fused_mha, bool int8_calibrate,
+               bool int8_inference, void* int8_weights, int blockIndex);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -367,6 +382,15 @@ class EncoderBlock {
   DataType *smol_ln1_gammas, *smol_ln1_betas;
   DataType *smol_ln2_gammas, *smol_ln2_betas;
   DataType *smol_global;
+
+
+  // int 8 stuff
+  int blockIndex_;
+  bool int8_inf_, int8_cali_;
+  MatMulQuantizationData kqv_;
+  MatMulQuantizationData mha_dense_;
+  MatMulQuantizationData ffn1_;
+  MatMulQuantizationData ffn2_;
 
   int mha_q_size_;
   int mha_k_size_;
@@ -477,7 +501,8 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const MultiHeadWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
-                int max_batch_size, bool new_encoding, bool fused_mha);
+                int max_batch_size, bool new_encoding, bool fused_mha,
+                bool int8_calibrate, bool int8_inference, void *int8_weights);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,

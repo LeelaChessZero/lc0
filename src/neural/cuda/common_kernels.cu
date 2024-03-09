@@ -1110,6 +1110,150 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   }
 }
 
+
+template <typename T>
+__global__ void layer_norm_kernel_slow(int N, int C, T* output, const T* input,
+                                  const T* bias, const T* skip, const T* gammas,
+                                  const T* betas, float ep, float alpha,
+                                  ActivationFunction act) {
+  int n = blockIdx.x * blockDim.z + threadIdx.z;
+  if (n >= N) return;
+  int c = (threadIdx.y * 32 + threadIdx.x) * 16;
+  bool oobThread = c >= C;
+
+  int biasIndex = c;
+  int tensorIndex = n * C + c;
+
+  float val[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  float oth[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+  const bool fp16 = std::is_same<half, T>::value;
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      half inp[8];
+      copyAs<uint4>(&inp[0], &input[tensorIndex]);
+      for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &input[tensorIndex + 8]);
+      for (int i = 0; i < 8; i++) val[i + 8] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &bias[biasIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &bias[biasIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+      for (int i = 0; i < 16; i++) val[i] += oth[i];
+    } else {
+      copyAs<uint4>(&val[0], &input[tensorIndex]);
+      copyAs<uint4>(&val[4], &input[tensorIndex + 4]);
+      copyAs<uint4>(&val[8], &input[tensorIndex + 8]);
+      copyAs<uint4>(&val[12], &input[tensorIndex + 12]);
+      copyAs<uint4>(&oth[0], &bias[biasIndex]);
+      copyAs<uint4>(&oth[4], &bias[biasIndex + 4]);
+      copyAs<uint4>(&oth[8], &bias[biasIndex + 8]);
+      copyAs<uint4>(&oth[12], &bias[biasIndex + 12]);
+      for (int i = 0; i < 16; i++) val[i] += oth[i];
+    }
+  }
+
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      half inp[8];
+      copyAs<uint4>(&inp[0], &skip[tensorIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<uint4>(&oth[0], &skip[tensorIndex]);
+      copyAs<uint4>(&oth[4], &skip[tensorIndex + 4]);
+      copyAs<uint4>(&oth[8], &skip[tensorIndex + 8]);
+      copyAs<uint4>(&oth[12], &skip[tensorIndex + 12]);
+    }
+  }
+
+  // 1. Compute mean
+  float s = 0;
+  if (!oobThread)
+    for (int i = 0; i < 16; i++) {
+      val[i] = activate(val[i], act) + oth[i] * alpha;
+      s += val[i];
+    }
+
+  s = shared_sum_for_layer_norm(s);
+  float mean = s / C;
+
+  // 2. Compute varience
+  s = 0;
+  if (!oobThread)
+    for (int i = 0; i < 16; i++) {
+      float d = val[i] - mean;
+      float d_sq = d * d;
+      s += d_sq;
+    }
+  s = shared_sum_for_layer_norm(s);
+  float var = s / C;
+
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      half inp[8];
+      copyAs<uint4>(&inp[0], &gammas[biasIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &gammas[biasIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<uint4>(&oth[0], &gammas[biasIndex]);
+      copyAs<uint4>(&oth[4], &gammas[biasIndex + 4]);
+      copyAs<uint4>(&oth[8], &gammas[biasIndex + 8]);
+      copyAs<uint4>(&oth[12], &gammas[biasIndex + 12]);
+    }
+  }
+
+  // 3. Normalize
+  for (int i = 0; i < 16; i++) {
+    float d = val[i] - mean;
+    float norm = d / sqrt(var + ep);
+    float op = norm * oth[i];
+    val[i] = op;
+  }
+
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      half inp[8];
+      copyAs<uint4>(&inp[0], &betas[biasIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &betas[biasIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<uint4>(&oth[0], &betas[biasIndex]);
+      copyAs<uint4>(&oth[4], &betas[biasIndex + 4]);
+      copyAs<uint4>(&oth[8], &betas[biasIndex + 8]);
+      copyAs<uint4>(&oth[12], &betas[biasIndex + 12]);
+    }
+  }
+
+  for (int i = 0; i < 16; i++) {
+    val[i] += oth[i];
+  }
+
+  if (!oobThread) {
+    // Write to memory
+    if (fp16) {
+      half op[8];
+      for (int i = 0; i < 8; i++) op[i] = (half)val[i];
+      copyAs<uint4>(&output[tensorIndex], &op[0]);
+      for (int i = 0; i < 8; i++) op[i] = (half)val[i + 8];
+      copyAs<uint4>(&output[tensorIndex + 8], &op[0]);
+    } else {
+      copyAs<uint4>(&output[tensorIndex], &val[0]);
+      copyAs<uint4>(&output[tensorIndex + 4], &val[4]);
+      copyAs<uint4>(&output[tensorIndex + 8], &val[8]);
+      copyAs<uint4>(&output[tensorIndex + 12], &val[12]);
+    }
+  }
+}
+
+
 __global__ void layer_norm_kernel_8_el_per_thread(
     int N, int C, half* output, const half* input, const half* bias,
     const half* skip, const half* gammas, const half* betas, float ep,
