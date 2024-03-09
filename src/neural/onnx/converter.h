@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
 
@@ -47,6 +49,8 @@ struct WeightsToOnnxConverterOptions {
   bool alternative_layer_normalization = false;
   std::string policy_head = "vanilla";
   std::string value_head = "winner";
+
+  static DataType StringToDataType(const std::string&);
 };
 
 // Converts "classical" weights file to weights file with embedded ONNX model.

@@ -116,17 +116,6 @@ bool ProcessParameters(OptionsParser* options) {
   return true;
 }
 
-WeightsToOnnxConverterOptions::DataType StringToDataType(
-    const std::string& data_type) {
-  if (data_type == "f32") {
-    return WeightsToOnnxConverterOptions::DataType::kFloat32;
-  }
-  if (data_type == "f16") {
-    return WeightsToOnnxConverterOptions::DataType::kFloat16;
-  }
-  throw Exception("Invalid data type: " + data_type);
-}
-
 }  // namespace
 
 void ConvertLeelaToOnnx() {
@@ -149,8 +138,8 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
     onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
-    onnx_options.data_type =
-        StringToDataType(dict.Get<std::string>(hOnnxDataTypeId));
+    onnx_options.data_type = WeightsToOnnxConverterOptions::StringToDataType(
+        dict.Get<std::string>(hOnnxDataTypeId));
     // onnx2pytorch only needs an alternate layernorm-implementation, so it's
     // currently only enables that. Might need to be extended in the future.
     onnx_options.alternative_layer_normalization =

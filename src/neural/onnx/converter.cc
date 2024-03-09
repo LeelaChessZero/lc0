@@ -194,8 +194,7 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
   if (!options_.alt_mish || options_.opset < 9 ||
-      options_.data_type !=
-          WeightsToOnnxConverterOptions::DataType::kFloat32) {
+      options_.data_type != WeightsToOnnxConverterOptions::DataType::kFloat32) {
     if (options_.opset >= 18) return builder->Mish(name, input);
     auto flow = builder->Softplus(name + "/softplus", input);
     flow = builder->Tanh(name + "/tanh", flow);
@@ -1186,6 +1185,13 @@ void Converter::Convert(pblczero::Net* dst) {
 }
 
 }  // namespace
+
+WeightsToOnnxConverterOptions::DataType
+WeightsToOnnxConverterOptions::StringToDataType(const std::string& s) {
+  if (s == "f32") return DataType::kFloat32;
+  if (s == "f16") return DataType::kFloat16;
+  throw Exception("Invalid data type: " + s);
+}
 
 pblczero::Net ConvertWeightsToOnnx(
     const pblczero::Net& net, const WeightsToOnnxConverterOptions& options) {

@@ -1129,6 +1129,10 @@ std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
       return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
                                                  onnx_tensor.raw_data(),
                                                  pblczero::XlaShapeProto::F32);
+    case pblczero::TensorProto::FLOAT16:
+      return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
+                                                 onnx_tensor.raw_data(),
+                                                 pblczero::XlaShapeProto::F16);
     default:
       throw Exception(
           "Unsupported ONNX tensor type for buffer conversion " +
