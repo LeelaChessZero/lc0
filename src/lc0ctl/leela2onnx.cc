@@ -116,17 +116,6 @@ bool ProcessParameters(OptionsParser* options) {
   return true;
 }
 
-WeightsToOnnxConverterOptions::DataType StringToDataType(
-    const std::string& data_type) {
-  if (data_type == "f32") {
-    return WeightsToOnnxConverterOptions::DataType::kFloat32;
-  }
-  if (data_type == "f16") {
-    return WeightsToOnnxConverterOptions::DataType::kFloat16;
-  }
-  throw Exception("Invalid data type: " + data_type);
-}
-
 }  // namespace
 
 void ConvertLeelaToOnnx() {
