@@ -256,6 +256,7 @@ class Onnx2HloConverter {
         &Onnx2HloConverter::OpLayerNormalization;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
+    onnx_op_to_builder_["Reciprocal"] = &Onnx2HloConverter::OpReciprocal;
     onnx_op_to_builder_["ReduceMean"] = &Onnx2HloConverter::OpReduceMean;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
@@ -639,7 +640,6 @@ class Onnx2HloConverter {
     flow = builder_.Add(
         flow, DoBroadcast(MakeScalar(epsilon, pblczero::XlaShapeProto::F32),
                           flow->shape().dimensions()));
-    flow = builder_.Sqrt(flow);
     flow = builder_.Rsqrt(flow);
     flow =
         builder_.Multiply(norm, DoBroadcast(flow, norm->shape().dimensions()));
@@ -690,6 +690,14 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
     return {builder_.Sqrt(input)};
+  }
+
+  std::vector<HloFlow> OpReciprocal(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {});
+    auto* input = GetInput(node, 0);
+    auto* one = MakeScalar(1, input->shape().element_type());
+    return {
+        builder_.Divide(DoBroadcast(one, input->shape().dimensions()), input)};
   }
 
   std::vector<HloFlow> OpSoftplus(const pblczero::NodeProto& node) {
