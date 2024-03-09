@@ -27,9 +27,9 @@
 
 #include "neural/xla/onnx2hlo.h"
 
+#include <numeric>
 #include <unordered_map>
 #include <unordered_set>
-#include <numeric>
 
 #include "neural/onnx/onnx.pb.h"
 #include "neural/xla/hlo.pb.h"
@@ -267,6 +267,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Softplus"] = &Onnx2HloConverter::OpSoftplus;
     onnx_op_to_builder_["Split"] = &Onnx2HloConverter::OpSplit;
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
+    onnx_op_to_builder_["Sub"] = &Onnx2HloConverter::OpSub;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
     onnx_op_to_builder_["Transpose"] = &Onnx2HloConverter::OpTranspose;
   }
@@ -696,6 +697,14 @@ class Onnx2HloConverter {
     auto* rhs = GetInput(node, 1);
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
     return {builder_.Add(lhs, rhs)};
+  }
+
+  std::vector<HloFlow> OpSub(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* lhs = GetInput(node, 0);
+    auto* rhs = GetInput(node, 1);
+    std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
+    return {builder_.Subtract(lhs, rhs)};
   }
 
   std::vector<HloFlow> OpMul(const pblczero::NodeProto& node) {
