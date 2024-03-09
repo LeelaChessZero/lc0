@@ -29,6 +29,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <numeric>
 
 #include "neural/onnx/onnx.pb.h"
 #include "neural/xla/hlo.pb.h"
@@ -255,6 +256,7 @@ class Onnx2HloConverter {
         &Onnx2HloConverter::OpLayerNormalization;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
+    onnx_op_to_builder_["ReduceMean"] = &Onnx2HloConverter::OpReduceMean;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
@@ -582,17 +584,28 @@ class Onnx2HloConverter {
                             is_sorted, is_unique)};
   }
 
-  HloFlow DoReduceMean(HloFlow input, int axis) {
+  HloFlow DoReduceMean(HloFlow input, const std::vector<int64_t>& axes) {
     HloFlow zero = MakeScalar(0, input->shape().element_type());
     auto flow = builder_.Reduce(
-        input, zero, MakeAddComputation(input->shape().element_type()), {axis});
-    auto denominator = MakeScalar(input->shape().dimensions(axis),
-                                  input->shape().element_type());
-    std::tie(flow, denominator) = EqualizeShape(flow, denominator);
+        input, zero, MakeAddComputation(input->shape().element_type()), axes);
+    size_t count = std::accumulate(
+        axes.begin(), axes.end(), 1, [&](size_t acc, size_t axis) {
+          return acc * input->shape().dimensions(axis);
+        });
+    auto denominator =
+        DoBroadcast(MakeScalar(count, input->shape().element_type()),
+                    flow->shape().dimensions());
     flow = builder_.Divide(flow, denominator);
     HloTensorType target_shape(input->shape());
-    target_shape.SetDimension(axis, 1);
+    for (auto axis : axes) target_shape.SetDimension(axis, 1);
     return builder_.Reshape(flow, target_shape);
+  }
+
+  std::vector<HloFlow> OpReduceMean(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"axes"});
+    auto* input = GetInput(node, 0);
+    auto axes = GetAttribute(node, "axes")->ints();
+    return {DoReduceMean(input, axes)};
   }
 
   std::vector<HloFlow> OpCast(const pblczero::NodeProto& node) {
@@ -617,10 +630,10 @@ class Onnx2HloConverter {
     auto* flow = need_conv
                      ? builder_.Convert(input, pblczero::XlaShapeProto::F32)
                      : input;
-    flow = DoBroadcast(DoReduceMean(flow, axis), input->shape().dimensions());
+    flow = DoBroadcast(DoReduceMean(flow, {axis}), input->shape().dimensions());
     auto* norm = builder_.Subtract(input, flow);
     flow = builder_.Multiply(norm, norm);
-    flow = DoReduceMean(flow, axis);
+    flow = DoReduceMean(flow, {axis});
     flow = builder_.Add(
         flow, DoBroadcast(MakeScalar(epsilon, pblczero::XlaShapeProto::F32),
                           flow->shape().dimensions()));
