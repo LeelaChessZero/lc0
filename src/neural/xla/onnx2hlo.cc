@@ -544,14 +544,20 @@ class Onnx2HloConverter {
         MakeScalar(-std::numeric_limits<float>::infinity(),
                    input->shape().element_type()),
         MakeMaxComputation(input->shape().element_type()), {axis});
-    max = builder_.Broadcast(max, HloTensorType(input->shape()), {0});
+    std::vector<int64_t> broadcast_dims;
+    for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
+      if (i != static_cast<size_t>(axis)) broadcast_dims.push_back(i);
+    }
+    max =
+        builder_.Broadcast(max, HloTensorType(input->shape()), broadcast_dims);
     input = builder_.Subtract(input, max);
 
     auto exp = builder_.Exponential(input);
     auto sum = builder_.Reduce(
         exp, MakeScalar(0, input->shape().element_type()),
         MakeAddComputation(input->shape().element_type()), {axis});
-    sum = builder_.Broadcast(sum, HloTensorType(input->shape()), {0});
+    sum =
+        builder_.Broadcast(sum, HloTensorType(input->shape()), broadcast_dims);
     return {builder_.Divide(exp, sum)};
   }
 
