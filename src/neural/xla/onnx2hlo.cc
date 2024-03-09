@@ -62,7 +62,7 @@ pblczero::XlaLiteralProto ConstOpConcat(
     throw Exception("Concat only supports axis 0 for now");
   }
   HloTensorType shape(inputs[0].shape());
-  shape.AddDimension(0);
+  shape.SetDimension(axis, 0);
   pblczero::XlaLiteralProto result;
   for (const auto& input : inputs) {
     if (input.shape().dimensions_size() != 1) {
@@ -72,7 +72,8 @@ pblczero::XlaLiteralProto ConstOpConcat(
     if (input.shape().element_type() != shape.GetElementType()) {
       throw Exception("All inputs must have the same type");
     }
-    shape.SetDimension(0, shape.GetDimension(0) + input.shape().dimensions(0));
+    shape.SetDimension(
+        axis, shape.GetDimension(axis) + input.shape().dimensions(axis));
     LiteralOp2(&result, input, [](auto* dst, const auto& src) {
       dst->insert(dst->end(), src.begin(), src.end());
     });
@@ -613,7 +614,7 @@ class Onnx2HloConverter {
         flow, DoBroadcast(MakeScalar(epsilon, pblczero::XlaShapeProto::F32),
                           flow->shape().dimensions()));
     flow = builder_.Sqrt(flow);
-    flow = builder_.Reciprocal(flow);
+    flow = builder_.Rsqrt(flow);
     flow =
         builder_.Multiply(norm, DoBroadcast(flow, norm->shape().dimensions()));
     if (need_conv) {

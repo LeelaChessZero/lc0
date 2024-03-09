@@ -347,8 +347,8 @@ HloFlow HloBuilder::Sqrt(HloFlow input) {
   return MakeInstruction("sqrt", input->shape(), {input});
 }
 
-HloFlow HloBuilder::Reciprocal(HloFlow input) {
-  return MakeInstruction("reciprocal", input->shape(), {input});
+HloFlow HloBuilder::Rsqrt(HloFlow input) {
+  return MakeInstruction("rsqrt", input->shape(), {input});
 }
 
 HloFlow HloBuilder::LogPlusOne(HloFlow input) {
