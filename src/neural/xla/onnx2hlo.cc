@@ -27,6 +27,8 @@
 
 #include "neural/xla/onnx2hlo.h"
 
+#include <algorithm>
+#include <numeric>
 #include <unordered_map>
 #include <unordered_set>
 
