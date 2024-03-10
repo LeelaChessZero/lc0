@@ -68,9 +68,14 @@ const OptionId kOnnxToPytorch{
     "onnx2pytorch", "",
     "Only use layer definitions supported by onnx2pytorch."};
 const OptionId kValueHead{
-    "value-head", "", "Value head to be used in the generated model."};
+    "value-head", "",
+    "Value head to be used in the generated model. Typical values are "
+    "'winner', 'q' or 'st', but only 'winner' is always available."};
 const OptionId kPolicyHead{
-    "policy-head", "", "Policy head to be used in the generated model."};
+    "policy-head", "",
+    "Policy head to be used in the generated model. Typical values are "
+    "'vanilla', 'optimistic' or 'soft', but only 'vanilla' is always "
+    "available."};
 
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
@@ -87,10 +92,8 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kOutputValue) = "/output/value";
   options->Add<StringOption>(kOutputMlh) = "/output/mlh";
   options->Add<BoolOption>(kOnnxToPytorch) = false;
-  std::vector<std::string> value_head = {"winner", "q", "st"};
-  options->Add<ChoiceOption>(kValueHead, value_head) = "winner";
-  std::vector<std::string> policy_head = {"vanilla", "optimistic", "soft"};
-  options->Add<ChoiceOption>(kPolicyHead, policy_head) = "vanilla";
+  options->Add<StringOption>(kValueHead) = "winner";
+  options->Add<StringOption>(kPolicyHead) = "vanilla";
   if (!options->ProcessAllFlags()) return false;
 
   const OptionsDict& dict = options->GetOptionsDict();

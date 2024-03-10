@@ -52,17 +52,17 @@ class Converter {
  public:
   Converter(const pblczero::Net& net,
             const WeightsToOnnxConverterOptions& options)
-      : src_(net), options_(options) {
-    default_activation_ =
-        net.format().network_format().default_activation() ==
-                pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
-            ? ACTIVATION_MISH
-            : ACTIVATION_RELU;
-    default_eps_ = net.format().network_format().input_embedding() ==
-                           pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE
-                       ? 1e-3
-                       : 1e-6;
-  }
+      : src_(net),
+        options_(options),
+        default_activation_(
+            net.format().network_format().default_activation() ==
+                    pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+                ? ACTIVATION_MISH
+                : ACTIVATION_RELU),
+        default_eps_(net.format().network_format().input_embedding() ==
+                             pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE
+                         ? 1e-3
+                         : 1e-6) {}
 
   void Convert(pblczero::Net* dst);
 
@@ -161,8 +161,8 @@ class Converter {
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
-  ActivationFunction default_activation_;
-  float default_eps_;
+  const ActivationFunction default_activation_;
+  const float default_eps_;
   bool se_reshape_init_ = false;
 };
 
