@@ -283,10 +283,4 @@ enum InputEmbedding {
   INPUT_EMBEDDING_PE_DENSE = 2,
 };
 
-enum InputEmbedding {
-  INPUT_EMBEDDING_NONE = 0,
-  INPUT_EMBEDDING_PE_MAP = 1,
-  INPUT_EMBEDDING_PE_DENSE = 2,
-};
-
 }  // namespace lczero

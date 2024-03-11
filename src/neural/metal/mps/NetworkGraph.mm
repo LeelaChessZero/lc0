@@ -496,7 +496,7 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) addEncoderLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                        legacyWeights:(lczero::LegacyWeights::EncoderLayer &)encoder
+                                        legacyWeights:(lczero::MultiHeadWeights::EncoderLayer &)encoder
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
                                     smolgenActivation:(NSString * __nullable)smolgenActivation
@@ -751,7 +751,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
-                                               smolgen:(lczero::LegacyWeights::Smolgen * __nullable)smolgen
+                                               smolgen:(lczero::MultiHeadWeights::Smolgen * __nullable)smolgen
                                      smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label
 {
@@ -1210,35 +1210,21 @@ static const NSInteger kMinSubBatchSize = 20;
                                    defaultActivation:(NSString * __nullable)defaultActivation
                                    smolgenActivation:(NSString * __nullable)smolgenActivation
                                        ffnActivation:(NSString * __nullable)ffnActivation
-                                         policyHeads:(lczero::LegacyWeights::PolicyHeads &)heads
-                                          activeHead:(NSString * __nonnull)activeHead
+                                          policyHead:(lczero::MultiHeadWeights::PolicyHead &)head
                                                label:(NSString * __nonnull)label
 {
-    // Selected head to construct.
-    // Use vanilla as default head.
-    lczero::LegacyWeights::PolicyHead& head = heads.vanilla;
-    if ([activeHead isEqual:@"optimistic"]) {
-        head = heads.optimistic_st;
-    }
-    else if ([activeHead isEqual:@"soft"]) {
-        head = heads.soft;
-    }
-    else if ([activeHead isEqual:@"opponent"]) {
-        head = heads.opponent;
-    }
-
     if (attentionPolicy) {
         // Not implemented yet!
         // tokens = tf.reverse(policy_tokens, axis=[1]) if opponent else policy_tokens
 
         // 2. Square Embedding: Dense with default activation (or SELU for old ap-mish nets).
-        NSUInteger embeddingSize = heads.ip_pol_b.size();
+        NSUInteger embeddingSize = head.ip_pol_b.size();
         NSUInteger policyDModel = head.ip2_pol_b.size();
         // ap-mish uses hardcoded SELU
         policy = [self addFullyConnectedLayerWithParent:policy
                                          outputChannels:embeddingSize
-                                                weights:&heads.ip_pol_w[0]
-                                                 biases:&heads.ip_pol_b[0]
+                                                weights:&head.ip_pol_w[0]
+                                                 biases:&head.ip_pol_b[0]
                                              activation:attentionBody ? defaultActivation : @"selu"
                                                   label:[NSString stringWithFormat:@"%@/fc_embed", label]];
 
@@ -1253,7 +1239,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                alpha:1.0
                                              epsilon:1e-6
                                             normtype:@"layernorm"
-                                               label:[NSString stringWithFormat:@"%@/%@/encoder_%zu", label, activeHead, i]];
+                                               label:[NSString stringWithFormat:@"%@/encoder_%zu", label, i]];
         }
 
         // 4. Self-attention q and k.
@@ -1262,20 +1248,20 @@ static const NSInteger kMinSubBatchSize = 20;
                                                                   weights:&head.ip2_pol_w[0]
                                                                    biases:&head.ip2_pol_b[0]
                                                                activation:nil
-                                                                    label:[NSString stringWithFormat:@"%@/%@/self_attention/q", label, activeHead]];
+                                                                    label:[NSString stringWithFormat:@"%@/self_attention/q", label]];
 
         MPSGraphTensor * keys = [self addFullyConnectedLayerWithParent:policy
                                                         outputChannels:policyDModel
                                                                weights:&head.ip3_pol_w[0]
                                                                 biases:&head.ip3_pol_b[0]
                                                             activation:nil
-                                                                 label:[NSString stringWithFormat:@"%@/%@/self_attention/k", label, activeHead]];
+                                                                 label:[NSString stringWithFormat:@"%@/self_attention/k", label]];
 
         // 5. matmul(q,k) / sqrt(dk)
         policy = [self scaledQKMatmulWithQueries:queries
                                         withKeys:keys
                                            scale:1.0f / sqrt(policyDModel)
-                                           label:[NSString stringWithFormat:@"%@/%@/self_attention/kq", label, activeHead]];
+                                           label:[NSString stringWithFormat:@"%@/self_attention/kq", label]];
 
         // 6. Slice last 8 keys (k[:, 56:, :]) and matmul with policy promotion weights, then concat to matmul_qk.
         policy = [self attentionPolicyPromoMatmulConcatWithParent:policy
@@ -1285,7 +1271,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                        outputSize:4
                                                         sliceFrom:56
                                                       channelSize:policyDModel
-                                                            label:[NSString stringWithFormat:@"%@/%@/promo_logits", label, activeHead]];
+                                                            label:[NSString stringWithFormat:@"%@/promo_logits", label]];
     }
     else if (convolutionPolicy) {
         if (attentionBody) {
@@ -1298,7 +1284,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                              weights:&head.policy1.weights[0]
                                               biases:&head.policy1.biases[0]
                                           activation:defaultActivation
-                                               label:[NSString stringWithFormat:@"%@/%@/conv1", label, activeHead]];
+                                               label:[NSString stringWithFormat:@"%@/conv1", label]];
 
         // No activation.
         policy = [self addConvolutionBlockWithParent:policy
@@ -1307,7 +1293,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                              weights:&head.policy.weights[0]
                                               biases:&head.policy.biases[0]
                                           activation:nil
-                                               label:[NSString stringWithFormat:@"%@/%@/conv2", label, activeHead]];
+                                               label:[NSString stringWithFormat:@"%@/conv2", label]];
 
 
         /**
@@ -1349,11 +1335,11 @@ static const NSInteger kMinSubBatchSize = 20;
                                              weights:&head.policy.weights[0]
                                               biases:&head.policy.biases[0]
                                           activation:defaultActivation
-                                               label:[NSString stringWithFormat:@"%@/%@/conv", label, activeHead]];
+                                               label:[NSString stringWithFormat:@"%@/conv", label]];
 
         policy = [self flatten2DTensor:policy
                                   axis:1
-                                  name:[NSString stringWithFormat:@"%@/%@/conv/flatten", label, activeHead]];
+                                  name:[NSString stringWithFormat:@"%@/conv/flatten", label]];
 
         // ip_pol_w and ip_pol_b as used here is for classical policy dense weights,
         // may be worth renaming to dismbiguate policy embedding weights in attention policy.
@@ -1362,7 +1348,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                 weights:&head.ip_pol_w[0]
                                                  biases:&head.ip_pol_b[0]
                                              activation:nil
-                                                  label:[NSString stringWithFormat:@"%@/%@/fc", label, activeHead]];
+                                                  label:[NSString stringWithFormat:@"%@/fc", label]];
     }
     return policy;
 }
@@ -1371,27 +1357,16 @@ static const NSInteger kMinSubBatchSize = 20;
                                       attentionBody:(bool)attentionBody
                                             wdlHead:(bool)wdl
                                   defaultActivation:(NSString * __nullable)defaultActivation
-                                         valueHeads:(lczero::LegacyWeights::ValueHeads &)heads
-                                         activeHead:(NSString * __nonnull)activeHead
+                                         valueHeads:(lczero::MultiHeadWeights::ValueHead &)head
                                               label:(NSString * __nonnull)label
 {
-    // Selected head to construct.
-    // Use value_winner as default head.
-    lczero::LegacyWeights::ValueHead& head = heads.winner;
-    if ([activeHead isEqual:@"q"]) {
-        head = heads.q;
-    }
-    else if ([activeHead isEqual:@"st"]) {
-        head = heads.st;
-    }
-
     if (attentionBody) {
         value = [self addFullyConnectedLayerWithParent:value
                                         outputChannels:head.ip_val_b.size()
                                                weights:&head.ip_val_w[0]
                                                 biases:&head.ip_val_b[0]
                                             activation:defaultActivation
-                                                 label:[NSString stringWithFormat:@"%@/%@/embedding", label, activeHead]];
+                                                 label:[NSString stringWithFormat:@"%@/embedding", label]];
     }
     else {
         value = [self addConvolutionBlockWithParent:value
@@ -1400,7 +1375,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                             weights:&head.value.weights[0]
                                              biases:&head.value.biases[0]
                                          activation:defaultActivation
-                                              label:[NSString stringWithFormat:@"%@/%@/conv", label, activeHead]];
+                                              label:[NSString stringWithFormat:@"%@/conv", label]];
     }
 
     value = [self flatten2DTensor:value
@@ -1412,14 +1387,14 @@ static const NSInteger kMinSubBatchSize = 20;
                                            weights:&head.ip1_val_w[0]
                                             biases:&head.ip1_val_b[0]
                                         activation:defaultActivation
-                                             label:[NSString stringWithFormat:@"%@/%@/fc1", label, activeHead]];
+                                             label:[NSString stringWithFormat:@"%@/fc1", label]];
 
     value = [self addFullyConnectedLayerWithParent:value
                                     outputChannels:head.ip2_val_b.size()
                                             weights:&head.ip2_val_w[0]
                                             biases:&head.ip2_val_b[0]
                                         activation:wdl ? @"softmax" : @"tanh"
-                                                label:[NSString stringWithFormat:@"%@/%@/fc2", label, activeHead]];
+                                                label:[NSString stringWithFormat:@"%@/fc2", label]];
 
     return value;
 }

@@ -108,7 +108,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                        label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) addEncoderLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                        legacyWeights:(lczero::LegacyWeights::EncoderLayer &)weights
+                                        legacyWeights:(lczero::MultiHeadWeights::EncoderLayer &)weights
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
                                     smolgenActivation:(NSString * __nullable)smolgenActivation
@@ -137,7 +137,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
-                                               smolgen:(lczero::LegacyWeights::Smolgen * __nullable)smolgen
+                                               smolgen:(lczero::MultiHeadWeights::Smolgen * __nullable)smolgen
                                      smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label;
 
@@ -183,16 +183,14 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                    defaultActivation:(NSString * __nullable)defaultActivation
                                    smolgenActivation:(NSString * __nullable)smolgenActivation
                                        ffnActivation:(NSString * __nullable)ffnActivation
-                                         policyHeads:(lczero::LegacyWeights::PolicyHeads &)heads
-                                          activeHead:(NSString * __nonnull)activeHead
+                                         policyHeads:(lczero::MultiHeadWeights::PolicyHead &)head
                                                label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) makeValueHeadWithTensor:(MPSGraphTensor * __nonnull)value
                                       attentionBody:(bool)attentionBody
                                             wdlHead:(bool)wdl
                                   defaultActivation:(NSString * __nullable)defaultActivation
-                                         valueHeads:(lczero::LegacyWeights::ValueHeads &)heads
-                                         activeHead:(NSString * __nonnull)activeHead
+                                         valueHeads:(lczero::MultiHeadWeights::ValueHead &)head
                                               label:(NSString * __nonnull)label;
 
 -(void) setGlobalSmolgenWeights:(float * __nonnull)weights;

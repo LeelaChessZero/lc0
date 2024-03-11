@@ -57,7 +57,7 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
-void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, InputEmbedding embedding,
+void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, InputEmbedding embedding,
                                 bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left,
                                 Activations activations, std::string policy_head, std::string value_head)
 {
@@ -241,18 +241,17 @@ void MetalNetworkBuilder::build(int kInputPlanes, LegacyWeights& weights, InputE
                            defaultActivation:defaultActivation
                            smolgenActivation:smolgenActivation
                                ffnActivation:ffnActivation
-                                 policyHeads:weights.policy_heads
-                                  activeHead:policyHead
-                                       label:@"policy"];
+                                 policyHeads:weights.policy_heads.at(policy_head)
+                                       label:[NSString stringWithFormat:@"policy/%@", policyHead]];
 
     // 4. Value head.
     MPSGraphTensor * value = [graph makeValueHeadWithTensor:layer
                                               attentionBody:attn_body
                                                     wdlHead:wdl
                                           defaultActivation:defaultActivation
-                                                 valueHeads:weights.value_heads
+                                                 valueHeads:weights.value_heads.at(value_head)
                                                  activeHead:valueHead
-                                                      label:@"value"];
+                                                      label:[NSString stringWithFormat:@"value/%@", valueHead]];
 
     // 5. Moves left head.
     MPSGraphTensor * mlh;

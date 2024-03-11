@@ -88,7 +88,7 @@ std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
 MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()} {
-  LegacyWeights weights(file.weights());
+  MultiHeadWeights weights(file.weights());
 
   try {
     const int gpu_id = options.GetOrDefault<int>("gpu", 0);
@@ -117,8 +117,10 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
   // Mask out the multihead format bit 7.
   bool attn_body =
-      (file.format().network_format().network() & 127) ==
-      pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
+      (file.format().network_format().network()) ==
+          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
+      (file.format().network_format().network()) ==
+          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
 
   // Build MPS Graph.
   Activations activations;
@@ -143,35 +145,21 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                 static_cast<pblczero::NetworkFormat::ActivationFunction>(
                     ffn_activation));
 
-  std::string policy_head = options.GetOrDefault<std::string>("policy_head", "vanilla");
+  std::string policy_head =
+      options.GetOrDefault<std::string>("policy_head", "vanilla");
   // Check that selected policy head exists.
-  if (attn_policy_) {
-    if ((policy_head == "vanilla" && weights.policy_heads.vanilla.ip2_pol_b.size() == 0)
-        || (policy_head == "optimistic" && weights.policy_heads.optimistic_st.ip2_pol_b.size() == 0)
-        || (policy_head == "soft" && weights.policy_heads.soft.ip2_pol_b.size() == 0)
-        || (policy_head != "vanilla" && policy_head != "optimistic" && policy_head != "soft")) {
-      throw Exception("The policy head you specified '" + policy_head + "'"
-        + " does not exist in this net.");
-    }
-  } else {
-    if ((policy_head == "vanilla" && weights.policy_heads.vanilla.policy.weights.size() == 0)
-        || (policy_head == "optimistic" && weights.policy_heads.optimistic_st.policy.weights.size() == 0)
-        || (policy_head == "soft" && weights.policy_heads.soft.policy.weights.size() == 0)
-        || (policy_head != "vanilla" && policy_head != "optimistic" && policy_head != "soft")) {
-      throw Exception("The policy head you specified '" + policy_head + "'"
-        + " does not exist in this net.");
-    }
+  if (weights.policy_heads.count(policy_head) == 0) {
+    throw Exception("The policy head you specified '" + policy_head +
+                    "' does not exist in this net.");
+  }
+  std::string value_head =
+      options.GetOrDefault<std::string>("value_head", "winner");
+  // Check that selected value head exists.
+  if (weights.value_heads.count(value_head) == 0) {
+    throw Exception("The value head you specified '" + value_head +
+                    "' does not exist in this net.");
   }
 
-  std::string value_head = options.GetOrDefault<std::string>("value_head", "winner");
-  // Check that selected value head exists.
-  if ((value_head == "winner" && weights.value_heads.winner.ip1_val_b.size() == 0)
-      || (value_head == "q" && weights.value_heads.q.ip1_val_b.size() == 0)
-      || (value_head == "st" && weights.value_heads.st.ip1_val_b.size() == 0)
-      || (value_head != "winner" && value_head != "q" && value_head != "st")) {
-    throw Exception("The value head you specified '" + value_head + "'"
-      + " does not exist in this net.");
-  }
   auto embedding = static_cast<InputEmbedding>(file.format().network_format().input_embedding());
   builder_->build(kInputPlanes, weights, embedding, attn_body, attn_policy_, conv_policy_,
                   wdl_, moves_left_, activations, policy_head, value_head);
