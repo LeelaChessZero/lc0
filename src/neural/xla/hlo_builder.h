@@ -79,9 +79,12 @@ class HloTensorType : public HloType {
   }
   pblczero::XlaShapeProto::Type GetElementType() const { return type_; }
   void AddDimension(int64_t size) { dimensions_.push_back(size); }
-  void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
   const std::vector<int64_t>& GetDimensions() const { return dimensions_; }
   int64_t GetDimension(size_t idx) const { return dimensions_[idx]; }
+  void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
+  void SetDimensions(const std::vector<int64_t>& dimensions) {
+    dimensions_ = dimensions;
+  }
   size_t Rank() const { return dimensions_.size(); }
   size_t NumElements() const;
 
@@ -97,6 +100,7 @@ class HloBuilder {
   // HLO operations.
   HloFlow Parameter(const HloType& shape);
   HloFlow Constant(const pblczero::XlaLiteralProto& literal);
+  HloFlow Concatenate(const std::vector<HloFlow>& inputs, size_t dimension);
   HloFlow Convert(HloFlow input, const pblczero::XlaShapeProto::Type type);
   HloFlow Convolution(
       HloFlow input, HloFlow filter, const pblczero::XlaWindow& window,
@@ -120,16 +124,18 @@ class HloBuilder {
   HloFlow ExponentialMinusOne(HloFlow input);
   HloFlow Negate(HloFlow input);
   HloFlow Exponential(HloFlow input);
+  HloFlow Sqrt(HloFlow input);
+  HloFlow Rsqrt(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
   HloFlow Reduce(HloFlow input, HloFlow initial, HloComputation function,
                  const std::vector<int64_t>& reduction_dimensions);
+  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);
   HloFlow Gather(HloFlow input, HloFlow indices, size_t index_vector_dim,
                  const std::vector<int64_t>& offset_dims,
                  const std::vector<int64_t>& slice_sizes,
                  const std::vector<int64_t>& collapsed_slice_dims,
                  const std::vector<int64_t>& start_index_map,
                  bool indices_are_sorted, bool unique_indicies);
-  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);
   // Direction is one of "EQ", "NE", "LT", "LE", "GT", "GE".
   HloFlow Compare(HloFlow lhs, HloFlow rhs, std::string_view direction);
   HloFlow Select(HloFlow condition, HloFlow on_true, HloFlow on_false);
