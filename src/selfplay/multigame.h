@@ -33,7 +33,7 @@ namespace lczero {
 
 class Evaluator {
  public:
-  virutal ~Evaluator() = default;
+  virtual ~Evaluator() = default;
   // Run before each batch before any Gather.
   virtual void Reset(const PlayerOptions& player) = 0;
   // Run for each tree.
