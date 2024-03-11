@@ -79,6 +79,7 @@ class HloTensorType : public HloType {
   }
   pblczero::XlaShapeProto::Type GetElementType() const { return type_; }
   void AddDimension(int64_t size) { dimensions_.push_back(size); }
+  void SetDimension(size_t idx, int64_t size) { dimensions_[idx] = size; }
   const std::vector<int64_t>& GetDimensions() const { return dimensions_; }
   int64_t GetDimension(size_t idx) const { return dimensions_[idx]; }
   size_t Rank() const { return dimensions_.size(); }
@@ -113,7 +114,10 @@ class HloBuilder {
   HloFlow Slice(
       HloFlow input,
       const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice);
+  HloFlow Concatenate(const std::vector<HloFlow>& inputs, int64_t dimension);
   HloFlow Tanh(HloFlow input);
+  HloFlow LogPlusOne(HloFlow input);
+  HloFlow ExponentialMinusOne(HloFlow input);
   HloFlow Negate(HloFlow input);
   HloFlow Exponential(HloFlow input);
   HloFlow Tuple(const std::vector<HloFlow>& elements);
@@ -125,6 +129,10 @@ class HloBuilder {
                  const std::vector<int64_t>& collapsed_slice_dims,
                  const std::vector<int64_t>& start_index_map,
                  bool indices_are_sorted, bool unique_indicies);
+  HloFlow Transpose(HloFlow input, const std::vector<int64_t>& permutation);
+  // Direction is one of "EQ", "NE", "LT", "LE", "GT", "GE".
+  HloFlow Compare(HloFlow lhs, HloFlow rhs, std::string_view direction);
+  HloFlow Select(HloFlow condition, HloFlow on_true, HloFlow on_false);
   // Insert a computation into the module, under given name. Dependent
   // computations are also merged into the module.
   HloComputation AddComputation(std::string_view name,

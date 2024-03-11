@@ -73,7 +73,7 @@ class SelfPlayTournament {
   void Worker();
   void PlayOneGame(int game_id);
   void PlayMultiGames(int game_id, size_t game_count);
-  void SaveResults();
+  void SaveResults() REQUIRES(mutex_);
 
   Mutex mutex_;
   // Whether first game will be black for player1.
@@ -113,6 +113,8 @@ class SelfPlayTournament {
   const bool kTraining;
   const float kResignPlaythrough;
   const int kPolicyGamesSize;
+  const int kValueGamesSize;
+  int multi_games_size_;
   const std::string kTournamentResultsFile;
   const float kDiscardedStartChance;
 };

@@ -49,25 +49,25 @@ using namespace cudnn_backend;
 template <typename DataType>
 class CudaNetwork;
 
-static size_t getMaxAttentionHeadSize(const MultiHeadWeights& weights, int N) {
-  const auto vanilla = weights.policy_heads.at("vanilla");
-  const size_t embedding_op_size = vanilla.ip_pol_b.size();
-  const size_t policy_d_model = vanilla.ip2_pol_b.size();
-  assert(policy_d_model == vanilla.ip3_pol_b.size());
+static size_t getMaxAttentionHeadSize(
+    const MultiHeadWeights::PolicyHead& weights, int N) {
+  const size_t embedding_op_size = weights.ip_pol_b.size();
+  const size_t policy_d_model = weights.ip2_pol_b.size();
+  assert(policy_d_model == weights.ip3_pol_b.size());
 
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
 
-  if (vanilla.pol_encoder.size() > 0) {
-    encoder_d_model = vanilla.pol_encoder[0].mha.q_b.size();
-    encoder_dff = vanilla.pol_encoder[0].ffn.dense1_b.size();
+  if (weights.pol_encoder.size() > 0) {
+    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
 
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.k_b.size());
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.v_b.size());
-    assert(embedding_op_size == vanilla.pol_encoder[0].ffn.dense2_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
   }
 
-  const size_t encoder_heads = vanilla.pol_encoder_head_count;
+  const size_t encoder_heads = weights.pol_encoder_head_count;
 
   size_t size =
       N * 64 *
@@ -121,8 +121,8 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
-  CudaNetworkComputation(CudaNetwork<DataType>* network, bool wdl, bool wdl_err,
-                         bool moves_left);
+  CudaNetworkComputation(CudaNetwork<DataType>* network,
+                         bool wdl, bool moves_left);
   ~CudaNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -177,7 +177,6 @@ class CudaNetworkComputation : public NetworkComputation {
   std::unique_ptr<InputsOutputs> inputs_outputs_;
   int batch_size_;
   bool wdl_;
-  bool wdl_err_;
   bool moves_left_;
 
   CudaNetwork<DataType>* network_;
@@ -345,9 +344,26 @@ class CudaNetwork : public Network {
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
+    std::string policy_head =
+        options.GetOrDefault<std::string>("policy_head", "vanilla");
+    // Check that selected policy head exists.
+    if (weights.policy_heads.count(policy_head) == 0) {
+      throw Exception("The policy head you specified '" + policy_head +
+                      "' does not exist in this net.");
+    }
+    std::string value_head =
+        options.GetOrDefault<std::string>("value_head", "winner");
+    // Check that selected value head exists.
+    if (weights.value_heads.count(value_head) == 0) {
+      throw Exception("The value head you specified '" + value_head +
+                      "' does not exist in this net.");
+    }
+
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
-        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
+        getMaxAttentionHeadSize(weights.policy_heads.at(policy_head),
+                                max_batch_size_) *
+        sizeof(DataType);
 
     const size_t attentionBodySize =
         getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
@@ -361,21 +377,6 @@ class CudaNetwork : public Network {
 
     ActivationFunction act = mish_net ? ACTIVATION_MISH : ACTIVATION_RELU;
 
-    std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
-    // Check that selected policy head exists.
-    if (weights.policy_heads.count(policy_head) == 0) {
-      throw Exception("The policy head you specified '" + policy_head +
-                      "' does not exist in this net.");
-    }
-
-    std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
-    // Check that selected value head exists.
-    if (weights.value_heads.count(value_head) == 0) {
-      throw Exception("The value head you specified '" + value_head +
-                      "' does not exist in this net.");
-    }
     // 2. Build the network, and copy the weights to GPU memory.
 
     // Input conv only used if there are residual blocks in the network
@@ -535,17 +536,9 @@ class CudaNetwork : public Network {
              pblczero::NetworkFormat::VALUE_WDL;
       BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
       auto value_main = std::make_unique<ValueHead<DataType>>(
-          lastlayer, head, scratch_mem_, attn_body_, wdl_, false, act,
+          lastlayer, head, scratch_mem_, attn_body_, wdl_, act,
           max_batch_size_, use_gemm_ex);
       network_.emplace_back(std::move(value_main));
-
-      wdl_err_ = weights.value_heads.count("st") > 0;
-      if (wdl_err_) {
-        auto value_err = std::make_unique<ValueHead<DataType>>(
-            lastlayer, weights.value_heads.at("st"), scratch_mem_, attn_body_,
-            wdl_, true, act, max_batch_size_, use_gemm_ex);
-        network_.emplace_back(std::move(value_err));
-      }
     }
 
     // Moves left head
@@ -662,7 +655,6 @@ class CudaNetwork : public Network {
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_gpu_;
     float* opMov = io->op_moves_left_mem_gpu_;
-    float* opValErr = io->op_value_err_mem_gpu_;
 
     // Figure out if the memory requirment for running the res block would fit
     // in the L2 cache.
@@ -832,20 +824,6 @@ class CudaNetwork : public Network {
                           stream);  // value head
     }
 
-    if (wdl_err_) {
-      // value error head
-      if (fp16) {
-        network_[l++]->Eval(batchSize, spare1, flow, spare2, scratch_mem,
-                            scratch_size_, nullptr, cublas,
-                            stream);  // value error head
-        copyTypeConverted(opValErr, (half*)spare1, batchSize, stream);
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opValErr, flow, spare2,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value error head
-      }
-    }
-
     if (moves_left_) {
       // Moves left head
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
@@ -926,16 +904,15 @@ class CudaNetwork : public Network {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
-    return std::make_unique<CudaNetworkComputation<DataType>>(
-        this, wdl_, wdl_err_, moves_left_);
+    return std::make_unique<CudaNetworkComputation<DataType>>(this, wdl_,
+                                                              moves_left_);
   }
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(
-          max_batch_size_, wdl_, wdl_err_, moves_left_, tensor_mem_size_,
-          scratch_size_,
+          max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
           !has_tensor_cores_ && std::is_same<half, DataType>::value);
     } else {
       std::unique_ptr<InputsOutputs> resource =
@@ -965,7 +942,6 @@ class CudaNetwork : public Network {
   int max_batch_size_;
   int min_batch_size_;
   bool wdl_;
-  bool wdl_err_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
                                           // tower
@@ -1058,8 +1034,8 @@ class CudaNetwork : public Network {
 
 template <typename DataType>
 CudaNetworkComputation<DataType>::CudaNetworkComputation(
-    CudaNetwork<DataType>* network, bool wdl, bool wdl_err, bool moves_left)
-    : wdl_(wdl), wdl_err_(wdl_err), moves_left_(moves_left), network_(network) {
+    CudaNetwork<DataType>* network, bool wdl, bool moves_left)
+    : wdl_(wdl), moves_left_(moves_left), network_(network) {
   batch_size_ = 0;
   inputs_outputs_ = network_->GetInputsOutputs();
 }

@@ -307,6 +307,8 @@ message HloInstructionProto {
 
   repeated int64 operand_ids = 36;
   repeated int64 called_computation_ids = 38;
+
+  optional string comparison_direction = 63;
 }
 
 message HloComputationProto {

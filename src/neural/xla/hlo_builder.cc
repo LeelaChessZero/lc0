@@ -333,6 +333,70 @@ HloFlow HloBuilder::Tanh(HloFlow input) {
   return MakeInstruction("tanh", input->shape(), {input});
 }
 
+HloFlow HloBuilder::LogPlusOne(HloFlow input) {
+  return MakeInstruction("log-plus-one", input->shape(), {input});
+}
+
+HloFlow HloBuilder::ExponentialMinusOne(HloFlow input) {
+  return MakeInstruction("exponential-minus-one", input->shape(), {input});
+}
+HloFlow HloBuilder::Compare(HloFlow lhs, HloFlow rhs,
+                            std::string_view direction) {
+  if (lhs->shape().dimensions() != rhs->shape().dimensions()) {
+    throw Exception("Elementwise operands must have the same shape");
+  }
+  HloTensorType shape(lhs->shape());
+  shape.SetElementType(pblczero::XlaShapeProto::PRED);
+  auto* flow = MakeInstruction("compare", shape.ToProto(), {lhs, rhs});
+  flow->set_comparison_direction(direction);
+  return flow;
+}
+
+HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
+                                int64_t dimension) {
+  if (inputs.empty()) {
+    throw Exception("Concatenate must have at least one input");
+  }
+  HloTensorType shape(inputs[0]->shape());
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    if (inputs[i]->shape().element_type() != shape.GetElementType()) {
+      throw Exception("Concatenate operands must have the same element type");
+    }
+    if (inputs[i]->shape().dimensions_size() != shape.Rank()) {
+      throw Exception("Concatenate operands must have the same rank");
+    }
+    for (size_t j = 0; j < shape.Rank(); ++j) {
+      if (j == dimension) {
+        shape.SetDimension(
+            j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
+      } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
+        throw Exception("Concatenate operands must have the same shape");
+      }
+    }
+  }
+  auto flow = MakeInstruction("concatenate", shape.ToProto(), inputs);
+  flow->add_dimensions(dimension);
+  return flow;
+}
+
+HloFlow HloBuilder::Select(HloFlow condition, HloFlow on_true,
+                           HloFlow on_false) {
+  if (condition->shape().element_type() != pblczero::XlaShapeProto::PRED) {
+    throw Exception("Select condition must have the PRED element type");
+  }
+  if (on_true->shape().dimensions() != on_false->shape().dimensions()) {
+    throw Exception("Select operands must have the same shape");
+  }
+  if (on_true->shape().element_type() != on_false->shape().element_type()) {
+    throw Exception("Select operands must have the same element type");
+  }
+  if (condition->shape().dimensions() != on_true->shape().dimensions()) {
+    throw Exception("Select condition and operands must have the same shape");
+  }
+  return MakeInstruction("select", on_true->shape(),
+                         {condition, on_true, on_false});
+}
+
 HloFlow HloBuilder::Negate(HloFlow input) {
   return MakeInstruction("negate", input->shape(), {input});
 }
@@ -348,6 +412,21 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
     *shape.add_tuple_shapes() = element->shape();
   }
   return MakeInstruction("tuple", shape, elements);
+}
+
+HloFlow HloBuilder::Transpose(HloFlow input,
+                              const std::vector<int64_t>& permutation) {
+  if (permutation.size() != input->shape().dimensions_size()) {
+    throw Exception(
+        "Transpose permutation must have the same size as the input shape");
+  }
+  HloTensorType shape(input->shape().element_type());
+  for (size_t i = 0; i < permutation.size(); ++i) {
+    shape.AddDimension(input->shape().dimensions(permutation[i]));
+  }
+  auto* flow = MakeInstruction("transpose", shape.ToProto(), {input});
+  *flow->mutable_dimensions() = permutation;
+  return flow;
 }
 
 HloFlow HloBuilder::Slice(

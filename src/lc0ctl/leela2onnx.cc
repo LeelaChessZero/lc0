@@ -69,6 +69,15 @@ const OptionId kOutputMlh{"mlh-head-name", "MlhHeadName",
 const OptionId kOnnxToPytorch{
     "onnx2pytorch", "",
     "Only use layer definitions supported by onnx2pytorch."};
+const OptionId kValueHead{
+    "value-head", "",
+    "Value head to be used in the generated model. Typical values are "
+    "'winner', 'q' or 'st', but only 'winner' is always available."};
+const OptionId kPolicyHead{
+    "policy-head", "",
+    "Policy head to be used in the generated model. Typical values are "
+    "'vanilla', 'optimistic' or 'soft', but only 'vanilla' is always "
+    "available."};
 
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
@@ -87,6 +96,8 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kOutputValue) = "/output/value";
   options->Add<StringOption>(kOutputMlh) = "/output/mlh";
   options->Add<BoolOption>(kOnnxToPytorch) = false;
+  options->Add<StringOption>(kValueHead) = "winner";
+  options->Add<StringOption>(kPolicyHead) = "vanilla";
   if (!options->ProcessAllFlags()) return false;
 
   const OptionsDict& dict = options->GetOptionsDict();
@@ -128,6 +139,8 @@ void ConvertLeelaToOnnx() {
     // currently only enables that. Might need to be extended in the future.
     onnx_options.alternative_layer_normalization =
         dict.Get<bool>(kOnnxToPytorch);
+    onnx_options.value_head = dict.Get<std::string>(kValueHead);
+    onnx_options.policy_head = dict.Get<std::string>(kPolicyHead);
     weights_file = ConvertWeightsToOnnx(weights_file, onnx_options);
   }
 

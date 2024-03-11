@@ -412,6 +412,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.data_type_ =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
+    converter_options.policy_head =
+        opts.GetOrDefault<std::string>("policy_head", "vanilla");
+    converter_options.value_head =
+        opts.GetOrDefault<std::string>("value_head", "winner");
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,

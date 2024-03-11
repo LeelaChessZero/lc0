@@ -31,13 +31,26 @@
 
 namespace lczero {
 
+class Evaluator {
+ public:
+  virtual ~Evaluator() = default;
+  // Run before each batch before any Gather.
+  virtual void Reset(const PlayerOptions& player) = 0;
+  // Run for each tree.
+  virtual void Gather(NodeTree* tree) = 0;
+  // Run once between Gather and Move.
+  virtual void Run() = 0;
+  // Run for each tree in the same order as Gather.
+  virtual void MakeBestMove(NodeTree* tree) = 0;
+};
+
 // Plays a bunch of games vs itself.
 class MultiSelfPlayGames {
  public:
   // Player options may point to the same network/cache/etc.
   MultiSelfPlayGames(PlayerOptions player1, PlayerOptions player2,
                      const std::vector<Opening>& openings,
-                     SyzygyTablebase* syzygy_tb);
+                     SyzygyTablebase* syzygy_tb, bool use_value);
 
   // Starts the games and blocks until all games are finished.
   void Play();
@@ -69,6 +82,7 @@ class MultiSelfPlayGames {
   bool abort_ = false;
   std::mutex mutex_;
   SyzygyTablebase* syzygy_tb_;
+  std::unique_ptr<Evaluator> eval_;
 };
 
 }  // namespace lczero
