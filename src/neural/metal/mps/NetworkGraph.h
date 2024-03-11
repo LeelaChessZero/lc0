@@ -177,20 +177,20 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) makePolicyHeadWithTensor:(MPSGraphTensor * __nonnull)policy
-                                     attentionPolicy:(bool)attentionPolicy
-                                   convolutionPolicy:(bool)convolutionPolicy
-                                       attentionBody:(bool)attentionBody
+                                     attentionPolicy:(BOOL)attentionPolicy
+                                   convolutionPolicy:(BOOL)convolutionPolicy
+                                       attentionBody:(BOOL)attentionBody
                                    defaultActivation:(NSString * __nullable)defaultActivation
                                    smolgenActivation:(NSString * __nullable)smolgenActivation
                                        ffnActivation:(NSString * __nullable)ffnActivation
-                                         policyHeads:(lczero::MultiHeadWeights::PolicyHead &)head
+                                          policyHead:(lczero::MultiHeadWeights::PolicyHead &)head
                                                label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) makeValueHeadWithTensor:(MPSGraphTensor * __nonnull)value
-                                      attentionBody:(bool)attentionBody
-                                            wdlHead:(bool)wdl
+                                      attentionBody:(BOOL)attentionBody
+                                            wdlHead:(BOOL)wdl
                                   defaultActivation:(NSString * __nullable)defaultActivation
-                                         valueHeads:(lczero::MultiHeadWeights::ValueHead &)head
+                                          valueHead:(lczero::MultiHeadWeights::ValueHead &)head
                                               label:(NSString * __nonnull)label;
 
 -(void) setGlobalSmolgenWeights:(float * __nonnull)weights;
