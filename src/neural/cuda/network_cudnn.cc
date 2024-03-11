@@ -173,6 +173,14 @@ class CudnnNetwork : public Network {
                    pblczero::NetworkFormat::POLICY_ATTENTION;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    // min_batch_size_ is chosen as 4 as it is common that for sizes less than
+    // 4 that there is no performance gain, but there is variance in the
+    // outputs, which means that there is extra non-determinism in some
+    // scenarios, including using the multiplexing backend.
+    min_batch_size_ =
+        options.GetOrDefault<int>("min_batch", std::min(4, max_batch_size_));
+    if (max_batch_size_ < min_batch_size_)
+      throw Exception("Max batch must not be less than min_batch setting.");
 
     showInfo();
 
@@ -657,6 +665,10 @@ class CudnnNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
+    // It is safe to evaluate larger than the batchSize
+    // as all buffers are designed to handle max_batch_size
+    // and the extra invalid results are never read.
+    if (batchSize < min_batch_size_) batchSize = min_batch_size_;
     std::unique_lock<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
@@ -950,6 +962,7 @@ class CudnnNetwork : public Network {
   cublasHandle_t cublas_;
   int gpu_id_;
   int max_batch_size_;
+  int min_batch_size_;
   bool wdl_;
   bool moves_left_;
 
@@ -1078,14 +1091,22 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
         " backend requires a network file.");
   }
   const WeightsFile& weights = *w;
-  if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT) {
-    throw Exception("Network format " +
-                    pblczero::NetworkFormat::NetworkStructure_Name(
-                        weights.format().network_format().network()) +
-                    " is not supported by CuDNN backend.");
+  switch (weights.format().network_format().network()) {
+    case pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT:
+    case pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT:
+      break;
+    case pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
+      CERR << "Network format not supported by CuDNN backend, switching to "
+              "CUDA.";
+      return NetworkFactory::Get()->Create(
+          "cuda" +
+              std::string(std::is_same<half, DataType>::value ? "-fp16" : ""),
+          weights, options);
+    default:
+      throw Exception("Network format " +
+                      pblczero::NetworkFormat::NetworkStructure_Name(
+                          weights.format().network_format().network()) +
+                      " is not supported by CuDNN backend.");
   }
   if (weights.format().network_format().policy() !=
           pblczero::NetworkFormat::POLICY_CLASSICAL &&

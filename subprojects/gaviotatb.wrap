@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/michiguel/Gaviota-Tablebases
+revision = head
+
+patch_directory = gaviotatb
+
+

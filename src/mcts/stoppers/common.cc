@@ -35,7 +35,6 @@ const OptionId kNNCacheSizeId{
     "up searching, but takes memory."};
 
 namespace {
-
 const OptionId kRamLimitMbId{
     "ramlimit-mb", "RamLimitMb",
     "Maximum memory usage for the engine, in megabytes. The estimation is very "
@@ -79,11 +78,15 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
   options->Add<IntOption>(kMinimumSmartPruningBatchesId, 0, 10000) = 0;
   options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
 
-  if (for_what == RunType::kUci) {
+  if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
     options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
     options->HideOption(kMinimumKLDGainPerNodeId);
     options->HideOption(kKLDGainAverageIntervalId);
     options->HideOption(kNodesAsPlayoutsId);
+  }
+  if (for_what == RunType::kSimpleUci) {
+    options->HideOption(kSmartPruningFactorId);
+    options->HideOption(kMinimumSmartPruningBatchesId);
   }
 }
 
@@ -128,12 +131,13 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
       stopper->AddStopper(std::make_unique<PlayoutsStopper>(
           *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
     } else {
-        node_limit = *params.nodes;
+      node_limit = *params.nodes;
     }
   }
-  // always limit nodes to avoid exceeding the limit 4000000000. That number is default when node_limit = 0)
+  // always limit nodes to avoid exceeding the limit 4000000000. That number is
+  // default when node_limit = 0.
   stopper->AddStopper(std::make_unique<VisitsStopper>(
-        node_limit, options.Get<float>(kSmartPruningFactorId) > 0.0f));
+      node_limit, options.Get<float>(kSmartPruningFactorId) > 0.0f));
 
   // "go movetime" stopper.
   if (params.movetime && !infinite) {

@@ -132,9 +132,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
   bool blacks_move = tree_[0]->IsBlackToMove();
 
   // If we are training, verify that input formats are consistent.
-  if (training &&
-      options_[0].network->GetCapabilities().input_format !=
-          options_[1].network->GetCapabilities().input_format) {
+  if (training && options_[0].network->GetCapabilities().input_format !=
+                      options_[1].network->GetCapabilities().input_format) {
     throw Exception("Can't mix networks with different input format!");
   }
   // Take syzygy tablebases from player1 options.
@@ -205,9 +204,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign &&
-        move_number >=
-            options_[idx].uci_options->Get<int>(kResignEarliestMoveId)) {
+    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
+                                            kResignEarliestMoveId)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
