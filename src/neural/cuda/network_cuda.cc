@@ -49,25 +49,25 @@ using namespace cudnn_backend;
 template <typename DataType>
 class CudaNetwork;
 
-static size_t getMaxAttentionHeadSize(const MultiHeadWeights& weights, int N) {
-  const auto vanilla = weights.policy_heads.at("vanilla");
-  const size_t embedding_op_size = vanilla.ip_pol_b.size();
-  const size_t policy_d_model = vanilla.ip2_pol_b.size();
-  assert(policy_d_model == vanilla.ip3_pol_b.size());
+static size_t getMaxAttentionHeadSize(
+    const MultiHeadWeights::PolicyHead& weights, int N) {
+  const size_t embedding_op_size = weights.ip_pol_b.size();
+  const size_t policy_d_model = weights.ip2_pol_b.size();
+  assert(policy_d_model == weights.ip3_pol_b.size());
 
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
 
-  if (vanilla.pol_encoder.size() > 0) {
-    encoder_d_model = vanilla.pol_encoder[0].mha.q_b.size();
-    encoder_dff = vanilla.pol_encoder[0].ffn.dense1_b.size();
+  if (weights.pol_encoder.size() > 0) {
+    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
 
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.k_b.size());
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.v_b.size());
-    assert(embedding_op_size == vanilla.pol_encoder[0].ffn.dense2_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
   }
 
-  const size_t encoder_heads = vanilla.pol_encoder_head_count;
+  const size_t encoder_heads = weights.pol_encoder_head_count;
 
   size_t size =
       N * 64 *
@@ -341,7 +341,9 @@ class CudaNetwork : public Network {
 
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
-        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
+        getMaxAttentionHeadSize(weights.policy_heads.at("vanilla"),
+                                max_batch_size_) *
+        sizeof(DataType);
 
     const size_t attentionBodySize =
         getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
