@@ -25,13 +25,14 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "cuda_common.h"
-#include <cstdint>
-#include "winograd_helper.inc"
-
 #include <thrust/device_ptr.h>
 #include <thrust/fill.h>
 
+#include <cstdint>
+
+#include "cuda_common.h"
+#include "neural/shared/activation.h"
+#include "winograd_helper.inc"
 
 #ifdef USE_CUTLASS
 
@@ -252,8 +253,10 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
       cutlass::epilogue::thread::LinearCombinationBiasElementwise<
           ElementIO, ElementAccumulator, ElementComputeEpilogue, ElementIO,
           ElementIO,
-          ElementScale,  // element Vector
-          elementsPerAccess, false,
+          // ElementScale,  // element Vector
+          elementsPerAccess,
+          //  false,
+          cutlass::epilogue::thread::Identity<ElementComputeEpilogue>,
           cutlass::multiplies<ElementComputeEpilogue>>;
 
   using Gemm = cutlass::gemm::device::GemmUniversalWithBroadcast<
@@ -923,7 +926,7 @@ void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
                                    int height, int width, int batchSize,
                                    float* invScale, float *deq, const half* bias,
                                    cudaStream_t stream,
-                                   ActivationFunction act = NONE) {
+                                   ActivationFunction act = ACTIVATION_NONE) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
                lczero::cudnn_backend::DivUp(height, 16), batchSize);

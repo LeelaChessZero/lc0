@@ -354,8 +354,9 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act, float default_eps, bool fused_mha, bool int8_calibrate,
-               bool int8_inference, void* int8_weights, int blockIndex);
+               ActivationFunction ffn_act, float default_eps, bool fused_mha,
+               bool int8_calibrate, bool int8_inference, void* int8_weights,
+               int blockIndex);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
