@@ -339,9 +339,24 @@ class CudaNetwork : public Network {
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
+    std::string policy_head =
+        options.GetOrDefault<std::string>("policy_head", "vanilla");
+    // Check that selected policy head exists.
+    if (weights.policy_heads.count(policy_head) == 0) {
+      throw Exception("The policy head you specified '" + policy_head +
+                      "' does not exist in this net.");
+    }
+    std::string value_head =
+        options.GetOrDefault<std::string>("value_head", "winner");
+    // Check that selected value head exists.
+    if (weights.value_heads.count(value_head) == 0) {
+      throw Exception("The value head you specified '" + value_head +
+                      "' does not exist in this net.");
+    }
+
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
-        getMaxAttentionHeadSize(weights.policy_heads.at("vanilla"),
+        getMaxAttentionHeadSize(weights.policy_heads.at(policy_head),
                                 max_batch_size_) *
         sizeof(DataType);
 
@@ -357,21 +372,6 @@ class CudaNetwork : public Network {
 
     ActivationFunction act = mish_net ? ACTIVATION_MISH : ACTIVATION_RELU;
 
-    std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
-    // Check that selected policy head exists.
-    if (weights.policy_heads.count(policy_head) == 0) {
-      throw Exception("The policy head you specified '" + policy_head +
-                      "' does not exist in this net.");
-    }
-
-    std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
-    // Check that selected value head exists.
-    if (weights.value_heads.count(value_head) == 0) {
-      throw Exception("The value head you specified '" + value_head +
-                      "' does not exist in this net.");
-    }
     // 2. Build the network, and copy the weights to GPU memory.
 
     // Input conv only used if there are residual blocks in the network
