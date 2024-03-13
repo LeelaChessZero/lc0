@@ -42,27 +42,27 @@ class TypeDict {
  protected:
   struct V {
     const T& Get() const {
-      is_used_ = true;
+      was_read_since_last_set_ = true;
       return value_;
     }
     T& Get() {
-      is_used_ = true;
+      was_read_since_last_set_ = true;
       return value_;
     }
     void Set(const T& v) {
-      is_used_ = false;
+      was_read_since_last_set_ = false;
       value_ = v;
     }
-    bool IsSet() const { return is_used_; }
+    bool WasReadSinceLastSet() const { return was_read_since_last_set_; }
 
    private:
-    mutable bool is_used_ = false;
+    mutable bool was_read_since_last_set_ = false;
     T value_;
   };
   void EnsureNoUnusedOptions(const std::string& type_name,
                              const std::string& prefix) const {
     for (auto const& option : dict_) {
-      if (!option.second.IsSet()) {
+      if (!option.second.WasReadSinceLastSet()) {
         throw Exception("Unknown " + type_name + " option: " + prefix +
                         option.first);
       }

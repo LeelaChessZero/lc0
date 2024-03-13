@@ -83,7 +83,7 @@ bool OptionsDict::GetOnce(const std::string& key) const {
     const auto& dict = alias->TypeDict<bool>::dict();
     auto iter = dict.find(key);
     if (iter != dict.end()) {
-      if (iter->second.IsSet()) return false;
+      if (iter->second.WasReadSinceLastSet()) return false;
       return iter->second.Get();
     }
   }
