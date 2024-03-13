@@ -46,6 +46,8 @@ const OptionId kHloTextOutputFilenameId = {"hlo-text-output", "",
                                            "Path of the output HLO file."};
 const OptionId kHloProtoOutputFilenameId = {
     "hlo-proto-output", "", "Path of the output HLO proto file."};
+const OptionId kOnnxBatchSizeId{"onnx-batch-size", "",
+                               "Batch size to use for ONNX conversion."};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
 const OptionId kHloAllowPartialResultId = {
@@ -67,14 +69,25 @@ const OptionId kOutputMlh{"mlh-head-name", "MlhHeadName",
 const OptionId kOnnxToPytorch{
     "onnx2pytorch", "",
     "Only use layer definitions supported by onnx2pytorch."};
+const OptionId kValueHead{
+    "value-head", "",
+    "Value head to be used in the generated model. Typical values are "
+    "'winner', 'q' or 'st', but only 'winner' is always available."};
+const OptionId kPolicyHead{
+    "policy-head", "",
+    "Policy head to be used in the generated model. Typical values are "
+    "'vanilla', 'optimistic' or 'soft', but only 'vanilla' is always "
+    "available."};
 
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
   options->Add<StringOption>(kOutputFilenameId);
   options->Add<StringOption>(kHloTextOutputFilenameId);
   options->Add<StringOption>(kHloProtoOutputFilenameId);
+  options->Add<IntOption>(kOnnxBatchSizeId, -1, 2048) = -1;
   options->Add<IntOption>(kHloBatchSizeId, 1, 2048) = 333;
   options->Add<BoolOption>(kHloAllowPartialResultId);
+  options->HideOption(kOnnxBatchSizeId);
   options->HideOption(kHloAllowPartialResultId);
 
   options->Add<StringOption>(kInputPlanesName) = "/input/planes";
@@ -83,6 +96,8 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kOutputValue) = "/output/value";
   options->Add<StringOption>(kOutputMlh) = "/output/mlh";
   options->Add<BoolOption>(kOnnxToPytorch) = false;
+  options->Add<StringOption>(kValueHead) = "winner";
+  options->Add<StringOption>(kPolicyHead) = "vanilla";
   if (!options->ProcessAllFlags()) return false;
 
   const OptionsDict& dict = options->GetOptionsDict();
@@ -119,10 +134,13 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
+    onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
     // onnx2pytorch only needs an alternate layernorm-implementation, so it's
     // currently only enables that. Might need to be extended in the future.
     onnx_options.alternative_layer_normalization =
         dict.Get<bool>(kOnnxToPytorch);
+    onnx_options.value_head = dict.Get<std::string>(kValueHead);
+    onnx_options.policy_head = dict.Get<std::string>(kPolicyHead);
     weights_file = ConvertWeightsToOnnx(weights_file, onnx_options);
   }
 

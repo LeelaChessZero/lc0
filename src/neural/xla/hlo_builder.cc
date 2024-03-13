@@ -165,8 +165,7 @@ HloFlow HloBuilder::Broadcast(
     const auto& input_dim = input_shape.dimensions(i);
     if (input_dim != target_shape.GetDimension(dim)) {
       throw Exception(
-          "Broadcast dimension must be 1 or equal to the target shape "
-          "dimension");
+          "Broadcast dimension must be equal to the target shape dimension");
     }
     flow->add_dimensions(dim);
   }
@@ -188,6 +187,17 @@ HloFlow HloBuilder::Reduce(HloFlow input, HloFlow initial,
   *flow->mutable_dimensions() = {reduction_dimensions.begin(),
                                  reduction_dimensions.end()};
   flow->add_called_computation_ids(function.idx());
+  return flow;
+}
+
+HloFlow HloBuilder::Transpose(HloFlow input,
+                              const std::vector<int64_t>& permutation) {
+  HloTensorType target_shape(input->shape().element_type());
+  for (size_t i = 0; i < permutation.size(); ++i) {
+    target_shape.AddDimension(input->shape().dimensions(permutation[i]));
+  }
+  auto flow = MakeInstruction("transpose", target_shape.ToProto(), {input});
+  *flow->mutable_dimensions() = permutation;
   return flow;
 }
 
@@ -333,6 +343,78 @@ HloFlow HloBuilder::Tanh(HloFlow input) {
   return MakeInstruction("tanh", input->shape(), {input});
 }
 
+HloFlow HloBuilder::Sqrt(HloFlow input) {
+  return MakeInstruction("sqrt", input->shape(), {input});
+}
+
+HloFlow HloBuilder::Rsqrt(HloFlow input) {
+  return MakeInstruction("rsqrt", input->shape(), {input});
+}
+
+HloFlow HloBuilder::LogPlusOne(HloFlow input) {
+  return MakeInstruction("log-plus-one", input->shape(), {input});
+}
+
+HloFlow HloBuilder::ExponentialMinusOne(HloFlow input) {
+  return MakeInstruction("exponential-minus-one", input->shape(), {input});
+}
+HloFlow HloBuilder::Compare(HloFlow lhs, HloFlow rhs,
+                            std::string_view direction) {
+  if (lhs->shape().dimensions() != rhs->shape().dimensions()) {
+    throw Exception("Elementwise operands must have the same shape");
+  }
+  HloTensorType shape(lhs->shape());
+  shape.SetElementType(pblczero::XlaShapeProto::PRED);
+  auto* flow = MakeInstruction("compare", shape.ToProto(), {lhs, rhs});
+  flow->set_comparison_direction(direction);
+  return flow;
+}
+
+HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
+                                int64_t dimension) {
+  if (inputs.empty()) {
+    throw Exception("Concatenate must have at least one input");
+  }
+  HloTensorType shape(inputs[0]->shape());
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    if (inputs[i]->shape().element_type() != shape.GetElementType()) {
+      throw Exception("Concatenate operands must have the same element type");
+    }
+    if (inputs[i]->shape().dimensions_size() != shape.Rank()) {
+      throw Exception("Concatenate operands must have the same rank");
+    }
+    for (size_t j = 0; j < shape.Rank(); ++j) {
+      if (j == static_cast<size_t>(dimension)) {
+        shape.SetDimension(
+            j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
+      } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
+        throw Exception("Concatenate operands must have the same shape");
+      }
+    }
+  }
+  auto flow = MakeInstruction("concatenate", shape.ToProto(), inputs);
+  flow->add_dimensions(dimension);
+  return flow;
+}
+
+HloFlow HloBuilder::Select(HloFlow condition, HloFlow on_true,
+                           HloFlow on_false) {
+  if (condition->shape().element_type() != pblczero::XlaShapeProto::PRED) {
+    throw Exception("Select condition must have the PRED element type");
+  }
+  if (on_true->shape().dimensions() != on_false->shape().dimensions()) {
+    throw Exception("Select operands must have the same shape");
+  }
+  if (on_true->shape().element_type() != on_false->shape().element_type()) {
+    throw Exception("Select operands must have the same element type");
+  }
+  if (condition->shape().dimensions() != on_true->shape().dimensions()) {
+    throw Exception("Select condition and operands must have the same shape");
+  }
+  return MakeInstruction("select", on_true->shape(),
+                         {condition, on_true, on_false});
+}
+
 HloFlow HloBuilder::Negate(HloFlow input) {
   return MakeInstruction("negate", input->shape(), {input});
 }
@@ -350,6 +432,34 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
   return MakeInstruction("tuple", shape, elements);
 }
 
+HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
+                                size_t dimension) {
+  if (inputs.empty()) {
+    throw Exception("Concatenate must have at least one input");
+  }
+  HloTensorType output_shape(inputs[0]->shape());
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    HloTensorType current_shape(inputs[i]->shape());
+    if (output_shape.Rank() != current_shape.Rank()) {
+      throw Exception("Concatenate inputs must have the same rank");
+    }
+    for (size_t j = 0; j < output_shape.Rank(); ++j) {
+      if (j == dimension) {
+        output_shape.SetDimension(
+            j, output_shape.GetDimension(j) + current_shape.GetDimension(j));
+      } else if (current_shape.GetDimension(j) !=
+                 current_shape.GetDimension(j)) {
+        throw Exception(
+            "Concatenate inputs must have the same size on all "
+            "dimensions except the concatenation dimension");
+      }
+    }
+  }
+  auto flow = MakeInstruction("concatenate", output_shape.ToProto(), inputs);
+  flow->add_dimensions(dimension);
+  return flow;
+}
+
 HloFlow HloBuilder::Slice(
     HloFlow input,
     const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice) {
@@ -364,7 +474,10 @@ HloFlow HloBuilder::Slice(
     if (dim.start() < 0 || dim.start() >= current_shape.GetDimension(i) ||
         dim.limit() < 0 || dim.limit() > current_shape.GetDimension(i) ||
         dim.start() >= dim.limit() || dim.stride() != 1) {
-      throw Exception("Invalid slice dimensions");
+      throw Exception("Invalid slice dimensions, input shape=" +
+                      current_shape.ToString() + ", dim=" + std::to_string(i) +
+                      ", slice_start=" + std::to_string(dim.start()) +
+                      ", slice_limit=" + std::to_string(dim.limit()));
     }
     // This / dim.stride() is pretty approximate, therefore there's a check
     // above.
