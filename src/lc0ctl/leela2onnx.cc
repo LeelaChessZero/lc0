@@ -50,7 +50,7 @@ const OptionId kOnnxBatchSizeId{"onnx-batch-size", "",
                                 "Batch size to use for ONNX conversion."};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
-const OptionId hOnnxDataTypeId{"onnx-data-type", "f32",
+const OptionId hOnnxDataTypeId{"onnx-data-type", "",
                                "Data type to use in the ONNX model."};
 const OptionId kHloAllowPartialResultId = {
     "hlo-allow-partial-result", "",

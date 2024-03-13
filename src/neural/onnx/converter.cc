@@ -1190,7 +1190,8 @@ WeightsToOnnxConverterOptions::DataType
 WeightsToOnnxConverterOptions::StringToDataType(const std::string& s) {
   if (s == "f32") return DataType::kFloat32;
   if (s == "f16") return DataType::kFloat16;
-  throw Exception("Invalid data type: " + s);
+  throw Exception("Invalid data type: [" + s + "]. Only f32 and f16 are "
+                  "supported.");
 }
 
 pblczero::Net ConvertWeightsToOnnx(
