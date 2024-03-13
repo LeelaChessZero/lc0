@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2018-2021 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,32 +25,38 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include <iostream>
 
-#include "neural/onnx/onnx.pb.h"
-#include "proto/net.pb.h"
+#include "chess/board.h"
+#include "rescorer/rescoreloop.h"
+#include "utils/commandline.h"
+#include "utils/esc_codes.h"
+#include "utils/exception.h"
+#include "utils/logging.h"
+#include "version.h"
 
-namespace lczero {
+int main(int argc, const char** argv) {
+  using namespace lczero;
+  EscCodes::Init();
+  LOGFILE << "Lc0 started.";
+  CERR << EscCodes::Bold() << EscCodes::Red() << "    _  _  _  _     _";
+  CERR << " _ |_ |_ |  | | _ |_  _";
+  CERR << "|  |_  _||_ |_||  |_ | " << EscCodes::Reset() << " v"
+       << GetVersionStr() << " built " << __DATE__;
 
-// Options to use when converting "old" weights to ONNX weights format.
-struct WeightsToOnnxConverterOptions {
-  enum class DataType { kFloat32, kFloat16 };
-  DataType data_type_ = DataType::kFloat32;
-  std::string input_planes_name = "/input/planes";
-  std::string output_policy_head = "/output/policy";
-  std::string output_wdl = "/output/wdl";
-  std::string output_value = "/output/value";
-  std::string output_mlh = "/output/mlh";
-  int batch_size = -1;
-  int opset = 17;
-  bool alt_mish = false;
-  bool alternative_layer_normalization = false;
-  std::string policy_head = "vanilla";
-  std::string value_head = "winner";
-};
+  try {
+    InitializeMagicBitboards();
 
-// Converts "classical" weights file to weights file with embedded ONNX model.
-pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
-                                   const WeightsToOnnxConverterOptions&);
+    CommandLine::Init(argc, argv);
+    CommandLine::RegisterMode(
+        "rescore", "(default) Update data scores with tablebase support");
 
-}  // namespace lczero
+    // Consuming optional "rescore" mode.
+    CommandLine::ConsumeCommand("rescore");
+    RescoreLoop loop;
+    loop.RunLoop();
+  } catch (std::exception& e) {
+    std::cerr << "Unhandled exception: " << e.what() << std::endl;
+    abort();
+  }
+}

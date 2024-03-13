@@ -344,4 +344,22 @@ uint16_t Move::as_nn_index(int transform) const {
   return transformed.as_nn_index(0);
 }
 
+Move MoveFromNNIndex(int idx, int transform) {
+  Move m = kIdxToMove[idx];
+  if (transform == 0) {
+    return m;
+  }
+  int inv_transform;
+  if (transform & TransposeTransform) {
+    inv_transform = TransposeTransform;
+    if (transform & FlipTransform) inv_transform |= MirrorTransform;
+    if (transform & MirrorTransform) inv_transform |= FlipTransform;
+  } else {
+    inv_transform = transform;
+  }
+  m.SetTo(Transform(m.to(), inv_transform));
+  m.SetFrom(Transform(m.from(), inv_transform));
+  return m;
+}
+
 }  // namespace lczero
