@@ -47,9 +47,11 @@ const OptionId kHloTextOutputFilenameId = {"hlo-text-output", "",
 const OptionId kHloProtoOutputFilenameId = {
     "hlo-proto-output", "", "Path of the output HLO proto file."};
 const OptionId kOnnxBatchSizeId{"onnx-batch-size", "",
-                               "Batch size to use for ONNX conversion."};
+                                "Batch size to use for ONNX conversion."};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
+const OptionId hOnnxDataTypeId{"onnx-data-type", "",
+                               "Data type to use in the ONNX model."};
 const OptionId kHloAllowPartialResultId = {
     "hlo-allow-partial-result", "",
     "Allow partial result in case of HLO conversion failure (DEBUG ONLY!)."};
@@ -86,6 +88,8 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kHloProtoOutputFilenameId);
   options->Add<IntOption>(kOnnxBatchSizeId, -1, 2048) = -1;
   options->Add<IntOption>(kHloBatchSizeId, 1, 2048) = 333;
+  options->Add<ChoiceOption>(hOnnxDataTypeId,
+                             std::vector<std::string>{"f32", "f16"}) = "f32";
   options->Add<BoolOption>(kHloAllowPartialResultId);
   options->HideOption(kOnnxBatchSizeId);
   options->HideOption(kHloAllowPartialResultId);
@@ -133,8 +137,9 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_policy_head = dict.Get<std::string>(kOutputPolicyHead);
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
-    onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
+    onnx_options.data_type = WeightsToOnnxConverterOptions::StringToDataType(
+        dict.Get<std::string>(hOnnxDataTypeId));
     // onnx2pytorch only needs an alternate layernorm-implementation, so it's
     // currently only enables that. Might need to be extended in the future.
     onnx_options.alternative_layer_normalization =

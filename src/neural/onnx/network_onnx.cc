@@ -409,7 +409,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
     converter_options.alternative_layer_normalization =
         opts.GetOrDefault<bool>("alternative_layer_normalization", true);
-    converter_options.data_type_ =
+    converter_options.data_type =
         fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
              : WeightsToOnnxConverterOptions::DataType::kFloat32;
     converter_options.policy_head =

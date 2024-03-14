@@ -167,7 +167,7 @@ class Converter {
 };
 
 pblczero::TensorProto::DataType Converter::GetDataType() const {
-  switch (options_.data_type_) {
+  switch (options_.data_type) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return pblczero::TensorProto::FLOAT;
     case WeightsToOnnxConverterOptions::DataType::kFloat16:
@@ -180,22 +180,21 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
 std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
     const std::vector<float>& weights, std::initializer_list<int> dims,
     std::initializer_list<int> order) {
-  switch (options_.data_type_) {
+  switch (options_.data_type) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
     case WeightsToOnnxConverterOptions::DataType::kFloat16:
       return std::make_unique<Float16OnnxWeightsAdapter>(weights, dims, order);
   }
   throw Exception("Data type " +
-                  std::to_string(static_cast<int>(options_.data_type_)) +
+                  std::to_string(static_cast<int>(options_.data_type)) +
                   " is not supported in weights converter");
 }
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
   if (!options_.alt_mish || options_.opset < 9 ||
-      options_.data_type_ !=
-          WeightsToOnnxConverterOptions::DataType::kFloat32) {
+      options_.data_type != WeightsToOnnxConverterOptions::DataType::kFloat32) {
     if (options_.opset >= 18) return builder->Mish(name, input);
     auto flow = builder->Softplus(name + "/softplus", input);
     flow = builder->Tanh(name + "/tanh", flow);
@@ -1186,6 +1185,14 @@ void Converter::Convert(pblczero::Net* dst) {
 }
 
 }  // namespace
+
+WeightsToOnnxConverterOptions::DataType
+WeightsToOnnxConverterOptions::StringToDataType(const std::string& s) {
+  if (s == "f32") return DataType::kFloat32;
+  if (s == "f16") return DataType::kFloat16;
+  throw Exception("Invalid data type: [" + s + "]. Only f32 and f16 are "
+                  "supported.");
+}
 
 pblczero::Net ConvertWeightsToOnnx(
     const pblczero::Net& net, const WeightsToOnnxConverterOptions& options) {

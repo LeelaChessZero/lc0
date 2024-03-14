@@ -37,6 +37,7 @@
 #include "neural/xla/hlo_builder.h"
 #include "neural/xla/print_hlo.h"
 #include "utils/exception.h"
+#include "utils/fp16_utils.h"
 
 namespace lczero {
 namespace {
@@ -226,6 +227,9 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
   switch (tensor.data_type()) {
     case pblczero::TensorProto::FLOAT:
       convert(tensor.raw_data(), literal.mutable_f32s());
+      break;
+    case pblczero::TensorProto::FLOAT16:
+      literal.set_f16s(tensor.raw_data());
       break;
     case pblczero::TensorProto::INT64:
       convert(tensor.raw_data(), literal.mutable_s64s());
@@ -972,8 +976,14 @@ class Onnx2HloConverter {
       case pblczero::XlaShapeProto::F32:
         literal.add_f32s(value);
         break;
+      case pblczero::XlaShapeProto::F16: {
+        uint16_t f16 = FP32toFP16(value);
+        std::string_view f16_view(reinterpret_cast<const char*>(&f16),
+                                  sizeof(f16));
+        literal.set_f16s(f16_view);
+      } break;
       default:
-        throw Exception("Unsupported type for zero constant");
+        throw Exception("Unsupported type for a constant");
     }
     return builder_.Constant(literal);
   }
@@ -1119,6 +1129,10 @@ std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
       return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
                                                  onnx_tensor.raw_data(),
                                                  pblczero::XlaShapeProto::F32);
+    case pblczero::TensorProto::FLOAT16:
+      return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
+                                                 onnx_tensor.raw_data(),
+                                                 pblczero::XlaShapeProto::F16);
     default:
       throw Exception(
           "Unsupported ONNX tensor type for buffer conversion " +
