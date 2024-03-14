@@ -218,7 +218,7 @@ class BoolOption : public OptionsParser::Option {
 
 class ButtonOption : public OptionsParser::Option {
  public:
-  using ValueType = bool;
+  using ValueType = Button;
   ButtonOption(const OptionId& id);
 
   void SetValue(const std::string& value, OptionsDict* dict) override;

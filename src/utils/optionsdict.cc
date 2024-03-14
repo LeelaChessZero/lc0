@@ -77,24 +77,6 @@ bool OptionsDict::HasSubdict(const std::string& name) const {
   return subdicts_.find(name) != subdicts_.end();
 }
 
-template <>
-bool OptionsDict::GetOnce(const std::string& key) const {
-  for (const auto* alias : aliases_) {
-    const auto& dict = alias->TypeDict<bool>::dict();
-    auto iter = dict.find(key);
-    if (iter != dict.end()) {
-      if (iter->second.WasReadSinceLastSet()) return false;
-      return iter->second.Get();
-    }
-  }
-  if (parent_) return parent_->GetOnce<bool>(key);
-  throw Exception("Key [" + key + "] was not set in options.");
-}
-template <>
-bool OptionsDict::GetOnce(const OptionId& option_id) const {
-  return GetOnce<bool>(GetOptionId(option_id));
-}
-
 namespace {
 
 class Lexer {

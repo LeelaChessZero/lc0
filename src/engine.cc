@@ -384,7 +384,8 @@ void EngineController::Go(const GoParams& params) {
     return;
   }
 
-  if (options_.GetOnce<bool>(kClearTree)) {
+  if (auto button = options_.Get<Button>(kClearTree)) {
+    button.reset();
     tree_->TrimTreeAtHead();
   }
 
