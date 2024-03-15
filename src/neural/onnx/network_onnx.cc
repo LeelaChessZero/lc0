@@ -410,9 +410,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   if (batch_size <= 0) batch_size = -1;  // Variable batch size.
 
-  bool fp16 = opts.GetOrDefault<bool>(
-      "fp16", kProvider == OnnxProvider::CPU ? false : true);
-
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
                                          batch_size, steps);
@@ -423,19 +420,22 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
     converter_options.alternative_layer_normalization =
         opts.GetOrDefault<bool>("alternative_layer_normalization", true);
-    converter_options.data_type =
-        fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
-             : WeightsToOnnxConverterOptions::DataType::kFloat32;
     converter_options.policy_head =
         opts.GetOrDefault<std::string>("policy_head", "vanilla");
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
 
-    if (opts.GetOrDefault<bool>("bf16", false)) {
-      converter_options.data_type =
-          WeightsToOnnxConverterOptions::DataType::kBFloat16;
-      converter_options.fix_bf16 = true;
+    std::string datatype;
+    if (opts.IsDefault<std::string>("datatype")) {
+      bool fp16 = opts.GetOrDefault<bool>(
+          "fp16", kProvider == OnnxProvider::CPU ? false : true);
+      datatype = fp16 ? "f16" : "f32";
+    } else {
+      datatype = opts.Get<std::string>("datatype");
     }
+    converter_options.data_type =
+        WeightsToOnnxConverterOptions::StringToDataType(datatype);
+    converter_options.fix_bf16 = true;
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,

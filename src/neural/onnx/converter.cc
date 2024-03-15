@@ -162,6 +162,12 @@ class Converter {
 
   std::unique_ptr<OnnxConst> GetScalarConverter(float in);
 
+  std::string OptionalBf16FixPrologue(OnnxBuilder* builder, std::string flow,
+                                      std::string name);
+
+  std::string OptionalBf16FixEpilogue(OnnxBuilder* builder, std::string flow,
+                                      std::string name);
+
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
   const ActivationFunction default_activation_;
@@ -214,23 +220,41 @@ std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
                   " is not supported in scalar converter");
 }
 
+std::string Converter::OptionalBf16FixPrologue(OnnxBuilder* builder,
+                                               std::string flow,
+                                               std::string name) {
+  if (!options_.fix_bf16 ||
+      options_.data_type !=
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    return flow;
+  }
+  return builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
+}
+
+std::string Converter::OptionalBf16FixEpilogue(OnnxBuilder* builder,
+                                               std::string flow,
+                                               std::string name) {
+  if (!options_.fix_bf16 ||
+      options_.data_type !=
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    return flow;
+  }
+  return builder->Cast(name + "/to_bf16", flow,
+                       pblczero::TensorProto::BFLOAT16);
+}
+
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
   if (!options_.alt_mish || options_.opset < 9 ||
       options_.data_type != WeightsToOnnxConverterOptions::DataType::kFloat32) {
-    if (options_.opset >= 18) return builder->Mish(name, input);
-    std::string flow;
-    if (options_.fix_bf16 &&
-        options_.data_type ==
-            WeightsToOnnxConverterOptions::DataType::kBFloat16) {
-      flow = builder->Cast(name + "/to_float", input,
-                           pblczero::TensorProto::FLOAT);
-      flow = builder->Softplus(name + "/softplus", flow);
-      flow = builder->Cast(name + "/to_bf16", flow,
-                           pblczero::TensorProto::BFLOAT16);
-    } else {
-      flow = builder->Softplus(name + "/softplus", input);
+    std::string flow = input;
+    flow = OptionalBf16FixPrologue(builder, flow, name);
+    if (options_.opset >= 18) {
+      flow = builder->Mish(name, flow);
+      return OptionalBf16FixEpilogue(builder, flow, name);
     }
+    flow = builder->Softplus(name + "/softplus", flow);
+    flow = OptionalBf16FixEpilogue(builder, flow, name);
     flow = builder->Tanh(name + "/tanh", flow);
     return builder->Mul(name, flow, input);
   } else {
@@ -266,17 +290,12 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       return builder->Relu(name + "/relu", input);
     case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
-    case ACTIVATION_SELU:
-      if (options_.fix_bf16 &&
-          options_.data_type ==
-              WeightsToOnnxConverterOptions::DataType::kBFloat16) {
-        auto flow = builder->Cast(name + "/to_float", input,
-                                  pblczero::TensorProto::FLOAT);
-        flow = builder->Selu(name + "/selu", flow);
-        return builder->Cast(name + "/to_bf16", flow,
-                             pblczero::TensorProto::BFLOAT16);
-      }
-      return builder->Selu(name + "/selu", input);
+    case ACTIVATION_SELU: {
+      auto flow = input;
+      flow = OptionalBf16FixPrologue(builder, flow, name);
+      flow = builder->Selu(name + "/selu", flow);
+      return OptionalBf16FixEpilogue(builder, flow, name);
+    }
     case ACTIVATION_SWISH:
       return MakeSwish(builder, input, name + "/swish");
     case ACTIVATION_RELU_2: {
@@ -578,7 +597,8 @@ std::string Converter::AttentionBodyMapEmbedding(OnnxBuilder* builder,
                          builder->AddInitializer("/const/pad_in_shape",
                                                  Int64OnnxConst({-1, 1}, {2})));
     pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
-    pad = builder->Add("/attn_body/pad/one_vec", pad, *GetScalarConverter(1.0f));
+    pad =
+        builder->Add("/attn_body/pad/one_vec", pad, *GetScalarConverter(1.0f));
     pad = builder->MatMul(
         "/attn_body/pad/expand", pad,
         builder->AddInitializer(
@@ -760,7 +780,8 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
         *GetWeghtsConverter(weights.ip_emb_ffn.dense2_b, {embedding_size}));
 
     float ffn_alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
-    flow = builder->Mul("/attn_body/ffn/alpha", flow, *GetScalarConverter(ffn_alpha));
+    flow = builder->Mul("/attn_body/ffn/alpha", flow,
+                        *GetScalarConverter(ffn_alpha));
     flow = builder->Add("/attn_body/ffn/skip", flow, skip);
     flow = MakeLayerNorm(
         builder, flow, "/attn_body/ffn/ln",
@@ -1219,8 +1240,9 @@ WeightsToOnnxConverterOptions::DataType
 WeightsToOnnxConverterOptions::StringToDataType(const std::string& s) {
   if (s == "f32") return DataType::kFloat32;
   if (s == "f16") return DataType::kFloat16;
-  throw Exception("Invalid data type: [" + s + "]. Only f32 and f16 are "
-                  "supported.");
+  if (s == "bf16") return DataType::kBFloat16;
+  throw Exception("Invalid data type: [" + s +
+                  "]. Only f32, f16 and bf16 are supported.");
 }
 
 pblczero::Net ConvertWeightsToOnnx(
