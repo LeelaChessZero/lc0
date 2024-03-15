@@ -211,6 +211,7 @@ files += [
   'src/neural/onnx/converter.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
+  'src/selfplay/multigame.cc',
   'src/selfplay/tournament.cc',
   'src/utils/histogram.cc',
   'src/utils/numa.cc',

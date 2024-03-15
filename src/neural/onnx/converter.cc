@@ -52,13 +52,17 @@ class Converter {
  public:
   Converter(const pblczero::Net& net,
             const WeightsToOnnxConverterOptions& options)
-      : src_(net), options_(options) {
-    default_activation_ =
-        net.format().network_format().default_activation() ==
-                pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
-            ? ACTIVATION_MISH
-            : ACTIVATION_RELU;
-  }
+      : src_(net),
+        options_(options),
+        default_activation_(
+            net.format().network_format().default_activation() ==
+                    pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+                ? ACTIVATION_MISH
+                : ACTIVATION_RELU),
+        default_eps_(net.format().network_format().input_embedding() ==
+                             pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE
+                         ? 1e-3
+                         : 1e-6) {}
 
   void Convert(pblczero::Net* dst);
 
@@ -75,23 +79,31 @@ class Converter {
                      std::initializer_list<int> dims);
 
   std::string MakeConvBlock(OnnxBuilder* builder,
-                            const LegacyWeights::ConvBlock&, int input_channels,
-                            int output_channels, const std::string& input,
-                            const std::string& name,
-                            const LegacyWeights::SEunit* se_unit = nullptr,
+                            const MultiHeadWeights::ConvBlock&,
+                            int input_channels, int output_channels,
+                            const std::string& input, const std::string& name,
+                            const MultiHeadWeights::SEunit* se_unit = nullptr,
                             const std::string& mixin = "",
                             bool activation = true, int filters = 3);
 
   std::string MakeResidualBlock(OnnxBuilder* builder,
-                                const LegacyWeights::Residual&,
+                                const MultiHeadWeights::Residual&,
                                 const std::string& input,
                                 const std::string& name);
 
+  std::string AttentionBodyMapEmbedding(OnnxBuilder* builder,
+                                        const std::string& input);
+
+  std::string AttentionBodyDenseEmbedding(OnnxBuilder* builder,
+                                          const std::string& input,
+                                          const MultiHeadWeights& weights,
+                                          int embedding_dense_size);
+
   std::string MakeAttentionBody(OnnxBuilder* builder, const std::string& input,
-                                const LegacyWeights& weights);
+                                const MultiHeadWeights& weights);
 
   std::string MakeSqueezeAndExcite(OnnxBuilder* builder,
-                                   const LegacyWeights::SEunit& se_unit,
+                                   const MultiHeadWeights::SEunit& se_unit,
                                    const std::string& input,
                                    const std::string& name);
 
@@ -106,7 +118,7 @@ class Converter {
                              ActivationFunction activation);
 
   std::string MakeSmolgen(OnnxBuilder* builder,
-                          const LegacyWeights::EncoderLayer& layer,
+                          const MultiHeadWeights::EncoderLayer& layer,
                           int embedding_size, int heads,
                           const std::string& encoder_in,
                           const std::string& name);
@@ -117,7 +129,7 @@ class Converter {
                             const lczero::OnnxConst& betas, float eps = 1e-6);
 
   std::string MakeEncoderLayer(OnnxBuilder* builder,
-                               const LegacyWeights::EncoderLayer& layer,
+                               const MultiHeadWeights::EncoderLayer& layer,
                                int embedding_size, int heads,
                                const std::string& encoder_in,
                                const std::string& name,
@@ -126,17 +138,19 @@ class Converter {
 
   std::string MakeAttentionPolicy(OnnxBuilder* builder,
                                   const std::string& input,
-                                  const LegacyWeights& weights);
+                                  const MultiHeadWeights& weights,
+                                  const MultiHeadWeights::PolicyHead& head);
 
   void MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
-                      const std::string& input, const LegacyWeights& weights);
+                      const std::string& input,
+                      const MultiHeadWeights& weights);
 
   void MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
-                     const std::string& input, const LegacyWeights& weights);
+                     const std::string& input, const MultiHeadWeights& weights);
 
   void MakeMovesLeftHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                          const std::string& input,
-                         const LegacyWeights& weights);
+                         const MultiHeadWeights& weights);
 
   void AddStdInitializers(OnnxBuilder* builder);
 
@@ -147,12 +161,13 @@ class Converter {
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
-  ActivationFunction default_activation_;
+  const ActivationFunction default_activation_;
+  const float default_eps_;
   bool se_reshape_init_ = false;
 };
 
 pblczero::TensorProto::DataType Converter::GetDataType() const {
-  switch (options_.data_type_) {
+  switch (options_.data_type) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return pblczero::TensorProto::FLOAT;
     case WeightsToOnnxConverterOptions::DataType::kFloat16:
@@ -165,22 +180,21 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
 std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
     const std::vector<float>& weights, std::initializer_list<int> dims,
     std::initializer_list<int> order) {
-  switch (options_.data_type_) {
+  switch (options_.data_type) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
     case WeightsToOnnxConverterOptions::DataType::kFloat16:
       return std::make_unique<Float16OnnxWeightsAdapter>(weights, dims, order);
   }
   throw Exception("Data type " +
-                  std::to_string(static_cast<int>(options_.data_type_)) +
+                  std::to_string(static_cast<int>(options_.data_type)) +
                   " is not supported in weights converter");
 }
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
   if (!options_.alt_mish || options_.opset < 9 ||
-      options_.data_type_ !=
-          WeightsToOnnxConverterOptions::DataType::kFloat32) {
+      options_.data_type != WeightsToOnnxConverterOptions::DataType::kFloat32) {
     if (options_.opset >= 18) return builder->Mish(name, input);
     auto flow = builder->Softplus(name + "/softplus", input);
     flow = builder->Tanh(name + "/tanh", flow);
@@ -226,13 +240,15 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       auto flow = builder->Relu(name + "/sqrrelu/relu", input);
       return builder->Mul(name + "/sqrrelu/sqr", flow, flow);
     }
+    case ACTIVATION_NONE:
+      return input;
     default:
-      throw Exception("Unsupposrted activation in " + name);
+      throw Exception("Unsupported activation in " + name);
   }
 }
 
 std::string Converter::MakeSqueezeAndExcite(
-    OnnxBuilder* builder, const LegacyWeights::SEunit& se_unit,
+    OnnxBuilder* builder, const MultiHeadWeights::SEunit& se_unit,
     const std::string& input, const std::string& name) {
   const int se_filters = se_unit.b1.size();
 
@@ -264,9 +280,9 @@ std::string Converter::MakeSqueezeAndExcite(
 }
 
 std::string Converter::MakeConvBlock(
-    OnnxBuilder* builder, const LegacyWeights::ConvBlock& weights,
+    OnnxBuilder* builder, const MultiHeadWeights::ConvBlock& weights,
     int input_channels, int output_channels, const std::string& input,
-    const std::string& name, const LegacyWeights::SEunit* seunit,
+    const std::string& name, const MultiHeadWeights::SEunit* seunit,
     const std::string& mixin, bool activation, int filters) {
   auto flow = builder->Conv(
       name, input,
@@ -284,7 +300,7 @@ std::string Converter::MakeConvBlock(
 }
 
 std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
-                                         const LegacyWeights::Residual& res,
+                                         const MultiHeadWeights::Residual& res,
                                          const std::string& input,
                                          const std::string& name) {
   auto block1 = MakeConvBlock(builder, res.conv1, NumFilters(), NumFilters(),
@@ -294,7 +310,7 @@ std::string Converter::MakeResidualBlock(OnnxBuilder* builder,
 }
 
 std::string Converter::MakeSmolgen(OnnxBuilder* builder,
-                                   const LegacyWeights::EncoderLayer& layer,
+                                   const MultiHeadWeights::EncoderLayer& layer,
                                    int embedding_size, int heads,
                                    const std::string& encoder_in,
                                    const std::string& name) {
@@ -386,7 +402,7 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
 }
 
 std::string Converter::MakeEncoderLayer(
-    OnnxBuilder* builder, const LegacyWeights::EncoderLayer& layer,
+    OnnxBuilder* builder, const MultiHeadWeights::EncoderLayer& layer,
     int embedding_size, int heads, const std::string& encoder_in,
     const std::string& name, ActivationFunction activation, float alpha) {
   const int d_model = layer.mha.q_b.size();
@@ -461,10 +477,10 @@ std::string Converter::MakeEncoderLayer(
     alpha_in = encoder_in;
   }
   flow = builder->Add(name + "/mha/out/skip", flow, alpha_in);
-  auto ffn_in =
-      MakeLayerNorm(builder, flow, name + "/ln1",
-                    *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
-                    *GetWeghtsConverter(layer.ln1_betas, {embedding_size}));
+  auto ffn_in = MakeLayerNorm(
+      builder, flow, name + "/ln1",
+      *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
+      *GetWeghtsConverter(layer.ln1_betas, {embedding_size}), default_eps_);
   const int dff_size = layer.ffn.dense1_b.size();
   flow =
       builder->MatMul(name + "/ffn/dense1/w", ffn_in,
@@ -494,13 +510,128 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Add(name + "/ffn/skip", flow, alpha_ffn_in);
   flow = MakeLayerNorm(builder, flow, name + "/ln2",
                        *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
-                       *GetWeghtsConverter(layer.ln2_betas, {embedding_size}));
+                       *GetWeghtsConverter(layer.ln2_betas, {embedding_size}),
+                       default_eps_);
+  return flow;
+}
+
+std::string Converter::AttentionBodyMapEmbedding(OnnxBuilder* builder,
+                                                 const std::string& input) {
+  auto flow = input;
+  flow = builder->Reshape(
+      "/attn_body/reshape", flow,
+      builder->AddInitializer("/const/att_body_shape",
+                              Int64OnnxConst({-1, 64, 112}, {3})));
+  std::string pad;
+  if (options_.opset < 8) {
+    pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
+                         {INT_MAX, 1, 1});
+    pad =
+        builder->Reshape("/attn_body/pad/reshape_in", pad,
+                         builder->AddInitializer("/const/pad_in_shape",
+                                                 Int64OnnxConst({-1, 1}, {2})));
+    pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
+    std::unique_ptr<OnnxConst> one;
+    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
+      one = std::make_unique<Float16OnnxConst>(
+          Float16OnnxConst({FP32toFP16(1.0f)}, {1}));
+    } else {
+      one = std::make_unique<FloatOnnxConst>(FloatOnnxConst({1.0f}, {1}));
+    }
+    pad = builder->Add("/attn_body/pad/one_vec", pad, *one);
+    pad = builder->MatMul(
+        "/attn_body/pad/expand", pad,
+        builder->AddInitializer(
+            "/const/pos_encoding",
+            *GetWeghtsConverter(
+                std::vector<float>(kPosEncoding[0], kPosEncoding[0] + 64 * 64),
+                {1, 64 * 64})));
+
+    pad = builder->Reshape(
+        "/attn_body/pad/reshape_out", pad,
+        builder->AddInitializer("/const/pad_out_shape",
+                                Int64OnnxConst({-1, 64, 64}, {3})));
+  } else if (options_.batch_size < 0) {
+    pad = builder->Shape("/attn_body/shape", flow);
+    pad = builder->Slice("/attn_body/batch", pad, {0}, {1});
+    pad = builder->Concat(
+        "/attn_body/pos_encoding_shape",
+        {pad, builder->AddInitializer("/const/pos_encoding_shape",
+                                      Int64OnnxConst({64, 64}, {2}))},
+        0);
+    pad = builder->Expand(
+        "/attn_body/expand",
+        builder->AddInitializer(
+            "/const/pos_encoding",
+            *GetWeghtsConverter(
+                std::vector<float>(kPosEncoding[0], kPosEncoding[0] + 64 * 64),
+                {1, 64, 64})),
+        pad);
+  } else {
+    pad = builder->AddInitializer(
+        "/const/pos_encoding_shape",
+        Int64OnnxConst({options_.batch_size, 64, 64}, {3}));
+    pad = builder->Expand(
+        "/attn_body/expand",
+        builder->AddInitializer(
+            "/const/pos_encoding",
+            *GetWeghtsConverter(
+                std::vector<float>(kPosEncoding[0], kPosEncoding[0] + 64 * 64),
+                {1, 64, 64})),
+        pad);
+  }
+  flow = builder->Concat("/attn_body/padded_input", {flow, pad}, 2);
+  flow =
+      builder->Reshape("/attn_body/reshape2", flow,
+                       builder->AddInitializer("/const/att_body_shape2",
+                                               Int64OnnxConst({-1, 176}, {2})));
+  return flow;
+}
+
+std::string Converter::AttentionBodyDenseEmbedding(
+    OnnxBuilder* builder, const std::string& input,
+    const MultiHeadWeights& weights, int embedding_dense_size) {
+  auto flow = input;
+
+  flow = builder->Reshape(
+      "/attn_body/reshape", flow,
+      builder->AddInitializer("/const/att_body_shape",
+                              Int64OnnxConst({-1, 64, 112}, {3})));
+  auto pos_info = builder->Slice("/attn_body/embedding/slice", flow, {0, 0, 0},
+                                 {INT_MAX, 64, 12});
+  pos_info = builder->Reshape(
+      "/attn_body/embedding/reshape", pos_info,
+      builder->AddInitializer("/const/pos_info_shape",
+                              Int64OnnxConst({-1, 64 * 12}, {2})));
+
+  pos_info = builder->MatMul(
+      "/attn_body/embedding/preprocess/matmul", pos_info,
+      *GetWeghtsConverter(weights.ip_emb_preproc_w,
+                          {64 * 12, 64 * embedding_dense_size}, {1, 0}));
+  pos_info = builder->Add("/attn_body/embedding/preprocess/add", pos_info,
+                          *GetWeghtsConverter(weights.ip_emb_preproc_b,
+                                              {64 * embedding_dense_size}));
+
+  pos_info = builder->Reshape(
+      "/attn_body/embedding/preprocess/reshape", pos_info,
+      builder->AddInitializer(
+          "/const/pos_info_processed_shape",
+          Int64OnnxConst({-1, 64, embedding_dense_size}, {3})));
+
+  flow = builder->Concat("/attn_body/embedding/concat", {flow, pos_info}, 2);
+
+  flow = builder->Reshape(
+      "/attn_body/embedding/out/reshape", flow,
+      builder->AddInitializer(
+          "/const/embedding/out_shape",
+          Int64OnnxConst({-1, 112 + embedding_dense_size}, {2})));
+
   return flow;
 }
 
 std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                          const std::string& input,
-                                         const LegacyWeights& weights) {
+                                         const MultiHeadWeights& weights) {
   if (weights.has_smolgen) {
     builder->AddInitializer(
         "/const/smolgen_w",
@@ -508,93 +639,44 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
             weights.smolgen_w,
             {static_cast<int>(weights.smolgen_w.size() / 4096), 4096}, {1, 0}));
   }
-
+  auto input_embedding = src_.format().network_format().input_embedding();
+  using network_format = pblczero::NetworkFormat;
   auto flow = builder->Transpose("/attn_body/transpose", input, {0, 2, 3, 1});
+  int fist_stage_out_C = 0;
 
   if (NumResBlocks() > 0) {
     flow = builder->Reshape(
         "/attn_body/reshape", flow,
         builder->AddInitializer("/const/att_body_shape",
                                 Int64OnnxConst({-1, NumFilters()}, {2})));
+    fist_stage_out_C = NumFilters();
+  } else if (input_embedding == network_format::INPUT_EMBEDDING_PE_MAP) {
+    flow = AttentionBodyMapEmbedding(builder, flow);
+    fist_stage_out_C = 176;
+  } else if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
+    int embedding_dense_size = weights.ip_emb_preproc_b.size() / 64;
+    flow = AttentionBodyDenseEmbedding(builder, flow, weights,
+                                       embedding_dense_size);
+    fist_stage_out_C = 112 + embedding_dense_size;
   } else {
-    flow = builder->Reshape(
-        "/attn_body/reshape", flow,
-        builder->AddInitializer("/const/att_body_shape",
-                                Int64OnnxConst({-1, 64, 112}, {3})));
-    std::string pad;
-    if (options_.opset < 8) {
-      pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
-                           {INT_MAX, 1, 1});
-      pad = builder->Reshape(
-          "/attn_body/pad/reshape_in", pad,
-          builder->AddInitializer("/const/pad_in_shape",
-                                  Int64OnnxConst({-1, 1}, {2})));
-      pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
-      std::unique_ptr<OnnxConst> one;
-      if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-        one = std::make_unique<Float16OnnxConst>(
-            Float16OnnxConst({FP32toFP16(1.0f)}, {1}));
-      } else {
-        one = std::make_unique<FloatOnnxConst>(FloatOnnxConst({1.0f}, {1}));
-      }
-      pad = builder->Add("/attn_body/pad/one_vec", pad, *one);
-      pad = builder->MatMul(
-          "/attn_body/pad/expand", pad,
-          builder->AddInitializer(
-              "/const/pos_encoding",
-              *GetWeghtsConverter(std::vector<float>(kPosEncoding[0],
-                                                     kPosEncoding[0] + 64 * 64),
-                                  {1, 64 * 64})));
-
-      pad = builder->Reshape(
-          "/attn_body/pad/reshape_out", pad,
-          builder->AddInitializer("/const/pad_out_shape",
-                                  Int64OnnxConst({-1, 64, 64}, {3})));
-    } else if (options_.batch_size < 0) {
-      pad = builder->Shape("/attn_body/shape", flow);
-      pad = builder->Slice("/attn_body/batch", pad, {0}, {1});
-      pad = builder->Concat(
-          "/attn_body/pos_encoding_shape",
-          {pad, builder->AddInitializer("/const/pos_encoding_shape",
-                                        Int64OnnxConst({64, 64}, {2}))},
-          0);
-      pad = builder->Expand(
-          "/attn_body/expand",
-          builder->AddInitializer(
-              "/const/pos_encoding",
-              *GetWeghtsConverter(std::vector<float>(kPosEncoding[0],
-                                                     kPosEncoding[0] + 64 * 64),
-                                  {1, 64, 64})),
-          pad);
-    } else {
-      pad = builder->AddInitializer(
-          "/const/pos_encoding_shape",
-          Int64OnnxConst({options_.batch_size, 64, 64}, {3}));
-      pad = builder->Expand(
-          "/attn_body/expand",
-          builder->AddInitializer(
-              "/const/pos_encoding",
-              *GetWeghtsConverter(std::vector<float>(kPosEncoding[0],
-                                                     kPosEncoding[0] + 64 * 64),
-                                  {1, 64, 64})),
-          pad);
-    }
-    flow = builder->Concat("/attn_body/padded_input", {flow, pad}, 2);
-    flow = builder->Reshape(
-        "/attn_body/reshape2", flow,
-        builder->AddInitializer("/const/att_body_shape2",
-                                Int64OnnxConst({-1, 176}, {2})));
+    throw Exception("Attention body missing input embedding.");
   }
 
   int embedding_size = weights.ip_emb_b.size();
   flow = builder->MatMul(
       "/attn_body/matmul", flow,
-      *GetWeghtsConverter(
-          weights.ip_emb_w,
-          {NumResBlocks() > 0 ? NumFilters() : 176, embedding_size}, {1, 0}));
+      *GetWeghtsConverter(weights.ip_emb_w, {fist_stage_out_C, embedding_size},
+                          {1, 0}));
   flow = builder->Add("/attn_body/add", flow,
                       *GetWeghtsConverter(weights.ip_emb_b, {embedding_size}));
   flow = MakeActivation(builder, flow, "/attn_body", default_activation_);
+
+  if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
+    flow = MakeLayerNorm(
+        builder, flow, "/attn_body/ln",
+        *GetWeghtsConverter(weights.ip_emb_ln_gammas, {embedding_size}),
+        *GetWeghtsConverter(weights.ip_emb_ln_betas, {embedding_size}), 1e-3);
+  }
 
   if (weights.ip_mult_gate.size() > 0 || weights.ip_add_gate.size() > 0) {
     flow = builder->Reshape(
@@ -615,6 +697,44 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
         "/attn_body/ma_gating/rehape2", flow,
         builder->AddInitializer("/const/ma_gating/shape2",
                                 Int64OnnxConst({-1, embedding_size}, {2})));
+  }
+
+  if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
+    const int dff_size = weights.ip_emb_ffn.dense1_b.size();
+    auto skip = flow;
+    flow = builder->MatMul(
+        "/attn_body/ffn/dense1/w", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense1_w,
+                            {embedding_size, dff_size}, {1, 0}));
+    flow = builder->Add(
+        "/attn_body/ffn/dense1/b", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense1_b, {dff_size}));
+    flow = MakeActivation(builder, flow, "/attn_body/ffn/dense1",
+                          default_activation_);
+    flow = builder->MatMul(
+        "/attn_body/ffn/dense2/w", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense2_w,
+                            {dff_size, embedding_size}, {1, 0}));
+    flow = builder->Add(
+        "/attn_body/ffn/dense2/b", flow,
+        *GetWeghtsConverter(weights.ip_emb_ffn.dense2_b, {embedding_size}));
+
+    float ffn_alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
+    std::unique_ptr<OnnxConst> alpha_onnx;
+    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
+      alpha_onnx = std::make_unique<Float16OnnxConst>(
+          Float16OnnxConst({FP32toFP16(ffn_alpha)}, {1}));
+    } else {
+      alpha_onnx =
+          std::make_unique<FloatOnnxConst>(FloatOnnxConst({ffn_alpha}, {1}));
+    }
+    flow = builder->Mul("/attn_body/ffn/alpha", flow, *alpha_onnx);
+    flow = builder->Add("/attn_body/ffn/skip", flow, skip);
+    flow = MakeLayerNorm(
+        builder, flow, "/attn_body/ffn/ln",
+        *GetWeghtsConverter(weights.ip_emb_ffn_ln_gammas, {embedding_size}),
+        *GetWeghtsConverter(weights.ip_emb_ffn_ln_betas, {embedding_size}),
+        1e-3);
   }
 
   float alpha = std::pow(2.0f * NumEncBlocks(), 0.25f);
@@ -638,18 +758,22 @@ std::vector<int> MakePolicyMap(const short* map, int size) {
 }
 }  // namespace
 
-std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
-                                           const std::string& input,
-                                           const LegacyWeights& weights) {
+std::string Converter::MakeAttentionPolicy(
+    OnnxBuilder* builder, const std::string& input,
+    const MultiHeadWeights& weights, const MultiHeadWeights::PolicyHead& head) {
+  if (head.ip2_pol_b.empty()) {
+    throw Exception("The policy head selected '" + options_.policy_head + "'" +
+                    " is empty.");
+  }
   const int embedding_size = weights.ip_emb_b.size();
-  const int policy_embedding_size = weights.ip_pol_b.size();
-  const int policy_d_model = weights.ip2_pol_b.size();
+  const int policy_embedding_size = head.ip_pol_b.size();
+  const int policy_d_model = head.ip2_pol_b.size();
   auto flow = input;
-  auto activation =
-      src_.format().network_format().network() >=
-              pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT
-          ? default_activation_
-          : ACTIVATION_SELU;
+  auto activation = src_.format().network_format().network() >=
+                            pblczero::NetworkFormat::
+                                NETWORK_ATTENTIONBODY_WITH_HEADFORMAT
+                        ? default_activation_
+                        : ACTIVATION_SELU;
   if (NumEncBlocks() == 0) {
     flow = builder->Transpose("/policy/dense1/transpose", flow, {0, 2, 3, 1});
 
@@ -660,39 +784,39 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
   }
   flow = builder->MatMul(
       "/policy/dense1/matmul", flow,
-      *GetWeghtsConverter(weights.ip_pol_w,
+      *GetWeghtsConverter(head.ip_pol_w,
                           {NumEncBlocks() > 0 ? embedding_size : NumFilters(),
                            policy_embedding_size},
                           {1, 0}));
-  flow = builder->Add(
-      "/policy/dense1/add", flow,
-      *GetWeghtsConverter(weights.ip_pol_b, {policy_embedding_size}));
+  flow = builder->Add("/policy/dense1/add", flow,
+                      *GetWeghtsConverter(head.ip_pol_b,
+                                          {policy_embedding_size}));
   flow = MakeActivation(builder, flow, "/policy/dense1", activation);
 
-  for (size_t i = 0; i < weights.pol_encoder.size(); i++) {
+  for (size_t i = 0; i < head.pol_encoder.size(); i++) {
     std::string name = "/policy/enc_layer_" + std::to_string(i);
 
-    flow = MakeEncoderLayer(
-        builder, weights.pol_encoder[i], policy_embedding_size,
-        weights.pol_encoder_head_count, flow, name, activation);
+    flow =
+        MakeEncoderLayer(builder, head.pol_encoder[i], policy_embedding_size,
+                         head.pol_encoder_head_count, flow, name, activation);
   }
   auto encoder_out = flow;
   flow = builder->MatMul(
       "/policy/Q/matmul", encoder_out,
-      *GetWeghtsConverter(weights.ip2_pol_w,
+      *GetWeghtsConverter(head.ip2_pol_w,
                           {policy_embedding_size, policy_d_model}, {1, 0}));
   flow = builder->Add("/policy/Q/add", flow,
-                      *GetWeghtsConverter(weights.ip2_pol_b, {policy_d_model}));
+                      *GetWeghtsConverter(head.ip2_pol_b, {policy_d_model}));
   auto Q = builder->Reshape(
       "/policy/Q/reshape", flow,
       builder->AddInitializer("/const/QK_shape",
                               Int64OnnxConst({-1, 64, policy_d_model}, {3})));
   flow = builder->MatMul(
       "/policy/K/matmul", encoder_out,
-      *GetWeghtsConverter(weights.ip3_pol_w,
+      *GetWeghtsConverter(head.ip3_pol_w,
                           {policy_embedding_size, policy_d_model}, {1, 0}));
   flow = builder->Add("/policy/K/add", flow,
-                      *GetWeghtsConverter(weights.ip3_pol_b, {policy_d_model}));
+                      *GetWeghtsConverter(head.ip3_pol_b, {policy_d_model}));
   auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
   flow = builder->Transpose("/policy/K/transpose", K, {0, 2, 1});
   flow = builder->MatMul("/policy/matmul", Q, flow);
@@ -709,7 +833,7 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
                              {INT_MAX, 64, policy_d_model});
   prom = builder->MatMul(
       "/policy/promotion/matmul", prom,
-      *GetWeghtsConverter(weights.ip4_pol_w, {policy_d_model, 4}, {1, 0}));
+      *GetWeghtsConverter(head.ip4_pol_w, {policy_d_model, 4}, {1, 0}));
   prom = builder->Transpose("/policy/promotion/transpose", prom, {0, 2, 1});
   auto prom2 = builder->Split("/policy/promotion/split", prom, 1, {3, 1});
   prom = builder->Add("/policy/promotion/add", prom2[0], prom2[1]);
@@ -751,21 +875,32 @@ std::string Converter::MakeAttentionPolicy(OnnxBuilder* builder,
 
 void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                                const std::string& input,
-                               const LegacyWeights& weights) {
+                               const MultiHeadWeights& weights) {
+  // Check that selected policy head exists.
+  if (weights.policy_heads.count(options_.policy_head) == 0) {
+    throw Exception("The policy head you specified '" + options_.policy_head +
+                    "'" + " does not exist in this net.");
+  }
+  const MultiHeadWeights::PolicyHead& head =
+      weights.policy_heads.at(options_.policy_head);
   if (src_.format().network_format().policy() ==
       pblczero::NetworkFormat::POLICY_ATTENTION) {
-    auto output = MakeAttentionPolicy(builder, input, weights);
+    auto output = MakeAttentionPolicy(builder, input, weights, head);
     builder->AddOutput(output, {-1, 1858}, GetDataType());
     onnx->set_output_policy(output);
-  } else if (!weights.policy1.weights.empty()) {
+    return;
+  } else if (head.policy.weights.empty()) {
+    throw Exception("The policy head selected '" + options_.policy_head + "'" +
+                    " is empty.");
+  } else if (!head.policy1.weights.empty()) {
     // Conv policy head.
     if (NumEncBlocks() > 0) {
       throw Exception(
           "Convolutional policy not supported with attention body.");
     }
-    auto flow = MakeConvBlock(builder, weights.policy1, NumFilters(),
-                              NumFilters(), input, "/policy/conv1");
-    flow = MakeConvBlock(builder, weights.policy, NumFilters(), 80, flow,
+    auto flow = MakeConvBlock(builder, head.policy1, NumFilters(), NumFilters(),
+                              input, "/policy/conv1");
+    flow = MakeConvBlock(builder, head.policy, NumFilters(), 80, flow,
                          "/policy/conv2", nullptr, "", false);
     flow = builder->Reshape(
         "/policy/flatten", flow,
@@ -786,10 +921,9 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
     if (NumEncBlocks() > 0) {
       throw Exception("Classical policy not supported with attention body.");
     }
-    const int pol_channels = weights.policy.biases.size();
-    auto flow =
-        MakeConvBlock(builder, weights.policy, NumFilters(), pol_channels,
-                      input, "/policy/conv", nullptr, "", true, 1);
+    const int pol_channels = head.policy.biases.size();
+    auto flow = MakeConvBlock(builder, head.policy, NumFilters(), pol_channels,
+                              input, "/policy/conv", nullptr, "", true, 1);
     flow =
         builder->Reshape("/policy/reshape", flow,
                          builder->AddInitializer(
@@ -797,10 +931,11 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                              Int64OnnxConst({-1, pol_channels * 8 * 8}, {2})));
     flow = builder->MatMul(
         "/policy/dense/matmul", flow,
-        *GetWeghtsConverter(weights.ip_pol_w, {pol_channels * 8 * 8, 1858},
-                            {1, 0}));
-    auto output = builder->Add(options_.output_policy_head, flow,
-                               *GetWeghtsConverter(weights.ip_pol_b, {1858}));
+        *GetWeghtsConverter(head.ip_pol_w,
+                            {pol_channels * 8 * 8, 1858}, {1, 0}));
+    auto output = builder->Add(
+        options_.output_policy_head, flow,
+        *GetWeghtsConverter(head.ip_pol_b, {1858}));
     builder->AddOutput(output, {options_.batch_size, 1858}, GetDataType());
     onnx->set_output_policy(output);
   }
@@ -808,51 +943,61 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
 
 void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                               const std::string& input,
-                              const LegacyWeights& weights) {
+                              const MultiHeadWeights& weights) {
+  // Check that selected value head exists.
+  if (weights.value_heads.count(options_.value_head) == 0) {
+    throw Exception("The value head you specified '" + options_.value_head +
+                    "'" + " does not exist in this net.");
+  }
+  const MultiHeadWeights::ValueHead& head =
+      weights.value_heads.at(options_.value_head);
+  if (head.ip1_val_b.empty()) {
+    throw Exception("The value head selected '" + options_.value_head + "'" +
+                    " is empty.");
+  }
   std::string flow;
-  const int val_channels = NumEncBlocks() > 0 ? weights.ip_val_b.size() : 32;
+  const int val_channels = NumEncBlocks() > 0 ? head.ip_val_b.size() : 32;
   if (NumEncBlocks() > 0) {
     int embedding_size = weights.ip_emb_b.size();
     flow = builder->MatMul(
         "/value/embed/matmul", input,
-        *GetWeghtsConverter(weights.ip_val_w, {embedding_size, val_channels},
+        *GetWeghtsConverter(head.ip_val_w, {embedding_size, val_channels},
                             {1, 0}));
     flow = builder->Add("/value/embed/add", flow,
-                        *GetWeghtsConverter(weights.ip_val_b, {val_channels}));
+                        *GetWeghtsConverter(head.ip_val_b, {val_channels}));
     flow = MakeActivation(builder, flow, "/value/embed", default_activation_);
   } else {
-    flow = MakeConvBlock(builder, weights.value, NumFilters(), val_channels,
-                         input, "/value/conv", nullptr, "", true, 1);
+    flow = MakeConvBlock(builder, head.value, NumFilters(), val_channels, input,
+                         "/value/conv", nullptr, "", true, 1);
   }
   flow = builder->Reshape(
       "/value/reshape", flow,
       builder->AddInitializer("/const/value_shape",
                               Int64OnnxConst({-1, val_channels * 8 * 8}, {2})));
-  flow =
-      builder->MatMul("/value/dense1/matmul", flow,
-                      *GetWeghtsConverter(weights.ip1_val_w,
-                                          {val_channels * 8 * 8, 128}, {1, 0}));
+  flow = builder->MatMul(
+      "/value/dense1/matmul", flow,
+      *GetWeghtsConverter(head.ip1_val_w, {val_channels * 8 * 8, 128}, {1, 0}));
   flow = builder->Add("/value/dense1/add", flow,
-                      *GetWeghtsConverter(weights.ip1_val_b, {128}));
+                      *GetWeghtsConverter(head.ip1_val_b, {128}));
   flow = MakeActivation(builder, flow, "/value/dense1", default_activation_);
 
   const bool wdl = src_.format().network_format().value() ==
                    pblczero::NetworkFormat::VALUE_WDL;
   if (wdl) {
-    flow = builder->MatMul(
-        "/value/dense2/matmul", flow,
-        *GetWeghtsConverter(weights.ip2_val_w, {128, 3}, {1, 0}));
+    flow =
+        builder->MatMul("/value/dense2/matmul", flow,
+                        *GetWeghtsConverter(head.ip2_val_w, {128, 3}, {1, 0}));
     flow = builder->Add("/value/dense2/add", flow,
-                        *GetWeghtsConverter(weights.ip2_val_b, {3}));
+                        *GetWeghtsConverter(head.ip2_val_b, {3}));
     auto output = builder->Softmax(options_.output_wdl, flow);
     builder->AddOutput(output, {options_.batch_size, 3}, GetDataType());
     onnx->set_output_wdl(output);
   } else {
-    flow = builder->MatMul(
-        "/value/dense2/matmul", flow,
-        *GetWeghtsConverter(weights.ip2_val_w, {128, 1}, {1, 0}));
+    flow =
+        builder->MatMul("/value/dense2/matmul", flow,
+                        *GetWeghtsConverter(head.ip2_val_w, {128, 1}, {1, 0}));
     flow = builder->Add("/value/dense2/add", flow,
-                        *GetWeghtsConverter(weights.ip2_val_b, {1}));
+                        *GetWeghtsConverter(head.ip2_val_b, {1}));
     auto output = builder->Tanh(options_.output_value, flow);
     builder->AddOutput(output, {options_.batch_size, 1}, GetDataType());
     onnx->set_output_value(output);
@@ -862,7 +1007,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
 void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
                                   OnnxBuilder* builder,
                                   const std::string& input,
-                                  const LegacyWeights& weights) {
+                                  const MultiHeadWeights& weights) {
   if (src_.format().network_format().moves_left() !=
       pblczero::NetworkFormat::MOVES_LEFT_V1) {
     return;
@@ -910,7 +1055,7 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
 }
 
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
-  LegacyWeights weights(src_.weights());
+  MultiHeadWeights weights(src_.weights());
   OnnxBuilder builder(options_.opset);
 
   onnx->set_data_type(GetDataType() == pblczero::TensorProto::FLOAT16
@@ -971,6 +1116,7 @@ void CheckSrcFormat(const pblczero::NetworkFormat& nf) {
     case pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT:
     case pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT:
     case pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
+    case pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT:
       break;
     default:
       throw Exception(
@@ -1007,6 +1153,17 @@ void CheckSrcFormat(const pblczero::NetworkFormat& nf) {
                           nf.default_activation()) +
                       " is not supported by the ONNX converter.");
   }
+  switch (nf.input_embedding()) {
+    case pblczero::NetworkFormat::INPUT_EMBEDDING_NONE:
+    case pblczero::NetworkFormat::INPUT_EMBEDDING_PE_MAP:
+    case pblczero::NetworkFormat::INPUT_EMBEDDING_PE_DENSE:
+      break;
+    default:
+      throw Exception("Input embedding " +
+                      pblczero::NetworkFormat::InputEmbeddingFormat_Name(
+                          nf.input_embedding()) +
+                      " is not supported by the ONNX converter.");
+  }
 }
 
 void Converter::Convert(pblczero::Net* dst) {
@@ -1022,11 +1179,20 @@ void Converter::Convert(pblczero::Net* dst) {
     throw Exception("The network already has ONNX section.");
   }
   CheckSrcFormat(src_.format().network_format());
+
   CopyGenericFields(dst);
   GenerateOnnx(dst->mutable_onnx_model());
 }
 
 }  // namespace
+
+WeightsToOnnxConverterOptions::DataType
+WeightsToOnnxConverterOptions::StringToDataType(const std::string& s) {
+  if (s == "f32") return DataType::kFloat32;
+  if (s == "f16") return DataType::kFloat16;
+  throw Exception("Invalid data type: [" + s + "]. Only f32 and f16 are "
+                  "supported.");
+}
 
 pblczero::Net ConvertWeightsToOnnx(
     const pblczero::Net& net, const WeightsToOnnxConverterOptions& options) {
