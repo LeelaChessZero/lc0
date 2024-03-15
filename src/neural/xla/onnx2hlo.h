@@ -43,6 +43,9 @@ struct Onnx2HloOptions {
   // The types of input/output tensors (does not affect constants passed as
   // parameters).
   pblczero::XlaShapeProto::Type io_type = pblczero::XlaShapeProto::F32;
+  // If error occurs during conversion, return a partial result instead of
+  // failing. Only to be used for debugging.
+  bool debugging_allow_partial_result = false;
 };
 
 struct Onnx2HloResult {
