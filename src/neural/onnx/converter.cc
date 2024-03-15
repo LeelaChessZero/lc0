@@ -162,11 +162,11 @@ class Converter {
 
   std::unique_ptr<OnnxConst> GetScalarConverter(float in);
 
-  std::string OptionalBf16FixPrologue(OnnxBuilder* builder, std::string flow,
-                                      std::string name);
+  std::string StartOptionalBf16Fix(OnnxBuilder* builder, std::string flow,
+                                   std::string name);
 
-  std::string OptionalBf16FixEpilogue(OnnxBuilder* builder, std::string flow,
-                                      std::string name);
+  std::string EndOptionalBf16Fix(OnnxBuilder* builder, std::string flow,
+                                 std::string name);
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
@@ -220,9 +220,9 @@ std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
                   " is not supported in scalar converter");
 }
 
-std::string Converter::OptionalBf16FixPrologue(OnnxBuilder* builder,
-                                               std::string flow,
-                                               std::string name) {
+std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
+                                            std::string flow,
+                                            std::string name) {
   if (!options_.fix_bf16 ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
@@ -231,9 +231,8 @@ std::string Converter::OptionalBf16FixPrologue(OnnxBuilder* builder,
   return builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
 }
 
-std::string Converter::OptionalBf16FixEpilogue(OnnxBuilder* builder,
-                                               std::string flow,
-                                               std::string name) {
+std::string Converter::EndOptionalBf16Fix(OnnxBuilder* builder,
+                                          std::string flow, std::string name) {
   if (!options_.fix_bf16 ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
@@ -248,13 +247,13 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
   if (!options_.alt_mish || options_.opset < 9 ||
       options_.data_type != WeightsToOnnxConverterOptions::DataType::kFloat32) {
     std::string flow = input;
-    flow = OptionalBf16FixPrologue(builder, flow, name);
+    flow = StartOptionalBf16Fix(builder, flow, name);
     if (options_.opset >= 18) {
       flow = builder->Mish(name, flow);
-      return OptionalBf16FixEpilogue(builder, flow, name);
+      return EndOptionalBf16Fix(builder, flow, name);
     }
     flow = builder->Softplus(name + "/softplus", flow);
-    flow = OptionalBf16FixEpilogue(builder, flow, name);
+    flow = EndOptionalBf16Fix(builder, flow, name);
     flow = builder->Tanh(name + "/tanh", flow);
     return builder->Mul(name, flow, input);
   } else {
@@ -292,9 +291,9 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       return MakeMish(builder, input, name + "/mish");
     case ACTIVATION_SELU: {
       auto flow = input;
-      flow = OptionalBf16FixPrologue(builder, flow, name);
+      flow = StartOptionalBf16Fix(builder, flow, name);
       flow = builder->Selu(name + "/selu", flow);
-      return OptionalBf16FixEpilogue(builder, flow, name);
+      return EndOptionalBf16Fix(builder, flow, name);
     }
     case ACTIVATION_SWISH:
       return MakeSwish(builder, input, name + "/swish");
