@@ -55,6 +55,8 @@ const OptionId hOnnxDataTypeId{"onnx-data-type", "",
 const OptionId kHloAllowPartialResultId = {
     "hlo-allow-partial-result", "",
     "Allow partial result in case of HLO conversion failure (DEBUG ONLY!)."};
+const OptionId kBf16Fix{"bf16-fix", "",
+                        "Use float for ONNX operators without bf16 support."};
 
 const OptionId kInputPlanesName{"input-planes-name", "",
                                 "ONNX name to use for the input planes node."};
@@ -88,11 +90,13 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kHloProtoOutputFilenameId);
   options->Add<IntOption>(kOnnxBatchSizeId, -1, 2048) = -1;
   options->Add<IntOption>(kHloBatchSizeId, 1, 2048) = 333;
-  options->Add<ChoiceOption>(hOnnxDataTypeId,
-                             std::vector<std::string>{"f32", "f16"}) = "f32";
+  options->Add<ChoiceOption>(
+      hOnnxDataTypeId, std::vector<std::string>{"f32", "f16", "bf16"}) = "f32";
   options->Add<BoolOption>(kHloAllowPartialResultId);
+  options->Add<BoolOption>(kBf16Fix) = true;
   options->HideOption(kOnnxBatchSizeId);
   options->HideOption(kHloAllowPartialResultId);
+  options->HideOption(kBf16Fix);
 
   options->Add<StringOption>(kInputPlanesName) = "/input/planes";
   options->Add<StringOption>(kOutputPolicyHead) = "/output/policy";
@@ -140,6 +144,7 @@ void ConvertLeelaToOnnx() {
     onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
     onnx_options.data_type = WeightsToOnnxConverterOptions::StringToDataType(
         dict.Get<std::string>(hOnnxDataTypeId));
+    onnx_options.fix_bf16 = dict.Get<bool>(kBf16Fix);
     // onnx2pytorch only needs an alternate layernorm-implementation, so it's
     // currently only enables that. Might need to be extended in the future.
     onnx_options.alternative_layer_normalization =
