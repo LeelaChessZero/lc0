@@ -57,6 +57,26 @@ void LiteralOp2(pblczero::XlaLiteralProto* dst,
   }
 }
 
+pblczero::XlaLiteralProto ConstOpConvert(
+    const pblczero::XlaLiteralProto& input,
+    const pblczero::XlaShapeProto::Type& to_type) {
+  const auto from_type = input.shape().element_type();
+  if (from_type == to_type) return input;
+  HloTensorType shape(to_type);
+  shape.SetDimensions(HloTensorType(input.shape()).GetDimensions());
+  pblczero::XlaLiteralProto result;
+  *result.mutable_shape() = shape.ToProto();
+  if (from_type == pblczero::XlaShapeProto::S64 &&
+      to_type == pblczero::XlaShapeProto::S32) {
+    std::copy(input.s64s().begin(), input.s64s().end(),
+              std::back_inserter(*result.mutable_s32s()));
+    return result;
+  }
+  throw Exception("Unsupported const conversion " +
+                  pblczero::XlaShapeProto::Type_Name(from_type) + " to " +
+                  pblczero::XlaShapeProto::Type_Name(to_type));
+}
+
 pblczero::XlaLiteralProto ConstOpConcat(
     const std::vector<pblczero::XlaLiteralProto>& inputs, int axis) {
   if (inputs.empty()) {
@@ -631,6 +651,13 @@ class Onnx2HloConverter {
         GetAttribute(node, "to")->i());
     const auto hlo_type = OnnxTypeToXlaType(onnx_type);
     if (input->shape().element_type() == hlo_type) return {input};
+    // Only convert constants of int64 to int32 as that's what TF does.
+    if (AllInputsConstant(node) &&
+        input->shape().element_type() == pblczero::XlaShapeProto::S64 &&
+        hlo_type == pblczero::XlaShapeProto::S32) {
+      return {builder_.Constant(
+          ConstOpConvert(*GetConstantInput(node, 0), hlo_type))};
+    }
     return {builder_.Convert(input, hlo_type)};
   }
 
