@@ -127,6 +127,29 @@ pblczero::XlaLiteralProto ConstOpSlice(
   return result;
 }
 
+pblczero::XlaLiteralProto ConstOpGather(
+    const pblczero::XlaLiteralProto& input,
+    const pblczero::XlaLiteralProto& indices, int axis) {
+  if (input.shape().dimensions_size() != 1 ||
+      indices.shape().dimensions_size() != 1) {
+    throw Exception(
+        "For constant gather, only 1D inputs are supported for now");
+  }
+  if (axis != 0) {
+    throw Exception("For constant gather, only axis 0 is supported for now");
+  }
+  HloTensorType shape(input.shape().element_type());
+  shape.SetDimension(axis, indices.shape().dimensions(axis));
+  pblczero::XlaLiteralProto result;
+  LiteralOp2(&result, indices, [&input](auto* dst, const auto& src) {
+    for (auto index : src) {
+      dst->push_back(input.s64s(index));
+    }
+  });
+  *result.mutable_shape() = shape.ToProto();
+  return result;
+}
+
 pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
     const pblczero::TensorProto::DataType& type) {
   switch (type) {
@@ -599,6 +622,11 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpGather(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {"axis"});
+    if (AllInputsConstant(node)) {
+      return {builder_.Constant(
+          ConstOpGather(*GetConstantInput(node, 0), *GetConstantInput(node, 1),
+                        GetAttribute(node, "axis")->i()))};
+    }
     auto* input = GetInput(node, 0);
     const auto axis = GetAttribute(node, "axis")->i();
     bool is_sorted = false;
