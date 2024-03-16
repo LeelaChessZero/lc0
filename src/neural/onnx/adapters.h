@@ -67,6 +67,18 @@ class Float16OnnxWeightsAdapter : public FloatOnnxWeightsAdapter {
   std::string GetRawData() const override;
 };
 
+class BFloat16OnnxWeightsAdapter : public FloatOnnxWeightsAdapter {
+ public:
+  BFloat16OnnxWeightsAdapter(const std::vector<float>& weights,
+                             std::initializer_list<int> dims,
+                             std::initializer_list<int> order = {})
+      : FloatOnnxWeightsAdapter(weights, dims, order) {}
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override;
+  std::string GetRawData() const override;
+};
+
 // GenericOnnxConst takes inline constant (usually short and known at compile
 // time) and converts to initializer for OnnxBuilder.
 template <typename T>
@@ -127,6 +139,17 @@ class Float16OnnxConst : public GenericOnnxConst<uint16_t> {
  private:
   pblczero::TensorProto::DataType GetDataType() const override {
     return pblczero::TensorProto::FLOAT16;
+  }
+};
+
+// GenericOnnxConst for Ort::BFloat16_t values.
+class BFloat16OnnxConst : public GenericOnnxConst<uint16_t> {
+ public:
+  using GenericOnnxConst<uint16_t>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::BFLOAT16;
   }
 };
 
