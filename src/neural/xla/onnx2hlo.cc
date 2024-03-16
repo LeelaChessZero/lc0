@@ -189,7 +189,7 @@ HloTensorType OnnxShapeToHloTensorType(const pblczero::TypeProto& type,
       shape.AddDimension(dim.dim_value());
       continue;
     }
-    if (dim.dim_param() == "batch") {
+    if (dim.has_dim_param()) {
       if (batch_size.has_value()) {
         shape.AddDimension(batch_size.value());
         continue;
