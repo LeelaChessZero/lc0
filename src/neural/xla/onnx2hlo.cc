@@ -36,6 +36,7 @@
 #include "neural/xla/hlo.pb.h"
 #include "neural/xla/hlo_builder.h"
 #include "neural/xla/print_hlo.h"
+#include "utils/bf16_utils.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 
@@ -230,6 +231,9 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
       break;
     case pblczero::TensorProto::FLOAT16:
       literal.set_f16s(tensor.raw_data());
+      break;
+    case pblczero::TensorProto::BFLOAT16:
+      literal.set_bf16s(tensor.raw_data());
       break;
     case pblczero::TensorProto::INT64:
       convert(tensor.raw_data(), literal.mutable_s64s());
@@ -979,6 +983,12 @@ class Onnx2HloConverter {
         std::string_view f16_view(reinterpret_cast<const char*>(&f16),
                                   sizeof(f16));
         literal.set_f16s(f16_view);
+      } break;
+      case pblczero::XlaShapeProto::BF16: {
+        uint16_t bf16 = FP32toBF16(value);
+        std::string_view bf16_view(reinterpret_cast<const char*>(&bf16),
+                                   sizeof(bf16));
+        literal.set_bf16s(bf16_view);
       } break;
       default:
         throw Exception("Unsupported type for a constant");
