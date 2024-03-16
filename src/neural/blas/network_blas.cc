@@ -496,8 +496,10 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                                 : kNumPosEncodingChannels;
   const auto input_channels =
       static_cast<size_t>(kInputPlanes + (attn_body_ ? enc_channels : 0));
+  const auto input_embed_dff = weights_.ip_emb_ffn.dense1_b.size();
 
-  const auto max_channels = std::max(output_channels, input_channels);
+  const auto max_channels =
+      std::max(std::max(output_channels, input_channels), input_embed_dff);
 
   // The policy head may increase convolution max output size.
   const auto max_output_channels =
