@@ -633,24 +633,22 @@ class Onnx2HloConverter {
     const auto epsilon = GetAttribute(node, "epsilon")->f();
     auto* scale = GetInput(node, 1);
     auto* bias = GetInput(node, 2, true);
-    const bool need_conv =
-        input->shape().element_type() != pblczero::XlaShapeProto::F32;
-    auto* flow = need_conv
-                     ? builder_.Convert(input, pblczero::XlaShapeProto::F32)
-                     : input;
-    flow = DoBroadcast(DoReduceMean(flow, {axis}), input->shape().dimensions());
+    constexpr auto kAccType = pblczero::XlaShapeProto::F32;
+    const auto input_type = input->shape().element_type();
+    const bool need_conv = input_type != kAccType;
+    input = need_conv ? builder_.Convert(input, kAccType) : input;
+    auto* flow =
+        DoBroadcast(DoReduceMean(input, {axis}), input->shape().dimensions());
     auto* norm = builder_.Subtract(input, flow);
     flow = builder_.Multiply(norm, norm);
     flow = DoReduceMean(flow, {axis});
-    flow = builder_.Add(
-        flow, DoBroadcast(MakeScalar(epsilon, pblczero::XlaShapeProto::F32),
-                          flow->shape().dimensions()));
+    flow = builder_.Add(flow, DoBroadcast(MakeScalar(epsilon, kAccType),
+                                          flow->shape().dimensions()));
     flow = builder_.Rsqrt(flow);
     flow =
         builder_.Multiply(norm, DoBroadcast(flow, norm->shape().dimensions()));
-    if (need_conv) {
-      flow = builder_.Convert(flow, input->shape().element_type());
-    }
+    if (need_conv) flow = builder_.Convert(flow, input_type);
+
     flow =
         builder_.Multiply(flow, DoBroadcast(scale, flow->shape().dimensions()));
     if (bias) {
