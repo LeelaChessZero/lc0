@@ -157,7 +157,11 @@ HloFlow HloBuilder::Broadcast(
     const std::vector<int64_t>& broadcast_dimensions) {
   auto flow = MakeInstruction("broadcast", target_shape.ToProto(), {input});
   if (broadcast_dimensions.size() != input->shape().dimensions_size()) {
-    throw Exception("Broadcast must have the same size as the input shape");
+    throw Exception(
+        "Broadcast must have the same size as the input shape: "
+        "broadcast_dimensions=" +
+            std::to_string(broadcast_dimensions.size()) +
+            ", input_shape=" + HloTensorType(input->shape()).ToString());
   }
   const auto& input_shape = input->shape();
   for (size_t i = 0; i < broadcast_dimensions.size(); ++i) {

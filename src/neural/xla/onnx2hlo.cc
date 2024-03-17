@@ -401,6 +401,8 @@ class Onnx2HloConverter {
  public:
   Onnx2HloConverter(const Onnx2HloOptions& options) : options_(options) {
     onnx_op_to_builder_["Add"] = &Onnx2HloConverter::OpAdd;
+    onnx_op_to_builder_["BatchNormalization"] =
+        &Onnx2HloConverter::OpBatchNormalization;
     onnx_op_to_builder_["Cast"] = &Onnx2HloConverter::OpCast;
     onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
@@ -893,6 +895,36 @@ class Onnx2HloConverter {
           ConstOpConvert(*GetConstantInput(node, 0), hlo_type))};
     }
     return {builder_.Convert(input, hlo_type)};
+  }
+
+  std::vector<HloFlow> OpBatchNormalization(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 5, {"epsilon", "momentum", "training_mode"});
+    if (GetOptionalAttributeAs<bool>(node, "training_mode").value_or(false)) {
+      throw Exception("Training mode not supported");
+    }
+    auto* input = GetInput(node, 0);
+    auto* scale = GetInput(node, 1);
+    auto* bias = GetInput(node, 2);
+    auto* mean = GetInput(node, 3);
+    auto* variance = GetInput(node, 4);
+    const auto epsilon =
+        GetOptionalAttributeAs<float>(node, "epsilon").value_or(1e-5);
+    std::vector<int64_t> broadcast_dims = {1};
+    HloTensorType shape(input->shape());
+    auto* flow = builder_.Subtract(
+        input, builder_.Broadcast(mean, shape, broadcast_dims));
+    flow = builder_.Divide(
+        flow, builder_.Broadcast(
+                  builder_.Sqrt(builder_.Add(
+                      variance,
+                      builder_.Broadcast(
+                          MakeScalar(epsilon, input->shape().element_type()),
+                          HloTensorType(variance->shape()), {}))),
+                  shape, broadcast_dims));
+    flow = builder_.Multiply(flow,
+                             builder_.Broadcast(scale, shape, broadcast_dims));
+    flow = builder_.Add(flow, builder_.Broadcast(bias, shape, broadcast_dims));
+    return {flow};
   }
 
   std::vector<HloFlow> OpLayerNormalization(const pblczero::NodeProto& node) {
@@ -1414,7 +1446,8 @@ class Onnx2HloConverter {
 
   void BuildGraph(const pblczero::GraphProto& graph) {
     for (const auto& node : graph.node()) {
-      // Set up the context so that nodes have metadata from the original ONNX.
+      // Set up the context so that nodes have metadata from the original
+      // ONNX.
       auto ctx = HloContext(&builder_);
       ctx.SetOpType(node.op_type());
       ctx.SetOpName(node.name());
