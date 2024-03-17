@@ -1236,8 +1236,8 @@ class Onnx2HloConverter {
       }
     }
     if (AllInputsConstant(node)) {
-      return {builder_.Constant(ConstReshape(*GetConstantInput(node, 0),
-                                            new_shape.ToProto()))};
+      return {builder_.Constant(
+          ConstReshape(*GetConstantInput(node, 0), new_shape.ToProto()))};
     }
     return {builder_.Reshape(input, new_shape)};
   }
@@ -1258,8 +1258,8 @@ class Onnx2HloConverter {
       }
     }
     if (AllInputsConstant(node)) {
-      return {builder_.Constant(ConstReshape(*GetConstantInput(node, 0),
-                                            new_shape.ToProto()))};
+      return {builder_.Constant(
+          ConstReshape(*GetConstantInput(node, 0), new_shape.ToProto()))};
     }
     return {builder_.Reshape(input, new_shape)};
   }
@@ -1427,8 +1427,15 @@ class Onnx2HloConverter {
   void DispatchNode(const pblczero::NodeProto& node) {
     auto iter = onnx_op_to_builder_.find(std::string(node.op_type()));
     if (iter == onnx_op_to_builder_.end()) {
+      std::string inputs;
+      for (const auto& input : node.input()) {
+        auto* flow = GetFlowByName(input);
+        inputs += "\ninput=[" + input + "]  shape=" +
+                  (flow ? flow->shape().OutputAsJson() : "(not found)");
+      }
       throw Exception("Unsupported ONNX op[" + std::string(node.op_type()) +
-                      "] name=[" + std::string(node.name()) + "]");
+                      "] name=[" + std::string(node.name()) + "] node=[" +
+                      node.OutputAsJson() + "]" + inputs);
     }
     try {
       auto outputs = (this->*iter->second)(node);
