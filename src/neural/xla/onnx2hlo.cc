@@ -1224,8 +1224,12 @@ class Onnx2HloConverter {
                                    sizeof(bf16));
         literal.set_bf16s(bf16_view);
       } break;
+      case pblczero::XlaShapeProto::S32:
+        literal.add_s32s(value);
+        break;
       default:
-        throw Exception("Unsupported type for a constant");
+        throw Exception("Unsupported type for a constant: " +
+                        pblczero::XlaShapeProto::Type_Name(type));
     }
     return builder_.Constant(literal);
   }
