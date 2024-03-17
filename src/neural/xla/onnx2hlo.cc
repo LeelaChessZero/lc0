@@ -596,7 +596,8 @@ class Onnx2HloConverter {
                             is_sorted, is_unique)};
   }
 
-  HloFlow DoReduceMean(HloFlow input, const std::vector<int64_t>& axes) {
+  HloFlow DoReduceMean(HloFlow input, const std::vector<int64_t>& axes,
+                       bool keepdims = true) {
     HloFlow zero = MakeScalar(0, input->shape().element_type());
     auto flow = builder_.Reduce(
         input, zero, MakeAddComputation(input->shape().element_type()), axes);
@@ -608,16 +609,19 @@ class Onnx2HloConverter {
         DoBroadcast(MakeScalar(count, input->shape().element_type()),
                     flow->shape().dimensions());
     flow = builder_.Divide(flow, denominator);
+    if (!keepdims) return flow;
     HloTensorType target_shape(input->shape());
     for (auto axis : axes) target_shape.SetDimension(axis, 1);
     return builder_.Reshape(flow, target_shape);
   }
 
   std::vector<HloFlow> OpReduceMean(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 1, {"axes"});
+    CheckKnownAttributes(node, 1, {"axes", "keepdims"});
     auto* input = GetInput(node, 0);
     auto axes = GetAttribute(node, "axes")->ints();
-    return {DoReduceMean(input, axes)};
+    auto keepdims_attr = GetAttribute(node, "keepdims", true);
+    bool keepdims = keepdims_attr ? keepdims_attr->i() : 1;
+    return {DoReduceMean(input, axes, keepdims)};
   }
 
   std::vector<HloFlow> OpCast(const pblczero::NodeProto& node) {
