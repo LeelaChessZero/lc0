@@ -385,6 +385,8 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Reciprocal"] = &Onnx2HloConverter::OpReciprocal;
     onnx_op_to_builder_["ReduceMean"] = &Onnx2HloConverter::OpReduceMean;
     onnx_op_to_builder_["ReduceProd"] = &Onnx2HloConverter::OpReduceProd;
+    onnx_op_to_builder_["ReduceSumSquare"] =
+        &Onnx2HloConverter::OpReduceSumSquare;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
@@ -817,6 +819,22 @@ class Onnx2HloConverter {
     HloFlow one = MakeScalar(1, input->shape().element_type());
     auto flow = builder_.Reduce(
         input, one, MakeMulComputation(input->shape().element_type()), axes);
+    if (!keepdims) return {flow};
+    HloTensorType target_shape(input->shape());
+    for (auto axis : axes) target_shape.SetDimension(axis, 1);
+    return {builder_.Reshape(flow, target_shape)};
+  }
+
+  std::vector<HloFlow> OpReduceSumSquare(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    auto* input = GetInput(node, 0);
+    auto axes = GetAttributeAsVec<int64_t>(node, "axes");
+    bool keepdims =
+        GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
+    auto flow = builder_.Multiply(input, input);
+    flow = builder_.Reduce(input, MakeScalar(0, input->shape().element_type()),
+                           MakeAddComputation(input->shape().element_type()),
+                           axes);
     if (!keepdims) return {flow};
     HloTensorType target_shape(input->shape());
     for (auto axis : axes) target_shape.SetDimension(axis, 1);
