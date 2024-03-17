@@ -247,6 +247,14 @@ pblczero::XlaLiteralProto ConstOpReduceProd(
   return result;
 }
 
+pblczero::XlaLiteralProto ConstReshape(
+    const pblczero::XlaLiteralProto& input,
+    const pblczero::XlaShapeProto& new_shape) {
+  auto result = input;
+  *result.mutable_shape() = new_shape;
+  return result;
+}
+
 pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
     const pblczero::TensorProto::DataType& type) {
   switch (type) {
@@ -1227,6 +1235,10 @@ class Onnx2HloConverter {
         }
       }
     }
+    if (AllInputsConstant(node)) {
+      return {builder_.Constant(ConstReshape(*GetConstantInput(node, 0),
+                                            new_shape.ToProto()))};
+    }
     return {builder_.Reshape(input, new_shape)};
   }
 
@@ -1244,6 +1256,10 @@ class Onnx2HloConverter {
       } else {
         new_shape.AddDimension(input_shape.GetDimension(src_dim++));
       }
+    }
+    if (AllInputsConstant(node)) {
+      return {builder_.Constant(ConstReshape(*GetConstantInput(node, 0),
+                                            new_shape.ToProto()))};
     }
     return {builder_.Reshape(input, new_shape)};
   }
