@@ -384,6 +384,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
     onnx_op_to_builder_["Reciprocal"] = &Onnx2HloConverter::OpReciprocal;
     onnx_op_to_builder_["ReduceMean"] = &Onnx2HloConverter::OpReduceMean;
+    onnx_op_to_builder_["ReduceProd"] = &Onnx2HloConverter::OpReduceProd;
     onnx_op_to_builder_["Relu"] = &Onnx2HloConverter::OpRelu;
     onnx_op_to_builder_["Reshape"] = &Onnx2HloConverter::OpReshape;
     onnx_op_to_builder_["Selu"] = &Onnx2HloConverter::OpSelu;
@@ -807,6 +808,21 @@ class Onnx2HloConverter {
     return {DoReduceMean(input, axes, keepdims)};
   }
 
+  std::vector<HloFlow> OpReduceProd(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    auto* input = GetInput(node, 0);
+    auto axes = GetAttributeAsVec<int64_t>(node, "axes");
+    bool keepdims =
+        GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
+    HloFlow one = MakeScalar(1, input->shape().element_type());
+    auto flow = builder_.Reduce(
+        input, one, MakeMulComputation(input->shape().element_type()), axes);
+    if (!keepdims) return {flow};
+    HloTensorType target_shape(input->shape());
+    for (auto axis : axes) target_shape.SetDimension(axis, 1);
+    return {builder_.Reshape(flow, target_shape)};
+  }
+
   std::vector<HloFlow> OpCast(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {"to"});
     auto* input = GetInput(node, 0);
@@ -1159,6 +1175,15 @@ class Onnx2HloConverter {
     auto builder = HloBuilder();
     builder.Add(builder.Parameter(MakeScalarShape(type)),
                 builder.Parameter(MakeScalarShape(type)));
+    return builder_.AddComputation(name, builder);
+  }
+
+  HloComputation MakeMulComputation(pblczero::XlaShapeProto::Type type) {
+    std::string name = "mul_" + pblczero::XlaShapeProto::Type_Name(type);
+    if (auto id = builder_.GetComputationId(name)) return *id;
+    auto builder = HloBuilder();
+    builder.Multiply(builder.Parameter(MakeScalarShape(type)),
+                     builder.Parameter(MakeScalarShape(type)));
     return builder_.AddComputation(name, builder);
   }
 
