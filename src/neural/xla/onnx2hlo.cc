@@ -401,6 +401,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Sub"] = &Onnx2HloConverter::OpSub;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
     onnx_op_to_builder_["Transpose"] = &Onnx2HloConverter::OpTranspose;
+    onnx_op_to_builder_["Unsqueeze"] = &Onnx2HloConverter::OpUnsqueeze;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -1167,7 +1168,7 @@ class Onnx2HloConverter {
     }
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
-    auto squeeze_dims = GetConstantInputAsVec<int64_t>(node, 1, true);
+    auto squeeze_dims = GetConstantInputAsVec<int64_t>(node, 1);
 
     HloTensorType new_shape(input->shape().element_type());
     if (squeeze_dims) {
@@ -1186,6 +1187,24 @@ class Onnx2HloConverter {
         if (input->shape().dimensions(i) != 1) {
           new_shape.AddDimension(input->shape().dimensions(i));
         }
+      }
+    }
+    return {builder_.Reshape(input, new_shape)};
+  }
+
+  std::vector<HloFlow> OpUnsqueeze(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* input = GetInput(node, 0);
+    auto axes = *GetConstantInputAsVec<int64_t>(node, 1);
+    HloTensorType input_shape(input->shape());
+    HloTensorType new_shape(input->shape().element_type());
+    const size_t new_num_dims = input_shape.Rank() + new_shape.Rank();
+    size_t src_dim = 0;
+    for (size_t i = 0; i < new_num_dims; ++i) {
+      if (std::find(axes.begin(), axes.end(), i) != axes.end()) {
+        new_shape.AddDimension(1);
+      } else {
+        new_shape.AddDimension(input_shape.GetDimension(src_dim++));
       }
     }
     return {builder_.Reshape(input, new_shape)};
