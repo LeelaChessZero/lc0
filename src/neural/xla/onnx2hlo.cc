@@ -1245,6 +1245,9 @@ class Onnx2HloConverter {
       case pblczero::XlaShapeProto::S32:
         literal.add_s32s(value);
         break;
+      case pblczero::XlaShapeProto::S64:
+        literal.add_s64s(value);
+        break;
       default:
         throw Exception("Unsupported type for a constant: " +
                         pblczero::XlaShapeProto::Type_Name(type));
