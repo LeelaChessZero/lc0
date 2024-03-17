@@ -44,17 +44,83 @@ namespace lczero {
 namespace {
 
 template <typename T>
-void LiteralOp2(pblczero::XlaLiteralProto* dst,
-                const pblczero::XlaLiteralProto& lhs, T&& func) {
-  switch (lhs.shape().element_type()) {
+void FetchConstForType(const pblczero::XlaLiteralProto& literal,
+                       pblczero::XlaShapeProto::Type type, T&& func) {
+  switch (type) {
+    case pblczero::XlaShapeProto::F32:
+      func(literal.f32s());
+      break;
+    case pblczero::XlaShapeProto::F64:
+      func(literal.f64s());
+      break;
+    case pblczero::XlaShapeProto::S32:
+      func(literal.s32s());
+      break;
     case pblczero::XlaShapeProto::S64:
-      func(dst->mutable_s64s(), lhs.s64s());
+      func(literal.s64s());
       break;
     default:
       throw Exception(
           "Unsupported type for constant input " +
-          pblczero::XlaShapeProto::Type_Name(lhs.shape().element_type()));
+          pblczero::XlaShapeProto::Type_Name(literal.shape().element_type()));
   }
+}
+
+template <typename T>
+void FetchMutableForType(pblczero::XlaLiteralProto* literal,
+                         pblczero::XlaShapeProto::Type type, T&& func) {
+  switch (type) {
+    case pblczero::XlaShapeProto::F32:
+      func(literal->mutable_f32s());
+      break;
+    case pblczero::XlaShapeProto::F64:
+      func(literal->mutable_f64s());
+      break;
+    case pblczero::XlaShapeProto::S32:
+      func(literal->mutable_s32s());
+      break;
+    case pblczero::XlaShapeProto::S64:
+      func(literal->mutable_s64s());
+      break;
+    default:
+      throw Exception(
+          "Unsupported type for constant input " +
+          pblczero::XlaShapeProto::Type_Name(literal->shape().element_type()));
+  }
+}
+
+template <typename T>
+void LiteralOutInOp(pblczero::XlaLiteralProto* dst,
+                    const pblczero::XlaLiteralProto& operand, T&& func) {
+  const auto type = operand.shape().element_type();
+  FetchMutableForType(dst, type, [&](auto* dst) {
+    FetchConstForType(operand, type, [&](const auto& src) { func(dst, src); });
+  });
+}
+
+template <typename T>
+void LiteralOutInInOp(pblczero::XlaLiteralProto* dst,
+                      const pblczero::XlaLiteralProto& lhs,
+                      const pblczero::XlaLiteralProto& rhs, T&& func) {
+  const auto out_type = lhs.shape().element_type();
+  const auto other_type = rhs.shape().element_type();
+  FetchMutableForType(dst, out_type, [&](auto* d) {
+    FetchConstForType(lhs, out_type, [&](const auto& l) {
+      FetchConstForType(rhs, other_type, [&](const auto& r) { func(d, l, r); });
+    });
+  });
+}
+
+template <typename T>
+void LiteralOutInOpDifferentTypes(pblczero::XlaLiteralProto* dst,
+                                  const pblczero::XlaLiteralProto& operand,
+                                  T&& func) {
+  const auto src_type = operand.shape().element_type();
+  const auto dst_type = dst->shape().element_type();
+  FetchMutableForType(dst, dst_type, [&](auto* dst) {
+    FetchConstForType(operand, src_type,
+                      [&](const auto& src) { func(dst, src); });
+  });
 }
 
 pblczero::XlaLiteralProto ConstOpConvert(
@@ -66,15 +132,10 @@ pblczero::XlaLiteralProto ConstOpConvert(
   shape.SetDimensions(HloTensorType(input.shape()).GetDimensions());
   pblczero::XlaLiteralProto result;
   *result.mutable_shape() = shape.ToProto();
-  if (from_type == pblczero::XlaShapeProto::S64 &&
-      to_type == pblczero::XlaShapeProto::S32) {
-    std::copy(input.s64s().begin(), input.s64s().end(),
-              std::back_inserter(*result.mutable_s32s()));
-    return result;
-  }
-  throw Exception("Unsupported const conversion " +
-                  pblczero::XlaShapeProto::Type_Name(from_type) + " to " +
-                  pblczero::XlaShapeProto::Type_Name(to_type));
+  LiteralOutInOpDifferentTypes(&result, input, [](auto* dst, const auto& src) {
+    std::copy(src.begin(), src.end(), std::back_inserter(*dst));
+  });
+  return result;
 }
 
 pblczero::XlaLiteralProto ConstOpConcat(
@@ -98,7 +159,7 @@ pblczero::XlaLiteralProto ConstOpConcat(
     }
     shape.SetDimension(
         axis, shape.GetDimension(axis) + input.shape().dimensions(axis));
-    LiteralOp2(&result, input, [](auto* dst, const auto& src) {
+    LiteralOutInOp(&result, input, [](auto* dst, const auto& src) {
       dst->insert(dst->end(), src.begin(), src.end());
     });
   }
@@ -119,11 +180,11 @@ pblczero::XlaLiteralProto ConstOpSlice(
   HloTensorType shape(input.shape().element_type());
   shape.AddDimension(slice[0].limit() - slice[0].start());
   pblczero::XlaLiteralProto result;
-  LiteralOp2(&result, input, [&slice](auto* dst, const auto& src) {
+  *result.mutable_shape() = shape.ToProto();
+  LiteralOutInOp(&result, input, [&slice](auto* dst, const auto& src) {
     dst->insert(dst->end(), src.begin() + slice[0].start(),
                 src.begin() + slice[0].limit());
   });
-  *result.mutable_shape() = shape.ToProto();
   return result;
 }
 
@@ -139,14 +200,18 @@ pblczero::XlaLiteralProto ConstOpGather(
     throw Exception("For constant gather, only axis 0 is supported for now");
   }
   HloTensorType shape(input.shape().element_type());
-  shape.SetDimension(axis, indices.shape().dimensions(axis));
+  shape.AddDimension(indices.shape().dimensions(axis));
   pblczero::XlaLiteralProto result;
-  LiteralOp2(&result, indices, [&input](auto* dst, const auto& src) {
-    for (auto index : src) {
-      dst->push_back(input.s64s(index));
-    }
-  });
   *result.mutable_shape() = shape.ToProto();
+  LiteralOutInInOp(&result, input, indices,
+                   [](auto* dst, const auto& inp, const auto& idxs) {
+                     for (size_t i : idxs) {
+                       if (i > inp.size()) {
+                         throw Exception("Constant gather index out of bounds");
+                       }
+                       dst->push_back(inp[i]);
+                     }
+                   });
   return result;
 }
 
@@ -680,9 +745,7 @@ class Onnx2HloConverter {
     const auto hlo_type = OnnxTypeToXlaType(onnx_type);
     if (input->shape().element_type() == hlo_type) return {input};
     // Only convert constants of int64 to int32 as that's what TF does.
-    if (AllInputsConstant(node) &&
-        input->shape().element_type() == pblczero::XlaShapeProto::S64 &&
-        hlo_type == pblczero::XlaShapeProto::S32) {
+    if (AllInputsConstant(node)) {
       return {builder_.Constant(
           ConstOpConvert(*GetConstantInput(node, 0), hlo_type))};
     }
