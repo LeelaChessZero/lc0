@@ -760,7 +760,7 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpExpand(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
-    const auto& shape = *GetConstantInputAsVec<int64_t>(node, 1);
+    const auto shape = *GetConstantInputAsVec<int64_t>(node, 1);
     return {DoBroadcast(input, shape)};
   }
 
