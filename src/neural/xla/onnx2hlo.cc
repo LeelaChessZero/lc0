@@ -767,7 +767,7 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpSoftmax(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 1, {""});
+    CheckKnownAttributes(node, 1, {"axis"});
     auto axis = GetOptionalAttributeAs<int>(node, "axis").value_or(-1);
     auto* input = GetInput(node, 0);
     if (axis < 0) axis += input->shape().dimensions_size();
