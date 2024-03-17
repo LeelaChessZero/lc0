@@ -160,8 +160,8 @@ HloFlow HloBuilder::Broadcast(
     throw Exception(
         "Broadcast must have the same size as the input shape: "
         "broadcast_dimensions=" +
-            std::to_string(broadcast_dimensions.size()) +
-            ", input_shape=" + HloTensorType(input->shape()).ToString());
+        std::to_string(broadcast_dimensions.size()) +
+        ", input_shape=" + HloTensorType(input->shape()).ToString());
   }
   const auto& input_shape = input->shape();
   for (size_t i = 0; i < broadcast_dimensions.size(); ++i) {
@@ -427,7 +427,12 @@ HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
         shape.SetDimension(
             j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
       } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
-        throw Exception("Concatenate operands must have the same shape");
+        std::string shapes;
+        for (const auto& input : inputs) {
+          shapes += HloTensorType(input->shape()).ToString() + ", ";
+        }
+        throw Exception("Concatenate operands must have the same shape, got " +
+                        shapes + "axis=" + std::to_string(dimension));
       }
     }
   }

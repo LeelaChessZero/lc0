@@ -1281,7 +1281,7 @@ class Onnx2HloConverter {
     auto axes = *GetConstantInputAsVec<int64_t>(node, 1);
     HloTensorType input_shape(input->shape());
     HloTensorType new_shape(input->shape().element_type());
-    const size_t new_num_dims = input_shape.Rank() + new_shape.Rank();
+    const size_t new_num_dims = input_shape.Rank() + axes.size();
     size_t src_dim = 0;
     for (size_t i = 0; i < new_num_dims; ++i) {
       if (std::find(axes.begin(), axes.end(), i) != axes.end()) {
