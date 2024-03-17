@@ -933,18 +933,39 @@ class Onnx2HloConverter {
     if (opset_version_ < 10) {
       throw Exception("Slice not supported in ONNX opset < 10");
     }
-    CheckKnownAttributes(node, 3, {});
+    CheckKnownAttributes(node, 4, {});
     auto* input = GetInput(node, 0);
     auto starts = GetConstantInput(node, 1)->s32s();
     auto ends = GetConstantInput(node, 2)->s32s();
+    auto axes_attr = GetConstantInput(node, 3, true);
+    if (starts.size() != ends.size()) {
+      throw Exception("Slice starts and ends must have the same size");
+    }
+    if (axes_attr && axes_attr->s32s().size() != starts.size()) {
+      throw Exception("Slice axes must have the same size as starts and ends");
+    }
+    std::vector<int32_t> axes =
+        axes_attr ? axes_attr->s32s() : std::vector<int32_t>(starts.size());
+    if (!axes_attr) std::iota(axes.begin(), axes.end(), 0);
+
     std::vector<pblczero::HloInstructionProto::SliceDimensions> slices;
-    for (size_t i = 0; i < starts.size(); ++i) {
+    for (const auto& dim : input->shape().dimensions()) {
       pblczero::HloInstructionProto::SliceDimensions slice;
-      slice.set_start(starts[i]);
-      slice.set_limit(std::min<int64_t>(ends[i], input->shape().dimensions(i)));
+      slice.set_start(0);
+      slice.set_limit(dim);
       slice.set_stride(1);
       slices.push_back(slice);
     }
+
+    for (size_t i = 0; i < axes.size(); ++i) {
+      pblczero::HloInstructionProto::SliceDimensions slice;
+      slice.set_start(starts[i]);
+      slice.set_limit(
+          std::min<int64_t>(ends[i], input->shape().dimensions(axes[i])));
+      slice.set_stride(1);
+      slices[axes[i]] = slice;
+    }
+
     if (AllInputsConstant(node)) {
       return {builder_.Constant(ConstOpSlice(input->literal(), slices))};
     }
