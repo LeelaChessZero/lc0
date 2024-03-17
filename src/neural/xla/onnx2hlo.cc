@@ -90,6 +90,15 @@ void FetchMutableForType(pblczero::XlaLiteralProto* literal,
 }
 
 template <typename T>
+std::vector<T> LiteralToVector(const pblczero::XlaLiteralProto& literal) {
+  std::vector<T> result;
+  FetchConstForType(
+      literal, literal.shape().element_type(),
+      [&](const auto& values) { result.assign(values.begin(), values.end()); });
+  return result;
+}
+
+template <typename T>
 void LiteralOutInOp(pblczero::XlaLiteralProto* dst,
                     const pblczero::XlaLiteralProto& operand, T&& func) {
   const auto type = operand.shape().element_type();
@@ -519,6 +528,15 @@ class Onnx2HloConverter {
                     " not found");
   }
 
+  template <typename T>
+  std::optional<std::vector<T>> GetConstantInputAsVec(
+      const pblczero::NodeProto& node, size_t idx, bool optional = false) {
+    if (auto literal = GetConstantInput(node, idx, optional)) {
+      return LiteralToVector<T>(*literal);
+    }
+    return std::nullopt;
+  }
+
   bool AllInputsConstant(const pblczero::NodeProto& node) {
     for (const auto& input : node.input()) {
       const std::string name(input);
@@ -653,7 +671,7 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpExpand(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
-    auto shape = GetConstantInput(node, 1)->s64s();
+    const auto& shape = *GetConstantInputAsVec<int64_t>(node, 1);
     return {DoBroadcast(input, shape)};
   }
 
@@ -865,7 +883,7 @@ class Onnx2HloConverter {
     }
     CheckKnownAttributes(node, 2, {"axis", "num_outputs"});
     auto* input = GetInput(node, 0);
-    auto split = GetConstantInput(node, 1, true);
+    auto split = GetConstantInputAsVec<int64_t>(node, 1, true);
     const auto* axis_attr = GetAttribute(node, "axis");
     const auto* num_outputs_attr = GetAttribute(node, "num_outputs", true);
     if (!axis_attr) throw Exception("Attribute 'axis' not set");
@@ -879,8 +897,8 @@ class Onnx2HloConverter {
 
     if (split) {
       size_t offset = 0;
-      for (size_t i = 0; i < split->s64s().size(); ++i) {
-        offset += split->s64s(i);
+      for (size_t i = 0; i < split->size(); ++i) {
+        offset += (*split)[i];
         splits.push_back(offset);
       }
     } else {
@@ -935,17 +953,16 @@ class Onnx2HloConverter {
     }
     CheckKnownAttributes(node, 4, {});
     auto* input = GetInput(node, 0);
-    auto starts = GetConstantInput(node, 1)->s32s();
-    auto ends = GetConstantInput(node, 2)->s32s();
-    auto axes_attr = GetConstantInput(node, 3, true);
+    auto starts = *GetConstantInputAsVec<int64_t>(node, 1);
+    auto ends = *GetConstantInputAsVec<int64_t>(node, 2);
+    auto axes_attr = GetConstantInputAsVec<int64_t>(node, 3, true);
     if (starts.size() != ends.size()) {
       throw Exception("Slice starts and ends must have the same size");
     }
-    if (axes_attr && axes_attr->s32s().size() != starts.size()) {
+    if (axes_attr && axes_attr->size() != starts.size()) {
       throw Exception("Slice axes must have the same size as starts and ends");
     }
-    std::vector<int32_t> axes =
-        axes_attr ? axes_attr->s32s() : std::vector<int32_t>(starts.size());
+    std::vector<int64_t> axes = axes_attr.value_or(std::vector<int64_t>());
     if (!axes_attr) std::iota(axes.begin(), axes.end(), 0);
 
     std::vector<pblczero::HloInstructionProto::SliceDimensions> slices;
@@ -975,7 +992,7 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpReshape(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
-    auto new_dims = GetConstantInput(node, 1)->s64s();
+    auto new_dims = *GetConstantInputAsVec<int64_t>(node, 1);
     HloTensorType input_shape(input->shape());
     HloTensorType new_shape(input_shape.GetElementType());
     std::optional<int64_t> infer_dim;
@@ -1058,17 +1075,16 @@ class Onnx2HloConverter {
     }
     CheckKnownAttributes(node, 2, {});
     auto* input = GetInput(node, 0);
-    auto squeeze_dims = GetConstantInput(node, 1, true);
+    auto squeeze_dims = GetConstantInputAsVec<int64_t>(node, 1, true);
 
     HloTensorType new_shape(input->shape().element_type());
     if (squeeze_dims) {
       for (size_t i = 0; i < input->shape().dimensions_size(); ++i) {
-        bool should_squeeze =
-            std::any_of(squeeze_dims->s64s().begin(),
-                        squeeze_dims->s64s().end(), [&](int64_t dim) {
-                          return dim == static_cast<int64_t>(i) ||
-                                 dim + input->shape().dimensions_size() == i;
-                        });
+        bool should_squeeze = std::any_of(
+            squeeze_dims->begin(), squeeze_dims->end(), [&](int64_t dim) {
+              return dim == static_cast<int64_t>(i) ||
+                     dim + input->shape().dimensions_size() == i;
+            });
         if (!should_squeeze) {
           new_shape.AddDimension(input->shape().dimensions(i));
         }
