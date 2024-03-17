@@ -51,6 +51,7 @@ pblczero::XlaShapeProto HloTensorType::ToProto() const {
   pblczero::XlaShapeProto ret;
   ret.set_element_type(type_);
   *ret.mutable_dimensions() = dimensions_;
+  ret.mutable_layout();
   for (size_t i = 0; i < dimensions_.size(); ++i) {
     ret.add_is_dynamic_dimension(false);
     ret.mutable_layout()->add_minor_to_major(dimensions_.size() - i - 1);
