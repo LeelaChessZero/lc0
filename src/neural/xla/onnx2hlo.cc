@@ -1037,6 +1037,7 @@ class Onnx2HloConverter {
     }
     CheckKnownAttributes(node, 4, {});
     auto* input = GetInput(node, 0);
+    HloTensorType input_shape(input->shape());
     auto starts = *GetConstantInputAsVec<int64_t>(node, 1);
     auto ends = *GetConstantInputAsVec<int64_t>(node, 2);
     auto axes_attr = GetConstantInputAsVec<int64_t>(node, 3, true);
@@ -1050,7 +1051,7 @@ class Onnx2HloConverter {
     if (!axes_attr) std::iota(axes.begin(), axes.end(), 0);
 
     std::vector<pblczero::HloInstructionProto::SliceDimensions> slices;
-    for (const auto& dim : input->shape().dimensions()) {
+    for (const auto& dim : input_shape.GetDimensions()) {
       pblczero::HloInstructionProto::SliceDimensions slice;
       slice.set_start(0);
       slice.set_limit(dim);
@@ -1060,9 +1061,16 @@ class Onnx2HloConverter {
 
     for (size_t i = 0; i < axes.size(); ++i) {
       pblczero::HloInstructionProto::SliceDimensions slice;
-      slice.set_start(starts[i]);
+      const auto axis = axes[i] < 0 ? axes[i] + input_shape.Rank() : axes[i];
+      const auto start = starts[i] < 0
+                             ? starts[i] + input_shape.GetDimension(axis)
+                             : starts[i];
+      const auto end =
+          ends[i] < 0 ? ends[i] + input_shape.GetDimension(axis) : ends[i];
+      slice.set_start(
+          std::min<int64_t>(start, input_shape.GetDimension(axes[i])));
       slice.set_limit(
-          std::min<int64_t>(ends[i], input->shape().dimensions(axes[i])));
+          std::min<int64_t>(end, input_shape.GetDimension(axes[i])));
       slice.set_stride(1);
       slices[axes[i]] = slice;
     }
