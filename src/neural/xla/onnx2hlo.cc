@@ -373,6 +373,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Cast"] = &Onnx2HloConverter::OpCast;
     onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
+    onnx_op_to_builder_["Div"] = &Onnx2HloConverter::OpDiv;
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
@@ -946,6 +947,14 @@ class Onnx2HloConverter {
     auto* rhs = GetInput(node, 1);
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
     return {builder_.Add(lhs, rhs)};
+  }
+
+  std::vector<HloFlow> OpDiv(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* lhs = GetInput(node, 0);
+    auto* rhs = GetInput(node, 1);
+    std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
+    return {builder_.Divide(lhs, rhs)};
   }
 
   std::vector<HloFlow> OpSub(const pblczero::NodeProto& node) {
