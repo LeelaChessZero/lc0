@@ -801,9 +801,9 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpReduceMean(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {"axes", "keepdims"});
     auto* input = GetInput(node, 0);
-    auto axes = GetAttribute(node, "axes")->ints();
-    auto keepdims_attr = GetAttribute(node, "keepdims", true);
-    bool keepdims = keepdims_attr ? keepdims_attr->i() : 1;
+    auto axes = GetAttributeAsVec<int64_t>(node, "axes");
+    bool keepdims =
+        GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     return {DoReduceMean(input, axes, keepdims)};
   }
 
@@ -811,7 +811,7 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 1, {"to"});
     auto* input = GetInput(node, 0);
     const auto onnx_type = static_cast<pblczero::TensorProto::DataType>(
-        GetAttribute(node, "to")->i());
+        GetAttributeAs<int>(node, "to"));
     const auto hlo_type = OnnxTypeToXlaType(onnx_type);
     if (input->shape().element_type() == hlo_type) return {input};
     // Only convert constants of int64 to int32 as that's what TF does.
@@ -825,8 +825,8 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpLayerNormalization(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 3, {"axis", "epsilon"});
     auto* input = GetInput(node, 0);
-    const auto axis = GetAttribute(node, "axis")->i();
-    const auto epsilon = GetAttribute(node, "epsilon")->f();
+    const auto axis = GetAttributeAs<int>(node, "axis");
+    const auto epsilon = GetAttributeAs<float>(node, "epsilon");
     auto* scale = GetInput(node, 1);
     auto* bias = GetInput(node, 2, true);
     constexpr auto kAccType = pblczero::XlaShapeProto::F32;
@@ -855,7 +855,7 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpConcat(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, std::numeric_limits<size_t>::max(), {"axis"});
-    const auto axis = GetAttribute(node, "axis")->i();
+    const auto axis = GetAttributeAs<int>(node, "axis");
     if (AllInputsConstant(node)) {
       std::vector<pblczero::XlaLiteralProto> constants;
       for (size_t i = 0; i < node.input_size(); ++i) {
@@ -936,15 +936,14 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 2, {"axis", "num_outputs"});
     auto* input = GetInput(node, 0);
     auto split = GetConstantInputAsVec<int64_t>(node, 1, true);
-    const auto* axis_attr = GetAttribute(node, "axis");
-    const auto* num_outputs_attr = GetAttribute(node, "num_outputs", true);
-    if (!axis_attr) throw Exception("Attribute 'axis' not set");
+    const size_t axis = GetAttributeAs<size_t>(node, "axis");
+    const auto num_outputs_attr =
+        GetOptionalAttributeAs<size_t>(node, "num_outputs");
 
     if (split && num_outputs_attr) {
       throw Exception("Split cannot have both 'split' and 'num_outputs'");
     }
 
-    const size_t axis = axis_attr->i();
     std::vector<size_t> splits;
 
     if (split) {
@@ -954,8 +953,7 @@ class Onnx2HloConverter {
         splits.push_back(offset);
       }
     } else {
-      size_t num_outputs =
-          num_outputs_attr ? num_outputs_attr->i() : node.output_size();
+      size_t num_outputs = num_outputs_attr.value_or(node.output_size());
       size_t chunk_size =
           (input->shape().dimensions(axis) + num_outputs - 1) / num_outputs;
       int64_t offset = 0;
