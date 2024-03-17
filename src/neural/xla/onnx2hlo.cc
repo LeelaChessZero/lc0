@@ -562,6 +562,59 @@ class Onnx2HloConverter {
     throw Exception("Attribute " + std::string(name) + " not set");
   }
 
+  template <typename T>
+  std::optional<T> GetOptionalAttributeAs(const pblczero::NodeProto& node,
+                                          std::string_view name,
+                                          bool optional = true) {
+    if (auto* attribute = GetAttribute(node, name, optional)) {
+      switch (attribute->type()) {
+        case pblczero::AttributeProto::FLOAT:
+          return attribute->f();
+        case pblczero::AttributeProto::INT:
+          return attribute->i();
+        default:
+          throw Exception(
+              "Unsupported attribute type " +
+              pblczero::AttributeProto::AttributeType_Name(attribute->type()));
+      }
+    }
+    return std::nullopt;
+  }
+
+  template <typename T>
+  T GetAttributeAs(const pblczero::NodeProto& node, std::string_view name) {
+    return GetOptionalAttributeAs<T>(node, name, false).value();
+  }
+
+  template <typename T>
+  std::optional<std::vector<T>> GetOptionalAttributeAsVec(
+      const pblczero::NodeProto& node, std::string_view name,
+      bool optional = true) {
+    if (auto* attribute = GetAttribute(node, name, optional)) {
+      std::vector<T> result;
+      switch (attribute->type()) {
+        case pblczero::AttributeProto::FLOATS:
+          result.assign(attribute->floats().begin(), attribute->floats().end());
+          break;
+        case pblczero::AttributeProto::INTS:
+          result.assign(attribute->ints().begin(), attribute->ints().end());
+          break;
+        default:
+          throw Exception(
+              "Unsupported attribute type " +
+              pblczero::AttributeProto::AttributeType_Name(attribute->type()));
+      }
+      return result;
+    }
+    return std::nullopt;
+  }
+
+  template <typename T>
+  std::vector<T> GetAttributeAsVec(const pblczero::NodeProto& node,
+                                   std::string_view name) {
+    return GetOptionalAttributeAsVec<T>(node, name, false).value();
+  }
+
   /////////////////////////////////////////////////////////////////////////////
   // ONNX operations
   /////////////////////////////////////////////////////////////////////////////
@@ -586,21 +639,21 @@ class Onnx2HloConverter {
       dn.add_output_spatial_dimensions(i + 2);
     }
 
-    const auto* pads = GetAttribute(node, "pads");
-    const auto* kernel_shape = GetAttribute(node, "kernel_shape");
-    if (!pads || pads->ints_size() != 2 * num_dims) {
-      throw Exception("'pads' attribute not set or wrong size");
+    const auto pads = GetAttributeAsVec<int32_t>(node, "pads");
+    const auto kernel_shape = GetAttributeAsVec<int32_t>(node, "kernel_shape");
+    if (pads.size() != 2 * num_dims) {
+      throw Exception("'pads' attribute must have 2 * num_dims elements");
     }
-    if (!kernel_shape || kernel_shape->ints_size() != num_dims) {
-      throw Exception("'kernel_shape' attribute not set or wrong size");
+    if (kernel_shape.size() != num_dims) {
+      throw Exception("'kernel_shape' attribute must have num_dims elements");
     }
     pblczero::XlaWindow window;
     for (size_t i = 0; i < input->shape().dimensions_size() - 2; ++i) {
       auto* dim = window.add_dimensions();
-      dim->set_size(kernel_shape->ints(i));
+      dim->set_size(kernel_shape[i]);
       dim->set_stride(1);
-      dim->set_padding_low(pads->ints(i));
-      dim->set_padding_high(pads->ints(i + num_dims));
+      dim->set_padding_low(pads[i]);
+      dim->set_padding_high(pads[i + num_dims]);
       dim->set_window_dilation(1);
       dim->set_base_dilation(1);
     }
@@ -623,10 +676,10 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpSelu(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {"alpha", "gamma"});
     auto* input = GetInput(node, 0);
-    auto* palpha = GetAttribute(node, "alpha", true);
-    double alpha = palpha ? palpha->f() : 1.6732632423543772848170429916717;
-    auto* pgamma = GetAttribute(node, "gamma", true);
-    double gamma = pgamma ? pgamma->f() : 1.0507009873554804934193349852946;
+    double alpha = GetOptionalAttributeAs<double>(node, "alpha")
+                       .value_or(1.6732632423543772848170429916717);
+    double gamma = GetOptionalAttributeAs<double>(node, "gamma")
+                       .value_or(1.0507009873554804934193349852946);
     auto* neg = builder_.Multiply(
         builder_.Broadcast(MakeScalar(alpha, input->shape().element_type()),
                            HloTensorType(input->shape()), {}),
@@ -650,7 +703,7 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpTranspose(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {"perm"});
     auto* input = GetInput(node, 0);
-    auto perm = GetAttribute(node, "perm")->ints();
+    auto perm = GetAttributeAsVec<int64_t>(node, "perm");
     return {builder_.Transpose(input, perm)};
   }
 
@@ -677,7 +730,7 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpSoftmax(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {"axis"});
-    const auto axis = GetAttribute(node, "axis")->i();
+    const auto axis = GetAttributeAs<int>(node, "axis");
     auto* input = GetInput(node, 0);
 
     // Normalize each batch by subtracting the maximum value.
@@ -705,13 +758,12 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpGather(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {"axis"});
+    const auto axis = GetOptionalAttributeAs<int>(node, "axis").value_or(0);
     if (AllInputsConstant(node)) {
-      return {builder_.Constant(
-          ConstOpGather(*GetConstantInput(node, 0), *GetConstantInput(node, 1),
-                        GetAttribute(node, "axis")->i()))};
+      return {builder_.Constant(ConstOpGather(
+          *GetConstantInput(node, 0), *GetConstantInput(node, 1), axis))};
     }
     auto* input = GetInput(node, 0);
-    const auto axis = GetAttribute(node, "axis")->i();
     bool is_sorted = false;
     bool is_unique = false;
     HloFlow indices;
