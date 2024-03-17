@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,38 +24,59 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-
 #pragma once
 
-#include <string>
-
-#include "neural/onnx/onnx.pb.h"
-#include "proto/net.pb.h"
+#include <cstdint>
+#include <cstring>
 
 namespace lczero {
 
-// Options to use when converting "old" weights to ONNX weights format.
-struct WeightsToOnnxConverterOptions {
-  enum class DataType { kFloat32, kFloat16, kBFloat16, kFloat8E5M2 };
-  DataType data_type = DataType::kFloat32;
-  std::string input_planes_name = "/input/planes";
-  std::string output_policy_head = "/output/policy";
-  std::string output_wdl = "/output/wdl";
-  std::string output_value = "/output/value";
-  std::string output_mlh = "/output/mlh";
-  int batch_size = -1;
-  int opset = 17;
-  bool alt_mish = false;
-  bool alternative_layer_normalization = false;
-  bool fix_bf16 = false;  // Work around missing bf16 support in onnx operators.
-  std::string policy_head = "vanilla";
-  std::string value_head = "winner";
+inline uint8_t FP32toFP8E5M2(float f32) {
+  unsigned int x;
+  unsigned int sign = 0;
+  memcpy(&x, &f32, sizeof(float));
+  if (x & 0x80000000) sign = 0x80;
+  x &= 0x7fffffff;
+  if (x >= 0x47700000) {
+    if ((x & 0x7f800000) == 0x7f800000 && (x & 0x7fffff)) {
+      x = ((x >> 21) - 0x380) | 0x2;
+    } else {
+      x = 0x7c;
+    }
+  } else if (x < 0x37000000) {
+    x = 0;
+  } else if (x < 0x38700000) {
+    int shift = 134 - ((x >> 23) & 0xff);
+    x = (x & 0x7fffff) | 0x800000;
+    if (x & (0x17fffff >> (24 - shift))) x += 0x800000 >> (24 - shift);
+    x >>= shift;
+  } else {
+    // Adjust exponent and round to nearest even.
+    if (x & 0x2fffff) {
+      x -= 0x37f00000;
+    } else {
+      x -= 0x38000000;
+    }
+    x >>= 21;
+  }
+  return x | sign;
+}
 
-  static DataType StringToDataType(const std::string&);
-};
-
-// Converts "classical" weights file to weights file with embedded ONNX model.
-pblczero::Net ConvertWeightsToOnnx(const pblczero::Net&,
-                                   const WeightsToOnnxConverterOptions&);
+inline float FP8E5M2toFP32(uint8_t f8) {
+  unsigned int x;
+  float f;
+  x = f8 & 0x7f;
+  if ((x & 0x7c) == 0) {
+    f = 1.5258789e-5f * x;
+    memcpy(&x, &f, sizeof(float));
+  } else if (x >= 0x7c) {
+    x = (x + 0x380) << 21;
+  } else {
+    x = (x + 0x1c0) << 21;
+  }
+  if (f8 & 0x80) x |= 0x80000000;
+  memcpy(&f, &x, sizeof(float));
+  return f;
+}
 
 }  // namespace lczero
