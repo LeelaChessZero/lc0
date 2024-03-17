@@ -224,6 +224,29 @@ pblczero::XlaLiteralProto ConstOpGather(
   return result;
 }
 
+pblczero::XlaLiteralProto ConstOpReduceProd(
+    const pblczero::XlaLiteralProto& input,
+    const std::vector<int64_t>& dimensions) {
+  if (input.shape().dimensions_size() != 1) {
+    throw Exception(
+        "For constant reduce_prod, only 1D inputs are supported for now");
+  }
+  if (dimensions.size() != 1 || dimensions[0] != 0) {
+    throw Exception(
+        "For constant reduce_prod, only 1D dimensions are supported for now");
+  }
+  HloTensorType shape(input.shape().element_type());
+  pblczero::XlaLiteralProto result;
+  HloTensorType result_shape(input.shape().element_type());
+  *result.mutable_shape() = result_shape.ToProto();
+  LiteralOutInOp(&result, input, [](auto* dst, const auto& inp) {
+    using T = typename std::remove_reference<decltype(inp)>::type::value_type;
+    dst->push_back(
+        std::accumulate(inp.begin(), inp.end(), T(1), std::multiplies<T>()));
+  });
+  return result;
+}
+
 pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
     const pblczero::TensorProto::DataType& type) {
   switch (type) {
@@ -818,9 +841,15 @@ class Onnx2HloConverter {
     auto axes = GetAttributeAsVec<int64_t>(node, "axes");
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
-    HloFlow one = MakeScalar(1, input->shape().element_type());
-    auto flow = builder_.Reduce(
-        input, one, MakeMulComputation(input->shape().element_type()), axes);
+    HloFlow flow;
+    if (AllInputsConstant(node)) {
+      flow = builder_.Constant(
+          ConstOpReduceProd(*GetConstantInput(node, 0), axes));
+    } else {
+      HloFlow one = MakeScalar(1, input->shape().element_type());
+      flow = builder_.Reduce(
+          input, one, MakeMulComputation(input->shape().element_type()), axes);
+    }
     if (!keepdims) return {flow};
     HloTensorType target_shape(input->shape());
     for (auto axis : axes) target_shape.SetDimension(axis, 1);
