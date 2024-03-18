@@ -74,7 +74,7 @@ std::vector<int> ParseIntList(const std::string& str) {
 
 std::string LeftTrim(std::string str) {
   const auto it = std::find_if(str.begin(), str.end(),
-                         [](int ch) { return !std::isspace(ch); });
+                               [](int ch) { return !std::isspace(ch); });
   str.erase(str.begin(), it);
   return str;
 }
@@ -114,6 +114,17 @@ std::vector<std::string> FlowText(const std::string& src, size_t width) {
       }
       result.back() += word;
     }
+  }
+  return result;
+}
+
+std::string AsHexString(std::string_view buf) {
+  std::string result;
+  result.reserve(buf.size() * 2);
+  constexpr char hex[] = "0123456789abcdef";
+  for (unsigned char c : buf) {
+    result.push_back(hex[c >> 4]);
+    result.push_back(hex[c & 0xf]);
   }
   return result;
 }

@@ -31,6 +31,7 @@
 
 #include "utils/exception.h"
 #include "utils/logging.h"
+#include "utils/string.h"
 
 namespace lczero {
 namespace {
@@ -50,18 +51,6 @@ size_t GetTypeSize(pblczero::XlaShapeProto::Type type) {
                       pblczero::XlaShapeProto::Type_Name(type));
   }
 }
-
-std::string AsHexString(std::string_view buf) {
-  std::string result;
-  result.reserve(buf.size() * 2);
-  constexpr char hex[] = "0123456789abcdef";
-  for (unsigned char c : buf) {
-    result.push_back(hex[c >> 4]);
-    result.push_back(hex[c & 0xf]);
-  }
-  return result;
-}
-
 }  // namespace
 
 std::string XlaTensor::DebugString() {

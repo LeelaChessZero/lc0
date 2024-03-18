@@ -26,6 +26,7 @@
 */
 
 #include <cassert>
+#include <iostream>
 
 #include "neural/factory.h"
 #include "neural/network.h"
@@ -33,6 +34,7 @@
 #include "neural/xla/onnx2hlo.h"
 #include "neural/xla/xla_runner.h"
 #include "utils/bititer.h"
+#include "utils/string.h"
 
 namespace lczero {
 namespace {
@@ -89,6 +91,7 @@ class XlaComputation : public NetworkComputation {
   float GetMVal(int sample) const override;
 
  private:
+  void DebugDump() const;
   const XlaNetwork* network_;
   Lc0InputTensor input_tensor_;
   std::vector<std::unique_ptr<XlaTensor>> outputs_;
@@ -100,6 +103,8 @@ struct XlaNetworkOptions {
   std::optional<size_t> output_wdl_idx;
   std::optional<size_t> output_policy_idx;
   std::optional<size_t> output_mlh_idx;
+  std::vector<std::pair<size_t, std::string>> debug_nodes;
+  std::string textdump_filename;
 };
 
 class XlaNetwork : public Network {
@@ -183,6 +188,30 @@ int XlaComputation::GetBatchSize() const {
 
 void XlaComputation::ComputeBlocking() {
   outputs_ = network_->runner_->ExecuteBlocking({&input_tensor_});
+  if (!network_->options_.debug_nodes.empty()) DebugDump();
+}
+
+void XlaComputation::DebugDump() const {
+  std::ostream* out;
+  std::unique_ptr<std::ofstream> file;
+  if (!network_->options_.textdump_filename.empty()) {
+    file = std::make_unique<std::ofstream>(network_->options_.textdump_filename,
+                                           std::ios::app);
+    out = file.get();
+  } else {
+    out = &std::cerr;
+  }
+
+  const size_t num_batches = input_tensor_.GetBatchSize();
+  for (size_t i = 0; i < num_batches; ++i) {
+    for (const auto& [idx, name] : network_->options_.debug_nodes) {
+      const auto& tensor = outputs_[idx];
+      *out << i << " " << name << " "
+           << AsHexString(
+                  {static_cast<const char*>(tensor->data()), tensor->size()})
+           << "\n";
+    }
+  }
 }
 
 XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
@@ -281,6 +310,9 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(
     options.output_mlh_idx =
         output_to_parameter_idx.at(std::string(onnx_model.output_mlh()));
   }
+  for (const auto& node : debug_nodes) {
+    options.debug_nodes.emplace_back(output_to_parameter_idx.at(node), node);
+  }
   return options;
 }
 
@@ -310,8 +342,8 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The XLA backend requires a network file.");
   int device = opts.GetOrDefault<int>("device", 0);
   // Note: if the plugin_path does NOT contain a slash, it's looked up in the
-  // LD_LIBRARY_PATH (and a few other system defined places). If it does contain
-  // a slash, it's looked up at the exact relative or absolute path.
+  // LD_LIBRARY_PATH (and a few other system defined places). If it does
+  // contain a slash, it's looked up at the exact relative or absolute path.
   auto runner = std::make_unique<XlaRunner>(
       opts.GetOrDefault<std::string>("plugin_path",
                                      "./pjrt_c_api_gpu_plugin.so")
@@ -320,8 +352,8 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
   int steps = opts.GetOrDefault<int>("steps", 16);
 
-  XlaNetworkOptions options;
   DebugOptions debug_options = ParseDebugOptions(opts);
+  XlaNetworkOptions options;
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get(),
                                     max_batch_size, steps, debug_options.nodes);
@@ -335,6 +367,7 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
                                     max_batch_size, steps, debug_options.nodes);
   }
+  options.textdump_filename = debug_options.textdump_filename;
 
   return std::make_unique<XlaNetwork>(std::move(runner), options,
                                       w->format().network_format());

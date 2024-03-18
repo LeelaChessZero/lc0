@@ -61,4 +61,7 @@ bool StringsEqualIgnoreCase(const std::string& a, const std::string& b);
 // Flow text into lines of width up to @width.
 std::vector<std::string> FlowText(const std::string& src, size_t width);
 
+// Converts a buffer to a hex string.
+std::string AsHexString(std::string_view buf);
+
 }  // namespace lczero
