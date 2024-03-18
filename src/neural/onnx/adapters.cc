@@ -28,6 +28,7 @@ Program grant you additional permission to convey the resulting work.
 #include "neural/onnx/adapters.h"
 #include <algorithm>
 
+#include "utils/bf16_utils.h"
 #include "utils/fp16_utils.h"
 #include "utils/transpose.h"
 
@@ -76,6 +77,17 @@ std::string Float16OnnxWeightsAdapter::GetRawData() const {
   std::vector<uint16_t> fp16(weights_.size());
   std::transform(weights_.begin(), weights_.end(), fp16.begin(), FP32toFP16);
   return TransposeAndReturnRaw<uint16_t>(dims_, order_, fp16);
+}
+
+pblczero::TensorProto::DataType BFloat16OnnxWeightsAdapter::GetDataType()
+    const {
+  return pblczero::TensorProto::BFLOAT16;
+}
+
+std::string BFloat16OnnxWeightsAdapter::GetRawData() const {
+  std::vector<uint16_t> bf16(weights_.size());
+  std::transform(weights_.begin(), weights_.end(), bf16.begin(), FP32toBF16);
+  return TransposeAndReturnRaw<uint16_t>(dims_, order_, bf16);
 }
 
 }  // namespace lczero
