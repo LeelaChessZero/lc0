@@ -216,10 +216,24 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
     }
   };
 
+  Onnx2HloOptions onnx2hlo_options{};
+  if (onnx_model.has_output_value()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_value());
+  }
+  if (onnx_model.has_output_wdl()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_wdl());
+  }
+  if (onnx_model.has_output_policy()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_policy());
+  }
+  if (onnx_model.has_output_mlh()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_mlh());
+  }
+
   for (size_t i = 0; i < steps; ++i) {
     size_t batch_size = max_batch_size * (i + 1) / steps;
     CERR << "Building HLO for batch size " << batch_size << "...";
-    auto conversion = ConvertOnnxToHlo(onnx, batch_size, {});
+    auto conversion = ConvertOnnxToHlo(onnx, batch_size, onnx2hlo_options);
     add_tensors(conversion.constants, constant_to_parameter_idx);
     add_tensors(conversion.inputs, input_to_parameter_idx);
     add_tensors(conversion.outputs, output_to_parameter_idx);
