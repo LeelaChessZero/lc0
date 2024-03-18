@@ -1459,19 +1459,11 @@ class Onnx2HloConverter {
   // Calls the correct function to handle the ONNX node, and stores output in
   // the map.
   void DispatchNode(const pblczero::NodeProto& node) {
-    auto iter = onnx_op_to_builder_.find(std::string(node.op_type()));
-    if (iter == onnx_op_to_builder_.end()) {
-      std::string inputs;
-      for (const auto& input : node.input()) {
-        auto* flow = GetFlowByName(input);
-        inputs += "\ninput=[" + input + "]  shape=" +
-                  (flow ? flow->shape().OutputAsJson() : "(not found)");
-      }
-      throw Exception("Unsupported ONNX op[" + std::string(node.op_type()) +
-                      "] name=[" + std::string(node.name()) + "] node=[" +
-                      node.OutputAsJson() + "]" + inputs);
-    }
     try {
+      auto iter = onnx_op_to_builder_.find(std::string(node.op_type()));
+      if (iter == onnx_op_to_builder_.end()) {
+        throw Exception("Unsupported ONNX op.");
+      }
       auto outputs = (this->*iter->second)(node);
       if (outputs.size() != node.output_size()) {
         throw Exception("Node produced wrong number of outputs");
@@ -1480,8 +1472,15 @@ class Onnx2HloConverter {
         onnx_name_to_hlo_flow_[std::string(node.output(i))] = outputs[i];
       }
     } catch (Exception& e) {
+      std::string inputs;
+      for (const auto& input : node.input()) {
+        auto* flow = GetFlowByName(input);
+        inputs += "\n  input=[" + input + "]  shape=" +
+                  (flow ? flow->shape().OutputAsJson() : "(not found)");
+      }
       throw Exception("Error in ONNX op=[" + std::string(node.op_type()) +
-                      "] name=[" + std::string(node.name()) + "]: " + e.what());
+                      "] name=[" + std::string(node.name()) + "]: " + e.what() +
+                      inputs);
     }
   }
 
