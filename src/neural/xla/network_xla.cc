@@ -194,9 +194,10 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
 
 // Converts ONNX model to HLO (for various batch sizes) and adds them to the
 // XlaRunner.
-XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
-                                        XlaRunner* runner,
-                                        size_t max_batch_size, size_t steps) {
+XlaNetworkOptions FillXlaRunnerFromOnnx(
+    const pblczero::OnnxModel& onnx_model, XlaRunner* runner,
+    size_t max_batch_size, size_t steps,
+    const std::vector<std::string>& debug_nodes) {
   pblczero::ModelProto onnx;
   onnx.ParseFromString(onnx_model.model());
 
@@ -229,6 +230,9 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   if (onnx_model.has_output_mlh()) {
     onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_mlh());
   }
+  onnx2hlo_options.outputs_override.insert(
+      onnx2hlo_options.outputs_override.end(), debug_nodes.begin(),
+      debug_nodes.end());
 
   for (size_t i = 0; i < steps; ++i) {
     size_t batch_size = max_batch_size * (i + 1) / steps;
@@ -280,6 +284,25 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   return options;
 }
 
+struct DebugOptions {
+  std::vector<std::string> nodes;
+  std::string textdump_filename;
+};
+
+DebugOptions ParseDebugOptions(const OptionsDict& opts) {
+  DebugOptions result;
+  if (!opts.HasSubdict("debug")) return result;
+  auto debug = opts.GetSubdict("debug");
+  result.textdump_filename = debug.GetOrDefault<std::string>("textdump", "");
+  if (debug.HasSubdict("nodes")) {
+    auto nodes = debug.GetSubdict("nodes");
+    for (const auto& node : nodes.ListSubdicts()) {
+      result.nodes.push_back(node);
+    }
+  }
+  return result;
+}
+
 // Makes an XLA network. First converts the weights to ONNX, and then calls
 // FillXlaRunnerFromOnnx to convert them further to HLO and them compile them.
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
@@ -298,9 +321,10 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   int steps = opts.GetOrDefault<int>("steps", 16);
 
   XlaNetworkOptions options;
+  DebugOptions debug_options = ParseDebugOptions(opts);
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, debug_options.nodes);
   } else {
     CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions onnx_converter_options;
@@ -309,7 +333,7 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
             opts.GetOrDefault<std::string>("data_type", "f32"));
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, debug_options.nodes);
   }
 
   return std::make_unique<XlaNetwork>(std::move(runner), options,
