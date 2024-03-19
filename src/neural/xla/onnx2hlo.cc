@@ -1127,7 +1127,8 @@ class Onnx2HloConverter {
     if (axes_attr && axes_attr->size() != starts.size()) {
       throw Exception("Slice axes must have the same size as starts and ends");
     }
-    std::vector<int64_t> axes = axes_attr.value_or(std::vector<int64_t>());
+    std::vector<int64_t> axes =
+        axes_attr.value_or(std::vector<int64_t>(starts.size()));
     if (!axes_attr) std::iota(axes.begin(), axes.end(), 0);
 
     std::vector<pblczero::HloInstructionProto::SliceDimensions> slices;
