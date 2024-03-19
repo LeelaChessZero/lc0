@@ -36,7 +36,9 @@
 #include "neural/xla/hlo.pb.h"
 #include "neural/xla/hlo_builder.h"
 #include "neural/xla/print_hlo.h"
+#include "utils/bf16_utils.h"
 #include "utils/exception.h"
+#include "utils/fp16_utils.h"
 
 namespace lczero {
 namespace {
@@ -226,6 +228,12 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
   switch (tensor.data_type()) {
     case pblczero::TensorProto::FLOAT:
       convert(tensor.raw_data(), literal.mutable_f32s());
+      break;
+    case pblczero::TensorProto::FLOAT16:
+      literal.set_f16s(tensor.raw_data());
+      break;
+    case pblczero::TensorProto::BFLOAT16:
+      literal.set_bf16s(tensor.raw_data());
       break;
     case pblczero::TensorProto::INT64:
       convert(tensor.raw_data(), literal.mutable_s64s());
@@ -588,7 +596,8 @@ class Onnx2HloConverter {
                             is_sorted, is_unique)};
   }
 
-  HloFlow DoReduceMean(HloFlow input, const std::vector<int64_t>& axes) {
+  HloFlow DoReduceMean(HloFlow input, const std::vector<int64_t>& axes,
+                       bool keepdims = true) {
     HloFlow zero = MakeScalar(0, input->shape().element_type());
     auto flow = builder_.Reduce(
         input, zero, MakeAddComputation(input->shape().element_type()), axes);
@@ -600,16 +609,19 @@ class Onnx2HloConverter {
         DoBroadcast(MakeScalar(count, input->shape().element_type()),
                     flow->shape().dimensions());
     flow = builder_.Divide(flow, denominator);
+    if (!keepdims) return flow;
     HloTensorType target_shape(input->shape());
     for (auto axis : axes) target_shape.SetDimension(axis, 1);
     return builder_.Reshape(flow, target_shape);
   }
 
   std::vector<HloFlow> OpReduceMean(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 1, {"axes"});
+    CheckKnownAttributes(node, 1, {"axes", "keepdims"});
     auto* input = GetInput(node, 0);
     auto axes = GetAttribute(node, "axes")->ints();
-    return {DoReduceMean(input, axes)};
+    auto keepdims_attr = GetAttribute(node, "keepdims", true);
+    bool keepdims = keepdims_attr ? keepdims_attr->i() : 1;
+    return {DoReduceMean(input, axes, keepdims)};
   }
 
   std::vector<HloFlow> OpCast(const pblczero::NodeProto& node) {
@@ -629,24 +641,22 @@ class Onnx2HloConverter {
     const auto epsilon = GetAttribute(node, "epsilon")->f();
     auto* scale = GetInput(node, 1);
     auto* bias = GetInput(node, 2, true);
-    const bool need_conv =
-        input->shape().element_type() != pblczero::XlaShapeProto::F32;
-    auto* flow = need_conv
-                     ? builder_.Convert(input, pblczero::XlaShapeProto::F32)
-                     : input;
-    flow = DoBroadcast(DoReduceMean(flow, {axis}), input->shape().dimensions());
+    constexpr auto kAccType = pblczero::XlaShapeProto::F32;
+    const auto input_type = input->shape().element_type();
+    const bool need_conv = input_type != kAccType;
+    input = need_conv ? builder_.Convert(input, kAccType) : input;
+    auto* flow =
+        DoBroadcast(DoReduceMean(input, {axis}), input->shape().dimensions());
     auto* norm = builder_.Subtract(input, flow);
     flow = builder_.Multiply(norm, norm);
     flow = DoReduceMean(flow, {axis});
-    flow = builder_.Add(
-        flow, DoBroadcast(MakeScalar(epsilon, pblczero::XlaShapeProto::F32),
-                          flow->shape().dimensions()));
+    flow = builder_.Add(flow, DoBroadcast(MakeScalar(epsilon, kAccType),
+                                          flow->shape().dimensions()));
     flow = builder_.Rsqrt(flow);
     flow =
         builder_.Multiply(norm, DoBroadcast(flow, norm->shape().dimensions()));
-    if (need_conv) {
-      flow = builder_.Convert(flow, input->shape().element_type());
-    }
+    if (need_conv) flow = builder_.Convert(flow, input_type);
+
     flow =
         builder_.Multiply(flow, DoBroadcast(scale, flow->shape().dimensions()));
     if (bias) {
@@ -972,8 +982,20 @@ class Onnx2HloConverter {
       case pblczero::XlaShapeProto::F32:
         literal.add_f32s(value);
         break;
+      case pblczero::XlaShapeProto::F16: {
+        uint16_t f16 = FP32toFP16(value);
+        std::string_view f16_view(reinterpret_cast<const char*>(&f16),
+                                  sizeof(f16));
+        literal.set_f16s(f16_view);
+      } break;
+      case pblczero::XlaShapeProto::BF16: {
+        uint16_t bf16 = FP32toBF16(value);
+        std::string_view bf16_view(reinterpret_cast<const char*>(&bf16),
+                                   sizeof(bf16));
+        literal.set_bf16s(bf16_view);
+      } break;
       default:
-        throw Exception("Unsupported type for zero constant");
+        throw Exception("Unsupported type for a constant");
     }
     return builder_.Constant(literal);
   }
@@ -1119,6 +1141,10 @@ std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
       return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
                                                  onnx_tensor.raw_data(),
                                                  pblczero::XlaShapeProto::F32);
+    case pblczero::TensorProto::FLOAT16:
+      return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
+                                                 onnx_tensor.raw_data(),
+                                                 pblczero::XlaShapeProto::F16);
     default:
       throw Exception(
           "Unsupported ONNX tensor type for buffer conversion " +
