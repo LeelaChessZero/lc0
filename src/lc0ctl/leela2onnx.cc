@@ -50,8 +50,10 @@ const OptionId kOnnxBatchSizeId{"onnx-batch-size", "",
                                 "Batch size to use for ONNX conversion."};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
-const OptionId hOnnxDataTypeId{"onnx-data-type", "",
+const OptionId kOnnxDataTypeId{"onnx-data-type", "",
                                "Data type to use in the ONNX model."};
+const OptionId kOnnxOpsetId{"onnx-opset", "",
+                            "Opset to use in the ONNX model."};
 const OptionId kHloAllowPartialResultId = {
     "hlo-allow-partial-result", "",
     "Allow partial result in case of HLO conversion failure (DEBUG ONLY!)."};
@@ -89,9 +91,10 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kHloTextOutputFilenameId);
   options->Add<StringOption>(kHloProtoOutputFilenameId);
   options->Add<IntOption>(kOnnxBatchSizeId, -1, 2048) = -1;
+  options->Add<IntOption>(kOnnxOpsetId, 7, 18) = 17;
   options->Add<IntOption>(kHloBatchSizeId, 1, 2048) = 333;
   options->Add<ChoiceOption>(
-      hOnnxDataTypeId, std::vector<std::string>{"f32", "f16", "bf16"}) = "f32";
+      kOnnxDataTypeId, std::vector<std::string>{"f32", "f16", "bf16"}) = "f32";
   options->Add<BoolOption>(kHloAllowPartialResultId);
   options->Add<BoolOption>(kBf16Fix) = true;
   options->HideOption(kOnnxBatchSizeId);
@@ -141,14 +144,14 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_policy_head = dict.Get<std::string>(kOutputPolicyHead);
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
+    onnx_options.opset = dict.Get<int>(kOnnxOpsetId);
     onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
     onnx_options.data_type = WeightsToOnnxConverterOptions::StringToDataType(
-        dict.Get<std::string>(hOnnxDataTypeId));
+        dict.Get<std::string>(kOnnxDataTypeId));
     onnx_options.fix_bf16 = dict.Get<bool>(kBf16Fix);
     // onnx2pytorch only needs an alternate layernorm-implementation, so it's
     // currently only enables that. Might need to be extended in the future.
-    onnx_options.alternative_layer_normalization =
-        dict.Get<bool>(kOnnxToPytorch);
+    onnx_options.alt_layernorm = dict.Get<bool>(kOnnxToPytorch);
     onnx_options.value_head = dict.Get<std::string>(kValueHead);
     onnx_options.policy_head = dict.Get<std::string>(kPolicyHead);
     weights_file = ConvertWeightsToOnnx(weights_file, onnx_options);

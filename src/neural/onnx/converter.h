@@ -45,9 +45,10 @@ struct WeightsToOnnxConverterOptions {
   std::string output_mlh = "/output/mlh";
   int batch_size = -1;
   int opset = 17;
-  bool alt_mish = false;
-  bool alternative_layer_normalization = false;
-  bool fix_bf16 = false; // Work around missing bf16 support in onnx operators.
+  bool alt_mish = false;       // Use "Mish" approximation (fp32 only).
+  bool alt_layernorm = false;  // Discrete "LayerNormalization" implementation.
+  bool fix_bf16 = false;  // Work around missing bf16 support in onnx operators.
+  bool no_shape = false;  // Avoid use of "Shape" operator.
   std::string policy_head = "vanilla";
   std::string value_head = "winner";
 

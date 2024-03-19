@@ -458,7 +458,7 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
                                      const lczero::OnnxConst& gammas,
                                      const lczero::OnnxConst& betas,
                                      float eps) {
-  if (!options_.alternative_layer_normalization) {
+  if (!options_.alt_layernorm) {
     return builder->LayerNormalization(name, input, gammas, betas, 1, eps);
   }
   auto in =
@@ -588,7 +588,7 @@ std::string Converter::AttentionBodyMapEmbedding(OnnxBuilder* builder,
       builder->AddInitializer("/const/att_body_shape",
                               Int64OnnxConst({-1, 64, 112}, {3})));
   std::string pad;
-  if (options_.opset < 8) {
+  if (options_.opset < 8 || (options_.no_shape && options_.batch_size < 0)) {
     pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
                          {INT_MAX, 1, 1});
     pad =
