@@ -105,9 +105,11 @@ class Button {
  public:
   Button() { val = std::make_shared<bool>(false); }
   Button(bool x) { val = std::make_shared<bool>(x); }
-  operator bool() { return *val; }
-  void operator=(bool x) { *val = x; }
-  void reset() { *val = false; }
+  bool TestAndReset() {
+    bool r = *val;
+    *val = false;
+    return r;
+  }
 
  private:
   std::shared_ptr<bool> val;
