@@ -223,7 +223,7 @@ std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
 std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
                                             std::string flow,
                                             std::string name) {
-  if (options_.force_bf16 ||
+  if (options_.relax_op_types ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
     return flow;
@@ -233,7 +233,7 @@ std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
 
 std::string Converter::EndOptionalBf16Fix(OnnxBuilder* builder,
                                           std::string flow, std::string name) {
-  if (options_.force_bf16 ||
+  if (options_.relax_op_types ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
     return flow;
@@ -346,7 +346,7 @@ std::string Converter::MakeConvBlock(
     const std::string& name, const MultiHeadWeights::SEunit* seunit,
     const std::string& mixin, bool activation, int filters) {
   auto flow = input;
-  if (!options_.force_bf16 &&
+  if (!options_.relax_op_types &&
       options_.data_type ==
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
     flow =

@@ -57,8 +57,8 @@ const OptionId kOnnxOpsetId{"onnx-opset", "",
 const OptionId kHloAllowPartialResultId = {
     "hlo-allow-partial-result", "",
     "Allow partial result in case of HLO conversion failure (DEBUG ONLY!)."};
-const OptionId kForceBf16{"force-bf16", "",
-                          "Ignore missing bf16 support in ONNX operators."};
+const OptionId kRelaxOpTypes{
+    "relax-op-types", "", "Use onnx-data-type even if unsuported by operator."};
 
 const OptionId kInputPlanesName{"input-planes-name", "",
                                 "ONNX name to use for the input planes node."};
@@ -96,10 +96,10 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<ChoiceOption>(
       kOnnxDataTypeId, std::vector<std::string>{"f32", "f16", "bf16"}) = "f32";
   options->Add<BoolOption>(kHloAllowPartialResultId);
-  options->Add<BoolOption>(kForceBf16) = false;
+  options->Add<BoolOption>(kRelaxOpTypes) = false;
   options->HideOption(kOnnxBatchSizeId);
   options->HideOption(kHloAllowPartialResultId);
-  options->HideOption(kForceBf16);
+  options->HideOption(kRelaxOpTypes);
 
   options->Add<StringOption>(kInputPlanesName) = "/input/planes";
   options->Add<StringOption>(kOutputPolicyHead) = "/output/policy";
@@ -148,7 +148,7 @@ void ConvertLeelaToOnnx() {
     onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
     onnx_options.data_type = WeightsToOnnxConverterOptions::StringToDataType(
         dict.Get<std::string>(kOnnxDataTypeId));
-    onnx_options.force_bf16 = dict.Get<bool>(kForceBf16);
+    onnx_options.relax_op_types = dict.Get<bool>(kRelaxOpTypes);
     // onnx2pytorch only needs an alternate layernorm-implementation, so it's
     // currently only enables that. Might need to be extended in the future.
     onnx_options.alt_layernorm = dict.Get<bool>(kOnnxToPytorch);
