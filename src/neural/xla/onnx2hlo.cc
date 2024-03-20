@@ -415,6 +415,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["LayerNormalization"] =
         &Onnx2HloConverter::OpLayerNormalization;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
+    onnx_op_to_builder_["Mish"] = &Onnx2HloConverter::OpMish;
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
     onnx_op_to_builder_["Reciprocal"] = &Onnx2HloConverter::OpReciprocal;
     onnx_op_to_builder_["ReduceMean"] = &Onnx2HloConverter::OpReduceMean;
@@ -838,9 +839,15 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpReduceMean(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    if (opset_version_ < 18) {
+      CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    } else {
+      CheckKnownAttributes(node, 2, {"keepdims"});
+    }
     auto* input = GetInput(node, 0);
-    auto axes = GetAttributeAsVec<int64_t>(node, "axes");
+    auto axes = opset_version_ < 18
+                    ? GetAttributeAsVec<int64_t>(node, "axes")
+                    : GetConstantInputAsVec<int64_t>(node, 1).value();
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     return {DoReduceMean(input, axes, keepdims)};
@@ -1296,6 +1303,12 @@ class Onnx2HloConverter {
           ConstReshape(*GetConstantInput(node, 0), new_shape.ToProto()))};
     }
     return {builder_.Reshape(input, new_shape)};
+  }
+
+  std::vector<HloFlow> OpMish(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {});
+    auto* input = GetInput(node, 0);
+    return {builder_.Tanh(builder_.LogPlusOne(builder_.Exponential(input)))};
   }
 
   /////////////////////////////////////////////////////////////////////////////
