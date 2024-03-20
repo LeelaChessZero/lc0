@@ -232,7 +232,7 @@ std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
 std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
                                             std::string flow,
                                             std::string name) {
-  if (!options_.fix_bf16 ||
+  if (options_.relax_op_types ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
     return flow;
@@ -242,7 +242,7 @@ std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
 
 std::string Converter::EndOptionalBf16Fix(OnnxBuilder* builder,
                                           std::string flow, std::string name) {
-  if (!options_.fix_bf16 ||
+  if (options_.relax_op_types ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
     return flow;
@@ -355,7 +355,7 @@ std::string Converter::MakeConvBlock(
     const std::string& name, const MultiHeadWeights::SEunit* seunit,
     const std::string& mixin, bool activation, int filters) {
   auto flow = input;
-  if (options_.fix_bf16 &&
+  if (!options_.relax_op_types &&
       options_.data_type ==
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
     flow =
@@ -467,7 +467,7 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
                                      const lczero::OnnxConst& gammas,
                                      const lczero::OnnxConst& betas,
                                      float eps) {
-  if (!options_.alternative_layer_normalization) {
+  if (!options_.alt_layernorm) {
     return builder->LayerNormalization(name, input, gammas, betas, 1, eps);
   }
   auto in =
@@ -597,7 +597,7 @@ std::string Converter::AttentionBodyMapEmbedding(OnnxBuilder* builder,
       builder->AddInitializer("/const/att_body_shape",
                               Int64OnnxConst({-1, 64, 112}, {3})));
   std::string pad;
-  if (options_.opset < 8) {
+  if (options_.opset < 8 || (options_.no_shape && options_.batch_size < 0)) {
     pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
                          {INT_MAX, 1, 1});
     pad =
