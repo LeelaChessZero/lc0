@@ -1237,6 +1237,11 @@ void Converter::Convert(pblczero::Net* dst) {
     throw Exception("The network already has ONNX section.");
   }
   CheckSrcFormat(src_.format().network_format());
+  if (!options_.relax_op_types &&
+      options_.data_type ==
+          WeightsToOnnxConverterOptions::DataType::kFloat8E5M2) {
+    throw Exception("FLOAT8 operation is not supported by the generated ONNX.");
+  }
 
   CopyGenericFields(dst);
   GenerateOnnx(dst->mutable_onnx_model());
