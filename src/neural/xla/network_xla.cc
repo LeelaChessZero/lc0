@@ -37,10 +37,10 @@
 namespace lczero {
 namespace {
 
-template <pblczero::XlaShapeProto::Type TensorType>
+template <pblczero::XlaShapeProto::Type IOType>
 class Lc0InputTensor : public XlaTensor {
  public:
-  using CppType = typename XlaToCppType<TensorType>::type;
+  using CppType = typename XlaToCppType<IOType>::type;
   Lc0InputTensor(size_t max_batch_size)
       : max_batch_size_(max_batch_size),
         // TODO replace with make_unique_for_overwrite() once C++20 is
@@ -54,7 +54,7 @@ class Lc0InputTensor : public XlaTensor {
   size_t capacity() const override {
     return GetTensorByteSizeForBatch(max_batch_size_);
   }
-  pblczero::XlaShapeProto::Type type() const override { return TensorType; }
+  pblczero::XlaShapeProto::Type type() const override { return IOType; }
 
   // Adds a batch to the tensor and returns a pointer to the start of the its
   // part in the buffer. Does NOT initialize the data with zeros.
@@ -77,8 +77,10 @@ class Lc0InputTensor : public XlaTensor {
 };
 
 class XlaNetwork;
+template <pblczero::XlaShapeProto::Type IOType>
 class XlaComputation : public NetworkComputation {
  public:
+  using CppType = typename XlaToCppType<IOType>::type;
   XlaComputation(const XlaNetwork* network);
   void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override;
@@ -90,7 +92,7 @@ class XlaComputation : public NetworkComputation {
 
  private:
   const XlaNetwork* network_;
-  Lc0InputTensor<pblczero::XlaShapeProto::F32> input_tensor_;
+  Lc0InputTensor<IOType> input_tensor_;
   std::vector<std::unique_ptr<XlaTensor>> outputs_;
 };
 
@@ -112,7 +114,7 @@ class XlaNetwork : public Network {
     return capabilities_;
   }
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<XlaComputation>(this);
+    return std::make_unique<XlaComputation<pblczero::XlaShapeProto::F32>>(this);
   }
   int GetMiniBatchSize() const override {
     // 32 is the default prefetch size, subtract it so that backend doesn't
@@ -126,62 +128,84 @@ class XlaNetwork : public Network {
   XlaNetworkOptions options_;
   NetworkCapabilities capabilities_;
 
+  template <pblczero::XlaShapeProto::Type IOType>
   friend class XlaComputation;
 };
 
-XlaComputation::XlaComputation(const XlaNetwork* network)
+template <pblczero::XlaShapeProto::Type IOType>
+typename XlaToCppType<IOType>::type FloatToType(float f) {
+  return static_cast<typename XlaToCppType<IOType>::type>(f);
+}
+
+template <pblczero::XlaShapeProto::Type IOType>
+float TypeToFloat(typename XlaToCppType<IOType>::type t) {
+  return static_cast<float>(t);
+}
+
+template <pblczero::XlaShapeProto::Type IOType>
+XlaComputation<IOType>::XlaComputation(const XlaNetwork* network)
     : network_(network), input_tensor_(network->runner_->GetMaxBatchSize()) {}
 
-void XlaComputation::AddInput(InputPlanes&& input) {
-  float* ptr = input_tensor_.AddBatch();
-  memset(ptr, 0, 8 * 8 * kInputPlanes * sizeof(float));
+template <pblczero::XlaShapeProto::Type IOType>
+void XlaComputation<IOType>::AddInput(InputPlanes&& input) {
+  CppType* ptr = input_tensor_.AddBatch();
+  memset(ptr, 0, 8 * 8 * kInputPlanes * sizeof(CppType));
   for (const auto& plane : input) {
-    for (auto bit : IterateBits(plane.mask)) ptr[bit] = plane.value;
+    for (auto bit : IterateBits(plane.mask)) {
+      ptr[bit] = FloatToType<IOType>(plane.value);
+    }
     ptr += 8 * 8;
   }
 }
 
-float XlaComputation::GetQVal(int sample) const {
+template <pblczero::XlaShapeProto::Type IOType>
+float XlaComputation<IOType>::GetQVal(int sample) const {
   if (network_->options_.output_wdl_idx) {
-    const float* data = reinterpret_cast<const float*>(
+    auto* data = reinterpret_cast<const CppType*>(
         outputs_[*network_->options_.output_wdl_idx]->data());
-    return data[sample * 3 + 0] - data[sample * 3 + 2];
+    return TypeToFloat<IOType>(data[sample * 3 + 0]) -
+           TypeToFloat<IOType>(data[sample * 3 + 2]);
   } else {
-    const float* data = reinterpret_cast<const float*>(
+    auto* data = reinterpret_cast<const CppType*>(
         outputs_[*network_->options_.output_value_idx]->data());
-    return data[sample];
+    return TypeToFloat<IOType>(data[sample]);
   }
 }
 
-float XlaComputation::GetDVal(int sample) const {
+template <pblczero::XlaShapeProto::Type IOType>
+float XlaComputation<IOType>::GetDVal(int sample) const {
   if (network_->options_.output_wdl_idx) {
-    const float* data = reinterpret_cast<const float*>(
+    auto* data = reinterpret_cast<const CppType*>(
         outputs_[*network_->options_.output_wdl_idx]->data());
-    return data[sample * 3 + 1];
+    return TypeToFloat<IOType>(data[sample * 3 + 1]);
   }
   return 0.0f;
 }
 
-float XlaComputation::GetPVal(int sample, int move_id) const {
-  const float* data = reinterpret_cast<const float*>(
+template <pblczero::XlaShapeProto::Type IOType>
+float XlaComputation<IOType>::GetPVal(int sample, int move_id) const {
+  auto* data = reinterpret_cast<const CppType*>(
       outputs_[*network_->options_.output_policy_idx]->data());
-  return data[sample * 1858 + move_id];
+  return TypeToFloat<IOType>(data[sample * 1858 + move_id]);
 }
 
-float XlaComputation::GetMVal(int sample) const {
+template <pblczero::XlaShapeProto::Type IOType>
+float XlaComputation<IOType>::GetMVal(int sample) const {
   if (network_->options_.output_mlh_idx) {
-    const float* data = reinterpret_cast<const float*>(
+    auto* data = reinterpret_cast<const CppType*>(
         outputs_[*network_->options_.output_mlh_idx]->data());
-    return data[sample];
+    return TypeToFloat<IOType>(data[sample]);
   }
   return 0.0f;
 }
 
-int XlaComputation::GetBatchSize() const {
+template <pblczero::XlaShapeProto::Type IOType>
+int XlaComputation<IOType>::GetBatchSize() const {
   return input_tensor_.GetBatchSize();
 }
 
-void XlaComputation::ComputeBlocking() {
+template <pblczero::XlaShapeProto::Type IOType>
+void XlaComputation<IOType>::ComputeBlocking() {
   outputs_ = network_->runner_->ExecuteBlocking({&input_tensor_});
 }
 
