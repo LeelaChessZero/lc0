@@ -292,9 +292,11 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
     case pblczero::TensorProto::FLOAT8E5M2:
       return pblczero::XlaShapeProto::F8E5M2;
     case pblczero::TensorProto::FLOAT8E4M3FN:
+      return pblczero::XlaShapeProto::F8E4M3FN;
     case pblczero::TensorProto::FLOAT8E4M3FNUZ:
+      return pblczero::XlaShapeProto::F8E4M3FNUZ;
     case pblczero::TensorProto::FLOAT8E5M2FNUZ:
-    case pblczero::TensorProto::STRING:
+      return pblczero::XlaShapeProto::F8E5M2FNUZ;
     default:
       throw Exception("Unsupported ONNX type " +
                       pblczero::TensorProto::DataType_Name(type));
