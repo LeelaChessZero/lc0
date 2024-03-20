@@ -131,4 +131,25 @@ class XlaRunner {
   int device_;
 };
 
+template <pblczero::XlaShapeProto::Type>
+struct XlaToCppType {
+  static_assert(false, "Unsupported XLA type");
+};
+#define XLA_TO_CPP_TYPE(type_name, cpp_type) \
+  template <>                                \
+  struct XlaToCppType<type_name> {           \
+    using type = cpp_type;                   \
+  }
+XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::F32, float);
+XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::F64, double);
+XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::S32, int32_t);
+XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::S64, int64_t);
+
+template <pblczero::XlaShapeProto::Type T>
+constexpr size_t GetXlaTypeSize() {
+  return sizeof(typename XlaToCppType<T>::type);
+}
+
+size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type);
+
 }  // namespace lczero

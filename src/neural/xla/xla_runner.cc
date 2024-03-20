@@ -33,22 +33,21 @@
 #include "utils/logging.h"
 
 namespace lczero {
-namespace {
 
-size_t GetTypeSize(pblczero::XlaShapeProto::Type type) {
+size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
+#define CASE_TYPE(type)               \
+  case pblczero::XlaShapeProto::type: \
+    return GetXlaTypeSize<pblczero::XlaShapeProto::type>();
   switch (type) {
-    case pblczero::XlaShapeProto::F32:
-      return sizeof(float);
-    case pblczero::XlaShapeProto::F64:
-      return sizeof(double);
-    case pblczero::XlaShapeProto::S32:
-      return sizeof(int32_t);
-    case pblczero::XlaShapeProto::S64:
-      return sizeof(int64_t);
+    CASE_TYPE(F32)
+    CASE_TYPE(F64)
+    CASE_TYPE(S32)
+    CASE_TYPE(S64)
     default:
       throw Exception("Add size for type " +
                       pblczero::XlaShapeProto::Type_Name(type));
   }
+#undef CASE_TYPE
 }
 
 pblczero::XlaShapeProto::Type PjrtTypeToXlaType(PjrtType type) {
@@ -236,7 +235,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   new_shape[0] = batch_size;
   const size_t input_size = std::accumulate(new_shape.begin(), new_shape.end(),
                                             1, std::multiplies<size_t>()) *
-                            GetTypeSize(inputs[0]->type());
+                            GetXlaTypeSize(inputs[0]->type());
   if (input_size > inputs[0]->capacity()) {
     throw Exception("Input buffer too small");
   }
