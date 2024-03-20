@@ -37,8 +37,10 @@
 namespace lczero {
 namespace {
 
+template <pblczero::XlaShapeProto::Type TensorType>
 class Lc0InputTensor : public XlaTensor {
  public:
+  using CppType = typename XlaToCppType<TensorType>::type;
   Lc0InputTensor(size_t max_batch_size)
       : max_batch_size_(max_batch_size),
         // TODO replace with make_unique_for_overwrite() once C++20 is
@@ -52,23 +54,21 @@ class Lc0InputTensor : public XlaTensor {
   size_t capacity() const override {
     return GetTensorByteSizeForBatch(max_batch_size_);
   }
-  pblczero::XlaShapeProto::Type type() const override {
-    return pblczero::XlaShapeProto::F32;
-  }
+  pblczero::XlaShapeProto::Type type() const override { return TensorType; }
 
   // Adds a batch to the tensor and returns a pointer to the start of the its
   // part in the buffer. Does NOT initialize the data with zeros.
-  float* AddBatch() {
+  CppType* AddBatch() {
     assert(size_t(shape_[0]) < max_batch_size_);
     auto ret = data_.get() + shape_[0] * GetTensorByteSizeForBatch(1);
     ++shape_[0];
-    return reinterpret_cast<float*>(ret);
+    return reinterpret_cast<CppType*>(ret);
   }
   size_t GetBatchSize() const { return shape_[0]; }
 
  private:
   static size_t GetTensorByteSizeForBatch(size_t batch_size) {
-    return kInputPlanes * 8 * 8 * batch_size * sizeof(float);
+    return kInputPlanes * 8 * 8 * batch_size * sizeof(CppType);
   }
 
   const size_t max_batch_size_;
@@ -90,7 +90,7 @@ class XlaComputation : public NetworkComputation {
 
  private:
   const XlaNetwork* network_;
-  Lc0InputTensor input_tensor_;
+  Lc0InputTensor<pblczero::XlaShapeProto::F32> input_tensor_;
   std::vector<std::unique_ptr<XlaTensor>> outputs_;
 };
 
