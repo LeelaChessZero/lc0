@@ -418,8 +418,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
-    converter_options.alternative_layer_normalization =
-        opts.GetOrDefault<bool>("alternative_layer_normalization", true);
+    converter_options.alt_layernorm = opts.GetOrDefault<bool>(
+        "alt_layernorm", kProvider == OnnxProvider::DML ? true : false);
+    converter_options.no_shape = opts.GetOrDefault<bool>("no_shape", false);
     converter_options.policy_head =
         opts.GetOrDefault<std::string>("policy_head", "vanilla");
     converter_options.value_head =
@@ -435,7 +436,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     }
     converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
-    converter_options.fix_bf16 = true;
+    converter_options.relax_op_types = false;
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
