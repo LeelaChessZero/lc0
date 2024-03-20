@@ -291,6 +291,9 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
       return pblczero::XlaShapeProto::BF16;
     case pblczero::TensorProto::FLOAT8E5M2:
       return pblczero::XlaShapeProto::F8E5M2;
+    case pblczero::TensorProto::FLOAT8E4M3FN:
+    case pblczero::TensorProto::FLOAT8E4M3FNUZ:
+    case pblczero::TensorProto::FLOAT8E5M2FNUZ:
     case pblczero::TensorProto::STRING:
     default:
       throw Exception("Unsupported ONNX type " +
