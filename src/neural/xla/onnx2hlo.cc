@@ -1384,7 +1384,7 @@ class Onnx2HloConverter {
       case pblczero::XlaShapeProto::F8E5M2: {
         uint8_t f8e5m2 = FP32toFP8E5M2(value);
         std::string_view f8e5m2_view(reinterpret_cast<const char*>(&f8e5m2),
-                                   sizeof(f8e5m2));
+                                     sizeof(f8e5m2));
         literal.set_f8e5m2s(f8e5m2_view);
       } break;
       case pblczero::XlaShapeProto::S32:
@@ -1543,20 +1543,9 @@ Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
 
 std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
     const pblczero::TensorProto& onnx_tensor) {
-  switch (onnx_tensor.data_type()) {
-    case pblczero::TensorProto::FLOAT:
-      return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
-                                                 onnx_tensor.raw_data(),
-                                                 pblczero::XlaShapeProto::F32);
-    case pblczero::TensorProto::FLOAT16:
-      return std::make_unique<XlaTensorNotOwned>(onnx_tensor.dims(),
-                                                 onnx_tensor.raw_data(),
-                                                 pblczero::XlaShapeProto::F16);
-    default:
-      throw Exception(
-          "Unsupported ONNX tensor type for buffer conversion " +
-          pblczero::TensorProto::DataType_Name(onnx_tensor.data_type()));
-  }
+  return std::make_unique<XlaTensorNotOwned>(
+      onnx_tensor.dims(), onnx_tensor.raw_data(),
+      OnnxTypeToXlaType(onnx_tensor.data_type()));
 }
 
 }  // namespace lczero
