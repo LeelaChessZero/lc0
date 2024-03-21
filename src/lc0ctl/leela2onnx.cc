@@ -94,7 +94,8 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<IntOption>(kOnnxOpsetId, 7, 18) = 17;
   options->Add<IntOption>(kHloBatchSizeId, 1, 2048) = 333;
   options->Add<ChoiceOption>(
-      kOnnxDataTypeId, std::vector<std::string>{"f32", "f16", "bf16"}) = "f32";
+      kOnnxDataTypeId,
+      std::vector<std::string>{"f32", "f16", "bf16", "f8e5m2"}) = "f32";
   options->Add<BoolOption>(kHloAllowPartialResultId);
   options->Add<BoolOption>(kRelaxOpTypes) = false;
   options->HideOption(kOnnxBatchSizeId);

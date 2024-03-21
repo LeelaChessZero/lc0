@@ -39,6 +39,7 @@
 #include "utils/bf16_utils.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
+#include "utils/fp8_utils.h"
 
 namespace lczero {
 namespace {
@@ -288,7 +289,14 @@ pblczero::XlaShapeProto::Type OnnxTypeToXlaType(
       return pblczero::XlaShapeProto::C128;
     case pblczero::TensorProto::BFLOAT16:
       return pblczero::XlaShapeProto::BF16;
-    case pblczero::TensorProto::STRING:
+    case pblczero::TensorProto::FLOAT8E5M2:
+      return pblczero::XlaShapeProto::F8E5M2;
+    case pblczero::TensorProto::FLOAT8E4M3FN:
+      return pblczero::XlaShapeProto::F8E4M3FN;
+    case pblczero::TensorProto::FLOAT8E4M3FNUZ:
+      return pblczero::XlaShapeProto::F8E4M3FNUZ;
+    case pblczero::TensorProto::FLOAT8E5M2FNUZ:
+      return pblczero::XlaShapeProto::F8E5M2FNUZ;
     default:
       throw Exception("Unsupported ONNX type " +
                       pblczero::TensorProto::DataType_Name(type));
@@ -382,6 +390,9 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
       break;
     case pblczero::TensorProto::BFLOAT16:
       literal.set_bf16s(tensor.raw_data());
+      break;
+    case pblczero::TensorProto::FLOAT8E5M2:
+      literal.set_f8e5m2s(tensor.raw_data());
       break;
     case pblczero::TensorProto::INT64:
       convert(tensor.raw_data(), literal.mutable_s64s());
@@ -1369,6 +1380,12 @@ class Onnx2HloConverter {
         std::string_view bf16_view(reinterpret_cast<const char*>(&bf16),
                                    sizeof(bf16));
         literal.set_bf16s(bf16_view);
+      } break;
+      case pblczero::XlaShapeProto::F8E5M2: {
+        uint8_t f8e5m2 = FP32toFP8E5M2(value);
+        std::string_view f8e5m2_view(reinterpret_cast<const char*>(&f8e5m2),
+                                   sizeof(f8e5m2));
+        literal.set_f8e5m2s(f8e5m2_view);
       } break;
       case pblczero::XlaShapeProto::S32:
         literal.add_s32s(value);

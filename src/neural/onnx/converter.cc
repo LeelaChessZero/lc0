@@ -45,6 +45,7 @@
 #include "utils/bf16_utils.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
+#include "utils/fp8_utils.h"
 
 namespace lczero {
 namespace {
@@ -183,6 +184,8 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
       return pblczero::TensorProto::FLOAT16;
     case WeightsToOnnxConverterOptions::DataType::kBFloat16:
       return pblczero::TensorProto::BFLOAT16;
+    case WeightsToOnnxConverterOptions::DataType::kFloat8E5M2:
+      return pblczero::TensorProto::FLOAT8E5M2;
     default:
       return pblczero::TensorProto::UNDEFINED;
   }
@@ -198,6 +201,9 @@ std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
       return std::make_unique<Float16OnnxWeightsAdapter>(weights, dims, order);
     case WeightsToOnnxConverterOptions::DataType::kBFloat16:
       return std::make_unique<BFloat16OnnxWeightsAdapter>(weights, dims, order);
+    case WeightsToOnnxConverterOptions::DataType::kFloat8E5M2:
+      return std::make_unique<Float8E5M2OnnxWeightsAdapter>(weights, dims,
+                                                            order);
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type)) +
@@ -214,6 +220,9 @@ std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
     case WeightsToOnnxConverterOptions::DataType::kBFloat16:
       return std::make_unique<BFloat16OnnxConst>(
           BFloat16OnnxConst({FP32toBF16(in)}, {1}));
+    case WeightsToOnnxConverterOptions::DataType::kFloat8E5M2:
+      return std::make_unique<Float8E5M2OnnxConst>(
+          Float8E5M2OnnxConst({FP32toFP8E5M2(in)}, {1}));
   }
   throw Exception("Data type " +
                   std::to_string(static_cast<int>(options_.data_type)) +
@@ -1228,6 +1237,11 @@ void Converter::Convert(pblczero::Net* dst) {
     throw Exception("The network already has ONNX section.");
   }
   CheckSrcFormat(src_.format().network_format());
+  if (!options_.relax_op_types &&
+      options_.data_type ==
+          WeightsToOnnxConverterOptions::DataType::kFloat8E5M2) {
+    throw Exception("FLOAT8 operation is not supported by the generated ONNX.");
+  }
 
   CopyGenericFields(dst);
   GenerateOnnx(dst->mutable_onnx_model());
@@ -1240,8 +1254,9 @@ WeightsToOnnxConverterOptions::StringToDataType(const std::string& s) {
   if (s == "f32") return DataType::kFloat32;
   if (s == "f16") return DataType::kFloat16;
   if (s == "bf16") return DataType::kBFloat16;
+  if (s == "f8e5m2") return DataType::kFloat8E5M2;
   throw Exception("Invalid data type: [" + s +
-                  "]. Only f32, f16 and bf16 are supported.");
+                  "]. Only f32, f16, bf16 and f8e5m2 are supported.");
 }
 
 pblczero::Net ConvertWeightsToOnnx(
