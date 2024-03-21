@@ -51,6 +51,7 @@ pblczero::XlaShapeProto HloTensorType::ToProto() const {
   pblczero::XlaShapeProto ret;
   ret.set_element_type(type_);
   *ret.mutable_dimensions() = dimensions_;
+  ret.mutable_layout();
   for (size_t i = 0; i < dimensions_.size(); ++i) {
     ret.add_is_dynamic_dimension(false);
     ret.mutable_layout()->add_minor_to_major(dimensions_.size() - i - 1);
@@ -157,7 +158,11 @@ HloFlow HloBuilder::Broadcast(
     const std::vector<int64_t>& broadcast_dimensions) {
   auto flow = MakeInstruction("broadcast", target_shape.ToProto(), {input});
   if (broadcast_dimensions.size() != input->shape().dimensions_size()) {
-    throw Exception("Broadcast must have the same size as the input shape");
+    throw Exception(
+        "Broadcast must have the same size as the input shape: "
+        "broadcast_dimensions=" +
+        std::to_string(broadcast_dimensions.size()) +
+        ", input_shape=" + HloTensorType(input->shape()).ToString());
   }
   const auto& input_shape = input->shape();
   for (size_t i = 0; i < broadcast_dimensions.size(); ++i) {
@@ -370,33 +375,6 @@ HloFlow HloBuilder::Compare(HloFlow lhs, HloFlow rhs,
   return flow;
 }
 
-HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
-                                int64_t dimension) {
-  if (inputs.empty()) {
-    throw Exception("Concatenate must have at least one input");
-  }
-  HloTensorType shape(inputs[0]->shape());
-  for (size_t i = 1; i < inputs.size(); ++i) {
-    if (inputs[i]->shape().element_type() != shape.GetElementType()) {
-      throw Exception("Concatenate operands must have the same element type");
-    }
-    if (inputs[i]->shape().dimensions_size() != shape.Rank()) {
-      throw Exception("Concatenate operands must have the same rank");
-    }
-    for (size_t j = 0; j < shape.Rank(); ++j) {
-      if (j == static_cast<size_t>(dimension)) {
-        shape.SetDimension(
-            j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
-      } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
-        throw Exception("Concatenate operands must have the same shape");
-      }
-    }
-  }
-  auto flow = MakeInstruction("concatenate", shape.ToProto(), inputs);
-  flow->add_dimensions(dimension);
-  return flow;
-}
-
 HloFlow HloBuilder::Select(HloFlow condition, HloFlow on_true,
                            HloFlow on_false) {
   if (condition->shape().element_type() != pblczero::XlaShapeProto::PRED) {
@@ -433,29 +411,33 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
 }
 
 HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
-                                size_t dimension) {
+                                int64_t dimension) {
   if (inputs.empty()) {
     throw Exception("Concatenate must have at least one input");
   }
-  HloTensorType output_shape(inputs[0]->shape());
+  HloTensorType shape(inputs[0]->shape());
   for (size_t i = 1; i < inputs.size(); ++i) {
-    HloTensorType current_shape(inputs[i]->shape());
-    if (output_shape.Rank() != current_shape.Rank()) {
-      throw Exception("Concatenate inputs must have the same rank");
+    if (inputs[i]->shape().element_type() != shape.GetElementType()) {
+      throw Exception("Concatenate operands must have the same element type");
     }
-    for (size_t j = 0; j < output_shape.Rank(); ++j) {
-      if (j == dimension) {
-        output_shape.SetDimension(
-            j, output_shape.GetDimension(j) + current_shape.GetDimension(j));
-      } else if (current_shape.GetDimension(j) !=
-                 current_shape.GetDimension(j)) {
-        throw Exception(
-            "Concatenate inputs must have the same size on all "
-            "dimensions except the concatenation dimension");
+    if (inputs[i]->shape().dimensions_size() != shape.Rank()) {
+      throw Exception("Concatenate operands must have the same rank");
+    }
+    for (size_t j = 0; j < shape.Rank(); ++j) {
+      if (j == static_cast<size_t>(dimension)) {
+        shape.SetDimension(
+            j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
+      } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
+        std::string shapes;
+        for (const auto& input : inputs) {
+          shapes += HloTensorType(input->shape()).ToString() + ", ";
+        }
+        throw Exception("Concatenate operands must have the same shape, got " +
+                        shapes + "axis=" + std::to_string(dimension));
       }
     }
   }
-  auto flow = MakeInstruction("concatenate", output_shape.ToProto(), inputs);
+  auto flow = MakeInstruction("concatenate", shape.ToProto(), inputs);
   flow->add_dimensions(dimension);
   return flow;
 }
