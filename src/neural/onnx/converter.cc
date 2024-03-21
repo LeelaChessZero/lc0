@@ -542,14 +542,11 @@ std::string Converter::MakeEncoderLayer(
                                           {d_model, embedding_size}, {1, 0}));
   flow = builder->Add(name + "/mha/out/dense/b", flow,
                       *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
-  std::string alpha_in;
   if (alpha != 1.0) {
-    alpha_in = builder->Mul(name + "/alpha*input", encoder_in,
-                            *GetScalarConverter(alpha));
-  } else {
-    alpha_in = encoder_in;
+    flow =
+        builder->Mul(name + "/alpha*input", flow, *GetScalarConverter(alpha));
   }
-  flow = builder->Add(name + "/mha/out/skip", flow, alpha_in);
+  flow = builder->Add(name + "/mha/out/skip", flow, encoder_in);
   auto ffn_in = MakeLayerNorm(
       builder, flow, name + "/ln1",
       *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
@@ -574,14 +571,10 @@ std::string Converter::MakeEncoderLayer(
   flow =
       builder->Add(name + "/ffn/dense2/b", flow,
                    *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
-  std::string alpha_ffn_in;
   if (alpha != 1.0) {
-    alpha_ffn_in =
-        builder->Mul(name + "/alpha*out1", ffn_in, *GetScalarConverter(alpha));
-  } else {
-    alpha_ffn_in = ffn_in;
+    flow = builder->Mul(name + "/ffn/alpha", flow, *GetScalarConverter(alpha));
   }
-  flow = builder->Add(name + "/ffn/skip", flow, alpha_ffn_in);
+  flow = builder->Add(name + "/ffn/skip", flow, ffn_in);
   flow = MakeLayerNorm(builder, flow, name + "/ln2",
                        *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
                        *GetWeghtsConverter(layer.ln2_betas, {embedding_size}),
@@ -767,6 +760,8 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                 Int64OnnxConst({-1, embedding_size}, {2})));
   }
 
+  float alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
+
   if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
     const int dff_size = weights.ip_emb_ffn.dense1_b.size();
     auto skip = flow;
@@ -787,9 +782,8 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
         "/attn_body/ffn/dense2/b", flow,
         *GetWeghtsConverter(weights.ip_emb_ffn.dense2_b, {embedding_size}));
 
-    float ffn_alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
-    flow = builder->Mul("/attn_body/ffn/alpha", flow,
-                        *GetScalarConverter(ffn_alpha));
+    flow =
+        builder->Mul("/attn_body/ffn/alpha", flow, *GetScalarConverter(alpha));
     flow = builder->Add("/attn_body/ffn/skip", flow, skip);
     flow = MakeLayerNorm(
         builder, flow, "/attn_body/ffn/ln",
@@ -798,7 +792,6 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
         1e-3);
   }
 
-  float alpha = std::pow(2.0f * NumEncBlocks(), 0.25f);
   for (size_t i = 0; i < NumEncBlocks(); i++) {
     flow = MakeEncoderLayer(
         builder, weights.encoder[i], embedding_size, weights.encoder_head_count,
