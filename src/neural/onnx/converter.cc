@@ -42,8 +42,10 @@
 #include "neural/shared/attention_policy_map.h"
 #include "neural/shared/policy_map.h"
 #include "proto/net.pb.h"
+#include "utils/bf16_utils.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
+#include "utils/fp8_utils.h"
 
 namespace lczero {
 namespace {
@@ -128,6 +130,11 @@ class Converter {
                             const lczero::OnnxConst& gammas,
                             const lczero::OnnxConst& betas, float eps = 1e-6);
 
+  std::string MakeFFN(OnnxBuilder* builder, const MultiHeadWeights::FFN& ffn,
+                      int embedding_size, const std::string& ffn_in,
+                      const std::string& name, ActivationFunction activation,
+                      float alpha);
+
   std::string MakeEncoderLayer(OnnxBuilder* builder,
                                const MultiHeadWeights::EncoderLayer& layer,
                                int embedding_size, int heads,
@@ -159,6 +166,14 @@ class Converter {
       const std::vector<float>&, std::initializer_list<int> dims,
       std::initializer_list<int> order = {});
 
+  std::unique_ptr<OnnxConst> GetScalarConverter(float in);
+
+  std::string StartOptionalBf16Fix(OnnxBuilder* builder, std::string flow,
+                                   std::string name);
+
+  std::string EndOptionalBf16Fix(OnnxBuilder* builder, std::string flow,
+                                 std::string name);
+
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
   const ActivationFunction default_activation_;
@@ -167,11 +182,15 @@ class Converter {
 };
 
 pblczero::TensorProto::DataType Converter::GetDataType() const {
-  switch (options_.data_type_) {
+  switch (options_.data_type) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return pblczero::TensorProto::FLOAT;
     case WeightsToOnnxConverterOptions::DataType::kFloat16:
       return pblczero::TensorProto::FLOAT16;
+    case WeightsToOnnxConverterOptions::DataType::kBFloat16:
+      return pblczero::TensorProto::BFLOAT16;
+    case WeightsToOnnxConverterOptions::DataType::kFloat8E5M2:
+      return pblczero::TensorProto::FLOAT8E5M2;
     default:
       return pblczero::TensorProto::UNDEFINED;
   }
@@ -180,24 +199,75 @@ pblczero::TensorProto::DataType Converter::GetDataType() const {
 std::unique_ptr<OnnxConst> Converter::GetWeghtsConverter(
     const std::vector<float>& weights, std::initializer_list<int> dims,
     std::initializer_list<int> order) {
-  switch (options_.data_type_) {
+  switch (options_.data_type) {
     case WeightsToOnnxConverterOptions::DataType::kFloat32:
       return std::make_unique<FloatOnnxWeightsAdapter>(weights, dims, order);
     case WeightsToOnnxConverterOptions::DataType::kFloat16:
       return std::make_unique<Float16OnnxWeightsAdapter>(weights, dims, order);
+    case WeightsToOnnxConverterOptions::DataType::kBFloat16:
+      return std::make_unique<BFloat16OnnxWeightsAdapter>(weights, dims, order);
+    case WeightsToOnnxConverterOptions::DataType::kFloat8E5M2:
+      return std::make_unique<Float8E5M2OnnxWeightsAdapter>(weights, dims,
+                                                            order);
   }
   throw Exception("Data type " +
-                  std::to_string(static_cast<int>(options_.data_type_)) +
+                  std::to_string(static_cast<int>(options_.data_type)) +
                   " is not supported in weights converter");
+}
+
+std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
+  switch (options_.data_type) {
+    case WeightsToOnnxConverterOptions::DataType::kFloat32:
+      return std::make_unique<FloatOnnxConst>(FloatOnnxConst({in}, {1}));
+    case WeightsToOnnxConverterOptions::DataType::kFloat16:
+      return std::make_unique<Float16OnnxConst>(
+          Float16OnnxConst({FP32toFP16(in)}, {1}));
+    case WeightsToOnnxConverterOptions::DataType::kBFloat16:
+      return std::make_unique<BFloat16OnnxConst>(
+          BFloat16OnnxConst({FP32toBF16(in)}, {1}));
+    case WeightsToOnnxConverterOptions::DataType::kFloat8E5M2:
+      return std::make_unique<Float8E5M2OnnxConst>(
+          Float8E5M2OnnxConst({FP32toFP8E5M2(in)}, {1}));
+  }
+  throw Exception("Data type " +
+                  std::to_string(static_cast<int>(options_.data_type)) +
+                  " is not supported in scalar converter");
+}
+
+std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
+                                            std::string flow,
+                                            std::string name) {
+  if (options_.relax_op_types ||
+      options_.data_type !=
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    return flow;
+  }
+  return builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
+}
+
+std::string Converter::EndOptionalBf16Fix(OnnxBuilder* builder,
+                                          std::string flow, std::string name) {
+  if (options_.relax_op_types ||
+      options_.data_type !=
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    return flow;
+  }
+  return builder->Cast(name + "/to_bf16", flow,
+                       pblczero::TensorProto::BFLOAT16);
 }
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
   if (!options_.alt_mish || options_.opset < 9 ||
-      options_.data_type_ !=
-          WeightsToOnnxConverterOptions::DataType::kFloat32) {
-    if (options_.opset >= 18) return builder->Mish(name, input);
-    auto flow = builder->Softplus(name + "/softplus", input);
+      options_.data_type != WeightsToOnnxConverterOptions::DataType::kFloat32) {
+    std::string flow = input;
+    flow = StartOptionalBf16Fix(builder, flow, name);
+    if (options_.opset >= 18) {
+      flow = builder->Mish(name, flow);
+      return EndOptionalBf16Fix(builder, flow, name);
+    }
+    flow = builder->Softplus(name + "/softplus", flow);
+    flow = EndOptionalBf16Fix(builder, flow, name);
     flow = builder->Tanh(name + "/tanh", flow);
     return builder->Mul(name, flow, input);
   } else {
@@ -233,8 +303,12 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       return builder->Relu(name + "/relu", input);
     case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
-    case ACTIVATION_SELU:
-      return builder->Selu(name + "/selu", input);
+    case ACTIVATION_SELU: {
+      auto flow = input;
+      flow = StartOptionalBf16Fix(builder, flow, name);
+      flow = builder->Selu(name + "/selu", flow);
+      return EndOptionalBf16Fix(builder, flow, name);
+    }
     case ACTIVATION_SWISH:
       return MakeSwish(builder, input, name + "/swish");
     case ACTIVATION_RELU_2: {
@@ -258,8 +332,8 @@ std::string Converter::MakeSqueezeAndExcite(
                             Int64OnnxConst({-1, NumFilters() * 2, 1, 1}, {4}));
     se_reshape_init_ = true;
   }
-  auto flow = builder->GlobalAveragePool(name + "/pooled", input);
-  flow = builder->Squeeze(name + "/squeeze", flow, {2, 3});
+  auto flow = input;
+  flow = builder->ReduceMean(name + "/reduce_mean", flow, {2, 3}, false);
   flow = builder->MatMul(
       name + "/matmul1", flow,
       *GetWeghtsConverter(se_unit.w1, {NumFilters(), se_filters}, {1, 0}));
@@ -285,13 +359,30 @@ std::string Converter::MakeConvBlock(
     int input_channels, int output_channels, const std::string& input,
     const std::string& name, const MultiHeadWeights::SEunit* seunit,
     const std::string& mixin, bool activation, int filters) {
-  auto flow = builder->Conv(
-      name, input,
-      *GetWeghtsConverter(weights.weights,
-                          {output_channels, input_channels, filters, filters}),
-      *GetWeghtsConverter(weights.biases, {output_channels}),
-      (filters - 1) / 2);
-
+  auto flow = input;
+  if (!options_.relax_op_types &&
+      options_.data_type ==
+          WeightsToOnnxConverterOptions::DataType::kBFloat16) {
+    flow =
+        builder->Cast(name + "/to_float", flow, pblczero::TensorProto::FLOAT);
+    flow = builder->Conv(
+        name, flow, *std::make_unique<FloatOnnxWeightsAdapter>(
+                        weights.weights, std::initializer_list<int>(
+                                             {output_channels, input_channels,
+                                              filters, filters})),
+        *std::make_unique<FloatOnnxWeightsAdapter>(
+            weights.biases, std::initializer_list<int>({output_channels})),
+        (filters - 1) / 2);
+    flow =
+        builder->Cast(name + "/to_bf16", flow, pblczero::TensorProto::BFLOAT16);
+  } else {
+    flow = builder->Conv(
+        name, flow,
+        *GetWeghtsConverter(weights.weights, {output_channels, input_channels,
+                                              filters, filters}),
+        *GetWeghtsConverter(weights.biases, {output_channels}),
+        (filters - 1) / 2);
+  }
   if (seunit) flow = MakeSqueezeAndExcite(builder, *seunit, flow, name + "/se");
   if (!mixin.empty()) flow = builder->Add(name + "/mixin", flow, mixin);
   if (activation) {
@@ -381,7 +472,7 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
                                      const lczero::OnnxConst& gammas,
                                      const lczero::OnnxConst& betas,
                                      float eps) {
-  if (!options_.alternative_layer_normalization) {
+  if (!options_.alt_layernorm) {
     return builder->LayerNormalization(name, input, gammas, betas, 1, eps);
   }
   auto in =
@@ -399,6 +490,30 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
   flow = builder->Cast(name + "/to_data_type", flow, GetDataType());
   flow = builder->Mul(name + "/gammas", flow, gammas);
   flow = builder->Add(name + "/betas", flow, betas);
+  return flow;
+}
+
+std::string Converter::MakeFFN(OnnxBuilder* builder,
+                               const MultiHeadWeights::FFN& ffn,
+                               int embedding_size, const std::string& ffn_in,
+                               const std::string& name,
+                               ActivationFunction activation, float alpha) {
+  const int dff_size = ffn.dense1_b.size();
+  auto flow = builder->MatMul(
+      name + "/ffn/dense1/w", ffn_in,
+      *GetWeghtsConverter(ffn.dense1_w, {embedding_size, dff_size}, {1, 0}));
+  flow = builder->Add(name + "/ffn/dense1/b", flow,
+                      *GetWeghtsConverter(ffn.dense1_b, {dff_size}));
+  flow = MakeActivation(builder, flow, name + "/ffn/dense1", activation);
+  flow = builder->MatMul(
+      name + "/ffn/dense2/w", flow,
+      *GetWeghtsConverter(ffn.dense2_w, {dff_size, embedding_size}, {1, 0}));
+  flow = builder->Add(name + "/ffn/dense2/b", flow,
+                      *GetWeghtsConverter(ffn.dense2_b, {embedding_size}));
+  if (alpha != 1.0) {
+    flow = builder->Mul(name + "/ffn/alpha", flow, *GetScalarConverter(alpha));
+  }
+  flow = builder->Add(name + "/ffn/skip", flow, ffn_in);
   return flow;
 }
 
@@ -434,15 +549,8 @@ std::string Converter::MakeEncoderLayer(
   flow = builder->Reshape(name + "/mha/V/reshape", flow, mha_shape);
   auto V = builder->Transpose(name + "/mha/V/transpose", flow, {0, 2, 1, 3});
   flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
-  std::unique_ptr<OnnxConst> scale;
-  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-    scale = std::make_unique<Float16OnnxConst>(
-        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(depth))}, {1}));
-  } else {
-    scale = std::make_unique<FloatOnnxConst>(
-        FloatOnnxConst({1.0f / sqrtf(depth)}, {1}));
-  }
-  flow = builder->Mul(name + "/mha/QK/scale", flow, *scale);
+  flow = builder->Mul(name + "/mha/QK/scale", flow,
+                      *GetScalarConverter(1.0f / sqrtf(depth)));
   if (layer.mha.has_smolgen) {
     auto smolgen_weights =
         MakeSmolgen(builder, layer, embedding_size, heads, encoder_in, name);
@@ -463,52 +571,21 @@ std::string Converter::MakeEncoderLayer(
                                           {d_model, embedding_size}, {1, 0}));
   flow = builder->Add(name + "/mha/out/dense/b", flow,
                       *GetWeghtsConverter(layer.mha.dense_b, {embedding_size}));
-  std::unique_ptr<OnnxConst> alpha_onnx;
-  std::string alpha_in;
   if (alpha != 1.0) {
-    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-      alpha_onnx = std::make_unique<Float16OnnxConst>(
-          Float16OnnxConst({FP32toFP16(alpha)}, {1}));
-    } else {
-      alpha_onnx =
-          std::make_unique<FloatOnnxConst>(FloatOnnxConst({alpha}, {1}));
-    }
-    alpha_in = builder->Mul(name + "/alpha*input", encoder_in, *alpha_onnx);
-  } else {
-    alpha_in = encoder_in;
+    flow =
+        builder->Mul(name + "/alpha*input", flow, *GetScalarConverter(alpha));
   }
-  flow = builder->Add(name + "/mha/out/skip", flow, alpha_in);
-  auto ffn_in = MakeLayerNorm(
-      builder, flow, name + "/ln1",
-      *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
-      *GetWeghtsConverter(layer.ln1_betas, {embedding_size}), default_eps_);
-  const int dff_size = layer.ffn.dense1_b.size();
-  flow =
-      builder->MatMul(name + "/ffn/dense1/w", ffn_in,
-                      *GetWeghtsConverter(layer.ffn.dense1_w,
-                                          {embedding_size, dff_size}, {1, 0}));
-  flow = builder->Add(name + "/ffn/dense1/b", flow,
-                      *GetWeghtsConverter(layer.ffn.dense1_b, {dff_size}));
-
+  flow = builder->Add(name + "/mha/out/skip", flow, encoder_in);
+  flow = MakeLayerNorm(builder, flow, name + "/ln1",
+                       *GetWeghtsConverter(layer.ln1_gammas, {embedding_size}),
+                       *GetWeghtsConverter(layer.ln1_betas, {embedding_size}),
+                       default_eps_);
   const auto ffn_activation = static_cast<ActivationFunction>(
       src_.format().network_format().ffn_activation());
-  flow = MakeActivation(
-      builder, flow, name + "/ffn/dense1",
-      ffn_activation == ACTIVATION_DEFAULT ? activation : ffn_activation);
-  flow =
-      builder->MatMul(name + "/ffn/dense2/w", flow,
-                      *GetWeghtsConverter(layer.ffn.dense2_w,
-                                          {dff_size, embedding_size}, {1, 0}));
-  flow =
-      builder->Add(name + "/ffn/dense2/b", flow,
-                   *GetWeghtsConverter(layer.ffn.dense2_b, {embedding_size}));
-  std::string alpha_ffn_in;
-  if (alpha != 1.0) {
-    alpha_ffn_in = builder->Mul(name + "/alpha*out1", ffn_in, *alpha_onnx);
-  } else {
-    alpha_ffn_in = ffn_in;
-  }
-  flow = builder->Add(name + "/ffn/skip", flow, alpha_ffn_in);
+  flow = MakeFFN(
+      builder, layer.ffn, embedding_size, flow, name,
+      ffn_activation == ACTIVATION_DEFAULT ? activation : ffn_activation,
+      alpha);
   flow = MakeLayerNorm(builder, flow, name + "/ln2",
                        *GetWeghtsConverter(layer.ln2_gammas, {embedding_size}),
                        *GetWeghtsConverter(layer.ln2_betas, {embedding_size}),
@@ -524,7 +601,7 @@ std::string Converter::AttentionBodyMapEmbedding(OnnxBuilder* builder,
       builder->AddInitializer("/const/att_body_shape",
                               Int64OnnxConst({-1, 64, 112}, {3})));
   std::string pad;
-  if (options_.opset < 8) {
+  if (options_.opset < 8 || (options_.no_shape && options_.batch_size < 0)) {
     pad = builder->Slice("/attn_body/pad/slice", flow, {0, 0, 0},
                          {INT_MAX, 1, 1});
     pad =
@@ -532,14 +609,8 @@ std::string Converter::AttentionBodyMapEmbedding(OnnxBuilder* builder,
                          builder->AddInitializer("/const/pad_in_shape",
                                                  Int64OnnxConst({-1, 1}, {2})));
     pad = builder->Sub("/attn_body/pad/zeros_vec", pad, pad);
-    std::unique_ptr<OnnxConst> one;
-    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-      one = std::make_unique<Float16OnnxConst>(
-          Float16OnnxConst({FP32toFP16(1.0f)}, {1}));
-    } else {
-      one = std::make_unique<FloatOnnxConst>(FloatOnnxConst({1.0f}, {1}));
-    }
-    pad = builder->Add("/attn_body/pad/one_vec", pad, *one);
+    pad =
+        builder->Add("/attn_body/pad/one_vec", pad, *GetScalarConverter(1.0f));
     pad = builder->MatMul(
         "/attn_body/pad/expand", pad,
         builder->AddInitializer(
@@ -700,45 +771,18 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                                 Int64OnnxConst({-1, embedding_size}, {2})));
   }
 
-  if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
-    const int dff_size = weights.ip_emb_ffn.dense1_b.size();
-    auto skip = flow;
-    flow = builder->MatMul(
-        "/attn_body/ffn/dense1/w", flow,
-        *GetWeghtsConverter(weights.ip_emb_ffn.dense1_w,
-                            {embedding_size, dff_size}, {1, 0}));
-    flow = builder->Add(
-        "/attn_body/ffn/dense1/b", flow,
-        *GetWeghtsConverter(weights.ip_emb_ffn.dense1_b, {dff_size}));
-    flow = MakeActivation(builder, flow, "/attn_body/ffn/dense1",
-                          default_activation_);
-    flow = builder->MatMul(
-        "/attn_body/ffn/dense2/w", flow,
-        *GetWeghtsConverter(weights.ip_emb_ffn.dense2_w,
-                            {dff_size, embedding_size}, {1, 0}));
-    flow = builder->Add(
-        "/attn_body/ffn/dense2/b", flow,
-        *GetWeghtsConverter(weights.ip_emb_ffn.dense2_b, {embedding_size}));
+  float alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
 
-    float ffn_alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
-    std::unique_ptr<OnnxConst> alpha_onnx;
-    if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-      alpha_onnx = std::make_unique<Float16OnnxConst>(
-          Float16OnnxConst({FP32toFP16(ffn_alpha)}, {1}));
-    } else {
-      alpha_onnx =
-          std::make_unique<FloatOnnxConst>(FloatOnnxConst({ffn_alpha}, {1}));
-    }
-    flow = builder->Mul("/attn_body/ffn/alpha", flow, *alpha_onnx);
-    flow = builder->Add("/attn_body/ffn/skip", flow, skip);
+  if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
+    flow = MakeFFN(builder, weights.ip_emb_ffn, embedding_size, flow,
+                   "/attn_body", default_activation_, alpha);
     flow = MakeLayerNorm(
-        builder, flow, "/attn_body/ffn/ln",
+        builder, flow, "/attn_body/ln2",
         *GetWeghtsConverter(weights.ip_emb_ffn_ln_gammas, {embedding_size}),
         *GetWeghtsConverter(weights.ip_emb_ffn_ln_betas, {embedding_size}),
         1e-3);
   }
 
-  float alpha = std::pow(2.0f * NumEncBlocks(), 0.25f);
   for (size_t i = 0; i < NumEncBlocks(); i++) {
     flow = MakeEncoderLayer(
         builder, weights.encoder[i], embedding_size, weights.encoder_head_count,
@@ -821,15 +865,8 @@ std::string Converter::MakeAttentionPolicy(
   auto K = builder->Reshape("/policy/K/reshape", flow, "/const/QK_shape");
   flow = builder->Transpose("/policy/K/transpose", K, {0, 2, 1});
   flow = builder->MatMul("/policy/matmul", Q, flow);
-  std::unique_ptr<OnnxConst> scale;
-  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
-    scale = std::make_unique<Float16OnnxConst>(
-        Float16OnnxConst({FP32toFP16(1.0f / sqrtf(policy_d_model))}, {1}));
-  } else {
-    scale = std::make_unique<FloatOnnxConst>(
-        FloatOnnxConst({1.0f / sqrtf(policy_d_model)}, {1}));
-  }
-  flow = builder->Mul("/policy/scale", flow, *scale);
+  flow = builder->Mul("/policy/scale", flow,
+                      *GetScalarConverter(1.0f / sqrtf(policy_d_model)));
   auto prom = builder->Slice("policy/promotion/slice", K, {0, 56, 0},
                              {INT_MAX, 64, policy_d_model});
   prom = builder->MatMul(
@@ -1059,9 +1096,13 @@ void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   MultiHeadWeights weights(src_.weights());
   OnnxBuilder builder(options_.opset);
 
-  onnx->set_data_type(GetDataType() == pblczero::TensorProto::FLOAT16
-                          ? pblczero::OnnxModel::FLOAT16
-                          : pblczero::OnnxModel::FLOAT);
+  if (GetDataType() == pblczero::TensorProto::FLOAT16) {
+    onnx->set_data_type(pblczero::OnnxModel::FLOAT16);
+  } else if (GetDataType() == pblczero::TensorProto::BFLOAT16) {
+    onnx->set_data_type(pblczero::OnnxModel::BFLOAT16);
+  } else {
+    onnx->set_data_type(pblczero::OnnxModel::FLOAT);
+  }
   onnx->set_input_planes(options_.input_planes_name);
   builder.AddInput(options_.input_planes_name, {options_.batch_size, 112, 8, 8},
                    GetDataType());
@@ -1180,12 +1221,27 @@ void Converter::Convert(pblczero::Net* dst) {
     throw Exception("The network already has ONNX section.");
   }
   CheckSrcFormat(src_.format().network_format());
+  if (!options_.relax_op_types &&
+      options_.data_type ==
+          WeightsToOnnxConverterOptions::DataType::kFloat8E5M2) {
+    throw Exception("FLOAT8 operation is not supported by the generated ONNX.");
+  }
 
   CopyGenericFields(dst);
   GenerateOnnx(dst->mutable_onnx_model());
 }
 
 }  // namespace
+
+WeightsToOnnxConverterOptions::DataType
+WeightsToOnnxConverterOptions::StringToDataType(const std::string& s) {
+  if (s == "f32") return DataType::kFloat32;
+  if (s == "f16") return DataType::kFloat16;
+  if (s == "bf16") return DataType::kBFloat16;
+  if (s == "f8e5m2") return DataType::kFloat8E5M2;
+  throw Exception("Invalid data type: [" + s +
+                  "]. Only f32, f16, bf16 and f8e5m2 are supported.");
+}
 
 pblczero::Net ConvertWeightsToOnnx(
     const pblczero::Net& net, const WeightsToOnnxConverterOptions& options) {

@@ -100,7 +100,6 @@ class HloBuilder {
   // HLO operations.
   HloFlow Parameter(const HloType& shape);
   HloFlow Constant(const pblczero::XlaLiteralProto& literal);
-  HloFlow Concatenate(const std::vector<HloFlow>& inputs, size_t dimension);
   HloFlow Convert(HloFlow input, const pblczero::XlaShapeProto::Type type);
   HloFlow Convolution(
       HloFlow input, HloFlow filter, const pblczero::XlaWindow& window,
