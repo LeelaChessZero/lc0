@@ -2058,7 +2058,8 @@ template <typename DataType>
 AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                                        void* scratch, Activations activations,
                                        int num_res_blocks, int input_c,
-                                       int max_batch_size, bool new_encoding,
+                                       int max_batch_size,
+                                       bool is_pe_dense_embedding,
                                        bool fused_mha)
     : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr),
       embedding_op_size_(weights.ip_emb_b.size()),
@@ -2069,12 +2070,12 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
       has_gating_(weights.ip_mult_gate.size() > 0 &&
                   weights.ip_add_gate.size() > 0),
       has_smolgen_(weights.has_smolgen),
-      new_encoding_(new_encoding),
+      is_pe_dense_embedding_(is_pe_dense_embedding),
       use_fused_mha_(fused_mha) {
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
 
-  if (new_encoding_) {
+  if (is_pe_dense_embedding_) {
     allocAndUpload<DataType>(&ip_emb_pre_w_, weights.ip_emb_preproc_w, scratch);
     allocAndUpload<DataType>(&ip_emb_pre_b_, weights.ip_emb_preproc_b, scratch);
 
@@ -2125,7 +2126,7 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        new_encoding_ ? 1e-3 : 1e-6, use_fused_mha_);
+        is_pe_dense_embedding_ ? 1e-3 : 1e-6, use_fused_mha_);
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -2134,7 +2135,7 @@ template <typename DataType>
 AttentionBody<DataType>::~AttentionBody() {
   ReportCUDAErrors(cudaFree(ip_emb_w_));
   ReportCUDAErrors(cudaFree(ip_emb_b_));
-  if (new_encoding_) {
+  if (is_pe_dense_embedding_) {
     ReportCUDAErrors(cudaFree(ip_emb_pre_w_));
     ReportCUDAErrors(cudaFree(ip_emb_pre_b_));
     ReportCUDAErrors(cudaFree(ip_emb_ln_g_));
@@ -2176,7 +2177,7 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       # if there are no residual blocks (pure transformer), do some input
       processing
     */
-    if (new_encoding_) {
+    if (is_pe_dense_embedding_) {
       // New encoding is made of dense layer fed with input from a 12-channel
       // slice of the input tensor.
       // pos_info = flow[..., :12]
@@ -2225,7 +2226,7 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
     convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8);
   }
 
-  if (new_encoding_) {
+  if (is_pe_dense_embedding_) {
     // 1. square embedding (fully connected layer)
     // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
     DataType* embedding = output_tensor;

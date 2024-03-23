@@ -464,7 +464,10 @@ class CudaNetwork : public Network {
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, activations, numBlocks_,
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
-          new_encoding, use_fused_mha);
+          static_cast<InputEmbedding>(
+              file.format().network_format().input_embedding()) ==
+              InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
+          use_fused_mha);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();

@@ -51,6 +51,7 @@ pblczero::XlaShapeProto HloTensorType::ToProto() const {
   pblczero::XlaShapeProto ret;
   ret.set_element_type(type_);
   *ret.mutable_dimensions() = dimensions_;
+  ret.mutable_layout();
   for (size_t i = 0; i < dimensions_.size(); ++i) {
     ret.add_is_dynamic_dimension(false);
     ret.mutable_layout()->add_minor_to_major(dimensions_.size() - i - 1);
@@ -157,7 +158,11 @@ HloFlow HloBuilder::Broadcast(
     const std::vector<int64_t>& broadcast_dimensions) {
   auto flow = MakeInstruction("broadcast", target_shape.ToProto(), {input});
   if (broadcast_dimensions.size() != input->shape().dimensions_size()) {
-    throw Exception("Broadcast must have the same size as the input shape");
+    throw Exception(
+        "Broadcast must have the same size as the input shape: "
+        "broadcast_dimensions=" +
+        std::to_string(broadcast_dimensions.size()) +
+        ", input_shape=" + HloTensorType(input->shape()).ToString());
   }
   const auto& input_shape = input->shape();
   for (size_t i = 0; i < broadcast_dimensions.size(); ++i) {
@@ -165,8 +170,7 @@ HloFlow HloBuilder::Broadcast(
     const auto& input_dim = input_shape.dimensions(i);
     if (input_dim != target_shape.GetDimension(dim)) {
       throw Exception(
-          "Broadcast dimension must be 1 or equal to the target shape "
-          "dimension");
+          "Broadcast dimension must be equal to the target shape dimension");
     }
     flow->add_dimensions(dim);
   }
@@ -188,6 +192,17 @@ HloFlow HloBuilder::Reduce(HloFlow input, HloFlow initial,
   *flow->mutable_dimensions() = {reduction_dimensions.begin(),
                                  reduction_dimensions.end()};
   flow->add_called_computation_ids(function.idx());
+  return flow;
+}
+
+HloFlow HloBuilder::Transpose(HloFlow input,
+                              const std::vector<int64_t>& permutation) {
+  HloTensorType target_shape(input->shape().element_type());
+  for (size_t i = 0; i < permutation.size(); ++i) {
+    target_shape.AddDimension(input->shape().dimensions(permutation[i]));
+  }
+  auto flow = MakeInstruction("transpose", target_shape.ToProto(), {input});
+  *flow->mutable_dimensions() = permutation;
   return flow;
 }
 
@@ -333,6 +348,14 @@ HloFlow HloBuilder::Tanh(HloFlow input) {
   return MakeInstruction("tanh", input->shape(), {input});
 }
 
+HloFlow HloBuilder::Sqrt(HloFlow input) {
+  return MakeInstruction("sqrt", input->shape(), {input});
+}
+
+HloFlow HloBuilder::Rsqrt(HloFlow input) {
+  return MakeInstruction("rsqrt", input->shape(), {input});
+}
+
 HloFlow HloBuilder::LogPlusOne(HloFlow input) {
   return MakeInstruction("log-plus-one", input->shape(), {input});
 }
@@ -349,33 +372,6 @@ HloFlow HloBuilder::Compare(HloFlow lhs, HloFlow rhs,
   shape.SetElementType(pblczero::XlaShapeProto::PRED);
   auto* flow = MakeInstruction("compare", shape.ToProto(), {lhs, rhs});
   flow->set_comparison_direction(direction);
-  return flow;
-}
-
-HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
-                                int64_t dimension) {
-  if (inputs.empty()) {
-    throw Exception("Concatenate must have at least one input");
-  }
-  HloTensorType shape(inputs[0]->shape());
-  for (size_t i = 1; i < inputs.size(); ++i) {
-    if (inputs[i]->shape().element_type() != shape.GetElementType()) {
-      throw Exception("Concatenate operands must have the same element type");
-    }
-    if (inputs[i]->shape().dimensions_size() != shape.Rank()) {
-      throw Exception("Concatenate operands must have the same rank");
-    }
-    for (size_t j = 0; j < shape.Rank(); ++j) {
-      if (j == dimension) {
-        shape.SetDimension(
-            j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
-      } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
-        throw Exception("Concatenate operands must have the same shape");
-      }
-    }
-  }
-  auto flow = MakeInstruction("concatenate", shape.ToProto(), inputs);
-  flow->add_dimensions(dimension);
   return flow;
 }
 
@@ -414,18 +410,35 @@ HloFlow HloBuilder::Tuple(const std::vector<HloFlow>& elements) {
   return MakeInstruction("tuple", shape, elements);
 }
 
-HloFlow HloBuilder::Transpose(HloFlow input,
-                              const std::vector<int64_t>& permutation) {
-  if (permutation.size() != input->shape().dimensions_size()) {
-    throw Exception(
-        "Transpose permutation must have the same size as the input shape");
+HloFlow HloBuilder::Concatenate(const std::vector<HloFlow>& inputs,
+                                int64_t dimension) {
+  if (inputs.empty()) {
+    throw Exception("Concatenate must have at least one input");
   }
-  HloTensorType shape(input->shape().element_type());
-  for (size_t i = 0; i < permutation.size(); ++i) {
-    shape.AddDimension(input->shape().dimensions(permutation[i]));
+  HloTensorType shape(inputs[0]->shape());
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    if (inputs[i]->shape().element_type() != shape.GetElementType()) {
+      throw Exception("Concatenate operands must have the same element type");
+    }
+    if (inputs[i]->shape().dimensions_size() != shape.Rank()) {
+      throw Exception("Concatenate operands must have the same rank");
+    }
+    for (size_t j = 0; j < shape.Rank(); ++j) {
+      if (j == static_cast<size_t>(dimension)) {
+        shape.SetDimension(
+            j, shape.GetDimension(j) + inputs[i]->shape().dimensions(j));
+      } else if (inputs[i]->shape().dimensions(j) != shape.GetDimension(j)) {
+        std::string shapes;
+        for (const auto& input : inputs) {
+          shapes += HloTensorType(input->shape()).ToString() + ", ";
+        }
+        throw Exception("Concatenate operands must have the same shape, got " +
+                        shapes + "axis=" + std::to_string(dimension));
+      }
+    }
   }
-  auto* flow = MakeInstruction("transpose", shape.ToProto(), {input});
-  *flow->mutable_dimensions() = permutation;
+  auto flow = MakeInstruction("concatenate", shape.ToProto(), inputs);
+  flow->add_dimensions(dimension);
   return flow;
 }
 
@@ -443,7 +456,10 @@ HloFlow HloBuilder::Slice(
     if (dim.start() < 0 || dim.start() >= current_shape.GetDimension(i) ||
         dim.limit() < 0 || dim.limit() > current_shape.GetDimension(i) ||
         dim.start() >= dim.limit() || dim.stride() != 1) {
-      throw Exception("Invalid slice dimensions");
+      throw Exception("Invalid slice dimensions, input shape=" +
+                      current_shape.ToString() + ", dim=" + std::to_string(i) +
+                      ", slice_start=" + std::to_string(dim.start()) +
+                      ", slice_limit=" + std::to_string(dim.limit()));
     }
     // This / dim.stride() is pretty approximate, therefore there's a check
     // above.

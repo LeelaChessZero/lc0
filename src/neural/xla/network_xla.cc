@@ -290,6 +290,9 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   } else {
     CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions onnx_converter_options;
+    onnx_converter_options.data_type =
+        WeightsToOnnxConverterOptions::StringToDataType(
+            opts.GetOrDefault<std::string>("data_type", "f32"));
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
                                     max_batch_size, steps);
