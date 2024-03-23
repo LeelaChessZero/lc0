@@ -50,6 +50,8 @@ size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
 #undef CASE_TYPE
 }
 
+namespace {
+
 pblczero::XlaShapeProto::Type PjrtTypeToXlaType(PjrtType type) {
   switch (type) {
     case PjrtType::PRED:
