@@ -33,7 +33,8 @@ namespace cudnn_backend {
 struct InputsOutputs {
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
-                bool cublasDisableTensorCores = false) {
+                bool cublasDisableTensorCores = false)
+      : has_moves_left_(moves_left) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -136,6 +137,8 @@ struct InputsOutputs {
 
   // cublas handle used to run the network
   cublasHandle_t cublas_;
+
+  bool has_moves_left_ = false;
 };
 
 }  // namespace cudnn_backend
