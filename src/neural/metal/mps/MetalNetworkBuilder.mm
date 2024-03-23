@@ -59,7 +59,7 @@ std::string MetalNetworkBuilder::init(int gpu_id)
 
 void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, InputEmbedding embedding,
                                 bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left,
-                                Activations activations, std::string policy_head, std::string value_head)
+                                Activations& activations, std::string& policy_head, std::string& value_head)
 {
     Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
     NSString * defaultActivation = [NSString stringWithUTF8String:activations.default_activation.c_str()];
