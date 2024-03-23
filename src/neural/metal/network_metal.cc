@@ -115,7 +115,6 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                  pblczero::NetworkFormat::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
 
-  // Mask out the multihead format bit 7.
   bool attn_body =
       (file.format().network_format().network()) ==
           pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
