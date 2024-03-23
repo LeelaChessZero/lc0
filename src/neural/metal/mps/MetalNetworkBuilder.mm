@@ -76,7 +76,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
                                                                 label:@"inputs"];
 
     const NSUInteger kernelSize = 3;
-    const bool newEncoding = embedding == InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
+    const bool isPeDenseEmbedding = embedding == InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
 
     // Initialize global smolgen weights.
     if (weights.has_smolgen) {
@@ -128,7 +128,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
         // 2a. Input embedding for attention body.
         if (weights.residual.size() == 0) {
             // No residual means pure transformer, so process input position encoding.
-            if (newEncoding) {
+            if (isPeDenseEmbedding) {
                 // New input position encoding.
                 layer = [graph dynamicPositionEncodingWithTensor:layer
                                                            width:weights.ip_emb_preproc_b.size() / 64
@@ -155,7 +155,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
                                                   label:@"input/embedding"];
 
         // Add layernorm for new nets.
-        if (newEncoding) {
+        if (isPeDenseEmbedding) {
             layer = [graph addLayerNormalizationWithParent:layer
                                      scaledSecondaryTensor:nil
                                                     gammas:&weights.ip_emb_ln_gammas[0]
@@ -184,7 +184,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
         }
 
         float alpha = (float) pow(2.0 * weights.encoder.size(), -0.25);
-        if (newEncoding) {
+        if (isPeDenseEmbedding) {
             // Input embedding feedforward network added for new multihead nets.
             MPSGraphTensor * ffn = [graph addFullyConnectedLayerWithParent:layer
                                                             outputChannels:weights.ip_emb_ffn.dense1_b.size()
@@ -219,7 +219,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
                                    smolgenActivation:smolgenActivation
                                        ffnActivation:ffnActivation
                                                alpha:alpha
-                                             epsilon:newEncoding ? 1e-3 : 1e-6
+                                             epsilon:isPeDenseEmbedding ? 1e-3 : 1e-6
                                             normtype:@"layernorm"
                                                label:[NSString stringWithFormat:@"encoder_%zu", i]];
         }
