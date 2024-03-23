@@ -62,12 +62,15 @@ template <bool use_eigen>
 class BlasComputation : public NetworkComputation {
  public:
   BlasComputation(BlasNetwork<use_eigen>* network,
-                  const MultiHeadWeights& weights, const size_t max_batch_size,
-                  const bool wdl, const bool moves_left, const bool conv_policy,
+                  const MultiHeadWeights& weights,
+                  const std::string policy_head, const std::string value_head,
+                  const size_t max_batch_size, const bool wdl,
+                  const bool moves_left, const bool conv_policy,
                   const ActivationFunction default_activation,
                   const ActivationFunction smolgen_activation,
                   const ActivationFunction ffn_activation,
-                  const bool attn_policy, const bool attn_body);
+                  const bool attn_policy, const bool attn_body,
+                  bool is_pe_dense_embedding);
 
   virtual ~BlasComputation() {}
 
@@ -115,14 +118,12 @@ class BlasComputation : public NetworkComputation {
 
  private:
   void EncodePlanes(const InputPlanes& sample, float* buffer);
-  void MakeEncoderLayer(std::vector<float>& head_buffer,
-                        std::vector<float>& head_buffer2,
-                        std::vector<float>& head_buffer3,
-                        std::vector<float>& head_buffer4, size_t batch_size,
-                        const MultiHeadWeights::EncoderLayer& layer,
-                        int embedding_size, int heads,
-                        ActivationFunction smolgen_activation,
-                        ActivationFunction ffn_activation, float alpha);
+  void ForwardEncoderLayer(
+      std::vector<float>& encoder_buffer, std::vector<float>& encoder_buffer2,
+      std::vector<float>& encoder_buffer3, std::vector<float>& encoder_buffer4,
+      size_t batch_size, const MultiHeadWeights::EncoderLayer& layer,
+      int embedding_size, int heads, ActivationFunction smolgen_activation,
+      ActivationFunction ffn_activation, float alpha, float default_eps);
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
@@ -141,12 +142,14 @@ class BlasComputation : public NetworkComputation {
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
+  bool attn_policy_;
+  bool attn_body_;
+  bool is_pe_dense_embedding_;
   ActivationFunction default_activation_;
   ActivationFunction smolgen_activation_;
   ActivationFunction ffn_activation_;
-  bool attn_policy_;
-  bool attn_body_;
-
+  std::string policy_head_;
+  std::string value_head_;
   BlasNetwork<use_eigen>* network_;
 };
 
@@ -158,9 +161,9 @@ class BlasNetwork : public Network {
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
-        this, weights_, max_batch_size_, wdl_, moves_left_, conv_policy_,
-        default_activation_, smolgen_activation_, ffn_activation_, attn_policy_,
-        attn_body_);
+        this, weights_, policy_head_, value_head_, max_batch_size_, wdl_,
+        moves_left_, conv_policy_, default_activation_, smolgen_activation_,
+        ffn_activation_, attn_policy_, attn_body_, is_pe_dense_embedding_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -199,11 +202,14 @@ class BlasNetwork : public Network {
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
+  bool attn_policy_;
+  bool attn_body_;
+  bool is_pe_dense_embedding_;
   ActivationFunction default_activation_;
   ActivationFunction smolgen_activation_;
   ActivationFunction ffn_activation_;
-  bool attn_policy_;
-  bool attn_body_;
+  std::string policy_head_;
+  std::string value_head_;
   std::mutex buffers_lock_;
   std::vector<std::unique_ptr<Buffers>> free_buffers_;
 };
@@ -211,11 +217,12 @@ class BlasNetwork : public Network {
 template <bool use_eigen>
 BlasComputation<use_eigen>::BlasComputation(
     BlasNetwork<use_eigen>* network, const MultiHeadWeights& weights,
+    const std::string policy_head, const std::string value_head,
     const size_t max_batch_size, const bool wdl, const bool moves_left,
     const bool conv_policy, const ActivationFunction default_activation,
     const ActivationFunction smolgen_activation,
     const ActivationFunction ffn_activation, const bool attn_policy,
-    const bool attn_body)
+    const bool attn_body, bool is_pe_dense_embedding)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
@@ -228,6 +235,9 @@ BlasComputation<use_eigen>::BlasComputation(
       ffn_activation_(ffn_activation),
       attn_policy_(attn_policy),
       attn_body_(attn_body),
+      is_pe_dense_embedding_(is_pe_dense_embedding),
+      policy_head_(policy_head),
+      value_head_(value_head),
       network_(network) {
 #ifdef USE_DNNL
   omp_set_num_threads(1);
@@ -257,12 +267,12 @@ void vec_adjust(std::vector<float>& vec, size_t size) {
 }
 
 template <bool use_eigen>
-void BlasComputation<use_eigen>::MakeEncoderLayer(
-    std::vector<float>& head_buffer, std::vector<float>& head_buffer2,
-    std::vector<float>& head_buffer3, std::vector<float>& head_buffer4,
+void BlasComputation<use_eigen>::ForwardEncoderLayer(
+    std::vector<float>& encoder_buffer, std::vector<float>& encoder_buffer2,
+    std::vector<float>& encoder_buffer3, std::vector<float>& encoder_buffer4,
     size_t batch_size, const MultiHeadWeights::EncoderLayer& layer,
     int embedding_size, int heads, ActivationFunction smolgen_activation,
-    ActivationFunction ffn_activation, float alpha) {
+    ActivationFunction ffn_activation, float alpha, float default_eps) {
   const int d_model = layer.mha.q_b.size();
   const int dff_size = layer.ffn.dense1_b.size();
   const int hidden_channels =
@@ -275,66 +285,67 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
   const int largest_batch_size = std::min(max_batch_size_, planes_.size());
 
-  vec_adjust(head_buffer, largest_batch_size * d_model * kSquares);
-  vec_adjust(head_buffer2,
+  vec_adjust(encoder_buffer, largest_batch_size * d_model * kSquares);
+  vec_adjust(encoder_buffer2,
              largest_batch_size *
                  std::max(std::max(d_model, hidden_channels) * kSquares,
                           gen_sz_outputs));
-  vec_adjust(head_buffer3,
+  vec_adjust(encoder_buffer3,
              largest_batch_size * std::max(d_model * kSquares, hidden_sz));
-  vec_adjust(head_buffer4,
+  vec_adjust(encoder_buffer4,
              batch_size * kSquares * std::max(kSquares * heads, dff_size));
 
   // Smolgen.
   if (layer.mha.has_smolgen) {
-    const float* input = &head_buffer[0];
-    float* QK = &head_buffer4[0];
+    const float* input = &encoder_buffer[0];
+    float* QK = &encoder_buffer4[0];
 
     // Compress.
     FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size * kSquares, embedding_size, hidden_channels, input,
         layer.mha.smolgen.compress.data(), (const float*)nullptr,
-        ACTIVATION_NONE, head_buffer2.data());
+        ACTIVATION_NONE, encoder_buffer2.data());
 
     // Dense 1.
     FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size, kSquares * hidden_channels, hidden_sz, head_buffer2.data(),
-        layer.mha.smolgen.dense1_w.data(), layer.mha.smolgen.dense1_b.data(),
-        smolgen_activation, head_buffer3.data());
+        batch_size, kSquares * hidden_channels, hidden_sz,
+        encoder_buffer2.data(), layer.mha.smolgen.dense1_w.data(),
+        layer.mha.smolgen.dense1_b.data(), smolgen_activation,
+        encoder_buffer3.data());
     // Layer Norm + skip connection.
-    LayerNorm2DWithSkipConnection(batch_size, hidden_sz, head_buffer3.data(),
-                                  0.0f, (const float*)nullptr,
+    LayerNorm2DWithSkipConnection(batch_size, hidden_sz, encoder_buffer3.data(),
+                                  1.0f, (const float*)nullptr,
                                   layer.mha.smolgen.ln1_gammas.data(),
                                   layer.mha.smolgen.ln1_betas.data(), 1e-3);
 
     // Dense 2.
     FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size, hidden_sz, gen_sz_outputs, head_buffer3.data(),
+        batch_size, hidden_sz, gen_sz_outputs, encoder_buffer3.data(),
         layer.mha.smolgen.dense2_w.data(), layer.mha.smolgen.dense2_b.data(),
-        smolgen_activation, head_buffer2.data());
+        smolgen_activation, encoder_buffer2.data());
     // Layer Norm + skip connection.
     LayerNorm2DWithSkipConnection(
-        batch_size, gen_sz_outputs, head_buffer2.data(), 0.0f,
+        batch_size, gen_sz_outputs, encoder_buffer2.data(), 1.0f,
         (const float*)nullptr, layer.mha.smolgen.ln2_gammas.data(),
         layer.mha.smolgen.ln2_betas.data(), 1e-3);
 
     // Global smolgen weights.
     FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size * heads, gen_sz_outputs / heads, kSquares * kSquares,
-        head_buffer2.data(), weights_.smolgen_w.data(), (const float*)nullptr,
-        ACTIVATION_NONE, QK);
+        encoder_buffer2.data(), weights_.smolgen_w.data(),
+        (const float*)nullptr, ACTIVATION_NONE, QK);
   }
 
   // Q
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
+      batch_size * kSquares, embedding_size, d_model, encoder_buffer.data(),
       layer.mha.q_w.data(), layer.mha.q_b.data(), ACTIVATION_NONE,
-      head_buffer2.data());
+      encoder_buffer2.data());
   // K
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
+      batch_size * kSquares, embedding_size, d_model, encoder_buffer.data(),
       layer.mha.k_w.data(), layer.mha.k_b.data(), ACTIVATION_NONE,
-      head_buffer3.data());
+      encoder_buffer3.data());
 
   // MHA (Q, K, V)
   const int depth = d_model / heads;
@@ -344,10 +355,10 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   for (auto batch = size_t{0}; batch < batch_size; batch++) {
     auto batchStart = batch * kSquares * d_model;
 
-    float* QK = &head_buffer4[batch * kSquares * kSquares * heads];
+    float* QK = &encoder_buffer4[batch * kSquares * kSquares * heads];
 
-    const float* Q = &head_buffer2[batchStart];
-    const float* K = &head_buffer3[batchStart];
+    const float* Q = &encoder_buffer2[batchStart];
+    const float* K = &encoder_buffer3[batchStart];
 
     // matmul(Q, K) for all heads per batch.
 
@@ -380,7 +391,7 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
   }
 
   // Apply Softmax.
-  float* QK = &head_buffer4[0];
+  float* QK = &encoder_buffer4[0];
   for (size_t h = 0; h < batch_size * heads * kSquares * kSquares;
        h += kSquares) {
 #if defined(USE_ISPC)
@@ -394,16 +405,16 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
   // V
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, d_model, head_buffer.data(),
+      batch_size * kSquares, embedding_size, d_model, encoder_buffer.data(),
       layer.mha.v_w.data(), layer.mha.v_b.data(), ACTIVATION_NONE,
-      head_buffer3.data());
+      encoder_buffer3.data());
 
   for (auto batch = size_t{0}; batch < batch_size; batch++) {
     auto batchStart = batch * kSquares * d_model;
     // matmul(softmax(QK), V) for all heads per batch.
-    float* attn = &head_buffer2[batchStart];
-    const float* V = &head_buffer3[batchStart];
-    const float* QK = &head_buffer4[batch * kSquares * kSquares * heads];
+    float* attn = &encoder_buffer2[batchStart];
+    const float* V = &encoder_buffer3[batchStart];
+    const float* QK = &encoder_buffer4[batch * kSquares * kSquares * heads];
     for (auto h = 0; h < heads; h++) {
       const float* A = &QK[h * kSquares * kSquares];
       const float* B = &V[h * depth];
@@ -427,38 +438,40 @@ void BlasComputation<use_eigen>::MakeEncoderLayer(
 
   // Fully connected final MHA layer.
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, d_model, embedding_size, head_buffer2.data(),
+      batch_size * kSquares, d_model, embedding_size, encoder_buffer2.data(),
       layer.mha.dense_w.data(), layer.mha.dense_b.data(), ACTIVATION_NONE,
-      head_buffer3.data());
+      encoder_buffer3.data());
 
   // Layer Norm + skip connection.
   LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                head_buffer.data(), 1.0f / alpha,
-                                head_buffer3.data(), layer.ln1_gammas.data(),
-                                layer.ln1_betas.data(), 1e-6);
+                                encoder_buffer3.data(), alpha,
+                                encoder_buffer.data(), layer.ln1_gammas.data(),
+                                layer.ln1_betas.data(), default_eps);
+  std::swap(encoder_buffer3, encoder_buffer);
 
   // FFN.
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, dff_size, head_buffer.data(),
+      batch_size * kSquares, embedding_size, dff_size, encoder_buffer.data(),
       layer.ffn.dense1_w.data(), layer.ffn.dense1_b.data(), ffn_activation,
-      head_buffer4.data());
+      encoder_buffer4.data());
 
   FullyConnectedLayer<use_eigen>::Forward1D(
       batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
-      head_buffer4.data(), layer.ffn.dense2_w.data(), layer.ffn.dense2_b.data(),
-      ACTIVATION_NONE, head_buffer3.data());
+      encoder_buffer4.data(), layer.ffn.dense2_w.data(),
+      layer.ffn.dense2_b.data(), ACTIVATION_NONE, encoder_buffer3.data());
 
   // Layer Norm + skip connection.
   LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                head_buffer.data(), 1.0f / alpha,
-                                head_buffer3.data(), layer.ln2_gammas.data(),
-                                layer.ln2_betas.data(), 1e-6);
+                                encoder_buffer3.data(), alpha,
+                                encoder_buffer.data(), layer.ln2_gammas.data(),
+                                layer.ln2_betas.data(), default_eps);
+  std::swap(encoder_buffer3, encoder_buffer);
 }
 
 template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
-  const auto& value_head = weights_.value_heads.at("winner");
-  const auto& policy_head = weights_.policy_heads.at("vanilla");
+  const auto& value_head = weights_.value_heads.at(value_head_);
+  const auto& policy_head = weights_.policy_heads.at(policy_head_);
   // Retrieve network key dimensions from the weights structure.
   const auto num_value_channels = value_head.ip1_val_b.size();
   const auto num_moves_channels = weights_.ip1_mov_b.size();
@@ -476,9 +489,17 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   // convolution.
   // Residual blocks are identical, but the first convolution might be bigger
   // when the network has very few filters
-  const auto input_channels = static_cast<size_t>(
-      kInputPlanes + (attn_body_ ? kNumPosEncodingChannels : 0));
-  const auto max_channels = std::max(output_channels, input_channels);
+  // For attention body nets, input channel size is increased by positional
+  // encoding.
+  const auto enc_channels = is_pe_dense_embedding_
+                                ? weights_.ip_emb_preproc_b.size() / 64
+                                : kNumPosEncodingChannels;
+  const auto input_channels =
+      static_cast<size_t>(kInputPlanes + (attn_body_ ? enc_channels : 0));
+  const auto input_embed_dff = weights_.ip_emb_ffn.dense1_b.size();
+
+  const auto max_channels =
+      std::max(std::max(output_channels, input_channels), input_embed_dff);
 
   // The policy head may increase convolution max output size.
   const auto max_output_channels =
@@ -492,6 +513,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
   /* Typically
    input_channels = 112
+   position encoding = 64 (512 for new encoding)
    output_channels = 192
    max_channels = 192
    num_value_input_planes = 32
@@ -585,18 +607,44 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       if (num_res_blocks == 0) {
         // No residual means pure transformer, so process input position
         // encoding.
+        if (is_pe_dense_embedding_) {
+          // NCHW to NHWC conversion of 12-channel slice of input.
+          for (auto batch = size_t{0}; batch < batch_size; batch++) {
+            for (auto i = 0; i < kSquares; i++) {
+              for (size_t j = 0; j < 12; j++) {
+                buffer3[batch * kSquares * 12 + i * 12 + j] =
+                    buffer1[batch * kSquares * kInputPlanes + j * kSquares + i];
+              }
+            }
+          }
+          // Dense embedding preprocess layer.
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size, kSquares * 12, weights_.ip_emb_preproc_b.size(),
+              buffer3.data(), weights_.ip_emb_preproc_w.data(),
+              weights_.ip_emb_preproc_b.data(), ACTIVATION_NONE,
+              buffer2.data());
+        }
+
         // Preprocess for attention body.
         for (auto batch = size_t{0}; batch < batch_size; batch++) {
           for (auto i = 0; i < kSquares; i++) {
-            // NCHW to NHWC conversion.
+            // Input NCHW to NHWC conversion.
             for (size_t j = 0; j < kInputPlanes; j++) {
               buffer3[batch * kSquares * input_size + i * input_size + j] =
                   buffer1[batch * kSquares * kInputPlanes + j * kSquares + i];
             }
-            // Position encoding.
-            for (size_t j = kInputPlanes; j < input_size; j++) {
-              buffer3[batch * kSquares * input_size + i * input_size + j] =
-                  kPosEncoding[i][j - kInputPlanes];
+            // Position encoding concat.
+            if (is_pe_dense_embedding_) {
+              for (size_t j = kInputPlanes; j < input_size; j++) {
+                buffer3[batch * kSquares * input_size + i * input_size + j] =
+                    buffer2[batch * kSquares * enc_channels + i * enc_channels +
+                            j - kInputPlanes];
+              }
+            } else {
+              for (size_t j = kInputPlanes; j < input_size; j++) {
+                buffer3[batch * kSquares * input_size + i * input_size + j] =
+                    kPosEncoding[i][j - kInputPlanes];
+              }
             }
           }
         }
@@ -607,6 +655,14 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           batch_size * kSquares, input_size, embedding_size, buffer3.data(),
           weights_.ip_emb_w.data(), weights_.ip_emb_b.data(),
           default_activation_, buffer1.data());
+
+      // Layer norm for new encoding.
+      if (is_pe_dense_embedding_) {
+        LayerNorm2DWithSkipConnection(
+            batch_size * kSquares, embedding_size, buffer1.data(), 1.0f,
+            (const float*)nullptr, weights_.ip_emb_ln_gammas.data(),
+            weights_.ip_emb_ln_betas.data(), 1e-3);
+      }
 
       // Input gating
       if (weights_.ip_mult_gate.size() > 0 && weights_.ip_add_gate.size() > 0) {
@@ -623,12 +679,42 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         };
       }
 
+      float alpha = (float)pow(2.0 * weights_.encoder.size(), -0.25);
+
+      // FFN in embedding for new encoding.
+      if (is_pe_dense_embedding_) {
+        const auto dff_size = weights_.ip_emb_ffn.dense1_b.size();
+        // FFN dense 1.
+        FullyConnectedLayer<use_eigen>::Forward1D(
+            batch_size * kSquares, embedding_size, dff_size, buffer1.data(),
+            weights_.ip_emb_ffn.dense1_w.data(),
+            weights_.ip_emb_ffn.dense1_b.data(), ffn_activation_,
+            buffer3.data());
+
+        // FFN dense 2.
+        FullyConnectedLayer<use_eigen>::Forward1D(
+            batch_size * kSquares, dff_size,
+            weights_.ip_emb_ffn.dense2_b.size(), buffer3.data(),
+            weights_.ip_emb_ffn.dense2_w.data(),
+            weights_.ip_emb_ffn.dense2_b.data(), ACTIVATION_NONE,
+            buffer2.data());
+
+        // Layer Norm.
+        LayerNorm2DWithSkipConnection(
+            batch_size * kSquares, weights_.ip_emb_ffn.dense2_b.size(),
+            buffer2.data(), alpha, buffer1.data(),
+            weights_.ip_emb_ffn_ln_gammas.data(),
+            weights_.ip_emb_ffn_ln_betas.data(), 1e-3);
+
+        std::swap(buffer1, buffer2);
+      }
+
       // Attention body encoders.
-      float alpha = (float)pow(2.0 * weights_.encoder.size(), 0.25);
       for (auto& layer : weights_.encoder) {
-        MakeEncoderLayer(buffer1, buffer2, buffer3, head_buffer, batch_size,
-                         layer, embedding_size, weights_.encoder_head_count,
-                         smolgen_activation_, ffn_activation_, alpha);
+        ForwardEncoderLayer(buffer1, buffer2, buffer3, head_buffer, batch_size,
+                            layer, embedding_size, weights_.encoder_head_count,
+                            smolgen_activation_, ffn_activation_, alpha,
+                            is_pe_dense_embedding_ ? 1e-3 : 1e-6);
       }
     }
 
@@ -742,11 +828,11 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       const size_t policy_d_model = policy_head.ip2_pol_b.size();
 
       for (auto& layer : policy_head.pol_encoder) {
-        MakeEncoderLayer(buffer2, buffer1, buffer3, head_buffer, batch_size,
-                         layer, policy_embedding_size,
-                         policy_head.pol_encoder_head_count,
-                         attn_body_ ? smolgen_activation_ : ACTIVATION_NONE,
-                         attn_body_ ? ffn_activation_ : ACTIVATION_SELU, 1.0f);
+        ForwardEncoderLayer(
+            buffer2, buffer1, buffer3, head_buffer, batch_size, layer,
+            policy_embedding_size, policy_head.pol_encoder_head_count,
+            attn_body_ ? smolgen_activation_ : ACTIVATION_NONE,
+            attn_body_ ? ffn_activation_ : ACTIVATION_SELU, 1.0f, 1e-6);
       }
 
       // Q
@@ -903,35 +989,36 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
 
-  wdl_ = file.format().network_format().value() ==
-         pblczero::NetworkFormat::VALUE_WDL;
+  auto nf = file.format().network_format();
+  using NF = pblczero::NetworkFormat;
+  wdl_ = nf.value() == NF::VALUE_WDL;
 
-  moves_left_ = (file.format().network_format().moves_left() ==
-                 pblczero::NetworkFormat::MOVES_LEFT_V1) &&
+  moves_left_ = (nf.moves_left() == NF::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
 
-  conv_policy_ = file.format().network_format().policy() ==
-                 pblczero::NetworkFormat::POLICY_CONVOLUTION;
+  conv_policy_ = nf.policy() == NF::POLICY_CONVOLUTION;
 
-  attn_policy_ = file.format().network_format().policy() ==
-                 pblczero::NetworkFormat::POLICY_ATTENTION;
+  attn_policy_ = nf.policy() == NF::POLICY_ATTENTION;
 
-  attn_body_ = file.format().network_format().network() ==
-               pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
+  attn_body_ = nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
+               nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
 
-  default_activation_ = file.format().network_format().default_activation() ==
-                                pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH
+  default_activation_ = nf.default_activation() == NF::DEFAULT_ACTIVATION_MISH
                             ? ACTIVATION_MISH
                             : ACTIVATION_RELU;
 
+  is_pe_dense_embedding_ =
+      static_cast<InputEmbedding>(
+          file.format().network_format().input_embedding()) ==
+      InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
+
   if (attn_body_) {
-    const auto smol_act = file.format().network_format().smolgen_activation();
-    smolgen_activation_ =
-        smol_act == pblczero::NetworkFormat::ACTIVATION_DEFAULT
-            ? default_activation_
-            : static_cast<ActivationFunction>(smol_act);
-    const auto ffn_act = file.format().network_format().ffn_activation();
-    ffn_activation_ = ffn_act == pblczero::NetworkFormat::ACTIVATION_DEFAULT
+    const auto smol_act = nf.smolgen_activation();
+    smolgen_activation_ = smol_act == NF::ACTIVATION_DEFAULT
+                              ? default_activation_
+                              : static_cast<ActivationFunction>(smol_act);
+    const auto ffn_act = nf.ffn_activation();
+    ffn_activation_ = ffn_act == NF::ACTIVATION_DEFAULT
                           ? default_activation_
                           : static_cast<ActivationFunction>(ffn_act);
   }
@@ -955,6 +1042,20 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
     conv1.weights = WinogradFilterTransformF(conv1.weights, channels, channels);
     conv2.weights = WinogradFilterTransformF(conv2.weights, channels, channels);
+  }
+
+  policy_head_ = options.GetOrDefault<std::string>("policy_head", "vanilla");
+  // Check that selected policy head exists.
+  if (weights_.policy_heads.count(policy_head_) == 0) {
+    throw Exception("The policy head you specified '" + policy_head_ +
+                    "' does not exist in this net.");
+  }
+
+  value_head_ = options.GetOrDefault<std::string>("value_head", "winner");
+  // Check that selected value head exists.
+  if (weights_.value_heads.count(value_head_) == 0) {
+    throw Exception("The value head you specified '" + value_head_ +
+                    "' does not exist in this net.");
   }
 
   if (conv_policy_) {
@@ -1015,55 +1116,63 @@ std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
                     " backend requires a network file.");
   }
   const WeightsFile& weights = *w;
-  if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
-    throw Exception("Network format " +
-                    pblczero::NetworkFormat::NetworkStructure_Name(
-                        weights.format().network_format().network()) +
-                    " is not supported by BLAS backend.");
+  auto nf = weights.format().network_format();
+  using NF = pblczero::NetworkFormat;
+  switch (nf.network()) {
+    case NF::NETWORK_CLASSICAL_WITH_HEADFORMAT:
+    case NF::NETWORK_SE_WITH_HEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT:
+      break;
+    default:
+      throw Exception("Network format " +
+                      NF::NetworkStructure_Name(nf.network()) +
+                      " is not supported by the BLAS backend.");
   }
-  if (weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CLASSICAL &&
-      weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
-      weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_ATTENTION) {
-    throw Exception("Policy format " +
-                    pblczero::NetworkFormat::PolicyFormat_Name(
-                        weights.format().network_format().policy()) +
-                    " is not supported by BLAS backend.");
+  switch (nf.policy()) {
+    case NF::POLICY_CLASSICAL:
+    case NF::POLICY_CONVOLUTION:
+    case NF::POLICY_ATTENTION:
+      break;
+    default:
+      throw Exception("Policy format " + NF::PolicyFormat_Name(nf.policy()) +
+                      " is not supported by the BLAS backend.");
   }
-  if (weights.format().network_format().value() !=
-          pblczero::NetworkFormat::VALUE_CLASSICAL &&
-      weights.format().network_format().value() !=
-          pblczero::NetworkFormat::VALUE_WDL) {
-    throw Exception("Value format " +
-                    pblczero::NetworkFormat::ValueFormat_Name(
-                        weights.format().network_format().value()) +
-                    " is not supported by BLAS backend.");
+  switch (nf.value()) {
+    case NF::VALUE_CLASSICAL:
+    case NF::VALUE_WDL:
+      break;
+    default:
+      throw Exception("Value format " + NF::ValueFormat_Name(nf.value()) +
+                      " is not supported by the BLAS backend.");
   }
-  if (weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
-      weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
-    throw Exception(
-        "Default activation " +
-        pblczero::NetworkFormat::DefaultActivation_Name(
-            weights.format().network_format().default_activation()) +
-        " is not supported by BLAS backend.");
+  switch (nf.moves_left()) {
+    case NF::MOVES_LEFT_NONE:
+    case NF::MOVES_LEFT_V1:
+      break;
+    default:
+      throw Exception("Moves left head format " +
+                      NF::MovesLeftFormat_Name(nf.moves_left()) +
+                      " is not supported by the BLAS backend.");
   }
-  if (weights.format().network_format().input_embedding() !=
-          pblczero::NetworkFormat::INPUT_EMBEDDING_NONE &&
-      weights.format().network_format().input_embedding() !=
-          pblczero::NetworkFormat::INPUT_EMBEDDING_PE_MAP) {
-    throw Exception("Input embedding " +
-                    pblczero::NetworkFormat::InputEmbeddingFormat_Name(
-                        weights.format().network_format().input_embedding()) +
-                    " is not supported by BLAS backend.");
+  switch (nf.default_activation()) {
+    case NF::DEFAULT_ACTIVATION_RELU:
+    case NF::DEFAULT_ACTIVATION_MISH:
+      break;
+    default:
+      throw Exception("Default activation " +
+                      NF::DefaultActivation_Name(nf.default_activation()) +
+                      " is not supported by the BLAS backend.");
+  }
+  switch (nf.input_embedding()) {
+    case NF::INPUT_EMBEDDING_NONE:
+    case NF::INPUT_EMBEDDING_PE_MAP:
+    case NF::INPUT_EMBEDDING_PE_DENSE:
+      break;
+    default:
+      throw Exception("Input embedding " +
+                      NF::InputEmbeddingFormat_Name(nf.input_embedding()) +
+                      " is not supported by the BLAS backend.");
   }
   return std::make_unique<BlasNetwork<use_eigen>>(weights, options);
 }
