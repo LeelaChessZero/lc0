@@ -230,12 +230,12 @@ BlasComputation<use_eigen>::BlasComputation(
       wdl_(wdl),
       moves_left_(moves_left),
       conv_policy_(conv_policy),
-      default_activation_(default_activation),
-      smolgen_activation_(smolgen_activation),
-      ffn_activation_(ffn_activation),
       attn_policy_(attn_policy),
       attn_body_(attn_body),
       is_pe_dense_embedding_(is_pe_dense_embedding),
+      default_activation_(default_activation),
+      smolgen_activation_(smolgen_activation),
+      ffn_activation_(ffn_activation),
       policy_head_(policy_head),
       value_head_(value_head),
       network_(network) {
@@ -312,7 +312,7 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
         encoder_buffer2.data(), layer.mha.smolgen.dense1_w.data(),
         layer.mha.smolgen.dense1_b.data(), smolgen_activation,
         encoder_buffer3.data());
-    // Layer Norm + skip connection.
+    // Layer Norm.
     LayerNorm2DWithSkipConnection(batch_size, hidden_sz, encoder_buffer3.data(),
                                   1.0f, (const float*)nullptr,
                                   layer.mha.smolgen.ln1_gammas.data(),
@@ -323,7 +323,7 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
         batch_size, hidden_sz, gen_sz_outputs, encoder_buffer3.data(),
         layer.mha.smolgen.dense2_w.data(), layer.mha.smolgen.dense2_b.data(),
         smolgen_activation, encoder_buffer2.data());
-    // Layer Norm + skip connection.
+    // Layer Norm.
     LayerNorm2DWithSkipConnection(
         batch_size, gen_sz_outputs, encoder_buffer2.data(), 1.0f,
         (const float*)nullptr, layer.mha.smolgen.ln2_gammas.data(),

@@ -493,7 +493,6 @@ class AttentionBody : public BaseLayer<DataType> {
   DataType *ip_emb_ffn_d2_w_, *ip_emb_ffn_d2_b_;  // input embedding FFN dense2 weights
   DataType *ip_emb_ffn_ln_g_, *ip_emb_ffn_ln_b_;  // input embedding FFN layernorm gamma and beta
   DataType *smolgen_global_;  // global smolgen weights for all encoder layers
-  bool is_pe_dense_embedding_;  // flag for dense position encoding
   DataType *pos_encoding_;
   int embedding_dense_size_;
   int embedding_op_size_;
@@ -507,6 +506,7 @@ class AttentionBody : public BaseLayer<DataType> {
   int smolgen_global_size_;
   const bool has_gating_;
   const bool has_smolgen_;
+  bool is_pe_dense_embedding_;  // flag for dense position encoding
 };
 
 // The value head implementation
