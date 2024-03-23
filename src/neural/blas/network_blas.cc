@@ -70,7 +70,7 @@ class BlasComputation : public NetworkComputation {
                   const ActivationFunction smolgen_activation,
                   const ActivationFunction ffn_activation,
                   const bool attn_policy, const bool attn_body,
-                  bool new_encoding);
+                  bool is_pe_dense_embedding);
 
   virtual ~BlasComputation() {}
 
@@ -144,7 +144,7 @@ class BlasComputation : public NetworkComputation {
   bool conv_policy_;
   bool attn_policy_;
   bool attn_body_;
-  bool new_encoding_;
+  bool is_pe_dense_embedding_;
   ActivationFunction default_activation_;
   ActivationFunction smolgen_activation_;
   ActivationFunction ffn_activation_;
@@ -163,7 +163,7 @@ class BlasNetwork : public Network {
     return std::make_unique<BlasComputation<use_eigen>>(
         this, weights_, policy_head_, value_head_, max_batch_size_, wdl_,
         moves_left_, conv_policy_, default_activation_, smolgen_activation_,
-        ffn_activation_, attn_policy_, attn_body_, new_encoding_);
+        ffn_activation_, attn_policy_, attn_body_, is_pe_dense_embedding_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -204,7 +204,7 @@ class BlasNetwork : public Network {
   bool conv_policy_;
   bool attn_policy_;
   bool attn_body_;
-  bool new_encoding_;
+  bool is_pe_dense_embedding_;
   ActivationFunction default_activation_;
   ActivationFunction smolgen_activation_;
   ActivationFunction ffn_activation_;
@@ -222,7 +222,7 @@ BlasComputation<use_eigen>::BlasComputation(
     const bool conv_policy, const ActivationFunction default_activation,
     const ActivationFunction smolgen_activation,
     const ActivationFunction ffn_activation, const bool attn_policy,
-    const bool attn_body, bool new_encoding)
+    const bool attn_body, bool is_pe_dense_embedding)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
@@ -235,7 +235,7 @@ BlasComputation<use_eigen>::BlasComputation(
       ffn_activation_(ffn_activation),
       attn_policy_(attn_policy),
       attn_body_(attn_body),
-      new_encoding_(new_encoding),
+      is_pe_dense_embedding_(is_pe_dense_embedding),
       policy_head_(policy_head),
       value_head_(value_head),
       network_(network) {
@@ -491,7 +491,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
   // when the network has very few filters
   // For attention body nets, input channel size is increased by positional
   // encoding.
-  const auto enc_channels = new_encoding_
+  const auto enc_channels = is_pe_dense_embedding_
                                 ? weights_.ip_emb_preproc_b.size() / 64
                                 : kNumPosEncodingChannels;
   const auto input_channels =
@@ -607,7 +607,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       if (num_res_blocks == 0) {
         // No residual means pure transformer, so process input position
         // encoding.
-        if (new_encoding_) {
+        if (is_pe_dense_embedding_) {
           // NCHW to NHWC conversion of 12-channel slice of input.
           for (auto batch = size_t{0}; batch < batch_size; batch++) {
             for (auto i = 0; i < kSquares; i++) {
@@ -634,7 +634,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                   buffer1[batch * kSquares * kInputPlanes + j * kSquares + i];
             }
             // Position encoding concat.
-            if (new_encoding_) {
+            if (is_pe_dense_embedding_) {
               for (size_t j = kInputPlanes; j < input_size; j++) {
                 buffer3[batch * kSquares * input_size + i * input_size + j] =
                     buffer2[batch * kSquares * enc_channels + i * enc_channels +
@@ -657,7 +657,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           default_activation_, buffer1.data());
 
       // Layer norm for new encoding.
-      if (new_encoding_) {
+      if (is_pe_dense_embedding_) {
         LayerNorm2DWithSkipConnection(
             batch_size * kSquares, embedding_size, buffer1.data(), 1.0f,
             (const float*)nullptr, weights_.ip_emb_ln_gammas.data(),
@@ -682,7 +682,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       float alpha = (float)pow(2.0 * weights_.encoder.size(), -0.25);
 
       // FFN in embedding for new encoding.
-      if (new_encoding_) {
+      if (is_pe_dense_embedding_) {
         const auto dff_size = weights_.ip_emb_ffn.dense1_b.size();
         // FFN dense 1.
         FullyConnectedLayer<use_eigen>::Forward1D(
@@ -714,7 +714,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
         ForwardEncoderLayer(buffer1, buffer2, buffer3, head_buffer, batch_size,
                             layer, embedding_size, weights_.encoder_head_count,
                             smolgen_activation_, ffn_activation_, alpha,
-                            new_encoding_ ? 1e-3 : 1e-6);
+                            is_pe_dense_embedding_ ? 1e-3 : 1e-6);
       }
     }
 
@@ -1007,9 +1007,10 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
                             ? ACTIVATION_MISH
                             : ACTIVATION_RELU;
 
-  new_encoding_ = static_cast<InputEmbedding>(
-                      file.format().network_format().input_embedding()) ==
-                  InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
+  is_pe_dense_embedding_ =
+      static_cast<InputEmbedding>(
+          file.format().network_format().input_embedding()) ==
+      InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
 
   if (attn_body_) {
     const auto smol_act = nf.smolgen_activation();
