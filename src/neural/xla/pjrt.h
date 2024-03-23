@@ -66,8 +66,8 @@ enum class PjrtErrorCode {
   UNAUTHENTICATED = 16
 };
 
-// PJRT_Type as enum class. Conincidentally, the types are the same as in XLA
-// and HloModuleProto, so simple cast works.
+// PJRT_Type as enum class. Unfortunately, only the first 13 types are the same
+// as in XLA and HloModuleProto, so simple cast doesn't work.
 enum class PjrtType {
   INVALID,
   PRED,

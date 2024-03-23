@@ -462,7 +462,8 @@ std::string OnnxBuilder::Cast(const std::string& name, const std::string& input,
 
 std::string OnnxBuilder::ReduceMean(const std::string& name,
                                     const std::string& input,
-                                    std::initializer_list<int> axes) {
+                                    std::initializer_list<int> axes,
+                                    bool keepdims) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "ReduceMean");
   if (opset_ < 18) {
@@ -473,6 +474,7 @@ std::string OnnxBuilder::ReduceMean(const std::string& name,
         Int64OnnxConst(std::vector<int64_t>(begin(axes), end(axes)),
                        {static_cast<int>(axes.size())})));
   }
+  AddIntAttribute(node, "keepdims", keepdims);
   return out;
 }
 
