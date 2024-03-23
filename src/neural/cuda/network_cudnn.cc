@@ -51,11 +51,11 @@ using namespace cudnn_backend;
 template <typename DataType>
 class CudnnNetwork;
 
-static size_t getMaxAttentionHeadSize(const MultiHeadWeights& weights, int N) {
-  const auto vanilla = weights.policy_heads.at("vanilla");
-  const size_t embedding_op_size = vanilla.ip_pol_b.size();
-  const size_t policy_d_model = vanilla.ip2_pol_b.size();
-  assert(policy_d_model == vanilla.ip3_pol_b.size());
+static size_t getMaxAttentionHeadSize(
+    const MultiHeadWeights::PolicyHead& weights, int N) {
+  const size_t embedding_op_size = weights.ip_pol_b.size();
+  const size_t policy_d_model = weights.ip2_pol_b.size();
+  assert(policy_d_model == weights.ip3_pol_b.size());
 
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
@@ -399,7 +399,9 @@ class CudnnNetwork : public Network {
 
     // Attention policy head may need more memory
     const size_t attentionSize =
-        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
+        getMaxAttentionHeadSize(weights.policy_heads.at("vanilla"),
+                                max_batch_size_) *
+        sizeof(DataType);
     scratch_size_ = std::max(scratch_size_, attentionSize);
 
     ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));

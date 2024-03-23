@@ -502,8 +502,8 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const MultiHeadWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
-                int max_batch_size, bool new_encoding, bool fused_mha,
-                bool int8_calibrate, bool int8_inference, void *int8_weights);
+                int max_batch_size, bool is_pe_dense_embedding, bool fused_mha,
+                bool int8_calibrate, bool int8_inference, void* int8_weights);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -520,7 +520,7 @@ class AttentionBody : public BaseLayer<DataType> {
   DataType *ip_emb_ffn_d2_w_, *ip_emb_ffn_d2_b_;  // input embedding FFN dense2 weights
   DataType *ip_emb_ffn_ln_g_, *ip_emb_ffn_ln_b_;  // input embedding FFN layernorm gamma and beta
   DataType *smolgen_global_;  // global smolgen weights for all encoder layers
-  bool new_encoding_;   // flag for new position encoding
+  bool is_pe_dense_embedding_;  // flag for dense position encoding
   DataType *pos_encoding_;
   int embedding_dense_size_;
   int embedding_op_size_;

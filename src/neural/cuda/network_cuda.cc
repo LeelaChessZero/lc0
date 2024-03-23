@@ -55,11 +55,11 @@ void dumpTensor(const T* memory, int elements, const char* message,
 template <typename DataType>
 class CudaNetwork;
 
-static size_t getMaxAttentionHeadSize(const MultiHeadWeights& weights, int N) {
-  const auto vanilla = weights.policy_heads.at("vanilla");
-  const size_t embedding_op_size = vanilla.ip_pol_b.size();
-  const size_t policy_d_model = vanilla.ip2_pol_b.size();
-  assert(policy_d_model == vanilla.ip3_pol_b.size());
+static size_t getMaxAttentionHeadSize(
+    const MultiHeadWeights::PolicyHead& weights, int N) {
+  const size_t embedding_op_size = weights.ip_pol_b.size();
+  const size_t policy_d_model = weights.ip2_pol_b.size();
+  assert(policy_d_model == weights.ip3_pol_b.size());
 
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
@@ -350,9 +350,26 @@ class CudaNetwork : public Network {
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
+    std::string policy_head =
+        options.GetOrDefault<std::string>("policy_head", "vanilla");
+    // Check that selected policy head exists.
+    if (weights.policy_heads.count(policy_head) == 0) {
+      throw Exception("The policy head you specified '" + policy_head +
+                      "' does not exist in this net.");
+    }
+    std::string value_head =
+        options.GetOrDefault<std::string>("value_head", "winner");
+    // Check that selected value head exists.
+    if (weights.value_heads.count(value_head) == 0) {
+      throw Exception("The value head you specified '" + value_head +
+                      "' does not exist in this net.");
+    }
+
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
-        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
+        getMaxAttentionHeadSize(weights.policy_heads.at(policy_head),
+                                max_batch_size_) *
+        sizeof(DataType);
 
     const size_t attentionBodySize =
         getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
@@ -555,8 +572,9 @@ class CudaNetwork : public Network {
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, activations, numBlocks_,
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
-          new_encoding, use_fused_mha, int8_calibration_run_, use_int8_,
-          int8_weights_);
+          static_cast<InputEmbedding>(
+              file.format().network_format().input_embedding()) ==
+              InputEmbedding::INPUT_EMBEDDING_PE_DENSE);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
