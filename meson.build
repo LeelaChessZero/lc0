@@ -460,7 +460,7 @@ if get_option('build_backends')
     endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d).returncode() == 0
-        includes += include_directories(d)
+        includes += include_directories(d, is_system: true)
       endif
     endforeach
     includes += include_directories('src/neural/cuda/')
