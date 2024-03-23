@@ -108,13 +108,29 @@ class XlaNetwork : public Network {
  public:
   XlaNetwork(std::unique_ptr<XlaRunner> runner,
              const XlaNetworkOptions& options,
-             const pblczero::NetworkFormat& format);
+             const pblczero::NetworkFormat& format,
+             pblczero::XlaShapeProto::Type io_type);
 
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    return std::make_unique<XlaComputation<pblczero::XlaShapeProto::F32>>(this);
+    switch (io_type_) {
+      case pblczero::XlaShapeProto::F16:
+        return std::make_unique<XlaComputation<pblczero::XlaShapeProto::F16>>(
+            this);
+      case pblczero::XlaShapeProto::F32:
+        return std::make_unique<XlaComputation<pblczero::XlaShapeProto::F32>>(
+            this);
+      case pblczero::XlaShapeProto::BF16:
+        return std::make_unique<XlaComputation<pblczero::XlaShapeProto::BF16>>(
+            this);
+      case pblczero::XlaShapeProto::F8E5M2:
+        return std::make_unique<
+            XlaComputation<pblczero::XlaShapeProto::F8E5M2>>(this);
+      default:
+        throw Exception("Unsupported IO type.");
+    }
   }
   int GetMiniBatchSize() const override {
     // 32 is the default prefetch size, subtract it so that backend doesn't
@@ -127,6 +143,7 @@ class XlaNetwork : public Network {
   std::unique_ptr<XlaRunner> runner_;
   XlaNetworkOptions options_;
   NetworkCapabilities capabilities_;
+  pblczero::XlaShapeProto::Type io_type_;
 
   template <pblczero::XlaShapeProto::Type IOType>
   friend class XlaComputation;
@@ -211,16 +228,19 @@ void XlaComputation<IOType>::ComputeBlocking() {
 
 XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
                        const XlaNetworkOptions& options,
-                       const pblczero::NetworkFormat& format)
+                       const pblczero::NetworkFormat& format,
+                       pblczero::XlaShapeProto::Type io_type)
     : runner_(std::move(runner)),
       options_(options),
-      capabilities_{format.input(), format.moves_left()} {}
+      capabilities_{format.input(), format.moves_left()},
+      io_type_(io_type) {}
 
 // Converts ONNX model to HLO (for various batch sizes) and adds them to the
 // XlaRunner.
 XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
                                         XlaRunner* runner,
-                                        size_t max_batch_size, size_t steps) {
+                                        size_t max_batch_size, size_t steps,
+                                        pblczero::XlaShapeProto::Type io_type) {
   pblczero::ModelProto onnx;
   onnx.ParseFromString(onnx_model.model());
 
@@ -240,10 +260,12 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
     }
   };
 
+  Onnx2HloOptions onnx_options;
+  onnx_options.io_type = io_type;
   for (size_t i = 0; i < steps; ++i) {
     size_t batch_size = max_batch_size * (i + 1) / steps;
     CERR << "Building HLO for batch size " << batch_size << "...";
-    auto conversion = ConvertOnnxToHlo(onnx, batch_size, {});
+    auto conversion = ConvertOnnxToHlo(onnx, batch_size, onnx_options);
     add_tensors(conversion.constants, constant_to_parameter_idx);
     add_tensors(conversion.inputs, input_to_parameter_idx);
     add_tensors(conversion.outputs, output_to_parameter_idx);
@@ -265,29 +287,29 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   runner->SetFrozenInputs(std::move(constants));
   CERR << "Done.";
 
-  XlaNetworkOptions options;
+  XlaNetworkOptions xla_options;
   if (input_to_parameter_idx.size() != 1 ||
       input_to_parameter_idx.begin()->first != onnx_model.input_planes()) {
     throw Exception("Expected a single input named " +
                     std::string(onnx_model.input_planes()));
   }
   if (onnx_model.has_output_value()) {
-    options.output_value_idx =
+    xla_options.output_value_idx =
         output_to_parameter_idx.at(std::string(onnx_model.output_value()));
   }
   if (onnx_model.has_output_wdl()) {
-    options.output_wdl_idx =
+    xla_options.output_wdl_idx =
         output_to_parameter_idx.at(std::string(onnx_model.output_wdl()));
   }
   if (onnx_model.has_output_policy()) {
-    options.output_policy_idx =
+    xla_options.output_policy_idx =
         output_to_parameter_idx.at(std::string(onnx_model.output_policy()));
   }
   if (onnx_model.has_output_mlh()) {
-    options.output_mlh_idx =
+    xla_options.output_mlh_idx =
         output_to_parameter_idx.at(std::string(onnx_model.output_mlh()));
   }
-  return options;
+  return xla_options;
 }
 
 // Makes an XLA network. First converts the weights to ONNX, and then calls
@@ -307,23 +329,25 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
   int steps = opts.GetOrDefault<int>("steps", 16);
 
+  pblczero::XlaShapeProto::Type io_type =
+      StringToXlaType(opts.GetOrDefault<std::string>("io_datatype", "f16"));
   XlaNetworkOptions options;
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, io_type);
   } else {
     CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions onnx_converter_options;
     onnx_converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(
-            opts.GetOrDefault<std::string>("data_type", "f32"));
+            opts.GetOrDefault<std::string>("datatype", "f32"));
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, io_type);
   }
 
   return std::make_unique<XlaNetwork>(std::move(runner), options,
-                                      w->format().network_format());
+                                      w->format().network_format(), io_type);
 }
 
 REGISTER_NETWORK("xla", MakeXlaNetwork, -34)

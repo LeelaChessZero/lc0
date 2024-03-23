@@ -140,8 +140,11 @@ struct XlaToCppType {
   struct XlaToCppType<type_name> {           \
     using type = cpp_type;                   \
   }
+XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::BF16, uint16_t);
+XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::F16, uint16_t);
 XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::F32, float);
 XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::F64, double);
+XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::F8E5M2, uint8_t);
 XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::S32, int32_t);
 XLA_TO_CPP_TYPE(pblczero::XlaShapeProto::S64, int64_t);
 
@@ -151,5 +154,7 @@ constexpr size_t GetXlaTypeSize() {
 }
 
 size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type);
+
+pblczero::XlaShapeProto::Type StringToXlaType(const std::string& type);
 
 }  // namespace lczero
