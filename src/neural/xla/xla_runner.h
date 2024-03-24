@@ -131,9 +131,9 @@ class XlaRunner {
   int device_;
 };
 
-template <pblczero::XlaShapeProto::Type>
+template <pblczero::XlaShapeProto::Type T>
 struct XlaToCppType {
-  static_assert(false, "Unsupported XLA type");
+  static_assert([] { return false; }(), "Unsupported XLA type");
 };
 #define XLA_TO_CPP_TYPE(type_name, cpp_type) \
   template <>                                \
