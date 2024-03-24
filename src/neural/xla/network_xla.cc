@@ -52,7 +52,7 @@ class XlaComputation : public NetworkComputation {
  private:
   const XlaNetwork* network_;
   XlaMutableTensor input_tensor_;
-  std::vector<std::unique_ptr<XlaTensor>> outputs_;
+  std::vector<std::unique_ptr<XlaMutableTensor>> outputs_;
 };
 
 // Indices of various heads in the HLO output.
@@ -158,7 +158,15 @@ float XlaComputation::GetMVal(int sample) const {
 int XlaComputation::GetBatchSize() const { return input_tensor_.shape()[0]; }
 
 void XlaComputation::ComputeBlocking() {
+  input_tensor_.Cast(network_->options_.input->type);
   outputs_ = network_->runner_->ExecuteBlocking({&input_tensor_});
+  for (const auto& output :
+       {network_->options_.output_value, network_->options_.output_wdl,
+        network_->options_.output_policy, network_->options_.output_mlh}) {
+    if (output) {
+      outputs_[output->idx]->Cast(output->type);
+    }
+  }
 }
 
 XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
