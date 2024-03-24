@@ -164,7 +164,7 @@ void XlaComputation::ComputeBlocking() {
        {network_->options_.output_value, network_->options_.output_wdl,
         network_->options_.output_policy, network_->options_.output_mlh}) {
     if (output) {
-      outputs_[output->idx]->Cast(output->type);
+      outputs_[output->idx]->Cast(pblczero::XlaShapeProto::F32);
     }
   }
 }
