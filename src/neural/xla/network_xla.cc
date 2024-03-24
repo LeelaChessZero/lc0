@@ -57,10 +57,15 @@ class XlaComputation : public NetworkComputation {
 
 // Indices of various heads in the HLO output.
 struct XlaNetworkOptions {
-  std::optional<size_t> output_value_idx;
-  std::optional<size_t> output_wdl_idx;
-  std::optional<size_t> output_policy_idx;
-  std::optional<size_t> output_mlh_idx;
+  struct IOInfo {
+    size_t idx;
+    pblczero::XlaShapeProto::Type type;
+  };
+  std::optional<IOInfo> input;
+  std::optional<IOInfo> output_value;
+  std::optional<IOInfo> output_wdl;
+  std::optional<IOInfo> output_policy;
+  std::optional<IOInfo> output_mlh;
 };
 
 class XlaNetwork : public Network {
@@ -115,21 +120,21 @@ void XlaComputation::AddInput(InputPlanes&& input) {
 }
 
 float XlaComputation::GetQVal(int sample) const {
-  if (network_->options_.output_wdl_idx) {
+  if (network_->options_.output_wdl) {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_wdl_idx]->data());
+        outputs_[network_->options_.output_wdl->idx]->data());
     return data[sample * 3 + 0] - data[sample * 3 + 2];
   } else {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_value_idx]->data());
+        outputs_[network_->options_.output_value->idx]->data());
     return data[sample];
   }
 }
 
 float XlaComputation::GetDVal(int sample) const {
-  if (network_->options_.output_wdl_idx) {
+  if (network_->options_.output_wdl) {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_wdl_idx]->data());
+        outputs_[network_->options_.output_wdl->idx]->data());
     return data[sample * 3 + 1];
   }
   return 0.0f;
@@ -137,14 +142,14 @@ float XlaComputation::GetDVal(int sample) const {
 
 float XlaComputation::GetPVal(int sample, int move_id) const {
   const float* data = reinterpret_cast<const float*>(
-      outputs_[*network_->options_.output_policy_idx]->data());
+      outputs_[network_->options_.output_policy->idx]->data());
   return data[sample * 1858 + move_id];
 }
 
 float XlaComputation::GetMVal(int sample) const {
-  if (network_->options_.output_mlh_idx) {
+  if (network_->options_.output_mlh) {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_mlh_idx]->data());
+        outputs_[network_->options_.output_mlh->idx]->data());
     return data[sample];
   }
   return 0.0f;
@@ -171,18 +176,22 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   pblczero::ModelProto onnx;
   onnx.ParseFromString(onnx_model.model());
 
-  std::unordered_map<std::string, size_t> constant_to_parameter_idx;
-  std::unordered_map<std::string, size_t> input_to_parameter_idx;
-  std::unordered_map<std::string, size_t> output_to_parameter_idx;
+  using IOInfo = XlaNetworkOptions::IOInfo;
+  std::unordered_map<std::string, IOInfo> constant_to_parameter_idx;
+  std::unordered_map<std::string, IOInfo> input_to_parameter_idx;
+  std::unordered_map<std::string, IOInfo> output_to_parameter_idx;
 
   auto add_tensors = [](const std::vector<Onnx2HloResult::NamedTensor>& tensors,
-                        std::unordered_map<std::string, size_t>& map) {
+                        std::unordered_map<std::string, IOInfo>& map) {
     for (const auto& tensor : tensors) {
       auto iter = map.find(tensor.name);
       if (iter == map.end()) {
-        map[tensor.name] = tensor.param_idx;
-      } else if (iter->second != tensor.param_idx) {
+        map.emplace(tensor.name,
+                    IOInfo{tensor.param_idx, tensor.shape.element_type()});
+      } else if (iter->second.idx != tensor.param_idx) {
         throw Exception("Inconsistent index for " + tensor.name);
+      } else if (iter->second.type != tensor.shape.element_type()) {
+        throw Exception("Inconsistent type for " + tensor.name);
       }
     }
   };
@@ -217,9 +226,9 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   for (const auto& initializer : onnx.graph().initializer()) {
     auto iter = constant_to_parameter_idx.find(std::string(initializer.name()));
     if (iter == constant_to_parameter_idx.end()) continue;
-    auto idx = iter->second;
-    assert(idx < constants.size());
-    constants[idx] = OnnxTensorToXlaTensor(initializer);
+    auto io_info = iter->second;
+    assert(io_info.idx < constants.size());
+    constants[io_info.idx] = OnnxTensorToXlaTensor(initializer);
   }
 
   CERR << "Transferring constants...";
@@ -232,20 +241,21 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
     throw Exception("Expected a single input named " +
                     std::string(onnx_model.input_planes()));
   }
+  options.input = input_to_parameter_idx.begin()->second;
   if (onnx_model.has_output_value()) {
-    options.output_value_idx =
+    options.output_value =
         output_to_parameter_idx.at(std::string(onnx_model.output_value()));
   }
   if (onnx_model.has_output_wdl()) {
-    options.output_wdl_idx =
+    options.output_wdl =
         output_to_parameter_idx.at(std::string(onnx_model.output_wdl()));
   }
   if (onnx_model.has_output_policy()) {
-    options.output_policy_idx =
+    options.output_policy =
         output_to_parameter_idx.at(std::string(onnx_model.output_policy()));
   }
   if (onnx_model.has_output_mlh()) {
-    options.output_mlh_idx =
+    options.output_mlh =
         output_to_parameter_idx.at(std::string(onnx_model.output_mlh()));
   }
   return options;
