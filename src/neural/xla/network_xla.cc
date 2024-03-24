@@ -37,45 +37,6 @@
 namespace lczero {
 namespace {
 
-class Lc0InputTensor : public XlaTensor {
- public:
-  Lc0InputTensor(size_t max_batch_size)
-      : max_batch_size_(max_batch_size),
-        // TODO replace with make_unique_for_overwrite() once C++20 is
-        // available.
-        data_(new char[GetTensorByteSizeForBatch(max_batch_size)]),
-        shape_{0, kInputPlanes, 8, 8} {}
-
-  const std::vector<int64_t>& shape() const override { return shape_; }
-  const void* data() const override { return data_.get(); }
-  size_t size() const override { return GetTensorByteSizeForBatch(shape_[0]); }
-  size_t capacity() const override {
-    return GetTensorByteSizeForBatch(max_batch_size_);
-  }
-  pblczero::XlaShapeProto::Type type() const override {
-    return pblczero::XlaShapeProto::F32;
-  }
-
-  // Adds a batch to the tensor and returns a pointer to the start of the its
-  // part in the buffer. Does NOT initialize the data with zeros.
-  float* AddBatch() {
-    assert(size_t(shape_[0]) < max_batch_size_);
-    auto ret = data_.get() + shape_[0] * GetTensorByteSizeForBatch(1);
-    ++shape_[0];
-    return reinterpret_cast<float*>(ret);
-  }
-  size_t GetBatchSize() const { return shape_[0]; }
-
- private:
-  static size_t GetTensorByteSizeForBatch(size_t batch_size) {
-    return kInputPlanes * 8 * 8 * batch_size * sizeof(float);
-  }
-
-  const size_t max_batch_size_;
-  std::unique_ptr<char[]> data_;
-  std::vector<int64_t> shape_;
-};
-
 class XlaNetwork;
 class XlaComputation : public NetworkComputation {
  public:
@@ -90,7 +51,7 @@ class XlaComputation : public NetworkComputation {
 
  private:
   const XlaNetwork* network_;
-  Lc0InputTensor input_tensor_;
+  XlaMutableTensor input_tensor_;
   std::vector<std::unique_ptr<XlaTensor>> outputs_;
 };
 
@@ -130,7 +91,15 @@ class XlaNetwork : public Network {
 };
 
 XlaComputation::XlaComputation(const XlaNetwork* network)
-    : network_(network), input_tensor_(network->runner_->GetMaxBatchSize()) {}
+    : network_(network),
+      input_tensor_(
+          pblczero::XlaShapeProto::F32,
+          std::vector<int64_t>{0, kInputPlanes, 8, 8},
+          XlaMutableTensor::GetBufferSize(
+              pblczero::XlaShapeProto::F32,
+              std::vector<int64_t>{
+                  static_cast<int64_t>(network->runner_->GetMaxBatchSize()),
+                  kInputPlanes, 8, 8})) {}
 
 void XlaComputation::AddInput(InputPlanes&& input) {
   float* ptr = input_tensor_.AddBatch();
@@ -178,7 +147,7 @@ float XlaComputation::GetMVal(int sample) const {
 }
 
 int XlaComputation::GetBatchSize() const {
-  return input_tensor_.GetBatchSize();
+  return input_tensor_.shape()[0];
 }
 
 void XlaComputation::ComputeBlocking() {

@@ -95,14 +95,14 @@ class XlaTensorNotOwned : public XlaTensor {
 class XlaMutableTensor : public XlaTensor {
  public:
   XlaMutableTensor(pblczero::XlaShapeProto::Type type,
-                   const std::vector<int64_t>& shape)
+                   const std::vector<int64_t>& shape, size_t capacity = 0)
       : shape_(shape),
         type_(type),
-        size_(GetBufferSize(shape, type)),
-        capacity_(size_),
+        size_(GetBufferSize(type, shape)),
+        capacity_(std::max(size_, capacity)),
         // TODO replace with make_unique_for_overwrite() once C++20 is
         // available.
-        data_(new char[size_]) {}
+        data_(new char[capacity_]) {}
 
   const std::vector<int64_t>& shape() const override { return shape_; }
   const void* data() const override { return data_.get(); }
@@ -112,8 +112,8 @@ class XlaMutableTensor : public XlaTensor {
   size_t capacity() const override { return capacity_; }
   pblczero::XlaShapeProto::Type type() const override { return type_; }
 
-  static size_t GetBufferSize(const std::vector<int64_t>& shape,
-                              pblczero::XlaShapeProto::Type type) {
+  static size_t GetBufferSize(pblczero::XlaShapeProto::Type type,
+                              const std::vector<int64_t>& shape) {
     return GetXlaTypeSize(type) * std::accumulate(shape.begin(), shape.end(), 1,
                                                   std::multiplies<int64_t>());
   }
