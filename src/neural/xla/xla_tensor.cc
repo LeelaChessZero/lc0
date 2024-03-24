@@ -67,4 +67,14 @@ std::string XlaTensor::DebugString() {
   return result;
 }
 
+void XlaMutableTensor::Reshape(const std::vector<int64_t>& new_shape) {
+  const size_t new_size = GetBufferSize(type_, new_shape);
+  if (new_size > capacity_) {
+    // TODO Implement allocating of new buffer when needed.
+    throw Exception("Reshape to exceeds capacity.");
+  }
+  shape_ = new_shape;
+  size_ = new_size;
+}
+
 }  // namespace lczero

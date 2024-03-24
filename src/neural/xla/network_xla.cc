@@ -102,7 +102,11 @@ XlaComputation::XlaComputation(const XlaNetwork* network)
                   kInputPlanes, 8, 8})) {}
 
 void XlaComputation::AddInput(InputPlanes&& input) {
-  float* ptr = input_tensor_.AddBatch();
+  auto new_shape = input_tensor_.shape();
+  float* ptr = static_cast<float*>(input_tensor_.mutable_data()) +
+               new_shape[0] * 8 * 8 * kInputPlanes;
+  ++new_shape[0];
+  input_tensor_.Reshape(new_shape);
   memset(ptr, 0, 8 * 8 * kInputPlanes * sizeof(float));
   for (const auto& plane : input) {
     for (auto bit : IterateBits(plane.mask)) ptr[bit] = plane.value;
@@ -146,9 +150,7 @@ float XlaComputation::GetMVal(int sample) const {
   return 0.0f;
 }
 
-int XlaComputation::GetBatchSize() const {
-  return input_tensor_.shape()[0];
-}
+int XlaComputation::GetBatchSize() const { return input_tensor_.shape()[0]; }
 
 void XlaComputation::ComputeBlocking() {
   outputs_ = network_->runner_->ExecuteBlocking({&input_tensor_});
