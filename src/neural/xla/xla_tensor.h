@@ -75,8 +75,8 @@ class XlaTensor {
 // avoid unnecessary copy.
 class XlaTensorNotOwned : public XlaTensor {
  public:
-  XlaTensorNotOwned(const std::vector<int64_t>& shape, std::string_view data,
-                    pblczero::XlaShapeProto::Type type)
+  XlaTensorNotOwned(pblczero::XlaShapeProto::Type type,
+                    const std::vector<int64_t>& shape, std::string_view data)
       : shape_(&shape), data_(data), type_(type) {}
 
   const std::vector<int64_t>& shape() const override { return *shape_; }
@@ -94,8 +94,8 @@ class XlaTensorNotOwned : public XlaTensor {
 // Tensor that owns data, used e.g. for XLA output.
 class XlaMutableTensor : public XlaTensor {
  public:
-  XlaMutableTensor(const std::vector<int64_t>& shape,
-                   pblczero::XlaShapeProto::Type type)
+  XlaMutableTensor(pblczero::XlaShapeProto::Type type,
+                   const std::vector<int64_t>& shape)
       : shape_(shape),
         type_(type),
         size_(GetBufferSize(shape, type)),

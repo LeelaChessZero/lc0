@@ -210,7 +210,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   for (size_t i = 0; i < outputs.size(); ++i) {
     const auto& output = outputs[i];
     auto new_tensor = std::make_unique<XlaMutableTensor>(
-        output->GetDimensions(), PjrtTypeToXlaType(output->GetType()));
+        PjrtTypeToXlaType(output->GetType()), output->GetDimensions());
     done_events.push_back(
         output->DeviceToHost(new_tensor->mutable_data(), new_tensor->size()));
     result.push_back(std::move(new_tensor));
