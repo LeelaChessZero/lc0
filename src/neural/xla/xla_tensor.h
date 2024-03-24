@@ -38,7 +38,7 @@
 
 namespace lczero {
 
-constexpr size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
+inline size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
   switch (type) {
     case pblczero::XlaShapeProto::F32:
       return sizeof(float);
@@ -112,8 +112,8 @@ class XlaMutableTensor : public XlaTensor {
   size_t capacity() const override { return capacity_; }
   pblczero::XlaShapeProto::Type type() const override { return type_; }
 
-  static constexpr size_t GetBufferSize(const std::vector<int64_t>& shape,
-                                        pblczero::XlaShapeProto::Type type) {
+  static size_t GetBufferSize(const std::vector<int64_t>& shape,
+                              pblczero::XlaShapeProto::Type type) {
     return GetXlaTypeSize(type) * std::accumulate(shape.begin(), shape.end(), 1,
                                                   std::multiplies<int64_t>());
   }
