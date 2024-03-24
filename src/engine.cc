@@ -132,6 +132,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPreload) = false;
   options->Add<BoolOption>(kValueOnly) = false;
   options->Add<ButtonOption>(kClearTree);
+  options->HideOption(kClearTree);
 }
 
 void EngineController::ResetMoveTimer() {
