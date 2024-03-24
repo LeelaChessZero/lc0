@@ -71,6 +71,8 @@ const OptionId kValueOnly{
     "In value only mode all search parameters are ignored and the position is "
     "evaluated by getting the valuation of every child position and choosing "
     "the worst for the opponent."};
+const OptionId kClearTree{"", "ClearTree",
+                          "Clear the tree before the next search."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -129,6 +131,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kPreload) = false;
   options->Add<BoolOption>(kValueOnly) = false;
+  options->Add<ButtonOption>(kClearTree);
+  options->HideOption(kClearTree);
 }
 
 void EngineController::ResetMoveTimer() {
@@ -379,6 +383,10 @@ void EngineController::Go(const GoParams& params) {
   if (options_.Get<bool>(kValueOnly)) {
     ValueOnlyGo(tree_.get(), network_.get(), options_, std::move(responder));
     return;
+  }
+
+  if (options_.Get<Button>(kClearTree).TestAndReset()) {
+    tree_->TrimTreeAtHead();
   }
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());

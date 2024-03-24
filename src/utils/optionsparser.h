@@ -216,6 +216,24 @@ class BoolOption : public OptionsParser::Option {
   void ValidateBoolString(const std::string& val);
 };
 
+class ButtonOption : public OptionsParser::Option {
+ public:
+  using ValueType = Button;
+  ButtonOption(const OptionId& id);
+
+  void SetValue(const std::string& value, OptionsDict* dict) override;
+
+ private:
+  std::string GetOptionString(const OptionsDict& dict) const override;
+  bool ProcessLongFlag(const std::string& flag, const std::string& value,
+                       OptionsDict* dict) override;
+  std::string GetHelp(const OptionsDict& dict) const override;
+  bool ProcessShortFlag(char flag, OptionsDict* dict) override;
+
+  ValueType GetVal(OptionsDict*) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
+};
+
 class ChoiceOption : public OptionsParser::Option {
  public:
   using ValueType = std::string;
