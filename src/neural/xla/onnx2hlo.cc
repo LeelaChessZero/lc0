@@ -499,11 +499,12 @@ class Onnx2HloConverter {
     for (size_t i = 0; i < node_names.size(); ++i) {
       const auto& output = node_names[i];
       auto flow = GetFlowByName(output);
-      if (flow->shape().element_type() != options_.io_type) {
+      if (options_.io_type &&
+          flow->shape().element_type() != *options_.io_type) {
         auto ctx = HloContext(&builder_);
         ctx.SetOpType("output");
         ctx.SetOpName(output);
-        flow = builder_.Convert(flow, options_.io_type);
+        flow = builder_.Convert(flow, *options_.io_type);
       }
       result.push_back({i, output, flow->shape()});
       outputs.push_back(flow);
@@ -1472,7 +1473,7 @@ class Onnx2HloConverter {
       ctx.SetOpName(input.name());
       auto out_shape = OnnxShapeToHloTensorType(input.type(), batch_size_);
       auto in_shape = out_shape;
-      in_shape.SetElementType(options_.io_type);
+      if (options_.io_type) in_shape.SetElementType(*options_.io_type);
       const auto* flow =
           MakeParameter(std::string(input.name()), in_shape, false);
       flow = builder_.Convert(flow, out_shape.GetElementType());
