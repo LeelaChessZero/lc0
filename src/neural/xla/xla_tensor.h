@@ -112,6 +112,7 @@ class XlaMutableTensor : public XlaTensor {
   size_t capacity() const override { return capacity_; }
   pblczero::XlaShapeProto::Type type() const override { return type_; }
   void Reshape(const std::vector<int64_t>& new_shape);
+  void Cast(pblczero::XlaShapeProto::Type new_type);
 
   static size_t GetBufferSize(pblczero::XlaShapeProto::Type type,
                               const std::vector<int64_t>& shape) {
