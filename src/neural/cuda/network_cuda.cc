@@ -49,7 +49,8 @@ using namespace cudnn_backend;
 template <typename DataType>
 class CudaNetwork;
 
-static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
+static size_t getMaxAttentionHeadSize(
+    const MultiHeadWeights::PolicyHead& weights, int N) {
   const size_t embedding_op_size = weights.ip_pol_b.size();
   const size_t policy_d_model = weights.ip2_pol_b.size();
   assert(policy_d_model == weights.ip3_pol_b.size());
@@ -84,7 +85,7 @@ static size_t getMaxAttentionHeadSize(const LegacyWeights& weights, int N) {
   return size;
 }
 
-static size_t getMaxAttentionBodySize(const LegacyWeights& weights, int N) {
+static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
   const size_t embedding_op_size = weights.ip_emb_b.size();
 
   size_t encoder_d_model = 0;
@@ -120,8 +121,8 @@ static size_t getMaxAttentionBodySize(const LegacyWeights& weights, int N) {
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
-  CudaNetworkComputation(CudaNetwork<DataType>* network, bool wdl,
-                         bool moves_left);
+  CudaNetworkComputation(CudaNetwork<DataType>* network,
+                         bool wdl, bool moves_left);
   ~CudaNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -149,18 +150,15 @@ class CudaNetworkComputation : public NetworkComputation {
       auto w = inputs_outputs_->op_value_mem_[3 * sample + 0];
       auto l = inputs_outputs_->op_value_mem_[3 * sample + 2];
       return w - l;
-    } else {
-      return inputs_outputs_->op_value_mem_[sample];
     }
+    return inputs_outputs_->op_value_mem_[sample];
   }
 
   float GetDVal(int sample) const override {
     if (wdl_) {
-      auto d = inputs_outputs_->op_value_mem_[3 * sample + 1];
-      return d;
-    } else {
-      return 0.0f;
+      return inputs_outputs_->op_value_mem_[3 * sample + 1];
     }
+    return 0.0f;
   }
 
   float GetPVal(int sample, int move_id) const override {
@@ -190,17 +188,15 @@ class CudaNetwork : public Network {
   CudaNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().moves_left()} {
-    LegacyWeights weights(file.weights());
+    MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
-    conv_policy_ = file.format().network_format().policy() ==
-                   pblczero::NetworkFormat::POLICY_CONVOLUTION;
-
-    attn_policy_ = file.format().network_format().policy() ==
-                   pblczero::NetworkFormat::POLICY_ATTENTION;
-
-    attn_body_ = file.format().network_format().network() ==
-                 pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
+    const auto nf = file.format().network_format();
+    using NF = pblczero::NetworkFormat;
+    conv_policy_ = nf.policy() == NF::POLICY_CONVOLUTION;
+    attn_policy_ = nf.policy() == NF::POLICY_ATTENTION;
+    attn_body_ = nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
+                 nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
     // min_batch_size_ is chosen as 4 as it is common that for sizes less than
@@ -343,9 +339,26 @@ class CudaNetwork : public Network {
       scratch_size_ = std::max(scratch_size_, 2 * transformed_tensor_size);
     }
 
+    std::string policy_head =
+        options.GetOrDefault<std::string>("policy_head", "vanilla");
+    // Check that selected policy head exists.
+    if (weights.policy_heads.count(policy_head) == 0) {
+      throw Exception("The policy head you specified '" + policy_head +
+                      "' does not exist in this net.");
+    }
+    std::string value_head =
+        options.GetOrDefault<std::string>("value_head", "winner");
+    // Check that selected value head exists.
+    if (weights.value_heads.count(value_head) == 0) {
+      throw Exception("The value head you specified '" + value_head +
+                      "' does not exist in this net.");
+    }
+
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
-        getMaxAttentionHeadSize(weights, max_batch_size_) * sizeof(DataType);
+        getMaxAttentionHeadSize(weights.policy_heads.at(policy_head),
+                                max_batch_size_) *
+        sizeof(DataType);
 
     const size_t attentionBodySize =
         getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
@@ -441,96 +454,84 @@ class CudaNetwork : public Network {
 
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, activations, numBlocks_,
-          numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_);
+          numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
+          static_cast<InputEmbedding>(
+              file.format().network_format().input_embedding()) ==
+              InputEmbedding::INPUT_EMBEDDING_PE_DENSE);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
     }
 
     // Policy head.
-    if (attn_policy_) {
-      auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
-          getLastLayer(), weights, scratch_mem_, attn_body_, act,
-          max_batch_size_);
-      network_.emplace_back(std::move(AttentionPolicy));
+    {
+      MultiHeadWeights::PolicyHead& head = weights.policy_heads.at(policy_head);
+      if (attn_policy_) {
+        auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
+            getLastLayer(), head, scratch_mem_, attn_body_, act,
+            max_batch_size_);
+        network_.emplace_back(std::move(AttentionPolicy));
 
-      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-          getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true);
-      policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
-      network_.emplace_back(std::move(policymap));
+        auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+            getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true);
+        policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
+        network_.emplace_back(std::move(policymap));
 
-    } else if (conv_policy_) {
-      assert(!attn_body_);  // not supported with attention body
-      auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          resi_last_, kNumFilters, 8, 8, kNumFilters, act, true, false, false,
-          0, use_gemm_ex);
-      conv1->LoadWeights(&weights.policy1.weights[0],
-                         &weights.policy1.biases[0], scratch_mem_);
-      network_.emplace_back(std::move(conv1));
+      } else {
+        if (conv_policy_) {
+          assert(!attn_body_);  // not supported with attention body
+          auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              resi_last_, kNumFilters, 8, 8, kNumFilters, act, true, false,
+              false, 0, use_gemm_ex);
+          conv1->LoadWeights(&head.policy1.weights[0], &head.policy1.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv1));
 
-      auto pol_channels = weights.policy.biases.size();
+          auto pol_channels = head.policy.biases.size();
 
-      // No relu
-      auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-          getLastLayer(), pol_channels, 8, 8, kNumFilters, ACTIVATION_NONE,
-          true, false, false, 0, use_gemm_ex);
-      conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
-                         scratch_mem_);
-      network_.emplace_back(std::move(conv2));
+          // No relu
+          auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+              getLastLayer(), pol_channels, 8, 8, kNumFilters, ACTIVATION_NONE,
+              true, false, false, 0, use_gemm_ex);
+          conv2->LoadWeights(&head.policy.weights[0], &head.policy.biases[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(conv2));
 
-      auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-          getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8, false);
-      policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
+          auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+              getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8, false);
+          policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
 
-      network_.emplace_back(std::move(policymap));
-    } else {
-      assert(!attn_body_);  // not supported with attention body
-      auto convPol = std::make_unique<Conv1Layer<DataType>>(
-          resi_last_, weights.policy.biases.size(), 8, 8, kNumFilters, act,
-          true, use_gemm_ex);
-      convPol->LoadWeights(&weights.policy.weights[0],
-                           &weights.policy.biases[0], scratch_mem_);
-      network_.emplace_back(std::move(convPol));
+          network_.emplace_back(std::move(policymap));
+        } else {
+          assert(!attn_body_);  // not supported with attention body
+          auto convPol = std::make_unique<Conv1Layer<DataType>>(
+              resi_last_, head.policy.biases.size(), 8, 8, kNumFilters, act,
+              true, use_gemm_ex);
+          convPol->LoadWeights(&head.policy.weights[0], &head.policy.biases[0],
+                               scratch_mem_);
+          network_.emplace_back(std::move(convPol));
 
-      auto FCPol = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip_pol_b.size(), 1, 1, true, ACTIVATION_NONE);
-      FCPol->LoadWeights(&weights.ip_pol_w[0], &weights.ip_pol_b[0],
-                         scratch_mem_);
-      network_.emplace_back(std::move(FCPol));
+          auto FCPol = std::make_unique<FCLayer<DataType>>(
+              getLastLayer(), head.ip_pol_b.size(), 1, 1, true,
+              ACTIVATION_NONE);
+          FCPol->LoadWeights(&head.ip_pol_w[0], &head.ip_pol_b[0],
+                             scratch_mem_);
+          network_.emplace_back(std::move(FCPol));
+        }
+      }
     }
 
-    // Value head.
+    // Value heads.
     {
-      if (attn_body_) {
-        auto embedded_val = std::make_unique<EmbeddingLayer<DataType>>(
-            encoder_last_, weights.ip_val_w, weights.ip_val_b, scratch_mem_,
-            act);
-        network_.emplace_back(std::move(embedded_val));
-      } else {
-        auto convVal = std::make_unique<Conv1Layer<DataType>>(
-            resi_last_, weights.value.biases.size(), 8, 8, kNumFilters, act,
-            true, use_gemm_ex);
-        convVal->LoadWeights(&weights.value.weights[0],
-                             &weights.value.biases[0], scratch_mem_);
-        network_.emplace_back(std::move(convVal));
-      }
-
-      auto FCVal1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_val_b.size(), 1, 1, true, act);
-      FCVal1->LoadWeights(&weights.ip1_val_w[0], &weights.ip1_val_b[0],
-                          scratch_mem_);
-      network_.emplace_back(std::move(FCVal1));
-
+      const MultiHeadWeights::ValueHead& head =
+          weights.value_heads.at(value_head);
       wdl_ = file.format().network_format().value() ==
              pblczero::NetworkFormat::VALUE_WDL;
-      auto fc2_tanh = !wdl_;
-
-      auto FCVal2 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip2_val_b.size(), 1, 1, true,
-          fc2_tanh ? ACTIVATION_TANH : ACTIVATION_NONE);
-      FCVal2->LoadWeights(&weights.ip2_val_w[0], &weights.ip2_val_b[0],
-                          scratch_mem_);
-      network_.emplace_back(std::move(FCVal2));
+      BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
+      auto value_main = std::make_unique<ValueHead<DataType>>(
+          lastlayer, head, scratch_mem_, attn_body_, wdl_, act,
+          max_batch_size_, use_gemm_ex);
+      network_.emplace_back(std::move(value_main));
     }
 
     // Moves left head
@@ -804,39 +805,16 @@ class CudaNetwork : public Network {
                         cudaMemcpyDeviceToHost, stream));
 
     // value head
-    network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
-                        scratch_size_, nullptr, cublas,
-                        stream);  // value conv or embedding
-
-    network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
-                        scratch_size_, nullptr, cublas,
-                        stream);  // value FC1
-
-    if (wdl_) {
-      if (fp16) {
-        network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
-                            scratch_size_, nullptr, cublas,
-                            stream);  // value FC2    // VALUE
-        copyTypeConverted(opVal, (half*)spare1, 3 * batchSize,
-                          stream);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, spare2, nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value FC2    // VALUE
-      }
+    if (fp16) {
+      network_[l++]->Eval(batchSize, spare1, flow, spare2, scratch_mem,
+                          scratch_size_, nullptr, cublas,
+                          stream);  // value head
+      copyTypeConverted(opVal, (half*)spare1, wdl_ ? 3 * batchSize : batchSize,
+                        stream);
     } else {
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
-                            scratch_size_, nullptr, cublas,
-                            stream);  // value FC2
-        copyTypeConverted(opVal, (half*)(spare1), batchSize,
-                          stream);  // VALUE
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opVal, spare2, nullptr,
-                            scratch_mem, scratch_size_, nullptr, cublas,
-                            stream);  // value FC2    // VALUE
-      }
+      network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2,
+                          scratch_mem, scratch_size_, nullptr, cublas,
+                          stream);  // value head
     }
 
     if (moves_left_) {
@@ -945,7 +923,9 @@ class CudaNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false); }
+  void UglyFunctionToSilenceNvccWarning() {
+    InputsOutputs io(0, false, false, false);
+  }
 
  private:
   const NetworkCapabilities capabilities_;
@@ -1073,55 +1053,63 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
         " backend requires a network file.");
   }
   const WeightsFile& weights = *w;
-  if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
-    throw Exception("Network format " +
-                    pblczero::NetworkFormat::NetworkStructure_Name(
-                        weights.format().network_format().network()) +
-                    " is not supported by the CUDA backend.");
+  auto nf = weights.format().network_format();
+  using NF = pblczero::NetworkFormat;
+  switch (nf.network()) {
+    case NF::NETWORK_CLASSICAL_WITH_HEADFORMAT:
+    case NF::NETWORK_SE_WITH_HEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT:
+      break;
+    default:
+      throw Exception("Network format " +
+                      NF::NetworkStructure_Name(nf.network()) +
+                      " is not supported by the CUDA backend.");
   }
-  if (weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CLASSICAL &&
-      weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
-      weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_ATTENTION) {
-    throw Exception("Policy format " +
-                    pblczero::NetworkFormat::PolicyFormat_Name(
-                        weights.format().network_format().policy()) +
-                    " is not supported by the CUDA backend.");
+  switch (nf.policy()) {
+    case NF::POLICY_CLASSICAL:
+    case NF::POLICY_CONVOLUTION:
+    case NF::POLICY_ATTENTION:
+      break;
+    default:
+      throw Exception("Policy format " + NF::PolicyFormat_Name(nf.policy()) +
+                      " is not supported by the CUDA backend.");
   }
-  if (weights.format().network_format().value() !=
-          pblczero::NetworkFormat::VALUE_CLASSICAL &&
-      weights.format().network_format().value() !=
-          pblczero::NetworkFormat::VALUE_WDL) {
-    throw Exception("Value format " +
-                    pblczero::NetworkFormat::ValueFormat_Name(
-                        weights.format().network_format().value()) +
-                    " is not supported by the CUDA backend.");
+  switch (nf.value()) {
+    case NF::VALUE_CLASSICAL:
+    case NF::VALUE_WDL:
+      break;
+    default:
+      throw Exception("Value format " + NF::ValueFormat_Name(nf.value()) +
+                      " is not supported by the CUDA backend.");
   }
-  if (weights.format().network_format().moves_left() !=
-          pblczero::NetworkFormat::MOVES_LEFT_NONE &&
-      weights.format().network_format().moves_left() !=
-          pblczero::NetworkFormat::MOVES_LEFT_V1) {
-    throw Exception("Moves left head format " +
-                    pblczero::NetworkFormat::MovesLeftFormat_Name(
-                        weights.format().network_format().moves_left()) +
-                    " is not supported by the CUDA backend.");
+  switch (nf.moves_left()) {
+    case NF::MOVES_LEFT_NONE:
+    case NF::MOVES_LEFT_V1:
+      break;
+    default:
+      throw Exception("Moves left head format " +
+                      NF::MovesLeftFormat_Name(nf.moves_left()) +
+                      " is not supported by the CUDA backend.");
   }
-  if (weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
-      weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
-    throw Exception(
-        "Default activation " +
-        pblczero::NetworkFormat::DefaultActivation_Name(
-            weights.format().network_format().default_activation()) +
-        " is not supported by the CUDA backend.");
+  switch (nf.default_activation()) {
+    case NF::DEFAULT_ACTIVATION_RELU:
+    case NF::DEFAULT_ACTIVATION_MISH:
+      break;
+    default:
+      throw Exception("Default activation " +
+                      NF::DefaultActivation_Name(nf.default_activation()) +
+                      " is not supported by the CUDA backend.");
+  }
+  switch (nf.input_embedding()) {
+    case NF::INPUT_EMBEDDING_NONE:
+    case NF::INPUT_EMBEDDING_PE_MAP:
+    case NF::INPUT_EMBEDDING_PE_DENSE:
+      break;
+    default:
+      throw Exception("Input embedding " +
+                      NF::InputEmbeddingFormat_Name(nf.input_embedding()) +
+                      " is not supported by the CUDA backend.");
   }
   return std::make_unique<CudaNetwork<DataType>>(weights, options);
 }

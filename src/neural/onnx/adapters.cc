@@ -30,6 +30,7 @@ Program grant you additional permission to convey the resulting work.
 
 #include "utils/bf16_utils.h"
 #include "utils/fp16_utils.h"
+#include "utils/fp8_utils.h"
 #include "utils/transpose.h"
 
 namespace lczero {
@@ -88,6 +89,17 @@ std::string BFloat16OnnxWeightsAdapter::GetRawData() const {
   std::vector<uint16_t> bf16(weights_.size());
   std::transform(weights_.begin(), weights_.end(), bf16.begin(), FP32toBF16);
   return TransposeAndReturnRaw<uint16_t>(dims_, order_, bf16);
+}
+
+pblczero::TensorProto::DataType Float8E5M2OnnxWeightsAdapter::GetDataType()
+    const {
+  return pblczero::TensorProto::FLOAT8E5M2;
+}
+
+std::string Float8E5M2OnnxWeightsAdapter::GetRawData() const {
+  std::vector<uint8_t> f8(weights_.size());
+  std::transform(weights_.begin(), weights_.end(), f8.begin(), FP32toFP8E5M2);
+  return TransposeAndReturnRaw<uint8_t>(dims_, order_, f8);
 }
 
 }  // namespace lczero

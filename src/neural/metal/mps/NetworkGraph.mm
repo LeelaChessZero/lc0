@@ -30,13 +30,13 @@
 #import <vector>
 
 static MPSGraphConvolution2DOpDescriptor * __nonnull convolution2DDescriptor = [MPSGraphConvolution2DOpDescriptor descriptorWithStrideInX:1
-                                                                                                             strideInY:1
-                                                                                                       dilationRateInX:1
-                                                                                                       dilationRateInY:1
-                                                                                                                groups:1
-                                                                                                          paddingStyle:MPSGraphPaddingStyleTF_SAME
-                                                                                                            dataLayout:MPSGraphTensorNamedDataLayoutNCHW
-                                                                                                         weightsLayout:MPSGraphTensorNamedDataLayoutOIHW];
+                                                                                                                                strideInY:1
+                                                                                                                          dilationRateInX:1
+                                                                                                                          dilationRateInY:1
+                                                                                                                                   groups:1
+                                                                                                                             paddingStyle:MPSGraphPaddingStyleTF_SAME
+                                                                                                                               dataLayout:MPSGraphTensorNamedDataLayoutNCHW
+                                                                                                                            weightsLayout:MPSGraphTensorNamedDataLayoutOIHW];
 
 static MPSGraphPooling2DOpDescriptor * __nonnull averagePoolingDescriptor = [MPSGraphPooling2DOpDescriptor descriptorWithKernelWidth:8
                                                                                                                         kernelHeight:8
@@ -112,7 +112,7 @@ static const NSInteger kMinSubBatchSize = 20;
 // The Lc0NetworkGraph object is stored in the dictionary.
 // The Lc0NetworkGraph object is initialized with the Metal device.
 +(void) graphWithDevice:(id<MTLDevice> __nonnull)device
-                index:(NSNumber * _Nonnull)index {
+                  index:(NSNumber * _Nonnull)index {
     NSMutableDictionary * graphs = [Lc0NetworkGraph getGraphs];
 
     @synchronized (self) {
@@ -146,14 +146,13 @@ static const NSInteger kMinSubBatchSize = 20;
     NSUInteger subBatchSize = batchSize / splits;
     NSUInteger inputDataLength = subBatchSize * [_inputTensor sizeOfDimensions:@[@1, @2, @3]];
 
-
     // Split batchSize into smaller sub-batches and run using double-buffering.
     NSUInteger subBatch = 0;
     MPSCommandBuffer * commandBuffer;
     for (subBatch = 0; subBatch < splits - 1; subBatch++) {
         commandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
-                                  subBatch:subBatch
-                              subBatchSize:subBatchSize];
+                                                  subBatch:subBatch
+                                              subBatchSize:subBatchSize];
     }
     // Last sub-batch may be smaller or larger than others.
     MPSCommandBuffer * latestCommandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
@@ -200,10 +199,10 @@ static const NSInteger kMinSubBatchSize = 20;
     };
 
     [self encodeToCommandBuffer:commandBuffer
-                            feeds:@{_inputTensor : inputTensorData}
-                    targetTensors:_targetTensors
-                 targetOperations:nil
-              executionDescriptor:executionDescriptor];
+                          feeds:@{_inputTensor : inputTensorData}
+                  targetTensors:_targetTensors
+               targetOperations:nil
+            executionDescriptor:executionDescriptor];
 
     // Commit the command buffer
     [commandBuffer commit];
@@ -219,7 +218,7 @@ static const NSInteger kMinSubBatchSize = 20;
         NSUInteger outputDataLength = [_resultTensors[rsIdx] sizeOfDimensions:@[@1, @2, @3]] * subBatchSize;
         for (NSUInteger subBatch = 0; subBatch < [_resultDataDicts count]; subBatch++) {
             [[_resultDataDicts[@(subBatch)][_resultTensors[rsIdx]] mpsndarray] readBytes:outputBuffers[rsIdx] + subBatch * outputDataLength
-                                                                     strideBytes:nil];
+                                                                             strideBytes:nil];
         }
     }
 }
@@ -264,23 +263,23 @@ static const NSInteger kMinSubBatchSize = 20;
                                           freeWhenDone:NO];
 
     MPSGraphTensor * weightsTensor = [self variableWithData:weightsData
-                                                        shape:@[@(outputChannels), @(inputChannels), @(kernelSize), @(kernelSize)]
-                                                     dataType:MPSDataTypeFloat32
-                                                         name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                      shape:@[@(outputChannels), @(inputChannels), @(kernelSize), @(kernelSize)]
+                                                   dataType:MPSDataTypeFloat32
+                                                       name:[NSString stringWithFormat:@"%@/weights", label]];
 
     NSData * biasData = [NSData dataWithBytesNoCopy:biases
                                              length:outputChannels * sizeof(float)
                                        freeWhenDone:NO];
 
     MPSGraphTensor * biasTensor = [self variableWithData:biasData
-                                                     shape:@[@(outputChannels), @1, @1]
-                                                  dataType:MPSDataTypeFloat32
-                                                      name:[NSString stringWithFormat:@"%@/biases", label]];
+                                                   shape:@[@(outputChannels), @1, @1]
+                                                dataType:MPSDataTypeFloat32
+                                                    name:[NSString stringWithFormat:@"%@/biases", label]];
 
     MPSGraphTensor * convTensor = [self convolution2DWithSourceTensor:parent
-                                                          weightsTensor:weightsTensor
-                                                             descriptor:convolution2DDescriptor
-                                                                   name:[NSString stringWithFormat:@"%@/conv", label]];
+                                                        weightsTensor:weightsTensor
+                                                           descriptor:convolution2DDescriptor
+                                                                 name:[NSString stringWithFormat:@"%@/conv", label]];
 
     MPSGraphTensor * convBiasTensor = [self additionWithPrimaryTensor:convTensor
                                                       secondaryTensor:biasTensor
@@ -290,20 +289,20 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) addResidualBlockWithParent:(MPSGraphTensor * __nonnull)parent
-                                      outputChannels:(NSUInteger)outputChannels
-                                          kernelSize:(NSUInteger)kernelSize
-                                            weights1:(float * __nonnull)weights1
-                                             biases1:(float * __nonnull)biases1
-                                            weights2:(float * __nonnull)weights2
-                                             biases2:(float * __nonnull)biases2
-                                               label:(NSString * __nonnull)label
-                                               hasSe:(BOOL)hasSe
-                                          seWeights1:(float * __nullable)seWeights1
-                                           seBiases1:(float * __nullable)seBiases1
-                                          seWeights2:(float * __nullable)seWeights2
-                                           seBiases2:(float * __nullable)seBiases2
-                                         seFcOutputs:(NSUInteger)seFcOutputs
-                                          activation:(NSString * __nullable)activation
+                                        outputChannels:(NSUInteger)outputChannels
+                                            kernelSize:(NSUInteger)kernelSize
+                                              weights1:(float * __nonnull)weights1
+                                               biases1:(float * __nonnull)biases1
+                                              weights2:(float * __nonnull)weights2
+                                               biases2:(float * __nonnull)biases2
+                                                 label:(NSString * __nonnull)label
+                                                 hasSe:(BOOL)hasSe
+                                            seWeights1:(float * __nullable)seWeights1
+                                             seBiases1:(float * __nullable)seBiases1
+                                            seWeights2:(float * __nullable)seWeights2
+                                             seBiases2:(float * __nullable)seBiases2
+                                           seFcOutputs:(NSUInteger)seFcOutputs
+                                            activation:(NSString * __nullable)activation
 {
     MPSGraphTensor * conv1Tensor = [self addConvolutionBlockWithParent:parent
                                                         outputChannels:outputChannels
@@ -346,11 +345,11 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) addFullyConnectedLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                            outputChannels:(NSUInteger)outputChannels
-                                                   weights:(float * __nonnull)weights
-                                                    biases:(float * __nullable)biases
-                                                activation:(NSString * __nullable)activation
-                                                     label:(NSString * __nonnull)label
+                                              outputChannels:(NSUInteger)outputChannels
+                                                     weights:(float * __nonnull)weights
+                                                      biases:(float * __nullable)biases
+                                                  activation:(NSString * __nullable)activation
+                                                       label:(NSString * __nonnull)label
 {
     NSUInteger inputChannels = [[parent.shape lastObject] intValue];
 
@@ -359,9 +358,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                          freeWhenDone:NO];
 
     MPSGraphTensor * weightTensor = [self variableWithData:weightData
-                                                       shape:@[@(outputChannels), @(inputChannels)]
-                                                    dataType:MPSDataTypeFloat32
-                                                        name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                     shape:@[@(outputChannels), @(inputChannels)]
+                                                  dataType:MPSDataTypeFloat32
+                                                      name:[NSString stringWithFormat:@"%@/weights", label]];
 
     // Leela weights are OIHW, need to be transposed to IO** to allow matmul.
     weightTensor = [self transposeTensor:weightTensor
@@ -480,29 +479,31 @@ static const NSInteger kMinSubBatchSize = 20;
                                             freeWhenDone:NO];
 
     MPSGraphTensor * mappingTensor = [self constantWithData:policyMapData
-                                                        shape:@[@(kNumPolicyOutputs)]
-                                                     dataType:MPSDataTypeUInt32];
+                                                      shape:@[@(kNumPolicyOutputs)]
+                                                   dataType:MPSDataTypeUInt32];
 
     MPSGraphTensor * flatConvTensor = [self flatten2DTensor:parent
                                                        axis:1
                                                        name:[NSString stringWithFormat:@"%@/flatten", label]];
 
     MPSGraphTensor * policyTensor = [self gatherWithUpdatesTensor:flatConvTensor
-                                                      indicesTensor:mappingTensor
-                                                               axis:1
-                                                    batchDimensions:0
-                                                               name:[NSString stringWithFormat:@"%@/gather", label]];
+                                                    indicesTensor:mappingTensor
+                                                             axis:1
+                                                  batchDimensions:0
+                                                             name:[NSString stringWithFormat:@"%@/gather", label]];
 
     return policyTensor;
 }
 
--(nonnull MPSGraphTensor *) addEncoderLayerWithParent:parent
-                                        legacyWeights:(lczero::LegacyWeights::EncoderLayer &)encoder
+-(nonnull MPSGraphTensor *) addEncoderLayerWithParent:(MPSGraphTensor * __nonnull)parent
+                                        legacyWeights:(lczero::MultiHeadWeights::EncoderLayer &)encoder
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
                                     smolgenActivation:(NSString * __nullable)smolgenActivation
                                         ffnActivation:(NSString * __nonnull)ffnActivation
                                                 alpha:(float)alpha
+                                              epsilon:(float)epsilon
+                                             normtype:(NSString * __nonnull)normtype
                                                 label:(NSString * __nonnull)label
 {
     NSUInteger dModel = encoder.mha.q_b.size();
@@ -545,13 +546,38 @@ static const NSInteger kMinSubBatchSize = 20;
                                            label:[NSString stringWithFormat:@"%@/mha/fc", label]];
 
     // Skip connection + Layer Norm 1.
-    MPSGraphTensor * enc = [self addLayerNormalizationWithParent:mha
-                                           scaledSecondaryTensor:parent
-                                                          gammas:&encoder.ln1_gammas[0]
-                                                           betas:&encoder.ln1_betas[0]
-                                                           alpha:alpha
-                                                         epsilon:1e-6
-                                                           label:[NSString stringWithFormat:@"%@/ln1", label]];
+    MPSGraphTensor * enc;
+    if ([normtype isEqual:@"layernorm"]) {
+        enc = [self addLayerNormalizationWithParent:parent
+                              scaledSecondaryTensor:mha
+                                             gammas:&encoder.ln1_gammas[0]
+                                              betas:&encoder.ln1_betas[0]
+                                              alpha:alpha
+                                            epsilon:epsilon
+                                              label:[NSString stringWithFormat:@"%@/ln1", label]];
+    }
+    else if ([normtype isEqual:@"rmsnorm"]) {
+        enc = [self addRmsNormalizationWithParent:parent
+                            scaledSecondaryTensor:mha
+                                           gammas:&encoder.ln1_gammas[0]
+                                            alpha:alpha
+                                            label:[NSString stringWithFormat:@"%@/ln1", label]];
+    }
+    else if ([normtype isEqual:@"skipfirst"]) {
+        if (alpha != 1.0) {
+            enc = [self constantWithScalar:alpha shape:@[@1] dataType:parent.dataType];
+            enc = [self multiplicationWithPrimaryTensor:mha
+                                        secondaryTensor:enc
+                                                   name:[NSString stringWithFormat:@"%@/multiply", label]];
+        }
+        enc = [self additionWithPrimaryTensor:parent
+                              secondaryTensor:enc
+                                         name:[NSString stringWithFormat:@"%@/add", label]];
+    }
+    else {
+        [NSException raise:@"Invalid normalization type."
+                    format:@"Invalid normalization type specified: %@", normtype];
+    }
 
     // Feedforward network (FFN).
     MPSGraphTensor * ffn = [self addFullyConnectedLayerWithParent:enc
@@ -569,13 +595,26 @@ static const NSInteger kMinSubBatchSize = 20;
                                            label:[NSString stringWithFormat:@"%@/ffn2", label]];
 
     // Skip connection + Layer Norm 2.
-    return [self addLayerNormalizationWithParent:ffn
-                           scaledSecondaryTensor:enc
-                                          gammas:&encoder.ln2_gammas[0]
-                                           betas:&encoder.ln2_betas[0]
-                                           alpha:alpha
-                                         epsilon:1e-6
-                                           label:[NSString stringWithFormat:@"%@/ln2", label]];
+    if ([normtype isEqual:@"layernorm"]) {
+        return [self addLayerNormalizationWithParent:enc
+                               scaledSecondaryTensor:ffn
+                                              gammas:&encoder.ln2_gammas[0]
+                                               betas:&encoder.ln2_betas[0]
+                                               alpha:alpha
+                                             epsilon:epsilon
+                                               label:[NSString stringWithFormat:@"%@/ln2", label]];
+    }
+    else if ([normtype isEqual:@"rmsnorm"] || [normtype isEqual:@"skipfirst"]) {
+        enc = [self addRmsNormalizationWithParent:enc
+                            scaledSecondaryTensor:ffn
+                                           gammas:&encoder.ln2_gammas[0]
+                                            alpha:alpha
+                                            label:[NSString stringWithFormat:@"%@/ln1", label]];
+    }
+    else {
+        [NSException raise:@"Invalid normalization type."
+                    format:@"Invalid normalization type specified: %@", normtype];
+    }
 }
 
 -(nonnull MPSGraphTensor *) addLayerNormalizationWithParent:(MPSGraphTensor * __nonnull)parent
@@ -603,38 +642,90 @@ static const NSInteger kMinSubBatchSize = 20;
     NSUInteger channelSize = [[parent.shape lastObject] intValue];
 
     MPSGraphTensor * means = [self meanOfTensor:parent
-                                      axes:@[@(axis)]
-                                      name:[NSString stringWithFormat:@"%@/mean", label]];
+                                           axes:@[@(axis)]
+                                           name:[NSString stringWithFormat:@"%@/mean", label]];
 
     MPSGraphTensor * variances = [self varianceOfTensor:parent
-                                      axes:@[@(axis)]
-                                      name:[NSString stringWithFormat:@"%@/variance", label]];
+                                                   axes:@[@(axis)]
+                                                   name:[NSString stringWithFormat:@"%@/variance", label]];
 
     NSData * gammaData = [NSData dataWithBytesNoCopy:gammas
-                                                  length:channelSize * sizeof(float)
-                                            freeWhenDone:NO];
-
-    MPSGraphTensor * gammaTensor = [self variableWithData:gammaData
-                                                        shape:@[@(channelSize)]
-                                                     dataType:MPSDataTypeFloat32
-                                                       name:[NSString stringWithFormat:@"%@/gamma", label]];
-
-    NSData * betaData = [NSData dataWithBytesNoCopy:betas
                                               length:channelSize * sizeof(float)
                                         freeWhenDone:NO];
 
+    MPSGraphTensor * gammaTensor = [self variableWithData:gammaData
+                                                    shape:@[@(channelSize)]
+                                                 dataType:MPSDataTypeFloat32
+                                                     name:[NSString stringWithFormat:@"%@/gamma", label]];
+
+    NSData * betaData = [NSData dataWithBytesNoCopy:betas
+                                             length:channelSize * sizeof(float)
+                                       freeWhenDone:NO];
+
     MPSGraphTensor * betaTensor = [self variableWithData:betaData
-                                                        shape:@[@(channelSize)]
-                                                     dataType:MPSDataTypeFloat32
-                                                      name:[NSString stringWithFormat:@"%@/beta", label]];
+                                                   shape:@[@(channelSize)]
+                                                dataType:MPSDataTypeFloat32
+                                                    name:[NSString stringWithFormat:@"%@/beta", label]];
 
     return [self normalizationWithTensor:parent
-                                meanTensor:means
-                            varianceTensor:variances
-                               gammaTensor:gammaTensor
-                                betaTensor:betaTensor
-                                   epsilon:epsilon
-                                      name:[NSString stringWithFormat:@"%@/norm", label]];
+                              meanTensor:means
+                          varianceTensor:variances
+                             gammaTensor:gammaTensor
+                              betaTensor:betaTensor
+                                 epsilon:epsilon
+                                    name:[NSString stringWithFormat:@"%@/norm", label]];
+}
+
+
+-(nonnull MPSGraphTensor *) addRmsNormalizationWithParent:(MPSGraphTensor * __nonnull)parent
+                                    scaledSecondaryTensor:(MPSGraphTensor * __nullable)secondary
+                                                   gammas:(float * __nonnull)gammas
+                                                    alpha:(float)alpha
+                                                    label:(NSString * __nonnull)label
+{
+    if (secondary != nil) {
+        if (alpha != 1.0) {
+            MPSGraphTensor * alphaTensor = [self constantWithScalar:alpha shape:@[@1] dataType:parent.dataType];
+            secondary = [self multiplicationWithPrimaryTensor:secondary
+                                              secondaryTensor:alphaTensor
+                                                         name:[NSString stringWithFormat:@"%@/multiply", label]];
+        }
+
+        parent = [self additionWithPrimaryTensor:parent
+                                 secondaryTensor:secondary
+                                            name:[NSString stringWithFormat:@"%@/add", label]];
+    }
+
+    NSUInteger axis = [parent.shape count] - 1;
+    NSUInteger channelSize = [[parent.shape lastObject] intValue];
+
+    MPSGraphTensor * factor = [self multiplicationWithPrimaryTensor:parent
+                                                    secondaryTensor:parent
+                                                               name:[NSString stringWithFormat:@"%@/square", label]];
+
+    factor = [self meanOfTensor:factor
+                           axes:@[@(axis)]
+                           name:[NSString stringWithFormat:@"%@/mean", label]];
+
+    factor = [self squareRootWithTensor:factor
+                                   name:[NSString stringWithFormat:@"%@/sqrt", label]];
+
+    NSData * gammaData = [NSData dataWithBytesNoCopy:gammas
+                                              length:channelSize * sizeof(float)
+                                        freeWhenDone:NO];
+
+    MPSGraphTensor * gammaTensor = [self variableWithData:gammaData
+                                                    shape:@[@(channelSize)]
+                                                 dataType:MPSDataTypeFloat32
+                                                     name:[NSString stringWithFormat:@"%@/gamma", label]];
+
+    factor = [self multiplicationWithPrimaryTensor:factor
+                                   secondaryTensor:gammaTensor
+                                              name:[NSString stringWithFormat:@"%@/multiply2", label]];
+
+    return [self multiplicationWithPrimaryTensor:parent
+                                 secondaryTensor:factor
+                                            name:[NSString stringWithFormat:@"%@/multiply3", label]];
 }
 
 -(nonnull MPSGraphTensor *) transposeChannelsWithTensor:(MPSGraphTensor * __nonnull)tensor
@@ -642,17 +733,17 @@ static const NSInteger kMinSubBatchSize = 20;
                                                   label:(NSString * __nonnull)label
 {
     MPSGraphTensor * transposeTensor = [self transposeTensor:tensor
-                                                     dimension:1
-                                                 withDimension:2
-                                                          name:[NSString stringWithFormat:@"%@/weights_transpose_1", label]];
+                                                   dimension:1
+                                               withDimension:2
+                                                        name:[NSString stringWithFormat:@"%@/weights_transpose_1", label]];
     transposeTensor = [self transposeTensor:transposeTensor
-                                    dimension:2
-                                withDimension:3
-                                         name:[NSString stringWithFormat:@"%@/weights_transpose_2", label]];
+                                  dimension:2
+                              withDimension:3
+                                       name:[NSString stringWithFormat:@"%@/weights_transpose_2", label]];
 
     return [self reshapeTensor:transposeTensor
-                       withShape:withShape
-                            name:[NSString stringWithFormat:@"%@/reshape", label]];
+                     withShape:withShape
+                          name:[NSString stringWithFormat:@"%@/reshape", label]];
 }
 
 -(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
@@ -660,7 +751,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
-                                               smolgen:(lczero::LegacyWeights::Smolgen * __nullable)smolgen
+                                               smolgen:(lczero::MultiHeadWeights::Smolgen * __nullable)smolgen
                                      smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label
 {
@@ -680,13 +771,13 @@ static const NSInteger kMinSubBatchSize = 20;
     // Scaled attention matmul.
     keys = [self transposeTensor:keys dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_k_2", label]];
     MPSGraphTensor * attn = [self matrixMultiplicationWithPrimaryTensor:queries
-                                                          secondaryTensor:keys
-                                                                     name:[NSString stringWithFormat:@"%@/matmul_qk", label]];
+                                                        secondaryTensor:keys
+                                                                   name:[NSString stringWithFormat:@"%@/matmul_qk", label]];
     attn = [self divisionWithPrimaryTensor:attn
                            secondaryTensor:[self constantWithScalar:sqrt(depth)
                                                               shape:@[@1]
                                                            dataType:attn.dataType]
-                                        name:[NSString stringWithFormat:@"%@/scale", label]];
+                                      name:[NSString stringWithFormat:@"%@/scale", label]];
     // Smolgen.
     if (smolgen != nil) {
         // Smolgen weights.
@@ -759,8 +850,8 @@ static const NSInteger kMinSubBatchSize = 20;
 
     // matmul(scaled_attention_weights, v).
     attn = [self matrixMultiplicationWithPrimaryTensor:attn
-                                         secondaryTensor:values
-                                                    name:[NSString stringWithFormat:@"%@/matmul_v", label]];
+                                       secondaryTensor:values
+                                                  name:[NSString stringWithFormat:@"%@/matmul_v", label]];
 
     attn = [self transposeTensor:attn dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_a", label]];
 
@@ -773,26 +864,26 @@ static const NSInteger kMinSubBatchSize = 20;
                                                 label:(NSString * __nonnull)label
 {
     queries = [self reshapeTensor:queries
-                          withShape:@[@(-1), @64, [queries.shape lastObject]]
-                               name:[NSString stringWithFormat:@"%@/reshape_q", label]];
+                        withShape:@[@(-1), @64, [queries.shape lastObject]]
+                             name:[NSString stringWithFormat:@"%@/reshape_q", label]];
 
     keys = [self reshapeTensor:keys
-                       withShape:@[@(-1), @64, [keys.shape lastObject]]
-                            name:[NSString stringWithFormat:@"%@/reshape_k", label]];
+                     withShape:@[@(-1), @64, [keys.shape lastObject]]
+                          name:[NSString stringWithFormat:@"%@/reshape_k", label]];
 
     keys = [self transposeTensor:keys
-                            dimension:1
-                        withDimension:2
-                                 name:[NSString stringWithFormat:@"%@/transpose_k", label]];
+                       dimension:1
+                   withDimension:2
+                            name:[NSString stringWithFormat:@"%@/transpose_k", label]];
 
     MPSGraphTensor * qkMatmul = [self matrixMultiplicationWithPrimaryTensor:queries
-                                                              secondaryTensor:keys
-                                                                         name:[NSString stringWithFormat:@"%@/matmul", label]];
+                                                            secondaryTensor:keys
+                                                                       name:[NSString stringWithFormat:@"%@/matmul", label]];
 
     qkMatmul = [self multiplicationWithPrimaryTensor:qkMatmul
-                                       secondaryTensor:[self constantWithScalar:scale
-                                                                            shape:@[@1] dataType:qkMatmul.dataType]
-                                                  name:[NSString stringWithFormat:@"%@/scale", label]];
+                                     secondaryTensor:[self constantWithScalar:scale
+                                                                        shape:@[@1] dataType:qkMatmul.dataType]
+                                                name:[NSString stringWithFormat:@"%@/scale", label]];
     return qkMatmul;
 }
 
@@ -814,9 +905,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                          freeWhenDone:NO];
 
     MPSGraphTensor * weightTensor = [self variableWithData:weightData
-                                                       shape:@[@(outputSize), @(channelSize)]
-                                                    dataType:parent.dataType
-                                                        name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                     shape:@[@(outputSize), @(channelSize)]
+                                                  dataType:parent.dataType
+                                                      name:[NSString stringWithFormat:@"%@/weights", label]];
 
     keys = [self transposeTensor:keys dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose", label]];
 
@@ -837,8 +928,8 @@ static const NSInteger kMinSubBatchSize = 20;
                                              name:[NSString stringWithFormat:@"%@/offset_slice_2", label]];
 
     MPSGraphTensor * promo = [self additionWithPrimaryTensor:offset1
-                                               secondaryTensor:offset2
-                                                          name:[NSString stringWithFormat:@"%@/offset_add", label]];
+                                             secondaryTensor:offset2
+                                                        name:[NSString stringWithFormat:@"%@/offset_add", label]];
 
     NSMutableArray<MPSGraphTensor *> * stack = [NSMutableArray arrayWithCapacity:inputSize];
     for (NSUInteger i = 0; i < inputSize; i++) {
@@ -865,8 +956,8 @@ static const NSInteger kMinSubBatchSize = 20;
     assert([shape count] == 2 && shape[0] == tensor.shape[1]);
 
     NSData * encodingData = [NSData dataWithBytesNoCopy:(void *)encodings
-                                               length:[shape[0] intValue] * [shape[1] intValue] * sizeof(float)
-                                         freeWhenDone:NO];
+                                                 length:[shape[0] intValue] * [shape[1] intValue] * sizeof(float)
+                                           freeWhenDone:NO];
 
     MPSGraphTensor * encodingTensor = [self variableWithData:encodingData
                                                        shape:shape
@@ -911,14 +1002,49 @@ static const NSInteger kMinSubBatchSize = 20;
                          name:[NSString stringWithFormat:@"%@/concat", label]];
 }
 
+
+-(nonnull MPSGraphTensor *) dynamicPositionEncodingWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                                        width:(const NSUInteger)width
+                                                      weights:(float * __nonnull)weights
+                                                       biases:(float * __nonnull)biases
+                                                        label:(NSString * __nonnull)label
+{
+    MPSGraphTensor * encodingTensor = [self sliceTensor:tensor
+                                              dimension:2
+                                                  start:0
+                                                 length:12
+                                                   name:[NSString stringWithFormat:@"%@/slice", label]];
+
+    encodingTensor = [self flatten2DTensor:encodingTensor
+                                      axis:1
+                                      name:[NSString stringWithFormat:@"%@/flatten", label]];
+
+    encodingTensor = [self addFullyConnectedLayerWithParent:encodingTensor
+                                             outputChannels:[tensor.shape[1] intValue] * width
+                                                    weights:weights
+                                                     biases:biases
+                                                 activation:nil
+                                                      label:[NSString stringWithFormat:@"%@/dense", label]];
+
+    encodingTensor = [self reshapeTensor:encodingTensor
+                               withShape:@[@(-1), tensor.shape[1], @(width)]
+                                    name:[NSString stringWithFormat:@"%@/reshape", label]];
+
+    return [self concatTensor:tensor
+                   withTensor:encodingTensor
+                    dimension:[tensor.shape count] - 1
+                         name:[NSString stringWithFormat:@"%@/concat", label]];
+}
+
+
 -(nonnull MPSGraphTensor *) addGatingLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                              weights:(const float * __nonnull)weights
                                        withOperation:(NSString * __nonnull)op
                                                label:(NSString * __nonnull)label
 {
     NSData * weightsData = [NSData dataWithBytesNoCopy:(void *)weights
-                                                 length:[parent sizeOfDimensionsFrom:@1] * sizeof(float)
-                                           freeWhenDone:NO];
+                                                length:[parent sizeOfDimensionsFrom:@1] * sizeof(float)
+                                          freeWhenDone:NO];
 
     MPSGraphTensor * weightsTensor = [self variableWithData:weightsData
                                                       shape:@[parent.shape[2], parent.shape[1]]
@@ -987,11 +1113,11 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) mishWithTensor:(MPSGraphTensor * __nonnull)tensor
-                                               label:(NSString * __nonnull)label
+                                     label:(NSString * __nonnull)label
 {
     // mish(x) = x * tanh(softplus(x)) = x * tanh(ln(1 + exp(x)))
     MPSGraphTensor * mishTensor = [self exponentWithTensor:tensor
-                                                        name:[NSString stringWithFormat:@"%@/exp", label]];
+                                                      name:[NSString stringWithFormat:@"%@/exp", label]];
 
     MPSGraphTensor * oneTensor = [self constantWithScalar:1.0 shape:@[@1] dataType:mishTensor.dataType];
     mishTensor = [self additionWithPrimaryTensor:mishTensor
@@ -1023,12 +1149,12 @@ static const NSInteger kMinSubBatchSize = 20;
 
     return [self multiplicationWithPrimaryTensor:tensor
                                  secondaryTensor:swish
-                                           name:[NSString stringWithFormat:@"%@/multiply_2", label]];
+                                            name:[NSString stringWithFormat:@"%@/multiply_2", label]];
 
 }
 
 -(nonnull MPSGraphTensor *) seluWithTensor:(MPSGraphTensor * __nonnull)tensor
-                                               label:(NSString * __nonnull)label
+                                     label:(NSString * __nonnull)label
 {
     // SELU:
     // if x > 0: return scale * x
@@ -1039,42 +1165,238 @@ static const NSInteger kMinSubBatchSize = 20;
     MPSGraphTensor * alpha = [self constantWithScalar:1.67326324 shape:@[@1] dataType:tensor.dataType];
 
     MPSGraphTensor * lessThanZero = [self lessThanWithPrimaryTensor:tensor
-                                                      secondaryTensor:zero
-                                                                 name:[NSString stringWithFormat:@"%@/ltzero", label]];
+                                                    secondaryTensor:zero
+                                                               name:[NSString stringWithFormat:@"%@/ltzero", label]];
 
     MPSGraphTensor * greaterThanZero = [self greaterThanOrEqualToWithPrimaryTensor:tensor
-                                                                     secondaryTensor:zero
-                                                                                name:[NSString stringWithFormat:@"%@/gtzero", label]];
+                                                                   secondaryTensor:zero
+                                                                              name:[NSString stringWithFormat:@"%@/gtzero", label]];
 
     MPSGraphTensor * scaled = [self multiplicationWithPrimaryTensor:tensor
-                                                      secondaryTensor:scale
-                                                                 name:[NSString stringWithFormat:@"%@/scale", label]];
+                                                    secondaryTensor:scale
+                                                               name:[NSString stringWithFormat:@"%@/scale", label]];
 
     scaled = [self multiplicationWithPrimaryTensor:scaled
-                                     secondaryTensor:greaterThanZero
-                                                name:[NSString stringWithFormat:@"%@/scale_mask", label]];
+                                   secondaryTensor:greaterThanZero
+                                              name:[NSString stringWithFormat:@"%@/scale_mask", label]];
 
     MPSGraphTensor * exp = [self exponentWithTensor:tensor
-                                                 name:[NSString stringWithFormat:@"%@/exp", label]];
+                                               name:[NSString stringWithFormat:@"%@/exp", label]];
 
     MPSGraphTensor * one = [self constantWithScalar:1.0 shape:@[@1] dataType:tensor.dataType];
     exp = [self subtractionWithPrimaryTensor:exp
-                               secondaryTensor:one
-                                          name:[NSString stringWithFormat:@"%@/exp_1", label]];
+                             secondaryTensor:one
+                                        name:[NSString stringWithFormat:@"%@/exp_1", label]];
 
     exp = [self multiplicationWithPrimaryTensor:exp
-                                  secondaryTensor:alpha
-                                             name:[NSString stringWithFormat:@"%@/exp_alpha", label]];
+                                secondaryTensor:alpha
+                                           name:[NSString stringWithFormat:@"%@/exp_alpha", label]];
 
     exp = [self multiplicationWithPrimaryTensor:exp
-                                  secondaryTensor:scale
-                                             name:[NSString stringWithFormat:@"%@/exp_scale", label]];
+                                secondaryTensor:scale
+                                           name:[NSString stringWithFormat:@"%@/exp_scale", label]];
 
     exp = [self multiplicationWithPrimaryTensor:exp
-                                  secondaryTensor:lessThanZero
-                                             name:[NSString stringWithFormat:@"%@/exp_mask", label]];
+                                secondaryTensor:lessThanZero
+                                           name:[NSString stringWithFormat:@"%@/exp_mask", label]];
 
     return [self additionWithPrimaryTensor:scaled secondaryTensor:exp name:[NSString stringWithFormat:@"%@/sum", label]];
+}
+
+-(nonnull MPSGraphTensor *) makePolicyHeadWithTensor:(MPSGraphTensor * __nonnull)policy
+                                     attentionPolicy:(BOOL)attentionPolicy
+                                   convolutionPolicy:(BOOL)convolutionPolicy
+                                       attentionBody:(BOOL)attentionBody
+                                   defaultActivation:(NSString * __nullable)defaultActivation
+                                   smolgenActivation:(NSString * __nullable)smolgenActivation
+                                       ffnActivation:(NSString * __nullable)ffnActivation
+                                          policyHead:(lczero::MultiHeadWeights::PolicyHead &)head
+                                               label:(NSString * __nonnull)label
+{
+    if (attentionPolicy) {
+        // Not implemented yet!
+        // tokens = tf.reverse(policy_tokens, axis=[1]) if opponent else policy_tokens
+
+        // 2. Square Embedding: Dense with default activation (or SELU for old ap-mish nets).
+        NSUInteger embeddingSize = head.ip_pol_b.size();
+        NSUInteger policyDModel = head.ip2_pol_b.size();
+        // ap-mish uses hardcoded SELU
+        policy = [self addFullyConnectedLayerWithParent:policy
+                                         outputChannels:embeddingSize
+                                                weights:&head.ip_pol_w[0]
+                                                 biases:&head.ip_pol_b[0]
+                                             activation:attentionBody ? defaultActivation : @"selu"
+                                                  label:[NSString stringWithFormat:@"%@/fc_embed", label]];
+
+        // 3. Encoder layers
+        for (NSUInteger i = 0; i < head.pol_encoder.size(); i++) {
+            policy = [self addEncoderLayerWithParent:policy
+                                       legacyWeights:head.pol_encoder[i]
+                                               heads:head.pol_encoder_head_count
+                                       embeddingSize:embeddingSize
+                                   smolgenActivation:attentionBody ? smolgenActivation : nil
+                                       ffnActivation:attentionBody ? ffnActivation : @"selu"
+                                               alpha:1.0
+                                             epsilon:1e-6
+                                            normtype:@"layernorm"
+                                               label:[NSString stringWithFormat:@"%@/encoder_%zu", label, i]];
+        }
+
+        // 4. Self-attention q and k.
+        MPSGraphTensor * queries = [self addFullyConnectedLayerWithParent:policy
+                                                           outputChannels:policyDModel
+                                                                  weights:&head.ip2_pol_w[0]
+                                                                   biases:&head.ip2_pol_b[0]
+                                                               activation:nil
+                                                                    label:[NSString stringWithFormat:@"%@/self_attention/q", label]];
+
+        MPSGraphTensor * keys = [self addFullyConnectedLayerWithParent:policy
+                                                        outputChannels:policyDModel
+                                                               weights:&head.ip3_pol_w[0]
+                                                                biases:&head.ip3_pol_b[0]
+                                                            activation:nil
+                                                                 label:[NSString stringWithFormat:@"%@/self_attention/k", label]];
+
+        // 5. matmul(q,k) / sqrt(dk)
+        policy = [self scaledQKMatmulWithQueries:queries
+                                        withKeys:keys
+                                           scale:1.0f / sqrt(policyDModel)
+                                           label:[NSString stringWithFormat:@"%@/self_attention/kq", label]];
+
+        // 6. Slice last 8 keys (k[:, 56:, :]) and matmul with policy promotion weights, then concat to matmul_qk.
+        policy = [self attentionPolicyPromoMatmulConcatWithParent:policy
+                                                         withKeys:keys
+                                                          weights:&head.ip4_pol_w[0]
+                                                        inputSize:8
+                                                       outputSize:4
+                                                        sliceFrom:56
+                                                      channelSize:policyDModel
+                                                            label:[NSString stringWithFormat:@"%@/promo_logits", label]];
+    }
+    else if (convolutionPolicy) {
+        if (attentionBody) {
+            [NSException raise:@"Unsupported architecture."
+                        format:@"Convolutional policy not supported with attention body."];
+        }
+        policy = [self addConvolutionBlockWithParent:policy
+                                      outputChannels:head.policy1.biases.size()
+                                          kernelSize:3
+                                             weights:&head.policy1.weights[0]
+                                              biases:&head.policy1.biases[0]
+                                          activation:defaultActivation
+                                               label:[NSString stringWithFormat:@"%@/conv1", label]];
+
+        // No activation.
+        policy = [self addConvolutionBlockWithParent:policy
+                                      outputChannels:head.policy.biases.size()
+                                          kernelSize:3
+                                             weights:&head.policy.weights[0]
+                                              biases:&head.policy.biases[0]
+                                          activation:nil
+                                               label:[NSString stringWithFormat:@"%@/conv2", label]];
+
+
+        /**
+         * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
+         * Implementation of policy map to be done in CPU for now.
+         *
+         * Reinstate this section when bug is fixed. See comments below.
+         *
+         // [1858 -> HWC or CHW]
+         const bool HWC = false;
+         std::vector<uint32_t> policy_map(1858);
+         for (const auto& mapping : kConvPolicyMap) {
+         if (mapping == -1) continue;
+         const auto index = &mapping - kConvPolicyMap;
+         const auto displacement = index / 64;
+         const auto square = index % 64;
+         const auto row = square / 8;
+         const auto col = square % 8;
+         if (HWC) {
+         policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
+         } else {
+         policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
+         }
+         }
+         policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
+         */
+    }
+    else {
+        if (attentionBody) {
+            [NSException raise:@"Unsupported architecture."
+                        format:@"Classical policy not supported with attention body."];
+        }
+
+        const int policySize = head.policy.biases.size();
+
+        policy = [self addConvolutionBlockWithParent:policy
+                                      outputChannels:policySize
+                                          kernelSize:1
+                                             weights:&head.policy.weights[0]
+                                              biases:&head.policy.biases[0]
+                                          activation:defaultActivation
+                                               label:[NSString stringWithFormat:@"%@/conv", label]];
+
+        policy = [self flatten2DTensor:policy
+                                  axis:1
+                                  name:[NSString stringWithFormat:@"%@/conv/flatten", label]];
+
+        // ip_pol_w and ip_pol_b as used here is for classical policy dense weights,
+        // may be worth renaming to dismbiguate policy embedding weights in attention policy.
+        policy = [self addFullyConnectedLayerWithParent:policy
+                                         outputChannels:head.ip_pol_b.size()
+                                                weights:&head.ip_pol_w[0]
+                                                 biases:&head.ip_pol_b[0]
+                                             activation:nil
+                                                  label:[NSString stringWithFormat:@"%@/fc", label]];
+    }
+    return policy;
+}
+
+-(nonnull MPSGraphTensor *) makeValueHeadWithTensor:(MPSGraphTensor * __nonnull)value
+                                      attentionBody:(BOOL)attentionBody
+                                            wdlHead:(BOOL)wdl
+                                  defaultActivation:(NSString * __nullable)defaultActivation
+                                          valueHead:(lczero::MultiHeadWeights::ValueHead &)head
+                                              label:(NSString * __nonnull)label
+{
+    if (attentionBody) {
+        value = [self addFullyConnectedLayerWithParent:value
+                                        outputChannels:head.ip_val_b.size()
+                                               weights:&head.ip_val_w[0]
+                                                biases:&head.ip_val_b[0]
+                                            activation:defaultActivation
+                                                 label:[NSString stringWithFormat:@"%@/embedding", label]];
+    }
+    else {
+        value = [self addConvolutionBlockWithParent:value
+                                     outputChannels:head.value.biases.size()
+                                         kernelSize:1
+                                            weights:&head.value.weights[0]
+                                             biases:&head.value.biases[0]
+                                         activation:defaultActivation
+                                              label:[NSString stringWithFormat:@"%@/conv", label]];
+    }
+
+    value = [self flatten2DTensor:value
+                             axis:1
+                             name:@"value/flatten"];
+
+    value = [self addFullyConnectedLayerWithParent:value
+                                    outputChannels:head.ip1_val_b.size()
+                                           weights:&head.ip1_val_w[0]
+                                            biases:&head.ip1_val_b[0]
+                                        activation:defaultActivation
+                                             label:[NSString stringWithFormat:@"%@/fc1", label]];
+
+    value = [self addFullyConnectedLayerWithParent:value
+                                    outputChannels:head.ip2_val_b.size()
+                                            weights:&head.ip2_val_w[0]
+                                            biases:&head.ip2_val_b[0]
+                                        activation:wdl ? @"softmax" : @"tanh"
+                                                label:[NSString stringWithFormat:@"%@/fc2", label]];
+
+    return value;
 }
 
 @end
