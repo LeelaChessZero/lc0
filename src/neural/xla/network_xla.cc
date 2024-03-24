@@ -216,10 +216,24 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
     }
   };
 
+  Onnx2HloOptions onnx2hlo_options{};
+  if (onnx_model.has_output_value()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_value());
+  }
+  if (onnx_model.has_output_wdl()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_wdl());
+  }
+  if (onnx_model.has_output_policy()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_policy());
+  }
+  if (onnx_model.has_output_mlh()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_mlh());
+  }
+
   for (size_t i = 0; i < steps; ++i) {
     size_t batch_size = max_batch_size * (i + 1) / steps;
     CERR << "Building HLO for batch size " << batch_size << "...";
-    auto conversion = ConvertOnnxToHlo(onnx, batch_size, {});
+    auto conversion = ConvertOnnxToHlo(onnx, batch_size, onnx2hlo_options);
     add_tensors(conversion.constants, constant_to_parameter_idx);
     add_tensors(conversion.inputs, input_to_parameter_idx);
     add_tensors(conversion.outputs, output_to_parameter_idx);
@@ -273,8 +287,8 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The XLA backend requires a network file.");
   int device = opts.GetOrDefault<int>("device", 0);
   // Note: if the plugin_path does NOT contain a slash, it's looked up in the
-  // LD_LIBRARY_PATH (and a few other system defined places). If it does contain
-  // a slash, it's looked up at the exact relative or absolute path.
+  // LD_LIBRARY_PATH (and a few other system defined places). If it does
+  // contain a slash, it's looked up at the exact relative or absolute path.
   auto runner = std::make_unique<XlaRunner>(
       opts.GetOrDefault<std::string>("plugin_path",
                                      "./pjrt_c_api_gpu_plugin.so")

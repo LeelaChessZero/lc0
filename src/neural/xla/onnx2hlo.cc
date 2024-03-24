@@ -463,7 +463,10 @@ class Onnx2HloConverter {
     try {
       BuildGraph(onnx_model.graph());
       // Convert ONNX outputs to HLO result.
-      result.outputs = BuildOutputs(onnx_model.graph().output());
+      result.outputs = options_.outputs_override.empty()
+                           ? BuildOutputs(GetOnnxOutputNodes(onnx_model))
+                           : BuildOutputs(options_.outputs_override);
+
       for (size_t i = 0; i < params_.size(); ++i) {
         const auto& param = params_[i];
         auto& dst = param.is_constant ? result.constants : result.inputs;
@@ -478,22 +481,31 @@ class Onnx2HloConverter {
   }
 
  private:
+  std::vector<std::string> GetOnnxOutputNodes(
+      const pblczero::ModelProto& onnx_model) const {
+    std::vector<std::string> result;
+    for (const auto& output : onnx_model.graph().output()) {
+      result.emplace_back(output.name());
+    }
+    return result;
+  }
+
   std::vector<Onnx2HloResult::NamedTensor> BuildOutputs(
-      const std::vector<pblczero::ValueInfoProto>& graph_output) {
+      const std::vector<std::string>& node_names) {
     // Gathers outputs into the root tuple, optionally converting their type if
     // I/O type is different from the instruction output.
     std::vector<Onnx2HloResult::NamedTensor> result;
     std::vector<HloFlow> outputs;
-    for (size_t i = 0; i < graph_output.size(); ++i) {
-      const auto& output = graph_output[i];
-      auto flow = GetFlowByName(std::string(output.name()));
+    for (size_t i = 0; i < node_names.size(); ++i) {
+      const auto& output = node_names[i];
+      auto flow = GetFlowByName(output);
       if (flow->shape().element_type() != options_.io_type) {
         auto ctx = HloContext(&builder_);
         ctx.SetOpType("output");
-        ctx.SetOpName(output.name());
+        ctx.SetOpName(output);
         flow = builder_.Convert(flow, options_.io_type);
       }
-      result.push_back({i, std::string(output.name()), flow->shape()});
+      result.push_back({i, output, flow->shape()});
       outputs.push_back(flow);
     }
     builder_.Tuple(outputs);
