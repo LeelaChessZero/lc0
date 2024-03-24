@@ -60,16 +60,16 @@ static size_t getMaxAttentionHeadSize(
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
 
-  if (vanilla.pol_encoder.size() > 0) {
-    encoder_d_model = vanilla.pol_encoder[0].mha.q_b.size();
-    encoder_dff = vanilla.pol_encoder[0].ffn.dense1_b.size();
+  if (weights.pol_encoder.size() > 0) {
+    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
 
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.k_b.size());
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.v_b.size());
-    assert(embedding_op_size == vanilla.pol_encoder[0].ffn.dense2_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
   }
 
-  const size_t encoder_heads = vanilla.pol_encoder_head_count;
+  const size_t encoder_heads = weights.pol_encoder_head_count;
 
   size_t size =
       N * 64 *

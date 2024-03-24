@@ -64,16 +64,16 @@ static size_t getMaxAttentionHeadSize(
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
 
-  if (vanilla.pol_encoder.size() > 0) {
-    encoder_d_model = vanilla.pol_encoder[0].mha.q_b.size();
-    encoder_dff = vanilla.pol_encoder[0].ffn.dense1_b.size();
+  if (weights.pol_encoder.size() > 0) {
+    encoder_d_model = weights.pol_encoder[0].mha.q_b.size();
+    encoder_dff = weights.pol_encoder[0].ffn.dense1_b.size();
 
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.k_b.size());
-    assert(encoder_d_model == vanilla.pol_encoder[0].mha.v_b.size());
-    assert(embedding_op_size == vanilla.pol_encoder[0].ffn.dense2_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.k_b.size());
+    assert(encoder_d_model == weights.pol_encoder[0].mha.v_b.size());
+    assert(embedding_op_size == weights.pol_encoder[0].ffn.dense2_b.size());
   }
 
-  const size_t encoder_heads = vanilla.pol_encoder_head_count;
+  const size_t encoder_heads = weights.pol_encoder_head_count;
 
   size_t size =
       N * 64 *
@@ -383,22 +383,6 @@ class CudaNetwork : public Network {
 
     ActivationFunction act = mish_net ? ACTIVATION_MISH : ACTIVATION_RELU;
 
-    std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
-    // Check that selected policy head exists.
-    if (weights.policy_heads.count(policy_head) == 0) {
-      throw Exception("The policy head you specified '" + policy_head +
-                      "' does not exist in this net.");
-    }
-
-    std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
-    // Check that selected value head exists.
-    if (weights.value_heads.count(value_head) == 0) {
-      throw Exception("The value head you specified '" + value_head +
-                      "' does not exist in this net.");
-    }
-
     use_int8_ = options.GetOrDefault<bool>("int8", false);
     int8_calibration_run_ = options.GetOrDefault<bool>("int8-calibrate", false);
 
@@ -565,16 +549,13 @@ class CudaNetwork : public Network {
               : static_cast<ActivationFunction>(ffn_activation);
       activations.default_activation = act;
 
-      auto new_encoding =
-          static_cast<InputEmbedding>(
-              file.format().network_format().input_embedding()) ==
-          InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, activations, numBlocks_,
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
-              InputEmbedding::INPUT_EMBEDDING_PE_DENSE);
+              InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
+          use_fused_mha, int8_calibration_run_, use_int8_, int8_weights_);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
