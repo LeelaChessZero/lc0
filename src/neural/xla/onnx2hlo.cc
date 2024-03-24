@@ -1556,8 +1556,8 @@ Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
 std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
     const pblczero::TensorProto& onnx_tensor) {
   return std::make_unique<XlaTensorNotOwned>(
-      onnx_tensor.dims(), onnx_tensor.raw_data(),
-      OnnxTypeToXlaType(onnx_tensor.data_type()));
+      OnnxTypeToXlaType(onnx_tensor.data_type()), onnx_tensor.dims(),
+      onnx_tensor.raw_data());
 }
 
 }  // namespace lczero

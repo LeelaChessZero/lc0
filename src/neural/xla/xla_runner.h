@@ -35,64 +35,9 @@
 
 #include "neural/xla/hlo.pb.h"
 #include "neural/xla/pjrt.h"
+#include "neural/xla/xla_tensor.h"
 
 namespace lczero {
-
-// An interface for in-host-memory tensor in XLA format.
-class XlaTensor {
- public:
-  virtual ~XlaTensor() = default;
-  virtual const std::vector<int64_t>& shape() const = 0;
-  virtual const void* data() const = 0;
-  // Returns amount of valid data in bytes.
-  virtual size_t size() const = 0;
-  // Returns amount of memory that are allowed to address in bytes. This is
-  // useful when the size of the buffer has to be increased to match the
-  // supported batch size.
-  virtual size_t capacity() const = 0;
-  virtual pblczero::XlaShapeProto::Type type() const = 0;
-
-  std::string DebugString();
-};
-
-// Not-owned XLA tensor, used e.g. when ONNX buffer can be used directly, to
-// avoid unnecessary copy.
-class XlaTensorNotOwned : public XlaTensor {
- public:
-  XlaTensorNotOwned(const std::vector<int64_t>& shape, std::string_view data,
-                    pblczero::XlaShapeProto::Type type)
-      : shape_(&shape), data_(data), type_(type) {}
-
-  const std::vector<int64_t>& shape() const override { return *shape_; }
-  const void* data() const override { return data_.data(); }
-  size_t size() const override { return data_.size(); }
-  size_t capacity() const override { return data_.size(); }
-  pblczero::XlaShapeProto::Type type() const override { return type_; }
-
- private:
-  const std::vector<int64_t>* shape_;
-  std::string_view data_;
-  pblczero::XlaShapeProto::Type type_;
-};
-
-// Tensor that owns data, used e.g. for XLA output.
-class XlaTensorOwned : public XlaTensor {
- public:
-  XlaTensorOwned(const std::vector<int64_t>& shape,
-                 pblczero::XlaShapeProto::Type type, std::string data)
-      : shape_(shape), type_(type), data_(data) {}
-
-  const std::vector<int64_t>& shape() const override { return shape_; }
-  const void* data() const override { return data_.data(); }
-  size_t size() const override { return data_.size(); }
-  size_t capacity() const override { return data_.size(); }
-  pblczero::XlaShapeProto::Type type() const override { return type_; }
-
- private:
-  std::vector<int64_t> shape_;
-  pblczero::XlaShapeProto::Type type_;
-  std::string data_;
-};
 
 // A class that keeps several XLA executables (for different batch sizes),
 // manages common buffers among them, and chooses the right executable for a
@@ -107,7 +52,7 @@ class XlaRunner {
   // the batch size. Only non-frozen inputs are passed as arguments.
   // Currnetly only single input is supported (just because we don't need more).
   std::vector<std::unique_ptr<XlaTensor>> ExecuteBlocking(
-      const std::vector<XlaTensor*>& inputs);
+      const std::vector<XlaMutableTensor*>& inputs);
   // Inputs that are shared between all calls (i.e. network weights passed as
   // parameters). These inputs are transferred to device immediately (and not
   // for each inference).

@@ -35,22 +35,6 @@
 namespace lczero {
 namespace {
 
-size_t GetTypeSize(pblczero::XlaShapeProto::Type type) {
-  switch (type) {
-    case pblczero::XlaShapeProto::F32:
-      return sizeof(float);
-    case pblczero::XlaShapeProto::F64:
-      return sizeof(double);
-    case pblczero::XlaShapeProto::S32:
-      return sizeof(int32_t);
-    case pblczero::XlaShapeProto::S64:
-      return sizeof(int64_t);
-    default:
-      throw Exception("Add size for type " +
-                      pblczero::XlaShapeProto::Type_Name(type));
-  }
-}
-
 pblczero::XlaShapeProto::Type PjrtTypeToXlaType(PjrtType type) {
   switch (type) {
     case PjrtType::PRED:
@@ -120,44 +104,7 @@ PjrtType XlaTypeToPjrtType(pblczero::XlaShapeProto::Type type) {
                       pblczero::XlaShapeProto::Type_Name(type));
   }
 }
-
-std::string AsHexString(std::string_view buf) {
-  std::string result;
-  result.reserve(buf.size() * 2);
-  constexpr char hex[] = "0123456789abcdef";
-  for (unsigned char c : buf) {
-    result.push_back(hex[c >> 4]);
-    result.push_back(hex[c & 0xf]);
-  }
-  return result;
-}
-
 }  // namespace
-
-std::string XlaTensor::DebugString() {
-  constexpr size_t kMaxSize = 1000;
-  constexpr size_t kSuffixSize = 200;
-  std::string result = "XlaTensor(";
-  result += "shape=[";
-  for (size_t i = 0; i < shape().size(); ++i) {
-    if (i > 0) result += ", ";
-    result += std::to_string(shape()[i]);
-  }
-  result += "], type=";
-  result += pblczero::XlaShapeProto::Type_Name(type());
-  result += ") size=" + std::to_string(size());
-  result += " data=";
-  if (size() <= kMaxSize) {
-    result += AsHexString({static_cast<const char*>(data()), size()});
-  } else {
-    result += AsHexString(
-        {static_cast<const char*>(data()), kMaxSize - kSuffixSize - 2});
-    result += "....";
-    result += AsHexString(
-        {static_cast<const char*>(data()) + size() - kSuffixSize, kSuffixSize});
-  }
-  return result;
-}
 
 XlaRunner::XlaRunner(const char* library_path, int device)
     : pjrt_client_(Pjrt(library_path).CreateClient()), device_(device) {
@@ -215,7 +162,7 @@ void XlaRunner::SetFrozenInputs(
 size_t XlaRunner::GetMaxBatchSize() const { return executables_.back().first; }
 
 std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
-    const std::vector<XlaTensor*>& inputs) {
+    const std::vector<XlaMutableTensor*>& inputs) {
   if (inputs.size() != 1) {
     throw Exception("Only one input is kinda supported.");
   }
@@ -234,17 +181,12 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   // garbage in the tail of that buffer).
   std::vector<int64_t> new_shape = inputs[0]->shape();
   new_shape[0] = batch_size;
-  const size_t input_size = std::accumulate(new_shape.begin(), new_shape.end(),
-                                            1, std::multiplies<size_t>()) *
-                            GetTypeSize(inputs[0]->type());
-  if (input_size > inputs[0]->capacity()) {
-    throw Exception("Input buffer too small");
-  }
+  inputs[0]->Reshape(new_shape);
   // Transfer the input to the device.
   auto input_buffer =
       pjrt_client_
           ->HostToDevice(
-              {static_cast<const char*>(inputs[0]->data()), input_size},
+              {static_cast<const char*>(inputs[0]->data()), inputs[0]->size()},
               XlaTypeToPjrtType(inputs[0]->type()), new_shape,
               devices_[0].get())
           ->AwaitAndReleaseBuffer();
@@ -257,26 +199,19 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   // Now we need to transfer the outputs back to the host.
   std::vector<std::unique_ptr<XlaTensor>> result;
   result.reserve(outputs.size());
-  std::vector<std::string> output_buffers;
   std::vector<std::unique_ptr<PjrtEvent>> done_events;
-  output_buffers.reserve(outputs.size());
   done_events.reserve(outputs.size());
   // Initialte transfers from device to host.
   for (size_t i = 0; i < outputs.size(); ++i) {
     const auto& output = outputs[i];
-    output_buffers.emplace_back();
-    auto& buffer = output_buffers.back();
-    buffer.resize(output->GetSize());
-    done_events.push_back(output->DeviceToHost(&buffer[0], buffer.size()));
+    auto new_tensor = std::make_unique<XlaMutableTensor>(
+        PjrtTypeToXlaType(output->GetType()), output->GetDimensions());
+    done_events.push_back(
+        output->DeviceToHost(new_tensor->mutable_data(), new_tensor->size()));
+    result.push_back(std::move(new_tensor));
   }
   // Wait for the transfers to complete.
-  for (size_t i = 0; i < outputs.size(); ++i) {
-    const auto& output = outputs[i];
-    done_events[i]->Await();
-    result.push_back(std::make_unique<XlaTensorOwned>(
-        output->GetDimensions(), PjrtTypeToXlaType(output->GetType()),
-        std::move(output_buffers[i])));
-  }
+  for (size_t i = 0; i < outputs.size(); ++i) done_events[i]->Await();
   return result;
 }
 

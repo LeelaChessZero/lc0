@@ -641,6 +641,7 @@ if get_option('build_backends')
         'src/neural/xla/network_xla.cc',
         'src/neural/xla/pjrt.cc',
         'src/neural/xla/xla_runner.cc',
+        'src/neural/xla/xla_tensor.cc',
       ]
       deps += cc.find_library('dl', required: false)
   endif
