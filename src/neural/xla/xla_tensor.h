@@ -34,10 +34,25 @@
 #include <vector>
 
 #include "neural/xla/hlo.pb.h"
+#include "utils/exception.h"
 
 namespace lczero {
 
-size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type);
+constexpr size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
+  switch (type) {
+    case pblczero::XlaShapeProto::F32:
+      return sizeof(float);
+    case pblczero::XlaShapeProto::F64:
+      return sizeof(double);
+    case pblczero::XlaShapeProto::S32:
+      return sizeof(int32_t);
+    case pblczero::XlaShapeProto::S64:
+      return sizeof(int64_t);
+    default:
+      throw Exception("Add size for type " +
+                      pblczero::XlaShapeProto::Type_Name(type));
+  }
+}
 
 // An interface for in-host-memory tensor in XLA format.
 class XlaTensor {
@@ -77,10 +92,10 @@ class XlaTensorNotOwned : public XlaTensor {
 };
 
 // Tensor that owns data, used e.g. for XLA output.
-class XlaTensorOwned : public XlaTensor {
+class XlaMutableTensor : public XlaTensor {
  public:
-  XlaTensorOwned(const std::vector<int64_t>& shape,
-                 pblczero::XlaShapeProto::Type type)
+  XlaMutableTensor(const std::vector<int64_t>& shape,
+                   pblczero::XlaShapeProto::Type type)
       : shape_(shape),
         type_(type),
         size_(GetBufferSize(shape, type)),

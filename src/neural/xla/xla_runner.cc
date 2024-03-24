@@ -209,7 +209,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   // Initialte transfers from device to host.
   for (size_t i = 0; i < outputs.size(); ++i) {
     const auto& output = outputs[i];
-    auto new_tensor = std::make_unique<XlaTensorOwned>(
+    auto new_tensor = std::make_unique<XlaMutableTensor>(
         output->GetDimensions(), PjrtTypeToXlaType(output->GetType()));
     done_events.push_back(
         output->DeviceToHost(new_tensor->mutable_data(), new_tensor->size()));

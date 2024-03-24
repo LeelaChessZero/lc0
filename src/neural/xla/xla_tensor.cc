@@ -27,25 +27,7 @@
 
 #include "neural/xla/xla_tensor.h"
 
-#include "utils/exception.h"
-
 namespace lczero {
-size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
-  switch (type) {
-    case pblczero::XlaShapeProto::F32:
-      return sizeof(float);
-    case pblczero::XlaShapeProto::F64:
-      return sizeof(double);
-    case pblczero::XlaShapeProto::S32:
-      return sizeof(int32_t);
-    case pblczero::XlaShapeProto::S64:
-      return sizeof(int64_t);
-    default:
-      throw Exception("Add size for type " +
-                      pblczero::XlaShapeProto::Type_Name(type));
-  }
-}
-
 namespace {
 std::string AsHexString(std::string_view buf) {
   std::string result;
