@@ -30,6 +30,7 @@
 #include "utils/bf16_utils.h"
 #include "utils/fp16_utils.h"
 #include "utils/fp8_utils.h"
+#include "utils/string.h"
 
 namespace lczero {
 namespace {
@@ -152,6 +153,38 @@ void XlaMutableTensor::Cast(pblczero::XlaShapeProto::Type new_type) {
   }
   size_ = new_size;
   type_ = new_type;
+}
+
+pblczero::XlaShapeProto::Type StringToXlaType(const std::string& type) {
+  for (const auto& types : {
+           pblczero::XlaShapeProto::S4,
+           pblczero::XlaShapeProto::S8,
+           pblczero::XlaShapeProto::S16,
+           pblczero::XlaShapeProto::S32,
+           pblczero::XlaShapeProto::S64,
+           pblczero::XlaShapeProto::U4,
+           pblczero::XlaShapeProto::U8,
+           pblczero::XlaShapeProto::U16,
+           pblczero::XlaShapeProto::U32,
+           pblczero::XlaShapeProto::U64,
+           pblczero::XlaShapeProto::F16,
+           pblczero::XlaShapeProto::F32,
+           pblczero::XlaShapeProto::BF16,
+           pblczero::XlaShapeProto::F64,
+           pblczero::XlaShapeProto::F8E5M2,
+           pblczero::XlaShapeProto::F8E4M3FN,
+           pblczero::XlaShapeProto::F8E4M3B11FNUZ,
+           pblczero::XlaShapeProto::F8E5M2FNUZ,
+           pblczero::XlaShapeProto::F8E4M3FNUZ,
+           pblczero::XlaShapeProto::C64,
+           pblczero::XlaShapeProto::C128,
+       }) {
+    if (StringsEqualIgnoreCase(type,
+                               pblczero::XlaShapeProto::Type_Name(types))) {
+      return types;
+    }
+  }
+  throw Exception("Cannot convert to XLA type: " + type);
 }
 
 }  // namespace lczero

@@ -178,9 +178,10 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
 
 // Converts ONNX model to HLO (for various batch sizes) and adds them to the
 // XlaRunner.
-XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
-                                        XlaRunner* runner,
-                                        size_t max_batch_size, size_t steps) {
+XlaNetworkOptions FillXlaRunnerFromOnnx(
+    const pblczero::OnnxModel& onnx_model, XlaRunner* runner,
+    size_t max_batch_size, size_t steps,
+    std::optional<pblczero::XlaShapeProto::Type> io_type) {
   pblczero::ModelProto onnx;
   onnx.ParseFromString(onnx_model.model());
 
@@ -217,6 +218,7 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   if (onnx_model.has_output_mlh()) {
     onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_mlh());
   }
+  onnx2hlo_options.io_type = io_type;
 
   for (size_t i = 0; i < steps; ++i) {
     size_t batch_size = max_batch_size * (i + 1) / steps;
@@ -287,18 +289,22 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   int steps = opts.GetOrDefault<int>("steps", 16);
 
   XlaNetworkOptions options;
+  std::optional<pblczero::XlaShapeProto::Type> io_type;
+  if (opts.Exists<std::string>("io_datatype")) {
+    StringToXlaType(opts.Get<std::string>("io_datatype"));
+  }
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, io_type);
   } else {
     CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions onnx_converter_options;
     onnx_converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(
-            opts.GetOrDefault<std::string>("data_type", "f32"));
+            opts.GetOrDefault<std::string>("datatype", "f32"));
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, io_type);
   }
 
   return std::make_unique<XlaNetwork>(std::move(runner), options,

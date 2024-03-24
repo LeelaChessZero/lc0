@@ -38,6 +38,8 @@
 
 namespace lczero {
 
+pblczero::XlaShapeProto::Type StringToXlaType(const std::string& type);
+
 inline size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
   switch (type) {
     case pblczero::XlaShapeProto::F32:
