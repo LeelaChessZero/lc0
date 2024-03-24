@@ -52,7 +52,7 @@ class XlaRunner {
   // the batch size. Only non-frozen inputs are passed as arguments.
   // Currnetly only single input is supported (just because we don't need more).
   std::vector<std::unique_ptr<XlaTensor>> ExecuteBlocking(
-      const std::vector<XlaTensor*>& inputs);
+      const std::vector<XlaMutableTensor*>& inputs);
   // Inputs that are shared between all calls (i.e. network weights passed as
   // parameters). These inputs are transferred to device immediately (and not
   // for each inference).

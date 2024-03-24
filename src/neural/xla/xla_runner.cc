@@ -162,7 +162,7 @@ void XlaRunner::SetFrozenInputs(
 size_t XlaRunner::GetMaxBatchSize() const { return executables_.back().first; }
 
 std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
-    const std::vector<XlaTensor*>& inputs) {
+    const std::vector<XlaMutableTensor*>& inputs) {
   if (inputs.size() != 1) {
     throw Exception("Only one input is kinda supported.");
   }
@@ -181,17 +181,12 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   // garbage in the tail of that buffer).
   std::vector<int64_t> new_shape = inputs[0]->shape();
   new_shape[0] = batch_size;
-  const size_t input_size = std::accumulate(new_shape.begin(), new_shape.end(),
-                                            1, std::multiplies<size_t>()) *
-                            GetXlaTypeSize(inputs[0]->type());
-  if (input_size > inputs[0]->capacity()) {
-    throw Exception("Input buffer too small");
-  }
+  inputs[0]->Reshape(new_shape);
   // Transfer the input to the device.
   auto input_buffer =
       pjrt_client_
           ->HostToDevice(
-              {static_cast<const char*>(inputs[0]->data()), input_size},
+              {static_cast<const char*>(inputs[0]->data()), inputs[0]->size()},
               XlaTypeToPjrtType(inputs[0]->type()), new_shape,
               devices_[0].get())
           ->AwaitAndReleaseBuffer();
