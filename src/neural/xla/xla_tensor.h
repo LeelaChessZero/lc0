@@ -42,6 +42,12 @@ pblczero::XlaShapeProto::Type StringToXlaType(const std::string& type);
 
 inline size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
   switch (type) {
+    case pblczero::XlaShapeProto::F16:
+      return sizeof(uint16_t);
+    case pblczero::XlaShapeProto::BF16:
+      return sizeof(uint16_t);
+    case pblczero::XlaShapeProto::F8E5M2:
+      return sizeof(uint8_t);
     case pblczero::XlaShapeProto::F32:
       return sizeof(float);
     case pblczero::XlaShapeProto::F64:

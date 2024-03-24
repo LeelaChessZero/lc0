@@ -120,7 +120,7 @@ void XlaMutableTensor::Cast(pblczero::XlaShapeProto::Type new_type) {
     dst_t* dst_ptr = static_cast<dst_t*>(dst);
     for (size_t i = 0; i < count; ++i) dst_ptr[i] = func(src_ptr[i]);
   };
-  if (type_ != pblczero::XlaShapeProto::F32) {
+  if (type_ == pblczero::XlaShapeProto::F32) {
     switch (new_type) {
       case pblczero::XlaShapeProto::F16:
         convert(FP32toFP16);

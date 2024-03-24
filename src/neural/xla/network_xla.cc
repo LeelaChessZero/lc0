@@ -291,7 +291,7 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   XlaNetworkOptions options;
   std::optional<pblczero::XlaShapeProto::Type> io_type;
   if (opts.Exists<std::string>("io_datatype")) {
-    StringToXlaType(opts.Get<std::string>("io_datatype"));
+    io_type = StringToXlaType(opts.Get<std::string>("io_datatype"));
   }
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get(),
