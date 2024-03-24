@@ -46,6 +46,9 @@ struct Onnx2HloOptions {
   // If error occurs during conversion, return a partial result instead of
   // failing. Only to be used for debugging.
   bool debugging_allow_partial_result = false;
+  // If not empty, uses these nodes as outputs instead of the ones from the ONNX
+  // model.
+  std::vector<std::string> outputs_override;
 };
 
 struct Onnx2HloResult {
