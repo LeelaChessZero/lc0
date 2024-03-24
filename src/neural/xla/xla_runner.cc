@@ -35,22 +35,6 @@
 namespace lczero {
 namespace {
 
-size_t GetTypeSize(pblczero::XlaShapeProto::Type type) {
-  switch (type) {
-    case pblczero::XlaShapeProto::F32:
-      return sizeof(float);
-    case pblczero::XlaShapeProto::F64:
-      return sizeof(double);
-    case pblczero::XlaShapeProto::S32:
-      return sizeof(int32_t);
-    case pblczero::XlaShapeProto::S64:
-      return sizeof(int64_t);
-    default:
-      throw Exception("Add size for type " +
-                      pblczero::XlaShapeProto::Type_Name(type));
-  }
-}
-
 pblczero::XlaShapeProto::Type PjrtTypeToXlaType(PjrtType type) {
   switch (type) {
     case PjrtType::PRED:
@@ -199,7 +183,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   new_shape[0] = batch_size;
   const size_t input_size = std::accumulate(new_shape.begin(), new_shape.end(),
                                             1, std::multiplies<size_t>()) *
-                            GetTypeSize(inputs[0]->type());
+                            GetXlaTypeSize(inputs[0]->type());
   if (input_size > inputs[0]->capacity()) {
     throw Exception("Input buffer too small");
   }
@@ -226,8 +210,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   for (size_t i = 0; i < outputs.size(); ++i) {
     const auto& output = outputs[i];
     auto new_tensor = std::make_unique<XlaTensorOwned>(
-        output->GetDimensions(), PjrtTypeToXlaType(output->GetType()),
-        output->GetSize());
+        output->GetDimensions(), PjrtTypeToXlaType(output->GetType()));
     done_events.push_back(
         output->DeviceToHost(new_tensor->mutable_data(), new_tensor->size()));
     result.push_back(std::move(new_tensor));

@@ -29,12 +29,15 @@
 
 #include <cstdint>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <vector>
 
 #include "neural/xla/hlo.pb.h"
 
 namespace lczero {
+
+size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type);
 
 // An interface for in-host-memory tensor in XLA format.
 class XlaTensor {
@@ -77,15 +80,14 @@ class XlaTensorNotOwned : public XlaTensor {
 class XlaTensorOwned : public XlaTensor {
  public:
   XlaTensorOwned(const std::vector<int64_t>& shape,
-                 pblczero::XlaShapeProto::Type type, size_t size_bytes,
-                 size_t capacity_bytes = 0)
+                 pblczero::XlaShapeProto::Type type)
       : shape_(shape),
         type_(type),
-        size_(size_bytes),
-        capacity_(std::max(size_bytes, capacity_bytes)),
+        size_(GetBufferSize(shape, type)),
+        capacity_(size_),
         // TODO replace with make_unique_for_overwrite() once C++20 is
         // available.
-        data_(new char[std::max(size_bytes, capacity_bytes)]) {}
+        data_(new char[size_]) {}
 
   const std::vector<int64_t>& shape() const override { return shape_; }
   const void* data() const override { return data_.get(); }
@@ -94,6 +96,12 @@ class XlaTensorOwned : public XlaTensor {
   size_t size() const override { return size_; }
   size_t capacity() const override { return capacity_; }
   pblczero::XlaShapeProto::Type type() const override { return type_; }
+
+  static constexpr size_t GetBufferSize(const std::vector<int64_t>& shape,
+                                        pblczero::XlaShapeProto::Type type) {
+    return GetXlaTypeSize(type) * std::accumulate(shape.begin(), shape.end(), 1,
+                                                  std::multiplies<int64_t>());
+  }
 
  private:
   std::vector<int64_t> shape_;
