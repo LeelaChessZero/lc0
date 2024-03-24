@@ -220,26 +220,20 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   // Now we need to transfer the outputs back to the host.
   std::vector<std::unique_ptr<XlaTensor>> result;
   result.reserve(outputs.size());
-  std::vector<std::string> output_buffers;
   std::vector<std::unique_ptr<PjrtEvent>> done_events;
-  output_buffers.reserve(outputs.size());
   done_events.reserve(outputs.size());
   // Initialte transfers from device to host.
   for (size_t i = 0; i < outputs.size(); ++i) {
     const auto& output = outputs[i];
-    output_buffers.emplace_back();
-    auto& buffer = output_buffers.back();
-    buffer.resize(output->GetSize());
-    done_events.push_back(output->DeviceToHost(&buffer[0], buffer.size()));
+    auto new_tensor = std::make_unique<XlaTensorOwned>(
+        output->GetDimensions(), PjrtTypeToXlaType(output->GetType()),
+        output->GetSize());
+    done_events.push_back(
+        output->DeviceToHost(new_tensor->mutable_data(), new_tensor->size()));
+    result.push_back(std::move(new_tensor));
   }
   // Wait for the transfers to complete.
-  for (size_t i = 0; i < outputs.size(); ++i) {
-    const auto& output = outputs[i];
-    done_events[i]->Await();
-    result.push_back(std::make_unique<XlaTensorStringBuf>(
-        output->GetDimensions(), PjrtTypeToXlaType(output->GetType()),
-        std::move(output_buffers[i])));
-  }
+  for (size_t i = 0; i < outputs.size(); ++i) done_events[i]->Await();
   return result;
 }
 

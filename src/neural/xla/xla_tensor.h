@@ -28,6 +28,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -73,22 +74,33 @@ class XlaTensorNotOwned : public XlaTensor {
 };
 
 // Tensor that owns data, used e.g. for XLA output.
-class XlaTensorStringBuf : public XlaTensor {
+class XlaTensorOwned : public XlaTensor {
  public:
-  XlaTensorStringBuf(const std::vector<int64_t>& shape,
-                 pblczero::XlaShapeProto::Type type, std::string data)
-      : shape_(shape), type_(type), data_(data) {}
+  XlaTensorOwned(const std::vector<int64_t>& shape,
+                 pblczero::XlaShapeProto::Type type, size_t size_bytes,
+                 size_t capacity_bytes = 0)
+      : shape_(shape),
+        type_(type),
+        size_(size_bytes),
+        capacity_(std::max(size_bytes, capacity_bytes)),
+        // TODO replace with make_unique_for_overwrite() once C++20 is
+        // available.
+        data_(new char[std::max(size_bytes, capacity_bytes)]) {}
 
   const std::vector<int64_t>& shape() const override { return shape_; }
-  const void* data() const override { return data_.data(); }
-  size_t size() const override { return data_.size(); }
-  size_t capacity() const override { return data_.size(); }
+  const void* data() const override { return data_.get(); }
+  // TODO replace with std::span once C++20 is available.
+  void* mutable_data() { return data_.get(); }
+  size_t size() const override { return size_; }
+  size_t capacity() const override { return capacity_; }
   pblczero::XlaShapeProto::Type type() const override { return type_; }
 
  private:
   std::vector<int64_t> shape_;
   pblczero::XlaShapeProto::Type type_;
-  std::string data_;
+  size_t size_;
+  size_t capacity_;
+  std::unique_ptr<char[]> data_;
 };
 
 }  // namespace lczero
