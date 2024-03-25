@@ -1,4 +1,74 @@
-﻿v0.30.0-rc1 (2023-04-24)
+﻿v0.31.0-rc1 (2024-03-25)
+~~~~~~~
+* The blas, cuda, eigen, metal and onnx backends now have support for multihead
+  network architecture and can run BT3/BT4 nets.
+* Updated the internal Elo model to better align with regular Elo for human
+  players.
+* There is a new XLA backend that uses OpenXLA compiler to produce code to
+  execute the neural network. See
+  <https://github.com/LeelaChessZero/lc0/wiki/XLA-backend> for details. Related
+  are new leela2onnx options to output the HLO format that XLA understands.
+* There is a vastly simplified lc0 interface available by renaming the
+  executable to `lc0simple`.
+* The backends can now suggest a minibatch size to the search, this is enabled
+  by `--minibatch-size=0` (the new default).
+* If the cudnn backend detected an unsupported network architecture it will
+  switch to the cuda backend.
+* Two new selfplay options enable value and policy tournaments. A policy
+  tournament is using a single node policy to select the move to play, while a
+  value tournament searches all possible moves at depth 1 to select the one with
+  the best q.
+* While it is easy to get a single node policy evaluation (`go nodes 1` using
+  uci), there was no simple way to get the effect of a value only evalaution, so
+  the `--value-only` option was added.
+* Button uci options were implemented and a button to clear the tree was added
+  (as hidden option).
+* Support for the uci `go mate` option was added.
+* The rescorer can now be built from the lc0 code base instead of a separate
+  branch.
+* A dicrete onnx layernorm implementation was added to get around a onnxruntime
+  bug with directml - this has some overhead so it is only enabled for onnx-dml
+  and can be switched off with the `alt_layernorm=false` backend option.
+* The `--onnx2pytoch` option was added to leela2onnx to generate pytorch
+  compatible models.
+* There is a cuda `min_batch` backend option to reduce non-determinism with
+  small batches.
+* New options were added to onnx2leela to fix tf exported onnx models.
+* The onnx backend can now be built for amd's rocm.
+* Fixed a bug where the Contempt effect on eval was too low for nets with
+  natively higher draw rates.
+* Made the WDL Rescale sharpness limit configurable via the `--wdl-max-s` hidden
+  option.
+* Several assorted fixes and code cleanups.
+
+v0.30.0 (2023-07-21)
+~~~~~~~
+* WDL_mu score type is now the default and the mlh-threshold default was
+  changed from 0 to 0.8.
+* Fixes for contempt with infinite search and pondering and for the wdl display
+  when pondering.
+
+v0.30.0-rc2 (2023-06-15)
+~~~~~~~
+* WDL conversion for more realistic WDL score and contempt. Adds an Elo based
+  WDL transformation of the NN value head output. Helps with more accurate play
+  at high level (WDL sharpening), more aggressive play against weaker opponents
+  and draw avoiding openings (contempt), piece odds play. There will be a blog
+  post soon explaining in detail how it works.
+* A new score type `WDL_mu` which follows the new eval convention, where +1.00
+  means 50% white win chance.
+* Simplified to a single `--draw-score` parameter, adjusting the draw score from
+  white's perspective: 0 gives standard scoring, -1 gives Armageddon scoring.
+* Updated describenet for new net architectures.
+* Added a `first-move-bonus` option to the legacy time manager, to accompany
+  `book-ply-bonus` for shallow openings.
+* Changed mlh threshold effect to create a smooth transition.
+* Revised 'simple' time manager.
+* A new spinlock implementation (selected with `--search-spin-backoff`) to help
+  with many cpu threads (e.g. 128 threads), obviously for cpu backends only.
+* Some assorted fixes and code cleanups.
+
+v0.30.0-rc1 (2023-04-24)
 ~~~~~~~
 * Support for networks with attention body and smolgen added to blas, cuda,
   metal and onnx backends.
