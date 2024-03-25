@@ -38,8 +38,16 @@
 
 namespace lczero {
 
+pblczero::XlaShapeProto::Type StringToXlaType(const std::string& type);
+
 inline size_t GetXlaTypeSize(pblczero::XlaShapeProto::Type type) {
   switch (type) {
+    case pblczero::XlaShapeProto::F16:
+      return sizeof(uint16_t);
+    case pblczero::XlaShapeProto::BF16:
+      return sizeof(uint16_t);
+    case pblczero::XlaShapeProto::F8E5M2:
+      return sizeof(uint8_t);
     case pblczero::XlaShapeProto::F32:
       return sizeof(float);
     case pblczero::XlaShapeProto::F64:
@@ -112,6 +120,7 @@ class XlaMutableTensor : public XlaTensor {
   size_t capacity() const override { return capacity_; }
   pblczero::XlaShapeProto::Type type() const override { return type_; }
   void Reshape(const std::vector<int64_t>& new_shape);
+  void Cast(pblczero::XlaShapeProto::Type new_type);
 
   static size_t GetBufferSize(pblczero::XlaShapeProto::Type type,
                               const std::vector<int64_t>& shape) {

@@ -161,7 +161,7 @@ void XlaRunner::SetFrozenInputs(
 
 size_t XlaRunner::GetMaxBatchSize() const { return executables_.back().first; }
 
-std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
+std::vector<std::unique_ptr<XlaMutableTensor>> XlaRunner::ExecuteBlocking(
     const std::vector<XlaMutableTensor*>& inputs) {
   if (inputs.size() != 1) {
     throw Exception("Only one input is kinda supported.");
@@ -197,7 +197,7 @@ std::vector<std::unique_ptr<XlaTensor>> XlaRunner::ExecuteBlocking(
   auto outputs = iter->second->ExecuteBlocking(input_buffers);
 
   // Now we need to transfer the outputs back to the host.
-  std::vector<std::unique_ptr<XlaTensor>> result;
+  std::vector<std::unique_ptr<XlaMutableTensor>> result;
   result.reserve(outputs.size());
   std::vector<std::unique_ptr<PjrtEvent>> done_events;
   done_events.reserve(outputs.size());
