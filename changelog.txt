@@ -39,6 +39,9 @@
   natively higher draw rates.
 * Made the WDL Rescale sharpness limit configurable via the `--wdl-max-s` hidden
   option.
+* The search task workers can be set automatically, to either 0 for cpu backends
+  or up to 4 depending on the number of cpu cores. This is enabled by
+  `--task-workers=-1` (the new default).
 * Several assorted fixes and code cleanups.
 
 v0.30.0 (2023-07-21)
