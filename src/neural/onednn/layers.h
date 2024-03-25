@@ -45,11 +45,14 @@ class BaseLayer {
 
   BaseLayer(int c, int h, int w, BaseLayer* ip);
   virtual ~BaseLayer() = default;
-  size_t GetOutputSize(int N) const { return sizeof(float) * N * C * H * W; }
   void SetDataType(dnnl::memory::data_type type) { data_type_ = type; }
   void SetConvolutionType(dnnl::algorithm type) { convolution_type_ = type; }
-  virtual void Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                    dnnl::engine& eng, dnnl::stream& stream) = 0;
+  // Scratch must be at least as large as the input, scratchpad_mem is resized
+  // automatically.
+  virtual void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                    const dnnl::memory& scratch, const dnnl::engine& eng,
+                    const dnnl::stream& stream,
+                    dnnl::memory& scratchpad_mem) = 0;
 
  protected:
   BaseLayer* input_;
@@ -59,7 +62,7 @@ class BaseLayer {
   int W;
   dnnl::memory::data_type data_type_;
   dnnl::algorithm convolution_type_;
-  std::mutex lock_;
+  dnnl::memory::desc scratchpad_md;
 };
 
 class ConvLayer : public BaseLayer {
@@ -67,12 +70,13 @@ class ConvLayer : public BaseLayer {
   ConvLayer(BaseLayer* ip, int C, int H, int W, int size, int Cin,
             ActivationFunction activation = ACTIVATION_NONE, bool skip = false);
 
-  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
-                   dnnl::stream& stream);
+  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
 
   // If there is a skip connection the output doubles as an input.
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream, dnnl::memory& scratchpad_mem) override;
 
  private:
   const int c_input_;
@@ -89,8 +93,6 @@ class ConvLayer : public BaseLayer {
   dnnl::convolution_forward conv_;
   dnnl::eltwise_forward mish_;
   dnnl::reorder in_reorder_;
-  dnnl::reorder skip_reorder_;
-  dnnl::memory scratchpad_mem;
   // Cached values to change in/out tensors for best performance.
   dnnl::memory::desc in_md;
   dnnl::memory::desc out_md;
@@ -100,10 +102,11 @@ class FCLayer : public BaseLayer {
  public:
   FCLayer(BaseLayer* ip, int C, int H, int W, ActivationFunction activation);
 
-  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
-                   dnnl::stream& stream);
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+  void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream, dnnl::memory& scratchpad_mem) override;
 
  private:
   ActivationFunction activation_;
@@ -115,7 +118,6 @@ class FCLayer : public BaseLayer {
   int last_batch_ = 0;
   dnnl::inner_product_forward fc_;
   dnnl::reorder in_reorder_;
-  dnnl::memory scratchpad_mem;
   // Cached values to change in/out tensors for best performance.
   dnnl::memory::desc in_md;
   dnnl::memory::desc out_md;
@@ -129,12 +131,14 @@ class SELayer : public BaseLayer {
   SELayer(BaseLayer* ip, int numFc1Out, ActivationFunction activation);
 
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
-                   dnnl::memory& b2, dnnl::engine& eng, dnnl::stream& stream);
+                   dnnl::memory& b2, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
 
   // Initially output holds the skip connection. Both input and output are
   // assumed to be the same memory format.
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream, dnnl::memory& scratchpad_mem) override;
 
  private:
   dnnl::memory filter_mem;
@@ -157,7 +161,8 @@ class SELayer : public BaseLayer {
   dnnl::reorder fc1_reorder_;
   dnnl::reorder mul_reorder_;
   dnnl::reorder add_reorder_;
-  dnnl::memory scratchpad_mem;
+  dnnl::memory buf1;
+  dnnl::memory buf2;
 
   // Cached values to change tensors for best performance.
   dnnl::memory::desc pool_out_md;
@@ -175,9 +180,11 @@ class AttentionPolicyHead : public BaseLayer {
         policy_d_model_(policy_d_model) {}
   void LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
                    dnnl::memory& b2, dnnl::memory& w3, dnnl::memory& b3,
-                   dnnl::memory& w4, dnnl::engine& eng, dnnl::stream& stream);
-  void Eval(int N, dnnl::memory& output, dnnl::memory& input, dnnl::engine& eng,
-            dnnl::stream& stream) override;
+                   dnnl::memory& w4, const dnnl::engine& eng,
+                   const dnnl::stream& stream);
+  void Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+            const dnnl::memory& scratch, const dnnl::engine& eng,
+            const dnnl::stream& stream, dnnl::memory& scratchpad_mem) override;
 
  private:
   const int embedding_size_;
@@ -201,8 +208,6 @@ class AttentionPolicyHead : public BaseLayer {
   dnnl::memory fcQ_out_mem;
   dnnl::memory fcK_out_mem;
   dnnl::memory promo_mem;
-
-  dnnl::memory scratchpad_mem;
 
   dnnl::reorder in_reorder_;
   dnnl::inner_product_forward fc_;
