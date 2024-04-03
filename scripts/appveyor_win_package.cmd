@@ -10,14 +10,13 @@ type "%MIMALLOC_PATH%"\LICENSE |more /P > dist\mimalloc-LICENSE
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%MIMALLOC_PATH%"\out\msvc-x64\Release\mimalloc-redirect.dll
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\mimalloc-readme.md
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\mimalloc-LICENSE
-IF %CUDA%==true copy lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-nodll.zip
+IF %CUDNN%==true copy lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-nodll.zip
 IF %NAME%==cpu-openblas 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\%DNNL_NAME%\bin\dnnl.dll
 IF %NAME%==onednn 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\%DNNL_NAME%\bin\dnnl.dll
 IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
 IF %CUDNN%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_100.dll" "%CUDA_PATH%\bin\cublas64_100.dll"
 IF %CUDNN%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\cuda\bin\cudnn64_7.dll"
-IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_110.dll" "%CUDA_PATH%\bin\cublas64_11.dll" "%CUDA_PATH%\bin\cublasLt64_11.dll"
 IF %NAME%==cpu-dnnl copy "%PKG_FOLDER%\%DNNL_NAME%\LICENSE" dist\DNNL-LICENSE
 IF %NAME%==cpu-dnnl copy "%PKG_FOLDER%\%DNNL_NAME%\THIRD-PARTY-PROGRAMS" dist\DNNL-THIRD-PARTY-PROGRAMS
 IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
@@ -39,8 +38,11 @@ IF %OPENCL%==true type scripts\check_opencl.bat |more /P > dist\check_opencl.bat
 IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\check_opencl.bat
 IF %DX%==true type scripts\check_dx.bat |more /P > dist\check_dx.bat
 IF %DX%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\check_dx.bat
+IF %CUDA%==true IF %CUDNN%==false type dist\install-cuda_11_8.cmd |more /P > dist\install.cmd
+IF %CUDA%==true IF %CUDNN%==false 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\install.cmd
 IF %CUDA%==true copy "%CUDA_PATH%\EULA.txt" dist\CUDA.txt
-IF %CUDA%==true type dist\README-cuda.txt |more /P > dist\README.txt
+IF %CUDA%==true IF %CUDNN%==false type dist\README-cuda.txt |more /P > dist\README.txt
+IF %CUDNN%==true type dist\README-cudnn.txt |more /P > dist\README.txt
 IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt .\dist\CUDA.txt
 IF %CUDNN%==true copy "%CUDA_PATH%\cuda\NVIDIA_SLA_cuDNN_Support.txt" dist\CUDNN.txt
 IF %CUDNN%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\CUDNN.txt
