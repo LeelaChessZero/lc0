@@ -109,6 +109,21 @@ SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
   return SearchParams::WDLRescaleParams(ratio, diff);
 }
 
+// Converts regular Elo into ideal UHO game pair Elo based on the same Elo
+// dependent draw rate model used below. Necessary because regular Elo doesn't
+// behave well at higher level, while the ideal UHO game pair Elo calculated
+// from the decisive game pair ratio underestimates Elo differences by a
+// factor of 2 at lower levels.
+
+float ConvertRegularToGamePairElo(float elo_regular) {
+  const float transition_sharpness = 250.0f;
+  const float transition_midpoint = 2737.0f;
+  return elo_regular +
+         0.5f * transition_sharpness *
+             std::log(1.0f + std::exp((transition_midpoint - elo_regular) /
+                                      transition_sharpness));
+}
+
 // Calculate ratio and diff for WDL conversion from the contempt settings.
 // Less accurate Elo model, but automatically chooses draw rate and accuracy
 // based on the absolute Elo of both sides. Doesn't require clamping, but still
@@ -129,6 +144,10 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
                                           (1.0f - draw_rate_reference));
   float elo_opp =
       elo_active - std::clamp(contempt, -contempt_max, contempt_max);
+  
+  //elo_active = ConvertRegularToGamePairElo(elo_active);
+  //elo_opp = ConvertRegularToGamePairElo(elo_opp);
+  
   float scale_active =
       1.0f / (1.0f / scale_zero + std::exp(elo_active / elo_slope - offset));
   float scale_opp =
@@ -138,12 +157,8 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
       std::sqrt((scale_active * scale_active + scale_opp * scale_opp) / 2.0f);
   float ratio = scale_target / scale_reference;
   // Mu is calculated as the integral over scale(Elo) between the Elo values.
-  float mu_active =
-      -std::log(10) / 200 * scale_zero * elo_slope *
-      std::log(1.0f + std::exp(-elo_active / elo_slope + offset) / scale_zero);
-  float mu_opp =
-      -std::log(10) / 200 * scale_zero * elo_slope *
-      std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
+  float mu_active = (elo_active - elo_opp) / (elo_active + elo_opp);
+  float mu_opp = (elo_opp - elo_active) / (elo_opp + elo_active);
   float diff = (mu_active - mu_opp) * contempt_attenuation;
   return SearchParams::WDLRescaleParams(ratio, diff);
 }
@@ -453,6 +468,14 @@ const OptionId SearchParams::kUCIRatingAdvId{
 const OptionId SearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
+const OptionId SearchParams::kPol_boostId{
+    "policy-boost", "PolicyBoost",
+    "Switches on or off policy boosting"    
+};
+const OptionId SearchParams::kMustWinId{
+    "must-win", "MustWin",
+    "Armmageton type of contempt"
+};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -548,6 +571,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
+  options->Add<BoolOption>(kPol_boostId) = false;
+  options->Add<BoolOption>(kMustWinId) = false;
+  
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
@@ -656,6 +682,8 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<int>(kMaxCollisionVisitsScalingEndId)),
       kMaxCollisionVisitsScalingPower(
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
-      kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
+      kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)),
+      kPol_boost(options_.Get<bool>(kPol_boostId)),
+      kMustWin(options_.Get<bool>(kMustWinId))  {}
 
 }  // namespace lczero
