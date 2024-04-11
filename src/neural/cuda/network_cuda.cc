@@ -670,7 +670,7 @@ class CudaNetwork : public Network {
     stream_attribute.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
 
     if (allow_cache_opt_ && use_res_block_winograd_fuse_opt_ &&
-        (res_block_mem <= scratch_size_) && (res_block_mem <= l2_cache_size_)) {
+        (static_cast<long unsigned int>(res_block_mem) <= scratch_size_) && (res_block_mem <= l2_cache_size_)) {
       // we can use a single alloc to hold all the required tensors, and enable
       // persistent L2 caching on it
       ReportCUDAErrors(cudaStreamSetAttribute(
