@@ -485,11 +485,33 @@ if get_option('build_backends')
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
     endif
     cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
-    nvcc_extra_args = []
+    nvcc_local_args = []  # Flags for common_kernels.cu only.
+    nvcc_extra_args = []  # Flags for both common_kernels.cu and fp16_kernels.cu.
     if cuda_cc != ''
       nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
     elif get_option('native_cuda') and nvcc_help.contains('-arch=native')
       nvcc_extra_args = ['-arch=native']
+    elif nvcc_help.contains('-arch=all-major')
+      nvcc_extra_args = ['-arch=all-major']
+    else
+      foreach x : ['60', '70', '80', '90']
+        if nvcc_help.contains('sm_' + x)
+          nvcc_extra_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
+        endif
+      endforeach
+      foreach x : ['35', '52']
+        if nvcc_help.contains('sm_' + x)
+          nvcc_local_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
+        endif
+      endforeach
+      # For forward compatibility.
+      if nvcc_help.contains('sm_90') # Cuda 12+
+        nvcc_extra_args += '-gencode=arch=compute_90,code=compute_90'
+      elif nvcc_help.contains('sm_80') # Cuda 11+
+        nvcc_extra_args += '-gencode=arch=compute_80,code=compute_80'
+      elif nvcc_help.contains('sm_75') # Cuda 10+
+        nvcc_extra_args += '-gencode=arch=compute_75,code=compute_75'
+      endif
     endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
@@ -504,38 +526,9 @@ if get_option('build_backends')
       input : 'src/neural/cuda/common_kernels.cu',
       output : outputname,
       depend_files: 'src/neural/cuda/winograd_helper.inc',
-      command : [nvcc, nvcc_extra_args, cuda_arguments]
+      command : [nvcc, nvcc_local_args, nvcc_extra_args, cuda_arguments]
     )
 
-    # Handling of fp16 cuda code: If nvcc_extra_args is empty add options to
-    # generate code for the major fp16 capable architectures.
-    if nvcc_extra_args == []
-      nvcc_arch = '-arch=compute_70'
-      nvcc_sm_list = ['sm_70', 'sm_75', 'sm_80', 'sm_90']
-      if host_machine.system() != 'windows'
-        nvcc_arch = '-arch=compute_60'
-        nvcc_sm_list += ['sm_60']
-        if ['arm', 'aarch64'].contains(host_machine.cpu_family())
-          message('Compiling for Jetson.')
-          nvcc_arch = '-arch=compute_53'
-          nvcc_sm_list = ['sm_53', 'sm_62', 'sm_72', 'sm_87']
-        endif
-      endif
-      nvcc_extra_args = [nvcc_arch]
-      foreach x : nvcc_sm_list
-        if nvcc_help.contains(x)
-          nvcc_extra_args += '-code=' + x
-        endif
-      endforeach
-      # For forward compatibility.
-      if nvcc_help.contains('sm_90') # Cuda 12+
-        nvcc_extra_args += '-gencode=arch=compute_90,code=compute_90'
-      elif nvcc_help.contains('sm_80') # Cuda 11+
-        nvcc_extra_args += '-gencode=arch=compute_80,code=compute_80'
-      elif nvcc_help.contains('sm_75') # Cuda 10+
-        nvcc_extra_args += '-gencode=arch=compute_75,code=compute_75'
-      endif
-    endif
     files += custom_target('cuda fp16 code',
       input : 'src/neural/cuda/fp16_kernels.cu',
       output : outputname,
