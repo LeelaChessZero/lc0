@@ -509,10 +509,10 @@ if get_option('build_backends')
 
     # Handling of fp16 cuda code: If nvcc_extra_args is empty add options to
     # generate code for the major fp16 capable architectures.
-    if nvcc_extra_args == [] and nvcc_help.contains('-arch=all-major')
-      nvcc_extra_args = ['-arch=all-major']
+    if nvcc_extra_args == [] and nvcc_help.contains('-arch=all')
+      nvcc_extra_args = ['-arch=all']
     elif nvcc_extra_args == []
-      # Fallback for cuda versions < 11.5 that don't support -arch=all-major.
+      # Fallback for cuda versions < 11.5 that don't support -arch=all.
       nvcc_arch = '-arch=compute_70'
       nvcc_sm_list = ['sm_70', 'sm_75', 'sm_80', 'sm_90']
       if host_machine.system() != 'windows'
