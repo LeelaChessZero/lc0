@@ -509,10 +509,14 @@ if get_option('build_backends')
 
     # Handling of fp16 cuda code: If nvcc_extra_args is empty add options to
     # generate code for the major fp16 capable architectures.
-    if nvcc_extra_args == [] and nvcc_help.contains('-arch=all')
-      nvcc_extra_args = ['-arch=all']
+    if nvcc_extra_args == [] and nvcc_help.contains('-arch=all-major')
+      nvcc_extra_args = ['-arch=all-major']
+      # For rtx40x0 compatibility, some drivers seem to need this.
+      if nvcc_help.contains('sm_89')
+        nvcc_extra_args += '-gencode=arch=compute_89,code=sm_89'
+      endif
     elif nvcc_extra_args == []
-      # Fallback for cuda versions < 11.5 that don't support -arch=all.
+      # Fallback for cuda versions < 11.5 that don't support -arch=all-major.
       nvcc_arch = '-arch=compute_70'
       nvcc_sm_list = ['sm_70', 'sm_75', 'sm_80', 'sm_90']
       if host_machine.system() != 'windows'
