@@ -494,20 +494,19 @@ if get_option('build_backends')
     elif nvcc_help.contains('-arch=all-major')
       nvcc_extra_args = ['-arch=all-major']
     else
-      foreach x : ['60', '70', '80', '90']
+      # Fallback for cuda versions without -arch=all-major.
+      foreach x : ['60', '70', '80']
         if nvcc_help.contains('sm_' + x)
           nvcc_extra_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
         endif
       endforeach
-      foreach x : ['35', '52']
+      foreach x : ['35', '50']
         if nvcc_help.contains('sm_' + x)
           nvcc_local_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
         endif
       endforeach
       # For forward compatibility.
-      if nvcc_help.contains('sm_90') # Cuda 12+
-        nvcc_extra_args += '-gencode=arch=compute_90,code=compute_90'
-      elif nvcc_help.contains('sm_80') # Cuda 11+
+      if nvcc_help.contains('sm_80') # Cuda 11+
         nvcc_extra_args += '-gencode=arch=compute_80,code=compute_80'
       elif nvcc_help.contains('sm_75') # Cuda 10+
         nvcc_extra_args += '-gencode=arch=compute_75,code=compute_75'
