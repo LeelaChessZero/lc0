@@ -938,7 +938,7 @@ class CudnnNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_, false,
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
                                              moves_left_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
