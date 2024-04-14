@@ -485,24 +485,19 @@ if get_option('build_backends')
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
     endif
     cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
-    nvcc_local_args = []  # Flags for common_kernels.cu only.
-    nvcc_extra_args = []  # Flags for both common_kernels.cu and fp16_kernels.cu.
+    nvcc_extra_args = []
     if cuda_cc != ''
       nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
     elif get_option('native_cuda') and nvcc_help.contains('-arch=native')
       nvcc_extra_args = ['-arch=native']
     elif nvcc_help.contains('-arch=all-major')
-      nvcc_extra_args = ['-arch=all-major']
+      nvcc_extra_args = ['-arch=all-major', '-Wno-deprecated-gpu-targets']
     else
+      nvcc_extra_args = ['-Wno-deprecated-gpu-targets']
       # Fallback for cuda versions without -arch=all-major.
-      foreach x : ['60', '70', '80']
+      foreach x : ['35', '50', '60', '70', '80']
         if nvcc_help.contains('sm_' + x)
           nvcc_extra_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
-        endif
-      endforeach
-      foreach x : ['35', '50']
-        if nvcc_help.contains('sm_' + x)
-          nvcc_local_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
         endif
       endforeach
       # For forward compatibility.
@@ -525,7 +520,7 @@ if get_option('build_backends')
       input : 'src/neural/cuda/common_kernels.cu',
       output : outputname,
       depend_files: 'src/neural/cuda/winograd_helper.inc',
-      command : [nvcc, nvcc_local_args, nvcc_extra_args, cuda_arguments]
+      command : [nvcc, nvcc_extra_args, cuda_arguments]
     )
 
     files += custom_target('cuda fp16 code',
