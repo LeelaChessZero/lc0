@@ -311,7 +311,7 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                       w->format().network_format());
 }
 
-REGISTER_NETWORK("xla", MakeXlaNetwork, -34)
+REGISTER_NETWORK("xla", MakeXlaNetwork, 34)
 
 }  // namespace
 }  // namespace lczero
