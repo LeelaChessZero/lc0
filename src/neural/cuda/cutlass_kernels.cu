@@ -185,8 +185,12 @@ void dumpTensor(const T* memory, int elements, const char* message,
   }
   float maxval = -std::numeric_limits<float>::max();
   float minval = std::numeric_limits<float>::max();
-  int nans = 0;
-  int nanss[10]{};
+  int cnans = 0;
+  int cnlims = 0;
+  int cplims = 0;
+  int nans[10]{};
+  int nlims[10]{};
+  int plims[10]{};
 
   std::vector<float> fpArr(elements);
   for (int i = 0; i < elements; i++) {
@@ -206,14 +210,28 @@ void dumpTensor(const T* memory, int elements, const char* message,
     minval = std::min(minval, val);
 
     if (std::isnan(val)) {
-      if (nans < 10) nanss[nans] = i;
-      nans++;
+      if (cnans < 10) nans[cnans] = i;
+      cnans++;
+    }
+    if (int8) {
+      if (val >= 127) {
+        if (cplims < 10) plims[cplims] = i;
+        cplims++;
+      } else if (val <= -128) {
+        if (cnlims < 10) nlims[cnlims] = i;
+        cnlims++;
+      }
     }
 
     if (!only_summary || i < 2 || i == elements - 1) {
-      printf("%8.4f ", val);
-      if ((i % 8) == 7) printf("\n");
-      // printf("%i;%.6f\n", i, val);
+      if (int8) {
+        printf("%6i ", (int8_t)val);
+        // printf("%i;%6i\n", i, (int8_t)val);
+      } else {
+        printf("%8.6f ", val);
+        // printf("%i;%8.6f\n", i, val);
+      }
+      if ((i % 8) == 7 || i == elements - 1) printf("\n");
     }
   }
   if (!cpu_tensor) free(temp);
@@ -224,12 +242,33 @@ void dumpTensor(const T* memory, int elements, const char* message,
 
   float avg = mean(&fpArr[0], elements);
   float stddev = stdDev(&fpArr[0], elements);
-  printf("Max: %.6f, Min: %.6f, Mean: %.6f, StdDev: %.6f, NaNs: %i of %i",
-         maxval, minval, avg, stddev, nans, elements);
-  if (nans > 0) {
+  if (int8) {
+    printf(
+        "Max: %i, Min: %i, Mean: %i, StdDev: %i\n"
+        "NaNs: %i, HiQuantLimit: %i, LoQuantLimit: %i, Total: %i",
+        (int8_t)maxval, (int8_t)minval, (int8_t)avg, (int8_t)stddev, cnans,
+        cplims, cnlims, elements);
+
+  } else {
+    printf(
+        "Max: %.6f, Min: %.6f, Mean: %.6f, StdDev: %.6f\n"
+        "NaNs: %i of %i",
+        maxval, minval, avg, stddev, cnans, elements);
+  }
+  if (cnans > 0) {
     printf("\nNaN indices: ");
-    for (int i = 0; i < nans && i < 10; i++) printf("%i ", nanss[i]);
-    if (nans > 10) printf("......");
+    for (int i = 0; i < cnans && i < 10; i++) printf("%i ", nans[i]);
+    if (cnans > 10) printf("......");
+  }
+  if (cplims > 0) {
+    printf("\n127 indices: ");
+    for (int i = 0; i < cplims && i < 10; i++) printf("%i ", plims[i]);
+    if (cplims > 10) printf("......");
+  }
+  if (cnlims > 0) {
+    printf("\n-128 indices: ");
+    for (int i = 0; i < cnlims && i < 10; i++) printf("%i ", nlims[i]);
+    if (cnlims > 10) printf("......");
   }
   printf("\n");
 }
@@ -856,7 +895,7 @@ __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
   copyAs<uint4>(&factor[4], &scale[x + 4]);
 
   for (int i = 0; i < 8; i++) {
-    float val = roundf((float)ip[i] * factor[i]);
+    float val = roundf((float)ip[i] / factor[i]);
     if (val > 127) val = 127;
     if (val < -128) val = -128;
     op[i] = (int8_t)(val);
@@ -874,6 +913,70 @@ void quantizeActivationMatrix(int8_t* output, const half* input, int height,
                lczero::cudnn_backend::DivUp(height, 16));
   quantizeMatrix<<<gridDim, blockDim, 0, stream>>>(output, input, height, width,
                                                    scale);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// Quantize matrix with single scale value
+// process 8 elements per thread (in x dimension)
+__global__ void quantizeMatrix(int8_t* output, const half* input, int height,
+                               int width, const float scale) {
+  int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+  if (x >= width || y >= height) return;
+
+  half ip[8];
+  int8_t op[8];
+
+  copyAs<uint4>(&ip[0], &input[y * width + x]);
+
+  for (int i = 0; i < 8; i++) {
+    float val = roundf((float)ip[i] / scale);
+    if (val > 127) val = 127;
+    if (val < -128) val = -128;
+    op[i] = (int8_t)(val);
+  }
+
+  copyAs<uint2>(&output[y * width + x], &op[0]);
+}
+
+// The scale is for all columns.
+void quantizeActivationMatrix(int8_t* output, const half* input, int height,
+                              int width, const float scale,
+                              cudaStream_t stream) {
+  dim3 blockDim(16, 16);
+  dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
+               lczero::cudnn_backend::DivUp(height, 16));
+  quantizeMatrix<<<gridDim, blockDim, 0, stream>>>(output, input, height, width,
+                                                   scale);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// Quantize matrix with single scale value
+template <typename T>
+__global__ void clipMatrix(T* output, const T* input, const float* factors,
+                           int height, int width) {
+  int x = (blockIdx.x * blockDim.x + threadIdx.x);
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+  if (x >= width || y >= height) return;
+
+  float limit = (float)(127 * factors[x]);
+  float val = (float)input[y * width + x];
+  if (val > limit) val = limit;
+  if (val < -limit) val = -limit;
+  output[y * width + x] = (T)val;
+}
+
+template <typename DataType>
+void clipActivationMatrix(DataType* output, const DataType* input,
+                          const float* factors, int height, int width,
+                          cudaStream_t stream) {
+  dim3 blockDim(16, 16);
+  dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16),
+               lczero::cudnn_backend::DivUp(height, 16));
+  clipMatrix<DataType>
+      <<<gridDim, blockDim, 0, stream>>>(output, input, factors, height, width);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -924,9 +1027,9 @@ __global__ void deQuantizeMatrix(half* output, const int8_t* input,
 // the bias is per column, per batch
 void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
                                    int height, int width, int batchSize,
-                                   float* invScale, float *deq, const half* bias,
-                                   cudaStream_t stream,
-                                   ActivationFunction act = ACTIVATION_NONE) {
+                                   float* invScale, float* deq,
+                                   const half* bias, ActivationFunction act,
+                                   cudaStream_t stream) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
                lczero::cudnn_backend::DivUp(height, 16), batchSize);
@@ -941,6 +1044,63 @@ void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
 
   deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(
       output, input, bias, height, width, stride, invScale, s, act);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// process 8 elements per thread (in x dimension)
+__global__ void deQuantizeMatrix(half* output, const int8_t* input,
+                                 const half* bias, int height, int width,
+                                 int stride, const float* invScale,
+                                 ActivationFunction act) {
+  int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  int b = blockIdx.z;
+
+  if (x >= width || y >= height) return;
+
+  int8_t ip[8] = {};
+  half op[8] = {};
+  half bi[8] = {};
+  float inv_scale[8];
+
+  copyAs<uint2>(&ip[0], &input[b * stride + y * width + x]);
+  if (bias) copyAs<uint4>(&bi[0], &bias[b * width + x]);
+
+  if (invScale) {
+    copyAs<uint4>(&inv_scale[0], &invScale[b * width + x]);
+    copyAs<uint4>(&inv_scale[4], &invScale[b * width + x + 4]);
+  } else {
+    for (int i = 0; i < 8; i++) inv_scale[i] = 1 / 127.0f;
+  }
+
+  for (int i = 0; i < 8; i++) {
+    float val = (float)ip[i];
+    val *= inv_scale[i];
+    if (bias) val += (float)bi[i];
+    op[i] = (half)activate(val, act);
+  }
+
+  copyAs<uint4>(&output[b * stride + y * width + x], &op[0]);
+}
+
+// the scale (in CPU memory) is per "batch"
+// the bias is per column, per batch
+void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
+                                   int height, int width, int batchSize,
+                                   float* invScale, const half* bias,
+                                   ActivationFunction act,
+                                   cudaStream_t stream) {
+  dim3 blockDim(16, 16);
+  dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
+               lczero::cudnn_backend::DivUp(height, 16), batchSize);
+
+  // otherwise we will need to put them in GPU memory
+  assert(batchSize < MAX_BATCH_DEQUANT);
+
+  int stride = width * height;
+
+  deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(
+      output, input, bias, height, width, stride, invScale, act);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -960,6 +1120,12 @@ template void calibrateGemmForInt8<half>(
     float* output_scaling_factors, float* output_deq_factors, float* maxValuesA,
     float* maxValuesOut, const half* A, const half* B, int M, int N, int K,
     int batchSize, int M_Batch);
+template void clipActivationMatrix<float>(float* output, const float* input,
+                                          const float* factors, int height,
+                                          int width, cudaStream_t stream);
+template void clipActivationMatrix<half>(half* output, const half* input,
+                                         const float* factors, int height,
+                                         int width, cudaStream_t stream);
 
 template void dumpTensor<float>(const float* memory, int elements,
                                 const char* message, bool only_summary,

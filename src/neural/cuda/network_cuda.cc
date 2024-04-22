@@ -383,69 +383,16 @@ class CudaNetwork : public Network {
 
     ActivationFunction act = mish_net ? ACTIVATION_MISH : ACTIVATION_RELU;
 
+    // @todo can we auto-detect by checking for scaling factors?
+    // @todo or otherwise assert that weights file isn't quantized.
     use_int8_ = options.GetOrDefault<bool>("int8", false);
-    int8_calibration_run_ = options.GetOrDefault<bool>("int8-calibrate", false);
 
-    if (int8_calibration_run_ || use_int8_) {
-      if (!fp16 && use_int8_)
+    if (use_int8_) {
+      if (!fp16)
         throw Exception("INT8 is supported only with cuda-fp16 backend.");
       if (!attn_body_)
         throw Exception("INT8 only supported for attention body networks");
-
-      // Structure of the weights file:
-      //   For each encoder block -
-      //     * per-channel scaling factors for Input Matrix to QKV GEMM (embedding_op_size floats)
-      //        (to use for quantization of the input)
-      //     * qunatized (int8) weights for QKV GEMMs (3 * encoder_d_model * embedding_op_size int8_ts)
-      //     * per-channel scaling factors for quantizing the Outut matrix (encoder_d_model * 3 floats)
-      //     * per-tensor output dequantization factors (3 floats)
-      // 
-      //     * per-channel scaling factors for the MHA dense layer's input (encoder_d_model floats)
-      //     * Qunatized (int8) weights for MHA dense (embedding_op_size * encoder_d_model int8_ts)
-      //     * per-channel output scaling factors for MHA dense (embedding_op_size floats)
-      //     * per-tensor output dequantization factor (1 float)
-      // 
-      //     * per-channel scaling factors for input to FFN1 (embedding_op_size_ floats)
-      //     * Qunatized (int8) weights for FFN1 (encoder_dff * encoder_d_model int8_ts)
-      //     * per-channel output scaling factors for FFN1 (encoder_dff floats)
-      //     * per-tensor output dequantization factor (1 float)
-      //     
-      //     * per-channel scaling factors for input to FFN2 (encoder_dff floats)
-      //     * Qunatized (int8) weights for FFN2 (embedding_op_size * encoder_dff int8_ts)
-      //     * per-channel output scaling factors for FFN2 (embedding_op_size floats)
-      //     * per-tensor output dequantization factor (1 float)
-      int embedding_op_size = weights.ip_emb_b.size();
-      int encoder_d_model = weights.encoder[0].mha.q_b.size();
-      int encoder_dff = weights.encoder[0].ffn.dense1_b.size();
-      int num_encoders = weights.encoder.size();
-      int8_weights_size_ =
-          num_encoders *
-          (embedding_op_size * sizeof(float) + 3 * embedding_op_size * encoder_d_model    + 3 * (encoder_d_model + 1)    * sizeof(float) +
-           encoder_d_model   * sizeof(float) +     encoder_d_model   * embedding_op_size  +     (embedding_op_size + 1)  * sizeof(float) +
-           embedding_op_size * sizeof(float) +     embedding_op_size * encoder_dff        +     (encoder_dff + 1)        * sizeof(float) +
-           encoder_dff       * sizeof(float) +     encoder_dff       * embedding_op_size  +     (embedding_op_size + 1)  * sizeof(float));
-
-      int8_weights_ = malloc(int8_weights_size_);
-      memset(int8_weights_, 0, int8_weights_size_);
-
-      printf("\nint8_weights_size: %d\n", int8_weights_size_);
     }
-
-    if (int8_calibration_run_) {
-      // we will write the file at the time of exit.      
-    } else if (use_int8_) {
-      FILE* fp = fopen("weights_quant.bin", "rb");
-      if (!fp) {
-        CERR << "ERROR: weights_quant.bin not found. Please run 'lc0 benchmark "
-                "-t 1 --nodes=1 -w <weightfile> --backend=cuda "
-                "--backend-opts=int8-calibrate=true' first";
-        throw Exception("Quantized weights not found");
-      } else {
-        int read = fread(int8_weights_, 1, int8_weights_size_, fp);
-        fclose(fp);
-        if (read != int8_weights_size_)
-          throw Exception(
-              "Quantized weights likely corrupted or of different network");
 
 #if 0
         // Ankan - test: dump some weights here
@@ -465,9 +412,6 @@ class CudaNetwork : public Network {
 
         exit(0);
 #endif
-
-      }
-    }
 
     // 2. Build the network, and copy the weights to GPU memory.
 
@@ -555,7 +499,7 @@ class CudaNetwork : public Network {
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
               InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
-          use_fused_mha, int8_calibration_run_, use_int8_, int8_weights_);
+          use_fused_mha, use_int8_);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -978,16 +922,6 @@ class CudaNetwork : public Network {
         ReportCUDAErrors(cudaFree(head_offset_pointers_));
       cublasDestroy(cublas_);
     }
-
-    if (int8_calibration_run_) {
-      // write the calibration data/weights to file
-      FILE* fp = fopen("weights_quant.bin", "wb+");
-      fwrite(int8_weights_, 1, int8_weights_size_, fp);
-      fclose(fp);
-    }
-    if (int8_calibration_run_ || use_int8_)
-        free(int8_weights_);
-
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -1049,7 +983,6 @@ class CudaNetwork : public Network {
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;                  // try to fit residual block activations in L2 cache
   bool use_int8_;                         // try to use INT8 (works only with cuda-fp16 backend)
-  bool int8_calibration_run_;             // this is a calibration run to figure out quantization factors
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
@@ -1085,9 +1018,6 @@ class CudaNetwork : public Network {
 
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
-
-  void* int8_weights_;     // loaded from disk / to be stored to disk
-  int int8_weights_size_;
 
   void showInfo() const {
     int version;

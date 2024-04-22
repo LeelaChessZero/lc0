@@ -355,8 +355,7 @@ class EncoderBlock {
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
                ActivationFunction ffn_act, float default_eps, bool fused_mha,
-               bool int8_calibrate, bool int8_inference, void* int8_weights,
-               int blockIndex);
+               bool int8_inference, int blockIndex);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -387,7 +386,7 @@ class EncoderBlock {
 
   // int 8 stuff
   int blockIndex_;
-  bool int8_inf_, int8_cali_;
+  bool int8_inf_, is_quantized_;
   MatMulQuantizationData kqv_;
   MatMulQuantizationData mha_dense_;
   MatMulQuantizationData ffn1_;
@@ -503,7 +502,7 @@ class AttentionBody : public BaseLayer<DataType> {
   AttentionBody(const MultiHeadWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
                 int max_batch_size, bool is_pe_dense_embedding, bool fused_mha,
-                bool int8_calibrate, bool int8_inference, void* int8_weights);
+                bool int8_inference);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
