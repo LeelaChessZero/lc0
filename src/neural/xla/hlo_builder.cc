@@ -290,12 +290,18 @@ HloFlow HloBuilder::Gather(HloFlow input, HloFlow indices,
 }
 
 HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
-                        const pblczero::XlaDotDimensionNumbers& dn) {
+                        const pblczero::XlaDotDimensionNumbers& dn,
+                        const pblczero::XlaShapeProto::Type out_type) {
   HloTensorType lhs_shape(lhs->shape());
   HloTensorType rhs_shape(rhs->shape());
-  HloTensorType new_shape(lhs_shape.GetElementType());
-  if (lhs_shape.GetElementType() != rhs_shape.GetElementType()) {
-    throw Exception("Dot operands must have the same element type");
+  HloTensorType new_shape(
+      out_type == pblczero::XlaShapeProto::PRIMITIVE_TYPE_INVALID
+          ? lhs_shape.GetElementType()
+          : out_type);
+  if (lhs_shape.GetElementType() != rhs_shape.GetElementType() &&
+      out_type == pblczero::XlaShapeProto::PRIMITIVE_TYPE_INVALID) {
+    throw Exception(
+        "Dot operands must have the same element type or explicit output type");
   }
   if (dn.lhs_batch_dimensions_size() != dn.rhs_batch_dimensions_size()) {
     throw Exception("Dot batch dimensions must have the same size");
@@ -469,6 +475,18 @@ HloFlow HloBuilder::Slice(
   auto flow = MakeInstruction("slice", new_shape.ToProto(), {input});
   *flow->mutable_slice_dimensions() = slice;
   return flow;
+}
+
+HloFlow HloBuilder::RoundNearestEven(HloFlow input) {
+  return MakeInstruction("round-nearest-even", input->shape(), {input});
+}
+
+HloFlow HloBuilder::Clamp(HloFlow min, HloFlow input, HloFlow max) {
+  if (min->shape().dimensions() != input->shape().dimensions() ||
+      input->shape().dimensions() != max->shape().dimensions()) {
+    throw Exception("Clamp operands must have the same shape");
+  }
+  return MakeInstruction("clamp", input->shape(), {min, input, max});
 }
 
 namespace {
