@@ -75,16 +75,16 @@ gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
 
 # Handle submodules.
 git = find_program('git', required: false)
-if run_command('scripts/checkdir.py', 'libs/lczero-common/proto').returncode() != 0
+if run_command('scripts/checkdir.py', 'libs/lczero-common/proto', check : true).returncode() != 0
   if git.found()
-    if run_command(git, 'status').returncode() == 0
+    if run_command(git, 'status', check : true).returncode() == 0
       message('updating git submodule libs/lczero-common')
-      run_command(git, 'submodule', 'update', '--init', '--recursive')
+      run_command(git, 'submodule', 'update', '--init', '--recursive', check : true)
     else
       message('cloning lczero-common.git into libs/lczero-common')
       run_command(git, 'clone', '--depth=1',
                   'https://github.com/LeelaChessZero/lczero-common.git',
-                  'libs/lczero-common/')
+                  'libs/lczero-common/', check : true)
     endif
   else
     error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
@@ -101,12 +101,12 @@ common_files += pb_files
 # Extract git short revision.
 short_rev = 'unknown'
 if git.found()
-  r = run_command(git, 'rev-parse', '--short', 'HEAD')
+  r = run_command(git, 'rev-parse', '--short', 'HEAD', check : true)
   if r.returncode() == 0
     # Now let's check if the working directory is clean.
-    if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
+    if run_command(git, 'diff-index', '--quiet', 'HEAD', check : true).returncode() == 0
       short_rev = r.stdout().strip()
-      if run_command(git, 'describe', '--exact-match', '--tags').returncode() == 0
+      if run_command(git, 'describe', '--exact-match', '--tags', check : true).returncode() == 0
         short_rev = ''
       endif
     else
@@ -272,7 +272,7 @@ if get_option('build_backends')
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
       mkl_inc = get_option('mkl_include')
-      if run_command('scripts/checkdir.py', mkl_inc).returncode() == 0
+      if run_command('scripts/checkdir.py', mkl_inc, check : true).returncode() == 0
         includes += include_directories(mkl_inc)
       endif
       if cc.has_header('mkl.h')
@@ -459,7 +459,7 @@ if get_option('build_backends')
       cuda_files += 'src/neural/cuda/network_cuda.cc'
     endif
     foreach d : get_option('cudnn_include')
-      if run_command('scripts/checkdir.py', d).returncode() == 0
+      if run_command('scripts/checkdir.py', d, check : true).returncode() == 0
         includes += include_directories(d, is_system: true)
       endif
     endforeach
@@ -467,7 +467,7 @@ if get_option('build_backends')
 
     cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
-    nvcc_help = run_command(nvcc, '-h').stdout()
+    nvcc_help = run_command(nvcc, '-h', check : true).stdout()
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
         cuda_arguments += ['-Xcompiler', '-MT']
