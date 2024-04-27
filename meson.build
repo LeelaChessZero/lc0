@@ -84,7 +84,7 @@ if run_command('scripts/checkdir.py', 'libs/lczero-common/proto', check : true).
       message('cloning lczero-common.git into libs/lczero-common')
       run_command(git, 'clone', '--depth=1',
                   'https://github.com/LeelaChessZero/lczero-common.git',
-                  'libs/lczero-common/', check : true)
+                  'libs/lczero-common/', check : false)
     endif
   else
     error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
@@ -101,12 +101,12 @@ common_files += pb_files
 # Extract git short revision.
 short_rev = 'unknown'
 if git.found()
-  r = run_command(git, 'rev-parse', '--short', 'HEAD', check : true)
+  r = run_command(git, 'rev-parse', '--short', 'HEAD', check : false)
   if r.returncode() == 0
     # Now let's check if the working directory is clean.
-    if run_command(git, 'diff-index', '--quiet', 'HEAD', check : true).returncode() == 0
+    if run_command(git, 'diff-index', '--quiet', 'HEAD', check : false).returncode() == 0
       short_rev = r.stdout().strip()
-      if run_command(git, 'describe', '--exact-match', '--tags', check : true).returncode() == 0
+      if run_command(git, 'describe', '--exact-match', '--tags', check : false).returncode() == 0
         short_rev = ''
       endif
     else
