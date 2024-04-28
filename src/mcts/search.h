@@ -452,7 +452,8 @@ class SearchWorker {
                              const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
-  void EnsureNodeTwoFoldCorrectForDepth(Node* node, int depth);
+  void EnsureNodeTwoFoldCorrectForDepth(Node* node, int depth,
+                                        bool revert_two_fold_visits);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
   void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
