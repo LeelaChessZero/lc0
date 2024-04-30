@@ -129,8 +129,8 @@ class Lexer:
             m = r.match(self.text, self.cur_offset)
             if m:
                 return (token, m)
-        self.Error(f'Unparseable token [{
-            self.text[self.cur_offset:self.cur_offset+10]}...]')
+        token_snippet = self.text[self.cur_offset:self.cur_offset + 10]
+        self.Error(f'Unparseable token [{token_snippet}...]')
 
     def Error(self, text):
         '''Throws an error with context in the file read.'''
@@ -320,7 +320,7 @@ class ProtoFieldParser:
         w.Write('case %d: %s; break;' % (self.number, self.GetParser()))
 
     def GenerateClear(self, w):
-        name = self.name.group(0)
+        name   = self.name.group(0)
         if self.category == 'repeated':
             w.Write('%s_.clear();' % name)
         else:
