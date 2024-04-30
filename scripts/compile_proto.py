@@ -392,8 +392,9 @@ class ProtoFieldParser:
             w.Write("bool has_%s() const;" % (name))
             if self.type.IsMessage():
                 w.Write("const %s& %s() const;" % (cpp_type, name))
-                w.Write("%s* mutable_%s();" % (cpp_type, name))
-            else:
+            if self.type.IsMessage() or self.type.IsBytesType():
+                w.Write("%s* mutable_%s();" % (var_cpp_type, name))
+            if not self.type.IsMessage():
                 w.Write("%s %s() const;" % (cpp_type, name))
                 w.Write("void set_%s(%s val);" % (name, cpp_type))
 
@@ -436,14 +437,15 @@ class ProtoFieldParser:
             if self.type.IsMessage():
                 w.Write("inline const %s& %s::%s() const { return %s_; }" %
                         (cpp_type, class_name, name, name))
+            if self.type.IsMessage() or self.type.IsBytesType():
                 w.Write("inline %s* %s::mutable_%s() {" %
-                        (cpp_type, class_name, name))
+                        (var_cpp_type, class_name, name))
                 w.Indent()
                 w.Write('has_%s_ = true;' % (name))
                 w.Write('return &%s_;' % name)
                 w.Unindent()
                 w.Write("}")
-            else:
+            if not self.type.IsMessage():
                 w.Write("inline %s %s::%s() const { return %s_; }" %
                         (cpp_type, class_name, name, name))
                 w.Write("inline void %s::set_%s(%s val) {" %
