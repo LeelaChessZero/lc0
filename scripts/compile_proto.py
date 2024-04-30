@@ -60,24 +60,25 @@ FLOAT_TYPES = set(['float', 'double'])
 TYPES = {**VARINT_TYPES, **FIXED32_TYPES, **FIXED64_TYPES, **BYTES_TYPES}
 
 RESERVED_WORDS = [
-    'syntax',
-    'package',
+    'enum',
     'message',
     'optional',
-    'required',
+    'package',
     'repeated',
-    'enum',
+    'required',
+    'reserved',
+    'syntax',
 ] + list(TYPES.keys())
 
 GRAMMAR = ([(r'%s\b' % x, x)
-            for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.'] + [
+            for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.,'] + [
                 (r'/\*.*?\*/', None),  # /* Comment */
                 (r'//.*?$', None),  # // Comment
                 (r'\s+', None),  # Whitespace
                 (r'$', 'EOF'),
                 (r'"((?:[^"\\]|\\.)*)"', 'string'),
                 (r'\d+', 'number'),
-                (r'\w+', 'identifier'),
+                (r'(\w+)', 'identifier'),
             ])
 
 
@@ -103,7 +104,7 @@ class Lexer:
         '''
         token, match = self.Pick()
         if expected_token != token:
-            self.Error('Expected token type [%s]' % expected_token)
+            self.Error(f'Expected token type [{expected_token}], got [{token}]')
         if value is not None and value != match.group(group):
             self.Error('Expected value [%s]' % value)
         self.cur_offset = match.span()[1]
@@ -128,7 +129,8 @@ class Lexer:
             m = r.match(self.text, self.cur_offset)
             if m:
                 return (token, m)
-        self.Error('Unexpected token')
+        self.Error(f'Unparseable token [{
+            self.text[self.cur_offset:self.cur_offset+10]}...]')
 
     def Error(self, text):
         '''Throws an error with context in the file read.'''
@@ -553,10 +555,30 @@ class ProtoEnumParser:
         w.Write('}')
 
 
+def ParseReservedFields(lexer):
+    res = set()
+    lexer.Consume('reserved')
+    while True:
+        token, match = lexer.Pick()
+        if token == 'number':
+            res.add(int(lexer.Consume('number').group(0)))
+        elif token in ['identifier', 'string']:
+            res.add(lexer.Consume(token).group(1))
+        else:
+            lexer.Error('Expected number or identifier')
+        token, _ = lexer.Pick()
+        if token == ';':
+            lexer.Consume(';')
+            break
+        lexer.Consume(',')
+    return res
+
+
 class ProtoMessageParser:
 
     def __init__(self, lexer, type_stack, scope):
         type_stack[0].append(self)
+        self.reserved = set()
         self.types = []
         self.fields = []
         self.scope = scope[:]
@@ -575,9 +597,12 @@ class ProtoMessageParser:
             elif token in ['repeated', 'optional', 'required']:
                 self.fields.append(
                     ProtoFieldParser(lexer, [self.types, *type_stack]))
+            elif token == 'reserved':
+                self.reserved.update(ParseReservedFields(lexer))
             else:
                 lexer.Error('Expected field or type')
         lexer.Consume('}')
+        self.CheckReserved()
 
     def GetName(self):
         return self.name
@@ -599,6 +624,15 @@ class ProtoMessageParser:
         for x in self.fields:
             type_to_fields.setdefault(x.type.GetWireType(), []).append(x)
         return type_to_fields
+    
+    def CheckReserved(self):
+        for r in self.reserved:
+            if isinstance(r, int):
+                if any(x.number == r for x in self.fields):
+                    raise ValueError(f'Field number [{r}] is reserved.')
+            else:
+                if any(x.name.group(0) == r for x in self.fields):
+                    raise ValueError(f'Field name [{r}] is reserved.')
 
     def ResolveForwardDeclarations(self, type_stack):
         type_stack.append(self.types)
