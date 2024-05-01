@@ -344,6 +344,7 @@ struct MatMulQuantizationData {
   float* output_deq_factors;       // per-tensor. Always in cpu memory (passed as constants to dequantization kernels)
   float* input_matrix_max_values;  // max values of input matrix (always in CPU memory)
   float* output_matrix_max_values; // max values in output matrix (always in CPU memory)
+  float accum_rescale_factor;      // accumulator rescale factor for matmuls to prevent overflow
 };
 
 
@@ -387,7 +388,7 @@ class EncoderBlock {
   // int 8 stuff
   int blockIndex_;
   bool int8_inf_, is_quantized_;
-  MatMulQuantizationData kqv_;
+  MatMulQuantizationData qkv_;
   MatMulQuantizationData mha_dense_;
   MatMulQuantizationData ffn1_;
   MatMulQuantizationData ffn2_;

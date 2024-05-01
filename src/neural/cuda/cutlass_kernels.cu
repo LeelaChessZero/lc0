@@ -223,15 +223,15 @@ void dumpTensor(const T* memory, int elements, const char* message,
       }
     }
 
-    if (!only_summary || i < 2 || i == elements - 1) {
+    if (!only_summary || i < 3 || i == elements - 1) {
       if (int8) {
-        printf("%6i ", (int8_t)val);
-        // printf("%i;%6i\n", i, (int8_t)val);
+        // printf("%6i ", (int8_t)val);
+        printf("%i;%6i\n", i, (int8_t)val);
       } else {
-        printf("%8.6f ", val);
-        // printf("%i;%8.6f\n", i, val);
+        // printf("%8.6f ", val);
+        printf("%i;%8.6f\n", i, val);
       }
-      if ((i % 8) == 7 || i == elements - 1) printf("\n");
+      // if ((i % 8) == 7 || i == elements - 1) printf("\n");
     }
   }
   if (!cpu_tensor) free(temp);
