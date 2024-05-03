@@ -153,7 +153,7 @@ namespace cudnn_backend {
 // than using multiple passes. The flag can be set to false for debugging.
 static constexpr bool kUseFusedSELayer = true;
 
-static constexpr bool clipInputActivations = true;
+static constexpr bool clipInputActivations = false;
 
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc)
@@ -2532,9 +2532,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
           (half*)buffer1, (const int8_t*)in_out_tensor, batch, num_outputs, 1,
           ffn2_.output_scaling_factors, nullptr, ACTIVATION_NONE, stream);
 
-      dumpTensor((const DataType*)buffer1, num_outputs * batch / 4,
-                 "encoder 1 ffn2 output dequant");
-      exit(0);
+      // dumpTensor((const DataType*)buffer1, num_outputs * batch / 4,
+      //            "encoder 1 ffn2 output dequant");
+      // exit(0);
     } else {
       if (is_quantized_ && clipInputActivations) {
         clipActivationMatrix<DataType>(
@@ -2550,9 +2550,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
           batch, num_outputs, num_inputs, 1, 0, 0, 0, true);
           */
 
-      dumpTensor((DataType*)buffer1, num_outputs * batch / 4,
-                 "encoder 1 ffn2 output");
-      exit(0);
+      // dumpTensor((DataType*)buffer1, num_outputs * batch / 4,
+      //            "encoder 1 ffn2 output");
+      // exit(0);
 
       /*
       dumpTensor<half>((const half*)buffer1, 768, "dequantized output values -
@@ -2569,9 +2569,10 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                       ffn_dense2_b, scratch, ln2_gammas, ln2_betas,
                       default_eps_, alpha_, ACTIVATION_NONE, stream);
 
-  // printf("\nencoder %i", blockIndex_);
-  // dumpTensor((const half*)in_out_tensor, embedding_op_size_ * 64, "ln2
-  // output", true); exit(0);
+  // printf("\nencoder %i: batchsize", blockIndex_, N);
+  // dumpTensor((const half*)in_out_tensor, embedding_op_size_ * 64, "ln2 output",
+  //            true);
+  // exit(0);
 }
 
 template <typename DataType>
@@ -2587,6 +2588,8 @@ void AttentionPolicyHead<DataType>::Eval(
   if (!attention_body_)
     convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8);
 
+  // dumpTensor(input, inputC * 64, "policy input tensor", true);
+
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
   DataType* pol_embedding = input2_tensor;
@@ -2601,6 +2604,8 @@ void AttentionPolicyHead<DataType>::Eval(
                           num_inputs, 0.0f, pol_embedding, num_outputs);
     addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
                    num_outputs, act_, stream);
+    // dumpTensor(pol_embedding, embedding_op_size_ * 64,
+    //            "policy embedding tensor", true);
   }
 
   // 2. Encoder layers
@@ -2608,6 +2613,8 @@ void AttentionPolicyHead<DataType>::Eval(
     pEnc->Eval(N, input2_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
                stream, offset_pointers);
   }  // End of encoder blocks
+  // dumpTensor(input2_tensor, embedding_op_size_ * 64, "policy encoder output",
+  //            true);
 
   DataType* wq;
   DataType* wk;
@@ -2625,6 +2632,8 @@ void AttentionPolicyHead<DataType>::Eval(
 
     addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs,
                              ACTIVATION_NONE, stream);
+    // dumpTensor(wq, num_outputs * 64, "policy attn wq output", true);
+    // dumpTensor(wk, num_outputs * 64, "policy attn wk output", true);
   }
 
   // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))
@@ -2645,6 +2654,7 @@ void AttentionPolicyHead<DataType>::Eval(
         wq /*B*/, policy_d_model_ /*LDB*/, 64 * policy_d_model_, /*strideB*/
         0.0f, output /*C*/,  // output (policy_attn_logits)
         64 /*LDC*/, 64 * 64 + 8 * 24 /*strideC*/, N);
+    // dumpTensor(output, 64 * 64, "policy attn output", true);
   }
 
   // Compute promotion_logits in a single kernel (and put the result just after
