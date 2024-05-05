@@ -535,6 +535,11 @@ class AttentionBody : public BaseLayer<DataType> {
   const bool has_gating_;
   const bool has_smolgen_;
   const bool use_fused_mha_;
+  const bool int8_inf_;
+  const bool is_quantized_;
+
+  MatMulQuantizationData emb_ffn1_;
+  MatMulQuantizationData emb_ffn2_;
 };
 
 // The value head implementation

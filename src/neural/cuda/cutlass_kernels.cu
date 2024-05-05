@@ -961,10 +961,11 @@ __global__ void clipMatrix(T* output, const T* input, const float* factors,
 
   if (x >= width || y >= height) return;
 
-  float limit = (float)(127 * factors[x]);
+  float ulimit = 127.0 * factors[x];
+  float llimit = -128.0 * factors[x];
   float val = (float)input[y * width + x];
-  if (val > limit) val = limit;
-  if (val < -limit) val = -limit;
+  if (val > ulimit) val = ulimit;
+  if (val < llimit) val = llimit;
   output[y * width + x] = (T)val;
 }
 

@@ -800,7 +800,7 @@ class CudaNetwork : public Network {
                             scratch_mem, scratch_size_, nullptr, cublas,
                             stream);  // policy map layer  // POLICY output
       }
-
+      dumpTensor<float>(opPol, 1858, "Output policy", false);
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, nullptr, cublas,
