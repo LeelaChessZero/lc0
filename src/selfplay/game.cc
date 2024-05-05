@@ -155,6 +155,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     if (game_result_ != GameResult::UNDECIDED) break;
     if (tree_[0]->GetPositionHistory().Last().GetGamePly() >= 450) {
       adjudicated_ = true;
+      game_result_ = GameResult::DRAW;
       break;
     }
     // Initialize search.
