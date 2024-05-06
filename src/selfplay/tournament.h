@@ -74,6 +74,7 @@ class SelfPlayTournament {
   void PlayOneGame(int game_id);
   void PlayMultiGames(int game_id, size_t game_count);
   void SaveResults() REQUIRES(mutex_);
+  bool IsAborted();
 
   Mutex mutex_;
   // Whether first game will be black for player1.

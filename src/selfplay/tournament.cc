@@ -396,7 +396,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb,
             enable_resign);
 
-  if (!abort_) {
+  if (!IsAborted()) {
     // Game callback.
     GameInfo game_info;
     game_info.game_result = game.GetGameResult();
@@ -675,6 +675,11 @@ void SelfPlayTournament::SaveResults() {
   output << "[Results \"" << tournament_info_.results[2][1] << " "
          << tournament_info_.results[0][1] << " "
          << tournament_info_.results[1][1] << "\"]" << std::endl;
+}
+
+bool SelfPlayTournament::IsAborted() {
+  Mutex::Lock lock(mutex_);
+  return abort_ ;
 }
 
 }  // namespace lczero
