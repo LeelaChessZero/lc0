@@ -137,4 +137,4 @@ struct ExecuteConvDesc {
   D3D12_GPU_DESCRIPTOR_HANDLE TemporaryResource;
 };
 
-};  // namespace lczero
+}  // namespace lczero

@@ -64,6 +64,7 @@ RESERVED_WORDS = [
     'package',
     'message',
     'optional',
+    'required',
     'repeated',
     'enum',
 ] + list(TYPES.keys())
@@ -81,6 +82,7 @@ GRAMMAR = ([(r'%s\b' % x, x)
 
 
 class Lexer:
+
     def __init__(self, text):
         self.text = text
         self.grammar = [(re.compile(x, re.S + re.M), y) for x, y in GRAMMAR]
@@ -130,13 +132,16 @@ class Lexer:
 
     def Error(self, text):
         '''Throws an error with context in the file read.'''
+        line = self.text[:self.cur_offset].count('\n') + 1
         line_start = self.text.rfind('\n', 0, self.cur_offset) + 1
         line_end = self.text.find('\n', line_start)
+        if line_end == -1:
+            line_end = len(self.text)
         sys.stderr.write('%s:\n' % text)
         sys.stderr.write(self.text[line_start:line_end] + '\n')
         sys.stderr.write(' ' * (self.cur_offset - line_start) + '^^^\n')
-        raise ValueError("Parse error: %s at offset %d." %
-                         (text, self.cur_offset))
+        raise ValueError("Parse error: %s at line %d column %d." %
+                         (text, line, (self.cur_offset - line_start)))
 
 
 def ReadIdentifierPath(lexer):
@@ -155,7 +160,7 @@ def LookupType(name, stack):
         for x in y:
             if x.GetName() == name[0]:
                 if len(name) == 1:
-                    return x.GetType()
+                    return x
                 else:
                     return LookupType(name[1:], [x.GetTypes()])
     raise ValueError("Cannot find type: %s." % '.'.join(name))
@@ -167,6 +172,7 @@ def LookupType(name, stack):
 
 
 class ProtoTypeParser:
+
     def __init__(self, lexer, object_stack):
         token, match = lexer.Pick()
         if token in TYPES:
@@ -175,9 +181,15 @@ class ProtoTypeParser:
             lexer.Consume(token)
         elif token == 'identifier':
             self.name = ReadIdentifierPath(lexer)
-            self.typetype = LookupType(self.name, object_stack)
+            self.typetype = 'forward'
         else:
             lexer.Error('Type expected')
+
+    def LookupForwardFieldType(self, object_stack):
+        if self.IsForward():
+            typ = LookupType(self.name, object_stack)
+            self.typetype = typ.GetType()
+            self.name = [typ.GetFullName()]
 
     def IsZigzag(self):
         if self.typetype == 'basic':
@@ -188,13 +200,16 @@ class ProtoTypeParser:
         if self.typetype == 'basic':
             return TYPES[self.name]
         else:
-            return '::'.join(self.name)
+            return '_'.join(self.name)
 
     def GetVariableCppType(self):
         if self.IsBytesType():
             return 'std::string'
         else:
             return self.GetCppType()
+
+    def IsEnumType(self):
+        return self.typetype == 'enum'
 
     def IsVarintType(self):
         return self.typetype == 'enum' or (self.typetype == 'basic'
@@ -231,6 +246,9 @@ class ProtoTypeParser:
     def IsMessage(self):
         return self.typetype == 'message'
 
+    def IsForward(self):
+        return self.typetype == 'forward'
+
     def IsIntegralType(self):
         if self.typetype == 'basic':
             if self.name == 'double':
@@ -251,6 +269,7 @@ class ProtoTypeParser:
 
 
 class ProtoFieldParser:
+
     def __init__(self, lexer, object_stack):
         token, match = lexer.Pick()
         if token not in ['repeated', 'optional', 'required']:
@@ -265,6 +284,9 @@ class ProtoFieldParser:
 
     def IsType(self):
         return False
+
+    def LookupForwardFieldType(self, object_stack):
+        self.type.LookupForwardFieldType(object_stack)
 
     def GetParser(self):
         name = self.name.group(0)
@@ -331,42 +353,101 @@ class ProtoFieldParser:
         w.Write('%s %s(%d, %s, &out);' %
                 (prefix, fname[wire_id], self.number, name))
 
-    def GenerateFunctions(self, w):
+    def GenerateJsonOutput(self, w):
+        name = self.name.group(0)
+        if self.category == 'repeated':
+            prefix = 'if (!%s_.empty())' % name
+            funcname = 'AppendJsonRepeatedField'
+        else:
+            prefix = 'if (has_%s_)' % name
+            funcname = 'AppendJsonField'
+        if self.type.IsEnumType():
+            value = '%s_Name(%s_)' % (self.type.GetCppType(), name)
+        else:
+            value = name + "_"
+        w.Write('%s %s("%s", %s, &first, &out);' %
+                (prefix, funcname, name, value))
+
+    def GenerateFunctionDeclarations(self, w):
         name = self.name.group(0)
         cpp_type = self.type.GetCppType()
         var_cpp_type = self.type.GetVariableCppType()
         if self.category == 'repeated':
             if self.type.IsMessage():
-                w.Write("%s* add_%s() { return &%s_.emplace_back(); }" %
-                        (cpp_type, name, name))
+                w.Write("%s* add_%s();" % (cpp_type, name))
             else:
-                w.Write("void add_%s(%s val) { %s_.emplace_back(val); }" %
-                        (name, cpp_type, name))
-            w.Write("const std::vector<%s>& %s() const { return %s_; }" %
-                    (var_cpp_type, name, name))
+                w.Write("void add_%s(%s val);" % (name, cpp_type))
+            # Using a vector here breaks API compatibility with the standard
+            # protobuf library, but it is more convenient.
+            w.Write("const std::vector<%s>& %s() const;" %
+                    (var_cpp_type, name))
+            w.Write("std::vector<%s>* mutable_%s();" % (var_cpp_type, name))
             if self.type.IsMessage():
-                w.Write("const %s& %s(size_t idx) const { return %s_[idx]; }" %
-                        (cpp_type, name, name))
+                w.Write("const %s& %s(size_t idx) const;" % (cpp_type, name))
+                w.Write("%s* mutable_%s(size_t idx);" % (cpp_type, name))
             else:
-                w.Write("%s %s(size_t idx) const { return %s_[idx]; }" %
-                        (cpp_type, name, name))
-            w.Write("size_t %s_size() const { return %s_.size(); }" %
-                    (name, name))
+                w.Write("%s %s(size_t idx) const;" % (cpp_type, name))
+            w.Write("size_t %s_size() const;" % (name))
         else:
-            w.Write("bool has_%s() const { return has_%s_; }" % (name, name))
+            w.Write("bool has_%s() const;" % (name))
             if self.type.IsMessage():
-                w.Write("const %s& %s() const { return %s_; }" %
-                        (cpp_type, name, name))
-                w.Write("%s* mutable_%s() {" % (cpp_type, name))
+                w.Write("const %s& %s() const;" % (cpp_type, name))
+                w.Write("%s* mutable_%s();" % (cpp_type, name))
+            else:
+                w.Write("%s %s() const;" % (cpp_type, name))
+                w.Write("void set_%s(%s val);" % (name, cpp_type))
+
+    def GenerateFunctionDefinitions(self, w, class_name):
+        name = self.name.group(0)
+        cpp_type = self.type.GetCppType()
+        var_cpp_type = self.type.GetVariableCppType()
+        if self.category == 'repeated':
+            if self.type.IsMessage():
+                w.Write(
+                    "inline %s* %s::add_%s() { return &%s_.emplace_back(); }" %
+                    (cpp_type, class_name, name, name))
+            else:
+                w.Write(
+                    "inline void %s::add_%s(%s val) { %s_.emplace_back(val); }"
+                    % (class_name, name, cpp_type, name))
+            w.Write(
+                "inline const std::vector<%s>& %s::%s() const { return %s_; }"
+                % (var_cpp_type, class_name, name, name))
+            w.Write(
+                "inline std::vector<%s>* %s::mutable_%s() { return &%s_; }"
+                % (var_cpp_type, class_name, name, name))
+            if self.type.IsMessage():
+                w.Write(
+                    "inline const %s& %s::%s(size_t idx) const { return %s_[idx]; }"
+                    % (cpp_type, class_name, name, name))
+                w.Write(
+                    "inline %s* %s::mutable_%s(size_t idx) { return &%s_[idx]; }"
+                    % (cpp_type, class_name, name, name))
+            else:
+                w.Write(
+                    "inline %s %s::%s(size_t idx) const { return %s_[idx]; }" %
+                    (cpp_type, class_name, name, name))
+            w.Write(
+                "inline size_t %s::%s_size() const { return %s_.size(); }" %
+                (class_name, name, name))
+        else:
+            w.Write("inline bool %s::has_%s() const { return has_%s_; }" %
+                    (class_name, name, name))
+            if self.type.IsMessage():
+                w.Write("inline const %s& %s::%s() const { return %s_; }" %
+                        (cpp_type, class_name, name, name))
+                w.Write("inline %s* %s::mutable_%s() {" %
+                        (cpp_type, class_name, name))
                 w.Indent()
                 w.Write('has_%s_ = true;' % (name))
                 w.Write('return &%s_;' % name)
                 w.Unindent()
                 w.Write("}")
             else:
-                w.Write("%s %s() const { return %s_; }" %
-                        (cpp_type, name, name))
-                w.Write("void set_%s(%s val) {" % (name, cpp_type))
+                w.Write("inline %s %s::%s() const { return %s_; }" %
+                        (cpp_type, class_name, name, name))
+                w.Write("inline void %s::set_%s(%s val) {" %
+                        (class_name, name, cpp_type))
                 w.Indent()
                 w.Write("has_%s_ = true;" % name)
                 w.Write("%s_ = val;" % name)
@@ -385,10 +466,12 @@ class ProtoFieldParser:
 
 
 class ProtoEnumParser:
-    def __init__(self, lexer):
+
+    def __init__(self, lexer, scope):
         lexer.Consume('enum')
         self.name = lexer.Consume('identifier').group(0)
         self.values = []
+        self.scope = scope[:]
         lexer.Consume('{')
         while True:
             token, match = lexer.Pick()
@@ -404,21 +487,54 @@ class ProtoEnumParser:
     def GetName(self):
         return self.name
 
+    def GetFullName(self):
+        return '_'.join([x.GetName() for x in self.scope] + [self.name])
+
     def GetType(self):
         return 'enum'
 
     def IsType(self):
         return True
 
-    def Generate(self, w):
+    def ResolveForwardDeclarations(self, _):
+        pass
+
+    def GenerateMessageDeclarations(self, w):
+        pass
+
+    def GenerateMessageDefinitions(self, w):
+        pass
+
+    def GenerateFunctionDefinitions(self, w):
+        pass
+
+    def GenerateEnumDefinitions(self, w):
         # Protobuf enum is mapped directly to C++ enum.
-        w.Write('enum %s {' % self.name)
+        w.Write('enum %s : int {' % self.GetFullName())
         w.Indent()
         for key, value in self.values:
-            w.Write('%s = %d,' % (key, value))
+            w.Write('%s_%s = %d,' % (self.GetFullName(), key, value))
         w.Unindent()
         w.Write('};')
-        # Static array of all possible enum values.
+        w.Write('inline std::string %s_Name(%s val) {' %
+                (self.GetFullName(), self.GetFullName()))
+        w.Indent()
+        w.Write('switch (val) {')
+        w.Indent()
+        for key, _ in self.values:
+            w.Write('case %s_%s:' % (self.GetFullName(), key))
+            w.Write('  return "%s";' % key)
+        w.Unindent()
+        w.Write('};')
+        w.Write('return "%s(" + std::to_string(val) + ")";' % self.name)
+        w.Unindent()
+        w.Write('}')
+
+    def GenerateUsingDirectives(self, w):
+        w.Write('using %s = %s;' % (self.name, self.GetFullName()))
+        for key, _ in self.values:
+            w.Write('static constexpr %s %s =' % (self.name, key))
+            w.Write('    %s_%s;' % (self.GetFullName(), key))
         w.Write('static constexpr std::array<%s,%d> %s_AllValues = {' %
                 (self.name, len(self.values), self.name))
         w.Indent()
@@ -430,22 +546,18 @@ class ProtoEnumParser:
         w.Write('static std::string %s_Name(%s val) {' %
                 (self.name, self.name))
         w.Indent()
-        w.Write('switch (val) {')
-        w.Indent()
-        for key, _ in self.values:
-            w.Write('case %s:' % key)
-            w.Write('  return "%s";' % key)
-        w.Unindent()
-        w.Write('};')
-        w.Write('return "%s(" + std::to_string(val) + ")";' % self.name)
+        w.Write('return %s_Name(val);' % (self.GetFullName()))
         w.Unindent()
         w.Write('}')
 
 
 class ProtoMessageParser:
-    def __init__(self, lexer, type_stack):
+
+    def __init__(self, lexer, type_stack, scope):
+        type_stack[0].append(self)
         self.types = []
         self.fields = []
+        self.scope = scope[:]
         lexer.Consume('message')
         self.name = lexer.Consume('identifier').group(0)
         lexer.Consume('{')
@@ -454,10 +566,10 @@ class ProtoMessageParser:
             if token == '}':
                 break
             elif token == 'message':
-                self.types.append(
-                    ProtoMessageParser(lexer, [self.types, *type_stack]))
+                ProtoMessageParser(lexer, [self.types, *type_stack],
+                                   self.scope + [self])
             elif token == 'enum':
-                self.types.append(ProtoEnumParser(lexer))
+                self.types.append(ProtoEnumParser(lexer, self.scope + [self]))
             elif token in ['repeated', 'optional', 'required']:
                 self.fields.append(
                     ProtoFieldParser(lexer, [self.types, *type_stack]))
@@ -467,6 +579,9 @@ class ProtoMessageParser:
 
     def GetName(self):
         return self.name
+
+    def GetFullName(self):
+        return '_'.join([x.GetName() for x in self.scope] + [self.name])
 
     def GetType(self):
         return 'message'
@@ -483,7 +598,15 @@ class ProtoMessageParser:
             type_to_fields.setdefault(x.type.GetWireType(), []).append(x)
         return type_to_fields
 
-    def WriteFieldParser(self, w, wire_id, fields):
+    def ResolveForwardDeclarations(self, type_stack):
+        type_stack.append(self.types)
+        for x in self.types:
+            x.ResolveForwardDeclarations(type_stack)
+        for x in self.fields:
+            x.LookupForwardFieldType(type_stack)
+        type_stack.pop()
+
+    def WriteFieldParserDeclaration(self, w, wire_id, fields):
         fname = {0: 'SetVarInt', 1: 'SetInt64', 2: 'SetString', 5: 'SetInt32'}
         tname = {
             0: 'std::uint64_t',
@@ -491,8 +614,19 @@ class ProtoMessageParser:
             2: 'std::string_view',
             5: 'std::uint32_t'
         }
-        w.Write('void %s(int field_id, %s val) override {' %
+        w.Write('void %s(int field_id, %s val) final;' %
                 (fname[wire_id], tname[wire_id]))
+
+    def WriteFieldParserDefinition(self, w, wire_id, fields):
+        fname = {0: 'SetVarInt', 1: 'SetInt64', 2: 'SetString', 5: 'SetInt32'}
+        tname = {
+            0: 'std::uint64_t',
+            1: 'std::uint64_t',
+            2: 'std::string_view',
+            5: 'std::uint32_t'
+        }
+        w.Write('inline void %s::%s(int field_id, %s val) {' %
+                (self.GetFullName(), fname[wire_id], tname[wire_id]))
         w.Indent()
         w.Write('switch (field_id) {')
         w.Indent()
@@ -503,19 +637,67 @@ class ProtoMessageParser:
         w.Unindent()
         w.Write('}')
 
-    def Generate(self, w):
+    def GenerateUsingDirectives(self, w):
+        w.Write('using %s = %s;' % (self.name, self.GetFullName()))
+
+    def GenerateMessageDeclarations(self, w):
+        w.Write(f'class %s;' % self.GetFullName())
+        for x in self.types:
+            x.GenerateMessageDeclarations(w)
+
+    def GenerateEnumDefinitions(self, w):
+        for x in self.types:
+            x.GenerateEnumDefinitions(w)
+
+    def GenerateMessageDefinitions(self, w):
+        # Writing nested messages.
+        for x in self.types:
+            if x.GetType() == 'message':
+                x.GenerateMessageDefinitions(w)
         # Protobuf message is a C++ class.
-        w.Write('class %s : public lczero::ProtoMessage {' % self.name)
+        w.Write('class %s final : public lczero::ProtoMessage {' %
+                self.GetFullName())
         w.Write(' public:')
         w.Indent()
-        # Writing submessages and enums.
+        # Writing using directives.
         for x in self.types:
-            x.Generate(w)
+            x.GenerateUsingDirectives(w)
+        # Writing function declarations.
         for x in self.fields:
             w.Write('')
-            x.GenerateFunctions(w)
+            x.GenerateFunctionDeclarations(w)
         w.Write('')
-        w.Write('std::string OutputAsString() const override {')
+        w.Write('std::string OutputAsString() const final;')
+        w.Write('std::string OutputAsJson() const final;')
+        w.Write('void Clear() final;')
+
+        w.Unindent()
+        w.Write('')
+        w.Write(' private:')
+        w.Indent()
+        for k, v in self.GetFieldsGruppedByWireType().items():
+            self.WriteFieldParserDeclaration(w, k, v)
+        w.Write('')
+        for x in self.fields:
+            x.GenerateVariable(w)
+        w.Unindent()
+        w.Write('};')
+        w.Write('')
+
+    def GenerateFunctionDefinitions(self, w):
+        # Writing nested messages.
+        for x in self.types:
+            if x.GetType() == 'message':
+                x.GenerateFunctionDefinitions(w)
+        self.GenerateOutputAsStringFunc(w)
+        self.GenerateOutputAsJsonFunc(w)
+        self.GenerateClearFunc(w)
+        self.GenerateParserFuncs(w)
+        self.GenerateFieldAccessorFuncs(w)
+
+    def GenerateOutputAsStringFunc(self, w):
+        w.Write('inline std::string %s::OutputAsString() const {' %
+                self.GetFullName())
         w.Indent()
         w.Write('std::string out;')
         for x in sorted(self.fields, key=lambda x: x.number):
@@ -523,31 +705,44 @@ class ProtoMessageParser:
         w.Write('return out;')
         w.Unindent()
         w.Write('}')
-        w.Write('')
-        w.Write('void Clear() override {')
+
+    def GenerateOutputAsJsonFunc(self, w):
+        w.Write('inline std::string %s::OutputAsJson() const {' %
+                self.GetFullName())
+        w.Indent()
+        if self.fields:
+            w.Write('bool first = true;')
+        w.Write('std::string out = "{";')
+        for x in self.fields:
+            x.GenerateJsonOutput(w)
+        w.Write('out += "}";')
+        w.Write('return out;')
+        w.Unindent()
+        w.Write('}')
+
+    def GenerateClearFunc(self, w):
+        w.Write('inline void %s::Clear() {' % self.GetFullName())
         w.Indent()
         for x in self.fields:
             x.GenerateClear(w)
         w.Unindent()
         w.Write('}')
-        w.Unindent()
-        w.Write('')
-        w.Write(' private:')
-        w.Indent()
+
+    def GenerateParserFuncs(self, w):
         for k, v in self.GetFieldsGruppedByWireType().items():
-            self.WriteFieldParser(w, k, v)
-        w.Write('')
+            self.WriteFieldParserDefinition(w, k, v)
+
+    def GenerateFieldAccessorFuncs(self, w):
         for x in self.fields:
-            x.GenerateVariable(w)
-        w.Unindent()
-        w.Write('};')
+            x.GenerateFunctionDefinitions(w, self.GetFullName())
 
 
 class ProtoFileParser:
     '''Root grammar of .proto file'''
+
     def __init__(self, lexer):
         self.package = None
-        self.objects = []
+        self.types = []
         while True:
             token, match = lexer.Pick()
             if token == 'EOF':
@@ -558,6 +753,8 @@ class ProtoFileParser:
                 self.ParsePackage(lexer)
             elif token == 'message':
                 self.ParseMessage(lexer)
+            elif token == 'enum':
+                self.ParseEnum(lexer)
             else:
                 lexer.Error('Expected message or something similar')
 
@@ -575,7 +772,10 @@ class ProtoFileParser:
         lexer.Consume(';')
 
     def ParseMessage(self, lexer):
-        self.objects.append(ProtoMessageParser(lexer, [self.objects]))
+        ProtoMessageParser(lexer, [self.types], [])
+
+    def ParseEnum(self, lexer):
+        self.types.append(ProtoEnumParser(lexer, []))
 
     def Generate(self, w):
         w.Write('// This file is AUTOGENERATED, do not edit.')
@@ -583,16 +783,32 @@ class ProtoFileParser:
         w.Write('#include "utils/protomessage.h"')
         for x in self.package:
             w.Write('namespace %s {' % x)
-        w.Indent()
-        for object in self.objects:
-            object.Generate(w)
-        w.Unindent()
+        w.Write('')
+        w.Write('// Forward declarations.')
+        for object in self.types:
+            object.GenerateMessageDeclarations(w)
+        for object in self.types:
+            object.GenerateEnumDefinitions(w)
+        w.Write('')
+        w.Write('// Class declarations.')
+        for object in self.types:
+            object.GenerateMessageDefinitions(w)
+        w.Write('')
+        w.Write('// Function definitions.')
+        for object in self.types:
+            object.GenerateFunctionDefinitions(w)
         for x in reversed(self.package):
             w.Write('}  // namespace %s' % x)
+
+    def ResolveForwardDeclarations(self):
+        type_stack = [self.types]
+        for object in self.types:
+            object.ResolveForwardDeclarations(type_stack)
 
 
 class Writer:
     '''A helper class for writing file line by line with indent.'''
+
     def __init__(self, fo):
         self.fo = fo
         self.indent = 0
@@ -626,5 +842,6 @@ if __name__ == "__main__":
 
     with open(args.input, 'r') as input, open(dest_path, 'w') as output:
         proto_file = ProtoFileParser(Lexer(input.read()))
+        proto_file.ResolveForwardDeclarations()
         writer = Writer(output)
         proto_file.Generate(writer)

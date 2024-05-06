@@ -36,7 +36,7 @@ List of command line flags:
 |------|---------------|-------------|
 | -w PATH,<br>--weights=PATH | Network weights file path | Path to load network weights from.<br>Default is `<autodiscover>`, which makes it search for the latest (by file date) file in ./ and ./weights/ subdirectories which look like weights. |
 | -t NUM,<br>--threads=NUM | Number of worker threads | Number of (CPU) threads to use.<br> Default is `2`. There's currently no use of making it more than 3 as it's limited by mutex contention which is yet to be optimized. |
-| --nncache=SIZE | NNCache size | Number of positions to store in cache.<br>Default: `200000` |
+| --nncache=SIZE | NNCache size | Number of positions to store in cache.<br>Default: `2000000` |
 | <nobr>--backend=BACKEND</nobr><br><nobr>--backend-opts=OPTS</nobr> | NN backend to use<br>NN backend parameters | Configuration of backend parameters. Described in details [here](#backendconfiguration).<br>Default depends on particular build type (cuDNN, tensorflow, etc.). |
 | --slowmover=NUM | Scale thinking time | Parameter value `X` means that the whole remaining time is split in such a way that the current move gets `X × Y` seconds, and next moves will get `1 × Y` seconds. However, due to smart pruning, the engine usually doesn't use all allocated time.<br>Default: `2.2`|
 | <nobr>--move-overhead=NUM</nobr> | Move time overhead in milliseconds | How much overhead should the engine allocate for every move (to counteract things like slow connection, interprocess communication, etc.).<br>Default: `100` ms. |

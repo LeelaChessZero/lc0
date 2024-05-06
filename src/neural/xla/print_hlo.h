@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,10 +24,21 @@
   terms of the respective license agreement, the licensors of this
   Program grant you additional permission to convey the resulting work.
 */
-#pragma once
+
+#include <iostream>
+
+#include "neural/xla/hlo.pb.h"
+
 namespace lczero {
 
-uint16_t FP32toFP16(float f32);
-float FP16toFP32(uint16_t f16);
+struct PrettyPrintHloOptions {
+  // Print layout information (which is always major-to-minor now, e.g.
+  // {3,2,1,0}. Switched off by default as it's just noise.
+  bool print_layout = false;
+};
 
-};  // namespace lczero
+// Pretty-prints the given HLO module to the given stream.
+void PrettyPrintHlo(const pblczero::HloModuleProto& module,
+                    PrettyPrintHloOptions options, std::ostream& stream);
+
+}  // namespace lczero

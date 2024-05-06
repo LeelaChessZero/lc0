@@ -89,7 +89,7 @@ class SyzygyTablebase {
   // Thread safe.
   // Returns false if the position is not in the tablebase.
   // Safe moves are added to the safe_moves output paramater.
-  bool root_probe(const Position& pos, bool has_repeated,
+  bool root_probe(const Position& pos, bool has_repeated, bool win_only,
                   std::vector<Move>* safe_moves);
   // Probes WDL tables to determine which moves might be on the optimal play
   // path. If 50 move ply counter is non-zero some (or maybe even all) of the
