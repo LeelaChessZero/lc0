@@ -174,7 +174,7 @@ void Validate(const std::vector<V6TrainingData>& fileContents) {
       DataAssert(data.side_to_move_or_enpassant <= 1);
     }
     DataAssert(data.result_q >= -1 && data.result_q <= 1);
-    DataAssert(data.result_d >= 0 && data.result_q <= 1);
+    DataAssert(data.result_d >= 0 && data.result_d <= 1);
     DataAssert(data.rule50_count <= 100);
     float sum = 0.0f;
     for (size_t j = 0; j < sizeof(data.probabilities) / sizeof(float); j++) {
@@ -979,6 +979,13 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                             fileContents.back().result_d,
                             fileContents.back().plies_left};
         bool deblunderingStarted = false;
+        if(fileContents.back().invariance_info & (1u << 5)) {
+          // Game adjudicated, use final best eval as result.
+          activeZ[0] = fileContents.back().best_q;
+          activeZ[1] = fileContents.back().best_d;
+          deblunderingStarted = true;
+        }
+
         while (true) {
           auto& cur = fileContents[history.GetLength() - 1];
           // A blunder is defined by the played move being worse than the
