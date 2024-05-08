@@ -102,9 +102,9 @@ void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C, cudaStream_t stream) {
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename T, ActivationFunction act>
-__global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
-                                      int N, int C) {
+template <typename T, typename IT, typename BT, ActivationFunction act>
+__global__ void addBiasBatched_kernel(T* output, const IT* input,
+                                      const BT* bias, int N, int C) {
   int batch = blockIdx.y;
   int n = blockIdx.x * blockDim.y + threadIdx.y;
   if (n >= N) return;
@@ -117,18 +117,21 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   float b[4];
 
   // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
+  if (std::is_same<half, IT>::value) {
     half inp[4];
     copyAs<uint2>(&inp[0], &input[tensorIndex]);
 #pragma unroll
     for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
+  } else {
+    copyAs<uint4>(&val[0], &input[tensorIndex]);
+  }
 
+  if (std::is_same<half, BT>::value) {
+    half inp[4];
     copyAs<uint2>(&inp[0], &bias[biasIndex]);
 #pragma unroll
     for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
   } else {
-    copyAs<uint4>(&val[0], &input[tensorIndex]);
     copyAs<uint4>(&b[0], &bias[biasIndex]);
   }
 
@@ -141,7 +144,7 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   }
 
   // write to memory
-  if (fp16) {
+  if (std::is_same<half, T>::value) {
     half op[4];
 #pragma unroll
     for (int i = 0; i < 4; i++) op[i] = (half)val[i];
@@ -153,108 +156,9 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
 
 // Input/output tensors are Batch * N * C
 // bias tensor is N * C (i.e, different bias for each Batch dimension)
-template <typename T>
-void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
-                    int C, ActivationFunction activation, cudaStream_t stream) {
-  // process 4 elements per thread to achieve close to peak memory bandwidth
-  if (C % 4 != 0) throw Exception("unsupported filter size");
-  if (C > 4096) throw Exception("unsupported filter size");
-
-  dim3 blockDim, gridDim;
-  blockDim.x = C / 4;
-  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int)N);
-  blockDim.z = 1;
-  gridDim.x = DivUp(N, blockDim.y);
-  gridDim.y = Batch;
-  gridDim.z = 1;
-
-  switch (activation) {
-    case ACTIVATION_NONE:
-      addBiasBatched_kernel<T, ACTIVATION_NONE>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_SELU:
-      addBiasBatched_kernel<T, ACTIVATION_SELU>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_MISH:
-      addBiasBatched_kernel<T, ACTIVATION_MISH>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_RELU:
-      addBiasBatched_kernel<T, ACTIVATION_RELU>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_SWISH:
-      addBiasBatched_kernel<T, ACTIVATION_SWISH>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    case ACTIVATION_RELU_2:  // square relu
-      addBiasBatched_kernel<T, ACTIVATION_RELU_2>
-          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
-      break;
-    default:
-      throw Exception(
-          "unsupported activation in addBiasBatched. Add in switch-case here");
-  }
-
-  ReportCUDAErrors(cudaGetLastError());
-}
-
-template <typename T, ActivationFunction act>
-__global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
-                                      int N, int C, int Nstride) {
-  int batch = blockIdx.y;
-  int n = blockIdx.x * blockDim.y + threadIdx.y;
-  if (n >= N) return;
-  int c = threadIdx.x * 4;
-
-  int biasIndex = batch * C + c;
-  int tensorIndex = batch * Nstride * C + n * C + c;
-
-  float val[4];
-  float b[4];
-
-  // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[4];
-    copyAs<uint2>(&inp[0], &input[tensorIndex]);
-#pragma unroll
-    for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
-
-    copyAs<uint2>(&inp[0], &bias[biasIndex]);
-#pragma unroll
-    for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
-  } else {
-    copyAs<uint4>(&val[0], &input[tensorIndex]);
-    copyAs<uint4>(&b[0], &bias[biasIndex]);
-  }
-
-  // Perform bias add and activation
-#pragma unroll
-  for (int i = 0; i < 4; i++) {
-    float x = val[i] + b[i];
-    x = activate(x, act);
-    val[i] = x;
-  }
-
-  // write to memory
-  if (fp16) {
-    half op[4];
-#pragma unroll
-    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
-    copyAs<uint2>(&output[tensorIndex], &op[0]);
-  } else {
-    copyAs<uint4>(&output[tensorIndex], &val[0]);
-  }
-}
-
-// Input/output tensors are Batch * N * C
-// bias tensor is N * C (i.e, different bias for each Batch dimension)
-template <typename T>
-void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
-                    int C, int Nstride, ActivationFunction activation,
+template <typename T, typename IT = T, typename BT = T>
+void addBiasBatched(T* output, const IT* input, const BT* bias, int Batch,
+                    int N, int C, ActivationFunction activation,
                     cudaStream_t stream) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 4 != 0) throw Exception("unsupported filter size");
@@ -270,32 +174,135 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
 
   switch (activation) {
     case ACTIVATION_NONE:
-      addBiasBatched_kernel<T, ACTIVATION_NONE>
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_NONE>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
+    case ACTIVATION_SELU:
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_SELU>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
+    case ACTIVATION_MISH:
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_MISH>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
+    case ACTIVATION_RELU:
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_RELU>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
+    case ACTIVATION_SWISH:
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_SWISH>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
+    case ACTIVATION_RELU_2:  // square relu
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_RELU_2>
+          <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C);
+      break;
+    default:
+      throw Exception(
+          "unsupported activation in addBiasBatched. Add in switch-case here");
+  }
+
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T, typename IT = T, typename BT = T, ActivationFunction act>
+__global__ void addBiasBatched_kernel(T* output, const IT* input, const BT* bias,
+                                      int N, int C, int Nstride) {
+  int batch = blockIdx.y;
+  int n = blockIdx.x * blockDim.y + threadIdx.y;
+  if (n >= N) return;
+  int c = threadIdx.x * 4;
+
+  int biasIndex = batch * C + c;
+  int tensorIndex = batch * Nstride * C + n * C + c;
+
+  float val[4];
+  float b[4];
+
+  // Load from memory
+  if (std::is_same<half, IT>::value) {
+    half inp[4];
+    copyAs<uint2>(&inp[0], &input[tensorIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
+  } else {
+    copyAs<uint4>(&val[0], &input[tensorIndex]);
+  }
+
+  if (std::is_same<half, BT>::value) {
+    half inp[4];
+    copyAs<uint2>(&inp[0], &bias[biasIndex]);
+#pragma unroll
+    for (int i = 0; i < 4; i++) b[i] = (float)inp[i];
+  } else {
+    copyAs<uint4>(&b[0], &bias[biasIndex]);
+  }
+
+  // Perform bias add and activation
+#pragma unroll
+  for (int i = 0; i < 4; i++) {
+    float x = val[i] + b[i];
+    x = activate(x, act);
+    val[i] = x;
+  }
+
+  // write to memory
+  if (std::is_same<half, T>::value) {
+    half op[4];
+#pragma unroll
+    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+    copyAs<uint2>(&output[tensorIndex], &op[0]);
+  } else {
+    copyAs<uint4>(&output[tensorIndex], &val[0]);
+  }
+}
+
+// Input/output tensors are Batch * N * C
+// bias tensor is N * C (i.e, different bias for each Batch dimension)
+template <typename T, typename IT = T, typename BT = T>
+void addBiasBatched(T* output, const IT* input, const BT* bias, int Batch,
+                    int N, int C, int Nstride, ActivationFunction activation,
+                    cudaStream_t stream) {
+  // process 4 elements per thread to achieve close to peak memory bandwidth
+  if (C % 4 != 0) throw Exception("unsupported filter size");
+  if (C > 4096) throw Exception("unsupported filter size");
+
+  dim3 blockDim, gridDim;
+  blockDim.x = C / 4;
+  blockDim.y = std::min(std::max(512 / blockDim.x, 1u), (unsigned int)N);
+  blockDim.z = 1;
+  gridDim.x = DivUp(N, blockDim.y);
+  gridDim.y = Batch;
+  gridDim.z = 1;
+
+  switch (activation) {
+    case ACTIVATION_NONE:
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_NONE>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
                                              Nstride);
       break;
     case ACTIVATION_SELU:
-      addBiasBatched_kernel<T, ACTIVATION_SELU>
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_SELU>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
                                              Nstride);
       break;
     case ACTIVATION_MISH:
-      addBiasBatched_kernel<T, ACTIVATION_MISH>
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_MISH>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
                                              Nstride);
       break;
     case ACTIVATION_RELU:
-      addBiasBatched_kernel<T, ACTIVATION_RELU>
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_RELU>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
                                              Nstride);
       break;
     case ACTIVATION_SWISH:
-      addBiasBatched_kernel<T, ACTIVATION_SWISH>
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_SWISH>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
                                              Nstride);
       break;
     case ACTIVATION_RELU_2:  // square relu
-      addBiasBatched_kernel<T, ACTIVATION_RELU_2>
+      addBiasBatched_kernel<T, IT, BT, ACTIVATION_RELU_2>
           <<<gridDim, blockDim, 0, stream>>>(output, input, bias, N, C,
                                              Nstride);
       break;
@@ -959,8 +966,8 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 // Each thread processes 4 elements
 // 1. Perform Bias add, and skip add
 // 2. Perform layer norm (normalize across C dimension)
-template <typename T>
-__global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
+template <typename T, typename IT>
+__global__ void layer_norm_kernel(int N, int C, T* output, const IT* input,
                                   const T* bias, const T* skip, const T* gammas,
                                   const T* betas, float ep, float alpha,
                                   ActivationFunction act) {
@@ -978,22 +985,26 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   const bool fp16 = std::is_same<half, T>::value;
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (fp16) {
+    if (std::is_same<half, IT>::value) {
       half inp[8];
       copyAs<uint4>(&inp[0], &input[tensorIndex]);
       for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &input[tensorIndex + 8]);
       for (int i = 0; i < 8; i++) val[i + 8] = (float)inp[i];
+    } else {
+      copyAs<uint4>(&val[0], &input[tensorIndex]);
+      copyAs<uint4>(&val[4], &input[tensorIndex + 4]);
+      copyAs<uint4>(&val[8], &input[tensorIndex + 8]);
+      copyAs<uint4>(&val[12], &input[tensorIndex + 12]);
+    }
+    if (fp16) {
+      half inp[8];
       copyAs<uint4>(&inp[0], &bias[biasIndex]);
       for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &bias[biasIndex + 8]);
       for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
       for (int i = 0; i < 16; i++) val[i] += oth[i];
     } else {
-      copyAs<uint4>(&val[0], &input[tensorIndex]);
-      copyAs<uint4>(&val[4], &input[tensorIndex + 4]);
-      copyAs<uint4>(&val[8], &input[tensorIndex + 8]);
-      copyAs<uint4>(&val[12], &input[tensorIndex + 12]);
       copyAs<uint4>(&oth[0], &bias[biasIndex]);
       copyAs<uint4>(&oth[4], &bias[biasIndex + 4]);
       copyAs<uint4>(&oth[8], &bias[biasIndex + 8]);
@@ -1110,12 +1121,12 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   }
 }
 
-
 template <typename T>
 __global__ void layer_norm_kernel_slow(int N, int C, T* output, const T* input,
-                                  const T* bias, const T* skip, const T* gammas,
-                                  const T* betas, float ep, float alpha,
-                                  ActivationFunction act) {
+                                       const T* bias, const T* skip,
+                                       const T* gammas, const T* betas,
+                                       float ep, float alpha,
+                                       ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
   if (n >= N) return;
   int c = (threadIdx.y * 32 + threadIdx.x) * 16;
@@ -1260,7 +1271,6 @@ __global__ void layer_norm_kernel_slow(int N, int C, T* output, const T* input,
   }
 }
 
-
 __global__ void layer_norm_kernel_8_el_per_thread(
     int N, int C, half* output, const half* input, const half* bias,
     const half* skip, const half* gammas, const half* betas, float ep,
@@ -1332,12 +1342,11 @@ __global__ void layer_norm_kernel_8_el_per_thread(
   }
 }
 
-
 // add (optional) skip connection to input, and then perform Layer normalization
 // normalization is done across C dimension (i.e, sums and std deviations taken
 // over elements in C dim)
-template <typename T>
-void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
+template <typename T, typename IT = T>
+void LayerNorm(int N, int C, T* output, const IT* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep,
                float alpha, ActivationFunction act, cudaStream_t stream) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
@@ -1353,7 +1362,7 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
   gridDim.y = 1;
   gridDim.z = 1;
 
-  layer_norm_kernel<T><<<gridDim, blockDim, 0, stream>>>(
+  layer_norm_kernel<T, IT><<<gridDim, blockDim, 0, stream>>>(
       N, C, output, input, bias, skip, gammas, betas, ep, alpha, act);
 
   ReportCUDAErrors(cudaGetLastError());
@@ -1465,7 +1474,8 @@ __global__ void preprocess_for_attention_body_kernel(
   if (c >= input_size) {
     // concatenate from position encoding array
     if (is_pe_dense_embedding) {
-      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size + (c - input_size)]);
+      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size +
+                        (c - input_size)]);
     } else {
       op = (T)(encoding[64 * hw + (c - input_size)]);
     }
@@ -1572,6 +1582,10 @@ template void addBiasBatched<half>(half* output, const half* input,
                                    ActivationFunction activation,
                                    cudaStream_t stream);
 
+template void addBiasBatched<half, float, half>(
+    half* output, const float* input, const half* bias, int Batch, int N, int C,
+    ActivationFunction activation, cudaStream_t stream);
+
 template void addBiasBatched<float>(float* output, const float* input,
                                     const float* bias, int Batch, int N, int C,
                                     int Nstride, ActivationFunction activation,
@@ -1580,6 +1594,10 @@ template void addBiasBatched<half>(half* output, const half* input,
                                    const half* bias, int Batch, int N, int C,
                                    int Nstride, ActivationFunction activation,
                                    cudaStream_t stream);
+
+template void addBiasBatched<half, float, half>(
+    half* output, const float* input, const half* bias, int Batch, int N, int C,
+    int Nstride, ActivationFunction activation, cudaStream_t stream);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
                                   int H, int W, ActivationFunction activation,
@@ -1766,6 +1784,12 @@ template void Softmax<half>(int N, int C, half* output, const half* input,
 template void Softmax<float>(int N, int C, float* output, const float* input,
                              const float* input2, cudaStream_t stream);
 
+template void LayerNorm<half, float>(int N, int C, half* output,
+                                     const float* input, const half* bias,
+                                     const half* skip, const half* gammas,
+                                     const half* betas, float ep, float alpha,
+                                     ActivationFunction act,
+                                     cudaStream_t stream);
 template void LayerNorm<half>(int N, int C, half* output, const half* input,
                               const half* bias, const half* skip,
                               const half* gammas, const half* betas, float ep,

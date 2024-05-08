@@ -174,9 +174,11 @@ void dumpTensor(const T* memory, int elements, const char* message,
                 bool only_summary = false, bool cpu_tensor = false) {
   const bool fp16 = std::is_same<half, T>::value;
   const bool int8 = std::is_same<int8_t, T>::value;
+  const bool int32 = std::is_same<int32_t, T>::value;
   printf("\n%s\n", message);
   int elementSize = (int)(fp16 ? sizeof(half) : sizeof(float));
   if (int8) elementSize = sizeof(int8_t);
+  if (int32) elementSize = sizeof(int32_t);
   int bytes = elements * elementSize;
   void* temp = (void*)memory;
   if (!cpu_tensor) {
@@ -195,7 +197,10 @@ void dumpTensor(const T* memory, int elements, const char* message,
   std::vector<float> fpArr(elements);
   for (int i = 0; i < elements; i++) {
     float val;
-    if (int8) {
+    if (int32) {
+      int32_t* arr = (int32_t*)temp;
+      val = (float)arr[i];
+    } else if (int8) {
       int8_t* arr = (int8_t*)temp;
       val = (float)arr[i];
     } else if (fp16) {
@@ -242,12 +247,12 @@ void dumpTensor(const T* memory, int elements, const char* message,
 
   float avg = mean(&fpArr[0], elements);
   float stddev = stdDev(&fpArr[0], elements);
-  if (int8) {
+  if (int8 || int32) {
     printf(
         "Max: %i, Min: %i, Mean: %i, StdDev: %i\n"
         "NaNs: %i, HiQuantLimit: %i, LoQuantLimit: %i, Total: %i",
-        (int8_t)maxval, (int8_t)minval, (int8_t)avg, (int8_t)stddev, cnans,
-        cplims, cnlims, elements);
+        (int)maxval, (int)minval, (int)avg, (int)stddev, cnans, cplims, cnlims,
+        elements);
 
   } else {
     printf(
@@ -275,23 +280,24 @@ void dumpTensor(const T* memory, int elements, const char* message,
 
 // int8 GEMM using CUTLASS (with per-column output quantization)
 void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
-                                 const float* scaleVector, int8_t* Out, int M,
+                                 const float* scaleVector, float* Out, int M,
                                  int N, int K, int batchSize, int AStride,
                                  int BStride, int OutStride, int VecStride,
                                  float alphaf, float betaf) {
   using ElementAccumulator = int32_t;
   using ElementComputeEpilogue = float;
-  using ElementIO = int8_t;
+  using ElementInput = int8_t;
+  using ElementOutput = float;
   using ElementScale = float;
   using ThreadBlockSwizzle =
       cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle;
   constexpr int elementsPerAccess =
-      128 / cutlass::sizeof_bits<ElementIO>::value;
+      128 / cutlass::sizeof_bits<ElementOutput>::value;
 
   using EpilogueOutputOp =
       cutlass::epilogue::thread::LinearCombinationBiasElementwise<
-          ElementIO, ElementAccumulator, ElementComputeEpilogue, ElementIO,
-          ElementIO,
+          ElementOutput, ElementAccumulator, ElementComputeEpilogue, ElementOutput,
+          ElementOutput,
           // ElementScale,  // element Vector
           elementsPerAccess,
           //  false,
@@ -299,8 +305,8 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
           cutlass::multiplies<ElementComputeEpilogue>>;
 
   using Gemm = cutlass::gemm::device::GemmUniversalWithBroadcast<
-      ElementIO, cutlass::layout::RowMajor, ElementIO,
-      cutlass::layout::ColumnMajor, ElementIO, cutlass::layout::RowMajor,
+      ElementInput, cutlass::layout::RowMajor, ElementInput,
+      cutlass::layout::ColumnMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
       cutlass::gemm::GemmShape<256, 128, 128>,
       cutlass::gemm::GemmShape<64, 64, 128>,
@@ -339,7 +345,7 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
 }
 
 // int8 GEMM using CUTLASS
-void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int8_t* Out,
+void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, float* Out,
                                  int M, int N, int K, int batchSize,
                                  int AStride, int BStride, int OutStride,
                                  float alphaf, float betaf) {
@@ -351,8 +357,7 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int8_t* Out,
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
   using ElementInputA = int8_t;  // <- data type of elements in input matrix A
   using ElementInputB = int8_t;  // <- data type of elements in input matrix B
-  using ElementOutput =
-      int8_t;  // <- data type of elements in output matrix Out
+  using ElementOutput = float;  // <- data type of elements in output matrix Out
 
   // TODO: figure out why row major for matrix B doesn't work?!!!
   using LayoutInputA = cutlass::layout::RowMajor;
@@ -954,15 +959,15 @@ void quantizeActivationMatrix(int8_t* output, const half* input, int height,
 
 // Quantize matrix with single scale value
 template <typename T>
-__global__ void clipMatrix(T* output, const T* input, const float* factors,
+__global__ void clipMatrix(T* output, const T* input, const float scale_factor,
                            int height, int width) {
   int x = (blockIdx.x * blockDim.x + threadIdx.x);
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
   if (x >= width || y >= height) return;
 
-  float ulimit = 127.0 * factors[x];
-  float llimit = -128.0 * factors[x];
+  float ulimit = 127.0 * scale_factor;
+  float llimit = -128.0 * scale_factor;
   float val = (float)input[y * width + x];
   if (val > ulimit) val = ulimit;
   if (val < llimit) val = llimit;
@@ -971,13 +976,13 @@ __global__ void clipMatrix(T* output, const T* input, const float* factors,
 
 template <typename DataType>
 void clipActivationMatrix(DataType* output, const DataType* input,
-                          const float* factors, int height, int width,
+                          const float scale_factor, int height, int width,
                           cudaStream_t stream) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16),
                lczero::cudnn_backend::DivUp(height, 16));
-  clipMatrix<DataType>
-      <<<gridDim, blockDim, 0, stream>>>(output, input, factors, height, width);
+  clipMatrix<DataType><<<gridDim, blockDim, 0, stream>>>(
+      output, input, scale_factor, height, width);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -1048,63 +1053,6 @@ void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-// process 8 elements per thread (in x dimension)
-__global__ void deQuantizeMatrix(half* output, const int8_t* input,
-                                 const half* bias, int height, int width,
-                                 int stride, const float* invScale,
-                                 ActivationFunction act) {
-  int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  int b = blockIdx.z;
-
-  if (x >= width || y >= height) return;
-
-  int8_t ip[8] = {};
-  half op[8] = {};
-  half bi[8] = {};
-  float inv_scale[8];
-
-  copyAs<uint2>(&ip[0], &input[b * stride + y * width + x]);
-  if (bias) copyAs<uint4>(&bi[0], &bias[b * width + x]);
-
-  if (invScale) {
-    copyAs<uint4>(&inv_scale[0], &invScale[b * width + x]);
-    copyAs<uint4>(&inv_scale[4], &invScale[b * width + x + 4]);
-  } else {
-    for (int i = 0; i < 8; i++) inv_scale[i] = 1 / 127.0f;
-  }
-
-  for (int i = 0; i < 8; i++) {
-    float val = (float)ip[i];
-    val *= inv_scale[i];
-    if (bias) val += (float)bi[i];
-    op[i] = (half)activate(val, act);
-  }
-
-  copyAs<uint4>(&output[b * stride + y * width + x], &op[0]);
-}
-
-// the scale (in CPU memory) is per "batch"
-// the bias is per column, per batch
-void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
-                                   int height, int width, int batchSize,
-                                   float* invScale, const half* bias,
-                                   ActivationFunction act,
-                                   cudaStream_t stream) {
-  dim3 blockDim(16, 16);
-  dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
-               lczero::cudnn_backend::DivUp(height, 16), batchSize);
-
-  // otherwise we will need to put them in GPU memory
-  assert(batchSize < MAX_BATCH_DEQUANT);
-
-  int stride = width * height;
-
-  deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(
-      output, input, bias, height, width, stride, invScale, act);
-  ReportCUDAErrors(cudaGetLastError());
-}
-
 void fillGpuArray(float* arr, float val, int count) {
   thrust::device_ptr<float> dev_ptr(arr);
   thrust::fill(dev_ptr, dev_ptr + count, val);
@@ -1122,10 +1070,10 @@ template void calibrateGemmForInt8<half>(
     float* maxValuesOut, const half* A, const half* B, int M, int N, int K,
     int batchSize, int M_Batch);
 template void clipActivationMatrix<float>(float* output, const float* input,
-                                          const float* factors, int height,
+                                          const float scale_factor, int height,
                                           int width, cudaStream_t stream);
 template void clipActivationMatrix<half>(half* output, const half* input,
-                                         const float* factors, int height,
+                                         const float scale_factor, int height,
                                          int width, cudaStream_t stream);
 
 template void dumpTensor<float>(const float* memory, int elements,
@@ -1140,6 +1088,9 @@ template void dumpTensor<int8_t>(const int8_t* memory, int elements,
                                  const char* message, bool only_summary,
                                  bool cpu_tensor);
 
+template void dumpTensor<int32_t>(const int32_t* memory, int elements,
+                                  const char* message, bool only_summary,
+                                  bool cpu_tensor);
 
 };  // namespace cudnn_backend
 };  // namespace lczero

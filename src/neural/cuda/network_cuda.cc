@@ -46,11 +46,13 @@
 namespace lczero {
 using namespace cudnn_backend;
 
+#if 0
 namespace cudnn_backend {
 template <typename T>
 void dumpTensor(const T* memory, int elements, const char* message,
                 bool only_summary = false, bool cpu_tensor = false);
 }
+#endif
 
 template <typename DataType>
 class CudaNetwork;
@@ -393,25 +395,6 @@ class CudaNetwork : public Network {
       if (!attn_body_)
         throw Exception("INT8 only supported for attention body networks");
     }
-
-#if 0
-        // Ankan - test: dump some weights here
-        float* data = (float*)int8_weights_;
-        dumpTensor<float>(data, weights.ip_emb_b.size(),
-                          "per-channel scaling factors for input",
-                          false, true);
-
-        int8_t* w = (int8_t*)int8_weights_;
-        w += weights.ip_emb_b.size() * sizeof(float);
-        dumpTensor<int8_t>(w, 512, "quantized weights",
-                          false, true);
-
-        w += 3 * weights.ip_emb_b.size() * weights.encoder[0].mha.q_b.size() *
-             sizeof(int8_t);
-        dumpTensor<float>((float*)w, 768, "scaling factors for output", false, true);
-
-        exit(0);
-#endif
 
     // 2. Build the network, and copy the weights to GPU memory.
 
@@ -800,7 +783,6 @@ class CudaNetwork : public Network {
                             scratch_mem, scratch_size_, nullptr, cublas,
                             stream);  // policy map layer  // POLICY output
       }
-      dumpTensor<float>(opPol, 1858, "Output policy", false);
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, nullptr, cublas,
