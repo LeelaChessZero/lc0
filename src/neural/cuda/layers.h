@@ -344,7 +344,8 @@ struct MatMulQuantizationData {
   float* output_deq_factors;       // per-tensor. Always in cpu memory (passed as constants to dequantization kernels)
   float* input_matrix_max_values;  // max values of input matrix (always in CPU memory)
   float* output_matrix_max_values; // max values in output matrix (always in CPU memory)
-  float accum_rescale_factor;      // accumulator rescale factor for matmuls to prevent overflow
+  float output_rescale_factor;     // accumulator rescale factor for matmuls to
+                                   // prevent overflow
   float fp16_clip_scale_factor;    // scale factor for clipping inputs in fp16 or fp32 mode
 };
 

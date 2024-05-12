@@ -138,7 +138,8 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2,
 template <typename T, typename IT = T>
 void LayerNorm(int N, int C, T* output, const IT* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep,
-               float alpha, ActivationFunction act, cudaStream_t stream);
+               float alpha, ActivationFunction act,
+               cudaStream_t stream, float dequant_scale = 1.0);
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,

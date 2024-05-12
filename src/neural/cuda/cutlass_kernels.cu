@@ -229,9 +229,9 @@ void dumpTensor(const T* memory, int elements, const char* message,
     }
 
     if (!only_summary || i < 3 || i == elements - 1) {
-      if (int8) {
+      if (int8 || int32) {
         // printf("%6i ", (int8_t)val);
-        printf("%i;%6i\n", i, (int8_t)val);
+        printf("%i;%8i\n", i, (int)val);
       } else {
         // printf("%8.6f ", val);
         printf("%i;%8.6f\n", i, val);
@@ -280,14 +280,14 @@ void dumpTensor(const T* memory, int elements, const char* message,
 
 // int8 GEMM using CUTLASS (with per-column output quantization)
 void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
-                                 const float* scaleVector, float* Out, int M,
+                                 const float* scaleVector, int32_t* Out, int M,
                                  int N, int K, int batchSize, int AStride,
                                  int BStride, int OutStride, int VecStride,
                                  float alphaf, float betaf) {
   using ElementAccumulator = int32_t;
   using ElementComputeEpilogue = float;
   using ElementInput = int8_t;
-  using ElementOutput = float;
+  using ElementOutput = int32_t;
   using ElementScale = float;
   using ThreadBlockSwizzle =
       cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle;
@@ -296,8 +296,8 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
 
   using EpilogueOutputOp =
       cutlass::epilogue::thread::LinearCombinationBiasElementwise<
-          ElementOutput, ElementAccumulator, ElementComputeEpilogue, ElementOutput,
-          ElementOutput,
+          ElementOutput, ElementAccumulator, ElementComputeEpilogue,
+          ElementOutput, ElementOutput,
           // ElementScale,  // element Vector
           elementsPerAccess,
           //  false,
@@ -345,7 +345,7 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
 }
 
 // int8 GEMM using CUTLASS
-void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, float* Out,
+void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int32_t* Out,
                                  int M, int N, int K, int batchSize,
                                  int AStride, int BStride, int OutStride,
                                  float alphaf, float betaf) {
@@ -357,7 +357,8 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, float* Out,
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
   using ElementInputA = int8_t;  // <- data type of elements in input matrix A
   using ElementInputB = int8_t;  // <- data type of elements in input matrix B
-  using ElementOutput = float;  // <- data type of elements in output matrix Out
+  using ElementOutput =
+      int32_t;  // <- data type of elements in gemm output matrix Out
 
   // TODO: figure out why row major for matrix B doesn't work?!!!
   using LayoutInputA = cutlass::layout::RowMajor;
@@ -993,35 +994,35 @@ struct ScaleParam {
 };
 
 // process 8 elements per thread (in x dimension)
-__global__ void deQuantizeMatrix(half* output, const int8_t* input,
+__global__ void deQuantizeMatrix(half* output, const int32_t* input,
                                  const half* bias, int height, int width,
-                                 int stride, const float *invScale, ScaleParam deq,
-                                 ActivationFunction act) {
+                                 int stride, const float* invScaleArr,
+                                 const float invScale, ActivationFunction act) {
   int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int b = blockIdx.z;
 
   if (x >= width || y >= height) return;
 
-  int8_t ip[8] = {};
+  int32_t ip[8] = {};
   half op[8] = {};
   half bi[8] = {};
   float inv_scale[8];
-  float deq_scale = deq.scale[b];
 
-  copyAs<uint2>(&ip[0], &input[b * stride + y * width + x]);
+  copyAs<uint4>(&ip[0], &input[b * stride + y * width + x]);
+  copyAs<uint4>(&ip[4], &input[b * stride + y * width + x + 4]);
   if (bias) copyAs<uint4>(&bi[0], &bias[b * width + x]);
 
-  if (invScale) {
-    copyAs<uint4>(&inv_scale[0], &invScale[b * width + x]);
-    copyAs<uint4>(&inv_scale[4], &invScale[b * width + x + 4]);
+  if (invScaleArr) {
+    copyAs<uint4>(&inv_scale[0], &invScaleArr[b * width + x]);
+    copyAs<uint4>(&inv_scale[4], &invScaleArr[b * width + x + 4]);
   } else {
-    for (int i = 0; i < 8; i++) inv_scale[i] = 1 / 127.0f;
+    for (int i = 0; i < 8; i++) inv_scale[i] = invScale;
   }
 
   for (int i = 0; i < 8; i++) {
     float val = (float)ip[i];
-    val *= (deq_scale / inv_scale[i]);
+    val *= inv_scale[i];
     if (bias) val += (float)bi[i];
     op[i] = (half)activate(val, act);
   }
@@ -1031,9 +1032,9 @@ __global__ void deQuantizeMatrix(half* output, const int8_t* input,
 
 // the scale (in CPU memory) is per "batch"
 // the bias is per column, per batch
-void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
+void deQuantizeOutputMatrixBiasAdd(half* output, const int32_t* input,
                                    int height, int width, int batchSize,
-                                   float* invScale, float* deq,
+                                   float* invScaleArr, float invScale,
                                    const half* bias, ActivationFunction act,
                                    cudaStream_t stream) {
   dim3 blockDim(16, 16);
@@ -1045,11 +1046,8 @@ void deQuantizeOutputMatrixBiasAdd(half* output, const int8_t* input,
 
   int stride = width * height;
 
-  ScaleParam s = {};
-  for (int i = 0; i < batchSize; i++) s.scale[i] = deq[i];
-
   deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(
-      output, input, bias, height, width, stride, invScale, s, act);
+      output, input, bias, height, width, stride, invScaleArr, invScale, act);
   ReportCUDAErrors(cudaGetLastError());
 }
 
