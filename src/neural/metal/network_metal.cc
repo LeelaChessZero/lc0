@@ -88,7 +88,7 @@ std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
 MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().moves_left()} {
-  LegacyWeights weights(file.weights());
+  MultiHeadWeights weights(file.weights());
 
   try {
     const int gpu_id = options.GetOrDefault<int>("gpu", 0);
@@ -116,8 +116,10 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                 options.GetOrDefault<bool>("mlh", true);
 
   bool attn_body =
-      file.format().network_format().network() ==
-      pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT;
+      (file.format().network_format().network()) ==
+          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
+      (file.format().network_format().network()) ==
+          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
 
   // Build MPS Graph.
   Activations activations;
@@ -141,8 +143,25 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
           : activationString(
                 static_cast<pblczero::NetworkFormat::ActivationFunction>(
                     ffn_activation));
-  builder_->build(kInputPlanes, weights, attn_body, attn_policy_, conv_policy_,
-                  wdl_, moves_left_, activations);
+
+  std::string policy_head =
+      options.GetOrDefault<std::string>("policy_head", "vanilla");
+  // Check that selected policy head exists.
+  if (weights.policy_heads.count(policy_head) == 0) {
+    throw Exception("The policy head you specified '" + policy_head +
+                    "' does not exist in this net.");
+  }
+  std::string value_head =
+      options.GetOrDefault<std::string>("value_head", "winner");
+  // Check that selected value head exists.
+  if (weights.value_heads.count(value_head) == 0) {
+    throw Exception("The value head you specified '" + value_head +
+                    "' does not exist in this net.");
+  }
+
+  auto embedding = static_cast<InputEmbedding>(file.format().network_format().input_embedding());
+  builder_->build(kInputPlanes, weights, embedding, attn_body, attn_policy_, conv_policy_,
+                  wdl_, moves_left_, activations, policy_head, value_head);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
@@ -241,55 +260,63 @@ std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
     throw Exception("The Metal backend requires a network file.");
   }
   const WeightsFile& weights = *w;
-  if (weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-      weights.format().network_format().network() !=
-          pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
-    throw Exception("Network format " +
-                    pblczero::NetworkFormat::NetworkStructure_Name(
-                        weights.format().network_format().network()) +
-                    " is not supported by the Metal backend.");
+  auto nf = weights.format().network_format();
+  using NF = pblczero::NetworkFormat;
+  switch (nf.network()) {
+    case NF::NETWORK_CLASSICAL_WITH_HEADFORMAT:
+    case NF::NETWORK_SE_WITH_HEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT:
+      break;
+    default:
+      throw Exception("Network format " +
+                      NF::NetworkStructure_Name(nf.network()) +
+                      " is not supported by the Metal backend.");
   }
-  if (weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CLASSICAL &&
-      weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_CONVOLUTION &&
-      weights.format().network_format().policy() !=
-          pblczero::NetworkFormat::POLICY_ATTENTION) {
-    throw Exception("Policy format " +
-                    pblczero::NetworkFormat::PolicyFormat_Name(
-                        weights.format().network_format().policy()) +
-                    " is not supported by the Metal backend.");
+  switch (nf.policy()) {
+    case NF::POLICY_CLASSICAL:
+    case NF::POLICY_CONVOLUTION:
+    case NF::POLICY_ATTENTION:
+      break;
+    default:
+      throw Exception("Policy format " + NF::PolicyFormat_Name(nf.policy()) +
+                      " is not supported by the Metal backend.");
   }
-  if (weights.format().network_format().value() !=
-          pblczero::NetworkFormat::VALUE_CLASSICAL &&
-      weights.format().network_format().value() !=
-          pblczero::NetworkFormat::VALUE_WDL) {
-    throw Exception("Value format " +
-                    pblczero::NetworkFormat::ValueFormat_Name(
-                        weights.format().network_format().value()) +
-                    " is not supported by the Metal backend.");
+  switch (nf.value()) {
+    case NF::VALUE_CLASSICAL:
+    case NF::VALUE_WDL:
+      break;
+    default:
+      throw Exception("Value format " + NF::ValueFormat_Name(nf.value()) +
+                      " is not supported by the Metal backend.");
   }
-  if (weights.format().network_format().moves_left() !=
-          pblczero::NetworkFormat::MOVES_LEFT_NONE &&
-      weights.format().network_format().moves_left() !=
-          pblczero::NetworkFormat::MOVES_LEFT_V1) {
-    throw Exception("Moves left head format " +
-                    pblczero::NetworkFormat::MovesLeftFormat_Name(
-                        weights.format().network_format().moves_left()) +
-                    " is not supported by the Metal backend.");
+  switch (nf.moves_left()) {
+    case NF::MOVES_LEFT_NONE:
+    case NF::MOVES_LEFT_V1:
+      break;
+    default:
+      throw Exception("Moves left head format " +
+                      NF::MovesLeftFormat_Name(nf.moves_left()) +
+                      " is not supported by the Metal backend.");
   }
-  if (weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
-      weights.format().network_format().default_activation() !=
-          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
-    throw Exception(
-        "Default activation " +
-        pblczero::NetworkFormat::DefaultActivation_Name(
-            weights.format().network_format().default_activation()) +
-        " is not supported by the Metal backend.");
+  switch (nf.default_activation()) {
+    case NF::DEFAULT_ACTIVATION_RELU:
+    case NF::DEFAULT_ACTIVATION_MISH:
+      break;
+    default:
+      throw Exception("Default activation " +
+                      NF::DefaultActivation_Name(nf.default_activation()) +
+                      " is not supported by the Metal backend.");
+  }
+  switch (nf.input_embedding()) {
+    case NF::INPUT_EMBEDDING_NONE:
+    case NF::INPUT_EMBEDDING_PE_MAP:
+    case NF::INPUT_EMBEDDING_PE_DENSE:
+      break;
+    default:
+      throw Exception("Input embedding " +
+                      NF::InputEmbeddingFormat_Name(nf.input_embedding()) +
+                      " is not supported by the Metal backend.");
   }
   return std::make_unique<MetalNetwork>(weights, options);
 }

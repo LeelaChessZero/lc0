@@ -463,7 +463,10 @@ class Onnx2HloConverter {
     try {
       BuildGraph(onnx_model.graph());
       // Convert ONNX outputs to HLO result.
-      result.outputs = BuildOutputs(onnx_model.graph().output());
+      result.outputs = options_.outputs_override.empty()
+                           ? BuildOutputs(GetOnnxOutputNodes(onnx_model))
+                           : BuildOutputs(options_.outputs_override);
+
       for (size_t i = 0; i < params_.size(); ++i) {
         const auto& param = params_[i];
         auto& dst = param.is_constant ? result.constants : result.inputs;
@@ -478,22 +481,32 @@ class Onnx2HloConverter {
   }
 
  private:
+  std::vector<std::string> GetOnnxOutputNodes(
+      const pblczero::ModelProto& onnx_model) const {
+    std::vector<std::string> result;
+    for (const auto& output : onnx_model.graph().output()) {
+      result.emplace_back(output.name());
+    }
+    return result;
+  }
+
   std::vector<Onnx2HloResult::NamedTensor> BuildOutputs(
-      const std::vector<pblczero::ValueInfoProto>& graph_output) {
+      const std::vector<std::string>& node_names) {
     // Gathers outputs into the root tuple, optionally converting their type if
     // I/O type is different from the instruction output.
     std::vector<Onnx2HloResult::NamedTensor> result;
     std::vector<HloFlow> outputs;
-    for (size_t i = 0; i < graph_output.size(); ++i) {
-      const auto& output = graph_output[i];
-      auto flow = GetFlowByName(std::string(output.name()));
-      if (flow->shape().element_type() != options_.io_type) {
+    for (size_t i = 0; i < node_names.size(); ++i) {
+      const auto& output = node_names[i];
+      auto flow = GetFlowByName(output);
+      if (options_.io_type &&
+          flow->shape().element_type() != *options_.io_type) {
         auto ctx = HloContext(&builder_);
         ctx.SetOpType("output");
-        ctx.SetOpName(output.name());
-        flow = builder_.Convert(flow, options_.io_type);
+        ctx.SetOpName(output);
+        flow = builder_.Convert(flow, *options_.io_type);
       }
-      result.push_back({i, std::string(output.name()), flow->shape()});
+      result.push_back({i, output, flow->shape()});
       outputs.push_back(flow);
     }
     builder_.Tuple(outputs);
@@ -1460,7 +1473,7 @@ class Onnx2HloConverter {
       ctx.SetOpName(input.name());
       auto out_shape = OnnxShapeToHloTensorType(input.type(), batch_size_);
       auto in_shape = out_shape;
-      in_shape.SetElementType(options_.io_type);
+      if (options_.io_type) in_shape.SetElementType(*options_.io_type);
       const auto* flow =
           MakeParameter(std::string(input.name()), in_shape, false);
       flow = builder_.Convert(flow, out_shape.GetElementType());
@@ -1544,8 +1557,8 @@ Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
 std::unique_ptr<XlaTensor> OnnxTensorToXlaTensor(
     const pblczero::TensorProto& onnx_tensor) {
   return std::make_unique<XlaTensorNotOwned>(
-      onnx_tensor.dims(), onnx_tensor.raw_data(),
-      OnnxTypeToXlaType(onnx_tensor.data_type()));
+      OnnxTypeToXlaType(onnx_tensor.data_type()), onnx_tensor.dims(),
+      onnx_tensor.raw_data());
 }
 
 }  // namespace lczero

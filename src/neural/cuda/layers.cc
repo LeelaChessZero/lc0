@@ -1668,13 +1668,13 @@ EncoderBlock<DataType>::EncoderBlock(
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
+      default_eps_(default_eps),
       use_fused_mha_(fused_mha),
       int8_inf_(int8_inference),
       has_smolgen_(cpu_weights.mha.has_smolgen),
       smolgen_activation_(smolgen_act),
       ffn_activation_(ffn_act),
       max_batch_size_(max_batch_size),
-      default_eps_(default_eps),
       is_quantized_(cpu_weights.mha.s1.size() > 0) {
   mha_q_size_ = cpu_weights.mha.q_b.size() > 0
                     ? cpu_weights.mha.q_b.size()
@@ -2802,15 +2802,15 @@ template <typename DataType>
 ValueHead<DataType>::ValueHead(BaseLayer<DataType>* ip,
                                const MultiHeadWeights::ValueHead& weights,
                                void* scratch, bool attention_body, bool wdl,
-                               ActivationFunction act, int max_batch_size,
+                               ActivationFunction act, int /*max_batch_size*/,
                                bool use_gemm_ex)
     : BaseLayer<DataType>(weights.ip_val_b.size(), 8, 8, ip),
-      attention_body_(attention_body),
       embedding_size_(attention_body ? weights.ip_val_b.size()
                                      : weights.value.biases.size()),
       value_hidden_size_(weights.ip1_val_b.size()),
-      act_(act),
-      wdl_(wdl) {
+      wdl_(wdl),
+      attention_body_(attention_body),
+      act_(act) {
   if (attention_body_) {
     allocAndUpload<DataType>(&ip_val_w_, weights.ip_val_w, scratch);
     allocAndUpload<DataType>(&ip_val_b_, weights.ip_val_b, scratch);
