@@ -938,7 +938,7 @@ __global__ void clipMatrix(T* output, const T* input, const float scale_factor,
   if (x >= width || y >= height) return;
 
   float val = (float)input[y * width + x];
-  val /= (1e-5 + scale_factor);
+  val /= (1e-5f + scale_factor);
   val = roundf(val);
   if (val > 127.0f) val = 127.0f;
   if (val < -128.0f) val = -128.0f;
