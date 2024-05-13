@@ -886,7 +886,8 @@ void calibrateGemmForInt8(int8_t* weights_int8, float* input_scaling_factors,
 
 // process 8 elements per thread (in x dimension)
 __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
-                               int width, const float* scale) {
+                               int width, const float* scaleArr,
+                               const float scale) {
   int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -897,11 +898,16 @@ __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
   int8_t op[8];
 
   copyAs<uint4>(&ip[0], &input[y * width + x]);
-  copyAs<uint4>(&factor[0], &scale[x]);
-  copyAs<uint4>(&factor[4], &scale[x + 4]);
+
+  if (scaleArr) {
+    copyAs<uint4>(&factor[0], &scaleArr[x]);
+    copyAs<uint4>(&factor[4], &scaleArr[x + 4]);
+  } else {
+    for (int i = 0; i < 8; i++) factor[i] = scale;
+  }
 
   for (int i = 0; i < 8; i++) {
-    float val = roundf((float)ip[i] / factor[i]);
+    float val = roundf((float)ip[i] / (factor[i] + 1e-5f));
     if (val > 127) val = 127;
     if (val < -128) val = -128;
     op[i] = (int8_t)(val);
@@ -912,49 +918,13 @@ __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
 
 // The scale is per column
 void quantizeActivationMatrix(int8_t* output, const half* input, int height,
-                              int width, const float* scale,
-                              cudaStream_t stream) {
-  dim3 blockDim(16, 16);
-  dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
-               lczero::cudnn_backend::DivUp(height, 16));
-  quantizeMatrix<<<gridDim, blockDim, 0, stream>>>(output, input, height, width,
-                                                   scale);
-  ReportCUDAErrors(cudaGetLastError());
-}
-
-// Quantize matrix with single scale value
-// process 8 elements per thread (in x dimension)
-__global__ void quantizeMatrix(int8_t* output, const half* input, int height,
-                               int width, const float scale) {
-  int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-  if (x >= width || y >= height) return;
-
-  half ip[8];
-  int8_t op[8];
-
-  copyAs<uint4>(&ip[0], &input[y * width + x]);
-
-  for (int i = 0; i < 8; i++) {
-    float val = roundf((float)ip[i] / scale);
-    if (val > 127) val = 127;
-    if (val < -128) val = -128;
-    op[i] = (int8_t)(val);
-  }
-
-  copyAs<uint2>(&output[y * width + x], &op[0]);
-}
-
-// The scale is for all columns.
-void quantizeActivationMatrix(int8_t* output, const half* input, int height,
                               int width, const float scale,
                               cudaStream_t stream) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
                lczero::cudnn_backend::DivUp(height, 16));
   quantizeMatrix<<<gridDim, blockDim, 0, stream>>>(output, input, height, width,
-                                                   scale);
+                                                   nullptr, scale);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -967,11 +937,12 @@ __global__ void clipMatrix(T* output, const T* input, const float scale_factor,
 
   if (x >= width || y >= height) return;
 
-  float ulimit = 127.0 * scale_factor;
-  float llimit = -128.0 * scale_factor;
   float val = (float)input[y * width + x];
-  if (val > ulimit) val = ulimit;
-  if (val < llimit) val = llimit;
+  val /= (1e-5 + scale_factor);
+  val = roundf(val);
+  if (val > 127.0f) val = 127.0f;
+  if (val < -128.0f) val = -128.0f;
+  val *= scale_factor;
   output[y * width + x] = (T)val;
 }
 
