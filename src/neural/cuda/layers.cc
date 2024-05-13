@@ -1557,10 +1557,12 @@ void clipActivationMatrix(DataType* output, const DataType* input,
                           const float scale_factor, int height, int width,
                           cudaStream_t stream);
 
-void deQuantizeOutputMatrixBiasAdd(half* output, const int32_t* input,
+template <typename OutputType = half>
+void deQuantizeOutputMatrixBiasAdd(OutputType* output, const int32_t* input,
                                    int height, int width, int batchSize,
                                    float* scaleArr, float scale,
                                    const half* bias, ActivationFunction act,
+                                   float nextInputScale,
                                    cudaStream_t stream);
 
 static void LoadQuantizationData(MatMulQuantizationData& data, half* weights,
@@ -1986,7 +1988,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       // 3. Dequantize and bias add - mixed precision (buffer1 -> mha_q)
       deQuantizeOutputMatrixBiasAdd((half*)mha_q, (int32_t*)buffer1, batch_to_use,
                                     num_outputs, 3, qkv_.output_scaling_factors,
-                                    1.0f, (half*)mha_qkv_b, ACTIVATION_NONE,
+                                    1.0f, (half*)mha_qkv_b, ACTIVATION_NONE, 1.0f,
                                     stream);
 
       // 3. Bias add - mixed precision (buffer1 -> mha_q)
@@ -2187,9 +2189,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
 
       // 3. Dequantize and bias add - mixed precision (buffer1 -> in_out_tensor)
       deQuantizeOutputMatrixBiasAdd(
-          (half*)in_out_tensor, (int32_t*)buffer1, batch, num_outputs, 1,
+          (int8_t*)in_out_tensor, (int32_t*)buffer1, batch, num_outputs, 1,
           nullptr, ffn1_.output_scaling_factor, (half*)ffn_dense1_b,
-          ffn_activation_, stream);
+          ffn_activation_, ffn2_.input_scaling_factor, stream);
 
       // 3. Bias add - mixed precision (buffer1 -> in_out_tensor)
       // addBiasBatched(in_out_tensor, (float*)buffer1, ffn_dense1_b, 1, batch,
@@ -2227,12 +2229,12 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       // 1. quantize the inputs (in_out_tensor -> buffer1)
       // TODO: Fuse this step with above bias add at least (or ideally with the
       // above GEMM)
-      quantizeActivationMatrix((int8_t*)buffer1, (const half*)in_out_tensor,
-                               batch, num_inputs, ffn2_.input_scaling_factor,
-                               stream);
+      // quantizeActivationMatrix((int8_t*)buffer1, (const half*)in_out_tensor,
+      //                          batch, num_inputs, ffn2_.input_scaling_factor,
+      //                          stream);
 
-      // 2. perform int8 GEMM (buffer1 -> buffer2)
-      cutlassMatrixMulBTransposed((const int8_t*)buffer1, ffn2_.weights_int8,
+      // 2. perform int8 GEMM (in_out_tensor -> buffer2)
+      cutlassMatrixMulBTransposed((const int8_t*)in_out_tensor, ffn2_.weights_int8,
                                   (int32_t*)buffer2, batch, num_outputs,
                                   num_inputs, 1, 0, 0, 0, 1.0, 0.0f);
       ReportCUDAErrors(cudaGetLastError());
@@ -2692,11 +2694,12 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
         //             (int8_t*)temp, num_inputs, 0, (int32_t*)buffer2,
         //             num_outputs);
 
-        // 3. Dequantize and bias add (mixed precision) (buffer2 -> buffer1)
+        // 3. Dequantize and bias add (mixed precision) (buffer2 -> temp)
         deQuantizeOutputMatrixBiasAdd(
-            (half*)buffer1, (int32_t*)buffer2, batch, num_outputs, 1, nullptr,
+            (int8_t*)temp, (int32_t*)buffer2, batch, num_outputs, 1, nullptr,
             emb_ffn1_.output_scaling_factor, (half*)ip_emb_ffn_d1_b_,
-            activations_.ffn_activation, stream);
+            activations_.ffn_activation, emb_ffn2_.input_scaling_factor,
+            stream);
 
         ReportCUDAErrors(cudaGetLastError());
 
@@ -2725,9 +2728,9 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       const int batch = N * 64;
       if (is_quantized_ && int8_inf_) {
         // 1. quantize (buffer1 -> temp)
-        quantizeActivationMatrix((int8_t*)temp, (const half*)buffer1, batch,
-                                 num_inputs, emb_ffn2_.input_scaling_factor,
-                                 stream);
+        // quantizeActivationMatrix((int8_t*)temp, (const half*)buffer1, batch,
+        //                          num_inputs, emb_ffn2_.input_scaling_factor,
+        //                          stream);
 
         // 2. int8 matmul (temp -> buffer2)
         cutlassMatrixMulBTransposed((const int8_t*)temp, emb_ffn2_.weights_int8,

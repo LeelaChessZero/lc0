@@ -965,10 +965,12 @@ struct ScaleParam {
 };
 
 // process 8 elements per thread (in x dimension)
-__global__ void deQuantizeMatrix(half* output, const int32_t* input,
+template <typename OT = half>
+__global__ void deQuantizeMatrix(OT* output, const int32_t* input,
                                  const half* bias, int height, int width,
                                  int stride, const float* invScaleArr,
-                                 const float invScale, ActivationFunction act) {
+                                 const float invScale, ActivationFunction act,
+                                 const float nextInputScale) {
   int x = (blockIdx.x * blockDim.x + threadIdx.x) * 8;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   int b = blockIdx.z;
@@ -976,7 +978,7 @@ __global__ void deQuantizeMatrix(half* output, const int32_t* input,
   if (x >= width || y >= height) return;
 
   int32_t ip[8] = {};
-  half op[8] = {};
+  OT op[8] = {};
   half bi[8] = {};
   float inv_scale[8];
 
@@ -991,23 +993,37 @@ __global__ void deQuantizeMatrix(half* output, const int32_t* input,
     for (int i = 0; i < 8; i++) inv_scale[i] = invScale;
   }
 
-  for (int i = 0; i < 8; i++) {
-    float val = (float)ip[i];
-    val *= inv_scale[i];
-    if (bias) val += (float)bi[i];
-    op[i] = (half)activate(val, act);
+  if (std::is_same<half, OT>::value) {
+    for (int i = 0; i < 8; i++) {
+      float val = (float)ip[i];
+      val *= inv_scale[i];
+      if (bias) val += (float)bi[i];
+      op[i] = (OT)activate(val, act);
+    }
+    copyAs<uint4>(&output[b * stride + y * width + x], &op[0]);
+  } else if (std::is_same<int8_t, OT>::value) {
+    for (int i = 0; i < 8; i++) {
+      float val = (float)ip[i];
+      val *= inv_scale[i];
+      if (bias) val += (float)bi[i];
+      val = activate(val, act);
+      val = roundf(val / (nextInputScale + 1e-5f));
+      if (val > 127) val = 127;
+      if (val < -128) val = -128;
+      op[i] = (OT)(val);
+    }
+    copyAs<uint2>(&output[b * stride + y * width + x], &op[0]);
   }
-
-  copyAs<uint4>(&output[b * stride + y * width + x], &op[0]);
 }
 
 // the scale (in CPU memory) is per "batch"
 // the bias is per column, per batch
-void deQuantizeOutputMatrixBiasAdd(half* output, const int32_t* input,
+template <typename OutputType = half>
+void deQuantizeOutputMatrixBiasAdd(OutputType* output, const int32_t* input,
                                    int height, int width, int batchSize,
                                    float* invScaleArr, float invScale,
                                    const half* bias, ActivationFunction act,
-                                   cudaStream_t stream) {
+                                   float nextInputScale, cudaStream_t stream) {
   dim3 blockDim(16, 16);
   dim3 gridDim(lczero::cudnn_backend::DivUp(width, 16 * 8),
                lczero::cudnn_backend::DivUp(height, 16), batchSize);
@@ -1017,8 +1033,9 @@ void deQuantizeOutputMatrixBiasAdd(half* output, const int32_t* input,
 
   int stride = width * height;
 
-  deQuantizeMatrix<<<gridDim, blockDim, 0, stream>>>(
-      output, input, bias, height, width, stride, invScaleArr, invScale, act);
+  deQuantizeMatrix<OutputType><<<gridDim, blockDim, 0, stream>>>(
+      output, input, bias, height, width, stride, invScaleArr, invScale, act,
+      nextInputScale);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -1060,6 +1077,16 @@ template void dumpTensor<int8_t>(const int8_t* memory, int elements,
 template void dumpTensor<int32_t>(const int32_t* memory, int elements,
                                   const char* message, bool only_summary,
                                   bool cpu_tensor);
+
+template void deQuantizeOutputMatrixBiasAdd(
+    half* output, const int32_t* input, int height, int width, int batchSize,
+    float* invScaleArr, float invScale, const half* bias,
+    ActivationFunction act, float nextInputScale, cudaStream_t stream);
+
+template void deQuantizeOutputMatrixBiasAdd(
+    int8_t* output, const int32_t* input, int height, int width, int batchSize,
+    float* invScaleArr, float invScale, const half* bias,
+    ActivationFunction act, float nextInputScale, cudaStream_t stream);
 
 };  // namespace cudnn_backend
 };  // namespace lczero
