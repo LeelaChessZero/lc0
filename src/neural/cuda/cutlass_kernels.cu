@@ -285,7 +285,7 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
                                  int BStride, int OutStride, int VecStride,
                                  float alphaf, float betaf) {
   using ElementAccumulator = int32_t;
-  using ElementComputeEpilogue = float;
+  using ElementComputeEpilogue = int32_t;
   using ElementInput = int8_t;
   using ElementOutput = int32_t;
   using ElementScale = float;
@@ -354,7 +354,7 @@ void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int32_t* Out,
   // dumpTensor<int8_t>(B, 512, "B after scaling", false);
 
   using ElementAccumulator = int32_t;    // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
+  using ElementComputeEpilogue = int32_t;  // <- data type of epilogue operations
   using ElementInputA = int8_t;  // <- data type of elements in input matrix A
   using ElementInputB = int8_t;  // <- data type of elements in input matrix B
   using ElementOutput =

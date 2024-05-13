@@ -2273,8 +2273,8 @@ void AttentionPolicyHead<DataType>::Eval(
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
     cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) {
   DataType* input2_tensor = (DataType*)input2;
-  DataType* buffer1 = output + scratch_size / (2 * sizeof(float));
-  DataType* buffer2 = input2_tensor + scratch_size / (2 * sizeof(float));
+  DataType* buffer1 = output + scratch_size / (2 * sizeof(DataType));
+  DataType* buffer2 = input2_tensor + scratch_size / (2 * sizeof(DataType));
 
   int inputC = this->input_->GetC();
   if (!attention_body_)
