@@ -374,7 +374,7 @@ class CudaNetwork : public Network {
         sizeof(DataType);
 
     const size_t attentionBodySize =
-        getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
+        getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(float);
     scratch_size_ = std::max(scratch_size_,
                              std::max(attentionPolicySize, attentionBodySize));
 

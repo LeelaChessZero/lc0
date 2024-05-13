@@ -992,7 +992,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const IT* input,
       for (int i = 0; i < 8; i++) val[i] = (float)inp[i] * dequant_scale;
 
       copyAs<uint4>(&inp[0], &input[tensorIndex + 8]);
-      copyAs<uint4>(&inp[4], &input[tensorIndex + 16]);
+      copyAs<uint4>(&inp[4], &input[tensorIndex + 12]);
       for (int i = 0; i < 8; i++) val[i + 8] = (float)inp[i] * dequant_scale;
     } else if (std::is_same<half, IT>::value) {
       half inp[8];
