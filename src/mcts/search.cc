@@ -504,8 +504,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
           contempt_mode_ == ContemptMode::NONE
               ? 0
               : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
-          is_perspective, true, params_.GetWDLMaxS());
-      print(oss, "(WL: ", wl, ") ", 8, 5);
+          sign * is_perspective, true, params_.GetWDLMaxS());
+      print(oss, "(WL: ", sign * wl, ") ", 8, 5);
       print(oss, "(D: ", d, ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
       print(oss, "(Q: ", sign * wl + draw_score * d, ") ", 8, 5);
