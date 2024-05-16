@@ -985,7 +985,11 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const IT* input,
   const bool fp16 = std::is_same<half, T>::value;
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (std::is_same<int32_t, IT>::value) {
+    if (std::is_same<int8_t, IT>::value) {
+      int8_t inp[16];
+      copyAs<uint4>(&inp[0], &input[tensorIndex]);
+      for (int i = 0; i < 16; i++) val[i] = (float)inp[i] * dequant_scale;
+    } else if (std::is_same<int32_t, IT>::value) {
       int32_t inp[8];
       copyAs<uint4>(&inp[0], &input[tensorIndex]);
       copyAs<uint4>(&inp[4], &input[tensorIndex + 4]);
@@ -1000,12 +1004,15 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const IT* input,
       for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &input[tensorIndex + 8]);
       for (int i = 0; i < 8; i++) val[i + 8] = (float)inp[i];
-    } else {
+    } else if (std::is_same<float, IT>::value) {
       copyAs<uint4>(&val[0], &input[tensorIndex]);
       copyAs<uint4>(&val[4], &input[tensorIndex + 4]);
       copyAs<uint4>(&val[8], &input[tensorIndex + 8]);
       copyAs<uint4>(&val[12], &input[tensorIndex + 12]);
+    } else {
+      return; // @todo
     }
+
     if (fp16) {
       half inp[8];
       copyAs<uint4>(&inp[0], &bias[biasIndex]);
@@ -1795,6 +1802,20 @@ template void Softmax<half>(int N, int C, half* output, const half* input,
 template void Softmax<float>(int N, int C, float* output, const float* input,
                              const float* input2, cudaStream_t stream);
 
+template void LayerNorm<half, int8_t>(int N, int C, half* output,
+                                       const int8_t* input, const half* bias,
+                                       const half* skip, const half* gammas,
+                                       const half* betas, float ep, float alpha,
+                                       ActivationFunction act,
+                                       cudaStream_t stream,
+                                       float dequant_scale);
+template void LayerNorm<float, int8_t>(int N, int C, float* output,
+                                        const int8_t* input, const float* bias,
+                                        const float* skip, const float* gammas,
+                                        const float* betas, float ep,
+                                        float alpha, ActivationFunction act,
+                                        cudaStream_t stream,
+                                        float dequant_scale);
 template void LayerNorm<half, int32_t>(int N, int C, half* output,
                                        const int32_t* input, const half* bias,
                                        const half* skip, const half* gammas,

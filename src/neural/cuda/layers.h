@@ -337,12 +337,14 @@ class ResidualBlock : public BaseLayer<DataType> {
 // (in GPU memory when int8_inf_ is set, otherwise in CPU memory)
 struct MatMulQuantizationData {
   int8_t* weights_int8;            // int8 quantized weights
-  float* input_scaling_factors;    // per-column scaling factors for input
+  float* input_quantize_factors;   // per-column scaling factors for input
                                    // quantization
   float* output_scaling_factors;   // per-column scaling factors for output
                                    // dequantization
   float output_scaling_factor;     // single value output dequantization factor
-  float input_scaling_factor;      // single value input quantization factor
+  float input_quantize_factor;     // single value input quantization factor
+  float output_dequant_factor;
+  float* output_dequant_factors;
 };
 
 

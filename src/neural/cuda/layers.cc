@@ -153,7 +153,7 @@ namespace cudnn_backend {
 // than using multiple passes. The flag can be set to false for debugging.
 static constexpr bool kUseFusedSELayer = true;
 
-static constexpr bool clipInputActivations = true;
+static constexpr bool clipQuantizedActivations = true;
 
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc)
@@ -1537,13 +1537,15 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
 
 void fillGpuArray(float* arr, float val, int count);
 
-void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, int32_t* Out,
+template <typename OutType = int32_t>
+void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B, OutType* Out,
                                  int M, int N, int K, int batchSize,
                                  int AStride, int BStride, int OutStride,
                                  float alphaf, float betaf);
 
+template <typename OutType = int32_t>
 void cutlassMatrixMulBTransposed(const int8_t* A, const int8_t* B,
-                                 const float* scaleVector, int32_t* Out, int M,
+                                 const float* scaleVector, OutType* Out, int M,
                                  int N, int K, int batchSize, int AStride,
                                  int BStride, int OutStride, int VecStride,
                                  float alphaf, float betaf);
@@ -1554,21 +1556,21 @@ void quantizeActivationMatrix(int8_t* output, const half* input, int height,
 
 template <typename DataType>
 void clipActivationMatrix(DataType* output, const DataType* input,
-                          const float scale_factor, int height, int width,
-                          cudaStream_t stream);
+                          const float* scale_factors, const float scale_factor,
+                          int height, int width, cudaStream_t stream);
 
-template <typename OutputType = half>
-void deQuantizeOutputMatrixBiasAdd(OutputType* output, const int32_t* input,
+template <typename OutputType = half, typename InputType = int32_t>
+void deQuantizeOutputMatrixBiasAdd(OutputType* output, const InputType* input,
                                    int height, int width, int batchSize,
                                    float* scaleArr, float scale,
                                    const half* bias, ActivationFunction act,
-                                   float nextInputScale,
-                                   cudaStream_t stream);
+                                   float nextInputScale, cudaStream_t stream);
 
 static void LoadQuantizationData(MatMulQuantizationData& data, half* weights,
                                  int input_len, int output_len,
                                  const std::vector<float>& weight_factors,
                                  const std::vector<float>& input_factors,
+                                 const std::vector<float>& output_factors,
                                  cudaStream_t stream) {
   // Load weights for INT8 inference
 
@@ -1579,10 +1581,14 @@ static void LoadQuantizationData(MatMulQuantizationData& data, half* weights,
     throw Exception("Channelwise quantization not yet supported.");
   } else {
     // Same factor will be used for clipping inputs in int8 and fp16 mode.
-    data.input_scaling_factor = input_factors[0];
+    data.input_quantize_factor = input_factors[0];
 
     // Output scaling factor = input factor x weight factor.
-    data.output_scaling_factor = input_factors[0] * weight_factors[0];
+    data.output_scaling_factor =
+        input_factors[0] * weight_factors[0] / output_factors[0];
+
+    // Output scale.
+    data.output_dequant_factor = output_factors[0];
   }
 
   // Load weights and run a GPU kernel to scale it.
@@ -1593,7 +1599,7 @@ static void LoadQuantizationData(MatMulQuantizationData& data, half* weights,
                            weight_factors[0], stream);
 
   // The original weights also need to be clipped for fp16 inference.
-  clipActivationMatrix<half>(weights, weights, weight_factors[0], 1,
+  clipActivationMatrix<half>(weights, weights, nullptr, weight_factors[0], 1,
                              weights_len, stream);
 }
 
@@ -1604,14 +1610,11 @@ static void LoadQKVQuantizationData(MatMulQuantizationData& data,
                                     const std::vector<float>& k_weight_factors,
                                     const std::vector<float>& v_weight_factors,
                                     const std::vector<float>& input_factors,
+                                    const std::vector<float>& q_output_factors,
+                                    const std::vector<float>& k_output_factors,
+                                    const std::vector<float>& v_output_factors,
                                     cudaStream_t stream) {
   // Load weights for INT8 inference.
-
-  // (per-column) scaling factors for the input and output.
-  // ReportCUDAErrors(
-  //     cudaMalloc(&data.input_scaling_factors, input_len * sizeof(float)));
-  ReportCUDAErrors(
-      cudaMalloc(&data.output_scaling_factors, output_len * 3 * sizeof(float)));
 
   if (input_factors.size() > 1) {
     // ReportCUDAErrors(cudaMemcpy(
@@ -1620,15 +1623,28 @@ static void LoadQKVQuantizationData(MatMulQuantizationData& data,
     throw Exception("Channelwise quantization not yet supported.");
   } else {
     // Same factor will be used for clipping inputs in int8 and fp16 mode.
-    data.input_scaling_factor = input_factors[0];
+    data.input_quantize_factor = input_factors[0];
 
     // Repeatedly fill values into the output factors buffer.
+    ReportCUDAErrors(cudaMalloc(&data.output_scaling_factors,
+                                output_len * 3 * sizeof(float)));
     fillGpuArray(data.output_scaling_factors,
-                 input_factors[0] * q_weight_factors[0], output_len);
+                 input_factors[0] * q_weight_factors[0] / q_output_factors[0],
+                 output_len);
     fillGpuArray(data.output_scaling_factors + output_len,
-                 input_factors[0] * k_weight_factors[0], output_len);
+                 input_factors[0] * k_weight_factors[0] / k_output_factors[0],
+                 output_len);
     fillGpuArray(data.output_scaling_factors + output_len * 2,
-                 input_factors[0] * v_weight_factors[0], output_len);
+                 input_factors[0] * v_weight_factors[0] / v_output_factors[0],
+                 output_len);
+
+    ReportCUDAErrors(cudaMalloc(&data.output_dequant_factors,
+                                output_len * 3 * sizeof(float)));
+    fillGpuArray(data.output_dequant_factors, q_output_factors[0], output_len);
+    fillGpuArray(data.output_dequant_factors + output_len, k_output_factors[0],
+                 output_len);
+    fillGpuArray(data.output_dequant_factors + output_len * 2,
+                 v_output_factors[0], output_len);
   }
 
   // Load QKV weights and run a GPU kernel to scale them.
@@ -1646,18 +1662,19 @@ static void LoadQKVQuantizationData(MatMulQuantizationData& data,
 
   // The original weights also need to be clipped for fp16 inference
   // q weights.
-  clipActivationMatrix<half>(qkv_weights, qkv_weights, q_weight_factors[0],
-                             output_len, input_len, stream);
+  clipActivationMatrix<half>(qkv_weights, qkv_weights, nullptr,
+                             q_weight_factors[0], output_len, input_len,
+                             stream);
 
   // k weights.
-  clipActivationMatrix<half>(qkv_weights + weights_len,
-                             qkv_weights + weights_len, k_weight_factors[0],
-                             output_len, input_len, stream);
+  clipActivationMatrix<half>(
+      qkv_weights + weights_len, qkv_weights + weights_len, nullptr,
+      k_weight_factors[0], output_len, input_len, stream);
 
   // v weights.
-  clipActivationMatrix<half>(qkv_weights + weights_len * 2,
-                             qkv_weights + weights_len * 2, v_weight_factors[0],
-                             output_len, input_len, stream);
+  clipActivationMatrix<half>(
+      qkv_weights + weights_len * 2, qkv_weights + weights_len * 2, nullptr,
+      v_weight_factors[0], output_len, input_len, stream);
 }
 
 template <typename DataType>
@@ -1771,19 +1788,20 @@ EncoderBlock<DataType>::EncoderBlock(
   // int8 stuff
   blockIndex_ = blockIndex;
   if (int8_inf_ || is_quantized_) {
-    LoadQKVQuantizationData(qkv_, (half*)mha_qkv_w, embedding_op_size_,
-                            mha_q_size_, cpu_weights.mha.q_s,
-                            cpu_weights.mha.k_s, cpu_weights.mha.v_s,
-                            cpu_weights.mha.s1, 0);
+    LoadQKVQuantizationData(
+        qkv_, (half*)mha_qkv_w, embedding_op_size_, mha_q_size_,
+        cpu_weights.mha.q_s, cpu_weights.mha.k_s, cpu_weights.mha.v_s,
+        cpu_weights.mha.s1, cpu_weights.mha.q_out_s, cpu_weights.mha.k_out_s,
+        cpu_weights.mha.v_out_s, 0);
     LoadQuantizationData(mha_dense_, (half*)mha_dense_w, embedding_op_size_,
                          mha_dense_size_, cpu_weights.mha.dense_s,
-                         cpu_weights.mha.s2, 0);
+                         cpu_weights.mha.s2, cpu_weights.mha.dense_out_s, 0);
     LoadQuantizationData(ffn1_, (half*)ffn_dense1_w, embedding_op_size_,
                          ffn_dense1_size_, cpu_weights.ffn.dense1_s,
-                         cpu_weights.ffn.s1, 0);
+                         cpu_weights.ffn.s1, cpu_weights.ffn.dense1_out_s, 0);
     LoadQuantizationData(ffn2_, (half*)ffn_dense2_w, ffn_dense1_size_,
                          ffn_dense2_size_, cpu_weights.ffn.dense2_s,
-                         cpu_weights.ffn.s2, 0);
+                         cpu_weights.ffn.s2, cpu_weights.ffn.dense2_out_s, 0);
   }
 }
 
@@ -1966,12 +1984,12 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     mha_k = mha_q + num_outputs * batch_to_use;
     mha_v = mha_k + num_outputs * batch_to_use;
 
-    if (is_quantized_ && int8_inf_) {
+    if (false && is_quantized_ && int8_inf_) {
       // 1. quantize the inputs (in_out_tensor -> scratch)
       // TODO: Fuse this step with layer-norm of previous block
       quantizeActivationMatrix((int8_t*)scratch, (const half*)in_out_tensor,
                                batch, embedding_op_size_,
-                               qkv_.input_scaling_factor, stream);
+                               qkv_.input_quantize_factor, stream);
 
       // 2. perform int8 GEMM (scratch -> buffer1)
       // cutlassMatrixMulBTransposed((const int8_t*)scratch, qkv_.weights_int8,
@@ -1999,10 +2017,10 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       ReportCUDAErrors(cudaGetLastError());
 
     } else {
-      if (is_quantized_ && clipInputActivations) {
+      if (is_quantized_ && clipQuantizedActivations) {
         clipActivationMatrix<DataType>(
-            (DataType*)in_out_tensor, (const DataType*)in_out_tensor,
-            qkv_.input_scaling_factor, batch, num_inputs, stream);
+            (DataType*)in_out_tensor, (const DataType*)in_out_tensor, nullptr,
+            qkv_.input_quantize_factor, batch, num_inputs, stream);
       }
 
       cublasXGemmStridedBatched<DataType>(
@@ -2010,6 +2028,12 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
           1.0f, mha_qkv_w, num_inputs, num_inputs * num_outputs, in_out_tensor,
           num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * batch_to_use,
           3);
+
+      if (is_quantized_ && clipQuantizedActivations) {
+        clipActivationMatrix<DataType>((DataType*)mha_q, (const DataType*)mha_q,
+                                       qkv_.output_dequant_factors, 0.0f, batch,
+                                       num_outputs, stream);
+      }
 
       addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs,
                                batch_to_use, ACTIVATION_NONE, stream);
@@ -2133,32 +2157,39 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       // 1. quantize the inputs (buffer2 -> scratch)
       // TODO: Fuse this step with the previous fused MHA
       quantizeActivationMatrix((int8_t*)scratch, (const half*)buffer2, batch,
-                               num_inputs, mha_dense_.input_scaling_factor,
+                               num_inputs, mha_dense_.input_quantize_factor,
                                stream);
 
       // 2. perform int8 GEMM (scratch -> buffer2)
       cutlassMatrixMulBTransposed(
-          (const int8_t*)scratch, mha_dense_.weights_int8, (int32_t*)buffer2,
-          batch, num_outputs, num_inputs, 1, 0, 0, 0, 1.0, 0.0f);
+          (const int8_t*)scratch, (const int8_t*)mha_dense_.weights_int8,
+          (int8_t*)buffer2, batch, num_outputs, num_inputs, 1, 0, 0, 0,
+          mha_dense_.output_scaling_factor, 0.0f);
 
       ReportCUDAErrors(cudaGetLastError());
 
       // LN1: skip connection and layer normalization (also bias add of prev
       // gemm) buffer2 -> scratch
-      LayerNorm<DataType, int32_t>(
-          N * 64, embedding_op_size_, scratch, (int32_t*)buffer2, mha_dense_b,
+      LayerNorm<DataType, int8_t>(
+          N * 64, embedding_op_size_, scratch, (int8_t*)buffer2, mha_dense_b,
           in_out_tensor, ln1_gammas, ln1_betas, default_eps_, alpha_,
-          ACTIVATION_NONE, stream, mha_dense_.output_scaling_factor);
+          ACTIVATION_NONE, stream, mha_dense_.output_dequant_factor);
     } else {
-      if (is_quantized_ && clipInputActivations) {
+      if (is_quantized_ && clipQuantizedActivations) {
         clipActivationMatrix<DataType>(
-            (DataType*)buffer2, (const DataType*)buffer2,
-            mha_dense_.input_scaling_factor, batch, num_inputs, stream);
+            (DataType*)buffer2, (const DataType*)buffer2, nullptr,
+            mha_dense_.input_quantize_factor, batch, num_inputs, stream);
       }
 
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, mha_dense_w, num_inputs, buffer2,
                   num_inputs, 0.0f, buffer1, num_outputs);
+
+      if (is_quantized_ && clipQuantizedActivations) {
+        clipActivationMatrix<DataType>(
+            (DataType*)buffer1, (const DataType*)buffer1, nullptr,
+            mha_dense_.output_dequant_factor, batch, num_outputs, stream);
+      }
 
       // LN1: skip connection and layer normalization (also bias add of prev
       // gemm) buffer1/in_out_tensor -> scratch
@@ -2167,6 +2198,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                           default_eps_, alpha_, ACTIVATION_NONE, stream);
     }
   }
+  // dumpTensor(scratch, embedding_op_size_ * N * 64, "ffn1 input", true);
+  // exit(0);
 
   // #FFN dense 1, scratch -> in_out_tensor
   const int encoder_dff = ffn_dense1_size_;
@@ -2179,41 +2212,47 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       // 1. quantize the inputs (scratch -> in_out_tensor)
       // TODO: Fuse this step with LN1 (should be easy)
       quantizeActivationMatrix((int8_t*)in_out_tensor, (const half*)scratch,
-                               batch, num_inputs, ffn1_.input_scaling_factor,
+                               batch, num_inputs, ffn1_.input_quantize_factor,
                                stream);
 
       // 2. perform int8 GEMM (in_out_tensor -> buffer1)
       cutlassMatrixMulBTransposed(
-          (const int8_t*)in_out_tensor, ffn1_.weights_int8, (int32_t*)buffer1,
-          batch, num_outputs, num_inputs, 1, 0, 0, 0, 1.0, 0.0f);
+          (const int8_t*)in_out_tensor, (const int8_t*)ffn1_.weights_int8,
+          (int8_t*)buffer1, batch, num_outputs, num_inputs, 1, 0, 0, 0,
+          ffn1_.output_scaling_factor, 0.0f);
 
-      // 3. Dequantize and bias add - mixed precision (buffer1 -> in_out_tensor)
+      // 3. Dequantize and bias add - mixed precision (buffer1 ->
+      // in_out_tensor)
       deQuantizeOutputMatrixBiasAdd(
-          (int8_t*)in_out_tensor, (int32_t*)buffer1, batch, num_outputs, 1,
-          nullptr, ffn1_.output_scaling_factor, (half*)ffn_dense1_b,
-          ffn_activation_, ffn2_.input_scaling_factor, stream);
+          (int8_t*)in_out_tensor, (int8_t*)buffer1, batch, num_outputs, 1,
+          nullptr, ffn1_.output_dequant_factor, (half*)ffn_dense1_b,
+          ffn_activation_, ffn2_.input_quantize_factor, stream);
 
       // 3. Bias add - mixed precision (buffer1 -> in_out_tensor)
       // addBiasBatched(in_out_tensor, (float*)buffer1, ffn_dense1_b, 1, batch,
       //                num_outputs, ffn_activation_, stream);
 
     } else {
-      if (is_quantized_ && clipInputActivations) {
+      if (is_quantized_ && clipQuantizedActivations) {
         // Note `scratch` should not be changed as it is the FFN input to be used
         // as skip connection later at the layer norm.
         clipActivationMatrix<DataType>(
-            (DataType*)in_out_tensor, (const DataType*)scratch,
-            ffn1_.input_scaling_factor, batch, num_inputs, stream);
+            (DataType*)in_out_tensor, (const DataType*)scratch, nullptr,
+            ffn1_.input_quantize_factor, batch, num_inputs, stream);
 
         cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                     num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                     in_out_tensor, num_inputs, 0.0f, buffer1, num_outputs);
+
+        clipActivationMatrix<DataType>(
+            (DataType*)buffer1, (const DataType*)buffer1, nullptr,
+            ffn1_.output_dequant_factor, batch, num_outputs, stream);
+
       } else {
         cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                     num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                     scratch, num_inputs, 0.0f, buffer1, num_outputs);
       }
-
       addBiasBatched(in_out_tensor, buffer1, ffn_dense1_b, 1, batch,
                      num_outputs, ffn_activation_, stream);
 
@@ -2230,31 +2269,38 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       // TODO: Fuse this step with above bias add at least (or ideally with the
       // above GEMM)
       // quantizeActivationMatrix((int8_t*)buffer1, (const half*)in_out_tensor,
-      //                          batch, num_inputs, ffn2_.input_scaling_factor,
-      //                          stream);
+      //                          batch, num_inputs,
+      //                          ffn2_.input_quantize_factor, stream);
 
       // 2. perform int8 GEMM (in_out_tensor -> buffer2)
-      cutlassMatrixMulBTransposed((const int8_t*)in_out_tensor, ffn2_.weights_int8,
-                                  (int32_t*)buffer2, batch, num_outputs,
-                                  num_inputs, 1, 0, 0, 0, 1.0, 0.0f);
+      cutlassMatrixMulBTransposed(
+          (const int8_t*)in_out_tensor, (const int8_t*)ffn2_.weights_int8,
+          (int8_t*)buffer2, batch, num_outputs, num_inputs, 1, 0, 0, 0,
+          ffn2_.output_scaling_factor, 0.0f);
       ReportCUDAErrors(cudaGetLastError());
 
       // LN2: skip connection and layer normilization (also bias add of prev
       // gemm) buffer2/scratch -> in_out_tensor
-      LayerNorm<DataType, int32_t>(
-          N * 64, embedding_op_size_, in_out_tensor, (int32_t*)buffer2,
+      LayerNorm<DataType, int8_t>(
+          N * 64, embedding_op_size_, in_out_tensor, (int8_t*)buffer2,
           ffn_dense2_b, scratch, ln2_gammas, ln2_betas, default_eps_, alpha_,
-          ACTIVATION_NONE, stream, ffn2_.output_scaling_factor);
+          ACTIVATION_NONE, stream, ffn2_.output_dequant_factor);
 
     } else {
-      if (is_quantized_ && clipInputActivations) {
+      if (is_quantized_ && clipQuantizedActivations) {
         clipActivationMatrix<DataType>(
-            (DataType*)in_out_tensor, (const DataType*)in_out_tensor,
-            ffn2_.input_scaling_factor, batch, num_inputs, stream);
+            (DataType*)in_out_tensor, (const DataType*)in_out_tensor, nullptr,
+            ffn2_.input_quantize_factor, batch, num_inputs, stream);
       }
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
                   in_out_tensor, num_inputs, 0.0f, buffer1, num_outputs);
+
+      if (is_quantized_ && clipQuantizedActivations) {
+        clipActivationMatrix<DataType>(
+            (DataType*)buffer1, (const DataType*)buffer1, nullptr,
+            ffn2_.output_dequant_factor, batch, num_outputs, stream);
+      }
 
       // LN2: skip connection and layer normilization (also bias add of prev
       // gemm) buffer1/scratch -> in_out_tensor
@@ -2266,6 +2312,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       //            "encoder 1 ffn2 LN output", false);
       // exit(0);
     }
+    // dumpTensor(in_out_tensor, num_outputs * N * 64, "Biases", true);
+    // exit(0);
   }
 }
 
@@ -2408,6 +2456,7 @@ EncoderBlock<DataType>::~EncoderBlock() {
     ReportCUDAErrors(cudaFree(qkv_.weights_int8));
     // ReportCUDAErrors(cudaFree(qkv_.input_scaling_factors));
     ReportCUDAErrors(cudaFree(qkv_.output_scaling_factors));
+    ReportCUDAErrors(cudaFree(qkv_.output_dequant_factors));
     ReportCUDAErrors(cudaFree(mha_dense_.weights_int8));
     // ReportCUDAErrors(cudaFree(mha_dense_.input_scaling_factors));
     // ReportCUDAErrors(cudaFree(mha_dense_.output_scaling_factors));
@@ -2513,10 +2562,12 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
     // Quantization data for input embedding FFN layers.
     LoadQuantizationData(emb_ffn1_, (half*)ip_emb_ffn_d1_w_,
                          embedding_ffn_size_, embedding_ffn_dff_,
-                         weights.ip_emb_ffn.dense1_s, weights.ip_emb_ffn.s1, 0);
+                         weights.ip_emb_ffn.dense1_s, weights.ip_emb_ffn.s1,
+                         weights.ip_emb_ffn.dense1_out_s, 0);
     LoadQuantizationData(emb_ffn2_, (half*)ip_emb_ffn_d2_w_, embedding_ffn_dff_,
                          embedding_ffn_size_, weights.ip_emb_ffn.dense2_s,
-                         weights.ip_emb_ffn.s2, 0);
+                         weights.ip_emb_ffn.s2, weights.ip_emb_ffn.dense2_out_s,
+                         0);
   } else {
     size_t size = 64 * kNumPosEncodingChannels * sizeof(float);
     ReportCUDAErrors(cudaMalloc(&pos_encoding_, size));
@@ -2681,14 +2732,17 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       if (is_quantized_ && int8_inf_) {
         // 1. quantize (embedding -> temp)
         quantizeActivationMatrix((int8_t*)temp, (const half*)embedding, batch,
-                                 num_inputs, emb_ffn1_.input_scaling_factor,
+                                 num_inputs, emb_ffn1_.input_quantize_factor,
                                  stream);
 
         // 2. int8 matmul (temp -> buffer2)
-        cutlassMatrixMulBTransposed((const int8_t*)temp, emb_ffn1_.weights_int8,
-                                    (int32_t*)buffer2, batch, num_outputs,
-                                    num_inputs, 1, 0, 0, 0, 1.0f, 0.0f);
+        cutlassMatrixMulBTransposed(
+            (const int8_t*)temp, (const int8_t*)emb_ffn1_.weights_int8,
+            (int8_t*)buffer2, batch, num_outputs, num_inputs, 1, 0, 0, 0,
+            emb_ffn1_.output_scaling_factor, 0.0f);
 
+        // dumpTensor((int8_t*)buffer2, 64 * num_outputs, "output", true);
+        // exit(0);
         // cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
         //             num_inputs, 1, emb_ffn1_.weights_int8, num_inputs,
         //             (int8_t*)temp, num_inputs, 0, (int32_t*)buffer2,
@@ -2696,9 +2750,9 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
 
         // 3. Dequantize and bias add (mixed precision) (buffer2 -> temp)
         deQuantizeOutputMatrixBiasAdd(
-            (int8_t*)temp, (int32_t*)buffer2, batch, num_outputs, 1, nullptr,
-            emb_ffn1_.output_scaling_factor, (half*)ip_emb_ffn_d1_b_,
-            activations_.ffn_activation, emb_ffn2_.input_scaling_factor,
+            (int8_t*)temp, (int8_t*)buffer2, batch, num_outputs, 1, nullptr,
+            emb_ffn1_.output_dequant_factor, (half*)ip_emb_ffn_d1_b_,
+            activations_.ffn_activation, emb_ffn2_.input_quantize_factor,
             stream);
 
         ReportCUDAErrors(cudaGetLastError());
@@ -2708,14 +2762,19 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
         //                num_outputs, activations_.ffn_activation, stream);
 
       } else {
-        if (is_quantized_ && clipInputActivations) {
+        if (is_quantized_ && clipQuantizedActivations) {
           clipActivationMatrix<DataType>(
-              (DataType*)temp, (const DataType*)embedding,
-              emb_ffn1_.input_scaling_factor, batch, num_inputs, stream);
+              (DataType*)temp, (const DataType*)embedding, nullptr,
+              emb_ffn1_.input_quantize_factor, batch, num_inputs, stream);
         }
         cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                     num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d1_w_,
                     num_inputs, temp, num_inputs, 0.0f, buffer1, num_outputs);
+        if (is_quantized_ && clipQuantizedActivations) {
+          clipActivationMatrix<DataType>(
+              (DataType*)buffer1, (const DataType*)buffer1, nullptr,
+              emb_ffn1_.output_dequant_factor, batch, num_outputs, stream);
+        }
         addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch,
                        num_outputs, activations_.ffn_activation, stream);
       }
@@ -2729,13 +2788,14 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       if (is_quantized_ && int8_inf_) {
         // 1. quantize (buffer1 -> temp)
         // quantizeActivationMatrix((int8_t*)temp, (const half*)buffer1, batch,
-        //                          num_inputs, emb_ffn2_.input_scaling_factor,
+        //                          num_inputs, emb_ffn2_.input_quantize_factor,
         //                          stream);
 
         // 2. int8 matmul (temp -> buffer2)
-        cutlassMatrixMulBTransposed((const int8_t*)temp, emb_ffn2_.weights_int8,
-                                    (int32_t*)buffer2, batch, num_outputs,
-                                    num_inputs, 1, 0, 0, 0, 1.0f, 0.0f);
+        cutlassMatrixMulBTransposed(
+            (const int8_t*)temp, (const int8_t*)emb_ffn2_.weights_int8,
+            (int8_t*)buffer2, batch, num_outputs, num_inputs, 1, 0, 0, 0,
+            emb_ffn2_.output_scaling_factor, 0.0f);
 
         // cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
         //             num_inputs, 1, emb_ffn2_.weights_int8, num_inputs,
@@ -2745,22 +2805,28 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
         // Embedding LN: skip connection and layer normalization (also bias add
         // of prev gemm) (buffer2 -> embedding/output_tensor)
         float alpha = (float)pow(2. * encoder_weights_.size(), -0.25);
-        LayerNorm<DataType, int32_t>(
-            batch, num_outputs, output_tensor, (int32_t*)buffer2,
+        LayerNorm<DataType, int8_t>(
+            batch, num_outputs, output_tensor, (int8_t*)buffer2,
             ip_emb_ffn_d2_b_, embedding, ip_emb_ffn_ln_g_, ip_emb_ffn_ln_b_,
             1e-3, alpha, ACTIVATION_NONE, stream,
-            emb_ffn2_.output_scaling_factor);
+            emb_ffn2_.output_dequant_factor);
 
       } else {
-        if (is_quantized_ && clipInputActivations) {
+        if (is_quantized_ && clipQuantizedActivations) {
           clipActivationMatrix<DataType>(
-              (DataType*)buffer1, (const DataType*)buffer1,
-              emb_ffn2_.input_scaling_factor, batch, num_inputs, stream);
+              (DataType*)buffer1, (const DataType*)buffer1, nullptr,
+              emb_ffn2_.input_quantize_factor, batch, num_inputs, stream);
         }
 
         cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                     num_inputs, 1.0f, ip_emb_ffn_d2_w_, num_inputs, buffer1,
                     num_inputs, 0.0f, buffer2, num_outputs);
+
+        if (is_quantized_ && clipQuantizedActivations) {
+          clipActivationMatrix<DataType>(
+              (DataType*)buffer2, (const DataType*)buffer2, nullptr,
+              emb_ffn2_.output_dequant_factor, batch, num_outputs, stream);
+        }
 
         // Embedding LN: skip connection and layer normilization (also bias add
         // of prev gemm) buffer2 -> embedding
