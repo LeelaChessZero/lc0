@@ -493,7 +493,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
     if (n) {
-      auto wl = n->GetWL();
+      auto wl = sign * n->GetWL();
       auto d = n->GetD();
       auto is_perspective = ((contempt_mode_ == ContemptMode::BLACK) ==
                              played_history_.IsBlackToMove())
@@ -504,11 +504,11 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
           contempt_mode_ == ContemptMode::NONE
               ? 0
               : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
-          sign * is_perspective, true, params_.GetWDLMaxS());
-      print(oss, "(WL: ", sign * wl, ") ", 8, 5);
+          is_perspective, true, params_.GetWDLMaxS());
+      print(oss, "(WL: ", wl, ") ", 8, 5);
       print(oss, "(D: ", d, ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
-      print(oss, "(Q: ", sign * wl + draw_score * d, ") ", 8, 5);
+      print(oss, "(Q: ", wl + draw_score * d, ") ", 8, 5);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
       print(oss, "(Q: ", fpu, ") ", 8, 5);
