@@ -914,7 +914,7 @@ __global__ void quantizeMatrix(int8_t* output, const half* input, int height,
   }
 
   for (int i = 0; i < 8; i++) {
-    float val = roundf((float)ip[i] / (factor[i] + 1e-5f));
+    float val = roundf((float)ip[i] / factor[i]);
     if (val > 127) val = 127;
     if (val < -128) val = -128;
     op[i] = (int8_t)(val);
@@ -951,7 +951,7 @@ __global__ void clipMatrix(T* output, const T* input, const float* scale_factors
   }
 
   float val = (float)input[y * width + x];
-  val /= (1e-5f + factor);
+  val /= factor;
   val = roundf(val);
   if (val > 127.0f) val = 127.0f;
   if (val < -128.0f) val = -128.0f;
@@ -1032,7 +1032,7 @@ __global__ void deQuantizeMatrix(OT* output, const IT* input, const half* bias,
       val *= inv_scale[i];
       if (bias) val += (float)bi[i];
       val = activate(val, act);
-      val = roundf(val / (nextInputScale + 1e-5f));
+      val = roundf(val / nextInputScale);
       if (val > 127) val = 127;
       if (val < -128) val = -128;
       op[i] = (OT)(val);
