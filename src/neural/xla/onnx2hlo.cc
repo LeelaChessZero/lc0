@@ -456,6 +456,9 @@ pblczero::XlaLiteralProto OnnxTensorToXlaLiteral(
     case pblczero::TensorProto::FLOAT8E5M2:
       literal.set_f8e5m2s(tensor.raw_data());
       break;
+    case pblczero::TensorProto::FLOAT8E4M3FN:
+      literal.set_f8e4m3fns(tensor.raw_data());
+      break;
     case pblczero::TensorProto::INT64:
       convert(tensor.raw_data(), literal.mutable_s64s());
       break;
@@ -1695,6 +1698,12 @@ class Onnx2HloConverter {
         std::string_view f8e5m2_view(reinterpret_cast<const char*>(&f8e5m2),
                                      sizeof(f8e5m2));
         literal.set_f8e5m2s(f8e5m2_view);
+      } break;
+      case pblczero::XlaShapeProto::F8E4M3FN: {
+        uint8_t f8e4m3fn = FP32toFP8E4M3FN(value);
+        std::string_view f8e4m3fn_view(reinterpret_cast<const char*>(&f8e4m3fn),
+                                       sizeof(f8e4m3fn));
+        literal.set_f8e4m3fns(f8e4m3fn_view);
       } break;
       case pblczero::XlaShapeProto::S32:
         literal.add_s32s(value);
