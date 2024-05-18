@@ -174,7 +174,7 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
                        const pblczero::NetworkFormat& format)
     : runner_(std::move(runner)),
       options_(options),
-      capabilities_{format.input(), format.moves_left()} {}
+      capabilities_{format.input(), format.output(), format.moves_left()} {}
 
 // Converts ONNX model to HLO (for various batch sizes) and adds them to the
 // XlaRunner.
