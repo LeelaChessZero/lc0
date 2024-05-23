@@ -187,6 +187,7 @@ class CudaNetwork : public Network {
  public:
   CudaNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
+                      file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
