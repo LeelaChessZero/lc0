@@ -140,7 +140,7 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
-# ONNX protobufs.
+# ONNX and HLO protobufs.
 gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
   arguments : [
     '--proto_path=@CURRENT_SOURCE_DIR@/src',
@@ -148,6 +148,9 @@ gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
     '@INPUT@'])
 
 files += gen_proto_src.process('src/neural/onnx/onnx.proto',
+  preserve_path_from : meson.current_source_dir() + '/src/')
+
+files += gen_proto_src.process('src/neural/xla/hlo.proto',
   preserve_path_from : meson.current_source_dir() + '/src/')
 
 #############################################################################
@@ -208,6 +211,9 @@ files += [
   'src/neural/onnx/adapters.cc',
   'src/neural/onnx/builder.cc',
   'src/neural/onnx/converter.cc',
+  'src/neural/xla/hlo_builder.cc',
+  'src/neural/xla/onnx2hlo.cc',
+  'src/neural/xla/print_hlo.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/multigame.cc',
@@ -615,14 +621,6 @@ if get_option('build_backends')
   ## ~~~~~~~~
   ## XLA
   ## ~~~~~~~~
-  files += [
-        'src/neural/xla/hlo_builder.cc',
-        'src/neural/xla/onnx2hlo.cc',
-        'src/neural/xla/print_hlo.cc',
-  ]
-  files += gen_proto_src.process('src/neural/xla/hlo.proto',
-      preserve_path_from : meson.current_source_dir() + '/src/')
-
   if get_option('xla')
       files += [
         'src/neural/xla/network_xla.cc',
