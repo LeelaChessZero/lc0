@@ -340,7 +340,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       const float centipawn_fallback_threshold = 0.996f;
       float centipawn_score = 90 * tan(1.5637541897 * wl);
       uci_info.score =
-          mu_uci != 0.0f && std::abs(wl) + d < centipawn_fallback_threshold &&
+          network_->GetCapabilities().has_wdl() && mu_uci != 0.0f &&
+                  std::abs(wl) + d < centipawn_fallback_threshold &&
                   (std::abs(mu_uci) < 1.0f ||
                    std::abs(centipawn_score) < std::abs(100 * mu_uci))
               ? 100 * mu_uci
