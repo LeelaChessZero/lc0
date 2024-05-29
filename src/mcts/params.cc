@@ -93,6 +93,11 @@ float GetContempt(std::string name, std::string contempt_str,
 SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
     float contempt, float draw_rate_target, float draw_rate_reference,
     float book_exit_bias, float contempt_max, float contempt_attenuation) {
+  // Catch accidental low positive values of draw_rate_target to guarantee
+  // somewhat reasonable behavior without numerical issues.
+  if draw_rate_target > 0.0f && draw_rate_target < 0.001f {
+    draw_rate_target = 0.001f;
+  }
   float scale_reference = 1.0f / std::log((1.0f + draw_rate_reference) /
                                           (1.0f - draw_rate_reference));
   float scale_target =
