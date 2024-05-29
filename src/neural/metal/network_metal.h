@@ -142,6 +142,7 @@ class MetalNetwork : public Network {
  private:
   NetworkCapabilities capabilities_{
       pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+      pblczero::NetworkFormat::OUTPUT_CLASSICAL,
       pblczero::NetworkFormat::MOVES_LEFT_NONE};
   int max_batch_size_;
   int batch_size_;

@@ -982,6 +982,7 @@ template <bool use_eigen>
 BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
                                     const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
+                    file.format().network_format().output(),
                     file.format().network_format().moves_left()},
       weights_(file.weights()) {
   Numa::Init();
