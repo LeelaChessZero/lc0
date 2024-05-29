@@ -500,7 +500,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
                              played_history_.IsBlackToMove())
                                 ? 1.0f
                                 : -1.0f;
-      auto mu_uci = WDLRescale(
+      WDLRescale(
           wl, d, params_.GetWDLRescaleRatio(),
           contempt_mode_ == ContemptMode::NONE
               ? 0
