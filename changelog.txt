@@ -1,4 +1,12 @@
-﻿v0.31.0-rc2 (2024-04-16)
+﻿v0.31.0-rc3 (2024-05-29)
+~~~~~~~
+* The `WDLDrawRateTarget` option now accepts the value 0 (new default) to retain
+  raw WDL values if `WDLCalibrationElo` is set to 0 (default).
+* Improvements to the verbose move stats if `WDLEvalObjectivity is used.
+* The centipawn score is displayed by default for old nets without WDL output.
+* Some build system improvements.
+
+v0.31.0-rc2 (2024-04-16)
 ~~~~~~~
 * Changed cuda compilation options to use `-arch=native` or `-arch=all-major`
   if no specific version is requested, with fallback for older cuda that don't
