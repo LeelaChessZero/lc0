@@ -31,7 +31,6 @@
 
 #include "neural/factory.h"
 #include "utils/exception.h"
-#include "utils/numa.h"
 
 namespace lczero {
 namespace {
@@ -122,11 +121,19 @@ class DemuxingNetwork : public Network {
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
                   const OptionsDict& opts) {
-    const int nn_threads = opts.GetOrDefault<int>("threads", 1);
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
+
+    int nn_threads = opts.GetOrDefault<int>("threads", 0);
+    if (nn_threads == 0) {
+      nn_threads = networks_.back()->GetThreads();
+    }
+
+    min_batch_size_ =
+        std::min(min_batch_size_, networks_.back()->GetMiniBatchSize());
+    is_cpu_ &= networks_.back()->IsCpu();
 
     if (networks_.size() == 1) {
       capabilities_ = networks_.back()->GetCapabilities();
@@ -135,7 +142,7 @@ class DemuxingNetwork : public Network {
     }
 
     for (int i = 0; i < nn_threads; ++i) {
-      threads_.emplace_back([this, i]() { Worker(i); });
+      threads_.emplace_back([this]() { Worker(); });
     }
   }
 
@@ -146,6 +153,12 @@ class DemuxingNetwork : public Network {
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
+
+  int GetMiniBatchSize() const override {
+    return min_batch_size_ * threads_.size();
+  }
+
+  bool IsCpu() const override { return is_cpu_; }
 
   void Enqueue(DemuxingComputation* computation) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -163,9 +176,7 @@ class DemuxingNetwork : public Network {
     }
   }
 
-  void Worker(int id) {
-    // Add one to the id in order to leave space for an active search thread.
-    Numa::BindThread(id + 1);
+  void Worker() {
     // While Abort() is not called (and it can only be called from destructor).
     while (!abort_) {
       {
@@ -212,6 +223,8 @@ class DemuxingNetwork : public Network {
 
   std::vector<std::unique_ptr<Network>> networks_;
   NetworkCapabilities capabilities_;
+  int min_batch_size_ = std::numeric_limits<int>::max();
+  bool is_cpu_ = true;
   std::queue<DemuxingComputation*> queue_;
   int minimum_split_size_ = 0;
   std::atomic<long long> counter_;

@@ -32,11 +32,68 @@
 
 #include "cuda_common.h"
 #include "kernels.h"
+#include "neural/network.h"
+#include "neural/shared/activation.h"
+#include "neural/shared/attention_policy_map.h"
 #include "utils/fp16_utils.h"
 
 namespace lczero {
-// void dumpTensor(void* memory, int elements, const char* message, bool fp16 =
-// false);
+
+#if 0
+// debug code to dump allocation in GPU memory
+template <typename T>
+void dumpTensor(T* memory, int elements, const char* message, bool only_summary = false) {
+    const bool fp16 = std::is_same<half, T>::value;
+    printf("\n%s\n", message);
+    int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
+    int bytes = elements * elementSize;
+    void *temp = malloc(bytes);
+    cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
+    float maxval = -std::numeric_limits<float>::max();
+    float minval = std::numeric_limits<float>::max();
+    int nans = 0;
+    int nanss[10] {};
+
+    for (int i = 0; i < elements; i++)
+    {
+        float val;
+        if (fp16) 
+        {
+            half *arr = (half*)temp;
+            val = (float)arr[i];
+        }
+        else
+        {
+            float *arr = (float *)temp;
+            val = arr[i];
+        }
+        maxval = std::max(maxval, val);
+        minval = std::min(minval, val);
+
+        if (std::isnan(val)) {
+          if (nans < 10) nanss[nans] = i;
+          nans++;
+        }
+
+        if (!only_summary || i < 2 || i == elements - 1) {
+          // printf("%8.4f ", val);
+          // if ((i % 8) == 7) printf("\n");
+          printf("%i;%.6f\n", i, val);
+        }
+    }
+    free(temp);
+    if (maxval == -std::numeric_limits<float>::max())
+       maxval = std::numeric_limits<double>::quiet_NaN();
+    if (minval == std::numeric_limits<float>::max())
+       minval = std::numeric_limits<double>::quiet_NaN();
+
+    printf("Max: %.6f, Min: %.6f, NaNs: %i of %i", maxval, minval, nans, elements);
+    printf("\nNaN indices: ");
+    for (int i=0; i<nans && i<10; i++) printf("%i ", nanss[i]);
+    if (nans > 10) printf("......");
+    printf("\n");
+}
+#endif
 
 namespace cudnn_backend {
 
@@ -56,7 +113,12 @@ BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc,
 
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip)
-    : input_(ip), C(c), H(h), W(w), nhwc_(ip->nhwc_), use_gemm_ex_(false) {}
+    : input_(ip),
+      C(c),
+      H(h),
+      W(w),
+      nhwc_(ip ? ip->nhwc_ : false),
+      use_gemm_ex_(false) {}
 
 #ifdef USE_CUDNN
 template <typename DataType>
@@ -108,7 +170,7 @@ void ConvLayer<DataType>::init() {
     conv_algo_ = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
   }
 
-  if (act_ == RELU) {
+  if (act_ == ACTIVATION_RELU) {
     cudnnSetActivationDescriptor(activation_, CUDNN_ACTIVATION_RELU,
                                  CUDNN_NOT_PROPAGATE_NAN, 0.0);
   }
@@ -193,7 +255,8 @@ template <typename DataType>
 void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                const DataType* input2, void* scratch,
                                size_t scratch_size, cudnnHandle_t cudnn,
-                               cublasHandle_t /*cublas*/, cudaStream_t stream) {
+                               cublasHandle_t /*cublas*/, cudaStream_t stream,
+                               DataType***) {
   const cudnnDataType_t dataType =
       std::is_same<half, DataType>::value ? CUDNN_DATA_HALF : CUDNN_DATA_FLOAT;
 
@@ -208,14 +271,15 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
 
   float alpha = 1.0f, beta = 0.0f;
 
-  if (!(act_ != NONE || use_bias_ || input2)) {
+  if (!(act_ != ACTIVATION_NONE || use_bias_ || input2)) {
     ReportCUDNNErrors(cudnnConvolutionForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
         conv_desc_, conv_algo_, scratch, scratch_size, &beta, out_tensor_desc_,
         output));
   }
 #if CUDNN_MAJOR != 7 || CUDNN_MINOR != 0
-  else if (input2 && (act_ == RELU || act_ == NONE) && use_bias_) {
+  else if (input2 && (act_ == ACTIVATION_RELU || act_ == ACTIVATION_NONE) &&
+           use_bias_) {
     // fused bias + sum + relu!
     ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
         cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
@@ -225,7 +289,8 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
     // For some reason cudnn doesn't support just Convolution + Bias with nchw
     // (winograd algorithm) it works fine when RELU is also needed which is
     // somewhat strange.
-    if ((act_ == RELU || (act_ == NONE && nhwc_)) && !input2 && use_bias_) {
+    if ((act_ == ACTIVATION_RELU || (act_ == ACTIVATION_NONE && nhwc_)) &&
+        !input2 && use_bias_) {
       ReportCUDNNErrors(cudnnConvolutionBiasActivationForward(
           cudnn, &alpha, in_tensor_desc_, input, filter_desc_, weights,
           conv_desc_, conv_algo_, scratch, scratch_size, &beta,
@@ -241,8 +306,8 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
       if (input2 && input2 != output) {
         // Merge act with residual add unless there is bias.
         addVectors(output, output, (DataType*)input2, N * C * H * W,
-                   N * C * H * W, N * C * H * W, use_bias_ ? NONE : act_,
-                   stream);
+                   N * C * H * W, N * C * H * W,
+                   use_bias_ ? ACTIVATION_NONE : act_, stream);
         act_done = !use_bias_;
       }
       // Merge act with bias.
@@ -254,7 +319,7 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
           addVectors(output, output, biases, N * C * H * W, N * C * H * W, C,
                      act_, stream);
         }
-      } else if (!act_done && act_ != NONE) {
+      } else if (!act_done && act_ != ACTIVATION_NONE) {
         addVectors(output, output, (DataType*)nullptr, N * C * H * W,
                    N * C * H * W, 0, act_, stream);
       }
@@ -274,12 +339,12 @@ void ConvLayer<DataType>::Eval(int N, DataType* output, const DataType* input,
       ReportCUDNNErrors(cudnnAddTensor(cudnn, &alpha, bias_desc_, biases,
                                        &alpha, out_tensor_desc_, output));
     }
-    if (act_ == RELU) {
+    if (act_ == ACTIVATION_RELU) {
       ReportCUDNNErrors(cudnnActivationForward(cudnn, activation_, &alpha,
                                                out_tensor_desc_, output, &beta,
                                                out_tensor_desc_, output));
     }
-    if (act_ != RELU && act_ != NONE) {
+    if (act_ != ACTIVATION_RELU && act_ != ACTIVATION_NONE) {
       addVectors(output, output, nullptr, N * C * H * W, N * C * H * W, 0, act_,
                  stream);
       // TODO: check this actually compiles?
@@ -423,7 +488,8 @@ template <>
 void SELayer<float>::Eval(int N, float* output, const float* input,
                           const float* /*input2*/, void* scratch,
                           size_t scratch_size, cudnnHandle_t /*cudnn*/,
-                          cublasHandle_t cublas, cudaStream_t stream) {
+                          cublasHandle_t cublas, cudaStream_t stream,
+                          float***) {
   // Ping-pong between 'op1' and 'op2' (parts of scratch memory).
   float* op1 = (float*)scratch;
   float* op2 = (float*)scratch + scratch_size / sizeof(float) / 2;
@@ -444,7 +510,8 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   ReportCUBLASErrors(cublasSgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                  numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                  numFc1Out_, &beta, op2, 2 * C));
-  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, NONE, stream);
+  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE,
+             stream);
 
   // 4. (Optional prev layer bias add), Global scale, residual add, relu and
   // bias.
@@ -455,7 +522,7 @@ template <>
 void SELayer<half>::Eval(int N, half* output, const half* input,
                          const half* input2, void* scratch, size_t scratch_size,
                          cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
-                         cudaStream_t stream) {
+                         cudaStream_t stream, half***) {
   bool se_done = false;
   if (kUseFusedSELayer && nhwc_) {
     se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_t_, b1_,
@@ -486,7 +553,8 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
     ReportCUBLASErrors(cublasHgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N,
                                    numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                    numFc1Out_, &beta, op2, 2 * C));
-    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, NONE, stream);
+    addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE,
+               stream);
 
     // 4. (Optional prev layer bias add), Global scale, residual add, relu and
     // bias.
@@ -559,7 +627,7 @@ template <>
 void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
                          const half* /*input2*/, void* /*scratch*/,
                          size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
-                         cublasHandle_t cublas, cudaStream_t stream) {
+                         cublasHandle_t cublas, cudaStream_t stream, half***) {
   const int num_outputs = C * H * W;
   const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
@@ -573,7 +641,7 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs));
 
-  if (use_bias_ || (act_ != NONE)) {
+  if (use_bias_ || (act_ != ACTIVATION_NONE)) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
                num_outputs, num_outputs * N, act_, stream);
   }
@@ -584,7 +652,7 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                           const float* input_tensor, const float* /*input2*/,
                           void* /*scratch*/, size_t /*scratch_size*/,
                           cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
-                          cudaStream_t stream) {
+                          cudaStream_t stream, float***) {
   const int num_outputs = C * H * W;
   const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
 
@@ -594,7 +662,7 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs));
 
-  if (use_bias_ || (act_ != NONE)) {
+  if (use_bias_ || (act_ != ACTIVATION_NONE)) {
     addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
                num_outputs, num_outputs * N, act_, stream);
   }
@@ -693,10 +761,13 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
 }
 
 template <typename DataType>
-void PolicyMapLayer<DataType>::Eval(
-    int N, DataType* output_tensor, const DataType* input_tensor,
-    const DataType* /*input2*/, void* /*scratch*/, size_t /*scratch_size*/,
-    cudnnHandle_t /*cudnn*/, cublasHandle_t /*cublas*/, cudaStream_t stream) {
+void PolicyMapLayer<DataType>::Eval(int N, DataType* output_tensor,
+                                    const DataType* input_tensor,
+                                    const DataType* /*input2*/,
+                                    void* /*scratch*/, size_t /*scratch_size*/,
+                                    cudnnHandle_t /*cudnn*/,
+                                    cublasHandle_t /*cublas*/,
+                                    cudaStream_t stream, DataType***) {
   int inputSize =
       this->input_->GetC() * this->input_->GetH() * this->input_->GetW();
   if (attention_map_) inputSize = used_size_;
@@ -723,7 +794,8 @@ FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
       has_se_(se),
       se_k_(se_k),
       op_nhcw_(op_nhcw) {
-  if (act_ != RELU && act_ != MISH && act_ != NONE) {
+  if (act_ != ACTIVATION_RELU && act_ != ACTIVATION_MISH &&
+      act_ != ACTIVATION_NONE) {
     throw Exception("Unsupported activation for fused winograd conv SE layer.");
   }
   // Allocate memory for weights (filter tensor) and biases.
@@ -870,7 +942,7 @@ template <typename DataType>
 void FusedWinogradConvSELayer<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
-    cublasHandle_t cublas, cudaStream_t stream) {
+    cublasHandle_t cublas, cudaStream_t stream, DataType***) {
   // Split the scratch space into two parts - use first part for holding
   // transformed input and second part for transformed output.
   DataType* transformed_input = (DataType*)scratch;
@@ -883,51 +955,58 @@ void FusedWinogradConvSELayer<DataType>::Eval(
       transformed_input, transformed_weights_, transformed_output, N * 4, C,
       c_input_, 36, cublas);
 
-  if (act_ == NONE) {
+  if (act_ == ACTIVATION_NONE) {
     if (!has_se_ && use_bias_ && !skip_add_)
-      OutputTransform<DataType, false, NONE, true, false, false, false>(
-          N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
-          nullptr, nullptr, nullptr, stream);
+      OutputTransform<DataType, false, ACTIVATION_NONE, true, false, false,
+                      false>(N, C, 0, output, transformed_output, nullptr,
+                             biases_, nullptr, nullptr, nullptr, nullptr,
+                             stream);
     else
       throw Exception("unsupported network type!");
-  } else if (act_ == RELU) {
+  } else if (act_ == ACTIVATION_RELU) {
     if (has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, true, RELU, true, true, false, false>(
-          N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_,
-          w2_, b2_, stream);
+      OutputTransform<DataType, true, ACTIVATION_RELU, true, true, false,
+                      false>(N, C, se_k_, output, transformed_output, input2,
+                             biases_, w1_, b1_, w2_, b2_, stream);
     else if (!has_se_ && use_bias_ && !skip_add_) {
       if (op_nhcw_)
-        OutputTransform<DataType, false, RELU, true, false, false, true>(
-            N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
-            nullptr, nullptr, nullptr, stream);
+        OutputTransform<DataType, false, ACTIVATION_RELU, true, false, false,
+                        true>(N, C, 0, output, transformed_output, nullptr,
+                              biases_, nullptr, nullptr, nullptr, nullptr,
+                              stream);
       else
-        OutputTransform<DataType, false, RELU, true, false, false, false>(
-            N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
-            nullptr, nullptr, nullptr, stream);
+        OutputTransform<DataType, false, ACTIVATION_RELU, true, false, false,
+                        false>(N, C, 0, output, transformed_output, nullptr,
+                               biases_, nullptr, nullptr, nullptr, nullptr,
+                               stream);
     } else if (!has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, false, RELU, true, true, false, false>(
-          N, C, 0, output, transformed_output, input2, biases_, nullptr,
-          nullptr, nullptr, nullptr, stream);
+      OutputTransform<DataType, false, ACTIVATION_RELU, true, true, false,
+                      false>(N, C, 0, output, transformed_output, input2,
+                             biases_, nullptr, nullptr, nullptr, nullptr,
+                             stream);
     else
       throw Exception("unsupported network type!");
-  } else if (act_ == MISH) {
+  } else if (act_ == ACTIVATION_MISH) {
     if (has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, true, MISH, true, true, false, false>(
-          N, C, se_k_, output, transformed_output, input2, biases_, w1_, b1_,
-          w2_, b2_, stream);
+      OutputTransform<DataType, true, ACTIVATION_MISH, true, true, false,
+                      false>(N, C, se_k_, output, transformed_output, input2,
+                             biases_, w1_, b1_, w2_, b2_, stream);
     else if (!has_se_ && use_bias_ && !skip_add_) {
       if (op_nhcw_)
-        OutputTransform<DataType, false, MISH, true, false, false, true>(
-            N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
-            nullptr, nullptr, nullptr, stream);
+        OutputTransform<DataType, false, ACTIVATION_MISH, true, false, false,
+                        true>(N, C, 0, output, transformed_output, nullptr,
+                              biases_, nullptr, nullptr, nullptr, nullptr,
+                              stream);
       else
-        OutputTransform<DataType, false, MISH, true, false, false, false>(
-            N, C, 0, output, transformed_output, nullptr, biases_, nullptr,
-            nullptr, nullptr, nullptr, stream);
+        OutputTransform<DataType, false, ACTIVATION_MISH, true, false, false,
+                        false>(N, C, 0, output, transformed_output, nullptr,
+                               biases_, nullptr, nullptr, nullptr, nullptr,
+                               stream);
     } else if (!has_se_ && use_bias_ && skip_add_)
-      OutputTransform<DataType, false, MISH, true, true, false, false>(
-          N, C, 0, output, transformed_output, input2, biases_, nullptr,
-          nullptr, nullptr, nullptr, stream);
+      OutputTransform<DataType, false, ACTIVATION_MISH, true, true, false,
+                      false>(N, C, 0, output, transformed_output, input2,
+                             biases_, nullptr, nullptr, nullptr, nullptr,
+                             stream);
     else
       throw Exception("unsupported network type!");
   } else
@@ -1035,13 +1114,13 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                 const DataType* /*input2*/, void* /*scratch*/,
                                 size_t /*scratch_size*/,
                                 cudnnHandle_t /*cudnn*/, cublasHandle_t cublas,
-                                cudaStream_t stream) {
+                                cudaStream_t stream, DataType***) {
   cublasSpecialMatrixMul(weights_, input, output, C, H * W, c_input_, N,
                          cublas);
 
   if (use_bias_)
     addBias_NCHW(output, output, biases_, N, C, H, W, act_, stream);
-  else if (act_ != NONE)
+  else if (act_ != ACTIVATION_NONE)
     addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W,
                0, act_, stream);
 }
@@ -1066,7 +1145,7 @@ ResidualBlock<DataType>::ResidualBlock(BaseLayer<DataType>* ip, int C, bool se,
       last_block_(last),
       shared_mem_size_(shared_mem_size),
       act_(activation) {
-  if (act_ != RELU && act_ != MISH) {
+  if (act_ != ACTIVATION_RELU && act_ != ACTIVATION_MISH) {
     throw Exception("Unsupported activation for residual block.");
   }
   // Allocate memory for weights (filter tensor) and biases.
@@ -1188,7 +1267,8 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
                                    const DataType* input,
                                    const DataType* /*input2*/, void* scratch,
                                    size_t scratch_size, cudnnHandle_t /*cudnn*/,
-                                   cublasHandle_t cublas, cudaStream_t stream) {
+                                   cublasHandle_t cublas, cudaStream_t stream,
+                                   DataType***) {
   // normally:
   // - "output" initially contains the transformed input,
   //    and after this layer, it contains the transformed input for next layer
@@ -1200,9 +1280,17 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
 
   // Split the scratch space into two parts - use first part for holding
   // transformed input and second part for transformed output.
-  DataType* transformed_input = (DataType*)scratch;
-  DataType* transformed_output =
-      transformed_input + scratch_size / (2 * sizeof(DataType));
+  DataType* transformed_input;
+  DataType* transformed_output;
+  if (!scratch) {
+    // Caller wants us to sub-allocate all memory we need from "output" tensor.
+    transformed_input = output;  // This is true in normal cases too!
+    transformed_output = transformed_input + (N * C * 8 * 8 * 36 / 16);
+  } else {
+    transformed_input = (DataType*)scratch;
+    transformed_output =
+        transformed_input + scratch_size / (2 * sizeof(DataType));
+  }
 
   if (first_block_) {
     InputTransform<DataType, true>(N, c_input_, transformed_input, input,
@@ -1216,12 +1304,12 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
                                                  c_input_, 36, cublas);
   }
 
-  if (act_ == RELU) {
-    OutputInputTransform<DataType, false, RELU, true, false>(
+  if (act_ == ACTIVATION_RELU) {
+    OutputInputTransform<DataType, false, ACTIVATION_RELU, true, false>(
         N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
         nullptr, nullptr, nullptr, nullptr, stream);
-  } else if (act_ == MISH) {
-    OutputInputTransform<DataType, false, MISH, true, false>(
+  } else if (act_ == ACTIVATION_MISH) {
+    OutputInputTransform<DataType, false, ACTIVATION_MISH, true, false>(
         N, C, 0, transformed_input, transformed_output, nullptr, biases0_,
         nullptr, nullptr, nullptr, nullptr, stream);
   }
@@ -1238,59 +1326,61 @@ void ResidualBlock<DataType>::Eval(int N, DataType* output,
       (fp16 && (shared_mem_size_ >= kMaxResBlockFusingSeFp16AmpereSmem) &&
        (C <= kMaxResBlockFusingSeKFp16Ampere));
 
-  if (act_ == RELU) {
+  if (act_ == ACTIVATION_RELU) {
     if (last_block_) {
       if (has_se_)
-        OutputTransform<DataType, true, RELU, true, true, true, false>(
-            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-            w2_, b2_, stream);
+        OutputTransform<DataType, true, ACTIVATION_RELU, true, true, true,
+                        false>(N, C, se_k_, output, transformed_output, input,
+                               biases1_, w1_, b1_, w2_, b2_, stream);
       else
-        OutputTransform<DataType, false, RELU, true, true, true, false>(
-            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-            w2_, b2_, stream);
+        OutputTransform<DataType, false, ACTIVATION_RELU, true, true, true,
+                        false>(N, C, se_k_, output, transformed_output, input,
+                               biases1_, w1_, b1_, w2_, b2_, stream);
     } else {
       if (has_se_) {
         if (allowFusing) {
-          OutputInputTransform<DataType, true, RELU, true, true>(
+          OutputInputTransform<DataType, true, ACTIVATION_RELU, true, true>(
               N, C, se_k_, output, transformed_output, input, biases1_, w1_,
               b1_, w2_, b2_, stream);
         } else {
-          OutputTransform<DataType, true, RELU, true, true, true, true>(
-              N, C, se_k_, (DataType*)input, transformed_output, input,
-              biases1_, w1_, b1_, w2_, b2_, stream);
+          OutputTransform<DataType, true, ACTIVATION_RELU, true, true, true,
+                          true>(N, C, se_k_, (DataType*)input,
+                                transformed_output, input, biases1_, w1_, b1_,
+                                w2_, b2_, stream);
           InputTransform<DataType, true>(N, C, output, (DataType*)input,
                                          stream);
         }
       } else
-        OutputInputTransform<DataType, false, RELU, true, true>(
+        OutputInputTransform<DataType, false, ACTIVATION_RELU, true, true>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     }
-  } else if (act_ == MISH) {
+  } else if (act_ == ACTIVATION_MISH) {
     if (last_block_) {
       if (has_se_)
-        OutputTransform<DataType, true, MISH, true, true, true, false>(
-            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-            w2_, b2_, stream);
+        OutputTransform<DataType, true, ACTIVATION_MISH, true, true, true,
+                        false>(N, C, se_k_, output, transformed_output, input,
+                               biases1_, w1_, b1_, w2_, b2_, stream);
       else
-        OutputTransform<DataType, false, MISH, true, true, true, false>(
-            N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
-            w2_, b2_, stream);
+        OutputTransform<DataType, false, ACTIVATION_MISH, true, true, true,
+                        false>(N, C, se_k_, output, transformed_output, input,
+                               biases1_, w1_, b1_, w2_, b2_, stream);
     } else {
       if (has_se_) {
         if (allowFusing) {
-          OutputInputTransform<DataType, true, MISH, true, true>(
+          OutputInputTransform<DataType, true, ACTIVATION_MISH, true, true>(
               N, C, se_k_, output, transformed_output, input, biases1_, w1_,
               b1_, w2_, b2_, stream);
         } else {
-          OutputTransform<DataType, true, MISH, true, true, true, true>(
-              N, C, se_k_, (DataType*)input, transformed_output, input,
-              biases1_, w1_, b1_, w2_, b2_, stream);
+          OutputTransform<DataType, true, ACTIVATION_MISH, true, true, true,
+                          true>(N, C, se_k_, (DataType*)input,
+                                transformed_output, input, biases1_, w1_, b1_,
+                                w2_, b2_, stream);
           InputTransform<DataType, true>(N, C, output, (DataType*)input,
                                          stream);
         }
       } else
-        OutputInputTransform<DataType, false, MISH, true, true>(
+        OutputInputTransform<DataType, false, ACTIVATION_MISH, true, true>(
             N, C, se_k_, output, transformed_output, input, biases1_, w1_, b1_,
             w2_, b2_, stream);
     }
@@ -1330,10 +1420,15 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
 }
 
 template <typename DataType>
-AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
-                                                   const LegacyWeights& weights,
-                                                   void* scratch)
-    : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip) {
+AttentionPolicyHead<DataType>::AttentionPolicyHead(
+    BaseLayer<DataType>* ip, const MultiHeadWeights::PolicyHead& weights,
+    void* scratch, bool attention_body, ActivationFunction act,
+    int max_batch_size)
+    : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
+      attention_body_(attention_body),
+      // Old networks without attention body (e.g. T79) use hardcoded SELU
+      // activations.
+      act_(attention_body ? act : ACTIVATION_SELU) {
   embedding_op_size_ = weights.ip_pol_b.size();
   wq_op_size_ = weights.ip2_pol_b.size();
   wk_op_size_ = weights.ip3_pol_b.size();
@@ -1374,14 +1469,32 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(BaseLayer<DataType>* ip,
   allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
 
   for (const auto& enc : weights.pol_encoder) {
-    EncoderWeights* pW = new EncoderWeights(enc, scratch);
+    EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
+        enc, scratch, encoder_heads_, embedding_op_size_,
+        1.0f,        // using alpha = 1 for now (TODO: may change?)
+        nullptr, 0,  // smolgen weights not implemented in
+                     // policy encoder heads yet.
+        max_batch_size, ACTIVATION_SWISH, act_,
+        1e-6);  // attentionbody nets don't have policy encoders, so using old
+                // epsilon for backward compatibility with T78.
     encoder_weights_.emplace_back(pW);
   }
 }
 
 template <typename DataType>
-AttentionPolicyHead<DataType>::EncoderWeights::EncoderWeights(
-    const LegacyWeights::EncoderLayer& cpu_weights, void* scratch) {
+EncoderBlock<DataType>::EncoderBlock(
+    const MultiHeadWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
+    int size, float alpha, DataType* smolgen_global_scratch,
+    int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
+    ActivationFunction ffn_act, float default_eps)
+    : embedding_op_size_(size),
+      encoder_heads_(heads),
+      alpha_(alpha),
+      default_eps_(default_eps),
+      has_smolgen_(cpu_weights.mha.has_smolgen),
+      smolgen_activation_(smolgen_act),
+      ffn_activation_(ffn_act),
+      max_batch_size_(max_batch_size) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1435,6 +1548,37 @@ AttentionPolicyHead<DataType>::EncoderWeights::EncoderWeights(
 
   allocAndUpload<DataType>(&ln2_gammas, cpu_weights.ln2_gammas, scratch);
   allocAndUpload<DataType>(&ln2_betas, cpu_weights.ln2_betas, scratch);
+
+  // Smolgen weights.
+  if (has_smolgen_) {
+    smol_compress_size_ = cpu_weights.mha.smolgen.compress.size() / mha_q_size_;
+    smol_dense_1_size_ = cpu_weights.mha.smolgen.dense1_b.size();
+    smol_dense_2_size_ = cpu_weights.mha.smolgen.dense2_b.size();
+    smol_global_size_ = smolgen_global_size;
+
+    allocAndUpload<DataType>(&smol_compress, cpu_weights.mha.smolgen.compress,
+                             scratch);
+    allocAndUpload<DataType>(&smol_dense1_w, cpu_weights.mha.smolgen.dense1_w,
+                             scratch);
+    allocAndUpload<DataType>(&smol_dense1_b, cpu_weights.mha.smolgen.dense1_b,
+                             scratch);
+    allocAndUpload<DataType>(&smol_dense2_w, cpu_weights.mha.smolgen.dense2_w,
+                             scratch);
+    allocAndUpload<DataType>(&smol_dense2_b, cpu_weights.mha.smolgen.dense2_b,
+                             scratch);
+
+    allocAndUpload<DataType>(&smol_ln1_gammas,
+                             cpu_weights.mha.smolgen.ln1_gammas, scratch);
+    allocAndUpload<DataType>(&smol_ln1_betas, cpu_weights.mha.smolgen.ln1_betas,
+                             scratch);
+    allocAndUpload<DataType>(&smol_ln2_gammas,
+                             cpu_weights.mha.smolgen.ln2_gammas, scratch);
+    allocAndUpload<DataType>(&smol_ln2_betas, cpu_weights.mha.smolgen.ln2_betas,
+                             scratch);
+
+    // GPU memory already allocated in AttentionBody.
+    smol_global = smolgen_global_scratch;
+  }
 }
 
 template <typename DataType>
@@ -1480,169 +1624,298 @@ static void cublasXGemmStridedBatched(
 }
 
 template <typename DataType>
+static void cublasXGemmBatched(cublasHandle_t handle, cublasOperation_t transa,
+                               cublasOperation_t transb, int m, int n, int k,
+                               float alpha, DataType** A, int lda, DataType** B,
+                               int ldb, float beta, DataType** C, int ldc,
+                               int batchCount) {
+  const bool fp16 = std::is_same<half, DataType>::value;
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
+    ReportCUBLASErrors(cublasHgemmBatched(
+        handle, transa, transb, m, n, k, (const half*)&alpha_h, (half**)A, lda,
+        (half**)B, ldb, (const half*)&beta_h, (half**)C, ldc, batchCount));
+  } else {
+    ReportCUBLASErrors(cublasSgemmBatched(
+        handle, transa, transb, m, n, k, &alpha, (float**)A, lda, (float**)B,
+        ldb, &beta, (float**)C, ldc, batchCount));
+  }
+}
+
+// input/output tensor is in_out_tensor, others are used as scratch.
+template <typename DataType>
+void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
+                                  DataType* scratch, DataType* buffer1,
+                                  DataType* buffer2, cublasHandle_t cublas,
+                                  cudaStream_t stream,
+                                  DataType*** offset_pointers) const {
+  const int d_model = mha_q_size_;
+  const int depth = d_model / encoder_heads_;
+
+  // Calculate smolgen weights. Do this first so we can make use of
+  // scratch, buffer1 and buffer2.
+  if (has_smolgen_) {
+    {
+      // Compress.
+      // input shape: N, 64, d_model
+      // output shape: N, 64, hidden_channels
+      const int num_inputs = d_model;
+      const int num_outputs = smol_compress_size_;
+      const int batch = N * 64;
+      cublasXgemm<DataType>(
+          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
+          1.0f, (const DataType*)smol_compress, num_inputs, in_out_tensor,
+          num_inputs, 0.0f, scratch, num_outputs);
+    }
+
+    {
+      // Hidden 1 dense.
+      // input shape: N, 64 * hidden_channels
+      // output shape: N, hidden_sz
+      const int num_inputs = 64 * smol_compress_size_;
+      const int num_outputs = smol_dense_1_size_;
+      const int batch = N;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f,
+                            (const DataType*)smol_dense1_w, num_inputs, scratch,
+                            num_inputs, 0.0f, buffer1, num_outputs);
+
+      LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense1_b,
+                          (DataType*)nullptr, smol_ln1_gammas, smol_ln1_betas,
+                          1e-3, 1.0, smolgen_activation_, stream);
+    }
+
+    {
+      // Hidden 2 dense (gen_from)
+      // input shape: N, hidden_sz
+      // output shape: N, heads * gen_sz
+      const int num_inputs = smol_dense_1_size_;
+      const int num_outputs = smol_dense_2_size_;
+      const int batch = N;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f,
+                            (const DataType*)smol_dense2_w, num_inputs, scratch,
+                            num_inputs, 0.0f, buffer1, num_outputs);
+
+      LayerNorm<DataType>(batch, num_outputs, scratch, buffer1, smol_dense2_b,
+                          (DataType*)nullptr, smol_ln2_gammas, smol_ln2_betas,
+                          1e-3, 1.0, smolgen_activation_, stream);
+    }
+
+    {
+      // Final smolgen weights generation.
+      /*
+        gen_from = tf.reshape(gen_from, [-1, heads, gen_sz])
+        out = self.smol_weight_gen_dense(gen_from)
+      */
+      const int num_inputs =
+          smol_dense_2_size_ / encoder_heads_; /* num_inputs == gen_sz == 256 */
+      const int num_outputs = smol_global_size_; /* hwhw: 64 * 64 */
+      const int batch = N * encoder_heads_;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f,
+                            (const DataType*)smol_global, num_inputs, scratch,
+                            num_inputs, 0.0f, buffer2, num_outputs);
+    }
+  }
+
+  DataType* mha_q;
+  DataType* mha_k;
+  DataType* mha_v;
+
+  {
+    const int num_inputs = embedding_op_size_;
+    const int num_outputs = d_model;
+    const int batch = N * 64;
+    const int max_batch = max_batch_size_ * 64;
+
+    mha_q = scratch;
+    mha_k = mha_q + num_outputs * max_batch;
+    mha_v = mha_k + num_outputs * max_batch;
+
+    cublasXGemmStridedBatched<DataType>(
+        cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
+        mha_qkv_w, num_inputs, num_inputs * num_outputs, in_out_tensor,
+        num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch, 3);
+    addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs,
+                             max_batch, ACTIVATION_NONE, stream);
+  }
+
+  // Apply split_heads() to q, k and v
+  // which basically transposes (batch_size, 64, num_heads, depth)
+  // to (batch_size, num_heads, 64, depth)
+  // Do we really need to transpose here?
+  // (Maybe not, we can play with strides of the gemm and do independent gemms
+  // for each encoder head)
+
+  // Apply scaled dot product attention:
+  /*
+      matmul_qk = tf.matmul(q, k, transpose_b=True)
+      dk = tf.cast(tf.shape(k)[-1], self.model_dtype)
+      scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
+      attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
+      output = tf.matmul(attention_weights, v)
+  */
+
+  // shape(k)[-1] = depth
+  float factor = 1.0f / sqrt((float)depth);
+
+  // matmul_qk = tf.matmul(q, k, transpose_b=True)
+  {
+    if (*offset_pointers == nullptr) {
+      std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_ * 5);
+      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
+        int h = i % encoder_heads_;
+        int n = i / encoder_heads_;
+        offsets[i] = mha_k + h * depth + 64 * d_model * n;
+        offsets[i + encoder_heads_ * max_batch_size_] =
+            mha_q + h * depth + 64 * d_model * n;
+        offsets[i + 2 * encoder_heads_ * max_batch_size_] =
+            buffer1 + i * 64 * 64;
+        offsets[i + 3 * encoder_heads_ * max_batch_size_] =
+            mha_v + h * depth + 64 * d_model * n;
+        offsets[i + 4 * encoder_heads_ * max_batch_size_] =
+            buffer2 + h * depth + 64 * d_model * n;
+      }
+      ReportCUDAErrors(
+          cudaMalloc((void**)offset_pointers,
+                     encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)));
+      ReportCUDAErrors(
+          cudaMemcpy(*offset_pointers, offsets.data(),
+                     encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
+                     cudaMemcpyHostToDevice));
+    }
+    cublasXGemmBatched<DataType>(
+        cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
+        depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
+                      // transform
+        factor,       // to handle "/ tf.math.sqrt(dk)"
+        *offset_pointers,  // mha_k + offset /*A*/,
+        d_model /*LDA*/,   // (d_model = depth * encoder_heads_) to skip over
+                           // other "depth" slices / heads
+        // 64 * d_model,     /*strideA*/
+        *offset_pointers +
+            encoder_heads_ * max_batch_size_,  // mha_q + offset /*B*/,
+        d_model /*LDB*/,  // to skip over other other "depth" slices / heads
+        // 64 * d_model,     /*strideB*/
+        0.0f,
+        *offset_pointers + encoder_heads_ * max_batch_size_ *
+                               2,  // buffer1 + outOffset /*C*/,  // output
+                                   // (matmul_qk) goes to buffer1
+        64 /*LDC*/,
+        // 64 * 64 /*strideC*/,
+        N * encoder_heads_);
+  }
+
+  // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
+  // attention_weights -> buffer1
+  if (has_smolgen_) {
+    // Add smolgen weights to the scaled matmul_qk attention logits before
+    // softmax.
+    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, stream);
+  } else {
+    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
+            (const DataType*)nullptr, stream);
+  }
+
+  {
+    cublasXGemmBatched<DataType>(
+        cublas, CUBLAS_OP_N, CUBLAS_OP_N, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
+        *offset_pointers + encoder_heads_ * max_batch_size_ *
+                               3,  // mha_v + offset /*A*/,  // "v" matrix
+        d_model /*LDA*/,           // to skip over other "depth" slices / heads
+        // 64 * d_model,          /*strideA*/
+        *offset_pointers + encoder_heads_ * max_batch_size_ *
+                               2,  // buffer1 + weightsOffset /*B*/,
+        64 /*LDB*/,                // 64 * 64, /*strideB*/
+        0.0f,
+        *offset_pointers +
+            encoder_heads_ * max_batch_size_ *
+                4,  // buffer2 + offset /*C*/,  // output goes to buffer2
+        d_model /*LDC*/,
+        // 64 * d_model /*strideC*/,
+        N * encoder_heads_);
+  }
+
+  // #final dense layer (mha_dense), buffer2 -> buffer1
+  {
+    const int num_inputs = d_model;
+    const int num_outputs = embedding_op_size_;
+    const int batch = N * 64;
+    cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                num_inputs, 1.0f, (const DataType*)mha_dense_w, num_inputs,
+                buffer2, num_inputs, 0.0f, buffer1, num_outputs);
+  }
+
+  // LN1: skip connection and layer normalization (also bias add of prev gemm)
+  // buffer1/in_out_tensor -> scratch
+  LayerNorm<DataType>(N * 64, embedding_op_size_, scratch, buffer1, mha_dense_b,
+                      in_out_tensor, ln1_gammas, ln1_betas, default_eps_,
+                      alpha_, ACTIVATION_NONE, stream);
+
+  // #FFN dense 1, scratch -> in_out_tensor
+  {
+    const int num_inputs = embedding_op_size_;
+    const int num_outputs = ffn_dense1_size_;  // encoder_dff
+    const int batch = N * 64;
+    cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
+                scratch, num_inputs, 0.0f, in_out_tensor, num_outputs);
+    addBiasBatched(in_out_tensor, in_out_tensor, ffn_dense1_b, 1, batch,
+                   num_outputs, ffn_activation_, stream);
+  }
+
+  // #FFN dense 2, in_out_tensor -> buffer1
+  {
+    const int num_inputs = ffn_dense1_size_;  // encoder_dff
+    const int num_outputs = embedding_op_size_;
+    const int batch = N * 64;
+    cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
+                in_out_tensor, num_inputs, 0.0f, buffer1, num_outputs);
+  }
+
+  // LN2: skip connection and layer normilization (also bias add of prev gemm)
+  // buffer1/scratch -> in_out_tensor
+  LayerNorm<DataType>(N * 64, embedding_op_size_, in_out_tensor, buffer1,
+                      ffn_dense2_b, scratch, ln2_gammas, ln2_betas,
+                      default_eps_, alpha_, ACTIVATION_NONE, stream);
+}
+
+template <typename DataType>
 void AttentionPolicyHead<DataType>::Eval(
     int N, DataType* output, const DataType* input, const DataType* input2,
     void* scratch, size_t scratch_size, cudnnHandle_t /*cudnn*/,
-    cublasHandle_t cublas, cudaStream_t stream) {
-  DataType* scratch0 = (DataType*)scratch;
-  DataType* scratch1 = (DataType*)input2;
-  DataType* scratch2 = output + scratch_size / (2 * sizeof(DataType));
-  DataType* scratch3 = scratch1 + scratch_size / (2 * sizeof(DataType));
+    cublasHandle_t cublas, cudaStream_t stream, DataType*** offset_pointers) {
+  DataType* input2_tensor = (DataType*)input2;
+  DataType* buffer1 = output + scratch_size / (2 * sizeof(DataType));
+  DataType* buffer2 = input2_tensor + scratch_size / (2 * sizeof(DataType));
 
   int inputC = this->input_->GetC();
-  convertNCHWtoNHWC(scratch0, input, N, inputC, N, inputC, 8, 8);
+  if (!attention_body_)
+    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8);
 
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
-  DataType* pol_embedding = scratch1;
+  DataType* pol_embedding = input2_tensor;
   {
     const int num_outputs = embedding_op_size_;
     const int num_inputs = inputC;
     const int batch = N * 64;
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                           num_inputs, 1.0f, (const DataType*)ip_pol_w_,
-                          num_inputs, scratch0, num_inputs, 0.0f, pol_embedding,
-                          num_outputs);
+                          num_inputs,
+                          attention_body_ ? input : (DataType*)scratch,
+                          num_inputs, 0.0f, pol_embedding, num_outputs);
     addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
-                   num_outputs, SELU, stream);
+                   num_outputs, act_, stream);
   }
 
   // 2. Encoder layers
   for (const auto pEnc : encoder_weights_) {
-    const auto& enc = *pEnc;
-    const int d_model = enc.mha_q_size_;
-    const int depth = d_model / encoder_heads_;
-
-    DataType* mha_q;
-    DataType* mha_k;
-    DataType* mha_v;
-
-    {
-      const int num_inputs = embedding_op_size_;
-      const int num_outputs = d_model;
-      const int batch = N * 64;
-
-      mha_q = scratch0;
-      mha_k = mha_q + num_outputs * batch;
-      mha_v = mha_k + num_outputs * batch;
-
-      cublasXGemmStridedBatched<DataType>(
-          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
-          1.0f, enc.mha_qkv_w, num_inputs, num_inputs * num_outputs,
-          pol_embedding, num_inputs, 0, 0.0f, mha_q, num_outputs,
-          num_outputs * batch, 3);
-      addBiasBatched<DataType>(mha_q, mha_q, enc.mha_qkv_b, 3, batch,
-                               num_outputs, NONE, stream);
-    }
-
-    // Apply split_heads() to q, k and v
-    // which basically transposes (batch_size, 64, num_heads, depth)
-    // to (batch_size, num_heads, 64, depth)
-    // Do we really need to transpose here?
-    // (Maybe not, we can play with strides of the gemm and do independent gemms
-    // for each encoder head)
-
-    // Apply scaled dot product attention:
-    /*
-        matmul_qk = tf.matmul(q, k, transpose_b=True)
-        dk = tf.cast(tf.shape(k)[-1], self.model_dtype)
-        scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
-        attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
-        output = tf.matmul(attention_weights, v)
-    */
-
-    // shape(k)[-1] = depth
-    float factor = 1.0f / sqrt((float)depth);
-
-    // matmul_qk = tf.matmul(q, k, transpose_b=True)
-    for (int i = 0; i < encoder_heads_; i++) {
-      int offset = i * depth;
-      // layout of the output: encoder_heads_ * Batch * 64 * 64
-      int outOffset = i * N * 64 * 64;
-      cublasXGemmStridedBatched<DataType>(
-          cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
-          depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
-                        // transform
-          factor,       // to handle "/ tf.math.sqrt(dk)"
-          mha_k + offset /*A*/,
-          d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
-                            // other "depth" slices / heads
-          64 * d_model,     /*strideA*/
-          mha_q + offset /*B*/,
-          d_model /*LDB*/,  // to skip over other other "depth" slices / heads
-          64 * d_model,     /*strideB*/
-          0.0f,
-          scratch2 + outOffset /*C*/,  // output (matmul_qk) goes to scratch2
-          64 /*LDC*/, 64 * 64 /*strideC*/, N);
-    }
-
-    // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
-    // attention_weights -> scratch2
-    Softmax(encoder_heads_ * N * 64, 64, scratch2, scratch2, stream);
-
-    // output = tf.matmul(attention_weights, v)
-    for (int i = 0; i < encoder_heads_; i++) {
-      int offset = i * depth;  // for output and "v" matrix
-      // layout: encoder_heads_ * Batch*64*64
-      int weightsOffset = i * N * 64 * 64;
-      cublasXGemmStridedBatched<DataType>(
-          cublas, CUBLAS_OP_N, CUBLAS_OP_N, depth /*M*/, 64 /*N*/, 64 /*K*/,
-          1.0f, mha_v + offset /*A*/,  // "v" matrix
-          d_model /*LDA*/,  // to skip over other "depth" slices / heads
-          64 * d_model,     /*strideA*/
-          scratch2 + weightsOffset /*B*/, 64 /*LDB*/, 64 * 64, /*strideB*/
-          0.0f, scratch3 + offset /*C*/,  // output goes to scratch3
-          d_model /*LDC*/, 64 * d_model /*strideC*/, N);
-    }
-
-    // #final dense layer (mha_dense), scratch3 -> scratch2
-    {
-      const int num_inputs = d_model;
-      const int num_outputs = embedding_op_size_;
-      const int batch = N * 64;
-      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                  num_inputs, 1.0f, (const DataType*)enc.mha_dense_w,
-                  num_inputs, scratch3, num_inputs, 0.0f, scratch2,
-                  num_outputs);
-    }
-
-    // LN1: skip connection and layer normalization (also bias add of prev gemm)
-    // scratch2/scratch1 -> scratch0
-    LayerNorm<DataType>(N * 64, embedding_op_size_, scratch0, scratch2,
-                        enc.mha_dense_b, scratch1, enc.ln1_gammas,
-                        enc.ln1_betas, 1e-6, stream);
-
-    // #FFN dense 1, scratch0 -> scratch1
-    const int encoder_dff = enc.ffn_dense1_size_;
-    {
-      const int num_inputs = embedding_op_size_;
-      const int num_outputs = encoder_dff;
-      const int batch = N * 64;
-      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                  num_inputs, 1.0f, (const DataType*)enc.ffn_dense1_w,
-                  num_inputs, scratch0, num_inputs, 0.0f, scratch1,
-                  num_outputs);
-      addBiasBatched(scratch1, scratch1, enc.ffn_dense1_b, 1, batch,
-                     num_outputs, SELU, stream);
-    }
-
-    // #FFN dense 2, scratch1 -> scratch2
-    {
-      const int num_inputs = encoder_dff;
-      const int num_outputs = embedding_op_size_;
-      const int batch = N * 64;
-      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                  num_inputs, 1.0f, (const DataType*)enc.ffn_dense2_w,
-                  num_inputs, scratch1, num_inputs, 0.0f, scratch2,
-                  num_outputs);
-    }
-
-    // LN2: skip connection and layer normilization (also bias add of prev gemm)
-    // scratch2/scratch0 -> scratch1
-    LayerNorm<DataType>(N * 64, embedding_op_size_, scratch1, scratch2,
-                        enc.ffn_dense2_b, scratch0, enc.ln2_gammas,
-                        enc.ln2_betas, 1e-6, stream);
-
+    pEnc->Eval(N, input2_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
+               stream, offset_pointers);
   }  // End of encoder blocks
 
   DataType* wq;
@@ -1651,16 +1924,16 @@ void AttentionPolicyHead<DataType>::Eval(
     const int num_inputs = embedding_op_size_;
     const int num_outputs = policy_d_model_;
     const int batch = N * 64;
-    wq = scratch0;
+    wq = (DataType*)scratch;
     wk = wq + num_outputs * batch;
 
     cublasXGemmStridedBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
-        wqk_w_, num_inputs, num_inputs * num_outputs, scratch1, num_inputs, 0,
-        0.0f, wq, num_outputs, num_outputs * batch, 2);
+        wqk_w_, num_inputs, num_inputs * num_outputs, input2_tensor, num_inputs,
+        0, 0.0f, wq, num_outputs, num_outputs * batch, 2);
 
-    addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs, NONE,
-                             stream);
+    addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs,
+                             ACTIVATION_NONE, stream);
   }
 
   // dk = tf.math.sqrt(tf.cast(tf.shape(keys)[-1], self.model_dtype))
@@ -1706,7 +1979,7 @@ AttentionPolicyHead<DataType>::~AttentionPolicyHead() {
 }
 
 template <typename DataType>
-AttentionPolicyHead<DataType>::EncoderWeights::~EncoderWeights() {
+EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(mha_q_w));
   ReportCUDAErrors(cudaFree(mha_q_b));
   ReportCUDAErrors(cudaFree(mha_k_w));
@@ -1725,6 +1998,400 @@ AttentionPolicyHead<DataType>::EncoderWeights::~EncoderWeights() {
   ReportCUDAErrors(cudaFree(ffn_dense2_b));
   ReportCUDAErrors(cudaFree(ln2_gammas));
   ReportCUDAErrors(cudaFree(ln2_betas));
+  if (has_smolgen_) {
+    ReportCUDAErrors(cudaFree(smol_compress));
+    ReportCUDAErrors(cudaFree(smol_dense1_w));
+    ReportCUDAErrors(cudaFree(smol_dense1_b));
+    ReportCUDAErrors(cudaFree(smol_dense2_w));
+    ReportCUDAErrors(cudaFree(smol_dense2_b));
+    ReportCUDAErrors(cudaFree(smol_ln1_gammas));
+    ReportCUDAErrors(cudaFree(smol_ln1_betas));
+    ReportCUDAErrors(cudaFree(smol_ln2_gammas));
+    ReportCUDAErrors(cudaFree(smol_ln2_betas));
+  }
+}
+
+template <typename DataType>
+EmbeddingLayer<DataType>::EmbeddingLayer(BaseLayer<DataType>* ip,
+                                         const std::vector<float>& weights,
+                                         const std::vector<float>& biases,
+                                         void* scratch, ActivationFunction act)
+    : BaseLayer<DataType>(biases.size(), 8, 8, ip), act_(act) {
+  allocAndUpload<DataType>(&weights_, weights, scratch);
+  allocAndUpload<DataType>(&biases_, biases, scratch);
+}
+
+template <typename DataType>
+EmbeddingLayer<DataType>::~EmbeddingLayer() {
+  ReportCUDAErrors(cudaFree(weights_));
+  ReportCUDAErrors(cudaFree(biases_));
+}
+
+template <typename DataType>
+void EmbeddingLayer<DataType>::Eval(
+    int N, DataType* output, const DataType* input, const DataType* /*input2*/,
+    void* /*scratch*/, size_t /*scratch_size*/, cudnnHandle_t /*cudnn*/,
+    cublasHandle_t cublas, cudaStream_t stream, DataType***) {
+  const int num_outputs = this->GetC();
+  const int num_inputs = this->input_->GetC();
+  const int batch = N * 64;
+  cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                        num_inputs, 1.0f, weights_, num_inputs, input,
+                        num_inputs, 0.0f, output, num_outputs);
+  addBiasBatched(output, output, biases_, 1, batch, num_outputs, act_, stream);
+}
+
+template <typename DataType>
+AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
+                                       void* scratch, Activations activations,
+                                       int num_res_blocks, int input_c,
+                                       int max_batch_size,
+                                       bool is_pe_dense_embedding)
+    : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr),
+      embedding_op_size_(weights.ip_emb_b.size()),
+      encoder_head_count_(weights.encoder_head_count),
+      activations_(activations),
+      num_resi_blocks_(num_res_blocks),
+      input_c_(input_c),
+      has_gating_(weights.ip_mult_gate.size() > 0 &&
+                  weights.ip_add_gate.size() > 0),
+      has_smolgen_(weights.has_smolgen),
+      is_pe_dense_embedding_(is_pe_dense_embedding) {
+  allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
+  allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
+
+  if (is_pe_dense_embedding_) {
+    allocAndUpload<DataType>(&ip_emb_pre_w_, weights.ip_emb_preproc_w, scratch);
+    allocAndUpload<DataType>(&ip_emb_pre_b_, weights.ip_emb_preproc_b, scratch);
+
+    allocAndUpload<DataType>(&ip_emb_ln_g_, weights.ip_emb_ln_gammas, scratch);
+    allocAndUpload<DataType>(&ip_emb_ln_b_, weights.ip_emb_ln_betas, scratch);
+
+    allocAndUpload<DataType>(&ip_emb_ffn_d1_w_, weights.ip_emb_ffn.dense1_w,
+                             scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_d1_b_, weights.ip_emb_ffn.dense1_b,
+                             scratch);
+
+    allocAndUpload<DataType>(&ip_emb_ffn_d2_w_, weights.ip_emb_ffn.dense2_w,
+                             scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_d2_b_, weights.ip_emb_ffn.dense2_b,
+                             scratch);
+
+    allocAndUpload<DataType>(&ip_emb_ffn_ln_g_, weights.ip_emb_ffn_ln_gammas,
+                             scratch);
+    allocAndUpload<DataType>(&ip_emb_ffn_ln_b_, weights.ip_emb_ffn_ln_betas,
+                             scratch);
+
+    // 12 is the number of input channels used for the input encoding.
+    embedding_dense_size_ = weights.ip_emb_preproc_b.size() / 64;
+    embedding_ffn_size_ = weights.ip_emb_ffn.dense2_b.size();
+    embedding_ffn_dff_ = weights.ip_emb_ffn.dense1_b.size();
+  } else {
+    size_t size = 64 * kNumPosEncodingChannels * sizeof(float);
+    ReportCUDAErrors(cudaMalloc(&pos_encoding_, size));
+    ReportCUDAErrors(
+        cudaMemcpy(scratch, kPosEncoding, size, cudaMemcpyHostToDevice));
+    copyTypeConverted(pos_encoding_, (float*)scratch, size, 0);
+  }
+
+  if (has_gating_) {
+    allocAndUpload<DataType>(&ip_mult_gate_, weights.ip_mult_gate, scratch);
+    allocAndUpload<DataType>(&ip_add_gate_, weights.ip_add_gate, scratch);
+  }
+
+  if (has_smolgen_) {
+    allocAndUpload<DataType>(&smolgen_global_, weights.smolgen_w, scratch);
+    smolgen_global_size_ = 64 * 64;
+  }
+
+  int num_encoders = weights.encoder.size();
+  float alpha = (float)pow(2.0 * num_encoders, -0.25);
+  for (const auto& enc : weights.encoder) {
+    EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
+        enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
+        smolgen_global_, smolgen_global_size_, max_batch_size,
+        activations_.smolgen_activation, activations_.ffn_activation,
+        is_pe_dense_embedding_ ? 1e-3 : 1e-6);
+    encoder_weights_.emplace_back(pW);
+  }
+}
+
+template <typename DataType>
+AttentionBody<DataType>::~AttentionBody() {
+  ReportCUDAErrors(cudaFree(ip_emb_w_));
+  ReportCUDAErrors(cudaFree(ip_emb_b_));
+  if (is_pe_dense_embedding_) {
+    ReportCUDAErrors(cudaFree(ip_emb_pre_w_));
+    ReportCUDAErrors(cudaFree(ip_emb_pre_b_));
+    ReportCUDAErrors(cudaFree(ip_emb_ln_g_));
+    ReportCUDAErrors(cudaFree(ip_emb_ln_b_));
+    ReportCUDAErrors(cudaFree(ip_emb_ffn_d1_w_));
+    ReportCUDAErrors(cudaFree(ip_emb_ffn_d1_b_));
+    ReportCUDAErrors(cudaFree(ip_emb_ffn_d2_w_));
+    ReportCUDAErrors(cudaFree(ip_emb_ffn_d2_b_));
+    ReportCUDAErrors(cudaFree(ip_emb_ffn_ln_g_));
+    ReportCUDAErrors(cudaFree(ip_emb_ffn_ln_b_));
+  } else {
+    ReportCUDAErrors(cudaFree(pos_encoding_));
+  }
+  if (has_gating_) {
+    ReportCUDAErrors(cudaFree(ip_mult_gate_));
+    ReportCUDAErrors(cudaFree(ip_add_gate_));
+  }
+  if (has_smolgen_) {
+    ReportCUDAErrors(cudaFree(smolgen_global_));
+  }
+  for (const auto pEnc : encoder_weights_) delete pEnc;
+}
+
+template <typename DataType>
+void AttentionBody<DataType>::Eval(int N, DataType* output,
+                                   const DataType* input,
+                                   const DataType* input2, void* scratch,
+                                   size_t scratch_size, cudnnHandle_t /*cudnn*/,
+                                   cublasHandle_t cublas, cudaStream_t stream,
+                                   DataType*** offset_pointers) {
+  DataType* output_tensor = (DataType*)output;
+  DataType* buffer1 = (DataType*)input2;
+  DataType* buffer2 = buffer1 + scratch_size / (2 * sizeof(DataType));
+
+  int inputC = input_c_;
+  if (num_resi_blocks_ == 0) {
+    assert(inputC == kInputPlanes);
+    /*
+      # if there are no residual blocks (pure transformer), do some input
+      processing
+    */
+    if (is_pe_dense_embedding_) {
+      // New encoding is made of dense layer fed with input from a 12-channel
+      // slice of the input tensor.
+      // pos_info = flow[..., :12]
+      // pos_info_flat = tf.reshape(pos_info, [-1, 64 * 12])
+      // pos_info_processed = tf.keras.layers.Dense(64*self.embedding_dense_sz,
+      //                                            name=name+"embedding/preprocess")(pos_info_flat)
+      const int num_outputs = 64 * embedding_dense_size_;
+      const int num_inputs = 64 * 12;
+      const int batch = N;
+
+      convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, 12, 8, 8);
+      cublasXgemm<DataType>(
+          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
+          1.0f, (const DataType*)ip_emb_pre_w_, num_inputs,
+          (const DataType*)scratch, num_inputs, 0.0f, buffer1, num_outputs);
+
+      // addBiasBatched(buffer1, buffer1, ip_emb_pre_b_, batch, N, num_outputs,
+      //               ACTIVATION_NONE, stream);
+      const int size = num_outputs * N;
+      // @todo addBiasBatched has a 4096 channel limit, needs refactoring.
+      addVectors(buffer1, buffer1, ip_emb_pre_b_, size, size, num_outputs,
+                 ACTIVATION_NONE, stream);
+      inputPreprocessForAttentionBody((DataType*)scratch, input, buffer1, N,
+                                      kInputPlanes, embedding_dense_size_, true,
+                                      stream);
+      inputC += embedding_dense_size_;
+    } else {
+      /*
+      flow = tf.transpose(inputs, perm=[0, 2, 3, 1])
+      flow = tf.reshape(flow, [-1, 64, tf.shape(inputs)[1]])
+      # add positional encoding for each square to the input
+      positional_encoding = tf.broadcast_to(tf.convert_to_tensor(self.POS_ENC,
+      dtype=self.model_dtype), [tf.shape(flow)[0], 64,
+      tf.shape(self.POS_ENC)[2]]) flow = tf.concat([flow, positional_encoding],
+      axis=2)
+      */
+      inputPreprocessForAttentionBody((DataType*)scratch, input, pos_encoding_,
+                                      N, kInputPlanes, kNumPosEncodingChannels,
+                                      false, stream);
+      inputC += kNumPosEncodingChannels;
+    }
+  } else {
+    // #redirect flow through encoder blocks
+    // flow = tf.transpose(flow, perm = [ 0, 2, 3, 1 ])
+    // flow = tf.reshape(flow, [ -1, 64, self.RESIDUAL_FILTERS ])
+    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8);
+  }
+
+  if (is_pe_dense_embedding_) {
+    // 1. square embedding (fully connected layer)
+    // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
+    DataType* embedding = output_tensor;
+    DataType* temp = (DataType*)scratch;
+    {
+      const int num_outputs = embedding_op_size_;
+      const int num_inputs = inputC;
+      const int batch = N * 64;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f, (const DataType*)ip_emb_w_,
+                            num_inputs, temp, num_inputs, 0.0f, embedding,
+                            num_outputs);
+      // embedding layer norm with fused in bias add of previous gemm.
+      LayerNorm<DataType>(N * 64, embedding_op_size_, temp, embedding,
+                          ip_emb_b_, (DataType*)nullptr, ip_emb_ln_g_,
+                          ip_emb_ln_b_, 1e-3, 1.0,
+                          activations_.default_activation, stream);
+    }
+
+    // Input gating
+    if (has_gating_) {
+      applyInputGating<DataType>(temp, temp, ip_mult_gate_, ip_add_gate_, N, 64,
+                                 embedding_op_size_, stream);
+    }
+
+    // embedding FFN dense 1
+    {
+      const int num_inputs = embedding_ffn_size_;
+      const int num_outputs = embedding_ffn_dff_;  // encoder_dff
+      const int batch = N * 64;
+      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d1_w_,
+                  num_inputs, temp, num_inputs, 0.0f, buffer1, num_outputs);
+      addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch, num_outputs,
+                     activations_.ffn_activation, stream);
+    }
+
+    // embedding FFN dense 2
+    {
+      const int num_inputs = embedding_ffn_dff_;  // encoder_dff
+      const int num_outputs = embedding_ffn_size_;
+      const int batch = N * 64;
+      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d2_w_,
+                  num_inputs, buffer1, num_inputs, 0.0f, buffer2, num_outputs);
+      // Embedding LN: skip connection and layer normilization (also bias add of
+      // prev gemm) buffer2 -> embedding
+      float alpha = (float)pow(2. * encoder_weights_.size(), -0.25);
+      LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
+                          ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_,
+                          ip_emb_ffn_ln_b_, 1e-3, alpha, ACTIVATION_NONE,
+                          stream);
+    }
+
+  } else {
+    // 1. square embedding (fully connected layer)
+    // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
+    DataType* embedding = output_tensor;
+    {
+      const int num_outputs = embedding_op_size_;
+      const int num_inputs = inputC;
+      const int batch = N * 64;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f, (const DataType*)ip_emb_w_,
+                            num_inputs, (DataType*)scratch, num_inputs, 0.0f,
+                            embedding, num_outputs);
+      addBiasBatched(embedding, embedding, ip_emb_b_, 1, batch, num_outputs,
+                     activations_.default_activation, stream);
+    }
+    // Input gating
+    if (has_gating_) {
+      applyInputGating<DataType>(embedding, embedding, ip_mult_gate_,
+                                 ip_add_gate_, N, 64, embedding_op_size_,
+                                 stream);
+    }
+  }
+
+  // 2. Encoder blocks
+  for (const auto pEnc : encoder_weights_) {
+    pEnc->Eval(N, output_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
+               stream, offset_pointers);
+  }  // End of encoder blocks
+}
+
+template <typename DataType>
+ValueHead<DataType>::ValueHead(BaseLayer<DataType>* ip,
+                               const MultiHeadWeights::ValueHead& weights,
+                               void* scratch, bool attention_body, bool wdl,
+                               ActivationFunction act, int /*max_batch_size*/,
+                               bool use_gemm_ex)
+    : BaseLayer<DataType>(weights.ip_val_b.size(), 8, 8, ip),
+      embedding_size_(attention_body ? weights.ip_val_b.size()
+                                     : weights.value.biases.size()),
+      value_hidden_size_(weights.ip1_val_b.size()),
+      wdl_(wdl),
+      attention_body_(attention_body),
+      act_(act) {
+  if (attention_body_) {
+    allocAndUpload<DataType>(&ip_val_w_, weights.ip_val_w, scratch);
+    allocAndUpload<DataType>(&ip_val_b_, weights.ip_val_b, scratch);
+  } else {
+    conv_ = std::make_unique<Conv1Layer<DataType>>(
+        ip, weights.value.biases.size(), 8, 8, ip->GetC(), act, true,
+        use_gemm_ex);
+    conv_->LoadWeights((float*)&weights.value.weights[0],
+                       (float*)&weights.value.biases[0], scratch);
+  }
+
+  allocAndUpload<DataType>(&ip1_val_w_, weights.ip1_val_w, scratch);
+  allocAndUpload<DataType>(&ip1_val_b_, weights.ip1_val_b, scratch);
+
+  allocAndUpload<DataType>(&ip2_val_w_, weights.ip2_val_w, scratch);
+  allocAndUpload<DataType>(&ip2_val_b_, weights.ip2_val_b, scratch);
+}
+
+template <typename DataType>
+ValueHead<DataType>::~ValueHead() {
+  if (attention_body_) {
+    ReportCUDAErrors(cudaFree(ip_val_w_));
+    ReportCUDAErrors(cudaFree(ip_val_b_));
+  }
+  ReportCUDAErrors(cudaFree(ip1_val_w_));
+  ReportCUDAErrors(cudaFree(ip1_val_b_));
+  ReportCUDAErrors(cudaFree(ip2_val_w_));
+  ReportCUDAErrors(cudaFree(ip2_val_b_));
+}
+
+template <typename DataType>
+void ValueHead<DataType>::Eval(int N, DataType* output, const DataType* input,
+                               const DataType* input2, void* scratch,
+                               size_t scratch_size, cudnnHandle_t /*cudnn*/,
+                               cublasHandle_t cublas, cudaStream_t stream,
+                               DataType***) {
+  DataType* buffer = (DataType*)input2;
+  {
+    const int num_inputs = this->input_->GetC();
+    const int num_outputs = embedding_size_;
+    const int batch = N * 64;
+    if (attention_body_) {
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f, (const DataType*)ip_val_w_,
+                            num_inputs, input, num_inputs, 0.0f, buffer,
+                            num_outputs);
+      addBiasBatched<DataType>(buffer, buffer, ip_val_b_, 1, batch, num_outputs,
+                               act_, stream);
+
+    } else {
+      conv_->Eval(N, buffer, input, nullptr, scratch, scratch_size, nullptr,
+                  cublas, stream);
+    }
+  }
+
+  {
+    // Value dense 1
+    const int num_inputs = embedding_size_ * 64;
+    const int num_outputs = value_hidden_size_;
+    const int batch = N;
+    DataType* layer_out = (DataType*)scratch;
+    cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                          num_inputs, 1.0f, (const DataType*)ip1_val_w_,
+                          num_inputs, buffer, num_inputs, 0.0f, layer_out,
+                          num_outputs);
+    addBiasBatched<DataType>(layer_out, layer_out, ip1_val_b_, 1, batch,
+                             num_outputs, act_, stream);
+  }
+
+  {
+    // Value dense 2
+    const int num_inputs = value_hidden_size_;
+    const int num_outputs = wdl_ ? 3 : 1;
+    const int batch = N;
+    DataType* layer_out = (DataType*)output;
+    cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                          num_inputs, 1.0f, (const DataType*)ip2_val_w_,
+                          num_inputs, (DataType*)scratch, num_inputs, 0.0f,
+                          layer_out, num_outputs);
+    addVectors(layer_out, layer_out, ip2_val_b_, num_outputs * batch,
+               num_outputs * batch, num_outputs,
+               wdl_ ? ACTIVATION_NONE : ACTIVATION_TANH, stream);
+  }
 }
 
 // Template instantiation.
@@ -1753,6 +2420,18 @@ template class ResidualBlock<float>;
 
 template class AttentionPolicyHead<half>;
 template class AttentionPolicyHead<float>;
+
+template class EncoderBlock<half>;
+template class EncoderBlock<float>;
+
+template class AttentionBody<half>;
+template class AttentionBody<float>;
+
+template class EmbeddingLayer<half>;
+template class EmbeddingLayer<float>;
+
+template class ValueHead<half>;
+template class ValueHead<float>;
 
 // Misc error handling stuff.
 #ifdef USE_CUDNN

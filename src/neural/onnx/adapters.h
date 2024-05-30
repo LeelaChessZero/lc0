@@ -49,9 +49,46 @@ class FloatOnnxWeightsAdapter : public OnnxConst {
   std::vector<int> GetDimensions() const override;
   std::string GetRawData() const override;
 
+ protected:
   const std::vector<float>& weights_;
   std::vector<int> dims_;
   std::vector<int> order_;
+};
+
+class Float16OnnxWeightsAdapter : public FloatOnnxWeightsAdapter {
+ public:
+  Float16OnnxWeightsAdapter(const std::vector<float>& weights,
+                            std::initializer_list<int> dims,
+                            std::initializer_list<int> order = {})
+      : FloatOnnxWeightsAdapter(weights, dims, order) {}
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override;
+  std::string GetRawData() const override;
+};
+
+class BFloat16OnnxWeightsAdapter : public FloatOnnxWeightsAdapter {
+ public:
+  BFloat16OnnxWeightsAdapter(const std::vector<float>& weights,
+                             std::initializer_list<int> dims,
+                             std::initializer_list<int> order = {})
+      : FloatOnnxWeightsAdapter(weights, dims, order) {}
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override;
+  std::string GetRawData() const override;
+};
+
+class Float8E5M2OnnxWeightsAdapter : public FloatOnnxWeightsAdapter {
+ public:
+  Float8E5M2OnnxWeightsAdapter(const std::vector<float>& weights,
+                               std::initializer_list<int> dims,
+                               std::initializer_list<int> order = {})
+      : FloatOnnxWeightsAdapter(weights, dims, order) {}
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override;
+  std::string GetRawData() const override;
 };
 
 // GenericOnnxConst takes inline constant (usually short and known at compile
@@ -92,6 +129,50 @@ class Int64OnnxConst : public GenericOnnxConst<int64_t> {
  private:
   pblczero::TensorProto::DataType GetDataType() const override {
     return pblczero::TensorProto::INT64;
+  }
+};
+
+// GenericOnnxConst for float values.
+class FloatOnnxConst : public GenericOnnxConst<float> {
+ public:
+  using GenericOnnxConst<float>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::FLOAT;
+  }
+};
+
+// GenericOnnxConst for Ort::Float16_t values.
+class Float16OnnxConst : public GenericOnnxConst<uint16_t> {
+ public:
+  using GenericOnnxConst<uint16_t>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::FLOAT16;
+  }
+};
+
+// GenericOnnxConst for Ort::BFloat16_t values.
+class BFloat16OnnxConst : public GenericOnnxConst<uint16_t> {
+ public:
+  using GenericOnnxConst<uint16_t>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::BFLOAT16;
+  }
+};
+
+// GenericOnnxConst for Ort::BFloat16_t values.
+class Float8E5M2OnnxConst : public GenericOnnxConst<uint8_t> {
+ public:
+  using GenericOnnxConst<uint8_t>::GenericOnnxConst;
+
+ private:
+  pblczero::TensorProto::DataType GetDataType() const override {
+    return pblczero::TensorProto::FLOAT8E5M2;
   }
 };
 

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -84,6 +84,7 @@ class NetworkComputation {
 
 struct NetworkCapabilities {
   pblczero::NetworkFormat::InputFormat input_format;
+  pblczero::NetworkFormat::OutputFormat output_format;
   pblczero::NetworkFormat::MovesLeftFormat moves_left;
   // TODO expose information of whether GetDVal() is usable or always zero.
 
@@ -95,11 +96,20 @@ struct NetworkCapabilities {
                       std::to_string(input_format) + " vs " +
                       std::to_string(other.input_format));
     }
+    if (output_format != other.output_format) {
+      throw Exception("Incompatible output formats, " +
+                      std::to_string(output_format) + " vs " +
+                      std::to_string(other.output_format));
+    }
+    if (!other.has_mlh()) moves_left = pblczero::NetworkFormat::MOVES_LEFT_NONE;
   }
 
   bool has_mlh() const {
-    return moves_left !=
-           pblczero::NetworkFormat::MovesLeftFormat::MOVES_LEFT_NONE;
+    return moves_left != pblczero::NetworkFormat::MOVES_LEFT_NONE;
+  }
+
+  bool has_wdl() const {
+    return output_format != pblczero::NetworkFormat::OUTPUT_WDL;
   }
 };
 
@@ -107,6 +117,10 @@ class Network {
  public:
   virtual const NetworkCapabilities& GetCapabilities() const = 0;
   virtual std::unique_ptr<NetworkComputation> NewComputation() = 0;
+  virtual int GetThreads() const { return 1; }
+  virtual void InitThread(int /*id*/) {}
+  virtual bool IsCpu() const { return false; }
+  virtual int GetMiniBatchSize() const { return 256; }
   virtual ~Network() = default;
 };
 

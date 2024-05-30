@@ -30,7 +30,11 @@ set CXX=cl
 set CC_LD=link
 set CXX_LD=link
 
-if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019" (
+if exist "C:\Program Files\Microsoft Visual Studio\2022" (
+  where /q cl
+  if errorlevel 1 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+  set backend=vs2022
+) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019" (
   where /q cl
   if errorlevel 1 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
   set backend=vs2019
@@ -53,7 +57,7 @@ if "%CUDA_PATH%"=="%CUDNN_PATH%" (
 
 if %CUDNN%==true set PATH=%CUDA_PATH%\bin;%PATH%
 
-meson build --backend %backend% --buildtype release -Ddx=%DX12% -Dcudnn=%CUDNN% -Dplain_cuda=%CUDA% ^
+meson setup build --backend %backend% --buildtype release -Ddx=%DX12% -Dcudnn=%CUDNN% -Dplain_cuda=%CUDA% ^
 -Dopencl=%OPENCL% -Dblas=%BLAS% -Dmkl=%MKL% -Dopenblas=%OPENBLAS% -Ddnnl=%DNNL% -Dgtest=%TEST% ^
 -Dcudnn_include="%CUDNN_INCLUDE_PATH%" -Dcudnn_libdirs="%CUDNN_LIB_PATH%" ^
 -Dmkl_include="%MKL_PATH%\include" -Dmkl_libdirs="%MKL_PATH%\lib\intel64" -Ddnnl_dir="%DNNL_PATH%" ^

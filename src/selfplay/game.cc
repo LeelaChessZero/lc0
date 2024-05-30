@@ -31,6 +31,7 @@
 
 #include "mcts/stoppers/common.h"
 #include "mcts/stoppers/factory.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -60,6 +61,10 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kOpeningStopProbId{
+    "opening-stop-prob", "OpeningStopProb",
+    "From each opening move, start a self-play game with probability max(p, "
+    "1/n), where p is the value given and n the opening moves remaining."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -71,6 +76,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   PopulateTimeManagementOptions(RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -91,10 +97,34 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
     tree_[1] = std::make_shared<NodeTree>();
     tree_[1]->ResetToPosition(orig_fen_, {});
   }
+  int ply = 0;
+  auto white_prob = white.uci_options->Get<float>(kOpeningStopProbId);
+  auto black_prob = black.uci_options->Get<float>(kOpeningStopProbId);
+  if (white_prob != black_prob && white_prob != 0 && black_prob != 0) {
+    throw Exception("Stop probabilities must be both equal or zero!");
+  }
+
   for (Move m : opening.moves) {
+    // For early exit from the opening, we support two cases: a) where both
+    // sides have the same exit probability and b) where one side's exit
+    // probability is zero. In the following formula, `positions` is the number
+    // of possible exit points remaining, used for adjusting the exit
+    // probability (to avoid favoring the last position).
+    auto exit_prob_now = tree_[0]->IsBlackToMove() ? black_prob : white_prob;
+    auto exit_prob_next = tree_[0]->IsBlackToMove() ? white_prob : black_prob;
+    int positions = opening.moves.size() - ply + 1;
+    if (exit_prob_now > 0.0f &&
+        Random::Get().GetFloat(1.0f) <
+            std::max(exit_prob_now,
+                     exit_prob_now / (exit_prob_now * ((positions + 1) / 2) +
+                                      exit_prob_next * (positions / 2)))) {
+      break;
+    }
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
+    ply++;
   }
+  start_ply_ = ply;
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
@@ -103,7 +133,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
   // If we are training, verify that input formats are consistent.
   if (training && options_[0].network->GetCapabilities().input_format !=
-      options_[1].network->GetCapabilities().input_format) {
+                      options_[1].network->GetCapabilities().input_format) {
     throw Exception("Can't mix networks with different input format!");
   }
   // Take syzygy tablebases from player1 options.
@@ -151,9 +181,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       search_ = std::make_unique<Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
-          std::move(stoppers),
-          /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
-          syzygy_tb);
+          std::move(stoppers), /* infinite */ false, /* ponder */ false,
+          *options_[idx].uci_options, options_[idx].cache, syzygy_tb);
     }
 
     // Do search.
@@ -175,9 +204,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign &&
-        move_number >=
-            options_[idx].uci_options->Get<int>(kResignEarliestMoveId)) {
+    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
+                                            kResignEarliestMoveId)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {

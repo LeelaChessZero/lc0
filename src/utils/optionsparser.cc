@@ -80,6 +80,17 @@ void OptionsParser::HideOption(const OptionId& id) {
   if (option) option->hidden_ = true;
 }
 
+void OptionsParser::HideAllOptions() {
+  for (const auto& option : options_) {
+    option->hidden_ = true;
+  }
+}
+
+void OptionsParser::UnhideOption(const OptionId& id) {
+  const auto option = FindOptionById(id);
+  if (option) option->hidden_ = false;
+}
+
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
@@ -324,8 +335,12 @@ bool StringOption::ProcessShortFlagWithValue(char flag,
 }
 
 std::string StringOption::GetHelp(const OptionsDict& dict) const {
-  return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetHelpText(),
-                    GetUciOption(), GetVal(dict));
+  std::string long_flag = GetLongFlag();
+  if (!long_flag.empty()) {
+    long_flag += "=STRING";
+  }
+  return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
+                    GetVal(dict));
 }
 
 std::string StringOption::GetOptionString(const OptionsDict& dict) const {
@@ -575,6 +590,34 @@ void BoolOption::ValidateBoolString(const std::string& val) {
         << "'true' or 'false'.";
     throw Exception(buf.str());
   }
+}
+
+/////////////////////////////////////////////////////////////////
+// ButtonOption
+/////////////////////////////////////////////////////////////////
+
+ButtonOption::ButtonOption(const OptionId& id) : Option(id) {}
+
+void ButtonOption::SetValue(const std::string& /*value*/, OptionsDict* dict) {
+  dict->Set<ValueType>(GetId(), true);
+}
+
+bool ButtonOption::ProcessLongFlag(const std::string& /*flag*/,
+                                   const std::string& /*value*/,
+                                   OptionsDict* /*dict*/) {
+  return false;
+}
+
+bool ButtonOption::ProcessShortFlag(char /*flag*/, OptionsDict* /*dict*/) {
+  return false;
+}
+
+std::string ButtonOption::GetHelp(const OptionsDict& /*dict*/) const {
+  return "";
+}
+
+std::string ButtonOption::GetOptionString(const OptionsDict& /*dict*/) const {
+  return "type button";
 }
 
 /////////////////////////////////////////////////////////////////

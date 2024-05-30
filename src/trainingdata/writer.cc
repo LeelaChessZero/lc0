@@ -33,7 +33,6 @@
 #include "utils/random.h"
 
 namespace lczero {
-
 namespace {
 std::string GetLc0CacheDirectory() {
   std::string user_cache_path = GetUserCacheDirectory();
@@ -57,6 +56,12 @@ TrainingDataWriter::TrainingDataWriter(int game_id) {
       << game_id << ".gz";
 
   filename_ = oss.str();
+  fout_ = gzopen(filename_.c_str(), "wb");
+  if (!fout_) throw Exception("Cannot create gzip file " + filename_);
+}
+
+TrainingDataWriter::TrainingDataWriter(std::string filename)
+    : filename_(filename) {
   fout_ = gzopen(filename_.c_str(), "wb");
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }
