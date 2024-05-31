@@ -52,7 +52,8 @@ class CachingComputation {
  public:
   CachingComputation(std::unique_ptr<NetworkComputation> parent,
                      pblczero::NetworkFormat::InputFormat input_format,
-                     lczero::FillEmptyHistory history_fill, NNCache* cache);
+                     lczero::FillEmptyHistory history_fill, float softmax_temp,
+                     NNCache* cache);
 
   // How many inputs are not found in cache and will be forwarded to a wrapped
   // computation.
@@ -73,7 +74,7 @@ class CachingComputation {
   // from parent's batch.
   void PopLastInputHit();
   // Do the computation.
-  void ComputeBlocking(float softmax_temp);
+  void ComputeBlocking();
   // Returns Q value of @sample.
   float GetQVal(int sample) const;
   // Returns probability of draw if NN has WDL value head.
@@ -101,6 +102,7 @@ class CachingComputation {
   std::unique_ptr<NetworkComputation> parent_;
   pblczero::NetworkFormat::InputFormat input_format_;
   lczero::FillEmptyHistory history_fill_;
+  float softmax_temp_;
   NNCache* cache_;
   std::vector<WorkItem> batch_;
 };

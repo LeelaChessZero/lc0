@@ -1260,7 +1260,8 @@ void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
   computation_ = std::make_unique<CachingComputation>(
       std::move(computation), search_->network_->GetCapabilities().input_format,
-      params_.GetHistoryFill(), search_->cache_);
+      params_.GetHistoryFill(), params_.GetPolicySoftmaxTemp(),
+      search_->cache_);
   computation_->Reserve(target_minibatch_size_);
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
@@ -2169,9 +2170,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() {
-  computation_->ComputeBlocking(params_.GetPolicySoftmaxTemp());
-}
+void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

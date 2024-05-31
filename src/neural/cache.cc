@@ -38,10 +38,11 @@ namespace lczero {
 CachingComputation::CachingComputation(
     std::unique_ptr<NetworkComputation> parent,
     pblczero::NetworkFormat::InputFormat input_format,
-    lczero::FillEmptyHistory history_fill, NNCache* cache)
+    lczero::FillEmptyHistory history_fill, float softmax_temp, NNCache* cache)
     : parent_(std::move(parent)),
       input_format_(input_format),
       history_fill_(history_fill),
+      softmax_temp_(softmax_temp),
       cache_(cache) {}
 
 int CachingComputation::GetCacheMisses() const {
@@ -96,7 +97,7 @@ void CachingComputation::PopLastInputHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::ComputeBlocking(float softmax_temp) {
+void CachingComputation::ComputeBlocking() {
   if (parent_->GetBatchSize() == 0) return;
   parent_->ComputeBlocking();
 
@@ -124,7 +125,7 @@ void CachingComputation::ComputeBlocking(float softmax_temp) {
     for (int i = 0; i < counter; i++) {
       // Perform softmax and take into account policy softmax temperature T.
       // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-      float p = FastExp((intermediate[i] - max_p) / softmax_temp);
+      float p = FastExp((intermediate[i] - max_p) / softmax_temp_);
       intermediate[i] = p;
       total += p;
     }
