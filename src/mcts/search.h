@@ -331,7 +331,6 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
-    int probability_transform = 0;
 
     // Details only populated in the multigather path.
 
@@ -341,8 +340,8 @@ class SearchWorker {
     // Details that are filled in as we go.
     uint64_t hash;
     NNCacheLock lock;
-    std::vector<uint16_t> probabilities_to_cache;
-    InputPlanes input_planes;
+    MoveList moves;
+    PositionHistory history;
     mutable int last_idx = 0;
     bool ooo_completed = false;
 

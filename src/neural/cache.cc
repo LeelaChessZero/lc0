@@ -30,13 +30,19 @@
 #include <cassert>
 #include <iostream>
 
+#include "neural/encoder.h"
 #include "utils/fastmath.h"
 #include "utils/pfloat16.h"
 
 namespace lczero {
 CachingComputation::CachingComputation(
-    std::unique_ptr<NetworkComputation> parent, NNCache* cache)
-    : parent_(std::move(parent)), cache_(cache) {}
+    std::unique_ptr<NetworkComputation> parent,
+    pblczero::NetworkFormat::InputFormat input_format,
+    lczero::FillEmptyHistory history_fill, NNCache* cache)
+    : parent_(std::move(parent)),
+      input_format_(input_format),
+      history_fill_(history_fill),
+      cache_(cache) {}
 
 int CachingComputation::GetCacheMisses() const {
   return parent_->GetBatchSize();
@@ -65,14 +71,22 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::AddInput(
-    uint64_t hash, InputPlanes&& input,
-    std::vector<uint16_t>&& probabilities_to_cache) {
+void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
+                                  MoveList&& moves) {
   if (AddInputByHash(hash)) return;
+
+  int transform;
+  auto input =
+      EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
+  std::vector<uint16_t> moves_as_nn_index;
+  moves_as_nn_index.reserve(moves.size());
+  for (auto iter = moves.begin(), end = moves.end(); iter != end; ++iter) {
+    moves_as_nn_index.emplace_back(iter->as_nn_index(transform));
+  }
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().probabilities_to_cache = probabilities_to_cache;
+  batch_.back().probabilities_to_cache = std::move(moves_as_nn_index);
   parent_->AddInput(std::move(input));
 }
 

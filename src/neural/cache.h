@@ -26,6 +26,7 @@
 */
 #pragma once
 
+#include "mcts/node.h"
 #include "neural/network.h"
 #include "utils/cache.h"
 #include "utils/smallarray.h"
@@ -50,7 +51,8 @@ typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
 class CachingComputation {
  public:
   CachingComputation(std::unique_ptr<NetworkComputation> parent,
-                     NNCache* cache);
+                     pblczero::NetworkFormat::InputFormat input_format,
+                     lczero::FillEmptyHistory history_fill, NNCache* cache);
 
   // How many inputs are not found in cache and will be forwarded to a wrapped
   // computation.
@@ -63,11 +65,10 @@ class CachingComputation {
   // Adds input by hash with existing lock. Assumes the given lock holds a real
   // reference.
   void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
-  // Adds a sample to the batch.
+  // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
-  // @probabilities_to_cache is which indices of policy head to store.
-  void AddInput(uint64_t hash, InputPlanes&& input,
-                std::vector<uint16_t>&& probabilities_to_cache);
+  void AddInput(uint64_t hash, const PositionHistory& history,
+                MoveList&& moves);
   // Undos last AddInput. If it was a cache miss, the it's actually not removed
   // from parent's batch.
   void PopLastInputHit();
@@ -98,6 +99,8 @@ class CachingComputation {
   };
 
   std::unique_ptr<NetworkComputation> parent_;
+  pblczero::NetworkFormat::InputFormat input_format_;
+  lczero::FillEmptyHistory history_fill_;
   NNCache* cache_;
   std::vector<WorkItem> batch_;
 };
