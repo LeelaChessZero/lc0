@@ -2020,32 +2020,32 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                                stream);
 
       // 2. perform int8 GEMM (scratch -> buffer1)
-      // cutlassMatrixMulBTransposed((const int8_t*)scratch, qkv_.weights_int8,
-      //                             (int32_t*)buffer1, batch, num_outputs,
-      //                             num_inputs, 3, 0, num_inputs * num_outputs,
-      //                             num_outputs * batch_to_use, 1.0f, 0.0f);
+      cutlassMatrixMulBTransposed((const int8_t*)scratch, qkv_.weights_int8,
+                                  (int8_t*)buffer1, batch, num_outputs,
+                                  num_inputs, 3, 0, num_inputs * num_outputs,
+                                  num_outputs * batch_to_use, qkv_.output_scaling_factor, 0.0f);
 
-      int ostride = num_outputs * batch_to_use;
-      cutlassMatrixMulBTransposed(
-          (const int8_t*)scratch, (const int8_t*)q_.weights_int8,
-          (int8_t*)buffer1, batch, num_outputs, num_inputs, 1, 0, 0, 0,
-          q_.output_scaling_factor, 0.0f);
+      // int ostride = num_outputs * batch_to_use;
+      // cutlassMatrixMulBTransposed(
+      //     (const int8_t*)scratch, (const int8_t*)q_.weights_int8,
+      //     (int8_t*)buffer1, batch, num_outputs, num_inputs, 1, 0, 0, 0,
+      //     q_.output_scaling_factor, 0.0f);
 
-      cutlassMatrixMulBTransposed(
-          (const int8_t*)scratch, (const int8_t*)k_.weights_int8,
-          (int8_t*)buffer1 + ostride, batch, num_outputs, num_inputs, 1, 0, 0,
-          0, k_.output_scaling_factor, 0.0f);
+      // cutlassMatrixMulBTransposed(
+      //     (const int8_t*)scratch, (const int8_t*)k_.weights_int8,
+      //     (int8_t*)buffer1 + ostride, batch, num_outputs, num_inputs, 1, 0, 0,
+      //     0, k_.output_scaling_factor, 0.0f);
 
-      cutlassMatrixMulBTransposed(
-          (const int8_t*)scratch, (const int8_t*)v_.weights_int8,
-          (int8_t*)buffer1 + 2 * ostride, batch, num_outputs, num_inputs, 1, 0,
-          0, 0, v_.output_scaling_factor, 0.0f);
+      // cutlassMatrixMulBTransposed(
+      //     (const int8_t*)scratch, (const int8_t*)v_.weights_int8,
+      //     (int8_t*)buffer1 + 2 * ostride, batch, num_outputs, num_inputs, 1, 0,
+      //     0, 0, v_.output_scaling_factor, 0.0f);
 
       // 3. Dequantize and bias add - mixed precision (buffer1 ->
       // scratch/mha_q/mha_k/mha_v)
       deQuantizeOutputMatrixBiasAdd(
           (half*)scratch, (int8_t*)buffer1, batch_to_use, num_outputs, 3,
-          qkv_.output_dequant_factors, 1.0f, (half*)mha_qkv_b, ACTIVATION_NONE,
+          nullptr, qkv_.output_dequant_factor, (half*)mha_qkv_b, ACTIVATION_NONE,
           1.0f, stream);
 
       // 3. Bias add - mixed precision (buffer1 -> mha_q)
