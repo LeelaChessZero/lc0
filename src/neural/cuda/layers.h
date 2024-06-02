@@ -389,6 +389,9 @@ class EncoderBlock {
   int blockIndex_;
   bool int8_inf_, is_quantized_;
   MatMulQuantizationData qkv_;
+  MatMulQuantizationData q_;
+  MatMulQuantizationData k_;
+  MatMulQuantizationData v_;
   MatMulQuantizationData mha_dense_;
   MatMulQuantizationData ffn1_;
   MatMulQuantizationData ffn2_;

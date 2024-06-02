@@ -1616,6 +1616,10 @@ static void LoadQKVQuantizationData(MatMulQuantizationData& data,
                                     cudaStream_t stream) {
   // Load weights for INT8 inference.
 
+  float avwfactor =
+      (q_weight_factors[0] + k_weight_factors[0] + v_weight_factors[0]) / 3;
+  float avofactor =
+      (q_output_factors[0] + k_output_factors[0] + v_output_factors[0]) / 3;
   if (input_factors.size() > 1) {
     // ReportCUDAErrors(cudaMemcpy(
     //     data.output_scaling_factors, input_factors.data(),
@@ -1645,6 +1649,12 @@ static void LoadQKVQuantizationData(MatMulQuantizationData& data,
                  output_len);
     fillGpuArray(data.output_dequant_factors + output_len * 2,
                  v_output_factors[0], output_len);
+
+    // Output scaling factor = input factor x weight factor.
+    data.output_scaling_factor = input_factors[0] * avwfactor / avofactor;
+
+    // Output scale.
+    data.output_dequant_factor = avofactor;
   }
 
   // Load QKV weights and run a GPU kernel to scale them.
@@ -1659,6 +1669,9 @@ static void LoadQKVQuantizationData(MatMulQuantizationData& data,
   quantizeActivationMatrix(data.weights_int8 + weights_len * 2,
                            qkv_weights + weights_len * 2, 1, weights_len,
                            v_weight_factors[0], stream);
+  // quantizeActivationMatrix(data.weights_int8, qkv_weights, 1, weights_len *
+  // 3,
+  //                          avwfactor, stream);
 
   // The original weights also need to be clipped for fp16 inference
   // q weights.
@@ -1793,6 +1806,15 @@ EncoderBlock<DataType>::EncoderBlock(
         cpu_weights.mha.q_s, cpu_weights.mha.k_s, cpu_weights.mha.v_s,
         cpu_weights.mha.s1, cpu_weights.mha.q_out_s, cpu_weights.mha.k_out_s,
         cpu_weights.mha.v_out_s, 0);
+    LoadQuantizationData(q_, (half*)mha_q_w, embedding_op_size_, mha_q_size_,
+                         cpu_weights.mha.q_s, cpu_weights.mha.s1,
+                         cpu_weights.mha.q_out_s, 0);
+    LoadQuantizationData(k_, (half*)mha_k_w, embedding_op_size_, mha_k_size_,
+                         cpu_weights.mha.k_s, cpu_weights.mha.s1,
+                         cpu_weights.mha.k_out_s, 0);
+    LoadQuantizationData(v_, (half*)mha_v_w, embedding_op_size_, mha_v_size_,
+                         cpu_weights.mha.v_s, cpu_weights.mha.s1,
+                         cpu_weights.mha.v_out_s, 0);
     LoadQuantizationData(mha_dense_, (half*)mha_dense_w, embedding_op_size_,
                          mha_dense_size_, cpu_weights.mha.dense_s,
                          cpu_weights.mha.s2, cpu_weights.mha.dense_out_s, 0);
@@ -1848,6 +1870,7 @@ static void cublasXGemmStridedBatched(
   const bool int8 = std::is_same<int8_t, DataType>::value;
   const bool fp16 = std::is_same<half, DataType>::value;
   const bool out_int32 = std::is_same<int32_t, OutDataType>::value;
+  const bool out_int8 = std::is_same<int8_t, OutDataType>::value;
   if (int8 && out_int32) {
     int32_t alpha_i = (int32_t)alpha;
     int32_t beta_i = (int32_t)beta;
@@ -1855,6 +1878,11 @@ static void cublasXGemmStridedBatched(
         handle, transa, transb, m, n, k, &alpha_i, A, CUDA_R_8I, lda, strideA,
         B, CUDA_R_8I, ldb, strideB, &beta_i, C, CUDA_R_32I, ldc, strideC,
         batchCount, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT));
+  } else if (int8 && out_int8) {
+    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+        handle, transa, transb, m, n, k, &alpha, A, CUDA_R_8I, lda, strideA, B,
+        CUDA_R_8I, ldb, strideB, &beta, C, CUDA_R_8I, ldc, strideC, batchCount,
+        CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT));
   } else if (fp16) {
     unsigned short alpha_h = FP32toFP16(alpha);
     unsigned short beta_h = FP32toFP16(beta);
@@ -1984,12 +2012,12 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     mha_k = mha_q + num_outputs * batch_to_use;
     mha_v = mha_k + num_outputs * batch_to_use;
 
-    if (false && is_quantized_ && int8_inf_) {
+    if (is_quantized_ && int8_inf_) {
       // 1. quantize the inputs (in_out_tensor -> scratch)
       // TODO: Fuse this step with layer-norm of previous block
       quantizeActivationMatrix((int8_t*)scratch, (const half*)in_out_tensor,
-                               batch, embedding_op_size_,
-                               qkv_.input_quantize_factor, stream);
+                               batch, num_inputs, qkv_.input_quantize_factor,
+                               stream);
 
       // 2. perform int8 GEMM (scratch -> buffer1)
       // cutlassMatrixMulBTransposed((const int8_t*)scratch, qkv_.weights_int8,
@@ -1997,17 +2025,28 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       //                             num_inputs, 3, 0, num_inputs * num_outputs,
       //                             num_outputs * batch_to_use, 1.0f, 0.0f);
 
-      cublasXGemmStridedBatched<int8_t, int32_t>(
-          cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-          num_inputs, 1.0f, qkv_.weights_int8, num_inputs, num_inputs *
-          num_outputs, (const int8_t*)scratch, num_inputs, 0, 0.0f,
-          (int32_t*)buffer1, num_outputs, num_outputs * batch_to_use, 3);
+      int ostride = num_outputs * batch_to_use;
+      cutlassMatrixMulBTransposed(
+          (const int8_t*)scratch, (const int8_t*)q_.weights_int8,
+          (int8_t*)buffer1, batch, num_outputs, num_inputs, 1, 0, 0, 0,
+          q_.output_scaling_factor, 0.0f);
 
-      // 3. Dequantize and bias add - mixed precision (buffer1 -> mha_q)
-      deQuantizeOutputMatrixBiasAdd((half*)mha_q, (int32_t*)buffer1, batch_to_use,
-                                    num_outputs, 3, qkv_.output_scaling_factors,
-                                    1.0f, (half*)mha_qkv_b, ACTIVATION_NONE, 1.0f,
-                                    stream);
+      cutlassMatrixMulBTransposed(
+          (const int8_t*)scratch, (const int8_t*)k_.weights_int8,
+          (int8_t*)buffer1 + ostride, batch, num_outputs, num_inputs, 1, 0, 0,
+          0, k_.output_scaling_factor, 0.0f);
+
+      cutlassMatrixMulBTransposed(
+          (const int8_t*)scratch, (const int8_t*)v_.weights_int8,
+          (int8_t*)buffer1 + 2 * ostride, batch, num_outputs, num_inputs, 1, 0,
+          0, 0, v_.output_scaling_factor, 0.0f);
+
+      // 3. Dequantize and bias add - mixed precision (buffer1 ->
+      // scratch/mha_q/mha_k/mha_v)
+      deQuantizeOutputMatrixBiasAdd(
+          (half*)scratch, (int8_t*)buffer1, batch_to_use, num_outputs, 3,
+          qkv_.output_dequant_factors, 1.0f, (half*)mha_qkv_b, ACTIVATION_NONE,
+          1.0f, stream);
 
       // 3. Bias add - mixed precision (buffer1 -> mha_q)
       // addBiasBatched<DataType, float>(mha_q, (float*)buffer1, mha_qkv_b, 3,
