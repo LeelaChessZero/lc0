@@ -61,7 +61,8 @@ class CachingComputation {
   // Total number of times AddInput/AddInputByHash were (successfully) called.
   int GetBatchSize() const;
   // Check if entry is in the cache.
-  bool CacheLookup(uint64_t hash, CachedNNRequest* entry = nullptr);
+  bool CacheLookup(uint64_t hash, const MoveList& moves = {},
+                   CachedNNRequest* entry = nullptr);
   // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
   void AddInput(uint64_t hash, const PositionHistory& history,
@@ -87,13 +88,6 @@ class CachingComputation {
   void Reserve(int batch_size) { batch_.reserve(batch_size); }
 
  private:
-  // Adds input by hash only. If that hash is not in cache, returns false
-  // and does nothing. Otherwise adds.
-  bool AddInputByHash(uint64_t hash);
-  // Adds input by hash with existing lock. Assumes the given lock holds a real
-  // reference.
-  void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
-
   struct WorkItem {
     uint64_t hash;
     NNCacheLock lock;

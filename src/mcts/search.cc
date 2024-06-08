@@ -1478,8 +1478,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.nn_queried = true;
         const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
         picked_node.hash = hash;
-        picked_node.is_cache_hit =
-            computation_->CacheLookup(hash, &picked_node.entry);
+        picked_node.is_cache_hit = computation_->CacheLookup(
+            hash, picked_node.moves, &picked_node.entry);
         picked_node.history = history;
       }
     }

@@ -51,20 +51,6 @@ int CachingComputation::GetCacheMisses() const {
 
 int CachingComputation::GetBatchSize() const { return batch_.size(); }
 
-bool CachingComputation::AddInputByHash(uint64_t hash) {
-  NNCacheLock lock(cache_, hash);
-  if (!lock) return false;
-  AddInputByHash(hash, std::move(lock));
-  return true;
-}
-
-void CachingComputation::AddInputByHash(uint64_t hash, NNCacheLock&& lock) {
-  assert(lock);
-  batch_.emplace_back();
-  batch_.back().lock = std::move(lock);
-  batch_.back().hash = hash;
-}
-
 void CachingComputation::PopCacheHit() {
   assert(!batch_.empty());
   assert(batch_.back().lock);
@@ -72,10 +58,12 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-bool CachingComputation::CacheLookup(uint64_t hash, CachedNNRequest* entry) {
+bool CachingComputation::CacheLookup(uint64_t hash, const MoveList& moves,
+                                     CachedNNRequest* entry) {
   NNCacheLock lock = NNCacheLock(cache_, hash);
   if (!lock) return false;
   if (entry != nullptr) {
+    if (moves.size() != lock->p.size()) return false;
     entry->q = lock->q;
     entry->d = lock->d;
     entry->m = lock->m;
@@ -88,7 +76,13 @@ bool CachingComputation::CacheLookup(uint64_t hash, CachedNNRequest* entry) {
 
 void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
                                   const MoveList& moves) {
-  if (AddInputByHash(hash)) return;
+  NNCacheLock lock(cache_, hash);
+  if (lock && moves.size() == lock->p.size()) {
+    batch_.emplace_back();
+    batch_.back().lock = std::move(lock);
+    batch_.back().hash = hash;
+    return;
+  }
 
   int transform;
   auto input =
@@ -175,13 +169,7 @@ float CachingComputation::GetMVal(int sample) const {
 uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) {
-    if (move_ct > static_cast<int>(item.probabilities_to_cache.size())) {
-      return 0;  // Hash collision.
-    }
     return item.probabilities_to_cache[move_ct];
-  }
-  if (static_cast<size_t>(move_ct) > item.lock->p.size()) {
-    return 0;  // Hash collision.
   }
   return item.lock->p[move_ct];
 }
