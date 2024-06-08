@@ -1471,7 +1471,15 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
+      // Initialize position sequence with pre-move position.
+      history.Trim(search_->played_history_.GetLength());
+      for (size_t i = 0; i < picked_node.moves_to_visit.size(); i++) {
+        history.Append(picked_node.moves_to_visit[i]);
+      }
+
+      picked_node.moves = history.Last().GetBoard().GenerateLegalMoves();
+
+      ExtendNode(node, picked_node.depth, history, picked_node.moves);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
         const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
@@ -1479,11 +1487,6 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.lock = NNCacheLock(search_->cache_, hash);
         picked_node.is_cache_hit = picked_node.lock;
         if (!picked_node.is_cache_hit) {
-          // Legal moves are known, use them.
-          picked_node.moves.reserve(node->GetNumEdges());
-          for (const auto& edge : node->Edges()) {
-            picked_node.moves.emplace_back(edge.GetMove());
-          }
           picked_node.history = history;
         }
       }
@@ -1931,19 +1934,11 @@ void SearchWorker::PickNodesToExtendTask(
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth,
-                              const std::vector<Move>& moves_to_node,
-                              PositionHistory* history) {
-  // Initialize position sequence with pre-move position.
-  history->Trim(search_->played_history_.GetLength());
-  for (size_t i = 0; i < moves_to_node.size(); i++) {
-    history->Append(moves_to_node[i]);
-  }
-
+                              const PositionHistory& history,
+                              const MoveList& legal_moves) {
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
-  const auto& board = history->Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-
+  const auto& board = history.Last().GetBoard();
   // Check whether it's a draw/lose by position. Importantly, we must check
   // these before doing the by-rule checks below.
   if (legal_moves.empty()) {
@@ -1964,12 +1959,12 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       return;
     }
 
-    if (history->Last().GetRule50Ply() >= 100) {
+    if (history.Last().GetRule50Ply() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
 
-    const auto repetitions = history->Last().GetRepetitions();
+    const auto repetitions = history.Last().GetRepetitions();
     // Mark two-fold repetitions as draws according to settings.
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     if (repetitions >= 2) {
@@ -1977,8 +1972,8 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       return;
     } else if (repetitions == 1 && depth - 1 >= 4 &&
                params_.GetTwoFoldDraws() &&
-               depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
-      const auto cycle_length = history->Last().GetPliesSincePrevRepetition();
+               depth - 1 >= history.Last().GetPliesSincePrevRepetition()) {
+      const auto cycle_length = history.Last().GetPliesSincePrevRepetition();
       // use plies since first repetition as moves left; exact if forced draw.
       node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
                          Node::Terminal::TwoFold);
@@ -1988,12 +1983,12 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
         board.castlings().no_legal_castle() &&
-        history->Last().GetRule50Ply() == 0 &&
+        history.Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       const WDLScore wdl =
-          search_->syzygy_tb_->probe_wdl(history->Last(), &state);
+          search_->syzygy_tb_->probe_wdl(history.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
