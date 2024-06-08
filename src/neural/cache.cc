@@ -38,11 +38,13 @@ namespace lczero {
 CachingComputation::CachingComputation(
     std::unique_ptr<NetworkComputation> parent,
     pblczero::NetworkFormat::InputFormat input_format,
-    lczero::FillEmptyHistory history_fill, float softmax_temp, NNCache* cache)
+    lczero::FillEmptyHistory history_fill, float softmax_temp,
+    int history_length, NNCache* cache)
     : parent_(std::move(parent)),
       input_format_(input_format),
       history_fill_(history_fill),
       softmax_temp_(softmax_temp),
+      history_length_(history_length),
       cache_(cache) {}
 
 int CachingComputation::GetCacheMisses() const {
@@ -58,9 +60,11 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-bool CachingComputation::CacheLookup(uint64_t hash, const MoveList& moves,
+bool CachingComputation::CacheLookup(const PositionHistory& history,
+                                     const MoveList& moves,
                                      CachedNNRequest* entry) {
-  NNCacheLock lock = NNCacheLock(cache_, hash);
+  const auto hash = history.HashLast(history_length_);
+  NNCacheLock lock(cache_, hash);
   if (!lock) return false;
   if (entry != nullptr) {
     if (moves.size() != lock->p.size()) return false;
@@ -74,8 +78,9 @@ bool CachingComputation::CacheLookup(uint64_t hash, const MoveList& moves,
   return true;
 }
 
-void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
+void CachingComputation::AddInput(const PositionHistory& history,
                                   const MoveList& moves) {
+  const auto hash = history.HashLast(history_length_);
   NNCacheLock lock(cache_, hash);
   if (lock && moves.size() == lock->p.size()) {
     batch_.emplace_back();

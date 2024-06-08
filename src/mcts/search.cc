@@ -1261,7 +1261,7 @@ void SearchWorker::InitializeIteration(
   computation_ = std::make_unique<CachingComputation>(
       std::move(computation), search_->network_->GetCapabilities().input_format,
       params_.GetHistoryFill(), params_.GetPolicySoftmaxTemp(),
-      search_->cache_);
+      params_.GetCacheHistoryLength() + 1, search_->cache_);
   computation_->Reserve(target_minibatch_size_);
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
@@ -1421,8 +1421,7 @@ void SearchWorker::GatherMinibatch() {
       // There are no OOO though.
       // Also terminals when OOO is disabled.
       if (!minibatch_[i].nn_queried) continue;
-      computation_->AddInput(minibatch_[i].hash, minibatch_[i].history,
-                             minibatch_[i].moves);
+      computation_->AddInput(minibatch_[i].history, minibatch_[i].moves);
     }
 
     // Check for stop at the end so we have at least one node.
@@ -1476,10 +1475,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       ExtendNode(node, picked_node.depth, history, picked_node.moves);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
-        picked_node.hash = hash;
         picked_node.is_cache_hit = computation_->CacheLookup(
-            hash, picked_node.moves, &picked_node.entry);
+            history, picked_node.moves, &picked_node.entry);
         picked_node.history = history;
       }
     }
@@ -2016,8 +2013,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node) {
-  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  if (computation_->CacheLookup(hash)) {
+  if (computation_->CacheLookup(history_)) {
     return true;
   }
   MoveList moves;
@@ -2033,7 +2029,7 @@ bool SearchWorker::AddNodeToComputation(Node* node) {
     moves = history_.Last().GetBoard().GenerateLegalMoves();
   }
 
-  computation_->AddInput(hash, history_, moves);
+  computation_->AddInput(history_, moves);
   return false;
 }
 

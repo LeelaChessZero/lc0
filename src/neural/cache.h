@@ -53,7 +53,7 @@ class CachingComputation {
   CachingComputation(std::unique_ptr<NetworkComputation> parent,
                      pblczero::NetworkFormat::InputFormat input_format,
                      lczero::FillEmptyHistory history_fill, float softmax_temp,
-                     NNCache* cache);
+                     int history_length, NNCache* cache);
 
   // How many inputs are not found in cache and will be forwarded to a wrapped
   // computation.
@@ -61,12 +61,11 @@ class CachingComputation {
   // Total number of times AddInput/AddInputByHash were (successfully) called.
   int GetBatchSize() const;
   // Check if entry is in the cache.
-  bool CacheLookup(uint64_t hash, const MoveList& moves = {},
+  bool CacheLookup(const PositionHistory& history, const MoveList& moves = {},
                    CachedNNRequest* entry = nullptr);
   // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
   // @hash is a hash to store/lookup it in the cache.
-  void AddInput(uint64_t hash, const PositionHistory& history,
-                const MoveList& moves);
+  void AddInput(const PositionHistory& history, const MoveList& moves);
   // Undos last AddInput. If it was a cache miss, the it's actually not removed
   // from parent's batch.
   void PopLastInputHit();
@@ -100,6 +99,7 @@ class CachingComputation {
   pblczero::NetworkFormat::InputFormat input_format_;
   lczero::FillEmptyHistory history_fill_;
   float softmax_temp_;
+  int history_length_;
   NNCache* cache_;
   std::vector<WorkItem> batch_;
 };

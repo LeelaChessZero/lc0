@@ -338,7 +338,6 @@ class SearchWorker {
     std::vector<Move> moves_to_visit;
 
     // Details that are filled in as we go.
-    uint64_t hash;
     CachedNNRequest entry;
     MoveList moves;
     PositionHistory history;
