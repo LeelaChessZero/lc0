@@ -72,8 +72,22 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
+bool CachingComputation::CacheLookup(uint64_t hash, CachedNNRequest* entry) {
+  NNCacheLock lock = NNCacheLock(cache_, hash);
+  if (!lock) return false;
+  if (entry != nullptr) {
+    entry->q = lock->q;
+    entry->d = lock->d;
+    entry->m = lock->m;
+    entry->p.clear();
+    entry->p.resize(lock->p.size());
+    for (size_t i = 0; i < lock->p.size(); i++) entry->p[i] = lock->p[i];
+  }
+  return true;
+}
+
 void CachingComputation::AddInput(uint64_t hash, const PositionHistory& history,
-                                  MoveList&& moves) {
+                                  const MoveList& moves) {
   if (AddInputByHash(hash)) return;
 
   int transform;
@@ -166,7 +180,7 @@ uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
     }
     return item.probabilities_to_cache[move_ct];
   }
-  if (move_ct > item.lock->p.size()) {
+  if (static_cast<size_t>(move_ct) > item.lock->p.size()) {
     return 0;  // Hash collision.
   }
   return item.lock->p[move_ct];

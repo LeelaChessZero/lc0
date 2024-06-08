@@ -1421,14 +1421,8 @@ void SearchWorker::GatherMinibatch() {
       // There are no OOO though.
       // Also terminals when OOO is disabled.
       if (!minibatch_[i].nn_queried) continue;
-      if (minibatch_[i].is_cache_hit) {
-        // Since minibatch_[i] holds cache lock, this is guaranteed to succeed.
-        computation_->AddInputByHash(minibatch_[i].hash,
-                                     std::move(minibatch_[i].lock));
-      } else {
-        computation_->AddInput(minibatch_[i].hash, minibatch_[i].history,
-                               std::move(minibatch_[i].moves));
-      }
+      computation_->AddInput(minibatch_[i].hash, minibatch_[i].history,
+                             minibatch_[i].moves);
     }
 
     // Check for stop at the end so we have at least one node.
@@ -1484,11 +1478,9 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.nn_queried = true;
         const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
         picked_node.hash = hash;
-        picked_node.lock = NNCacheLock(search_->cache_, hash);
-        picked_node.is_cache_hit = picked_node.lock;
-        if (!picked_node.is_cache_hit) {
-          picked_node.history = history;
-        }
+        picked_node.is_cache_hit =
+            computation_->CacheLookup(hash, &picked_node.entry);
+        picked_node.history = history;
       }
     }
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
@@ -2025,7 +2017,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node) {
   const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  if (search_->cache_->ContainsKey(hash)) {
+  if (computation_->CacheLookup(hash)) {
     return true;
   }
   MoveList moves;
@@ -2041,7 +2033,7 @@ bool SearchWorker::AddNodeToComputation(Node* node) {
     moves = history_.Last().GetBoard().GenerateLegalMoves();
   }
 
-  computation_->AddInput(hash, history_, std::move(moves));
+  computation_->AddInput(hash, history_, moves);
   return false;
 }
 

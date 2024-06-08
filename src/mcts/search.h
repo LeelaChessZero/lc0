@@ -339,7 +339,7 @@ class SearchWorker {
 
     // Details that are filled in as we go.
     uint64_t hash;
-    NNCacheLock lock;
+    CachedNNRequest entry;
     MoveList moves;
     PositionHistory history;
     mutable int last_idx = 0;
@@ -360,13 +360,13 @@ class SearchWorker {
     // Methods to allow NodeToProcess to conform as a 'Computation'. Only safe
     // to call if is_cache_hit is true in the multigather path.
 
-    float GetQVal(int) const { return lock->q; }
+    float GetQVal(int) const { return entry.q; }
 
-    float GetDVal(int) const { return lock->d; }
+    float GetDVal(int) const { return entry.d; }
 
-    float GetMVal(int) const { return lock->m; }
+    float GetMVal(int) const { return entry.m; }
 
-    uint16_t GetPVal(int, int move_ct) const { return lock->p[move_ct]; }
+    uint16_t GetPVal(int, int move_ct) const { return entry.p[move_ct]; }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
