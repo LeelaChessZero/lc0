@@ -1420,7 +1420,7 @@ void SearchWorker::GatherMinibatch() {
       // If there was no OOO, there can stil be collisions.
       // There are no OOO though.
       // Also terminals when OOO is disabled.
-      if (!minibatch_[i].nn_queried) continue;
+      if (!minibatch_[i].nn_queried || minibatch_[i].is_cache_hit) continue;
       computation_->AddInput(minibatch_[i].history, minibatch_[i].moves);
     }
 
@@ -1466,6 +1466,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       // Node was never visited, extend it.
       // Initialize position sequence with pre-move position.
       history.Trim(search_->played_history_.GetLength());
+      history.Reserve(search_->played_history_.GetLength() +
+                      picked_node.moves_to_visit.size());
       for (size_t i = 0; i < picked_node.moves_to_visit.size(); i++) {
         history.Append(picked_node.moves_to_visit[i]);
       }
@@ -1477,7 +1479,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         picked_node.nn_queried = true;
         picked_node.is_cache_hit = computation_->CacheLookup(
             history, picked_node.moves, &picked_node.entry);
-        picked_node.history = history;
+        if (!picked_node.is_cache_hit) picked_node.history = history;
       }
     }
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
@@ -2161,6 +2163,10 @@ void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
+    if (node_to_process.is_cache_hit) {
+      FetchSingleNodeResult(&node_to_process, node_to_process, 0);
+      continue;
+    }
     FetchSingleNodeResult(&node_to_process, *computation_, idx_in_computation);
     if (node_to_process.nn_queried) ++idx_in_computation;
   }
