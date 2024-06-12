@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('lc0', 'cpp',
+project('lc0', ['cpp', 'c'],
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.55')
 
@@ -44,6 +44,9 @@ endif
 if cc.get_id() == 'msvc'
   # Silence some zlib warnings.
   add_global_arguments('/wd4131', '/wd4267', '/wd4127', '/wd4244', '/wd4245', language : 'c')
+else
+  # Check libatomic only for non-MSVC compilers
+  add_project_link_arguments('-libatomic', language: 'cpp')
 endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
