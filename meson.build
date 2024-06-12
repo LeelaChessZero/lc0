@@ -44,9 +44,6 @@ endif
 if cc.get_id() == 'msvc'
   # Silence some zlib warnings.
   add_global_arguments('/wd4131', '/wd4267', '/wd4127', '/wd4244', '/wd4245', language : 'c')
-else
-  # Check libatomic only for non-MSVC compilers
-  add_project_link_arguments('-libatomic', language: 'cpp')
 endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
@@ -670,7 +667,11 @@ endif
       dirs: ['/usr/local/lib'], required: false)
   endif
 
-  deps += cc.find_library('libatomic', required: false)
+  # Add libatomic dependency only when not using MSVC
+  if cc.get_id() != 'msvc'
+    deps += cc.find_library('libatomic', required: false)
+  endif
+  
 
 #############################################################################
 ## Main Executable
