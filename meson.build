@@ -666,12 +666,8 @@ endif
     deps += cc.find_library('libprofiler',
       dirs: ['/usr/local/lib'], required: false)
   endif
-
-  # Add libatomic dependency only when not using MSVC
-  if cc.get_id() != 'msvc'
-    deps += cc.find_library('libatomic', required: false)
-  endif
-  
+ 
+  deps += cc.find_library('libatomic', required: false)
 
 #############################################################################
 ## Main Executable
