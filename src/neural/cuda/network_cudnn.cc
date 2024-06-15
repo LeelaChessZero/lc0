@@ -159,6 +159,7 @@ class CudnnNetwork : public Network {
  public:
   CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
+                      file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
@@ -938,7 +939,7 @@ class CudnnNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_, false,
+      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
                                              moves_left_);
     } else {
       std::unique_ptr<InputsOutputs> resource =

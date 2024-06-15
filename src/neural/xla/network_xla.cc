@@ -37,45 +37,6 @@
 namespace lczero {
 namespace {
 
-class Lc0InputTensor : public XlaTensor {
- public:
-  Lc0InputTensor(size_t max_batch_size)
-      : max_batch_size_(max_batch_size),
-        // TODO replace with make_unique_for_overwrite() once C++20 is
-        // available.
-        data_(new char[GetTensorByteSizeForBatch(max_batch_size)]),
-        shape_{0, kInputPlanes, 8, 8} {}
-
-  const std::vector<int64_t>& shape() const override { return shape_; }
-  const void* data() const override { return data_.get(); }
-  size_t size() const override { return GetTensorByteSizeForBatch(shape_[0]); }
-  size_t capacity() const override {
-    return GetTensorByteSizeForBatch(max_batch_size_);
-  }
-  pblczero::XlaShapeProto::Type type() const override {
-    return pblczero::XlaShapeProto::F32;
-  }
-
-  // Adds a batch to the tensor and returns a pointer to the start of the its
-  // part in the buffer. Does NOT initialize the data with zeros.
-  float* AddBatch() {
-    assert(size_t(shape_[0]) < max_batch_size_);
-    auto ret = data_.get() + shape_[0] * GetTensorByteSizeForBatch(1);
-    ++shape_[0];
-    return reinterpret_cast<float*>(ret);
-  }
-  size_t GetBatchSize() const { return shape_[0]; }
-
- private:
-  static size_t GetTensorByteSizeForBatch(size_t batch_size) {
-    return kInputPlanes * 8 * 8 * batch_size * sizeof(float);
-  }
-
-  const size_t max_batch_size_;
-  std::unique_ptr<char[]> data_;
-  std::vector<int64_t> shape_;
-};
-
 class XlaNetwork;
 class XlaComputation : public NetworkComputation {
  public:
@@ -90,16 +51,21 @@ class XlaComputation : public NetworkComputation {
 
  private:
   const XlaNetwork* network_;
-  Lc0InputTensor input_tensor_;
-  std::vector<std::unique_ptr<XlaTensor>> outputs_;
+  XlaMutableTensor input_tensor_;
+  std::vector<std::unique_ptr<XlaMutableTensor>> outputs_;
 };
 
 // Indices of various heads in the HLO output.
 struct XlaNetworkOptions {
-  std::optional<size_t> output_value_idx;
-  std::optional<size_t> output_wdl_idx;
-  std::optional<size_t> output_policy_idx;
-  std::optional<size_t> output_mlh_idx;
+  struct IOInfo {
+    size_t idx;
+    pblczero::XlaShapeProto::Type type;
+  };
+  std::optional<IOInfo> input;
+  std::optional<IOInfo> output_value;
+  std::optional<IOInfo> output_wdl;
+  std::optional<IOInfo> output_policy;
+  std::optional<IOInfo> output_mlh;
 };
 
 class XlaNetwork : public Network {
@@ -130,10 +96,22 @@ class XlaNetwork : public Network {
 };
 
 XlaComputation::XlaComputation(const XlaNetwork* network)
-    : network_(network), input_tensor_(network->runner_->GetMaxBatchSize()) {}
+    : network_(network),
+      input_tensor_(
+          pblczero::XlaShapeProto::F32,
+          std::vector<int64_t>{0, kInputPlanes, 8, 8},
+          XlaMutableTensor::GetBufferSize(
+              pblczero::XlaShapeProto::F32,
+              std::vector<int64_t>{
+                  static_cast<int64_t>(network->runner_->GetMaxBatchSize()),
+                  kInputPlanes, 8, 8})) {}
 
 void XlaComputation::AddInput(InputPlanes&& input) {
-  float* ptr = input_tensor_.AddBatch();
+  auto new_shape = input_tensor_.shape();
+  float* ptr = static_cast<float*>(input_tensor_.mutable_data()) +
+               new_shape[0] * 8 * 8 * kInputPlanes;
+  ++new_shape[0];
+  input_tensor_.Reshape(new_shape);
   memset(ptr, 0, 8 * 8 * kInputPlanes * sizeof(float));
   for (const auto& plane : input) {
     for (auto bit : IterateBits(plane.mask)) ptr[bit] = plane.value;
@@ -142,21 +120,21 @@ void XlaComputation::AddInput(InputPlanes&& input) {
 }
 
 float XlaComputation::GetQVal(int sample) const {
-  if (network_->options_.output_wdl_idx) {
+  if (network_->options_.output_wdl) {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_wdl_idx]->data());
+        outputs_[network_->options_.output_wdl->idx]->data());
     return data[sample * 3 + 0] - data[sample * 3 + 2];
   } else {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_value_idx]->data());
+        outputs_[network_->options_.output_value->idx]->data());
     return data[sample];
   }
 }
 
 float XlaComputation::GetDVal(int sample) const {
-  if (network_->options_.output_wdl_idx) {
+  if (network_->options_.output_wdl) {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_wdl_idx]->data());
+        outputs_[network_->options_.output_wdl->idx]->data());
     return data[sample * 3 + 1];
   }
   return 0.0f;
@@ -164,25 +142,31 @@ float XlaComputation::GetDVal(int sample) const {
 
 float XlaComputation::GetPVal(int sample, int move_id) const {
   const float* data = reinterpret_cast<const float*>(
-      outputs_[*network_->options_.output_policy_idx]->data());
+      outputs_[network_->options_.output_policy->idx]->data());
   return data[sample * 1858 + move_id];
 }
 
 float XlaComputation::GetMVal(int sample) const {
-  if (network_->options_.output_mlh_idx) {
+  if (network_->options_.output_mlh) {
     const float* data = reinterpret_cast<const float*>(
-        outputs_[*network_->options_.output_mlh_idx]->data());
+        outputs_[network_->options_.output_mlh->idx]->data());
     return data[sample];
   }
   return 0.0f;
 }
 
-int XlaComputation::GetBatchSize() const {
-  return input_tensor_.GetBatchSize();
-}
+int XlaComputation::GetBatchSize() const { return input_tensor_.shape()[0]; }
 
 void XlaComputation::ComputeBlocking() {
+  input_tensor_.Cast(network_->options_.input->type);
   outputs_ = network_->runner_->ExecuteBlocking({&input_tensor_});
+  for (const auto& output :
+       {network_->options_.output_value, network_->options_.output_wdl,
+        network_->options_.output_policy, network_->options_.output_mlh}) {
+    if (output) {
+      outputs_[output->idx]->Cast(pblczero::XlaShapeProto::F32);
+    }
+  }
 }
 
 XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
@@ -190,36 +174,56 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
                        const pblczero::NetworkFormat& format)
     : runner_(std::move(runner)),
       options_(options),
-      capabilities_{format.input(), format.moves_left()} {}
+      capabilities_{format.input(), format.output(), format.moves_left()} {}
 
 // Converts ONNX model to HLO (for various batch sizes) and adds them to the
 // XlaRunner.
-XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
-                                        XlaRunner* runner,
-                                        size_t max_batch_size, size_t steps) {
+XlaNetworkOptions FillXlaRunnerFromOnnx(
+    const pblczero::OnnxModel& onnx_model, XlaRunner* runner,
+    size_t max_batch_size, size_t steps,
+    std::optional<pblczero::XlaShapeProto::Type> io_type) {
   pblczero::ModelProto onnx;
   onnx.ParseFromString(onnx_model.model());
 
-  std::unordered_map<std::string, size_t> constant_to_parameter_idx;
-  std::unordered_map<std::string, size_t> input_to_parameter_idx;
-  std::unordered_map<std::string, size_t> output_to_parameter_idx;
+  using IOInfo = XlaNetworkOptions::IOInfo;
+  std::unordered_map<std::string, IOInfo> constant_to_parameter_idx;
+  std::unordered_map<std::string, IOInfo> input_to_parameter_idx;
+  std::unordered_map<std::string, IOInfo> output_to_parameter_idx;
 
   auto add_tensors = [](const std::vector<Onnx2HloResult::NamedTensor>& tensors,
-                        std::unordered_map<std::string, size_t>& map) {
+                        std::unordered_map<std::string, IOInfo>& map) {
     for (const auto& tensor : tensors) {
       auto iter = map.find(tensor.name);
       if (iter == map.end()) {
-        map[tensor.name] = tensor.param_idx;
-      } else if (iter->second != tensor.param_idx) {
+        map.emplace(tensor.name,
+                    IOInfo{tensor.param_idx, tensor.shape.element_type()});
+      } else if (iter->second.idx != tensor.param_idx) {
         throw Exception("Inconsistent index for " + tensor.name);
+      } else if (iter->second.type != tensor.shape.element_type()) {
+        throw Exception("Inconsistent type for " + tensor.name);
       }
     }
   };
 
+  Onnx2HloOptions onnx2hlo_options{};
+  if (onnx_model.has_output_value()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_value());
+  }
+  if (onnx_model.has_output_wdl()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_wdl());
+  }
+  if (onnx_model.has_output_policy()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_policy());
+  }
+  if (onnx_model.has_output_mlh()) {
+    onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_mlh());
+  }
+  onnx2hlo_options.io_type = io_type;
+
   for (size_t i = 0; i < steps; ++i) {
     size_t batch_size = max_batch_size * (i + 1) / steps;
     CERR << "Building HLO for batch size " << batch_size << "...";
-    auto conversion = ConvertOnnxToHlo(onnx, batch_size, {});
+    auto conversion = ConvertOnnxToHlo(onnx, batch_size, onnx2hlo_options);
     add_tensors(conversion.constants, constant_to_parameter_idx);
     add_tensors(conversion.inputs, input_to_parameter_idx);
     add_tensors(conversion.outputs, output_to_parameter_idx);
@@ -232,9 +236,9 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
   for (const auto& initializer : onnx.graph().initializer()) {
     auto iter = constant_to_parameter_idx.find(std::string(initializer.name()));
     if (iter == constant_to_parameter_idx.end()) continue;
-    auto idx = iter->second;
-    assert(idx < constants.size());
-    constants[idx] = OnnxTensorToXlaTensor(initializer);
+    auto io_info = iter->second;
+    assert(io_info.idx < constants.size());
+    constants[io_info.idx] = OnnxTensorToXlaTensor(initializer);
   }
 
   CERR << "Transferring constants...";
@@ -247,20 +251,21 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(const pblczero::OnnxModel& onnx_model,
     throw Exception("Expected a single input named " +
                     std::string(onnx_model.input_planes()));
   }
+  options.input = input_to_parameter_idx.begin()->second;
   if (onnx_model.has_output_value()) {
-    options.output_value_idx =
+    options.output_value =
         output_to_parameter_idx.at(std::string(onnx_model.output_value()));
   }
   if (onnx_model.has_output_wdl()) {
-    options.output_wdl_idx =
+    options.output_wdl =
         output_to_parameter_idx.at(std::string(onnx_model.output_wdl()));
   }
   if (onnx_model.has_output_policy()) {
-    options.output_policy_idx =
+    options.output_policy =
         output_to_parameter_idx.at(std::string(onnx_model.output_policy()));
   }
   if (onnx_model.has_output_mlh()) {
-    options.output_mlh_idx =
+    options.output_mlh =
         output_to_parameter_idx.at(std::string(onnx_model.output_mlh()));
   }
   return options;
@@ -273,8 +278,8 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The XLA backend requires a network file.");
   int device = opts.GetOrDefault<int>("device", 0);
   // Note: if the plugin_path does NOT contain a slash, it's looked up in the
-  // LD_LIBRARY_PATH (and a few other system defined places). If it does contain
-  // a slash, it's looked up at the exact relative or absolute path.
+  // LD_LIBRARY_PATH (and a few other system defined places). If it does
+  // contain a slash, it's looked up at the exact relative or absolute path.
   auto runner = std::make_unique<XlaRunner>(
       opts.GetOrDefault<std::string>("plugin_path",
                                      "./pjrt_c_api_gpu_plugin.so")
@@ -284,25 +289,29 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   int steps = opts.GetOrDefault<int>("steps", 16);
 
   XlaNetworkOptions options;
+  std::optional<pblczero::XlaShapeProto::Type> io_type;
+  if (opts.Exists<std::string>("io_datatype")) {
+    io_type = StringToXlaType(opts.Get<std::string>("io_datatype"));
+  }
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, io_type);
   } else {
     CERR << "Converting weights to ONNX first.";
     WeightsToOnnxConverterOptions onnx_converter_options;
     onnx_converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(
-            opts.GetOrDefault<std::string>("data_type", "f32"));
+            opts.GetOrDefault<std::string>("datatype", "f32"));
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
-                                    max_batch_size, steps);
+                                    max_batch_size, steps, io_type);
   }
 
   return std::make_unique<XlaNetwork>(std::move(runner), options,
                                       w->format().network_format());
 }
 
-REGISTER_NETWORK("xla", MakeXlaNetwork, -34)
+REGISTER_NETWORK("xla", MakeXlaNetwork, 34)
 
 }  // namespace
 }  // namespace lczero

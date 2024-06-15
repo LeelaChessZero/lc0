@@ -1491,12 +1491,12 @@ EncoderBlock<DataType>::EncoderBlock(
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
-      use_fused_mha_(fused_mha),
+      default_eps_(default_eps),
       has_smolgen_(cpu_weights.mha.has_smolgen),
       smolgen_activation_(smolgen_act),
       ffn_activation_(ffn_act),
       max_batch_size_(max_batch_size),
-      default_eps_(default_eps) {
+      use_fused_mha_(fused_mha) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1765,11 +1765,11 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
 
 #ifdef USE_CUTLASS
   if (use_fused_mha_) {
-    // TODO: check if we need skip in a different tensor than same tensor as output!
+    // TODO: check if we need skip in a different tensor than same tensor as
+    // output!
     bool success =
-        fusedMHA(buffer2, mha_q, mha_k, mha_v,
-                 has_smolgen_ ? buffer2 : nullptr, N,
-                 encoder_heads_, depth, stream);
+        fusedMHA(buffer2, mha_q, mha_k, mha_v, has_smolgen_ ? buffer2 : nullptr,
+                 N, encoder_heads_, depth, stream);
 
     ReportCUDAErrors(cudaGetLastError());
     if (!success) throw Exception("Some error running fused MHA");
@@ -2315,15 +2315,15 @@ template <typename DataType>
 ValueHead<DataType>::ValueHead(BaseLayer<DataType>* ip,
                                const MultiHeadWeights::ValueHead& weights,
                                void* scratch, bool attention_body, bool wdl,
-                               ActivationFunction act, int max_batch_size,
+                               ActivationFunction act, int /*max_batch_size*/,
                                bool use_gemm_ex)
     : BaseLayer<DataType>(weights.ip_val_b.size(), 8, 8, ip),
-      attention_body_(attention_body),
       embedding_size_(attention_body ? weights.ip_val_b.size()
                                      : weights.value.biases.size()),
       value_hidden_size_(weights.ip1_val_b.size()),
-      act_(act),
-      wdl_(wdl) {
+      wdl_(wdl),
+      attention_body_(attention_body),
+      act_(act) {
   if (attention_body_) {
     allocAndUpload<DataType>(&ip_val_w_, weights.ip_val_w, scratch);
     allocAndUpload<DataType>(&ip_val_b_, weights.ip_val_b, scratch);
