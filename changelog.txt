@@ -1,4 +1,8 @@
-﻿v0.31.0-rc3 (2024-05-29)
+﻿v0.31.0 (2024-06-16)
+~~~~~~~
+* No changes from rc3.
+
+v0.31.0-rc3 (2024-05-29)
 ~~~~~~~
 * The `WDLDrawRateTarget` option now accepts the value 0 (new default) to retain
   raw WDL values if `WDLCalibrationElo` is set to 0 (default).
