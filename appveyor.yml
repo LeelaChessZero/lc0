@@ -7,18 +7,18 @@ environment:
   matrix:
   - NAME: gpu-nvidia-cudnn
   - NAME: gpu-nvidia-cuda
-  - NAME: gpu-dx12
-  - NAME: gpu-opencl
+#  - NAME: gpu-dx12
+#  - NAME: gpu-opencl
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
-  - NAME: onednn
+#  - NAME: onednn
   - NAME: onnx-dml
   - NAME: android
 for:
 -
   matrix:
     only:
-    - NAME: gpu-opencl
+#    - NAME: gpu-opencl
     - NAME: cpu-dnnl
   skip_non_tags: true
 clone_folder: c:\projects\lc0
