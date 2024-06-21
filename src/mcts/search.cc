@@ -196,6 +196,11 @@ Search::Search(const NodeTree& tree, Network* network,
                            : ContemptMode::WHITE;
     }
   }
+  wdl_rescale_ratio_ = params_.GetWDLRescaleRatio();
+  wdl_rescale_diff_ =
+      contempt_mode_ == ContemptMode::NONE ? 0 : params_.GetWDLRescaleDiff();
+  wdl_eval_objectivity_ = params_.GetWDLEvalObjectivity();
+  wdl_max_s_ = params_.GetWDLMaxS();
 }
 
 namespace {
@@ -219,15 +224,12 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
 }
 }  // namespace
 
-namespace {
 // WDL conversion formula based on random walk model.
-inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
-                         float wdl_rescale_diff, float sign, bool invert,
-                         float max_reasonable_s) {
-  if (invert) {
-    wdl_rescale_diff = -wdl_rescale_diff;
-    wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
-  }
+inline double Search::WDLRescale(float& v, float& d, float sign, bool invert) {
+  float wdl_rescale_ratio =
+      invert ? 1.0f / wdl_rescale_ratio_ : wdl_rescale_ratio_;
+  float wdl_rescale_diff =
+      invert ? -wdl_rescale_diff_ * wdl_eval_objectivity_ : wdl_rescale_diff_;
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
   // Safeguard against numerical issues; skip WDL transformation if WDL is too
@@ -240,12 +242,12 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
     auto s = 2 / (a + b);
     // Safeguard against unrealistically broad WDL distributions coming from
     // the NN. Originally hardcoded, made into a parameter for piece odds.
-    if (!invert) s = std::min(max_reasonable_s, s);
+    if (!invert) s = std::min(wdl_max_s_, s);
     auto mu = (a - b) / (a + b);
     auto s_new = s * wdl_rescale_ratio;
     if (invert) {
       std::swap(s, s_new);
-      s = std::min(max_reasonable_s, s);
+      s = std::min(wdl_max_s_, s);
     }
     auto mu_new = mu + sign * s * s * wdl_rescale_diff;
     auto w_new = FastLogistic((-1.0f + mu_new) / s_new);
@@ -256,7 +258,6 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
   }
   return 0;
 }
-}  // namespace
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
@@ -308,12 +309,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                    played_history_.IsBlackToMove())
                       ? 1.0f
                       : -1.0f;
-      mu_uci = WDLRescale(
-          wl, d, params_.GetWDLRescaleRatio(),
-          contempt_mode_ == ContemptMode::NONE
-              ? 0
-              : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
-          sign, true, params_.GetWDLMaxS());
+      mu_uci = WDLRescale(wl, d, sign, true);
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -2227,11 +2223,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
                     search_->played_history_.Last().IsBlackToMove();
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-    WDLRescale(v, d, params_.GetWDLRescaleRatio(),
-               search_->contempt_mode_ == ContemptMode::NONE
-                   ? 0
-                   : params_.GetWDLRescaleDiff(),
-               sign, false, params_.GetWDLMaxS());
+    search_->WDLRescale(v, d, sign, false);
   }
   node_to_process->v = v;
   node_to_process->d = d;
