@@ -77,12 +77,12 @@ class EngineController {
   Position ApplyPositionMoves();
 
  private:
-  void UpdateFromUciOptions();
+  void UpdateFromUciOptions(const OptionsDict& options);
 
-  void SetupPosition(const std::string& fen,
+  bool SetupPosition(const std::string& fen,
                      const std::vector<std::string>& moves);
   void ResetMoveTimer();
-  void CreateFreshTimeManager();
+  void CreateFreshTimeManager(const OptionsDict& options);
 
   const OptionsDict& options_;
 
