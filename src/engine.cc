@@ -35,6 +35,7 @@
 #include "mcts/stoppers/factory.h"
 #include "utils/commandline.h"
 #include "utils/configfile.h"
+#include "utils/fastmath.h"
 #include "utils/logging.h"
 
 namespace lczero {
@@ -71,6 +72,9 @@ const OptionId kValueOnly{
     "In value only mode all search parameters are ignored and the position is "
     "evaluated by getting the valuation of every child position and choosing "
     "the worst for the opponent."};
+const OptionId kPolicyMix{
+    "policy-mix", "PolicyMix",
+    "Amount to mix policy into the value in value-only mode."};
 const OptionId kClearTree{"", "ClearTree",
                           "Clear the tree before the next search."};
 
@@ -131,6 +135,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
 
   options->Add<BoolOption>(kPreload) = false;
   options->Add<BoolOption>(kValueOnly) = false;
+  options->Add<FloatOption>(kPolicyMix, -2.0f, 2.0f) = 0.0f;
   options->Add<ButtonOption>(kClearTree);
   options->HideOption(kClearTree);
 }
@@ -281,6 +286,9 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
   tree->GetCurrentHead()->CreateEdges(legal_moves);
   PositionHistory history = tree->GetPositionHistory();
   std::vector<InputPlanes> planes;
+  int transform;
+  planes.emplace_back(EncodePositionForNN(
+     input_format, history, 8, FillEmptyHistory::FEN_ONLY, &transform));
   for (auto edge : tree->GetCurrentHead()->Edges()) {
     history.Append(edge.GetMove());
     if (history.ComputeGameResult() == GameResult::UNDECIDED) {
@@ -293,7 +301,9 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
   std::vector<float> comp_q;
   int batch_size = options.Get<int>(SearchParams::kMiniBatchSizeId);
   if (batch_size == 0) batch_size = network->GetMiniBatchSize();
-
+  bool policy_done = false;
+  std::vector<float> pol;
+  float max_p = 0.0f;
   for (size_t i = 0; i < planes.size(); i += batch_size) {
     auto comp = network->NewComputation();
     for (int j = 0; j < batch_size; j++) {
@@ -301,13 +311,26 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
       if (i + j + 1 == planes.size()) break;
     }
     comp->ComputeBlocking();
-
-    for (int j = 0; j < batch_size; j++) comp_q.push_back(comp->GetQVal(j));
+    int start = 0;
+    if (!policy_done) {
+      for (auto edge : tree->GetCurrentHead()->Edges()) {
+        pol.push_back(comp->GetPVal(0, edge.GetMove().as_nn_index(transform)));
+        if (pol.back() > max_p) max_p = pol.back();
+      }
+      start = 1;
+      policy_done = true;
+    }
+    for (int j = start; j < batch_size; j++) comp_q.push_back(comp->GetQVal(j));
   }
-
+  float sum=0.0f;
+  for (int i=0; i < pol.size(); i++) {
+    pol[i] = FastExp(pol[i]-max_p)/options.Get<float>(SearchParams::kPolicySoftmaxTempId);
+    sum += pol[i];
+  }
   Move best;
   int comp_idx = 0;
   float max_q = std::numeric_limits<float>::lowest();
+  int polidx=0;
   for (auto edge : tree->GetCurrentHead()->Edges()) {
     history.Append(edge.GetMove());
     auto result = history.ComputeGameResult();
@@ -324,11 +347,13 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
       // win.
       q = 1;
     }
+    q += (pol[polidx])/sum*options.Get<float>(kPolicyMix);
     if (q >= max_q) {
       max_q = q;
       best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
     }
     history.Pop();
+    polidx++;
   }
   std::vector<ThinkingInfo> infos;
   ThinkingInfo thinking;
