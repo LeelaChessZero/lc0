@@ -105,8 +105,8 @@ std::atomic<int> delta(0);
 std::atomic<int> rescored2(0);
 std::atomic<int> rescored3(0);
 std::atomic<int> blunders(0);
-std::atomic<int> orig_counts[3];
-std::atomic<int> fixed_counts[3];
+std::atomic<int> orig_counts[4];
+std::atomic<int> fixed_counts[4];
 std::atomic<int> policy_bump(0);
 std::atomic<int> policy_nobump_total_hist[11];
 std::atomic<int> policy_bump_total_hist[11];
@@ -174,7 +174,7 @@ void Validate(const std::vector<V6TrainingData>& fileContents) {
       DataAssert(data.side_to_move_or_enpassant <= 1);
     }
     DataAssert(data.result_q >= -1 && data.result_q <= 1);
-    DataAssert(data.result_d >= 0 && data.result_q <= 1);
+    DataAssert(data.result_d >= 0 && data.result_d <= 1);
     DataAssert(data.rule50_count <= 100);
     float sum = 0.0f;
     for (size_t j = 0; j < sizeof(data.probabilities) / sizeof(float); j++) {
@@ -422,8 +422,11 @@ void ChangeInputFormat(int newInputFormat, V6TrainingData* data,
 }
 
 int ResultForData(const V6TrainingData& data) {
-  // Ensure we aren't reprocessing some data that has had custom adjustments to
-  // result training target applied.
+  // Check if the game was adjudicated.
+  if ((data.invariance_info & (1u << 5)) && data.result_q != -1.0f &&
+      data.result_q != 1.0f) {
+    return 2;
+  }
   DataAssert(data.result_q == -1.0f || data.result_q == 1.0f ||
              data.result_q == 0.0f);
   // Paranoia - ensure int cast never breaks the value.
@@ -443,7 +446,7 @@ std::string AsNnueString(const Position& p, Move m, float q, int result) {
   }
   if (p.IsBlackToMove()) m.Mirror();
   out << "move " << m.as_string() << std::endl;
-  // Formula from PR1477 adjuster for SF PawnValueEg.
+  // Formula from PR1477 adjusted for SF PawnValueEg.
   out << "score " << round(660.6 * q / (1 - 0.9751875 * std::pow(q, 10)))
       << std::endl;
   out << "ply " << p.GetGamePly() << std::endl;
@@ -591,7 +594,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                             */
                 }
                 rescored += 1;
-                delta += abs(ResultForData(fileContents[j]) - score_to_apply);
+                if (ResultForData(fileContents[j]) != 2) {
+                  delta += abs(ResultForData(fileContents[j]) - score_to_apply);
+                }
                 /*
               std::cerr << "Rescoring: " << (int)fileContents[j].result << " ->
               "
@@ -643,11 +648,15 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                 ResultForData(fileContents[i + 1]) != score_to_apply
                     ? 0
                     : ResultForData(fileContents[i + 1]);
+            if (ResultForData(fileContents[i + 1]) == 2) {
+              new_score = score_to_apply;
+            }
             bool dtz_rescored = false;
             // if score is not already right, and the score to apply isn't 0,
             // dtz can let us know its definitely correct.
             if (ResultForData(fileContents[i + 1]) != score_to_apply &&
-                score_to_apply != 0) {
+                (score_to_apply != 0 ||
+                 ResultForData(fileContents[i + 1]) == 2)) {
               // Any repetitions in the history since last 50 ply makes it risky
               // to assume dtz is still correct.
               int steps = history.Last().GetRule50Ply();
@@ -979,6 +988,13 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                             fileContents.back().result_d,
                             fileContents.back().plies_left};
         bool deblunderingStarted = false;
+        if (fileContents.back().invariance_info & (1u << 5)) {
+          // Game adjudicated, use final best eval as result.
+          activeZ[0] = fileContents.back().best_q;
+          activeZ[1] = fileContents.back().best_d;
+          deblunderingStarted = true;
+        }
+
         while (true) {
           auto& cur = fileContents[history.GetLength() - 1];
           // A blunder is defined by the played move being worse than the
@@ -1349,9 +1365,11 @@ void RescoreLoop::RunLoop() {
   }
   std::cout << std::endl;
   std::cout << "Original L: " << orig_counts[0] << " D: " << orig_counts[1]
-            << " W: " << orig_counts[2] << std::endl;
+            << " W: " << orig_counts[2] << " Adj: " << orig_counts[3]
+            << std::endl;
   std::cout << "After L: " << fixed_counts[0] << " D: " << fixed_counts[1]
-            << " W: " << fixed_counts[2] << std::endl;
+            << " W: " << fixed_counts[2] << " Adj: " << fixed_counts[3]
+            << std::endl;
   std::cout << "Gaviota DTM move_count rescores: " << gaviota_dtm_rescores
             << std::endl;
 }
