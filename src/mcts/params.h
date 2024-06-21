@@ -106,14 +106,9 @@ class SearchParams {
     return options_.Get<std::string>(kScoreTypeId);
   }
   FillEmptyHistory GetHistoryFill() const { return kHistoryFill; }
-  float GetMovesLeftMaxEffect() const { return kMovesLeftMaxEffect; }
   float GetMovesLeftThreshold() const { return kMovesLeftThreshold; }
-  float GetMovesLeftSlope() const { return kMovesLeftSlope; }
-  float GetMovesLeftConstantFactor() const { return kMovesLeftConstantFactor; }
-  float GetMovesLeftScaledFactor() const { return kMovesLeftScaledFactor; }
-  float GetMovesLeftQuadraticFactor() const {
-    return kMovesLeftQuadraticFactor;
-  }
+  float GetMovesLeftMidpointMove() const { return kMovesLeftMidpointMove; }
+  float GetMovesLeftSteepnessFactor() const { return kMovesLeftSteepnessFactor; }
   bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetDrawScore() const { return kDrawScore; }
@@ -200,12 +195,9 @@ class SearchParams {
   static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
   static const OptionId kHistoryFillId;
-  static const OptionId kMovesLeftMaxEffectId;
+  static const OptionId kMovesLeftMidpointMoveId;
   static const OptionId kMovesLeftThresholdId;
-  static const OptionId kMovesLeftConstantFactorId;
-  static const OptionId kMovesLeftScaledFactorId;
-  static const OptionId kMovesLeftQuadraticFactorId;
-  static const OptionId kMovesLeftSlopeId;
+  static const OptionId kMovesLeftSteepnessFactorId;
   static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
   static const OptionId kDrawScoreId;
@@ -266,12 +258,9 @@ class SearchParams {
   const bool kSyzygyFastPlay;
   const FillEmptyHistory kHistoryFill;
   const int kMiniBatchSize;
-  const float kMovesLeftMaxEffect;
+  const float kMovesLeftMidpointMove;
   const float kMovesLeftThreshold;
-  const float kMovesLeftSlope;
-  const float kMovesLeftConstantFactor;
-  const float kMovesLeftScaledFactor;
-  const float kMovesLeftQuadraticFactor;
+  const float kMovesLeftSteepnessFactor;
   const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
   const float kDrawScore;

@@ -343,32 +343,19 @@ const OptionId SearchParams::kHistoryFillId{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
-const OptionId SearchParams::kMovesLeftMaxEffectId{
-    "moves-left-max-effect", "MovesLeftMaxEffect",
-    "Maximum bonus to add to the score of a node based on how much "
-    "shorter/longer it makes the game when winning/losing."};
+const OptionId SearchParams::kMovesLeftMidpointMoveId{
+    "moves-left-midpoint-move", "MovesLeftMidpointMove",
+    "determines where the curve-value crosses the y-axis,"
+	"where the value of the calculation for m gets negative."};
 const OptionId SearchParams::kMovesLeftThresholdId{
     "moves-left-threshold", "MovesLeftThreshold",
     "Absolute value of node Q needs to exceed this value before shorter wins "
     "or longer losses are considered."};
-const OptionId SearchParams::kMovesLeftSlopeId{
-    "moves-left-slope", "MovesLeftSlope",
-    "Controls how the bonus for shorter wins or longer losses is adjusted "
-    "based on how many moves the move is estimated to shorten/lengthen the "
-    "game. The move difference is multiplied with the slope and capped at "
-    "MovesLeftMaxEffect."};
-const OptionId SearchParams::kMovesLeftConstantFactorId{
-    "moves-left-constant-factor", "MovesLeftConstantFactor",
-    "A simple multiplier to the moves left effect, can be set to 0 to only use "
-    "an effect scaled by Q."};
-const OptionId SearchParams::kMovesLeftScaledFactorId{
-    "moves-left-scaled-factor", "MovesLeftScaledFactor",
-    "A factor which is multiplied by the absolute Q of parent node and the "
-    "base moves left effect."};
-const OptionId SearchParams::kMovesLeftQuadraticFactorId{
-    "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
-    "A factor which is multiplied by the square of Q of parent node and the "
-    "base moves left effect."};
+const OptionId SearchParams::kMovesLeftSteepnessFactorId{
+    "moves-left-steepness-factor", "MovesLeftSteepnessFactor",
+    "This sets the steepness of the curve," 
+	"which is how quickly the Mutility value changes as the moves-left decrease."
+    "How high or low the curve-value goes"};
 const OptionId SearchParams::kDisplayCacheUsageId{
     "display-cache-usage", "DisplayCacheUsage",
     "Display cache fullness through UCI info `hash` section."};
@@ -546,13 +533,9 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "WDL_mu";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
-  options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0345f;
-  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.8f;
-  options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.0027f;
-  options->Add<FloatOption>(kMovesLeftConstantFactorId, -1.0f, 1.0f) = 0.0f;
-  options->Add<FloatOption>(kMovesLeftScaledFactorId, -2.0f, 2.0f) = 1.6521f;
-  options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) =
-      -0.6521f;
+  options->Add<FloatOption>(kMovesLeftMidpointMoveId, 0.0f, 200.0f) = 100.0f;
+  options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kMovesLeftSteepnessFactorId, -1.0f, 1.0f) = 0.5000f;
   options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
   options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
@@ -644,13 +627,9 @@ SearchParams::SearchParams(const OptionsDict& options)
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId)),
       kHistoryFill(EncodeHistoryFill(options.Get<std::string>(kHistoryFillId))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId)),
-      kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId)),
+      kMovesLeftMidpointMove(options.Get<float>(kMovesLeftMidpointMoveId)),
       kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId)),
-      kMovesLeftSlope(options.Get<float>(kMovesLeftSlopeId)),
-      kMovesLeftConstantFactor(options.Get<float>(kMovesLeftConstantFactorId)),
-      kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
-      kMovesLeftQuadraticFactor(
-          options.Get<float>(kMovesLeftQuadraticFactorId)),
+      kMovesLeftSteepnessFactor(options.Get<float>(kMovesLeftSteepnessFactorId)),
       kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
       kDrawScore(options.Get<float>(kDrawScoreId)),
