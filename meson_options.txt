@@ -190,7 +190,7 @@ option('onnx_include',
 
 option('xla',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable XLA backend')
 
 option('lc0',
