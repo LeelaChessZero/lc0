@@ -27,6 +27,7 @@
 
 #include "neural/xla/hlo_builder.h"
 
+#include <algorithm>
 #include <numeric>
 
 #include "utils/exception.h"
