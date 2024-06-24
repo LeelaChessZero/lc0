@@ -72,6 +72,10 @@ inline uint8_t FP32toFP8E5M2(float f32, bool saturate = true) {
   return x | sign;
 }
 
+inline uint8_t FP32toFP8E5M2_Saturate(float f32) {
+  return FP32toFP8E5M2(f32, true);
+}
+
 #if defined(NO_POPCNT) || defined(NO_F16C) || \
     (defined(__GNUC__) && !defined(__F16C__))
 
