@@ -45,14 +45,14 @@ void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C, cudaStream_t stream);
 
 // Optimized kernel to add bias to innermost dimension
 // and perform optional activation (to be used with GEMMs/fully connected)
-template <typename T>
-void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+template <typename T, typename IT = T, typename BT = T>
+void addBiasBatched(T* output, const IT* input, const BT* bias, int Batch, int N,
                     int C, ActivationFunction activation, cudaStream_t stream);
 
 // Optimized kernel to add bias to innermost dimension
 // and perform optional activation (to be used with GEMMs/fully connected)
-template <typename T>
-void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
+template <typename T, typename IT = T, typename BT = T>
+void addBiasBatched(T* output, const IT* input, const BT* bias, int Batch, int N,
                     int C, int Nstride, ActivationFunction activation,
                     cudaStream_t stream);
 
@@ -135,10 +135,11 @@ template <typename T>
 void Softmax(int N, int C, T* output, const T* input, const T* input2,
              cudaStream_t stream);
 
-template <typename T>
-void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
+template <typename T, typename IT = T>
+void LayerNorm(int N, int C, T* output, const IT* input, const T* bias,
                const T* skip, const T* gammas, const T* betas, float ep,
-               float alpha, ActivationFunction act, cudaStream_t stream);
+               float alpha, ActivationFunction act,
+               cudaStream_t stream, float dequant_scale = 1.0);
 
 template <typename T>
 void ComputePromotionLogits(int N, int C, T* output, const T* keys,
@@ -155,5 +156,17 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, cudaStream_t stream);
+
+void cutlassMatrixMulBTransposed(const half* A, const half* B, half* Out, int M,
+                                 int N, int K, int batchSize, int AStride,
+                                 int BStride, int OutStride,
+                                 bool useInt8 = true);
+
 }  // namespace cudnn_backend
 }  // namespace lczero
+
+// Work around to avoid "nvcc error : 'cudafe++' died with status 0xC0000409"
+// error For some reason nvcc runs into this random error when trying to compile
+// this function inside the namespaces
+bool fusedMHA(void* output, void* mha_q, void* mha_k, void* mha_v, void* skip,
+              int batch_size, int num_heads, int depth, cudaStream_t stream);
