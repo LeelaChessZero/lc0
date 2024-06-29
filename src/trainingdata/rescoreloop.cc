@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "rescorer/rescoreloop.h"
+#include "trainingdata/rescoreloop.h"
 
 #include <optional>
 #include <sstream>
