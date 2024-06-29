@@ -19,7 +19,7 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "neural/opencl/OpenCLTuner.h"
+#include "neural/backends/opencl/OpenCLTuner.h"
 
 #include <array>
 #include <cassert>
@@ -31,8 +31,8 @@
 #include <sstream>
 #include <string>
 
-#include "neural/opencl/OpenCL.h"
-#include "neural/opencl/OpenCLParams.h"
+#include "neural/backends/opencl/OpenCL.h"
+#include "neural/backends/opencl/OpenCLParams.h"
 #include "utils/logging.h"
 
 constexpr auto MAX_ERROR = 1e-4f;

@@ -22,11 +22,11 @@
 #include <condition_variable>
 #include <thread>
 
+#include "neural/backends/opencl/OpenCL.h"
+#include "neural/backends/opencl/OpenCLParams.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "neural/network_legacy.h"
-#include "neural/opencl/OpenCL.h"
-#include "neural/opencl/OpenCLParams.h"
 #include "neural/shared/activation.h"
 #include "neural/shared/policy_map.h"
 #include "neural/shared/winograd_filter.h"

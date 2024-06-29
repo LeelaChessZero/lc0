@@ -26,8 +26,8 @@
 #include <vector>
 
 #include "OpenCLParams.h"
-#include "neural/opencl/OpenCL.h"
-#include "neural/opencl/OpenCLParams.h"
+#include "neural/backends/opencl/OpenCL.h"
+#include "neural/backends/opencl/OpenCLParams.h"
 
 using Configurations = std::pair<std::string, std::vector<size_t>>;
 using TuneParameters = std::map<std::string, size_t>;

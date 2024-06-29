@@ -34,9 +34,9 @@
 #include <string>
 #include <thread>
 
-#include "neural/opencl/OpenCL.h"
-#include "neural/opencl/OpenCLParams.h"
-#include "neural/opencl/OpenCLTuner.h"
+#include "neural/backends/opencl/OpenCL.h"
+#include "neural/backends/opencl/OpenCLParams.h"
+#include "neural/backends/opencl/OpenCLTuner.h"
 #include "utils/logging.h"
 
 class OpenCL_Network;
