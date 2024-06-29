@@ -33,8 +33,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "neural/backends/xla/pjrt.h"
 #include "neural/xla/hlo.pb.h"
-#include "neural/xla/pjrt.h"
 #include "neural/xla/xla_tensor.h"
 
 namespace lczero {

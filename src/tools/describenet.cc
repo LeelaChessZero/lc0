@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "lc0ctl/describenet.h"
+#include "tools/describenet.h"
 
 #include "neural/loader.h"
 #include "neural/onnx/onnx.pb.h"

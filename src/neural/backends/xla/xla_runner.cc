@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/xla/xla_runner.h"
+#include "neural/backends/xla/xla_runner.h"
 
 #include <algorithm>
 #include <numeric>

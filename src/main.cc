@@ -25,14 +25,14 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "benchmark/backendbench.h"
-#include "benchmark/benchmark.h"
 #include "chess/board.h"
 #include "engine.h"
-#include "lc0ctl/describenet.h"
-#include "lc0ctl/leela2onnx.h"
-#include "lc0ctl/onnx2leela.h"
 #include "selfplay/loop.h"
+#include "tools/backendbench.h"
+#include "tools/benchmark.h"
+#include "tools/describenet.h"
+#include "tools/leela2onnx.h"
+#include "tools/onnx2leela.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/logging.h"

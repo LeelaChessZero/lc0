@@ -19,7 +19,7 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "neural/opencl/OpenCLBuffers.h"
+#include "neural/backends/opencl/OpenCLBuffers.h"
 
 OpenCLBuffers::OpenCLBuffers(const OpenCL_Network& opencl_net)
     : m_opencl_net(opencl_net), m_opencl(opencl_net.getOpenCL()) {

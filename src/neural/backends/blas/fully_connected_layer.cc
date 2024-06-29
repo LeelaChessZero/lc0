@@ -16,8 +16,8 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/blas/fully_connected_layer.h"
-#include "neural/blas/blas.h"
+#include "neural/backends/blas/fully_connected_layer.h"
+#include "neural/backends/blas/blas.h"
 #include "neural/shared/activation.h"
 
 #include <algorithm>

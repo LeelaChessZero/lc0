@@ -37,8 +37,8 @@ using net_t = float;
 #include <vector>
 
 #include "cl2.hpp"
-#include "neural/opencl/OpenCLBuffers.h"
-#include "neural/opencl/OpenCLParams.h"
+#include "neural/backends/opencl/OpenCLBuffers.h"
+#include "neural/backends/opencl/OpenCLParams.h"
 
 inline size_t ceilMultiple(size_t a, size_t b) {
   if (a % b == 0) return a;

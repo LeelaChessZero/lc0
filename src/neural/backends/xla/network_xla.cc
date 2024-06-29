@@ -27,11 +27,11 @@
 
 #include <cassert>
 
+#include "neural/backends/xla/xla_runner.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
 #include "neural/xla/onnx2hlo.h"
-#include "neural/xla/xla_runner.h"
 #include "utils/bititer.h"
 
 namespace lczero {

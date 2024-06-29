@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "benchmark/backendbench.h"
+#include "tools/backendbench.h"
 
 #include "chess/board.h"
 #include "mcts/node.h"

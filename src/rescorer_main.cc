@@ -28,7 +28,7 @@
 #include <iostream>
 
 #include "chess/board.h"
-#include "rescorer/rescoreloop.h"
+#include "trainingdata/rescoreloop.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/exception.h"
