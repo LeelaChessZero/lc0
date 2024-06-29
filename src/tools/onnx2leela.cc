@@ -31,9 +31,9 @@
 #include <fstream>
 #include <set>
 
-#include "lc0ctl/describenet.h"
 #include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/fp16_utils.h"
 #include "utils/optionsparser.h"

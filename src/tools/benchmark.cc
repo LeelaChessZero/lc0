@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "benchmark/benchmark.h"
+#include "tools/benchmark.h"
 
 #include <numeric>
 

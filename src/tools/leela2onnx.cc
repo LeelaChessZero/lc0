@@ -28,11 +28,11 @@
 #include <fstream>
 #include <iostream>
 
-#include "lc0ctl/describenet.h"
 #include "neural/loader.h"
 #include "neural/onnx/converter.h"
 #include "neural/xla/onnx2hlo.h"
 #include "neural/xla/print_hlo.h"
+#include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/optionsparser.h"
 

@@ -181,12 +181,7 @@ common_files += [
 ]
 
 files += [
-  'src/benchmark/backendbench.cc',
-  'src/benchmark/benchmark.cc',
   'src/engine.cc',
-  'src/lc0ctl/describenet.cc',
-  'src/lc0ctl/leela2onnx.cc',
-  'src/lc0ctl/onnx2leela.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
   'src/mcts/stoppers/alphazero.cc',
@@ -218,6 +213,11 @@ files += [
   'src/selfplay/loop.cc',
   'src/selfplay/multigame.cc',
   'src/selfplay/tournament.cc',
+  'src/tools/backendbench.cc',
+  'src/tools/benchmark.cc',
+  'src/tools/describenet.cc',
+  'src/tools/leela2onnx.cc',
+  'src/tools/onnx2leela.cc',
   'src/utils/histogram.cc',
   'src/utils/numa.cc',
   'src/utils/weights_adapter.cc',
