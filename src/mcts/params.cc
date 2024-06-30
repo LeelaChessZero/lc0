@@ -93,10 +93,17 @@ float GetContempt(std::string name, std::string contempt_str,
 SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
     float contempt, float draw_rate_target, float draw_rate_reference,
     float book_exit_bias, float contempt_max, float contempt_attenuation) {
-  float scale_target =
-      1.0f / std::log((1.0f + draw_rate_target) / (1.0f - draw_rate_target));
+  // Catch accidental low positive values of draw_rate_target to guarantee
+  // somewhat reasonable behavior without numerical issues.
+  if (draw_rate_target > 0.0f && draw_rate_target < 0.001f) {
+    draw_rate_target = 0.001f;
+  }
   float scale_reference = 1.0f / std::log((1.0f + draw_rate_reference) /
                                           (1.0f - draw_rate_reference));
+  float scale_target =
+      (draw_rate_target == 0 ? scale_reference
+                             : 1.0f / std::log((1.0f + draw_rate_target) /
+                                               (1.0f - draw_rate_target)));
   float ratio = scale_target / scale_reference;
   float diff =
       scale_target / (scale_reference * scale_reference) /
@@ -390,7 +397,8 @@ const OptionId SearchParams::kContemptMaxValueId{
     "The maximum value of contempt used. Higher values will be capped."};
 const OptionId SearchParams::kWDLCalibrationEloId{
     "wdl-calibration-elo", "WDLCalibrationElo",
-    "Elo of the active side, adjusted for time control relative to rapid."};
+    "Elo of the active side, adjusted for time control relative to rapid."
+    "To retain raw WDL without sharpening/softening, use default value 0."};
 const OptionId SearchParams::kWDLContemptAttenuationId{
     "wdl-contempt-attenuation", "WDLContemptAttenuation",
     "Scales how Elo advantage is applied for contempt. Use 1.0 for realistic "
@@ -409,7 +417,8 @@ const OptionId SearchParams::kWDLEvalObjectivityId{
 const OptionId SearchParams::kWDLDrawRateTargetId{
     "wdl-draw-rate-target", "WDLDrawRateTarget",
     "To define the accuracy of play, the target draw rate in equal "
-    "positions is used as a proxy. Ignored if WDLCalibrationElo is set."};
+    "positions is used as a proxy. Ignored if WDLCalibrationElo is set. "
+    "To retain raw WDL without sharpening/softening, use default value 0."};
 const OptionId SearchParams::kWDLDrawRateReferenceId{
     "wdl-draw-rate-reference", "WDLDrawRateReference",
     "Set this to the draw rate predicted by the used neural network at "
@@ -559,7 +568,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLContemptAttenuationId, -10.0f, 10.0f) = 1.0f;
   options->Add<FloatOption>(kWDLMaxSId, 0.0f, 10.0f) = 1.4f;
   options->Add<FloatOption>(kWDLEvalObjectivityId, 0.0f, 1.0f) = 1.0f;
-  options->Add<FloatOption>(kWDLDrawRateTargetId, 0.001f, 0.999f) = 0.5f;
+  options->Add<FloatOption>(kWDLDrawRateTargetId, 0.0f, 0.999f) = 0.0f;
   options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;

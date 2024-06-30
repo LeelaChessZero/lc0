@@ -87,6 +87,7 @@ std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
 
 MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
+                    file.format().network_format().output(),
                     file.format().network_format().moves_left()} {
   MultiHeadWeights weights(file.weights());
 

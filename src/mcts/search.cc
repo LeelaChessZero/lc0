@@ -340,7 +340,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       const float centipawn_fallback_threshold = 0.996f;
       float centipawn_score = 90 * tan(1.5637541897 * wl);
       uci_info.score =
-          mu_uci != 0.0f && std::abs(wl) + d < centipawn_fallback_threshold &&
+          network_->GetCapabilities().has_wdl() && mu_uci != 0.0f &&
+                  std::abs(wl) + d < centipawn_fallback_threshold &&
                   (std::abs(mu_uci) < 1.0f ||
                    std::abs(centipawn_score) < std::abs(100 * mu_uci))
               ? 100 * mu_uci
@@ -493,13 +494,26 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
     if (n) {
-      print(oss, "(WL: ", sign * n->GetWL(), ") ", 8, 5);
-      print(oss, "(D: ", n->GetD(), ") ", 5, 3);
+      auto wl = sign * n->GetWL();
+      auto d = n->GetD();
+      auto is_perspective = ((contempt_mode_ == ContemptMode::BLACK) ==
+                             played_history_.IsBlackToMove())
+                                ? 1.0f
+                                : -1.0f;
+      WDLRescale(
+          wl, d, params_.GetWDLRescaleRatio(),
+          contempt_mode_ == ContemptMode::NONE
+              ? 0
+              : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
+          is_perspective, true, params_.GetWDLMaxS());
+      print(oss, "(WL: ", wl, ") ", 8, 5);
+      print(oss, "(D: ", d, ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
+      print(oss, "(Q: ", wl + draw_score * d, ") ", 8, 5);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
+      print(oss, "(Q: ", fpu, ") ", 8, 5);
     }
-    print(oss, "(Q: ", n ? sign * n->GetQ(sign * draw_score) : fpu, ") ", 8, 5);
   };
   auto print_tail = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;

@@ -98,7 +98,8 @@ pblczero::TensorProto::DataType Float8E5M2OnnxWeightsAdapter::GetDataType()
 
 std::string Float8E5M2OnnxWeightsAdapter::GetRawData() const {
   std::vector<uint8_t> f8(weights_.size());
-  std::transform(weights_.begin(), weights_.end(), f8.begin(), FP32toFP8E5M2);
+  std::transform(weights_.begin(), weights_.end(), f8.begin(),
+                 [](float x) { return FP32toFP8E5M2(x); });
   return TransposeAndReturnRaw<uint8_t>(dims_, order_, f8);
 }
 
