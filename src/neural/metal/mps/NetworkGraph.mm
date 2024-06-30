@@ -534,6 +534,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                       heads:heads
                                                      parent:parent
                                                     smolgen:encoder.mha.has_smolgen ? &encoder.mha.smolgen : nil
+                                                       rpeQ:encoder.mha.rpe_q.size() > 0 ? encoder.mha.rpe_q.data() : nil
+                                                       rpeK:encoder.mha.rpe_k.size() > 0 ? encoder.mha.rpe_k.data() : nil
+                                                       rpeV:encoder.mha.rpe_v.size() > 0 ? encoder.mha.rpe_v.data() : nil
                                           smolgenActivation:smolgenActivation
                                                       label:[NSString stringWithFormat:@"%@/mha", label]];
 
@@ -746,12 +749,138 @@ static const NSInteger kMinSubBatchSize = 20;
                           name:[NSString stringWithFormat:@"%@/reshape", label]];
 }
 
+-(nonnull MPSGraphTensor *) relativePositionEncodingWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                                     mapTensor:(MPSGraphTensor * __nonnull)rpeMapTensor
+                                                       weights:(float * __nonnull)rpeWeights
+                                                         depth:(NSUInteger)depth
+                                                         heads:(NSUInteger)heads
+                                                       queries:(NSUInteger)queries
+                                                          keys:(NSUInteger)keys
+                                                          type:(NSUInteger)type
+                                                         label:(NSString * __nonnull)label
+{
+    // RPE weights factorization.
+    NSData * rpeWeightsData = [NSData dataWithBytesNoCopy:(void *)rpeWeights
+                                                   length:depth * heads * 15 * 15 * sizeof(float)
+                                             freeWhenDone:NO];
+
+    MPSGraphTensor * rpeTensor = [self variableWithData:rpeWeightsData
+                                                  shape:@[@(depth * heads), @(15 * 15)]
+                                               dataType:MPSDataTypeFloat32
+                                                   name:[NSString stringWithFormat:@"%@/weights", label]];
+
+    rpeTensor = [self matrixMultiplicationWithPrimaryTensor:rpeTensor
+                                            secondaryTensor:rpeMapTensor
+                                                       name:[NSString stringWithFormat:@"%@/factorize_matmul", label]];
+
+    rpeTensor = [self reshapeTensor:rpeTensor
+                          withShape:@[@(depth), @(heads), @(queries), @(keys)]
+                               name:[NSString stringWithFormat:@"%@/reshape", label]];
+
+    // Permutations to implement einsum.
+    // First permute rpeTensor to get D to dimension 3, then expand.
+    if (type == 0) {
+        // RPE-Q
+        // rpe: [D, H, Q, K] -> [1, H, Q, D, K]
+        rpeTensor = [self transposeTensor:rpeTensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/transpose_1", label]];
+        rpeTensor = [self transposeTensor:rpeTensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_2", label]];
+        rpeTensor = [self expandDimsOfTensor:rpeTensor axis:0 name:[NSString stringWithFormat:@"%@/expand_dims", label]];
+    } else if (type == 1) {
+        // RPE-K
+        // rpe: [D, H, Q, K] -> [1, H, K, D, Q]
+        rpeTensor = [self transposeTensor:rpeTensor dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_1", label]];
+        rpeTensor = [self transposeTensor:rpeTensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/transpose_2", label]];
+        rpeTensor = [self transposeTensor:rpeTensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_3", label]];
+        rpeTensor = [self expandDimsOfTensor:rpeTensor axis:0 name:[NSString stringWithFormat:@"%@/expand_dims", label]];
+    } else if (type == 2) {
+        // RPE-V
+        // rpe: [D, H, Q, K] -> [1, H, Q, K, D]
+        rpeTensor = [self transposeTensor:rpeTensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/transpose_1", label]];
+        rpeTensor = [self transposeTensor:rpeTensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_2", label]];
+        rpeTensor = [self transposeTensor:rpeTensor dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_3", label]];
+        rpeTensor = [self expandDimsOfTensor:rpeTensor axis:0 name:[NSString stringWithFormat:@"%@/expand_dims", label]];;
+    }
+
+    // Second broadcast rpeTensor to match the batch size
+    // rpe_permuted_Q: [1, H, Q, D, K] -> [B, H, Q, D, K]
+    // rpe_permuted_K: [1, H, K, D, Q] -> [B, H, K, D, Q]
+    // rpe_permuted_V: [1, H, Q, K, D] -> [B, H, Q, K, D]
+    NSArray * toShape = type == 0 ? @[tensor.shape[0], @(heads), @(queries), @(depth), @(keys)]
+                                  : (type == 1 ? @[tensor.shape[0], @(heads), @(keys), @(depth), @(queries)]
+                                     : @[tensor.shape[0], @(heads), @(queries), @(keys), @(depth)]);
+
+//    rpeTensor = [self broadcastTensor:rpeTensor
+//                              toShape:toShape
+//                                 name:[NSString stringWithFormat:@"%@/rpe/broadcast", label]];
+
+    // Third add a singleton dimension to input tensor for K.
+    // x: [B, H, Q, D] -> [B, H, Q, 1, D]
+    // x: [B, H, K, D] -> [B, H, K, 1, D]
+    // x: [B, H, Q, K] -> [B, H, Q, 1, K]
+    tensor = [self expandDimsOfTensor:tensor axis:3 name:[NSString stringWithFormat:@"%@/rpe/expand_dims_2", label]];
+
+    // Finally matrix multiplication and unsqueeze.
+    tensor = [self matrixMultiplicationWithPrimaryTensor:tensor
+                                         secondaryTensor:rpeTensor
+                                                    name:[NSString stringWithFormat:@"%@/rpe/matmul", label]];
+
+    tensor = [self squeezeTensor:tensor
+                            name:[NSString stringWithFormat:@"%@/rpe/squeeze", label]];
+
+//    if (type == 1) {
+//        // RPE-K needs a transpose back.
+//        return [self transposeTensor:tensor dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/rpe/transpose_3", label]];
+//    }
+
+    return tensor;
+}
+
+-(nonnull MPSGraphTensor *) getRpeMapTensor
+{
+    // RPE weights factorizer tensor
+    static MPSGraphTensor * rpeMapTensor = nil;
+    
+    @synchronized (self) {
+        if (rpeMapTensor == nil) {
+            int rows = 15 * 15;
+            int cols = 64 * 64;
+            int row, col;
+            std::vector<float> rpeMap(rows * cols);
+            // 15 * 15 in units for distance pairs to 64 * 64 pairs of squares.
+            // Distance pairs mapped on rows, while square pairs mapped on columns.
+            for (NSUInteger i = 0; i < 8; i++) {
+                for (NSUInteger j = 0; j < 8; j++) {
+                    for (NSUInteger k = 0; k < 8; k++) {
+                        for (NSUInteger l = 0; l < 8; l++) {
+                            row = 15 * (i - k + 7) + (j - l + 7);
+                            col = 64 * (i * 8 + j) + k * 8 + l;
+                            rpeMap[row * cols + col] = 1.0f;
+                        }
+                    }
+                }
+            }
+            NSData * rpeMapData = [NSData dataWithBytesNoCopy:(void *)rpeMap.data()
+                                                       length:rows * cols * sizeof(float)
+                                                 freeWhenDone:NO];
+            
+            rpeMapTensor = [self variableWithData:rpeMapData
+                                            shape:@[@(rows), @(cols)]
+                                         dataType:MPSDataTypeFloat32
+                                             name:@"rpe_factor"];
+        }
+    }
+    return rpeMapTensor;
+}
+
 -(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
                                               withKeys:(MPSGraphTensor * __nonnull)keys
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
                                                smolgen:(lczero::MultiHeadWeights::Smolgen * __nullable)smolgen
+                                                  rpeQ:(float * __nullable)rpeQ
+                                                  rpeK:(float * __nullable)rpeK
+                                                  rpeV:(float * __nullable)rpeV
                                      smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label
 {
@@ -769,10 +898,45 @@ static const NSInteger kMinSubBatchSize = 20;
     values = [self transposeTensor:values dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_v", label]];
 
     // Scaled attention matmul.
-    keys = [self transposeTensor:keys dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_k_2", label]];
+    MPSGraphTensor * transposedKeys = [self transposeTensor:keys dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_k_2", label]];
     MPSGraphTensor * attn = [self matrixMultiplicationWithPrimaryTensor:queries
-                                                        secondaryTensor:keys
+                                                        secondaryTensor:transposedKeys
                                                                    name:[NSString stringWithFormat:@"%@/matmul_qk", label]];
+
+    if (rpeQ != nil || rpeK != nil) {
+        MPSGraphTensor * rpeMapTensor = [self getRpeMapTensor]; // [Lc0NetworkGraph getRpeMapTensor];
+
+        // Apply the RPELogits to each of Q and K.
+        if (false && rpeQ != nil) {
+            MPSGraphTensor * rpeQTensor = [self relativePositionEncodingWithTensor:queries
+                                                                         mapTensor:rpeMapTensor
+                                                                           weights:rpeQ
+                                                                             depth:depth
+                                                                             heads:heads
+                                                                           queries:64
+                                                                              keys:64
+                                                                              type:0 // Q-type
+                                                                             label:[NSString stringWithFormat:@"%@/rpeQ", label]];
+            attn = [self additionWithPrimaryTensor:attn
+                                   secondaryTensor:rpeQTensor
+                                              name:[NSString stringWithFormat:@"%@/rpeQ_add", label]];
+        }
+        if (false && rpeK != nil) {
+            MPSGraphTensor * rpeKTensor = [self relativePositionEncodingWithTensor:keys
+                                                                         mapTensor:rpeMapTensor
+                                                                           weights:rpeK
+                                                                             depth:depth
+                                                                             heads:heads
+                                                                           queries:64
+                                                                              keys:64
+                                                                              type:1 // K-type
+                                                                             label:[NSString stringWithFormat:@"%@/rpeK", label]];
+            attn = [self additionWithPrimaryTensor:attn
+                                   secondaryTensor:rpeKTensor
+                                              name:[NSString stringWithFormat:@"%@/rpeK_add", label]];
+        }
+    }
+
     attn = [self divisionWithPrimaryTensor:attn
                            secondaryTensor:[self constantWithScalar:sqrt(depth)
                                                               shape:@[@1]
@@ -849,9 +1013,26 @@ static const NSInteger kMinSubBatchSize = 20;
     attn = [self applyActivationWithTensor:attn activation:@"softmax" label:label];
 
     // matmul(scaled_attention_weights, v).
-    attn = [self matrixMultiplicationWithPrimaryTensor:attn
-                                       secondaryTensor:values
-                                                  name:[NSString stringWithFormat:@"%@/matmul_v", label]];
+    MPSGraphTensor * output = [self matrixMultiplicationWithPrimaryTensor:attn
+                                                          secondaryTensor:values
+                                                                     name:[NSString stringWithFormat:@"%@/matmul_v", label]];
+    
+    if (false && rpeV != nil) {
+        MPSGraphTensor * rpeMapTensor = [self getRpeMapTensor]; // [Lc0NetworkGraph getRpeMapTensor];
+        // output = output + RPEValue(head_depth, name=name+'/rpe_v')(attention_weights)
+        MPSGraphTensor * rpeVTensor = [self relativePositionEncodingWithTensor:attn
+                                                                     mapTensor:rpeMapTensor
+                                                                       weights:rpeV
+                                                                         depth:depth
+                                                                         heads:heads
+                                                                       queries:64
+                                                                          keys:64
+                                                                          type:2 // V-type
+                                                                         label:[NSString stringWithFormat:@"%@/rpeV", label]];
+        output = [self additionWithPrimaryTensor:output
+                               secondaryTensor:rpeVTensor
+                                          name:[NSString stringWithFormat:@"%@/rpeV_add", label]];
+    }
 
     attn = [self transposeTensor:attn dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_a", label]];
 
