@@ -142,7 +142,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                           type:(NSUInteger)type
                                                          label:(NSString * __nonnull)label;
 
-+(nonnull MPSGraphTensor *) getRpeMapTensor;
+-(nonnull MPSGraphTensor *) getRpeMapTensor;
 
 -(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
                                               withKeys:(MPSGraphTensor * __nonnull)keys

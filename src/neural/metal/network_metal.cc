@@ -203,7 +203,7 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     // The next thread can start using the GPU now.
     lock_.unlock();
 
-    // for (auto i = 0; i < 10; i++) {
+    // for (auto i = 0; i < 16*4096; i++) {
     //   CERR << i << ";" << io->op_policy_raw_mem_[i];
     // }
 
