@@ -42,56 +42,55 @@ namespace lczero {
 #if 0
 // debug code to dump allocation in GPU memory
 template <typename T>
-void dumpTensor(T* memory, int elements, const char* message, bool only_summary = false) {
-    const bool fp16 = std::is_same<half, T>::value;
-    printf("\n%s\n", message);
-    int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
-    int bytes = elements * elementSize;
-    void *temp = malloc(bytes);
-    cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
-    float maxval = -std::numeric_limits<float>::max();
-    float minval = std::numeric_limits<float>::max();
-    int nans = 0;
-    int nanss[10] {};
+void dumpTensor(T* memory, int elements, const char* message, int lines = -1,
+                int start = 0) {
+  const bool fp16 = std::is_same<half, T>::value;
+  printf("\n%s\n", message);
+  int elementSize = (int)(fp16 ? sizeof(half) : sizeof(float));
+  int bytes = elements * elementSize;
+  void* temp = malloc(bytes);
+  cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
+  float maxval = -std::numeric_limits<float>::max();
+  float minval = std::numeric_limits<float>::max();
+  int nans = 0;
+  int nanss[10]{};
 
-    for (int i = 0; i < elements; i++)
-    {
-        float val;
-        if (fp16) 
-        {
-            half *arr = (half*)temp;
-            val = (float)arr[i];
-        }
-        else
-        {
-            float *arr = (float *)temp;
-            val = arr[i];
-        }
-        maxval = std::max(maxval, val);
-        minval = std::min(minval, val);
-
-        if (std::isnan(val)) {
-          if (nans < 10) nanss[nans] = i;
-          nans++;
-        }
-
-        if (!only_summary || i < 2 || i == elements - 1) {
-          // printf("%8.4f ", val);
-          // if ((i % 8) == 7) printf("\n");
-          printf("%i;%.6f\n", i, val);
-        }
+  for (int i = 0; i < elements; i++) {
+    float val;
+    if (fp16) {
+      half* arr = (half*)temp;
+      val = (float)arr[i];
+    } else {
+      float* arr = (float*)temp;
+      val = arr[i];
     }
-    free(temp);
-    if (maxval == -std::numeric_limits<float>::max())
-       maxval = std::numeric_limits<double>::quiet_NaN();
-    if (minval == std::numeric_limits<float>::max())
-       minval = std::numeric_limits<double>::quiet_NaN();
+    maxval = std::max(maxval, val);
+    minval = std::min(minval, val);
 
-    printf("Max: %.6f, Min: %.6f, NaNs: %i of %i", maxval, minval, nans, elements);
-    printf("\nNaN indices: ");
-    for (int i=0; i<nans && i<10; i++) printf("%i ", nanss[i]);
-    if (nans > 10) printf("......");
-    printf("\n");
+    if (std::isnan(val)) {
+      if (nans < 10) nanss[nans] = i;
+      nans++;
+    }
+
+    if ((i >= start && (i < start + lines || lines == -1)) ||
+        i == elements - 1) {
+      // printf("%8.4f ", val);
+      // if ((i % 8) == 7) printf("\n");
+      printf("%i;%.6f\n", i, val);
+    }
+  }
+  free(temp);
+  if (maxval == -std::numeric_limits<float>::max())
+    maxval = std::numeric_limits<double>::quiet_NaN();
+  if (minval == std::numeric_limits<float>::max())
+    minval = std::numeric_limits<double>::quiet_NaN();
+
+  printf("Max: %.6f, Min: %.6f, NaNs: %i of %i", maxval, minval, nans,
+         elements);
+  printf("\nNaN indices: ");
+  for (int i = 0; i < nans && i < 10; i++) printf("%i ", nanss[i]);
+  if (nans > 10) printf("......");
+  printf("\n");
 }
 #endif
 
@@ -1420,6 +1419,68 @@ void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src,
 }
 
 template <typename DataType>
+static void cublasXgemm(cublasHandle_t handle, cublasOperation_t transa,
+                        cublasOperation_t transb, int m, int n, int k,
+                        float alpha, const DataType* A, int lda,
+                        const DataType* B, int ldb, float beta, DataType* C,
+                        int ldc) {
+  const bool fp16 = std::is_same<half, DataType>::value;
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
+    ReportCUBLASErrors(cublasHgemm(
+        handle, transa, transb, m, n, k, (const half*)&alpha_h, (const half*)A,
+        lda, (const half*)B, ldb, (const half*)&beta_h, (half*)C, ldc));
+  } else {
+    ReportCUBLASErrors(cublasSgemm(handle, transa, transb, m, n, k, &alpha,
+                                   (const float*)A, lda, (const float*)B, ldb,
+                                   &beta, (float*)C, ldc));
+  }
+}
+
+template <typename DataType>
+static void cublasXGemmStridedBatched(
+    cublasHandle_t handle, cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k, float alpha, const void* A, int lda,
+    long long int strideA, const void* B, int ldb, long long int strideB,
+    float beta, void* C, int ldc, long long int strideC, int batchCount) {
+  const bool fp16 = std::is_same<half, DataType>::value;
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
+    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+        handle, transa, transb, m, n, k, &alpha_h, A, CUDA_R_16F, lda, strideA,
+        B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
+        batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
+  } else {
+    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+        handle, transa, transb, m, n, k, &alpha, A, CUDA_R_32F, lda, strideA, B,
+        CUDA_R_32F, ldb, strideB, &beta, C, CUDA_R_32F, ldc, strideC,
+        batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+  }
+}
+
+template <typename DataType>
+static void cublasXGemmBatched(cublasHandle_t handle, cublasOperation_t transa,
+                               cublasOperation_t transb, int m, int n, int k,
+                               float alpha, DataType** A, int lda, DataType** B,
+                               int ldb, float beta, DataType** C, int ldc,
+                               int batchCount) {
+  const bool fp16 = std::is_same<half, DataType>::value;
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
+    ReportCUBLASErrors(cublasHgemmBatched(
+        handle, transa, transb, m, n, k, (const half*)&alpha_h, (half**)A, lda,
+        (half**)B, ldb, (const half*)&beta_h, (half**)C, ldc, batchCount));
+  } else {
+    ReportCUBLASErrors(cublasSgemmBatched(
+        handle, transa, transb, m, n, k, &alpha, (float**)A, lda, (float**)B,
+        ldb, &beta, (float**)C, ldc, batchCount));
+  }
+}
+
+template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(
     BaseLayer<DataType>* ip, const MultiHeadWeights::PolicyHead& weights,
     void* scratch, bool attention_body, ActivationFunction act,
@@ -1579,67 +1640,73 @@ EncoderBlock<DataType>::EncoderBlock(
     // GPU memory already allocated in AttentionBody.
     smol_global = smolgen_global_scratch;
   }
-}
 
-template <typename DataType>
-static void cublasXgemm(cublasHandle_t handle, cublasOperation_t transa,
-                        cublasOperation_t transb, int m, int n, int k,
-                        float alpha, const DataType* A, int lda,
-                        const DataType* B, int ldb, float beta, DataType* C,
-                        int ldc) {
-  const bool fp16 = std::is_same<half, DataType>::value;
-  if (fp16) {
-    unsigned short alpha_h = FP32toFP16(alpha);
-    unsigned short beta_h = FP32toFP16(beta);
-    ReportCUBLASErrors(cublasHgemm(
-        handle, transa, transb, m, n, k, (const half*)&alpha_h, (const half*)A,
-        lda, (const half*)B, ldb, (const half*)&beta_h, (half*)C, ldc));
-  } else {
-    ReportCUBLASErrors(cublasSgemm(handle, transa, transb, m, n, k, &alpha,
-                                   (const float*)A, lda, (const float*)B, ldb,
-                                   &beta, (float*)C, ldc));
-  }
-}
+  // RPE weights.
+  if (cpu_weights.mha.rpe_q.size() > 0 || cpu_weights.mha.rpe_k.size() > 0 ||
+      cpu_weights.mha.rpe_v.size() > 0) {
+    // Weights factorizer.
+    int rows = 15 * 15;
+    int cols = 64 * 64;
+    int row, col;
+    std::vector<float> rpe_map(rows * cols);
+    // 15 * 15 in units for distance pairs to 64 * 64 pairs of squares.
+    // Distance pairs mapped on rows, while square pairs mapped on columns.
+    for (auto i = 0; i < 8; i++) {
+      for (auto j = 0; j < 8; j++) {
+        for (auto k = 0; k < 8; k++) {
+          for (auto l = 0; l < 8; l++) {
+            row = 15 * (i - k + 7) + (j - l + 7);
+            col = 64 * (i * 8 + j) + k * 8 + l;
+            rpe_map[row * cols + col] = 1.0f;
+          }
+        }
+      }
+    }
+    allocAndUpload<DataType>(&mha_rpe_factorizer, rpe_map, scratch);
 
-template <typename DataType>
-static void cublasXGemmStridedBatched(
-    cublasHandle_t handle, cublasOperation_t transa, cublasOperation_t transb,
-    int m, int n, int k, float alpha, const void* A, int lda,
-    long long int strideA, const void* B, int ldb, long long int strideB,
-    float beta, void* C, int ldc, long long int strideC, int batchCount) {
-  const bool fp16 = std::is_same<half, DataType>::value;
-  if (fp16) {
-    unsigned short alpha_h = FP32toFP16(alpha);
-    unsigned short beta_h = FP32toFP16(beta);
-    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
-        handle, transa, transb, m, n, k, &alpha_h, A, CUDA_R_16F, lda, strideA,
-        B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
-        batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
-  } else {
-    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
-        handle, transa, transb, m, n, k, &alpha, A, CUDA_R_32F, lda, strideA, B,
-        CUDA_R_32F, ldb, strideB, &beta, C, CUDA_R_32F, ldc, strideC,
-        batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
-  }
-}
+    // We need a cublas instance for the gemm. Create a temporary one.
+    cublasHandle_t tmp_cublas;
+    ReportCUBLASErrors(cublasCreate(&tmp_cublas));
 
-template <typename DataType>
-static void cublasXGemmBatched(cublasHandle_t handle, cublasOperation_t transa,
-                               cublasOperation_t transb, int m, int n, int k,
-                               float alpha, DataType** A, int lda, DataType** B,
-                               int ldb, float beta, DataType** C, int ldc,
-                               int batchCount) {
-  const bool fp16 = std::is_same<half, DataType>::value;
-  if (fp16) {
-    unsigned short alpha_h = FP32toFP16(alpha);
-    unsigned short beta_h = FP32toFP16(beta);
-    ReportCUBLASErrors(cublasHgemmBatched(
-        handle, transa, transb, m, n, k, (const half*)&alpha_h, (half**)A, lda,
-        (half**)B, ldb, (const half*)&beta_h, (half**)C, ldc, batchCount));
-  } else {
-    ReportCUBLASErrors(cublasSgemmBatched(
-        handle, transa, transb, m, n, k, &alpha, (float**)A, lda, (float**)B,
-        ldb, &beta, (float**)C, ldc, batchCount));
+    // Allocate RPE weights and multiply by factorizer
+    DataType* rpe_scratch;
+    mha_rpe_q_size_ = cpu_weights.mha.rpe_q.size();
+    if (mha_rpe_q_size_ > 0) {
+      allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_q, scratch);
+
+      // Gemm to factorize the RPE Q weights.
+      ReportCUDAErrors(
+          cudaMalloc(&mha_rpe_q, mha_q_size_ * 4096 * sizeof(DataType)));
+      cublasXgemm<DataType>(tmp_cublas, CUBLAS_OP_N, CUBLAS_OP_T, 4096,
+                            mha_q_size_, 225, 1.0f, mha_rpe_factorizer, 4096,
+                            rpe_scratch, mha_q_size_, 0.0f,
+                            (DataType*)mha_rpe_q, 4096);
+    }
+    mha_rpe_k_size_ = cpu_weights.mha.rpe_k.size();
+    if (mha_rpe_k_size_ > 0) {
+      allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_k, scratch);
+
+      // Gemm to factorize the RPE K weights.
+      ReportCUDAErrors(
+          cudaMalloc(&mha_rpe_k, mha_k_size_ * 4096 * sizeof(DataType)));
+      cublasXgemm<DataType>(tmp_cublas, CUBLAS_OP_N, CUBLAS_OP_T, 4096,
+                            mha_k_size_, 225, 1.0f, mha_rpe_factorizer, 4096,
+                            rpe_scratch, mha_k_size_, 0.0f,
+                            (DataType*)mha_rpe_k, 4096);
+    }
+    mha_rpe_v_size_ = cpu_weights.mha.rpe_v.size();
+    if (mha_rpe_v_size_ > 0) {
+      allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_v, scratch);
+
+      // Gemm to factorize the RPE V weights.
+      ReportCUDAErrors(
+          cudaMalloc(&mha_rpe_v, mha_v_size_ * 4096 * sizeof(DataType)));
+      cublasXgemm<DataType>(tmp_cublas, CUBLAS_OP_N, CUBLAS_OP_T, 4096,
+                            mha_v_size_, 225, 1.0f, mha_rpe_factorizer, 4096,
+                            rpe_scratch, mha_v_size_, 0.0f,
+                            (DataType*)mha_rpe_v, 4096);
+    }
+    cublasDestroy(tmp_cublas);
   }
 }
 
@@ -1749,18 +1816,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // (Maybe not, we can play with strides of the gemm and do independent gemms
   // for each encoder head)
 
-  // Apply scaled dot product attention:
-  /*
-      matmul_qk = tf.matmul(q, k, transpose_b=True)
-      dk = tf.cast(tf.shape(k)[-1], self.model_dtype)
-      scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
-      attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
-      output = tf.matmul(attention_weights, v)
-  */
-
-  // shape(k)[-1] = depth
-  float factor = 1.0f / sqrt((float)depth);
-
+  // Apply dot product attention
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
     if (*offset_pointers == nullptr) {
@@ -1790,7 +1846,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
         depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
                       // transform
-        factor,       // to handle "/ tf.math.sqrt(dk)"
+        1.0,          // Scaling done after RPE logits
         *offset_pointers,  // mha_k + offset /*A*/,
         d_model /*LDA*/,   // (d_model = depth * encoder_heads_) to skip over
                            // other "depth" slices / heads
@@ -1808,6 +1864,30 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         N * encoder_heads_);
   }
 
+  // Scaling of attention logits is done after RPE.
+  float factor = 1.0f / sqrt((float)depth);
+  {
+    // RPE Q and K.
+    if (mha_rpe_q_size_ > 0) {
+      // Matrix-vector multiplication for query x rpe_q
+      // Note: mha_q here is not yet transposed, so shape is still BQHD.
+      // mha_q @ rpe_q: [B, Q, H, D] x [D, H, Q, K]
+      // Kernel performs the required transpositions.
+      float outScale = mha_rpe_k_size_ == 0 ? factor : 1.0f;
+      multiplyRPEAttentionLogits<DataType>(mha_q, mha_rpe_q, buffer1, buffer1,
+                                           N, encoder_heads_, 64, 64, depth,
+                                           outScale, 0, stream);
+    }
+    if (mha_rpe_k_size_ > 0) {
+      // Matrix-vector multiplication for key x rpe_k
+      // Note: mha_k here is not yet transposed, so shape is still BKHD.
+      // mha_k @ rpe_k: [B, K, H, D] x [D, H, Q, K]
+      // Kernel performs the required transpositions.
+      multiplyRPEAttentionLogits<DataType>(mha_k, mha_rpe_k, buffer1, buffer1,
+                                           N, encoder_heads_, 64, 64, depth,
+                                           factor, 1, stream);
+    }
+  }
   // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
   // attention_weights -> buffer1
   if (has_smolgen_) {
@@ -1836,6 +1916,17 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         d_model /*LDC*/,
         // 64 * d_model /*strideC*/,
         N * encoder_heads_);
+  }
+
+  if (mha_rpe_v_size_ > 0) {
+    // RPE-V
+    // Matrix-vector multiplication for attn x rpe_v
+    // attn @ rpe_v: [B, H, Q, K] x [D, H, Q, K]
+    // Kernel performs the required transpositions.
+    // The matmul result (buffer2) is already with BQHD shape.
+    multiplyRPEAttentionLogits<DataType>(buffer1, mha_rpe_v, buffer2, buffer2,
+                                         N, encoder_heads_, 64, 64, depth, 1.0f,
+                                         2, stream);
   }
 
   // #final dense layer (mha_dense), buffer2 -> buffer1

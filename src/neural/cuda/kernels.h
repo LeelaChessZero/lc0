@@ -155,5 +155,12 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, cudaStream_t stream);
+
+template <typename T>
+void multiplyRPEAttentionLogits(const T* rpeInput, const T* rpeWeights,
+                                const T* attnInput, T* output, int B, int H,
+                                int Q, int K, int D, float outScale,
+                                size_t rpetype, cudaStream_t stream);
+
 }  // namespace cudnn_backend
 }  // namespace lczero

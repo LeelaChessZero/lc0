@@ -340,19 +340,21 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename dT, typename sT>
-__device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
-                       int Nin, int Cin, int H, int W) {
-  if (n >= Nin || c >= Cin) return 0;
+template <typename dT, typename sT = dT>
+__device__ dT readInputTensor(const sT* input_tensor, int i, int j, int k,
+                              int l, int I, int J, int K, int L) {
+  // i is the outermost|slowest|most-significant index, while l is the
+  // innermost|fastest|least-significant index.
+  if (i >= I || j >= J || k >= K || l >= L) return 0;
 
   int index;
-  index = n;
-  index *= Cin;
-  index += c;
-  index *= H;
-  index += h;
-  index *= W;
-  index += w;
+  index = i;
+  index *= J;
+  index += j;
+  index *= K;
+  index += k;
+  index *= L;
+  index += l;
 
   return (dT)(input_tensor[index]);
 }
@@ -376,7 +378,7 @@ __global__ void NCHWtoNHWC_kernel(dT* output_tensor, const sT* input_tensor,
   int n = index;
 
   output_tensor[tid] =
-      readNCHW<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
+      readInputTensor<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
 }
 
 template <typename DstType, typename SrcType>
@@ -1242,7 +1244,8 @@ __global__ void preprocess_for_attention_body_kernel(
   if (c >= input_size) {
     // concatenate from position encoding array
     if (is_pe_dense_embedding) {
-      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size + (c - input_size)]);
+      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size +
+                        (c - input_size)]);
     } else {
       op = (T)(encoding[64 * hw + (c - input_size)]);
     }
@@ -1305,6 +1308,126 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   gridSize.z = N;
   input_gating_kernel<T>
       <<<gridSize, blockSize, 0, stream>>>(output, input, mult, add, HW, C);
+
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// Get the index corresponding to position (i,j,k,l) in a tensor
+// with dimensions (I,J,K,L) where the innermost dimension is L.
+__device__ __forceinline__ int getTensorIndex(int i, int j, int k, int l, int I,
+                                              int J, int K, int L) {
+  if (i >= I || j >= J || k >= K || l >= L) return -1;
+
+  int index;
+  index = i;
+  index *= J;
+  index += j;
+  index *= K;
+  index += k;
+  index *= L;
+  index += l;
+
+  return index;
+}
+
+template <typename T>
+__global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
+                                         const T* skipAdd, T* output, int B,
+                                         int H, int Q, int K, int D,
+                                         float outScale, size_t rpetype) {
+  int x = threadIdx.x + blockDim.x * blockIdx.x;
+  int q = threadIdx.y + blockDim.y * blockIdx.y;
+  int bh = threadIdx.z + blockDim.z * blockIdx.z;
+  int h = bh % H;
+  int b = bh / H;
+
+  if (rpetype == 0) {
+    // RPE-Q
+    // rpeInput:   [B, Q, H, D] -> transpose to [B, H, Q, (1, D)]
+    // rpeWeights: [D, H, Q, K] -> transpose to [1, H, Q, (D, K)]
+    // output:     [B, H, Q, K]
+
+    // Read tensors per the input layouts and write out per the output layout.
+    // Sum is along the D dimension, K is along the x-axis.
+    int k = x;
+    if (b >= B || h >= H || q >= Q || k >= K) return;
+
+    T sum = 0;
+    for (int i = 0; i < D; i++) {
+      sum += readInputTensor<T>(rpeInput, b, q, h, i, B, Q, H, D) *
+             readInputTensor<T>(rpeWeights, i, h, q, k, D, H, Q, K);
+    }
+    int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
+    output[outIdx] = (sum + skipAdd[outIdx]) * (T)outScale;
+  } else if (rpetype == 1) {
+    // RPE-K
+    // rpeInput:   [B, K, H, D] -> transpose to [B, H, K, (1, D)]
+    // rpeWeights: [D, H, Q, K] -> transpose to [1, H, K, (D, Q)]
+    // output:     [B, H, Q, K]
+
+    // Read tensors per the input layouts and write out per the output layout.
+    // Sum is along the D dimension, and K is along the x-axis.
+    int k = x;
+    if (b >= B || h >= H || q >= Q || k >= K) return;
+
+    T sum = 0;
+    for (int i = 0; i < D; i++) {
+      sum += readInputTensor<T>(rpeInput, b, k, h, i, B, K, H, D) *
+             readInputTensor<T>(rpeWeights, i, h, q, k, D, H, Q, K);
+    }
+    int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
+    output[outIdx] = (sum + skipAdd[outIdx]) * (T)outScale;
+  } else if (rpetype == 2) {
+    // RPE-V
+    // rpeInput:   [B, H, Q, K] -> transpose to [B, H, Q, (1, K)]
+    // rpeWeights: [D, H, Q, K] -> transpose to [1, H, Q, (K, D)]
+    // output:     [B, Q, H, D]
+    // The skip connection is also already in BQHD order.
+
+    // Read tensors per the input layouts and write out per the output layout.
+    // Sum is along the K dimension, and D is along the x-axis.
+    int d = x;
+    if (b >= B || h >= H || q >= Q || d >= D) return;
+
+    T sum = 0;
+    for (int i = 0; i < K; i++) {
+      sum += readInputTensor<T>(rpeInput, b, h, q, i, B, H, Q, K) *
+             readInputTensor<T>(rpeWeights, d, h, q, i, D, H, Q, K);
+    }
+    int outIdx = getTensorIndex(b, q, h, d, B, Q, H, D);
+    output[outIdx] = (sum + skipAdd[outIdx]) * (T)outScale;
+  }
+}
+
+template <typename T>
+void multiplyRPEAttentionLogits(const T* rpeInput, const T* rpeWeights,
+                                const T* attnInput, T* output, int B, int H,
+                                int Q, int K, int D, float outScale,
+                                size_t rpetype, cudaStream_t stream) {
+  if (rpetype > 2) {
+    throw Exception("unsupported rpetype in multiplyRPEAttentionLogits.");
+  }
+
+  // rpeType:    Q            | K            | V
+  // rpeInput:   [B, Q, H, D] | [B, K, H, D] | [B, H, Q, K]
+  // rpeWeights: [D, H, Q, K] | [D, H, Q, K] | [D, H, Q, K]
+
+  // 3D block structure where x-axis maps to K (or D for rpetype==2), y-axis to
+  // Q and z-axis to BH. Each thread calculates the vector sum-product for the
+  // cube at BHQK | BHQD (i.e. "d,dk->k" | "d,dq->q" | "k,kd->d").
+  dim3 blockDim, gridDim;
+  int X = rpetype == 2 ? D : K;
+  blockDim.x = std::min(32, X);
+  blockDim.y = std::min(32, Q);
+  blockDim.z = std::min(std::max(1024 / (blockDim.x * blockDim.y), 1u),
+                        (unsigned int)(B * H));
+  gridDim.x = DivUp(X, blockDim.x);
+  gridDim.y = DivUp(Q, blockDim.y);
+  gridDim.z = DivUp(B * H, blockDim.z);
+
+  rpeVectorMultiply_kernel<T><<<gridDim, blockDim, 0, stream>>>(
+      rpeInput, rpeWeights, attnInput, output, B, H, Q, K, D, outScale,
+      rpetype);
 
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -1595,5 +1718,16 @@ template void applyInputGating<float>(float* output, const float* input,
                                       const float* mult, const float* add,
                                       int N, int C, int output_size,
                                       cudaStream_t stream);
+
+template void multiplyRPEAttentionLogits<half>(
+    const half* rpeInput, const half* rpeWeights, const half* attnInput,
+    half* output, int B, int H, int Q, int K, int D, float outScale,
+    size_t rpetype, cudaStream_t stream);
+
+template void multiplyRPEAttentionLogits<float>(
+    const float* rpeInput, const float* rpeWeights, const float* attnInput,
+    float* output, int B, int H, int Q, int K, int D, float outScale,
+    size_t rpetype, cudaStream_t stream);
+
 }  // namespace cudnn_backend
 }  // namespace lczero
