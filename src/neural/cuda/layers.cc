@@ -1641,7 +1641,7 @@ EncoderBlock<DataType>::EncoderBlock(
     smol_global = smolgen_global_scratch;
   }
 
-  // RPE weights.
+  // RPE weights. /*
   if (cpu_weights.mha.rpe_q.size() > 0 || cpu_weights.mha.rpe_k.size() > 0 ||
       cpu_weights.mha.rpe_v.size() > 0) {
     // Weights factorizer.
@@ -1816,7 +1816,18 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // (Maybe not, we can play with strides of the gemm and do independent gemms
   // for each encoder head)
 
-  // Apply dot product attention
+  // Apply scaled dot product attention:
+  /*
+      matmul_qk = tf.matmul(q, k, transpose_b=True)
+      dk = tf.cast(tf.shape(k)[-1], self.model_dtype)
+      scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
+      attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
+      output = tf.matmul(attention_weights, v)
+  */
+
+  // shape(k)[-1] = depth
+  float factor = 1.0f / sqrt((float)depth);
+
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
     if (*offset_pointers == nullptr) {
@@ -1846,7 +1857,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
         depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
                       // transform
-        1.0,          // Scaling done after RPE logits
+        mha_rpe_q_size_ > 0 || mha_rpe_k_size_ > 0
+            ? 1.0f
+            : factor,      // in RPE nets, scaling is done after RPE logits
         *offset_pointers,  // mha_k + offset /*A*/,
         d_model /*LDA*/,   // (d_model = depth * encoder_heads_) to skip over
                            // other "depth" slices / heads
@@ -1864,8 +1877,6 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         N * encoder_heads_);
   }
 
-  // Scaling of attention logits is done after RPE.
-  float factor = 1.0f / sqrt((float)depth);
   {
     // RPE Q and K.
     if (mha_rpe_q_size_ > 0) {

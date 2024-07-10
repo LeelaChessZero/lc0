@@ -1348,7 +1348,7 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     // output:     [B, H, Q, K]
 
     // Read tensors per the input layouts and write out per the output layout.
-    // Sum is along the D dimension, K is along the x-axis.
+    // Sum is along the D dimension, and K is on the x-axis.
     int k = x;
     if (b >= B || h >= H || q >= Q || k >= K) return;
 
@@ -1366,7 +1366,7 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     // output:     [B, H, Q, K]
 
     // Read tensors per the input layouts and write out per the output layout.
-    // Sum is along the D dimension, and K is along the x-axis.
+    // Sum is along the D dimension, and K is on the x-axis.
     int k = x;
     if (b >= B || h >= H || q >= Q || k >= K) return;
 
@@ -1385,7 +1385,7 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     // The skip connection is also already in BQHD order.
 
     // Read tensors per the input layouts and write out per the output layout.
-    // Sum is along the K dimension, and D is along the x-axis.
+    // Sum is along the K dimension, and D is on the x-axis.
     int d = x;
     if (b >= B || h >= H || q >= Q || d >= D) return;
 
