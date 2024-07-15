@@ -42,6 +42,7 @@
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
+#include "gtb-probe.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
@@ -55,7 +56,7 @@ class Search {
          std::chrono::steady_clock::time_point start_time,
          std::unique_ptr<SearchStopper> stopper, bool infinite, bool ponder,
          const OptionsDict& options, NNCache* cache,
-         SyzygyTablebase* syzygy_tb);
+         SyzygyTablebase* syzygy_tb, std::unique_ptr<bool>* gaviotaEnabled);
 
   ~Search();
 
@@ -166,6 +167,12 @@ class Search {
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
+
+  // Probes Gaviota tables to determine which moves are on the optimal play path.
+  // Thread safe.
+  // Returns false if the position is not in the tablebase.
+  // Safe moves are added to the safe_moves output paramater.
+  bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves);
 
   Network* const network_;
   const SearchParams params_;

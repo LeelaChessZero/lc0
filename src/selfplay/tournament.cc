@@ -96,6 +96,12 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kGaviotaTablebaseId{"gaviotatb-paths", "GaviotaPath",
+     "List of Gaviota tablebase directories. If both Syzygy and Gaviota are "
+     "provided, Gaviota will take precedence when only 5 pieces remain. "
+     "Note that if this parameter is set it is assumed that all Gaviota "
+     "tables (3, 4 and 5-men) are available, but this is not checked, "
+     "so using this parameter without all of these is not supported."};
 
 }  // namespace
 
@@ -136,6 +142,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kOpeningsModeId, openings_modes) = "sequential";
 
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<StringOption>(kGaviotaTablebaseId);  
   SelfPlayGame::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
@@ -156,6 +163,13 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<bool>(SearchParams::kTwoFoldDrawsId, false);
   defaults->Set<int>(SearchParams::kTaskWorkersPerSearchWorkerId, 0);
 }
+
+// Needed for Gaviota
+#ifdef _WIN32
+#define SEP_CHAR ';'
+#else
+#define SEP_CHAR ':'
+#endif
 
 SelfPlayTournament::SelfPlayTournament(
     const OptionsDict& options,
@@ -269,6 +283,29 @@ SelfPlayTournament::SelfPlayTournament(
       CERR << "Failed to load Syzygy tablebases!";
       syzygy_tb_ = nullptr;
     }
+  }
+
+  // Init Gaviota, if a path is given.
+  auto dtmPaths = options.Get<std::string>(kGaviotaTablebaseId);
+  if (dtmPaths.size() != 0 && !gaviotaEnabled_) {
+    std::stringstream path_string_stream(dtmPaths);
+    std::string path;
+    auto paths = tbpaths_init();
+    while (std::getline(path_string_stream, path, SEP_CHAR)) {
+	paths = tbpaths_add(paths, path.c_str());
+    }
+    tb_init(0, tb_CP4, paths);
+    tbcache_init(64 * 1024 * 1024, 64);
+    if (tb_availability() != 63) {
+      std::cerr << "UNEXPECTED gaviota availability" << std::endl;
+      gaviotaEnabled_ = std::make_unique<bool>(false);
+      // return;
+    } else {
+      gaviotaEnabled_ = std::make_unique<bool>(true);      
+      std::cerr << "Found Gaviota TBs" << std::endl;
+    }
+  } else {
+    gaviotaEnabled_ = std::make_unique<bool>(false);
   }
 }
 
@@ -394,7 +431,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb,
-            enable_resign);
+            &gaviotaEnabled_, enable_resign);
 
   // If game was aborted, it's still undecided.
   if (game.GetGameResult() != GameResult::UNDECIDED) {

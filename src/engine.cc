@@ -51,6 +51,12 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kGaviotaTablebaseId{"gaviotatb-paths", "GaviotaPath",
+     "List of Gaviota tablebase directories. If both Syzygy and Gaviota are "
+     "provided, Gaviota will take precedence when only 5 pieces remain. "
+     "Note that if this parameter is set it is assumed that all Gaviota "
+     "tables (3, 4 and 5-men) are available, but this is not checked, "
+     "so using this parameter without all of these is not supported."};
 const OptionId kPonderId{"", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
 const OptionId kUciChess960{
@@ -116,6 +122,7 @@ void EngineController::PopulateOptions(OptionsParser* options) {
     options->UnhideOption(SearchParams::kMultiPvId);
   }
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<StringOption>(kGaviotaTablebaseId);  
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
@@ -139,6 +146,13 @@ void EngineController::ResetMoveTimer() {
   move_start_time_ = std::chrono::steady_clock::now();
 }
 
+// Needed for Gaviota
+#ifdef _WIN32
+#define SEP_CHAR ';'
+#else
+#define SEP_CHAR ':'
+#endif
+
 // Updates values from Uci options.
 void EngineController::UpdateFromUciOptions() {
   SharedLock lock(busy_mutex_);
@@ -158,6 +172,29 @@ void EngineController::UpdateFromUciOptions() {
     tb_paths_.clear();
   }
 
+  // Init Gaviota, if a path is given
+  auto dtmPaths = options_.Get<std::string>(kGaviotaTablebaseId);
+  if (dtmPaths.size() != 0) {
+    std::stringstream path_string_stream(dtmPaths);
+    std::string path;
+    auto paths = tbpaths_init();
+    while (std::getline(path_string_stream, path, SEP_CHAR)) {
+      paths = tbpaths_add(paths, path.c_str());
+    }
+    tb_init(0, tb_CP4, paths);
+    tbcache_init(64 * 1024 * 1024, 64);
+    if (tb_availability() != 63) {
+      std::cerr << "UNEXPECTED gaviota availability" << std::endl;
+      gaviotaEnabled_ = std::make_unique<bool>(false);
+      return;
+    } else {
+      gaviotaEnabled_ = std::make_unique<bool>(true);      
+      std::cerr << "Found Gaviota TBs" << std::endl;
+    }
+  } else {
+    gaviotaEnabled_ = std::make_unique<bool>(false);
+  }
+  
   // Network.
   const auto network_configuration =
       NetworkFactory::BackendConfiguration(options_);
@@ -394,7 +431,7 @@ void EngineController::Go(const GoParams& params) {
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
-      options_, &cache_, syzygy_tb_.get());
+      options_, &cache_, syzygy_tb_.get(), &gaviotaEnabled_);
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));

@@ -128,7 +128,9 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
-                        SyzygyTablebase* syzygy_tb, bool enable_resign) {
+                        SyzygyTablebase* syzygy_tb,
+			std::unique_ptr<bool>* gaviotaEnabled,
+			bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
   // If we are training, verify that input formats are consistent.
@@ -182,7 +184,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers), /* infinite */ false, /* ponder */ false,
-          *options_[idx].uci_options, options_[idx].cache, syzygy_tb);
+          *options_[idx].uci_options, options_[idx].cache, syzygy_tb,
+	  /* gaviota */ gaviotaEnabled);
     }
 
     // Do search.

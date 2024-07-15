@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('lc0', 'cpp',
+project('lc0', ['c', 'cpp'],
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.55')
 
@@ -691,6 +691,7 @@ endif
 
 if get_option('lc0')
   files += common_files
+  deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
   executable('lc0', 'src/main.cc',
        files, include_directories: includes, dependencies: deps, install: true)
 endif
