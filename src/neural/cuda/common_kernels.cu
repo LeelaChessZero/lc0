@@ -340,21 +340,19 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template <typename dT, typename sT = dT>
-__device__ dT readInputTensor(const sT* input_tensor, int i, int j, int k,
-                              int l, int I, int J, int K, int L) {
-  // i is the outermost|slowest|most-significant index, while l is the
-  // innermost|fastest|least-significant index.
-  if (i >= I || j >= J || k >= K || l >= L) return 0;
+template <typename dT, typename sT>
+__device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
+                       int Nin, int Cin, int H, int W) {
+  if (n >= Nin || c >= Cin) return 0;
 
   int index;
-  index = i;
-  index *= J;
-  index += j;
-  index *= K;
-  index += k;
-  index *= L;
-  index += l;
+  index = n;
+  index *= Cin;
+  index += c;
+  index *= H;
+  index += h;
+  index *= W;
+  index += w;
 
   return (dT)(input_tensor[index]);
 }
@@ -378,7 +376,7 @@ __global__ void NCHWtoNHWC_kernel(dT* output_tensor, const sT* input_tensor,
   int n = index;
 
   output_tensor[tid] =
-      readInputTensor<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
+      readNCHW<dT, sT>(input_tensor, n, c, h, w, Nin, Cin, H, W);
 }
 
 template <typename DstType, typename SrcType>
@@ -1318,16 +1316,40 @@ __device__ __forceinline__ int getTensorIndex(int i, int j, int k, int l, int I,
                                               int J, int K, int L) {
   if (i >= I || j >= J || k >= K || l >= L) return -1;
 
-  int index;
-  index = i;
-  index *= J;
-  index += j;
-  index *= K;
-  index += k;
-  index *= L;
-  index += l;
+  return  (((((i * J) + j) * K) + k) * L) + l;
 
-  return index;
+  // int index;
+  // index = i;
+  // index *= J;
+  // index += j;
+  // index *= K;
+  // index += k;
+  // index *= L;
+  // index += l;
+
+
+  // return index;
+}
+
+template <typename dT, typename sT = dT>
+__device__ __forceinline__ dT readInputTensor(const sT* input_tensor, size_t i, size_t j, size_t k,
+                              size_t l, size_t I, size_t J, size_t K, size_t L) {
+  // i is the outermost|slowest|most-significant index, while l is the
+  // innermost|fastest|least-significant index.
+  if (i >= I || j >= J || k >= K || l >= L) return 0;
+
+  // int index;
+  // index = i;
+  // index *= J;
+  // index += j;
+  // index *= K;
+  // index += k;
+  // index *= L;
+  // index += l;
+  // int index = getTensorIndex(i, j, k, l, I, J, K, L);
+  size_t index = (((((i * J) + j) * K) + k) * L) + l;
+
+  return (dT)(input_tensor[index]);
 }
 
 template <typename T>
@@ -1353,12 +1375,17 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     if (b >= B || h >= H || q >= Q || k >= K) return;
 
     T sum = 0;
-    for (int i = 0; i < D; i++) {
-      sum += readInputTensor<T>(rpeInput, b, q, h, i, B, Q, H, D) *
-             readInputTensor<T>(rpeWeights, i, h, q, k, D, H, Q, K);
+    const T* ip = rpeInput + getTensorIndex(b, q, h, 0, B, Q, H, D);
+    const T* wt = rpeWeights + getTensorIndex(0, h, q, k, D, H, Q, K);
+    const int wtstep = H * Q * K;
+
+    for (int i = 0, j = 0; i < D; i++, j += wtstep) {
+      sum += ip[i] * wt[j];
+      // sum += readInputTensor<T>(rpeInput, b, q, h, i, B, Q, H, D) *
+      //        readInputTensor<T>(rpeWeights, i, h, q, k, D, H, Q, K);
     }
     int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
-    output[outIdx] = (sum + skipAdd[outIdx]) * (T)outScale;
+    output[outIdx] = ((T)sum + (T)skipAdd[outIdx]) * (T)outScale;
   } else if (rpetype == 1) {
     // RPE-K
     // rpeInput:   [B, K, H, D] -> transpose to [B, H, K, (1, D)]
@@ -1371,12 +1398,17 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     if (b >= B || h >= H || q >= Q || k >= K) return;
 
     T sum = 0;
-    for (int i = 0; i < D; i++) {
-      sum += readInputTensor<T>(rpeInput, b, k, h, i, B, K, H, D) *
-             readInputTensor<T>(rpeWeights, i, h, q, k, D, H, Q, K);
+    const T* ip = rpeInput + getTensorIndex(b, k, h, 0, B, K, H, D);
+    const T* wt = rpeWeights + getTensorIndex(0, h, q, k, D, H, Q, K);
+    const int wtstep = H * Q * K;
+
+    for (int i = 0, j = 0; i < D; i++, j += wtstep) {
+      sum += ip[i] * wt[j];
+      // sum += readInputTensor<T>(rpeInput, b, k, h, 0, B, K, H, D) *
+      //        readInputTensor<T>(rpeWeights, 0, h, q, k, D, H, Q, K);
     }
     int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
-    output[outIdx] = (sum + skipAdd[outIdx]) * (T)outScale;
+    output[outIdx] = ((T)sum + (T)skipAdd[outIdx]) * (T)outScale;
   } else if (rpetype == 2) {
     // RPE-V
     // rpeInput:   [B, H, Q, K] -> transpose to [B, H, Q, (1, K)]
@@ -1390,12 +1422,16 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     if (b >= B || h >= H || q >= Q || d >= D) return;
 
     T sum = 0;
+    const T* ip = rpeInput + getTensorIndex(b, h, q, 0, B, H, Q, K);
+    const T* wt = rpeWeights + getTensorIndex(d, h, q, 0, D, H, Q, K);
+
     for (int i = 0; i < K; i++) {
-      sum += readInputTensor<T>(rpeInput, b, h, q, i, B, H, Q, K) *
-             readInputTensor<T>(rpeWeights, d, h, q, i, D, H, Q, K);
+      sum += ip[i] * wt[i];
+      // sum += readInputTensor<T>(rpeInput, b, h, q, 0, B, H, Q, K) *
+      //        readInputTensor<T>(rpeWeights, d, h, q, 0, D, H, Q, K);
     }
     int outIdx = getTensorIndex(b, q, h, d, B, Q, H, D);
-    output[outIdx] = (sum + skipAdd[outIdx]) * (T)outScale;
+    output[outIdx] = ((T)sum + (T)skipAdd[outIdx]) * (T)outScale;
   }
 }
 
