@@ -153,10 +153,8 @@ bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves) {
   std::vector<unsigned int> infos (root_moves.size());  
   unsigned int minimum_dtm = 1000;
   unsigned int maximum_dtm = 0;
-  unsigned int target_dtm;
+  unsigned int target_dtm = 0;
   int dtm_idx = 0;
-  bool winning = false;
-  bool drawing = false;
     
   // for all legal moves identify minimum and maximum dtm, if any.
   for (auto& move : root_moves) {
@@ -165,25 +163,32 @@ bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves) {
     unsigned int dtm;
     gaviota_tb_probe_hard(next_pos, info, dtm);
     // LOGFILE << "DTM for move: " << move.as_string() << " is " << dtm << " and info is " << info << "\n";
-    if (! winning && info == 2) winning = true; // set winning if it is not already set
-    if (! drawing && info == 0) drawing = true; // set drawing if it is not already set    
     dtms[dtm_idx] = dtm;
     infos[dtm_idx] = info;
-    dtm_idx++;    
-    if (dtm < minimum_dtm) minimum_dtm = dtm;
-    if (dtm > maximum_dtm) maximum_dtm = dtm;    
+    dtm_idx++;
+    if (info == 2){
+      // Only set minimum_dtm if side to move is winning, ie dtm is
+      // even (note that this is children of root, not root, so if dtm
+      // for a child of root is one, then side to move is losing)
+      if (dtm % 2 == 0 && dtm < minimum_dtm) minimum_dtm = dtm;
+      // Only set maximum_dtm if side to move is losing
+      if (dtm % 2 != 0 && dtm > maximum_dtm) maximum_dtm = dtm;
+    }
   }
 
-  // Set a target DTM if the game is not drawn.
-  if (!winning && !drawing) {
-    target_dtm = maximum_dtm;
+  // Set a target DTM if the game is not drawn, as implied by
+  // minium_dtm or maximum_dtm are changed from there default values
+  if (minimum_dtm != 1000) {
+    target_dtm = minimum_dtm;
   } else {
-    if (winning) {
-      target_dtm = minimum_dtm;
+    // Only care about how to lose when not winning. That there is a losing move does not imply that the game is lost), and this asymmetry motivates testing for losing only after ruling out winning.
+    if (maximum_dtm != 0) {
+      target_dtm = maximum_dtm;
     }
   }
   
-  if (winning || !drawing) {
+  // If target dtm is set, then filter moves
+  if (target_dtm > 0) {
     dtm_idx = 0;
     for (auto& move : root_moves) {
       if (dtms[dtm_idx] == target_dtm) {
