@@ -166,13 +166,15 @@ bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves) {
     dtms[dtm_idx] = dtm;
     infos[dtm_idx] = info;
     dtm_idx++;
+    // info == 2 implies side to move is winning, info == 1 implies side to move is losing
+    // note that this is children of root, not root, so for root the opposite is true.
     if (info == 2){
-      // Only set minimum_dtm if side to move is winning, ie dtm is
-      // even (note that this is children of root, not root, so if dtm
-      // for a child of root is one, then side to move is losing)
-      if (dtm % 2 == 0 && dtm < minimum_dtm) minimum_dtm = dtm;
-      // Only set maximum_dtm if side to move is losing
-      if (dtm % 2 != 0 && dtm > maximum_dtm) maximum_dtm = dtm;
+      // root is losing, maximise
+      if(dtm > maximum_dtm) maximum_dtm = dtm;
+    }
+    if (info == 1){
+      // root is winning, minimise
+      if(dtm < minimum_dtm) minimum_dtm = dtm;
     }
   }
 
