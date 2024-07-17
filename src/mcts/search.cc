@@ -150,11 +150,12 @@ bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves) {
   // Create a vector to store dtm information in.
   std::vector<unsigned int> dtms (root_moves.size());
   // And a vector for info information.
-  std::vector<unsigned int> infos (root_moves.size());  
+  std::vector<unsigned int> infos (root_moves.size());
   unsigned int minimum_dtm = 1000;
   unsigned int maximum_dtm = 0;
   unsigned int target_dtm = 0;
   int dtm_idx = 0;
+  bool at_least_there_is_a_draw = false;
     
   // for all legal moves identify minimum and maximum dtm, if any.
   for (auto& move : root_moves) {
@@ -166,15 +167,28 @@ bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves) {
     dtms[dtm_idx] = dtm;
     infos[dtm_idx] = info;
     dtm_idx++;
-    // info == 2 implies side to move is winning, info == 1 implies side to move is losing
-    // note that this is children of root, not root, so for root the opposite is true.
-    if (info == 2){
-      // root is losing, maximise
-      if(dtm > maximum_dtm) maximum_dtm = dtm;
-    }
-    if (info == 1){
+    // info == 0 means draw.
+    // info == 1 and info == 2 implies a decisive move
+
+    // if some moves have info == 1 and others have info == 2, then the info == 1 moves appears to be
+    // moves that lose in a otherwise won position.
+    
+    // when info == 2 && dtm is odd then root is losing
+    // when info == 2 && dtm is even then root is winning does the same hold when info == 1?
+
+    if (info == 2 || info == 1){
+      if(dtm % 2 == 0 || dtm == 0){
       // root is winning, minimise
       if(dtm < minimum_dtm) minimum_dtm = dtm;
+      } else {
+	// it root is losing, maximise
+	if(dtm > maximum_dtm) maximum_dtm = dtm;
+      }
+    } else {
+      // Set the draw flag if not already set
+      if (!at_least_there_is_a_draw){
+	at_least_there_is_a_draw = true;
+      }
     }
   }
 
@@ -182,23 +196,25 @@ bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves) {
   // minium_dtm or maximum_dtm are changed from there default values
   if (minimum_dtm != 1000) {
     target_dtm = minimum_dtm;
+      // LOGFILE << "Winning, opting for lowest dtm = " << target_dtm;    
   } else {
-    // Only care about how to lose when not winning. That there is a losing move does not imply that the game is lost), and this asymmetry motivates testing for losing only after ruling out winning.
-    if (maximum_dtm != 0) {
+    // Only care about how to lose when actually losing.
+    if (!at_least_there_is_a_draw) {
       target_dtm = maximum_dtm;
+      // LOGFILE << "Losing, opting for highest dtm = " << target_dtm;
     }
   }
   
-  // If target dtm is set, then filter moves
-  if (target_dtm > 0) {
+  if (minimum_dtm != 1000 || !at_least_there_is_a_draw) {
     dtm_idx = 0;
     for (auto& move : root_moves) {
-      if (dtms[dtm_idx] == target_dtm) {
+      if (dtms[dtm_idx] == target_dtm && /* stalemate is also dtm 0, make sure to pick a proper mate */ infos[dtm_idx] != 0) {
 	safe_moves->push_back(move);
       }
       dtm_idx++;
     }
   } else {
+    // LOGFILE << "Drawing is optimal exclude losing moves";
     // Draw is the optimal outcome, but keep only drawing moves (info == 0 means draw).
     dtm_idx = 0;
     for (auto& move : root_moves) {
