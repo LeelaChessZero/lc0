@@ -162,5 +162,9 @@ void multiplyRPEAttentionLogits(const T* rpeInput, const T* rpeWeights,
                                 int Q, int K, int D, float outScale,
                                 size_t rpetype, cudaStream_t stream);
 
+template <typename T>
+void permuteTensor(T* output, const T* input, int s1, int s2, int s3, int s4,
+                   int p1, int p2, int p3, int p4, cudaStream_t stream);
+
 }  // namespace cudnn_backend
 }  // namespace lczero

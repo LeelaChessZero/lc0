@@ -1670,41 +1670,56 @@ EncoderBlock<DataType>::EncoderBlock(
 
     // Allocate RPE weights and multiply by factorizer
     DataType* rpe_scratch;
+    int heads = encoder_heads_;
+    int depth = mha_q_size_ / encoder_heads_;
     mha_rpe_q_size_ = cpu_weights.mha.rpe_q.size();
     if (mha_rpe_q_size_ > 0) {
       allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_q, scratch);
 
       // Gemm to factorize the RPE Q weights.
-      ReportCUDAErrors(
-          cudaMalloc(&mha_rpe_q, mha_q_size_ * 4096 * sizeof(DataType)));
       cublasXgemm<DataType>(tmp_cublas, CUBLAS_OP_N, CUBLAS_OP_T, 4096,
                             mha_q_size_, 225, 1.0f, mha_rpe_factorizer, 4096,
-                            rpe_scratch, mha_q_size_, 0.0f,
-                            (DataType*)mha_rpe_q, 4096);
+                            rpe_scratch, mha_q_size_, 0.0f, (DataType*)scratch,
+                            4096);
+
+      // Permute RPE Q weights: [D, H, Q, K] -> [H, Q, D, K]
+      // Permute RPE Q weights: [D, H, Q, K] -> [H, Q, K, D]
+      ReportCUDAErrors(
+          cudaMalloc(&mha_rpe_q, mha_q_size_ * 4096 * sizeof(DataType)));
+      permuteTensor((DataType*)mha_rpe_q, (const DataType*)scratch, depth, heads, 64,
+                    64, 1, 2, 3, 0, 0);
     }
     mha_rpe_k_size_ = cpu_weights.mha.rpe_k.size();
     if (mha_rpe_k_size_ > 0) {
       allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_k, scratch);
 
       // Gemm to factorize the RPE K weights.
-      ReportCUDAErrors(
-          cudaMalloc(&mha_rpe_k, mha_k_size_ * 4096 * sizeof(DataType)));
       cublasXgemm<DataType>(tmp_cublas, CUBLAS_OP_N, CUBLAS_OP_T, 4096,
                             mha_k_size_, 225, 1.0f, mha_rpe_factorizer, 4096,
-                            rpe_scratch, mha_k_size_, 0.0f,
-                            (DataType*)mha_rpe_k, 4096);
+                            rpe_scratch, mha_k_size_, 0.0f, (DataType*)scratch,
+                            4096);
+
+      // Permute RPE K weights: [D, H, Q, K] -> [H, K, D, Q]
+      ReportCUDAErrors(
+          cudaMalloc(&mha_rpe_k, mha_k_size_ * 4096 * sizeof(DataType)));
+      permuteTensor((DataType*)mha_rpe_k, (const DataType*)scratch, depth,
+                    heads, 64, 64, 1, 3, 2, 0, 0);
     }
     mha_rpe_v_size_ = cpu_weights.mha.rpe_v.size();
     if (mha_rpe_v_size_ > 0) {
       allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_v, scratch);
 
       // Gemm to factorize the RPE V weights.
-      ReportCUDAErrors(
-          cudaMalloc(&mha_rpe_v, mha_v_size_ * 4096 * sizeof(DataType)));
       cublasXgemm<DataType>(tmp_cublas, CUBLAS_OP_N, CUBLAS_OP_T, 4096,
                             mha_v_size_, 225, 1.0f, mha_rpe_factorizer, 4096,
-                            rpe_scratch, mha_v_size_, 0.0f,
-                            (DataType*)mha_rpe_v, 4096);
+                            rpe_scratch, mha_v_size_, 0.0f, (DataType*)scratch,
+                            4096);
+
+      // Permute RPE V weights: [D, H, Q, K] -> [H, Q, K, D]
+      ReportCUDAErrors(
+          cudaMalloc(&mha_rpe_v, mha_v_size_ * 4096 * sizeof(DataType)));
+      permuteTensor((DataType*)mha_rpe_v, (const DataType*)scratch, depth,
+                    heads, 64, 64, 1, 2, 0, 3, 0);
     }
     cublasDestroy(tmp_cublas);
   }

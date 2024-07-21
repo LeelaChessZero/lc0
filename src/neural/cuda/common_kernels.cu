@@ -1316,7 +1316,7 @@ __device__ __forceinline__ int getTensorIndex(int i, int j, int k, int l, int I,
                                               int J, int K, int L) {
   if (i >= I || j >= J || k >= K || l >= L) return -1;
 
-  return  (((((i * J) + j) * K) + k) * L) + l;
+  return (((((i * J) + j) * K) + k) * L) + l;
 
   // int index;
   // index = i;
@@ -1327,13 +1327,14 @@ __device__ __forceinline__ int getTensorIndex(int i, int j, int k, int l, int I,
   // index *= L;
   // index += l;
 
-
   // return index;
 }
 
 template <typename dT, typename sT = dT>
-__device__ __forceinline__ dT readInputTensor(const sT* input_tensor, size_t i, size_t j, size_t k,
-                              size_t l, size_t I, size_t J, size_t K, size_t L) {
+__device__ __forceinline__ dT readInputTensor(const sT* input_tensor, size_t i,
+                                              size_t j, size_t k, size_t l,
+                                              size_t I, size_t J, size_t K,
+                                              size_t L) {
   // i is the outermost|slowest|most-significant index, while l is the
   // innermost|fastest|least-significant index.
   if (i >= I || j >= J || k >= K || l >= L) return 0;
@@ -1353,6 +1354,39 @@ __device__ __forceinline__ dT readInputTensor(const sT* input_tensor, size_t i, 
 }
 
 template <typename T>
+__device__ __forceinline__ T dotProductSum(const T* U, const T* V, int length,
+                                           bool fp16) {
+  T sum = 0;
+  // Load from memory (16 elements a time)
+  if (fp16) {
+    half u[8];
+    half v[8];
+#pragma unroll
+    for (int h = 0; h < length; h += 8) {
+      copyAs<uint4>(&u[0], &U[h]);
+      copyAs<uint4>(&v[0], &V[h]);
+#pragma unroll
+      for (int i = 0; i < 8; i++) {
+        sum += (T)u[i] * (T)v[i];
+      }
+    }
+  } else {
+    float u[8];
+    float v[8];
+#pragma unroll
+    for (int h = 0; h < length; h += 4) {
+      copyAs<uint4>(&u[0], &U[h]);
+      copyAs<uint4>(&v[0], &V[h]);
+#pragma unroll
+      for (int i = 0; i < 8; i++) {
+        sum += u[i] * v[i];
+      }
+    }
+  }
+  return sum;
+}
+
+template <typename T>
 __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
                                          const T* skipAdd, T* output, int B,
                                          int H, int Q, int K, int D,
@@ -1362,11 +1396,12 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
   int bh = threadIdx.z + blockDim.z * blockIdx.z;
   int h = bh % H;
   int b = bh / H;
+  const bool fp16 = std::is_same<half, T>::value;
 
   if (rpetype == 0) {
     // RPE-Q
     // rpeInput:   [B, Q, H, D] -> transpose to [B, H, Q, (1, D)]
-    // rpeWeights: [D, H, Q, K] -> transpose to [1, H, Q, (D, K)]
+    // rpeWeights: [H, Q, D, K] -> transpose to [1, H, Q, (D, K)]
     // output:     [B, H, Q, K]
 
     // Read tensors per the input layouts and write out per the output layout.
@@ -1374,22 +1409,17 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     int k = x;
     if (b >= B || h >= H || q >= Q || k >= K) return;
 
-    T sum = 0;
-    const T* ip = rpeInput + getTensorIndex(b, q, h, 0, B, Q, H, D);
-    const T* wt = rpeWeights + getTensorIndex(0, h, q, k, D, H, Q, K);
-    const int wtstep = H * Q * K;
+    const int tensorIndex = getTensorIndex(b, q, h, 0, B, Q, H, D);
+    const int weightIndex = getTensorIndex(h, q, k, 0, H, Q, K, D);
 
-    for (int i = 0, j = 0; i < D; i++, j += wtstep) {
-      sum += ip[i] * wt[j];
-      // sum += readInputTensor<T>(rpeInput, b, q, h, i, B, Q, H, D) *
-      //        readInputTensor<T>(rpeWeights, i, h, q, k, D, H, Q, K);
-    }
+    T sum = dotProductSum(rpeInput + tensorIndex, rpeWeights + weightIndex, D,
+                          fp16);
     int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
     output[outIdx] = ((T)sum + (T)skipAdd[outIdx]) * (T)outScale;
   } else if (rpetype == 1) {
     // RPE-K
     // rpeInput:   [B, K, H, D] -> transpose to [B, H, K, (1, D)]
-    // rpeWeights: [D, H, Q, K] -> transpose to [1, H, K, (D, Q)]
+    // rpeWeights: [H, K, Q, D] -> transpose to [1, H, K, (D, Q)]
     // output:     [B, H, Q, K]
 
     // Read tensors per the input layouts and write out per the output layout.
@@ -1397,22 +1427,16 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     int k = x;
     if (b >= B || h >= H || q >= Q || k >= K) return;
 
-    T sum = 0;
-    const T* ip = rpeInput + getTensorIndex(b, k, h, 0, B, K, H, D);
-    const T* wt = rpeWeights + getTensorIndex(0, h, q, k, D, H, Q, K);
-    const int wtstep = H * Q * K;
-
-    for (int i = 0, j = 0; i < D; i++, j += wtstep) {
-      sum += ip[i] * wt[j];
-      // sum += readInputTensor<T>(rpeInput, b, k, h, 0, B, K, H, D) *
-      //        readInputTensor<T>(rpeWeights, 0, h, q, k, D, H, Q, K);
-    }
+    const int tensorIndex = getTensorIndex(b, k, h, 0, B, K, H, D);
+    const int weightIndex = getTensorIndex(h, k, q, 0, H, K, Q, D);
+    T sum = dotProductSum(rpeInput + tensorIndex, rpeWeights + weightIndex, D,
+                          fp16);
     int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
     output[outIdx] = ((T)sum + (T)skipAdd[outIdx]) * (T)outScale;
   } else if (rpetype == 2) {
     // RPE-V
     // rpeInput:   [B, H, Q, K] -> transpose to [B, H, Q, (1, K)]
-    // rpeWeights: [D, H, Q, K] -> transpose to [1, H, Q, (K, D)]
+    // rpeWeights: [H, Q, K, D] -> transpose to [1, H, Q, (K, D)]
     // output:     [B, Q, H, D]
     // The skip connection is also already in BQHD order.
 
@@ -1421,15 +1445,10 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     int d = x;
     if (b >= B || h >= H || q >= Q || d >= D) return;
 
-    T sum = 0;
-    const T* ip = rpeInput + getTensorIndex(b, h, q, 0, B, H, Q, K);
-    const T* wt = rpeWeights + getTensorIndex(d, h, q, 0, D, H, Q, K);
-
-    for (int i = 0; i < K; i++) {
-      sum += ip[i] * wt[i];
-      // sum += readInputTensor<T>(rpeInput, b, h, q, 0, B, H, Q, K) *
-      //        readInputTensor<T>(rpeWeights, d, h, q, 0, D, H, Q, K);
-    }
+    const int tensorIndex = getTensorIndex(b, h, q, 0, B, H, Q, K);
+    const int weightIndex = getTensorIndex(h, q, d, 0, H, Q, D, K);
+    T sum = dotProductSum(rpeInput + tensorIndex, rpeWeights + weightIndex, K,
+                          fp16);
     int outIdx = getTensorIndex(b, q, h, d, B, Q, H, D);
     output[outIdx] = ((T)sum + (T)skipAdd[outIdx]) * (T)outScale;
   }
@@ -1465,6 +1484,54 @@ void multiplyRPEAttentionLogits(const T* rpeInput, const T* rpeWeights,
       rpeInput, rpeWeights, attnInput, output, B, H, Q, K, D, outScale,
       rpetype);
 
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T>
+__global__ void permuteTensor_kernel(T* output, const T* input, int s1, int s2,
+                                     int s3, int s4, int p1, int p2, int p3,
+                                     int p4) {
+  // Shared memory for shape of tensor.
+  __shared__ int tshp[4];
+  if (threadIdx.x == 0) {
+    tshp[0] = s1;
+    tshp[1] = s2;
+    tshp[2] = s3;
+    tshp[3] = s4;
+  }
+  __syncthreads();
+
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (tid >= s1 * s2 * s3 * s4) return;
+
+  int tloc[] = {0, 0, 0, 0};
+  int index = tid;
+
+  tloc[3] = (index % s4);
+  index /= s4;
+  tloc[2] = index % s3;
+  index /= s3;
+  tloc[1] = index % s2;
+  index /= s2;
+  tloc[0] = index;
+
+  int outIdx = (((((tloc[p1] * tshp[p2]) + tloc[p2]) * tshp[p3]) + tloc[p3]) *
+                tshp[p4]) +
+               tloc[p4];
+  output[outIdx] = (T)input[tid];
+}
+
+template <typename T>
+void permuteTensor(T* output, const T* input, int s1, int s2, int s3, int s4,
+                   int p1, int p2, int p3, int p4, cudaStream_t stream) {
+  // The order and bounds arrays are assumed to have 4 elements.
+  int elements = s1 * s2 * s3 * s4;
+  const int kBlockSize = 1024;
+  int blocks = DivUp(elements, kBlockSize);
+
+  permuteTensor_kernel<<<blocks, kBlockSize, 0, stream>>>(
+      output, input, s1, s2, s3, s4, p1, p2, p3, p4);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -1764,6 +1831,14 @@ template void multiplyRPEAttentionLogits<float>(
     const float* rpeInput, const float* rpeWeights, const float* attnInput,
     float* output, int B, int H, int Q, int K, int D, float outScale,
     size_t rpetype, cudaStream_t stream);
+
+template void permuteTensor<half>(half* output, const half* input, int s1,
+                                  int s2, int s3, int s4, int p1, int p2,
+                                  int p3, int p4, cudaStream_t stream);
+
+template void permuteTensor<float>(float* output, const float* input, int s1,
+                                   int s2, int s3, int s4, int p1, int p2,
+                                   int p3, int p4, cudaStream_t stream);
 
 }  // namespace cudnn_backend
 }  // namespace lczero
