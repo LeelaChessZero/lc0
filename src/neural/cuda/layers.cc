@@ -1641,9 +1641,12 @@ EncoderBlock<DataType>::EncoderBlock(
     smol_global = smolgen_global_scratch;
   }
 
-  // RPE weights. /*
-  if (cpu_weights.mha.rpe_q.size() > 0 || cpu_weights.mha.rpe_k.size() > 0 ||
-      cpu_weights.mha.rpe_v.size() > 0) {
+  // RPE weights.
+  mha_rpe_q_size_ = cpu_weights.mha.rpe_q.size();
+  mha_rpe_k_size_ = cpu_weights.mha.rpe_k.size();
+  mha_rpe_v_size_ = cpu_weights.mha.rpe_v.size();
+
+  if (mha_rpe_q_size_ > 0 || mha_rpe_k_size_ > 0 || mha_rpe_v_size_ > 0) {
     // Weights factorizer.
     int rows = 15 * 15;
     int cols = 64 * 64;
@@ -1672,7 +1675,6 @@ EncoderBlock<DataType>::EncoderBlock(
     DataType* rpe_scratch;
     int heads = encoder_heads_;
     int depth = mha_q_size_ / encoder_heads_;
-    mha_rpe_q_size_ = cpu_weights.mha.rpe_q.size();
     if (mha_rpe_q_size_ > 0) {
       allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_q, scratch);
 
@@ -1686,10 +1688,9 @@ EncoderBlock<DataType>::EncoderBlock(
       // Permute RPE Q weights: [D, H, Q, K] -> [H, Q, K, D]
       ReportCUDAErrors(
           cudaMalloc(&mha_rpe_q, mha_q_size_ * 4096 * sizeof(DataType)));
-      permuteTensor((DataType*)mha_rpe_q, (const DataType*)scratch, depth, heads, 64,
-                    64, 1, 2, 3, 0, 0);
+      permuteTensor((DataType*)mha_rpe_q, (const DataType*)scratch, depth,
+                    heads, 64, 64, 1, 2, 3, 0, 0);
     }
-    mha_rpe_k_size_ = cpu_weights.mha.rpe_k.size();
     if (mha_rpe_k_size_ > 0) {
       allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_k, scratch);
 
@@ -1705,7 +1706,6 @@ EncoderBlock<DataType>::EncoderBlock(
       permuteTensor((DataType*)mha_rpe_k, (const DataType*)scratch, depth,
                     heads, 64, 64, 1, 3, 2, 0, 0);
     }
-    mha_rpe_v_size_ = cpu_weights.mha.rpe_v.size();
     if (mha_rpe_v_size_ > 0) {
       allocAndUpload<DataType>(&rpe_scratch, cpu_weights.mha.rpe_v, scratch);
 

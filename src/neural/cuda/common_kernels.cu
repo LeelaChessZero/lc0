@@ -1378,7 +1378,7 @@ __device__ __forceinline__ T dotProductSum(const T* U, const T* V, int length,
       copyAs<uint4>(&u[0], &U[h]);
       copyAs<uint4>(&v[0], &V[h]);
 #pragma unroll
-      for (int i = 0; i < 8; i++) {
+      for (int i = 0; i < 4; i++) {
         sum += u[i] * v[i];
       }
     }
