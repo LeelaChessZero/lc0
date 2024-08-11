@@ -1,4 +1,9 @@
-﻿v0.31.0 (2024-06-16)
+﻿v0.31.1 (2024-08-11)
+~~~~~~~
+* Make WDL_mu score type work as intended.
+* Fix macos CI builds.
+
+v0.31.0 (2024-06-16)
 ~~~~~~~
 * No changes from rc3.
 
