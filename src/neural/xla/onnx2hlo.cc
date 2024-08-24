@@ -237,8 +237,21 @@ pblczero::XlaLiteralProto ConstOpGather(
   return result;
 }
 
+void EnsureSameShape(const pblczero::XlaLiteralProto& lhs,
+                     const pblczero::XlaLiteralProto& rhs,
+                     bool also_check_types = true) {
+  if (lhs.shape().dimensions() != rhs.shape().dimensions()) {
+    throw Exception("Operands must have the same shape");
+  }
+  if (also_check_types &&
+      lhs.shape().element_type() != rhs.shape().element_type()) {
+    throw Exception("Operands must have the same type");
+  }
+}
+
 pblczero::XlaLiteralProto ConstOpMul(const pblczero::XlaLiteralProto& lhs,
                                      const pblczero::XlaLiteralProto& rhs) {
+  EnsureSameShape(lhs, rhs);
   pblczero::XlaLiteralProto result;
   *result.mutable_shape() = lhs.shape();
   LiteralOutInInOp(
@@ -251,6 +264,7 @@ pblczero::XlaLiteralProto ConstOpMul(const pblczero::XlaLiteralProto& lhs,
 
 pblczero::XlaLiteralProto ConstOpMax(const pblczero::XlaLiteralProto& lhs,
                                      const pblczero::XlaLiteralProto& rhs) {
+  EnsureSameShape(lhs, rhs);
   pblczero::XlaLiteralProto result;
   *result.mutable_shape() = lhs.shape();
   LiteralOutInInOp(
@@ -724,6 +738,16 @@ class Onnx2HloConverter {
     return result;
   };
 
+  uint64_t GetNumberElements(const std::vector<int64_t>& dimensions) {
+    return std::accumulate(dimensions.begin(), dimensions.end(), 1,
+                           std::multiplies<int64_t>());
+  }
+
+  uint64_t GetShapeSize(const pblczero::XlaShapeProto& shape) {
+    return GetNumberElements(shape.dimensions()) *
+           GetXlaTypeSize(shape.element_type());
+  }
+
   /////////////////////////////////////////////////////////////////////////////
   // ONNX operations
   /////////////////////////////////////////////////////////////////////////////
@@ -1122,14 +1146,10 @@ class Onnx2HloConverter {
     auto* lhs = GetInput(node, 0);
     auto* rhs = GetInput(node, 1);
 
-    if (AllInputsConstant(node)) {
-      const size_t num_elements = std::accumulate(
-          lhs->shape().dimensions().begin(), lhs->shape().dimensions().end(), 1,
-          std::multiplies<size_t>());
-      if (num_elements <= options_.max_inline_constant_size) {
-        return {builder_.Constant(ConstOpMul(*GetConstantInput(node, 0),
-                                             *GetConstantInput(node, 1)))};
-      }
+    if (AllInputsConstant(node) &&
+        GetShapeSize(lhs->shape()) <= options_.max_inline_constant_size) {
+      return {builder_.Constant(
+          ConstOpMul(*GetConstantInput(node, 0), *GetConstantInput(node, 1)))};
     }
 
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
@@ -1141,14 +1161,10 @@ class Onnx2HloConverter {
     auto* lhs = GetInput(node, 0);
     auto* rhs = GetInput(node, 1);
 
-    if (AllInputsConstant(node)) {
-      const size_t num_elements = std::accumulate(
-          lhs->shape().dimensions().begin(), lhs->shape().dimensions().end(), 1,
-          std::multiplies<size_t>());
-      if (num_elements <= options_.max_inline_constant_size) {
-        return {builder_.Constant(ConstOpMax(*GetConstantInput(node, 0),
-                                             *GetConstantInput(node, 1)))};
-      }
+    if (AllInputsConstant(node) &&
+        GetShapeSize(lhs->shape()) <= options_.max_inline_constant_size) {
+      return {builder_.Constant(
+          ConstOpMax(*GetConstantInput(node, 0), *GetConstantInput(node, 1)))};
     }
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
     return {builder_.Maximum(lhs, rhs)};
