@@ -343,9 +343,15 @@ class TFNetworkComputation : public NetworkComputation {
     raw_input_.emplace_back(input);
   }
   void ComputeBlocking() override {
+    auto start_time = std::chrono::high_resolution_clock::now();
     PrepareInput();
     status_ = network_->Compute(input_, &output_);
     CHECK(status_.ok()) << status_.ToString();
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end_time - start_time;
+    if (elapsed.count() > 1.0) {
+        std::cerr << "Warning: Computation took " << elapsed.count()  << " seconds, which is longer than expected." << std::endl;
+    }
   }
 
   int GetBatchSize() const override { return raw_input_.size(); }
