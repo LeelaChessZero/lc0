@@ -66,8 +66,6 @@ class OnnxBuilder {
                   const std::string& input2);
   std::string Add(const std::string& name, const std::string& input1,
                   const OnnxConst& input2);
-  std::string Sub(const std::string& name, const OnnxConst& input1,
-                  const std::string& input2);
   std::string GlobalAveragePool(const std::string& name,
                                 const std::string& input);
   std::string Squeeze(const std::string& name, const std::string& input,
@@ -124,6 +122,10 @@ class OnnxBuilder {
   std::string Mish(const std::string& name, const std::string& input);
   std::string Sqrt(const std::string& name, const std::string& input);
   std::string Reciprocal(const std::string& name, const std::string& input);
+  std::string Cast(const std::string& name, const std::string& input,
+                   pblczero::TensorProto::DataType type);
+  std::string ReduceMean(const std::string& name, const std::string& input,
+                         std::initializer_list<int> axes, bool keepdims = true);
   // Returns ONNX model as protobuf.
   const pblczero::ModelProto& as_proto() const { return model_; }
   // Returns serialized model.

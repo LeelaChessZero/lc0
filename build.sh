@@ -28,4 +28,8 @@ else
 fi
 
 "${MESON}" compile -C "${BUILDDIR}"
-[ -n "${INSTALL_PREFIX}" ] && "${MESON}" install -C "${BUILDDIR}"
+
+if [ -n "${INSTALL_PREFIX}" ]
+then
+  "${MESON}" install -C "${BUILDDIR}"
+fi

@@ -137,10 +137,12 @@ std::string OnnxBuilder::Conv(const std::string& name,
                               const OnnxConst& kernel_weights,
                               const OnnxConst& bias_weights, int pads) {
   auto* node = model_.mutable_graph()->add_node();
+  auto shape = kernel_weights.GetDimensions().back();
   auto out = PopulateStdNodeFields(node, name, input_name, "Conv");
   node->add_input(AddInitializer(name + "/w/kernel", kernel_weights));
   node->add_input(AddInitializer(name + "/w/bias", bias_weights));
   AddIntsAttribute(node, "pads", {pads, pads, pads, pads});
+  AddIntsAttribute(node, "kernel_shape", {shape, shape});
   return out;
 }
 
@@ -157,15 +159,6 @@ std::string OnnxBuilder::Add(const std::string& name, const std::string& input1,
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input1, "Add");
   node->add_input(AddInitializer(name + "/w", input2));
-  return out;
-}
-
-std::string OnnxBuilder::Sub(const std::string& name, const OnnxConst& input1,
-                             const std::string& input2) {
-  auto* node = model_.mutable_graph()->add_node();
-  auto out = PopulateStdNodeFields(node, name,
-                                   AddInitializer(name + "/w", input1), "Sub");
-  node->add_input(input2);
   return out;
 }
 
@@ -457,6 +450,32 @@ std::string OnnxBuilder::Reciprocal(const std::string& name,
                                     const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
   return PopulateStdNodeFields(node, name, input, "Reciprocal");
+}
+
+std::string OnnxBuilder::Cast(const std::string& name, const std::string& input,
+                              pblczero::TensorProto::DataType type) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "Cast");
+  AddIntAttribute(node, "to", type);
+  return out;
+}
+
+std::string OnnxBuilder::ReduceMean(const std::string& name,
+                                    const std::string& input,
+                                    std::initializer_list<int> axes,
+                                    bool keepdims) {
+  auto* node = model_.mutable_graph()->add_node();
+  auto out = PopulateStdNodeFields(node, name, input, "ReduceMean");
+  if (opset_ < 18) {
+    AddIntsAttribute(node, "axes", axes);
+  } else {
+    node->add_input(AddInitializer(
+        name + "/axes",
+        Int64OnnxConst(std::vector<int64_t>(begin(axes), end(axes)),
+                       {static_cast<int>(axes.size())})));
+  }
+  AddIntAttribute(node, "keepdims", keepdims);
+  return out;
 }
 
 }  // namespace lczero

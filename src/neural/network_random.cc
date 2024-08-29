@@ -112,6 +112,7 @@ class RandomNetwork : public Network {
                 options.GetOrDefault<int>(
                     "input_mode",
                     pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)),
+            pblczero::NetworkFormat::OUTPUT_WDL,
             pblczero::NetworkFormat::MOVES_LEFT_NONE} {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<RandomNetworkComputation>(delay_ms_, seed_,
@@ -127,6 +128,7 @@ class RandomNetwork : public Network {
   bool uniform_mode_ = false;
   NetworkCapabilities capabilities_{
       pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+      pblczero::NetworkFormat::OUTPUT_WDL,
       pblczero::NetworkFormat::MOVES_LEFT_NONE};
 };
 }  // namespace
