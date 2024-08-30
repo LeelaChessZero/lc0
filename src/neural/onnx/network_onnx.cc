@@ -411,11 +411,15 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   int gpu = opts.GetOrDefault<int>("gpu", 0);
 
-  int batch_size =
-      opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML ? 16 : -1);
+  int batch_size = opts.GetOrDefault<int>(
+      "batch", kProvider == OnnxProvider::DML
+                   ? 16
+                   : kProvider == OnnxProvider::TRT ? 128 : -1);
 
-  int steps =
-      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 4 : 1);
+  int steps = opts.GetOrDefault<int>(
+      "steps",
+      (kProvider == OnnxProvider::DML || kProvider == OnnxProvider::TRT) ? 4
+                                                                         : 1);
 
   int threads =
       opts.GetOrDefault<int>("threads", kProvider == OnnxProvider::CPU ? 1 : 0);
