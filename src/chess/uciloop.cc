@@ -153,8 +153,16 @@ bool UciLoop::DispatchCommand(
   } else if (command == "isready") {
     CmdIsReady();
   } else if (command == "setoption") {
+if (GetOrEmpty(params, "name").empty()) {
+      throw Exception("setoption requires name");
+    }
+    else if (GetOrEmpty(params, "value").empty()) {
+      throw Exception("setoption requires value");
+    }
+    else {
     CmdSetOption(GetOrEmpty(params, "name"), GetOrEmpty(params, "value"),
                  GetOrEmpty(params, "context"));
+    }
   } else if (command == "ucinewgame") {
     CmdUciNewGame();
   } else if (command == "position") {
