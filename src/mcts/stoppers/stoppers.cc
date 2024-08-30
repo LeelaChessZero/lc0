@@ -103,7 +103,7 @@ const size_t kAvgCacheItemSize =
 MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb,
                                              bool populate_remaining_playouts)
     : VisitsStopper(
-          ((ram_limit_mb * 1000000LL - cache_size * kAvgCacheItemSize) /
+          (ram_limit_mb * 1000000LL - cache_size * kAvgCacheItemSize) /
               kAvgNodeSize > 0 ? (ram_limit_mb * 1000000LL - cache_size * kAvgCacheItemSize) /
               kAvgNodeSize : 0,
           populate_remaining_playouts) {
