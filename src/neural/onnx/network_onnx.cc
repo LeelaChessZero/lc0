@@ -319,6 +319,8 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
       trt_options.trt_fp16_enable = fp16;
       trt_options.trt_int8_enable = int8;
       trt_options.trt_engine_cache_enable = 1;
+      trt_options.trt_max_partition_iterations = 1000;
+      trt_options.trt_min_subgraph_size = 1;
       options.AppendExecutionProvider_TensorRT(trt_options);
       break;
     }
