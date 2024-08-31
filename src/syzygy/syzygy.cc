@@ -1413,7 +1413,7 @@ class SyzygyTablebaseImpl {
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
     if (duration.count() > 1) {
-    std::cout << "Warning: Computation took " << elapsed.count()  << " seconds, which is longer than expected." << std::endl;
+    std::cout << "Warning: Tablebase probing took " << elapsed.count()  << " seconds, which is longer than expected." << std::endl;
     }
 
     if (type == WDL) return static_cast<int>(w[0]) - 2;
