@@ -1406,7 +1406,7 @@ class SyzygyTablebaseImpl {
       }
       idx = type != DTM ? encode_pawn_f(p, ei, be) : encode_pawn_r(p, ei, be);
     }
-    
+
     uint8_t* w = decompress_pairs(ei->precomp, idx);
 
     if (type == WDL) return static_cast<int>(w[0]) - 2;
