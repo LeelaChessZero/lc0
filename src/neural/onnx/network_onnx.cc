@@ -103,6 +103,8 @@ class OnnxNetwork : public Network {
   }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
+  Ort::SessionOptions GetOptions(int gpu, int threads, int batch_size);
+
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;
   int steps_;
@@ -288,8 +290,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
   }
 }
 
-Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
-                               int batch_size, bool fp16, bool int8) {
+Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
+                                            int batch_size) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -302,7 +304,7 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
             ->AddFreeDimensionOverrideByName(options, "batch", batch_size));
   }
 
-  switch (provider) {
+  switch (provider_) {
     case OnnxProvider::DML:
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
       options.DisableMemPattern();
@@ -314,14 +316,43 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
 #endif
       break;
     case OnnxProvider::TRT: {
-      OrtTensorRTProviderOptions trt_options{};
-      trt_options.device_id = gpu;
-      trt_options.trt_fp16_enable = fp16;
-      trt_options.trt_int8_enable = int8;
-      trt_options.trt_engine_cache_enable = 1;
-      trt_options.trt_max_partition_iterations = 1000;
-      trt_options.trt_min_subgraph_size = 1;
-      options.AppendExecutionProvider_TensorRT(trt_options);
+      std::map<std::string, std::string> trt_options;
+      trt_options["device_id"] = std::to_string(gpu);
+      trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
+      trt_options["trt_int8_enable"] = int8_ ? "1" : "0";
+      trt_options["trt_engine_cache_enable"] = "1";
+      trt_options["trt_max_partition_iterations"] = "1000";
+      trt_options["trt_min_subgraph_size"] = "1";
+      trt_options["trt_engine_cache_enable"] = "1";
+      trt_options["trt_timing_cache_enable"] = "1";
+      trt_options["trt_layer_norm_fp32_fallback"] = "1";
+      trt_options["trt_cuda_graph_enable"] = "1";
+      if (batch_size < 0) {
+        trt_options["trt_profile_min_shapes"] = inputs_[0] + ":1x112x8x8";
+        trt_options["trt_profile_max_shapes"] =
+            inputs_[0] + ":" + std::to_string(max_batch_size_) + "x112x8x8";
+        trt_options["trt_profile_opt_shapes"] =
+            inputs_[0] + ":" + std::to_string(max_batch_size_ / 4) + "x112x8x8";
+      }
+
+      std::vector<const char*> keys;
+      std::vector<const char*> values;
+      for (const auto & [ key, value ] : trt_options) {
+        keys.push_back(key.c_str());
+        values.push_back(value.c_str());
+      }
+
+      const auto& api = Ort::GetApi();
+      OrtTensorRTProviderOptionsV2* trt_options_v2;
+      Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt_options_v2));
+
+      Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(
+          trt_options_v2, keys.data(), values.data(), keys.size()));
+
+      options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
+
+      api.ReleaseTensorRTProviderOptions(trt_options_v2);
+
       break;
     }
     case OnnxProvider::ROCM: {
@@ -369,12 +400,6 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
     batch_size_ = max_batch_size_ / steps_;
   }
 
-  for (int step = 1; step <= steps_; step++)
-    session_.emplace_back(
-        onnx_env_, file.onnx_model().model().data(),
-        file.onnx_model().model().size(),
-        GetOptions(provider, gpu, threads, batch_size_ * step, fp16_, int8));
-
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
     throw Exception("NN doesn't have input planes defined.");
@@ -404,6 +429,11 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
   std::transform(outputs_.begin(), outputs_.end(),
                  std::back_inserter(outputs_cstr_),
                  [](const auto& x) { return x.c_str(); });
+
+  for (int step = 1; step <= steps_; step++)
+    session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
+                          file.onnx_model().model().size(),
+                          GetOptions(gpu, threads, batch_size_ * step));
 }
 
 template <OnnxProvider kProvider>
@@ -416,7 +446,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   int batch_size = opts.GetOrDefault<int>(
       "batch", kProvider == OnnxProvider::DML
                    ? 16
-                   : kProvider == OnnxProvider::TRT ? 128 : -1);
+                   : kProvider == OnnxProvider::TRT ? 32 : -1);
 
   int steps = opts.GetOrDefault<int>(
       "steps",
