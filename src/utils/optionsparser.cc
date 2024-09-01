@@ -70,10 +70,9 @@ void OptionsParser::SetUciOption(const std::string& name,
   auto option = FindOptionByUciName(name);
   if (option) {
     option->SetValue(value, GetMutableOptions(context));
-    return true;
+    return;
   }
   throw Exception("Unknown option: " + name);
-  return false;
 }
 
 void OptionsParser::HideOption(const OptionId& id) {
