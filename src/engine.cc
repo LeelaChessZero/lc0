@@ -446,7 +446,6 @@ void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   options_.SetUciOption(name, value, context);
   // Set the log filename for the case it was set in UCI option.
-  SendResponse(name + "successfully set to " + value);
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId));
 }
