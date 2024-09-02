@@ -39,7 +39,27 @@
 
 namespace lczero {
 
-#if 0
+#if 1
+// function to calculate mean
+static float mean(float arr[], int n) {
+  float sum = 0;
+  for (int i = 0; i < n; i++) {
+    sum += arr[i];
+  }
+  return sum / n;
+}
+
+// function to calculate standard deviation
+static float stdDev(float arr[], int n) {
+  float m = mean(arr, n);  // get the mean
+  float var = 0;           // initialize variance
+  for (int i = 0; i < n; i++) {
+    var += pow(arr[i] - m, 2);  // add the squared difference from mean
+  }
+  var /= n;          // divide by number of elements
+  return sqrt(var);  // return the square root of variance
+}
+
 // debug code to dump allocation in GPU memory
 template <typename T>
 void dumpTensor(T* memory, int elements, const char* message, int lines = -1,
@@ -52,9 +72,10 @@ void dumpTensor(T* memory, int elements, const char* message, int lines = -1,
   cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
   float maxval = -std::numeric_limits<float>::max();
   float minval = std::numeric_limits<float>::max();
-  int nans = 0;
-  int nanss[10]{};
+  int cnans = 0;
+  int nans[10]{};
 
+  std::vector<float> fpArr(elements);
   for (int i = 0; i < elements; i++) {
     float val;
     if (fp16) {
@@ -64,12 +85,13 @@ void dumpTensor(T* memory, int elements, const char* message, int lines = -1,
       float* arr = (float*)temp;
       val = arr[i];
     }
+    fpArr[i] = val;
     maxval = std::max(maxval, val);
     minval = std::min(minval, val);
 
     if (std::isnan(val)) {
-      if (nans < 10) nanss[nans] = i;
-      nans++;
+      if (cnans < 10) nans[cnans] = i;
+      cnans++;
     }
 
     if ((i >= start && (i < start + lines || lines == -1)) ||
@@ -85,11 +107,18 @@ void dumpTensor(T* memory, int elements, const char* message, int lines = -1,
   if (minval == std::numeric_limits<float>::max())
     minval = std::numeric_limits<double>::quiet_NaN();
 
-  printf("Max: %.6f, Min: %.6f, NaNs: %i of %i", maxval, minval, nans,
-         elements);
-  printf("\nNaN indices: ");
-  for (int i = 0; i < nans && i < 10; i++) printf("%i ", nanss[i]);
-  if (nans > 10) printf("......");
+  float avg = mean(&fpArr[0], elements);
+  float stddev = stdDev(&fpArr[0], elements);
+  printf(
+      "Max: %.6f, Min: %.6f, Mean: %.6f, StdDev: %.6f\n"
+      "NaNs: %i of %i",
+      maxval, minval, avg, stddev, cnans, elements);
+
+  if (cnans > 0) {
+    printf("\nNaN indices: ");
+    for (int i = 0; i < cnans && i < 10; i++) printf("%i ", nans[i]);
+    if (cnans > 10) printf("......");
+  }
   printf("\n");
 }
 #endif
@@ -1684,7 +1713,6 @@ EncoderBlock<DataType>::EncoderBlock(
                             rpe_scratch, mha_q_size_, 0.0f, (DataType*)scratch,
                             4096);
 
-      // Permute RPE Q weights: [D, H, Q, K] -> [H, Q, D, K]
       // Permute RPE Q weights: [D, H, Q, K] -> [H, Q, K, D]
       ReportCUDAErrors(
           cudaMalloc(&mha_rpe_q, mha_q_size_ * 4096 * sizeof(DataType)));
@@ -1700,7 +1728,7 @@ EncoderBlock<DataType>::EncoderBlock(
                             rpe_scratch, mha_k_size_, 0.0f, (DataType*)scratch,
                             4096);
 
-      // Permute RPE K weights: [D, H, Q, K] -> [H, K, D, Q]
+      // Permute RPE K weights: [D, H, Q, K] -> [H, K, Q, D]
       ReportCUDAErrors(
           cudaMalloc(&mha_rpe_k, mha_k_size_ * 4096 * sizeof(DataType)));
       permuteTensor((DataType*)mha_rpe_k, (const DataType*)scratch, depth,
@@ -1715,7 +1743,7 @@ EncoderBlock<DataType>::EncoderBlock(
                             rpe_scratch, mha_v_size_, 0.0f, (DataType*)scratch,
                             4096);
 
-      // Permute RPE V weights: [D, H, Q, K] -> [H, Q, K, D]
+      // Permute RPE V weights: [D, H, Q, K] -> [H, Q, D, K]
       ReportCUDAErrors(
           cudaMalloc(&mha_rpe_v, mha_v_size_ * 4096 * sizeof(DataType)));
       permuteTensor((DataType*)mha_rpe_v, (const DataType*)scratch, depth,
@@ -1903,6 +1931,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       multiplyRPEAttentionLogits<DataType>(mha_q, mha_rpe_q, buffer1, buffer1,
                                            N, encoder_heads_, 64, 64, depth,
                                            outScale, 0, stream);
+      // dumpTensor((DataType*)buffer1, 64 * d_model * N, "from kernel", 8192);
+      // exit(0);
     }
     if (mha_rpe_k_size_ > 0) {
       // Matrix-vector multiplication for key x rpe_k
@@ -1953,6 +1983,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     multiplyRPEAttentionLogits<DataType>(buffer1, mha_rpe_v, buffer2, buffer2,
                                          N, encoder_heads_, 64, 64, depth, 1.0f,
                                          2, stream);
+    // dumpTensor((DataType*)buffer2, 4096 * d_model * N, "from kernel", 8192);
+    // exit(0);
   }
 
   // #final dense layer (mha_dense), buffer2 -> buffer1
