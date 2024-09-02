@@ -630,7 +630,7 @@ class Onnx2HloConverter {
       const pblczero::NodeProto& node, size_t idx, bool optional = false) {
     if (idx >= node.input_size()) {
       if (optional) return std::nullopt;
-      throw Exception("Constant Input " + std::to_string(idx) + " not set");
+      throw Exception("Constant input " + std::to_string(idx) + " not set");
     }
     const std::string name(node.input(idx));
     if (auto tensor = initializers_.find(name); tensor != initializers_.end()) {
@@ -939,21 +939,18 @@ class Onnx2HloConverter {
       CheckKnownAttributes(node, 2, {"keepdims", "noop_with_empty_axes"});
     }
     auto* input = GetInput(node, 0);
-    std::vector<int64_t> axes;
-    if (opset_version_ < 18) {
-      axes = GetOptionalAttributeAsVec<int64_t>(node, "axes")
-                .value_or(GetIota(input->shape().dimensions_size()));
-    } else {
-      auto axes_input = GetConstantInputAsVec<int64_t>(node, 1, true);
-      if (axes_input) {
-        axes = *axes_input;
-      } else {
-        axes = GetIota(input->shape().dimensions_size());
+    auto axes = opset_version_ < 18
+                    ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
+                    : GetConstantInputAsVec<int64_t>(node, 1, true);
+    if (!axes) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes").value_or(false)) {
+        return {input};
       }
+      axes = GetIota(input->shape().dimensions_size());
     }
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
-    return {DoReduceMean(input, axes, keepdims)};
+    return {DoReduceMean(input, *axes, keepdims)};
   }
 
   std::vector<HloFlow> OpReduceProd(const pblczero::NodeProto& node) {
@@ -963,66 +960,59 @@ class Onnx2HloConverter {
       CheckKnownAttributes(node, 2, {"keepdims", "noop_with_empty_axes"});
     }
     auto* input = GetInput(node, 0);
-    std::vector<int64_t> axes;
-    if (opset_version_ < 18) {
-      axes = GetOptionalAttributeAsVec<int64_t>(node, "axes")
-                .value_or(GetIota(input->shape().dimensions_size()));
-    } else {
-      auto axes_input = GetConstantInputAsVec<int64_t>(node, 1, true);
-      if (axes_input) {
-        axes = *axes_input;
-      } else {
-        axes = GetIota(input->shape().dimensions_size());
+    auto axes = opset_version_ < 18
+                    ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
+                    : GetConstantInputAsVec<int64_t>(node, 1, true);
+    if (!axes) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes").value_or(false)) {
+        return {input};
       }
+      axes = GetIota(input->shape().dimensions_size());
     }
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     HloFlow flow;
     if (AllInputsConstant(node)) {
-      auto literal = ConstOpReduceProd(*GetConstantInput(node, 0), axes);
+      auto literal = ConstOpReduceProd(*GetConstantInput(node, 0), *axes);
       if (!keepdims) return {builder_.Constant(literal)};
       HloTensorType target_shape(input->shape());
-      for (auto axis : axes) target_shape.SetDimension(axis, 1);
+      for (auto axis : *axes) target_shape.SetDimension(axis, 1);
       return {builder_.Constant(ConstReshape(literal, target_shape.ToProto()))};
     }
     HloFlow one = MakeScalar(1, input->shape().element_type());
     flow = builder_.Reduce(
-        input, one, MakeMulComputation(input->shape().element_type()), axes);
+        input, one, MakeMulComputation(input->shape().element_type()), *axes);
     if (!keepdims) return {flow};
     HloTensorType target_shape(input->shape());
-    for (auto axis : axes) target_shape.SetDimension(axis, 1);
+    for (auto axis : *axes) target_shape.SetDimension(axis, 1);
     return {builder_.Reshape(flow, target_shape)};
   }
 
   std::vector<HloFlow> OpReduceSumSquare(const pblczero::NodeProto& node) {
-    if (opset_version_
-     < 18) {
+    if (opset_version_ < 18) {
       CheckKnownAttributes(node, 1, {"axes", "keepdims"});
     } else {
       CheckKnownAttributes(node, 2, {"keepdims", "noop_with_empty_axes"});
     }
     auto* input = GetInput(node, 0);
-    std::vector<int64_t> axes;
-    if (opset_version_ < 18) {
-      axes = GetOptionalAttributeAsVec<int64_t>(node, "axes")
-                .value_or(GetIota(input->shape().dimensions_size()));
-    } else {
-      auto axes_input = GetConstantInputAsVec<int64_t>(node, 1, true);
-      if (axes_input) {
-        axes = *axes_input;
-      } else {
-        axes = GetIota(input->shape().dimensions_size());
+    auto axes = opset_version_ < 18
+                    ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
+                    : GetConstantInputAsVec<int64_t>(node, 1, true);
+    if (!axes) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes").value_or(false)) {
+        return {input};
       }
+      axes = GetIota(input->shape().dimensions_size());
     }
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     auto flow = builder_.Multiply(input, input);
     flow = builder_.Reduce(flow, MakeScalar(0, input->shape().element_type()),
                            MakeAddComputation(input->shape().element_type()),
-                           axes);
+                           *axes);
     if (!keepdims) return {flow};
     HloTensorType target_shape(input->shape());
-    for (auto axis : axes) target_shape.SetDimension(axis, 1);
+    for (auto axis : *axes) target_shape.SetDimension(axis, 1);
     return {builder_.Reshape(flow, target_shape)};
   }
 
@@ -1054,7 +1044,6 @@ class Onnx2HloConverter {
     auto* variance = GetInput(node, 4);
     const auto epsilon =
         GetOptionalAttributeAs<float>(node, "epsilon").value_or(1e-5);
-    
     std::vector<int64_t> broadcast_dims = {1};
     HloTensorType shape(input->shape());
     auto* flow = builder_.Subtract(
