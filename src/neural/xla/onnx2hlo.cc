@@ -1017,7 +1017,7 @@ class Onnx2HloConverter {
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     auto flow = builder_.Multiply(input, input);
-    flow = builder_.Reduce(input, MakeScalar(0, input->shape().element_type()),
+    flow = builder_.Reduce(flow, MakeScalar(0, input->shape().element_type()),
                            MakeAddComputation(input->shape().element_type()),
                            axes);
     if (!keepdims) return {flow};
