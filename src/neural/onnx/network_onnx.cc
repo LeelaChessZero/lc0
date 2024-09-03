@@ -127,7 +127,7 @@ class OnnxNetwork : public Network {
   // The batch size to use, or -1 for variable.
   int batch_size_;
   static constexpr int max_batch_size_ = 1024;
-  // For conditional locking if running the DML provider.
+  // For conditional locking if running the DML/ROCM/TRT provider.
   OnnxProvider provider_;
   std::mutex lock_;
 };
@@ -275,7 +275,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     // same to be true for the ROCm execution provider (at least for CNNs).
     // TODO: This may be a onnxruntime/ROCm bug, check onnxruntime 1.16 release.
     if (network_->provider_ == OnnxProvider::DML ||
-        network_->provider_ == OnnxProvider::ROCM) {
+        network_->provider_ == OnnxProvider::ROCM ||
+        network_->provider_ == OnnxProvider::TRT) {
       network_->lock_.lock();
     }
     network_->session_[step - 1].Run(
@@ -283,7 +284,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         network_->outputs_cstr_.data(), output_tensors_.data(),
         output_tensors_.size());
     if (network_->provider_ == OnnxProvider::DML ||
-        network_->provider_ == OnnxProvider::ROCM) {
+        network_->provider_ == OnnxProvider::ROCM ||
+        network_->provider_ == OnnxProvider::TRT) {
       network_->lock_.unlock();
     }
     i += batch;
@@ -326,7 +328,8 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       trt_options["trt_engine_cache_enable"] = "1";
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
-      trt_options["trt_cuda_graph_enable"] = "1";
+      // Looks like we need I/O binding to enable this.
+      // trt_options["trt_cuda_graph_enable"] = "1";
       if (batch_size < 0) {
         trt_options["trt_profile_min_shapes"] = inputs_[0] + ":1x112x8x8";
         trt_options["trt_profile_max_shapes"] =
