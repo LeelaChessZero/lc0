@@ -318,6 +318,8 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
 #endif
       break;
     case OnnxProvider::TRT: {
+      options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu);
       trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
