@@ -27,6 +27,7 @@
 
 #include "neural/xla/xla_runner.h"
 
+#include <algorithm>
 #include <numeric>
 
 #include "utils/exception.h"
