@@ -893,7 +893,7 @@ v0.19.0-rc1 (2018-11-03)
   Possible values:
     - centipawn (default) – approximate the win rate in centipawns, like Leela
       always did.
-    - win_percentage – value from 0 to 100.0 which represents expected score in
+    - expected_score – value from 0 to 100.0 which represents expected score in
       percents.
     - Q – the same, but scales from -100.0 to 100.0 rather than from 0 to 100.0
 
