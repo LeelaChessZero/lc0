@@ -1531,19 +1531,6 @@ __global__ void rpeVectorMultiply_kernel(const T* rpeInput, const T* rpeWeights,
     T sum = dotProductSum(x, rpeInput + tensorIndex, rpeWeights + weightIndex,
                           D, fp16);
 
-    // if (b == 0 && h == 0 && q == 0 && k == 0) {
-    //   // if (lane == 0) {
-    //     // sum += __shfl_down_sync(0xffffffff, sum, 1);
-    //     // sum = __shfl_down_sync(0xffffffff, sum, 1);
-    //     // return sum;
-    //     // printf("\n");
-    //     for (int i = 0; i < 32; i++) {
-    //       printf("x: %i, lane: %i, thread warp id: %d, sum: %f\n", x, lane,
-    //       i, (float)__shfl_sync(0xffffffff, sum, i));
-    //     }
-    //   // }
-    //   printf("x: %d, sum: %f\n", x, (float)sum);
-    // }
     if (lane == 0) {
       int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
       output[outIdx] = ((T)sum + (T)skipAdd[outIdx]) * (T)outScale;
@@ -1642,6 +1629,67 @@ void multiplyRPEAttentionLogits(const T* rpeInput, const T* rpeWeights,
       rpetype);
 #endif
   // }
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T>
+__global__ void rpeQK_multiply_kernel(const T* rpeInputQ, const T* rpeWeightsQ,
+                                      const T* rpeInputK, const T* rpeWeightsK,
+                                      const T* skipAdd, T* output, int B, int H,
+                                      int Q, int K, int D, float outScale) {
+  // Fused version of rpeVectorMultiply_kernel for RPE-Q and RPE-K.
+  const int x = threadIdx.x + blockDim.x * blockIdx.x;
+  const int q = threadIdx.y + blockDim.y * blockIdx.y;
+  const int bh = threadIdx.z + blockDim.z * blockIdx.z;
+  const int h = bh % H;
+  const int b = bh / H;
+  const bool fp16 = std::is_same<half, T>::value;
+  const int lane = x & (kNumRpeKernelSplits - 1);
+
+  // Read tensors per the input layouts and write out per the output layout.
+  // Sum is along the D dimension, and K is on the x-axis.
+  int k = x / kNumRpeKernelSplits;
+  if (b >= B || h >= H || q >= Q || k >= K) return;
+
+  // RPE-Q sum
+  const int tidxq = getTensorIndex(b, q, h, 0, B, Q, H, D);
+  const int widxq = getTensorIndex(h, q, k, 0, H, Q, K, D);
+  T sum1 = dotProductSum(x, rpeInputQ + tidxq, rpeWeightsQ + widxq, D, fp16);
+
+  // RPE-K sum.
+  const int tidxk = getTensorIndex(b, k, h, 0, B, K, H, D);
+  const int widxk = getTensorIndex(h, k, q, 0, H, K, Q, D);
+  T sum2 = dotProductSum(x, rpeInputK + tidxk, rpeWeightsK + widxk, D, fp16);
+
+  // Write out the result.
+  if (lane == 0) {
+    int outIdx = getTensorIndex(b, h, q, k, B, H, Q, K);
+    output[outIdx] = (T)(sum1 + sum2 + skipAdd[outIdx]) * (T)outScale;
+  }
+}
+
+template <typename T>
+void multiplyRpeQKLogits(const T* rpeInputQ, const T* rpeWeightsQ,
+                         const T* rpeInputK, const T* rpeWeightsK,
+                         const T* attnInput, T* output, int B, int H, int Q,
+                         int K, int D, float outScale, cudaStream_t stream) {
+  // rpeType:    Q            | K
+  // rpeInput:   [B, Q, H, D] | [B, K, H, D]
+  // rpeWeights: [H, Q, K, D] | [H, K, Q, D]
+  // attnInput:  [B, H, Q, K] | [B, H, Q, K]
+  dim3 blockDim, gridDim;
+  blockDim.x = std::min(32, K);
+  blockDim.y = std::min(16, Q);
+  blockDim.z = std::min(std::max(512 / (blockDim.x * blockDim.y), 1u),
+                        (unsigned int)(B * H));
+  gridDim.x = DivUp(K * kNumRpeKernelSplits, blockDim.x);
+  gridDim.y = DivUp(Q, blockDim.y);
+  gridDim.z = DivUp(B * H, blockDim.z);
+
+  rpeQK_multiply_kernel<T><<<gridDim, blockDim, 0, stream>>>(
+      rpeInputQ, rpeWeightsQ, rpeInputK, rpeWeightsK, attnInput, output, B, H,
+      Q, K, D, outScale);
+
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -1989,6 +2037,16 @@ template void multiplyRPEAttentionLogits<float>(
     const float* rpeInput, const float* rpeWeights, const float* attnInput,
     float* output, int B, int H, int Q, int K, int D, float outScale,
     size_t rpetype, cudaStream_t stream);
+
+template void multiplyRpeQKLogits<half>(
+    const half* rpeInputQ, const half* rpeWeightsQ, const half* rpeInputK,
+    const half* rpeWeightsK, const half* attnInput, half* output, int B, int H,
+    int Q, int K, int D, float outScale, cudaStream_t stream);
+
+template void multiplyRpeQKLogits<float>(
+    const float* rpeInputQ, const float* rpeWeightsQ, const float* rpeInputK,
+    const float* rpeWeightsK, const float* attnInput, float* output, int B,
+    int H, int Q, int K, int D, float outScale, cudaStream_t stream);
 
 template void permuteTensor<half>(half* output, const half* input, int s1,
                                   int s2, int s3, int s4, int p1, int p2,

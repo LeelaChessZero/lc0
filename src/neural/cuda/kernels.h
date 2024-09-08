@@ -163,6 +163,13 @@ void multiplyRPEAttentionLogits(const T* rpeInput, const T* rpeWeights,
                                 size_t rpetype, cudaStream_t stream);
 
 template <typename T>
+void multiplyRpeQKLogits(const T* rpeInputQ, const T* rpeWeightsQ,
+                         const T* rpeInputK, const T* rpeWeightsK,
+                         const T* attnInput, T* output, int B, int H, int Q,
+                         int K, int D, float outScale,
+                         cudaStream_t stream);
+
+template <typename T>
 void permuteTensor(T* output, const T* input, int s1, int s2, int s3, int s4,
                    int p1, int p2, int p3, int p4, cudaStream_t stream);
 
