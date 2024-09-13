@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -40,6 +41,7 @@
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 #include "utils/fp8_utils.h"
+#include "utils/string.h"
 
 namespace lczero {
 namespace {
@@ -471,6 +473,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Concat"] = &Onnx2HloConverter::OpConcat;
     onnx_op_to_builder_["Conv"] = &Onnx2HloConverter::OpConv;
     onnx_op_to_builder_["Div"] = &Onnx2HloConverter::OpDiv;
+    onnx_op_to_builder_["Einsum"] = &Onnx2HloConverter::OpEinsum;
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
@@ -1490,6 +1493,78 @@ class Onnx2HloConverter {
     flow = builder_.LogPlusOne(flow);
     flow = builder_.Tanh(flow);
     return {builder_.Multiply(flow, input)};
+  }
+
+  std::vector<HloFlow> OpEinsum(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, std::numeric_limits<size_t>::max(),
+                         {"equation"});
+    std::string equation(GetAttribute(node, "equation")->s());
+    std::vector<HloFlow> inputs;
+    for (size_t i = 0; i < node.input_size(); ++i) {
+      inputs.push_back(GetInput(node, i));
+    }
+    if (inputs.size() != 2) {
+      throw Exception("Only 2 inputs supported");
+    }
+    auto pos_comma = equation.find(',');
+    auto pos_arrow = equation.find("->");
+    std::string eq_a = Trim(equation.substr(0, pos_comma));
+    std::string eq_b =
+        Trim(equation.substr(pos_comma + 1, pos_arrow - pos_comma - 1));
+    std::string eq_out = Trim(equation.substr(pos_arrow + 2));
+    auto has_dups = [](const auto& s) {
+      return std::set<char>(s.begin(), s.end()).size() < s.size();
+    };
+    if (eq_a.empty() || eq_b.empty() || eq_out.empty() ||
+        equation.find('.') != std::string::npos || has_dups(eq_a) ||
+        has_dups(eq_b) || has_dups(eq_out)) {
+      throw Exception("Unsupportred equation: " + equation);
+    }
+
+    pblczero::XlaDotDimensionNumbers dn;
+    std::string batch;
+    std::string non_contracting;
+    for (size_t i = 0; i < eq_a.size(); i++) {
+      auto j = eq_b.find(eq_a[i]);
+      auto k = eq_out.find(eq_a[i]);
+      if (j != std::string::npos && k != std::string::npos) {
+        // Batch dimension.
+        dn.add_lhs_batch_dimensions(i);
+        dn.add_rhs_batch_dimensions(j);
+        batch += eq_a[i];
+      } else if (j != std::string::npos && k == std::string::npos) {
+        // Contracting dimension.
+        dn.add_lhs_contracting_dimensions(i);
+        dn.add_rhs_contracting_dimensions(j);
+      } else if (j == std::string::npos && k != std::string::npos) {
+        // Non contracting dimension.
+        non_contracting += eq_a[i];
+      } else {
+        throw Exception("LHS dimension " + eq_a.substr(i, 1) + " not used");
+      }
+    }
+    for (size_t j = 0; j < eq_b.size(); j++) {
+      auto i = eq_a.find(eq_b[j]);
+      auto k = eq_out.find(eq_b[j]);
+      if (i == std::string::npos && k != std::string::npos) {
+        // Non contracting dimension.
+        non_contracting += eq_b[j];
+      } else if (i == std::string::npos && k == std::string::npos) {
+        throw Exception("RHS dimension " + eq_b.substr(j, 1) + " not used");
+      }
+    }
+    std::string out = batch + non_contracting;
+    std::vector<int64_t> perm;
+    for (size_t k = 0; k < eq_out.size(); k++) {
+      auto l = out.find(eq_out[k]);
+      if (l != std::string::npos) {
+        perm.push_back(l);
+      } else {
+        throw Exception("Unknown output dimension " + eq_out.substr(k, 1));
+      }
+    }
+    auto flow = builder_.Dot(inputs[0], inputs[1], dn);
+    return {builder_.Transpose(flow, perm)};
   }
 
   /////////////////////////////////////////////////////////////////////////////
