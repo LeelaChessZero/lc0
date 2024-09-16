@@ -59,6 +59,9 @@ const OptionId kSmartPruningFactorId{
     "promising moves from being considered even earlier. Values less than 1 "
     "causes hopeless moves to still have some attention. When set to 0, smart "
     "pruning is deactivated."};
+const OptionId kHyperpruningThresholdId{
+    "hyperpruning-threshold", "HyperpruningThreshold",
+    "Threshold for hyperpruning to activate. Threshold is in sigmoid space."};
 const OptionId kMinimumSmartPruningBatchesId{
     "smart-pruning-minimum-batches", "SmartPruningMinimumBatches",
     "Only allow smart pruning to stop search after at least this many batches "
@@ -74,9 +77,10 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
   options->Add<IntOption>(kKLDGainAverageIntervalId, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNodeId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) =
-      (for_what == RunType::kUci ? 1.33f : 0.00f);
+      (for_what == RunType::kUci ? 1.0f : 0.00f);
   options->Add<IntOption>(kMinimumSmartPruningBatchesId, 0, 10000) = 0;
   options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
+  options->Add<FloatOption>(kHyperpruningThresholdId, -50.0f, 50.0f) = 2.9f;
 
   if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
     options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
@@ -104,7 +108,8 @@ void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
   const auto smart_pruning_factor = options.Get<float>(kSmartPruningFactorId);
   if (smart_pruning_factor > 0.0f) {
     stopper->AddStopper(std::make_unique<SmartPruningStopper>(
-        smart_pruning_factor, options.Get<int>(kMinimumSmartPruningBatchesId)));
+        smart_pruning_factor, options.Get<int>(kMinimumSmartPruningBatchesId),
+        options.Get<float>(kHyperpruningThresholdId)));
   }
 }
 
