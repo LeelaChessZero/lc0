@@ -26,7 +26,7 @@
 */
 
 #include "cuda_common.h"
-#include "neural/shared/activation.h"
+#include "neural/backends/shared/activation.h"
 
 // Allow building on an old architecture.
 #if __CUDA_ARCH__ < 530

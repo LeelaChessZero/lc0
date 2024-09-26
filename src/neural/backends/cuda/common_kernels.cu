@@ -29,8 +29,8 @@
 #include <cassert>
 
 #include "cuda_common.h"
-#include "neural/shared/activation.h"
-#include "neural/shared/attention_policy_map.h"
+#include "neural/backends/shared/activation.h"
+#include "neural/tables/attention_policy_map.h"
 #include "winograd_helper.inc"
 
 namespace lczero {

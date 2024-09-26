@@ -26,7 +26,7 @@
 */
 
 #include "cuda_common.h"
-#include "neural/shared/activation.h"
+#include "neural/backends/shared/activation.h"
 
 namespace lczero {
 namespace cudnn_backend {

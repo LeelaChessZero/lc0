@@ -16,7 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/shared/activation.h"
+#include "neural/backends/shared/activation.h"
 
 #include <algorithm>
 #include <cmath>

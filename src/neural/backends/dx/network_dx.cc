@@ -35,7 +35,7 @@
 #include <vector>
 
 #include "layers_dx.h"
-#include "neural/shared/policy_map.h"
+#include "neural/tables/policy_map.h"
 #include "shader_wrapper.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"

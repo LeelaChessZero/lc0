@@ -26,7 +26,7 @@
 */
 #pragma once
 
-#include "neural/shared/activation.h"
+#include "neural/backends/shared/activation.h"
 #include "utils/exception.h"
 
 #include "dnnl.hpp"

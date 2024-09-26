@@ -18,7 +18,7 @@
 
 #pragma once
 
-#include "neural/shared/activation.h"
+#include "neural/backends/shared/activation.h"
 
 #include <cstddef>
 #include <vector>

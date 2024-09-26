@@ -382,8 +382,8 @@ if get_option('build_backends')
     ]
 
     shared_files = [
-    'src/neural/shared/activation.cc',
-    'src/neural/shared/winograd_filter.cc',
+    'src/neural/backends/shared/activation.cc',
+    'src/neural/backends/shared/winograd_filter.cc',
     ]
 
     files += blas_files
@@ -392,7 +392,7 @@ if get_option('build_backends')
     if get_option('ispc') and ispc.found()
       files += iscp_gen.process('src/neural/backends/blas/winograd_transform.ispc')
       files += iscp_gen.process('src/neural/backends/blas/layer_norm.ispc')
-      files += iscp_gen.process('src/neural/shared/activation.ispc')
+      files += iscp_gen.process('src/neural/backends/shared/activation.ispc')
       add_project_arguments('-DUSE_ISPC', language : 'cpp')
     endif
 
@@ -429,8 +429,8 @@ if get_option('build_backends')
     ]
 
     shared_files = [
-    'src/neural/shared/activation.cc',
-    'src/neural/shared/winograd_filter.cc',
+    'src/neural/backends/shared/activation.cc',
+    'src/neural/backends/shared/winograd_filter.cc',
     ]
 
     if not opencl_framework.found()

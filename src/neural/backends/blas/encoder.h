@@ -20,7 +20,7 @@
 
 #include <cmath>
 
-#include "neural/shared/activation.h"
+#include "neural/backends/shared/activation.h"
 
 #ifdef USE_ISPC
 #include "layer_norm_ispc.h"

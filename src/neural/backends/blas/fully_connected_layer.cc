@@ -18,7 +18,6 @@
 
 #include "neural/backends/blas/fully_connected_layer.h"
 #include "neural/backends/blas/blas.h"
-#include "neural/shared/activation.h"
 
 #include <algorithm>
 #include <cassert>

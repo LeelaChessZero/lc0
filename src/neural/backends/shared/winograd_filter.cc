@@ -16,7 +16,7 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "neural/shared/winograd_filter.h"
+#include "neural/backends/shared/winograd_filter.h"
 
 #include <array>
 

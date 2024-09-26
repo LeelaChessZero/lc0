@@ -38,7 +38,7 @@
 
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
-#include "neural/shared/policy_map.h"
+#include "neural/tables/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/optionsdict.h"
 #include "utils/transpose.h"

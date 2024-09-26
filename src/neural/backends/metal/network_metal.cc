@@ -37,8 +37,8 @@
 #include "mps/MetalNetworkBuilder.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
-#include "neural/shared/attention_policy_map.h"
-#include "neural/shared/policy_map.h"
+#include "neural/tables/attention_policy_map.h"
+#include "neural/tables/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 

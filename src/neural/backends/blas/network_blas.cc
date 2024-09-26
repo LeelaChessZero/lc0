@@ -28,13 +28,13 @@
 #include "neural/backends/blas/fully_connected_layer.h"
 #include "neural/backends/blas/se_unit.h"
 #include "neural/backends/blas/winograd_convolution3.h"
+#include "neural/backends/shared/activation.h"
+#include "neural/backends/shared/winograd_filter.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "neural/network_legacy.h"
-#include "neural/shared/activation.h"
-#include "neural/shared/attention_policy_map.h"
-#include "neural/shared/policy_map.h"
-#include "neural/shared/winograd_filter.h"
+#include "neural/tables/attention_policy_map.h"
+#include "neural/tables/policy_map.h"
 #include "utils/numa.h"
 
 #ifdef USE_DNNL
