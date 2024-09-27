@@ -336,7 +336,8 @@ const OptionId SearchParams::kPerPvCountersId{
 const OptionId SearchParams::kScoreTypeId{
     "score-type", "ScoreType",
     "What to display as score. Either centipawns (the UCI default), win "
-    "percentage or Q (the actual internal score) multiplied by 100."};
+    "percentage or Q (the actual internal score) multiplied by 10000 "
+    "(typically GUIs display this divided by 100)."};
 const OptionId SearchParams::kHistoryFillId{
     "history-fill", "HistoryFill",
     "Neural network uses 7 previous board positions in addition to the current "
