@@ -29,7 +29,7 @@
 #include <cassert>
 
 #include "cuda_common.h"
-#include "neural/backends/shared/activation.h"
+#include "neural/tables/activation_function.h"
 #include "neural/tables/attention_policy_map.h"
 #include "winograd_helper.inc"
 

@@ -35,7 +35,6 @@
 #include "inputs_outputs.h"
 #include "kernels.h"
 #include "layers.h"
-#include "neural/backends/shared/activation.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
 #include "neural/tables/attention_policy_map.h"

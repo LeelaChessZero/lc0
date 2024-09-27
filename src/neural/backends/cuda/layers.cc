@@ -32,7 +32,6 @@
 
 #include "cuda_common.h"
 #include "kernels.h"
-#include "neural/backends/shared/activation.h"
 #include "neural/network.h"
 #include "neural/tables/attention_policy_map.h"
 #include "utils/fp16_utils.h"
