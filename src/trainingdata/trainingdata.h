@@ -57,7 +57,7 @@ struct V6TrainingData {
   //  bit 0: flip transform (input type 3)
   // In versions prior to v5 this spot contained an unused move count field.
   uint8_t invariance_info;
-  // In versions prior to v6 this spot contained thr result as an int8_t.
+  // In versions prior to v6 this spot contained the result as an int8_t.
   uint8_t dummy;
   float root_q;
   float best_q;
