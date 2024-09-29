@@ -748,6 +748,16 @@ class Onnx2HloConverter {
            GetXlaTypeSize(shape.element_type());
   }
 
+  void NormalizeDimensions(std::vector<int64_t>* dimensions, int rank) {
+    for (auto& dim : *dimensions) {
+      if (dim >= rank || dim < -rank) {
+        throw Exception("Invalid dimension " + std::to_string(dim) +
+                        " for rank " + std::to_string(rank));
+      }
+      if (dim < 0) dim += rank;
+    }
+  }
+
   /////////////////////////////////////////////////////////////////////////////
   // ONNX operations
   /////////////////////////////////////////////////////////////////////////////
@@ -943,7 +953,8 @@ class Onnx2HloConverter {
                     ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
                     : GetConstantInputAsVec<int64_t>(node, 1, true);
     if (!axes) {
-      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes").value_or(false)) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes")
+              .value_or(false)) {
         return {input};
       }
       axes = GetIota(input->shape().dimensions_size());
@@ -964,7 +975,8 @@ class Onnx2HloConverter {
                     ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
                     : GetConstantInputAsVec<int64_t>(node, 1, true);
     if (!axes) {
-      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes").value_or(false)) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes")
+              .value_or(false)) {
         return {input};
       }
       axes = GetIota(input->shape().dimensions_size());
@@ -999,7 +1011,8 @@ class Onnx2HloConverter {
                     ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
                     : GetConstantInputAsVec<int64_t>(node, 1, true);
     if (!axes) {
-      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes").value_or(false)) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes")
+              .value_or(false)) {
         return {input};
       }
       axes = GetIota(input->shape().dimensions_size());
@@ -1443,6 +1456,7 @@ class Onnx2HloConverter {
     HloTensorType input_shape(input->shape());
     HloTensorType new_shape(input->shape().element_type());
     const size_t new_num_dims = input_shape.Rank() + axes.size();
+    NormalizeDimensions(&axes, new_num_dims);
     size_t src_dim = 0;
     for (size_t i = 0; i < new_num_dims; ++i) {
       if (std::find(axes.begin(), axes.end(), i) != axes.end()) {
