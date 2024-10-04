@@ -44,6 +44,18 @@
 namespace lczero {
 namespace {
 
+bool CanConvertConstant(const pblczero::XlaShapeProto::Type& type) {
+  switch (type) {
+    case pblczero::XlaShapeProto::F32:
+    case pblczero::XlaShapeProto::F64:
+    case pblczero::XlaShapeProto::S32:
+    case pblczero::XlaShapeProto::S64:
+      return true;
+    default:
+      return false;
+  }
+}
+
 template <typename T>
 void FetchConstForType(const pblczero::XlaLiteralProto& literal,
                        pblczero::XlaShapeProto::Type type, T&& func) {
@@ -222,6 +234,47 @@ pblczero::XlaLiteralProto ConstOpGather(
                        dst->push_back(inp[i]);
                      }
                    });
+  return result;
+}
+
+void EnsureSameShape(const pblczero::XlaLiteralProto& lhs,
+                     const pblczero::XlaLiteralProto& rhs,
+                     bool also_check_types = true) {
+  if (lhs.shape().dimensions() != rhs.shape().dimensions()) {
+    throw Exception("Operands must have the same shape");
+  }
+  if (also_check_types &&
+      lhs.shape().element_type() != rhs.shape().element_type()) {
+    throw Exception("Operands must have the same type");
+  }
+}
+
+pblczero::XlaLiteralProto ConstOpMul(const pblczero::XlaLiteralProto& lhs,
+                                     const pblczero::XlaLiteralProto& rhs) {
+  EnsureSameShape(lhs, rhs);
+  pblczero::XlaLiteralProto result;
+  *result.mutable_shape() = lhs.shape();
+  LiteralOutInInOp(
+      &result, lhs, rhs, [](auto* dst, const auto& lhs, const auto& rhs) {
+        std::transform(lhs.begin(), lhs.end(), rhs.begin(),
+                       std::back_inserter(*dst), std::multiplies<>());
+      });
+  return result;
+}
+
+pblczero::XlaLiteralProto ConstOpMax(const pblczero::XlaLiteralProto& lhs,
+                                     const pblczero::XlaLiteralProto& rhs) {
+  EnsureSameShape(lhs, rhs);
+  pblczero::XlaLiteralProto result;
+  *result.mutable_shape() = lhs.shape();
+  LiteralOutInInOp(
+      &result, lhs, rhs, [](auto* dst, const auto& lhs, const auto& rhs) {
+        using T =
+            typename std::remove_reference<decltype(lhs)>::type::value_type;
+        std::transform(lhs.begin(), lhs.end(), rhs.begin(),
+                       std::back_inserter(*dst),
+                       [](T a, T b) { return std::max(a, b); });
+      });
   return result;
 }
 
@@ -425,6 +478,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Identity"] = &Onnx2HloConverter::OpIdentity;
     onnx_op_to_builder_["LayerNormalization"] =
         &Onnx2HloConverter::OpLayerNormalization;
+    onnx_op_to_builder_["Max"] = &Onnx2HloConverter::OpMax;
     onnx_op_to_builder_["MatMul"] = &Onnx2HloConverter::OpMatMul;
     onnx_op_to_builder_["Mish"] = &Onnx2HloConverter::OpMish;
     onnx_op_to_builder_["Mul"] = &Onnx2HloConverter::OpMul;
@@ -576,7 +630,7 @@ class Onnx2HloConverter {
       const pblczero::NodeProto& node, size_t idx, bool optional = false) {
     if (idx >= node.input_size()) {
       if (optional) return std::nullopt;
-      throw Exception("Input " + std::to_string(idx) + " not set");
+      throw Exception("Constant input " + std::to_string(idx) + " not set");
     }
     const std::string name(node.input(idx));
     if (auto tensor = initializers_.find(name); tensor != initializers_.end()) {
@@ -676,6 +730,32 @@ class Onnx2HloConverter {
   std::vector<T> GetAttributeAsVec(const pblczero::NodeProto& node,
                                    std::string_view name) {
     return GetOptionalAttributeAsVec<T>(node, name, false).value();
+  }
+
+  std::vector<int64_t> GetIota(size_t size) {
+    std::vector<int64_t> result(size);
+    std::iota(result.begin(), result.end(), 0);
+    return result;
+  };
+
+  uint64_t GetNumberElements(const std::vector<int64_t>& dimensions) {
+    return std::accumulate(dimensions.begin(), dimensions.end(), 1,
+                           std::multiplies<int64_t>());
+  }
+
+  uint64_t GetShapeSize(const pblczero::XlaShapeProto& shape) {
+    return GetNumberElements(shape.dimensions()) *
+           GetXlaTypeSize(shape.element_type());
+  }
+
+  void NormalizeDimensions(std::vector<int64_t>* dimensions, int rank) {
+    for (auto& dim : *dimensions) {
+      if (dim >= rank || dim < -rank) {
+        throw Exception("Invalid dimension " + std::to_string(dim) +
+                        " for rank " + std::to_string(rank));
+      }
+      if (dim < 0) dim += rank;
+    }
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -866,51 +946,86 @@ class Onnx2HloConverter {
     if (opset_version_ < 18) {
       CheckKnownAttributes(node, 1, {"axes", "keepdims"});
     } else {
-      CheckKnownAttributes(node, 2, {"keepdims"});
+      CheckKnownAttributes(node, 2, {"keepdims", "noop_with_empty_axes"});
     }
     auto* input = GetInput(node, 0);
     auto axes = opset_version_ < 18
-                    ? GetAttributeAsVec<int64_t>(node, "axes")
-                    : GetConstantInputAsVec<int64_t>(node, 1).value();
+                    ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
+                    : GetConstantInputAsVec<int64_t>(node, 1, true);
+    if (!axes) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes")
+              .value_or(false)) {
+        return {input};
+      }
+      axes = GetIota(input->shape().dimensions_size());
+    }
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
-    return {DoReduceMean(input, axes, keepdims)};
+    return {DoReduceMean(input, *axes, keepdims)};
   }
 
   std::vector<HloFlow> OpReduceProd(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    if (opset_version_ < 18) {
+      CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    } else {
+      CheckKnownAttributes(node, 2, {"keepdims", "noop_with_empty_axes"});
+    }
     auto* input = GetInput(node, 0);
-    auto axes = GetAttributeAsVec<int64_t>(node, "axes");
+    auto axes = opset_version_ < 18
+                    ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
+                    : GetConstantInputAsVec<int64_t>(node, 1, true);
+    if (!axes) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes")
+              .value_or(false)) {
+        return {input};
+      }
+      axes = GetIota(input->shape().dimensions_size());
+    }
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     HloFlow flow;
     if (AllInputsConstant(node)) {
-      flow = builder_.Constant(
-          ConstOpReduceProd(*GetConstantInput(node, 0), axes));
-    } else {
-      HloFlow one = MakeScalar(1, input->shape().element_type());
-      flow = builder_.Reduce(
-          input, one, MakeMulComputation(input->shape().element_type()), axes);
+      auto literal = ConstOpReduceProd(*GetConstantInput(node, 0), *axes);
+      if (!keepdims) return {builder_.Constant(literal)};
+      HloTensorType target_shape(input->shape());
+      for (auto axis : *axes) target_shape.SetDimension(axis, 1);
+      return {builder_.Constant(ConstReshape(literal, target_shape.ToProto()))};
     }
+    HloFlow one = MakeScalar(1, input->shape().element_type());
+    flow = builder_.Reduce(
+        input, one, MakeMulComputation(input->shape().element_type()), *axes);
     if (!keepdims) return {flow};
     HloTensorType target_shape(input->shape());
-    for (auto axis : axes) target_shape.SetDimension(axis, 1);
+    for (auto axis : *axes) target_shape.SetDimension(axis, 1);
     return {builder_.Reshape(flow, target_shape)};
   }
 
   std::vector<HloFlow> OpReduceSumSquare(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    if (opset_version_ < 18) {
+      CheckKnownAttributes(node, 1, {"axes", "keepdims"});
+    } else {
+      CheckKnownAttributes(node, 2, {"keepdims", "noop_with_empty_axes"});
+    }
     auto* input = GetInput(node, 0);
-    auto axes = GetAttributeAsVec<int64_t>(node, "axes");
+    auto axes = opset_version_ < 18
+                    ? GetOptionalAttributeAsVec<int64_t>(node, "axes")
+                    : GetConstantInputAsVec<int64_t>(node, 1, true);
+    if (!axes) {
+      if (GetOptionalAttributeAs<bool>(node, "noop_with_empty_axes")
+              .value_or(false)) {
+        return {input};
+      }
+      axes = GetIota(input->shape().dimensions_size());
+    }
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     auto flow = builder_.Multiply(input, input);
-    flow = builder_.Reduce(input, MakeScalar(0, input->shape().element_type()),
+    flow = builder_.Reduce(flow, MakeScalar(0, input->shape().element_type()),
                            MakeAddComputation(input->shape().element_type()),
-                           axes);
+                           *axes);
     if (!keepdims) return {flow};
     HloTensorType target_shape(input->shape());
-    for (auto axis : axes) target_shape.SetDimension(axis, 1);
+    for (auto axis : *axes) target_shape.SetDimension(axis, 1);
     return {builder_.Reshape(flow, target_shape)};
   }
 
@@ -922,7 +1037,8 @@ class Onnx2HloConverter {
     const auto hlo_type = OnnxTypeToXlaType(onnx_type);
     if (input->shape().element_type() == hlo_type) return {input};
     // Only convert constants of int64 to int32 as that's what TF does.
-    if (AllInputsConstant(node)) {
+    if (AllInputsConstant(node) && CanConvertConstant(hlo_type) &&
+        CanConvertConstant(input->shape().element_type())) {
       return {builder_.Constant(
           ConstOpConvert(*GetConstantInput(node, 0), hlo_type))};
     }
@@ -1070,8 +1186,29 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 2, {});
     auto* lhs = GetInput(node, 0);
     auto* rhs = GetInput(node, 1);
+
+    if (AllInputsConstant(node) &&
+        GetShapeSize(lhs->shape()) <= options_.max_inline_constant_size) {
+      return {builder_.Constant(
+          ConstOpMul(*GetConstantInput(node, 0), *GetConstantInput(node, 1)))};
+    }
+
     std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
     return {builder_.Multiply(lhs, rhs)};
+  }
+
+  std::vector<HloFlow> OpMax(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* lhs = GetInput(node, 0);
+    auto* rhs = GetInput(node, 1);
+
+    if (AllInputsConstant(node) &&
+        GetShapeSize(lhs->shape()) <= options_.max_inline_constant_size) {
+      return {builder_.Constant(
+          ConstOpMax(*GetConstantInput(node, 0), *GetConstantInput(node, 1)))};
+    }
+    std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
+    return {builder_.Maximum(lhs, rhs)};
   }
 
   std::vector<HloFlow> OpSplit(const pblczero::NodeProto& node) {
@@ -1224,6 +1361,11 @@ class Onnx2HloConverter {
       new_shape.SetDimension(infer_dim.value(),
                              input_shape.NumElements() / num_elements);
     }
+    if (AllInputsConstant(node) &&
+        new_shape.NumElements() <= options_.max_inline_constant_size) {
+      return {builder_.Constant(
+          ConstReshape(*GetConstantInput(node, 0), new_shape.ToProto()))};
+    }
     return {builder_.Reshape(input, new_shape)};
   }
 
@@ -1314,6 +1456,7 @@ class Onnx2HloConverter {
     HloTensorType input_shape(input->shape());
     HloTensorType new_shape(input->shape().element_type());
     const size_t new_num_dims = input_shape.Rank() + axes.size();
+    NormalizeDimensions(&axes, new_num_dims);
     size_t src_dim = 0;
     for (size_t i = 0; i < new_num_dims; ++i) {
       if (std::find(axes.begin(), axes.end(), i) != axes.end()) {
