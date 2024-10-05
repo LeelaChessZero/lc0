@@ -894,6 +894,11 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 void Search::StartThreads(size_t how_many) {
+#ifdef __EMSCRIPTEN__
+  (void) how_many;
+  SearchWorker worker(this, params_, 0);
+  worker.RunBlocking();
+#else
   Mutex::Lock lock(threads_mutex_);
   if (how_many == 0 && threads_.size() == 0) {
     how_many = backend_attributes_.suggested_num_search_threads +
@@ -916,6 +921,7 @@ void Search::StartThreads(size_t how_many) {
                  std::chrono::steady_clock::now() - start_time_)
                  .count()
           << "ms already passed.";
+#endif
 }
 
 void Search::RunBlocking(size_t threads) {

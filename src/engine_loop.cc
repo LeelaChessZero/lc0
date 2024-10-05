@@ -29,12 +29,42 @@
 
 #include <iostream>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "engine.h"
 #include "neural/shared_params.h"
 #include "utils/configfile.h"
 
 namespace lczero {
 namespace {
+
+#ifdef __EMSCRIPTEN__
+
+extern "C" {
+
+EM_ASYNC_JS(char*, lc0web_get_line, (), {
+  return stringToNewUTF8(String(await globalThis.lc0web_get_line()))
+});
+
+}  // extern "C"
+
+bool GetLine(std::string& line) {
+  char* cline = lc0web_get_line();
+  line = cline;
+  free(cline);
+  return true;
+}
+
+#else
+
+bool GetLine(std::string& line) {
+  return static_cast<bool>(std::getline(std::cin, line));
+}
+
+#endif
+
 const OptionId kLogFileId{
     {.long_flag = "logfile",
      .uci_option = "LogFile",
@@ -69,7 +99,7 @@ void RunEngine(SearchFactory* factory) {
   // Run the stdin loop.
   std::cout.setf(std::ios::unitbuf);
   std::string line;
-  while (std::getline(std::cin, line)) {
+  while (GetLine(line)) {
     LOGFILE << ">> " << line;
     try {
       if (!loop.ProcessLine(line)) break;
