@@ -308,7 +308,15 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
     case ACTIVATION_SELU: {
       auto flow = input;
       flow = StartOptionalBf16Fix(builder, flow, name);
-      flow = builder->Selu(name + "/selu", flow);
+      if (!options_.alt_selu) {
+        flow = builder->Selu(name + "/selu", flow);
+      } else {
+        // For the JS backend (while ORT-web doesn't implement SELU).
+        auto& alpha =
+            static_cast<const OnnxConst&>(FloatOnnxConst({1.67326f}, {1}));
+        flow = builder->Elu(name + "/selu/elu", flow, 1.0507f);
+        flow = builder->Mul(name + "/selu/mul", flow, alpha);
+      }
       return EndOptionalBf16Fix(builder, flow, name);
     }
     case ACTIVATION_SWISH:

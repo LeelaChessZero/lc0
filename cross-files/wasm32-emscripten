@@ -1,0 +1,26 @@
+[host_machine]
+system = 'emscripten'
+cpu_family = 'wasm32'
+cpu = 'wasm32'
+endian = 'little'
+
+[binaries]
+c = 'emcc'
+cpp = 'em++'
+ar = 'emar'
+strip = 'emstrip'
+
+[built-in options]
+cpp_args = ['--use-port=zlib', '-fexceptions', '-msse', '-msse2', '-msse3', '-msimd128']
+cpp_link_args = [
+		'--use-port=zlib',
+		'-fexceptions',
+		'-sASYNCIFY', '-sASYNCIFY_STACK_SIZE=65536',
+		'-STACK_SIZE=1048576',
+		'-sMODULARIZE', '-sEXPORT_ES6',
+		'-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$stringToNewUTF8',
+		'-sALLOW_MEMORY_GROWTH',
+		'-sWASM_BIGINT',
+		'-sENVIRONMENT=worker',
+		'-sEXTRA_EXPORTED_RUNTIME_METHODS=["FS"]',
+	]
