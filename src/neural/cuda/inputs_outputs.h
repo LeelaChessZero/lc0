@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #include "neural/network.h"
 
 namespace lczero {

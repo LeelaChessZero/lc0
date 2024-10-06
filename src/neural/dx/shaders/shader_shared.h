@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #define kExpandPlanesElementsPerBlock 256
 #define kExpandPlanesFp32BlockSize kExpandPlanesElementsPerBlock
 #define kExpandPlanesFp16BlockSize (kExpandPlanesElementsPerBlock / 2)
