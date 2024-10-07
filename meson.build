@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
-project('lc0', 'cpp',
+project('lc0', ['cpp', 'c'],
         default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.55')
 
@@ -666,7 +666,7 @@ endif
     deps += cc.find_library('libprofiler',
       dirs: ['/usr/local/lib'], required: false)
   endif
-
+ 
   deps += cc.find_library('libatomic', required: false)
 
 #############################################################################
