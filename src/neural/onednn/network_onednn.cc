@@ -39,6 +39,7 @@
 #include "neural/shared/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
+#include "utils/fp16_utils.h"
 
 #include <omp.h>
 
@@ -80,6 +81,18 @@ struct InputsOutputs {
   float* op_policy_mem_;
   float* op_value_mem_;
   float* op_moves_left_mem_;
+
+  // Scratch memory
+  dnnl::memory scratch_mem;
+  dnnl::memory scratchpad_mem;
+
+  // Output memory.
+  dnnl::memory opPol_mem;
+  dnnl::memory opVal_mem;
+  dnnl::memory opMov_mem;
+
+  // Intermediate tensors.
+  dnnl::memory tensor_mem[3];
 };
 
 class OnednnNetwork;
@@ -187,13 +200,13 @@ class OnednnNetwork : public Network {
     }
     eng_stream_ = dnnl::stream(eng_);
 
-    auto data_type = dnnl::memory::data_type::f32;
+    data_type_ = dnnl::memory::data_type::f32;
     if (options.GetOrDefault<bool>(
             "fp16", eng_.get_kind() == dnnl::engine::kind::gpu)) {
       if (eng_.get_kind() == dnnl::engine::kind::cpu) {
-        data_type = dnnl::memory::data_type::bf16;
+        data_type_ = dnnl::memory::data_type::bf16;
       } else {
-        data_type = dnnl::memory::data_type::f16;
+        data_type_ = dnnl::memory::data_type::f16;
       }
     }
 
@@ -220,7 +233,7 @@ class OnednnNetwork : public Network {
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
     batch_size_ = options.GetOrDefault<int>(
-        "batch", data_type == dnnl::memory::data_type::f32 ? 32 : 64);
+        "batch", data_type_ == dnnl::memory::data_type::f32 ? 32 : 64);
 
     steps_ = options.GetOrDefault<int>("steps", 2);
     if (batch_size_ <= 0) {
@@ -250,7 +263,7 @@ class OnednnNetwork : public Network {
         auto inputConv = std::make_unique<ConvLayer>(
             nullptr, numFilters_, 8, 8, 3, kInputPlanes, default_activation_);
         // Set the data type first, the following layers will pick it up.
-        inputConv->SetDataType(data_type);
+        inputConv->SetDataType(data_type_);
         inputConv->SetConvolutionType(convolution_type);
         auto w_md = dnnl::memory::desc({numFilters_, kInputPlanes, 3, 3},
                                        dnnl::memory::data_type::f32,
@@ -545,6 +558,54 @@ class OnednnNetwork : public Network {
     uint64_t* ipDataMasks = io->input_masks_mem_;
     float* ipDataValues = io->input_val_mem_;
 
+    // Allocate memory.
+    if (!io->opVal_mem) {
+      auto alloc_batch = steps_ * batch_size_;
+      auto tensor_desc =
+          dnnl::memory::desc({alloc_batch, numFilters_, 8, 8}, data_type_,
+                             dnnl::memory::format_tag::nchw);
+      io->tensor_mem[0] = dnnl::memory(tensor_desc, eng_);
+      io->tensor_mem[1] = dnnl::memory(tensor_desc, eng_);
+      io->tensor_mem[2] = dnnl::memory(tensor_desc, eng_);
+
+      auto scratch_desc =
+          dnnl::memory::desc({alloc_batch, kInputPlanes, 8, 8},
+                             data_type_ == dnnl::memory::data_type::f16
+                                 ? dnnl::memory::data_type::f16
+                                 : dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::nchw);
+      if (tensor_desc.get_size() > scratch_desc.get_size()) {
+        scratch_desc = tensor_desc;
+      }
+      io->scratch_mem = dnnl::memory(scratch_desc, eng_);
+
+      dnnl::memory::desc opPol_desc;
+      if (attn_policy_) {
+        opPol_desc = dnnl::memory::desc({alloc_batch, 67, 8, 8},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      } else if (conv_policy_) {
+        opPol_desc = dnnl::memory::desc({alloc_batch, pol_channels_, 8, 8},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      } else {
+        opPol_desc = dnnl::memory::desc({alloc_batch, kNumOutputPolicy, 1, 1},
+                                        dnnl::memory::data_type::f32,
+                                        dnnl::memory::format_tag::nchw);
+      }
+      io->opPol_mem = dnnl::memory(opPol_desc, eng_);
+
+      auto opVal_desc = dnnl::memory::desc({alloc_batch, wdl_ ? 3 : 1, 1, 1},
+                                           dnnl::memory::data_type::f32,
+                                           dnnl::memory::format_tag::nchw);
+      io->opVal_mem = dnnl::memory(opVal_desc, eng_);
+
+      auto opMov_desc = dnnl::memory::desc({alloc_batch, 1, 1, 1},
+                                           dnnl::memory::data_type::f32,
+                                           dnnl::memory::format_tag::nchw);
+      io->opMov_mem = dnnl::memory(opMov_desc, eng_);
+    }
+
     int batchSize = steps_ * batch_size_;
     if (batchSize <= 0) {
       // Use just one batch of variable size.
@@ -563,40 +624,58 @@ class OnednnNetwork : public Network {
         batchSize = (idx + 1) * batch_size_;
       }
 
-      auto input_desc = dnnl::memory::desc({batchSize, kInputPlanes, 8, 8},
-                                           dnnl::memory::data_type::f32,
-                                           dnnl::memory::format_tag::nchw);
-      dnnl::memory input_mem = dnnl::memory(input_desc, cpu_eng_);
+      auto input_desc =
+          dnnl::memory::desc({batchSize, kInputPlanes, 8, 8},
+                             data_type_ == dnnl::memory::data_type::f16
+                                 ? dnnl::memory::data_type::f16
+                                 : dnnl::memory::data_type::f32,
+                             dnnl::memory::format_tag::nchw);
 
-      float* buffer = (float*)input_mem.get_data_handle();
-      for (int j = 0; j < currentBatchSize * kInputPlanes; j++) {
-        const float value = ipDataValues[j + start * kInputPlanes];
-        const uint64_t mask = ipDataMasks[j + start * kInputPlanes];
-        for (auto i = 0; i < 64; i++)
-          *(buffer++) = (mask & (((uint64_t)1) << i)) != 0 ? value : 0;
-      }
-      // Clear remaining buffer (if any).
-      memset(buffer, 0, (batchSize - currentBatchSize) * kInputPlanes * 64 *
-                            sizeof(float));
+      dnnl::memory input_mem =
+          eng_.get_kind() == dnnl::engine::kind::cpu
+              ? dnnl::memory(input_desc, eng_,
+                             io->scratch_mem.get_data_handle())
+              : dnnl::memory(input_desc, cpu_eng_);
 
-      // Move input to the gpu.
-      if (eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(input_desc, eng_);
-        dnnl::reorder in_reorder = dnnl::reorder(input_mem, tmp);
-        in_reorder.execute(eng_stream_, input_mem, tmp);
-        input_mem = tmp;
+      if (data_type_ == dnnl::memory::data_type::f16) {
+        uint16_t* buffer = (uint16_t*)input_mem.get_data_handle();
+        for (int j = 0; j < currentBatchSize * kInputPlanes; j++) {
+          const auto value = FP32toFP16(ipDataValues[j + start * kInputPlanes]);
+          const uint64_t mask = ipDataMasks[j + start * kInputPlanes];
+          for (auto i = 0; i < 64; i++)
+            *(buffer++) = (mask & (((uint64_t)1) << i)) != 0 ? value : 0;
+        }
+        // Clear remaining buffer (if any).
+        memset(buffer, 0, (batchSize - currentBatchSize) * kInputPlanes * 64 *
+                              sizeof(short));
+      } else {
+        float* buffer = (float*)input_mem.get_data_handle();
+        for (int j = 0; j < currentBatchSize * kInputPlanes; j++) {
+          const float value = ipDataValues[j + start * kInputPlanes];
+          const uint64_t mask = ipDataMasks[j + start * kInputPlanes];
+          for (auto i = 0; i < 64; i++)
+            *(buffer++) = (mask & (((uint64_t)1) << i)) != 0 ? value : 0;
+        }
+        // Clear remaining buffer (if any).
+        memset(buffer, 0, (batchSize - currentBatchSize) * kInputPlanes * 64 *
+                              sizeof(float));
       }
 
       // Output descriptors.
       dnnl::memory::desc opPol_desc;
       if (attn_policy_) {
-        opPol_desc = dnnl::memory::desc({batchSize, 67, 8, 8},
-                                        dnnl::memory::data_type::f32,
-                                        dnnl::memory::format_tag::nchw);
+        opPol_desc = dnnl::memory::desc(
+            {batchSize, 67, 8, 8}, data_type_ == dnnl::memory::data_type::f16
+                                       ? dnnl::memory::data_type::f16
+                                       : dnnl::memory::data_type::f32,
+            dnnl::memory::format_tag::nchw);
       } else if (conv_policy_) {
-        opPol_desc = dnnl::memory::desc({batchSize, pol_channels_, 8, 8},
-                                        dnnl::memory::data_type::f32,
-                                        dnnl::memory::format_tag::nchw);
+        opPol_desc =
+            dnnl::memory::desc({batchSize, pol_channels_, 8, 8},
+                               data_type_ == dnnl::memory::data_type::f16
+                                   ? dnnl::memory::data_type::f16
+                                   : dnnl::memory::data_type::f32,
+                               dnnl::memory::format_tag::nchw);
       } else {
         opPol_desc = dnnl::memory::desc({batchSize, kNumOutputPolicy, 1, 1},
                                         dnnl::memory::data_type::f32,
@@ -608,119 +687,163 @@ class OnednnNetwork : public Network {
       auto opMov_desc =
           dnnl::memory::desc({batchSize, 1, 1, 1}, dnnl::memory::data_type::f32,
                              dnnl::memory::format_tag::nchw);
+
       // Output memory.
-      dnnl::memory opPol_mem;
-      dnnl::memory opVal_mem;
-      dnnl::memory opMov_mem;
+      dnnl::memory opPol_mem =
+          dnnl::memory(opPol_desc, eng_, io->opPol_mem.get_data_handle());
+      dnnl::memory opVal_mem =
+          dnnl::memory(opVal_desc, eng_, io->opVal_mem.get_data_handle());
+      dnnl::memory opMov_mem =
+          dnnl::memory(opMov_desc, eng_, io->opMov_mem.get_data_handle());
 
       // Intermediate tensors.
+      auto tensor_desc =
+          dnnl::memory::desc({batchSize, numFilters_, 8, 8}, data_type_,
+                             dnnl::memory::format_tag::nchw);
       dnnl::memory tensor_mem[3];
+      tensor_mem[0] =
+          dnnl::memory(tensor_desc, eng_, io->tensor_mem[0].get_data_handle());
+      tensor_mem[1] =
+          dnnl::memory(tensor_desc, eng_, io->tensor_mem[1].get_data_handle());
+      tensor_mem[2] =
+          dnnl::memory(tensor_desc, eng_, io->tensor_mem[2].get_data_handle());
+
+      dnnl::memory scratch_mem =
+          dnnl::memory(tensor_desc, eng_, io->scratch_mem.get_data_handle());
+
+      // A reference to be allocated and enlarged as needed.
+      dnnl::memory& scratchpad_mem = io->scratchpad_mem;
+
+      lock_.lock();
+      // Move input to the gpu.
+      if (eng_.get_kind() != dnnl::engine::kind::cpu) {
+        dnnl::memory tmp =
+            dnnl::memory(input_desc, eng_, io->scratch_mem.get_data_handle());
+        dnnl::reorder in_reorder = dnnl::reorder(input_mem, tmp);
+        in_reorder.execute(eng_stream_, input_mem, tmp);
+        input_mem = tmp;
+      }
 
       int l = 0;
 
       // Input.
-      layers_[idx][l++]->Eval(batchSize, tensor_mem[2], input_mem, eng_,
-                              eng_stream_);  // input conv
+      layers_[idx][l++]->Eval(batchSize, tensor_mem[2], input_mem,
+                              tensor_mem[1], eng_, eng_stream_,
+                              scratchpad_mem);  // input conv
 
       // Residual block.
       for (int block = 0; block < numBlocks_; block++) {
-        layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], eng_,
-                                eng_stream_);  // conv1
+        layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // conv1
 
         // For SE Resnet, skip connection is added after SE.
         if (has_se_) {
-          layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0], eng_,
-                                  eng_stream_);  // conv2
+          layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
+                                  scratch_mem, eng_, eng_stream_,
+                                  scratchpad_mem);  // conv2
         } else {
-          layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[0], eng_,
-                                  eng_stream_);  // conv2
+          layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[0],
+                                  scratch_mem, eng_, eng_stream_,
+                                  scratchpad_mem);  // conv2
         }
 
         if (has_se_) {
-          layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1], eng_,
-                                  eng_stream_);  // SE layer
+          layers_[idx][l++]->Eval(batchSize, tensor_mem[2], tensor_mem[1],
+                                  scratch_mem, eng_, eng_stream_,
+                                  scratchpad_mem);  // SE layer
         }
       }
 
       // Policy head.
       if (attn_policy_) {
-        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[2], eng_,
-                                eng_stream_);  // attention head
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[2],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // attention head
       } else if (conv_policy_) {
-        layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], eng_,
-                                eng_stream_);  // policy conv1
+        layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // policy conv1
 
-        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0], eng_,
-                                eng_stream_);  // policy conv2
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // policy conv2
       } else {
-        dnnl::memory policy_mem;
-        layers_[idx][l++]->Eval(batchSize, policy_mem, tensor_mem[2], eng_,
-                                eng_stream_);  // pol conv
+        layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // pol conv
 
-        layers_[idx][l++]->Eval(batchSize, opPol_mem, policy_mem, eng_,
-                                eng_stream_);  // pol FC  // POLICY
+        layers_[idx][l++]->Eval(batchSize, opPol_mem, tensor_mem[0],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // pol FC  // POLICY
       }
 
       // value head
       {
-        dnnl::memory tmp1_mem;
-        dnnl::memory tmp2_mem;
-        layers_[idx][l++]->Eval(batchSize, tmp1_mem, tensor_mem[2], eng_,
-                                eng_stream_);  // value conv
+        layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // value conv
 
-        layers_[idx][l++]->Eval(batchSize, tmp2_mem, tmp1_mem, eng_,
-                                eng_stream_);  // value FC1
+        layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // value FC1
 
-        layers_[idx][l++]->Eval(batchSize, opVal_mem, tmp2_mem, eng_,
-                                eng_stream_);  // value FC2    // VALUE
+        layers_[idx][l++]->Eval(batchSize, opVal_mem, tensor_mem[1],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // value FC2    // VALUE
       }
 
       if (moves_left_) {
         // Moves left head
-        dnnl::memory tmp1_mem;
-        dnnl::memory tmp2_mem;
-        layers_[idx][l++]->Eval(batchSize, tmp1_mem, tensor_mem[2], eng_,
-                                eng_stream_);  // moves conv
+        layers_[idx][l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // moves conv
 
-        layers_[idx][l++]->Eval(batchSize, tmp2_mem, tmp1_mem, eng_,
-                                eng_stream_);  // moves FC1
+        layers_[idx][l++]->Eval(batchSize, tensor_mem[1], tensor_mem[0],
+                                scratch_mem, eng_, eng_stream_,
+                                scratchpad_mem);  // moves FC1
 
         // Moves left FC2
-        layers_[idx][l++]->Eval(batchSize, opMov_mem, tmp2_mem, eng_,
-                                eng_stream_);
+        layers_[idx][l++]->Eval(batchSize, opMov_mem, tensor_mem[1],
+                                scratch_mem, eng_, eng_stream_, scratchpad_mem);
       }
 
       // Convert output data to nchw and if on gpu move them to the cpu.
+      dnnl::memory opPol_mem_cpu;
+      dnnl::memory opVal_mem_cpu;
+
       if (opPol_desc != opPol_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(opPol_desc, cpu_eng_);
-        dnnl::reorder pol_reorder = dnnl::reorder(opPol_mem, tmp);
-        pol_reorder.execute(eng_stream_, opPol_mem, tmp);
-        opPol_mem = tmp;
+        opPol_mem_cpu = dnnl::memory(opPol_desc, cpu_eng_);
+        dnnl::reorder pol_reorder = dnnl::reorder(opPol_mem, opPol_mem_cpu);
+        pol_reorder.execute(eng_stream_, opPol_mem, opPol_mem_cpu);
+      } else {
+        opPol_mem_cpu = opPol_mem;
       }
 
       if (opVal_desc != opVal_mem.get_desc() ||
           eng_.get_kind() != dnnl::engine::kind::cpu) {
-        auto tmp = dnnl::memory(opVal_desc, cpu_eng_);
-        dnnl::reorder val_reorder_ = dnnl::reorder(opVal_mem, tmp);
-        val_reorder_.execute(eng_stream_, opVal_mem, tmp);
-        opVal_mem = tmp;
+        opVal_mem_cpu = dnnl::memory(opVal_desc, cpu_eng_);
+        dnnl::reorder val_reorder_ = dnnl::reorder(opVal_mem, opVal_mem_cpu);
+        val_reorder_.execute(eng_stream_, opVal_mem, opVal_mem_cpu);
+      } else {
+        opVal_mem_cpu = opVal_mem;
       }
 
-      if (moves_left_ && (opMov_desc != opMov_mem.get_desc() ||
-                          eng_.get_kind() != dnnl::engine::kind::cpu)) {
-        auto tmp = dnnl::memory(opMov_desc, cpu_eng_);
-        dnnl::reorder mov_reorder_ = dnnl::reorder(opMov_mem, tmp);
-        mov_reorder_.execute(eng_stream_, opMov_mem, tmp);
-        opMov_mem = tmp;
+      if (moves_left_) {
+        // MLH doesn't need post-processing so move directly to output buffer.
+        dnnl::memory opMov_mem_cpu =
+            dnnl::memory(opMov_desc, cpu_eng_, io->op_moves_left_mem_ + start);
+        dnnl::reorder mov_reorder_ = dnnl::reorder(opMov_mem, opMov_mem_cpu);
+        mov_reorder_.execute(eng_stream_, opMov_mem, opMov_mem_cpu);
       }
-
       eng_stream_.wait();
+      lock_.unlock();
 
       // Copy memory to output buffers and do final transformations.
       if (wdl_) {
         // Value softmax done cpu side.
-        float* opVal = (float*)opVal_mem.get_data_handle();
+        float* opVal = (float*)opVal_mem_cpu.get_data_handle();
         for (int i = 0; i < currentBatchSize; i++) {
           float w = opVal[3 * i + 0];
           float d = opVal[3 * i + 1];
@@ -738,62 +861,107 @@ class OnednnNetwork : public Network {
           io->op_value_mem_[3 * (i + start) + 2] = l;
         }
       } else {
-        memcpy(io->op_value_mem_ + start, opVal_mem.get_data_handle(),
+        memcpy(io->op_value_mem_ + start, opVal_mem_cpu.get_data_handle(),
                currentBatchSize * sizeof(float));
       }
       if (attn_policy_) {
-        float* opPol = (float*)opPol_mem.get_data_handle();
-        // The promotion offsets are extracted from the output tensor.
-        float promotion_offsets[3][8];
-        for (int batch = 0; batch < currentBatchSize; batch++) {
-          for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 8; j++) {
-              promotion_offsets[i][j] =
-                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + i * 8 + j] +
-                  opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j];
+        if (data_type_ == dnnl::memory::data_type::f16) {
+          uint16_t* opPol = (uint16_t*)opPol_mem_cpu.get_data_handle();
+          // The promotion offsets are extracted from the output tensor.
+          float promotion_offsets[3][8];
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 3; i++) {
+              for (int j = 0; j < 8; j++) {
+                promotion_offsets[i][j] =
+                    FP16toFP32(opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 +
+                                     i * 8 + j]) +
+                    FP16toFP32(
+                        opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j]);
+              }
+            }
+            for (int x = 0; x < 64 * 64; x++) {
+              auto y = kAttnPolicyMap[x];
+              if (y >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                    FP16toFP32(opPol[batch * (64 * 64 + 8 * 24) + x]);
+              }
+            }
+            for (int k = 0; k < 8; k++) {
+              for (int j = 0; j < 8; j++) {
+                for (int i = 0; i < 3; i++) {
+                  auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
+                  if (y >= 0) {
+                    io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                        FP16toFP32(opPol[batch * (64 * 64 + 8 * 24) +
+                                         (48 + k) * 64 + 56 + j]) +
+                        promotion_offsets[i][j];
+                  }
+                }
+              }
             }
           }
-          for (int x = 0; x < 64 * 64; x++) {
-            auto y = kAttnPolicyMap[x];
-            if (y >= 0) {
-              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
-                  opPol[batch * (64 * 64 + 8 * 24) + x];
+        } else {
+          float* opPol = (float*)opPol_mem_cpu.get_data_handle();
+          // The promotion offsets are extracted from the output tensor.
+          float promotion_offsets[3][8];
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 3; i++) {
+              for (int j = 0; j < 8; j++) {
+                promotion_offsets[i][j] =
+                    opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + i * 8 + j] +
+                    opPol[batch * (64 * 64 + 8 * 24) + 64 * 64 + 24 + j];
+              }
             }
-          }
-          for (int k = 0; k < 8; k++) {
-            for (int j = 0; j < 8; j++) {
-              for (int i = 0; i < 3; i++) {
-                auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
-                if (y >= 0) {
-                  io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
-                      opPol[batch * (64 * 64 + 8 * 24) + (48 + k) * 64 + 56 +
-                            j] +
-                      promotion_offsets[i][j];
+            for (int x = 0; x < 64 * 64; x++) {
+              auto y = kAttnPolicyMap[x];
+              if (y >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                    opPol[batch * (64 * 64 + 8 * 24) + x];
+              }
+            }
+            for (int k = 0; k < 8; k++) {
+              for (int j = 0; j < 8; j++) {
+                for (int i = 0; i < 3; i++) {
+                  auto y = kAttnPolicyMap[64 * 64 + 24 * k + 3 * j + i];
+                  if (y >= 0) {
+                    io->op_policy_mem_[(batch + start) * kNumOutputPolicy + y] =
+                        opPol[batch * (64 * 64 + 8 * 24) + (48 + k) * 64 + 56 +
+                              j] +
+                        promotion_offsets[i][j];
+                  }
                 }
               }
             }
           }
         }
       } else if (conv_policy_) {
-        float* opPol = (float*)opPol_mem.get_data_handle();
-        for (int batch = 0; batch < currentBatchSize; batch++) {
-          for (int i = 0; i < 73 * 8 * 8; i++) {
-            auto j = kConvPolicyMap[i];
-            if (j >= 0) {
-              io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
-                  opPol[batch * pol_channels_ * 64 + i];
+        if (data_type_ == dnnl::memory::data_type::f16) {
+          uint16_t* opPol = (uint16_t*)opPol_mem_cpu.get_data_handle();
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 73 * 8 * 8; i++) {
+              auto j = kConvPolicyMap[i];
+              if (j >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
+                    FP16toFP32(opPol[batch * pol_channels_ * 64 + i]);
+              }
+            }
+          }
+        } else {
+          float* opPol = (float*)opPol_mem_cpu.get_data_handle();
+          for (int batch = 0; batch < currentBatchSize; batch++) {
+            for (int i = 0; i < 73 * 8 * 8; i++) {
+              auto j = kConvPolicyMap[i];
+              if (j >= 0) {
+                io->op_policy_mem_[(batch + start) * kNumOutputPolicy + j] =
+                    opPol[batch * pol_channels_ * 64 + i];
+              }
             }
           }
         }
       } else {
         memcpy(io->op_policy_mem_ + start * kNumOutputPolicy,
-               opPol_mem.get_data_handle(),
+               opPol_mem_cpu.get_data_handle(),
                currentBatchSize * kNumOutputPolicy * sizeof(float));
-      }
-
-      if (moves_left_) {
-        memcpy(io->op_moves_left_mem_ + start, opMov_mem.get_data_handle(),
-               currentBatchSize * sizeof(float));
       }
     }
   }
@@ -835,6 +1003,7 @@ class OnednnNetwork : public Network {
   dnnl::engine cpu_eng_;
   dnnl::engine eng_;
   dnnl::stream eng_stream_;
+  dnnl::memory::data_type data_type_;
   int max_batch_size_;
   int batch_size_;
   int steps_;
