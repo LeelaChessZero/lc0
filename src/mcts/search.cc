@@ -2089,12 +2089,12 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // nodes which are likely useful in future.
   if (search_->stop_.load(std::memory_order_acquire)) return;
   if (computation_->GetCacheMisses() > 0 &&
-      computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
+      computation_->GetCacheMisses() < max_prefetch_batch_) {
     history_.Trim(search_->played_history_.GetLength());
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
-    PrefetchIntoCache(
-        search_->root_node_,
-        params_.GetMaxPrefetchBatch() - computation_->GetCacheMisses(), false);
+    PrefetchIntoCache(search_->root_node_,
+                      max_prefetch_batch_ - computation_->GetCacheMisses(),
+                      false);
   }
 }
 

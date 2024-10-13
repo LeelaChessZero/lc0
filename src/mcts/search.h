@@ -240,6 +240,10 @@ class SearchWorker {
     max_out_of_order_ =
         std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvalsFactor() *
                                      target_minibatch_size_));
+    max_prefetch_batch_ = params.GetMaxPrefetchBatch();
+    if (max_prefetch_batch_ < 0) {
+      max_prefetch_batch_ = search_->network_->IsCpu() ? 0 : 32;
+    }
   }
 
   ~SearchWorker() {
@@ -473,6 +477,7 @@ class SearchWorker {
   int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;
+  int max_prefetch_batch_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
   int number_out_of_order_ = 0;
