@@ -160,9 +160,11 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                     "' does not exist in this net.");
   }
 
-  auto embedding = static_cast<InputEmbedding>(file.format().network_format().input_embedding());
-  builder_->build(kInputPlanes, weights, embedding, attn_body, attn_policy_, conv_policy_,
-                  wdl_, moves_left_, activations, policy_head, value_head);
+  auto embedding = static_cast<InputEmbedding>(
+      file.format().network_format().input_embedding());
+  builder_->build(kInputPlanes, weights, embedding, attn_body, attn_policy_,
+                  conv_policy_, wdl_, moves_left_, activations, policy_head,
+                  value_head);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
@@ -200,6 +202,10 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     }
     // The next thread can start using the GPU now.
     lock_.unlock();
+
+    // for (auto i = 0; i < 16*4096; i++) {
+    //   CERR << i << ";" << io->op_policy_raw_mem_[i];
+    // }
 
     if (attn_policy_) {
       // Promotion offset calculation.

@@ -222,6 +222,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
                                              epsilon:isPeDenseEmbedding ? 1e-3 : 1e-6
                                             normtype:@"layernorm"
                                                label:[NSString stringWithFormat:@"encoder_%zu", i]];
+//            break;
         }
     }
 
