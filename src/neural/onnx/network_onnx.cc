@@ -437,7 +437,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     }
     converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
-    converter_options.relax_op_types = false;
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
