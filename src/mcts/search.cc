@@ -1481,7 +1481,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
           int transform;
           picked_node.input_planes = EncodePositionForNN(
               search_->network_->GetCapabilities().input_format, history, 8,
-              params_.GetHistoryFill(), &transform);
+              params_.GetHistoryFill(), &transform, params_.GetSwapColors());
           picked_node.probability_transform = transform;
 
           std::vector<uint16_t>& moves = picked_node.probabilities_to_cache;
