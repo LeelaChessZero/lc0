@@ -748,13 +748,18 @@ class Onnx2HloConverter {
            GetXlaTypeSize(shape.element_type());
   }
 
+  int64_t NormalizeDimension(int64_t dim, int rank) {
+    if (dim >= rank || dim < -rank) {
+      throw Exception("Invalid dimension " + std::to_string(dim) +
+                      " for rank " + std::to_string(rank));
+    }
+    if (dim < 0) dim += rank;
+    return dim;
+  }
+
   void NormalizeDimensions(std::vector<int64_t>* dimensions, int rank) {
     for (auto& dim : *dimensions) {
-      if (dim >= rank || dim < -rank) {
-        throw Exception("Invalid dimension " + std::to_string(dim) +
-                        " for rank " + std::to_string(rank));
-      }
-      if (dim < 0) dim += rank;
+      dim = NormalizeDimension(dim, rank);
     }
   }
 
@@ -875,7 +880,7 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 1, {"axis"});
     auto axis = GetOptionalAttributeAs<int>(node, "axis").value_or(-1);
     auto* input = GetInput(node, 0);
-    if (axis < 0) axis += input->shape().dimensions_size();
+    axis = NormalizeDimension(axis, input->shape().dimensions_size());
 
     // Normalize each batch by subtracting the maximum value.
     auto* max = builder_.Reduce(
@@ -902,12 +907,13 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpGather(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 2, {"axis"});
-    const auto axis = GetOptionalAttributeAs<int>(node, "axis").value_or(0);
+    auto axis = GetOptionalAttributeAs<int>(node, "axis").value_or(0);
     if (AllInputsConstant(node)) {
       return {builder_.Constant(ConstOpGather(
           *GetConstantInput(node, 0), *GetConstantInput(node, 1), axis))};
     }
     auto* input = GetInput(node, 0);
+    axis = NormalizeDimension(axis, input->shape().dimensions_size());
     bool is_sorted = false;
     bool is_unique = false;
     HloFlow indices;
@@ -959,6 +965,7 @@ class Onnx2HloConverter {
       }
       axes = GetIota(input->shape().dimensions_size());
     }
+    NormalizeDimensions(&*axes, input->shape().dimensions_size());
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     return {DoReduceMean(input, *axes, keepdims)};
@@ -981,6 +988,7 @@ class Onnx2HloConverter {
       }
       axes = GetIota(input->shape().dimensions_size());
     }
+    NormalizeDimensions(&*axes, input->shape().dimensions_size());
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     HloFlow flow;
@@ -1017,6 +1025,7 @@ class Onnx2HloConverter {
       }
       axes = GetIota(input->shape().dimensions_size());
     }
+    NormalizeDimensions(&*axes, input->shape().dimensions_size());
     bool keepdims =
         GetOptionalAttributeAs<bool>(node, "keepdims").value_or(true);
     auto flow = builder_.Multiply(input, input);
@@ -1078,7 +1087,8 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpLayerNormalization(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 3, {"axis", "epsilon"});
     auto* input = GetInput(node, 0);
-    const auto axis = GetAttributeAs<int>(node, "axis");
+    auto axis = GetAttributeAs<int>(node, "axis");
+    axis = NormalizeDimension(axis, input->shape().dimensions_size());
     const auto epsilon = GetAttributeAs<float>(node, "epsilon");
     auto* scale = GetInput(node, 1);
     auto* bias = GetInput(node, 2, true);
@@ -1108,7 +1118,7 @@ class Onnx2HloConverter {
 
   std::vector<HloFlow> OpConcat(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, std::numeric_limits<size_t>::max(), {"axis"});
-    const auto axis = GetAttributeAs<int>(node, "axis");
+    auto axis = GetAttributeAs<int>(node, "axis");
     if (AllInputsConstant(node)) {
       std::vector<pblczero::XlaLiteralProto> constants;
       for (size_t i = 0; i < node.input_size(); ++i) {
@@ -1120,6 +1130,7 @@ class Onnx2HloConverter {
     for (size_t i = 0; i < node.input_size(); ++i) {
       inputs.push_back(GetInput(node, i));
     }
+    axis = NormalizeDimension(axis, inputs[0]->shape().dimensions_size());
     return {builder_.Concatenate(inputs, axis)};
   }
 
@@ -1218,7 +1229,8 @@ class Onnx2HloConverter {
     CheckKnownAttributes(node, 2, {"axis", "num_outputs"});
     auto* input = GetInput(node, 0);
     auto split = GetConstantInputAsVec<int64_t>(node, 1, true);
-    const size_t axis = GetAttributeAs<size_t>(node, "axis");
+    size_t axis = GetAttributeAs<size_t>(node, "axis");
+    axis = NormalizeDimension(axis, input->shape().dimensions_size());
     const auto num_outputs_attr =
         GetOptionalAttributeAs<size_t>(node, "num_outputs");
 
@@ -1298,6 +1310,7 @@ class Onnx2HloConverter {
     std::vector<int64_t> axes =
         axes_attr.value_or(std::vector<int64_t>(starts.size()));
     if (!axes_attr) std::iota(axes.begin(), axes.end(), 0);
+    NormalizeDimensions(&axes, input_shape.Rank());
 
     std::vector<pblczero::HloInstructionProto::SliceDimensions> slices;
     for (const auto& dim : input_shape.GetDimensions()) {
@@ -1310,18 +1323,16 @@ class Onnx2HloConverter {
 
     for (size_t i = 0; i < axes.size(); ++i) {
       pblczero::HloInstructionProto::SliceDimensions slice;
-      const auto axis = axes[i] < 0 ? axes[i] + input_shape.Rank() : axes[i];
-      const auto start = starts[i] < 0
-                             ? starts[i] + input_shape.GetDimension(axis)
-                             : starts[i];
-      const auto end =
-          ends[i] < 0 ? ends[i] + input_shape.GetDimension(axis) : ends[i];
-      slice.set_start(
-          std::min<int64_t>(start, input_shape.GetDimension(axes[i])));
-      slice.set_limit(
-          std::min<int64_t>(end, input_shape.GetDimension(axes[i])));
+      const auto axis = axes[i];
+      const int dim = input_shape.GetDimension(axis);
+      int start = starts[i] < 0 ? starts[i] + dim : starts[i];
+      start = std::clamp(start, 0, dim);
+      int end = ends[i] < 0 ? ends[i] + dim : ends[i];
+      end = std::clamp(end, 0, dim);
+      slice.set_start(std::min<int64_t>(start, dim));
+      slice.set_limit(std::min<int64_t>(end, dim));
       slice.set_stride(1);
-      slices[axes[i]] = slice;
+      slices[axis] = slice;
     }
 
     if (AllInputsConstant(node)) {
