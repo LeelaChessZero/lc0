@@ -8,7 +8,7 @@ set DX12=false
 set OPENCL=false
 set MKL=false
 set DNNL=false
-set OPENBLAS=false
+set OPENBLAS=true
 set EIGEN=false
 set TEST=false
 
