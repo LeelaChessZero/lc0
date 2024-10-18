@@ -1,0 +1,29 @@
+name: LC0 Build and Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Meson
+        uses: actions/setup-meson@v1
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y meson ninja-build
+
+      - name: Build with Meson
+        run: meson setup --buildtype release builddir && cd builddir && ninja
+
+      - name: Run tests
+        run: cd builddir && ./lc0 --test
