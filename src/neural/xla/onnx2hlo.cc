@@ -1486,7 +1486,10 @@ class Onnx2HloConverter {
   std::vector<HloFlow> OpMish(const pblczero::NodeProto& node) {
     CheckKnownAttributes(node, 1, {});
     auto* input = GetInput(node, 0);
-    return {builder_.Tanh(builder_.LogPlusOne(builder_.Exponential(input)))};
+    auto flow = builder_.Exponential(input);
+    flow = builder_.LogPlusOne(flow);
+    flow = builder_.Tanh(flow);
+    return {builder_.Multiply(flow, input)};
   }
 
   /////////////////////////////////////////////////////////////////////////////
