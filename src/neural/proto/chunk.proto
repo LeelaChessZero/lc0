@@ -1,0 +1,67 @@
+/*
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2018 The LCZero Authors
+
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
+*/
+syntax = "proto2";
+
+import "proto/net.proto";
+
+package pblczero;
+
+message State {
+  repeated fixed64 plane = 1 [packed=true];
+  optional uint32 us_ooo = 2;
+  optional uint32 us_oo = 3;
+  optional uint32 them_ooo = 4;
+  optional uint32 them_oo = 5;
+  optional uint32 side_to_move = 6;
+  optional uint32 rule_50 = 7;
+}
+
+message Policy {
+  repeated uint32 index = 1 [packed=true];
+  repeated float prior = 2 [packed=true];
+}
+
+message Game {
+  enum Result {
+    WHITE = 0;
+    BLACK = 1;
+    DRAW = 2;
+  }
+
+  repeated State state = 1;
+  repeated Policy policy = 2;
+  repeated float value = 3 [packed=true];
+  repeated uint32 move = 4 [packed=true];
+  optional Result result = 5;
+}
+
+message Chunk {
+  optional fixed32 magic = 1;
+  optional string license = 2;
+  optional EngineVersion version = 3;
+  repeated Game game = 4;
+}
