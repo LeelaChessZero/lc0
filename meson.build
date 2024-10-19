@@ -632,6 +632,11 @@ if get_option('build_backends')
       has_backends = true
   endif
 
+  if host_machine.system() == 'emscripten'
+      files += 'src/neural/js/network_js.cc'
+      has_backends = true
+  endif
+
 endif # if get_option('build_backends')
 
 if not has_backends and get_option('lc0') and get_option('build_backends')

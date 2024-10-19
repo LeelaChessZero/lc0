@@ -1,0 +1,7 @@
+{
+	"scripts": {
+		"build": "npm install && ./build.sh",
+		"pack": "npm run build && tar cf lc0.tar dist"
+	}
+}
+
