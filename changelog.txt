@@ -1,4 +1,11 @@
-﻿v0.31.1 (2024-08-11)
+﻿v0.31.2 (2024-10-20)
+~~~~~~~
+* Updated the WDL_mu centipawn fallback.
+* Fix for build issues with newer Linux c++ libraries.
+* Fix for an XLA Mish bug.
+* Minor README.md update.
+
+v0.31.1 (2024-08-11)
 ~~~~~~~
 * Make WDL_mu score type work as intended.
 * Fix macos CI builds.
