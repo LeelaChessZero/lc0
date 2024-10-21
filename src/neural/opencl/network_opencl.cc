@@ -87,7 +87,7 @@ class OpenCLComputation : public NetworkComputation {
   void ComputeBlocking() override {
     // Determine the largest batch for allocations.
     const auto plane_count = planes_.size();
-    const auto max_batch_size = opencl_net_.getMaxMatchSize();
+    const auto max_batch_size = opencl_net_.getMaxBatchSize();
     const auto largest_batch_size = std::min(max_batch_size, plane_count);
 
     const auto num_output_policies = weights_.num_output_policies;
@@ -403,7 +403,11 @@ class OpenCLNetwork : public Network {
           weights.ip1_mov_w, weights.ip1_mov_b);
     }
 
-    opencl_net_.setMaxMatchSize(max_batch_size_);
+    opencl_net_.setMaxBatchSize(max_batch_size_);
+
+    opencl_net_.setDefaultMish(
+        file.format().network_format().default_activation() ==
+        pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH);
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -463,7 +467,9 @@ std::unique_ptr<Network> MakeOpenCLNetwork(const std::optional<WeightsFile>& w,
                     " is not supported by OpenCL backend.");
   }
   if (weights.format().network_format().default_activation() !=
-      pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU) {
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
+      weights.format().network_format().default_activation() !=
+          pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
     throw Exception(
         "Default activation " +
         pblczero::NetworkFormat::DefaultActivation_Name(
