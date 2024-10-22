@@ -51,7 +51,7 @@ jobs:
         run: |
          echo "C:\Program Files\Meson" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
          echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-         shell: pwsh
+         pwsh
 
 
       - name: Configure Meson(Windows)
