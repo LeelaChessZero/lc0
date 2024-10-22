@@ -48,8 +48,8 @@ jobs:
       - name: Download Meson
         if: runner.os == 'Windows'
         run: |
-          curl -sSL https://github.com/mesonbuild/meson/releases/download/1.6.0/meson-1.6.0-64.msi -o meson-1.6.0-64.msi
-          msiexec /i meson-1.6.0-64.msi /qn
+          curl -sSL https://github.com/mesonbuild/meson/releases/download/1.6.0/meson-1.6.0-64.msi -o
+          msiexec /I .\meson-1.6.0-64.msi /quiet
 
       - name: Set Meson Path
         if: runner.os == 'Windows'
