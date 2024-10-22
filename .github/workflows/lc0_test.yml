@@ -18,9 +18,18 @@ jobs:
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y meson ninja-build
+        
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev
+          # Install CUDA
+          sudo apt-get install -y nvidia-cuda-toolkit
+          # Install ONNX
+          sudo apt-get install -y libonnxruntime-dev
 
       - name: Configure Meson
-        run: meson setup --buildtype release builddir
+        run: meson setup --buildtype release builddir --onnx=true --cuda=true --blas=true
 
       - name: Build with Meson
         run: ninja -C builddir
