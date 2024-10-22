@@ -54,7 +54,7 @@ jobs:
       - name: Add Meson to PATH (Windows)
         if: runner.os == 'Windows'
         run: |
-          setx PATH=C:\Program Files\Meson"
+          setx PATH "%PATH%;C:\Program Files\Meson"
 
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
