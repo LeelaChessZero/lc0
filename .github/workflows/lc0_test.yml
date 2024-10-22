@@ -26,13 +26,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if ( "ubuntu-latest" ); then
+          if ( matrix.os == "ubuntu-latest" ); then
             sudo apt-get update
             sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev nvidia-cuda-toolkit
-          elif ( "debian-latest" ); then
+          elif ( matrix.os == "debian-latest" ); then
             sudo apt-get update
             sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev nvidia-cuda-toolkit
-          elif ( "windows-latest" ); then
+          elif ( matrix.os == "windows-latest" ); then
             choco install meson ninja
             curl -sSL http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe -o cuda_installer.exe
             ./cuda_installer.exe -s
@@ -40,7 +40,7 @@ jobs:
 
       - name: Configure Meson
         run: |
-          if ( "windows-latest" ); then
+          if ( matrix.os == "windows-latest" ); then
             meson setup --buildtype release builddir -Dblas=true -Dcuda=true
           else
             meson setup --buildtype release builddir -Dblas=true -Dcuda=true
@@ -48,7 +48,7 @@ jobs:
 
       - name: Build with Meson
         run: |
-          if ( "windows-latest" ); then
+          if ( matrix.os == "windows-latest" ); then
             ninja -C builddir
           else
             ninja -C builddir
@@ -56,7 +56,7 @@ jobs:
 
       - name: Run tests
         run: |
-          if ( "windows-latest" ); then
+          if ( matrix.os == "windows-latest" ); then
             ./builddir/lc0 --benchmark
           else
             ./builddir/lc0 --benchmark
