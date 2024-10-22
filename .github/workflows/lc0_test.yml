@@ -15,11 +15,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, debian-latest]
         include:
           - os: ubuntu-latest
-            cuda-package: nvidia-cuda-toolkit
           - os: debian-latest
-            cuda-package: nvidia-cuda-toolkit
           - os: windows-latest
-            cuda-package: "http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe"
 
     runs-on: ${{ matrix.os }}
 
@@ -29,13 +26,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if ( "${{ matrix.os }}" == "ubuntu-latest" ); then
+          if ( "ubuntu-latest" ); then
             sudo apt-get update
             sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev nvidia-cuda-toolkit
-          elif ( "${{ matrix.os }}" == "debian-latest" ); then
+          elif ( "debian-latest" ); then
             sudo apt-get update
             sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev nvidia-cuda-toolkit
-          elif ( "${{ matrix.os }}" == "windows-latest" ); then
+          elif ( "windows-latest" ); then
             choco install meson ninja
             curl -sSL http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe -o cuda_installer.exe
             ./cuda_installer.exe -s
