@@ -250,8 +250,7 @@ std::string Converter::EndOptionalBf16Fix(OnnxBuilder* builder,
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
-  if (!options_.alt_mish || options_.opset < 9 ||
-      options_.data_type != WeightsToOnnxConverterOptions::DataType::kFloat32) {
+  if (!options_.alt_mish || options_.opset < 9) {
     std::string flow = input;
     flow = StartOptionalBf16Fix(builder, flow, name);
     if (options_.opset >= 18) {
@@ -263,20 +262,31 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
     flow = builder->Tanh(name + "/tanh", flow);
     return builder->Mul(name, flow, input);
   } else {
+    auto in = input;
+    if (options_.data_type !=
+        WeightsToOnnxConverterOptions::DataType::kFloat32) {
+      in = builder->Cast(name + "/to_float", in,
+                         pblczero::TensorProto::FLOAT);
+    }
     const OnnxConst& two =
         static_cast<const OnnxConst&>(FloatOnnxConst({2.0f}, {1}));
     const OnnxConst& zero =
         static_cast<const OnnxConst&>(FloatOnnxConst({0.0f}, {1}));
-    auto e = builder->Exp(name + "/exp", input);
+    auto e = builder->Exp(name + "/exp", in);
     auto flow = builder->Add(name + "/e+2", e, two);
     auto n = builder->Mul(name + "/n", e, flow);
     flow = builder->Add(name + "/n+2", n, two);
-    auto d = builder->Div(name + "/d", input, flow);
+    auto d = builder->Div(name + "/d", in, flow);
     auto f = builder->Mul(name + "/n*d", n, d);
     flow = builder->Mul(name + "/2*d", d, two);
-    auto t = builder->Sub(name + "/in-2*d", input, flow);
-    flow = builder->Greater(name + "/compare", input, zero);
-    return builder->Where(name, flow, t, f);
+    auto t = builder->Sub(name + "/in-2*d", in, flow);
+    flow = builder->Greater(name + "/compare", in, zero);
+    flow = builder->Where(name, flow, t, f);
+    if (options_.data_type !=
+        WeightsToOnnxConverterOptions::DataType::kFloat32) {
+      flow = builder->Cast(name + "/to_data_type", flow, GetDataType());
+    }
+    return flow;
   }
 }
 
