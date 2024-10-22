@@ -49,9 +49,10 @@ jobs:
       - name: Set Meson Path
         if: runner.os == 'Windows'
         run: |
-         echo "C:\Program Files\Meson" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-         echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-         pwsh
+         env: C:\Program Files\Meson\meson.exe
+         #echo "C:\Program Files\Meson" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+         #echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+         #pwsh
 
 
       - name: Configure Meson(Windows)
