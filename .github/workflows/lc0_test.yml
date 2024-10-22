@@ -41,10 +41,15 @@ jobs:
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-            choco install meson --installargs 'meson=System' -y
+            choco install meson
             choco install cuda 
             #choco install ninja --installargs 'ADD_NINJA_TO_PATH=System' -y
             Start-Process PowerShell -Verb RunAs
+
+      - name: Set Meson Path
+        if: runner.os == 'Windows'
+        run: |
+          echo "$env:Path += 'C:\Program Files\Meson\meson.exe'" >> $Env:GITHUB_ENV
 
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
