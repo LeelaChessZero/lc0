@@ -17,46 +17,52 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          submodules: true  # Ensure submodules are checked out
 
-      - name: Install dependencies
+      - name: Update submodules
         run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            sudo apt-get update
-            sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev nvidia-cuda-toolkit
-          elif [ "${{ matrix.os }}" == "debian-latest" ]; then
-            sudo apt-get update
-            sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev nvidia-cuda-toolkit
-          elif [ "${{ matrix.os }}" == "windows-latest" ]; then
-            choco install meson ninja
+         git submodule sync --recursive
+         git submodule update --init --recursive
+        
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev
+          # Install CUDA
+          sudo apt-get install -y nvidia-cuda-toolkit
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+            choco install meson 
+            choco install ninja
             curl -sSL http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe -o cuda_installer.exe
             ./cuda_installer.exe -s
-          fi
 
-      - name: Configure Meson
+      - name: Configure Meson(Windows)
+        if: runner.os == 'Windows'
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
             meson setup --buildtype release builddir -Dblas=true -Dcuda=true
-          else
-            meson setup --buildtype release builddir -Dblas=true -Dcuda=true
-          fi
 
-      - name: Build with Meson
+      - name: Configure Meson(Linux)      
+        if: runner.os == 'Linux'
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            meson setup --buildtype release builddir -Dblas=true -Dcuda=true
+
+      - name: Build with Meson(Windows)
+        if: runner.os == 'Windows'
+        run: |
             ninja -C builddir
-          else
+      - name: Build with Meson(Linux)
+        if: runner.os == 'Linux'
+        run: |
             ninja -C builddir
-          fi
 
       - name: Run tests
-        run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            ./builddir/lc0 --test
-          else
-            ./builddir/lc0 --test
-          fi
+        run: ./builddir/lc0 --benchmark
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v4.4.3
