@@ -49,7 +49,8 @@ jobs:
       - name: Set Meson Path
         if: runner.os == 'Windows'
         run: |
-         env: C:\Program Files\Meson\meson.exe
+         env: 
+           meson: ${{ matrix.os.meson.exe }}
          #echo "C:\Program Files\Meson" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
          #echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
          #pwsh
