@@ -41,31 +41,19 @@ jobs:
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-            choco install meson --installargs 'ADD_MESON_TO_PATH=System' -y
+            choco install meson --installargs 'meson=System' -y
+            coco install cuda --installargs 'CUDA=System' -y
             #choco install ninja --installargs 'ADD_NINJA_TO_PATH=System' -y
-            
-
-      - name: Install dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          curl -sSL http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe -o cuda_installer.exe
-          ./cuda_installer.exe -s
-
-      - name: Set Meson Path
-        if: runner.os == 'Windows'
-        run: |
-          echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" >> $Env:GITHUB_ENV
-        shell: pwsh
 
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
         run: |
-            meson setup --buildtype release build -Dblas=true -Dcuda=true
+            meson setup --buildtype release build -Dblas=true -Dcudnn=true
 
       - name: Configure Meson(Linux)      
         if: runner.os == 'Linux'
         run: |
-            meson setup --buildtype release builddir -Dblas=true -Dcuda=true
+            meson setup --buildtype release builddir -Dblas=true -Dcudnn=true
 
       - name: Build with Meson(Windows)
         if: runner.os == 'Windows'
