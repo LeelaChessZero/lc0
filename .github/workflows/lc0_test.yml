@@ -45,10 +45,15 @@ jobs:
             curl -sSL http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe -o cuda_installer.exe
             ./cuda_installer.exe -s
 
+      - name: Add Meson to PATH (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          setx PATH "%PATH%;C:\Program Files\Meson"
+
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
         run: |
-            meson setup --buildtype release builddir -Dblas=true -Dcuda=true
+            meson setup --buildtype release build -Dblas=true -Dcuda=true
 
       - name: Configure Meson(Linux)      
         if: runner.os == 'Linux'
