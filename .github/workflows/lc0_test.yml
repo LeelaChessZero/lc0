@@ -40,5 +40,5 @@ jobs:
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v4.4.3
         with:
-          name: build-artifacts-${{ matrix.os }}
+          name: lc0-ubuntu-latest
           path: builddir
