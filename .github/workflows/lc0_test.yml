@@ -12,7 +12,10 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, debian-latest]
+        os: |
+         - ubuntu-latest
+         - windows-latest
+         - debian-latest
 
     runs-on: ${{ matrix.config.os }}
 
