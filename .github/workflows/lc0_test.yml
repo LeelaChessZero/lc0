@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.3
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y meson ninja-build
@@ -26,13 +26,19 @@ jobs:
           # Install CUDA
           sudo apt-get install -y nvidia-cuda-toolkit
           # Install ONNX
-          sudo apt-get install -y libonnxruntime-dev
+          # sudo apt-get install -y libonnxruntime-dev
 
       - name: Configure Meson
-        run: meson setup --buildtype release builddir --onnx=true --cuda=true --blas=true
+        run: meson setup --buildtype release builddir --cuda=true --blas=true
 
       - name: Build with Meson
         run: ninja -C builddir
 
       - name: Run tests
         run: ./builddir/lc0 --test
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: build-artifacts-${{ matrix.os }}
+          path: builddir
