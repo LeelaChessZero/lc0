@@ -42,8 +42,9 @@ jobs:
         if: runner.os == 'Windows'
         run: |
             choco install meson --installargs 'meson=System' -y
-            choco install cuda --installargs 'CUDA=System' -y
+            choco install cuda 
             #choco install ninja --installargs 'ADD_NINJA_TO_PATH=System' -y
+            Start-Process PowerShell -Verb RunAs
 
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
