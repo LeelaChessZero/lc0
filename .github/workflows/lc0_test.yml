@@ -30,15 +30,18 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev
+          sudo apt-get install -y meson 
+          sudo apt-get install -y ninja-build 
+          sudo apt-get install -y libblas-dev 
+          sudo apt-get install -y libopenblas-dev
           # Install CUDA
           sudo apt-get install -y nvidia-cuda-toolkit
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-            choco install meson 
-            choco install ninja
+            choco install meson --installargs 'ADD_MESON_TO_PATH=System' -y
+            choco install ninja --installargs 'ADD_NINJA_TO_PATH=System' -y
             curl -sSL http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe -o cuda_installer.exe
             ./cuda_installer.exe -s
 
