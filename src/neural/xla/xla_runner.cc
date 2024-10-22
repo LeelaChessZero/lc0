@@ -124,7 +124,6 @@ void XlaRunner::AddModule(size_t minibatch_size,
   pblczero::CompileOptionsProto options;
   options.mutable_executable_build_options()->set_num_replicas(1);
   options.mutable_executable_build_options()->set_num_partitions(1);
-  options.mutable_executable_build_options()->set_device_ordinal(device_);
   options.mutable_executable_build_options()
       ->mutable_device_assignment()
       ->set_replica_count(1);
