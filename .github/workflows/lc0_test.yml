@@ -1,0 +1,72 @@
+name: Multi-Platform Meson Build with CUDA and BLAS
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, debian-latest]
+        include:
+          - os: ubuntu-latest
+            cuda-package: nvidia-cuda-toolkit
+          - os: debian-latest
+            cuda-package: nvidia-cuda-toolkit
+          - os: windows-latest
+            cuda-package: "http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            sudo apt-get update
+            sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev ${{ matrix.cuda-package }}
+          elif [ "${{ matrix.os }}" == "debian-latest" ]; then
+            sudo apt-get update
+            sudo apt-get install -y meson ninja-build libblas-dev libopenblas-dev ${{ matrix.cuda-package }}
+          elif [ "${{ matrix.os }}" == "windows-latest" ]; then
+            choco install meson ninja
+            curl -sSL ${{ matrix.cuda-package }} -o cuda_installer.exe
+            ./cuda_installer.exe -s
+          fi
+
+      - name: Configure Meson
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            meson setup --buildtype release builddir -Dblas=true -Dcuda=true
+          else
+            meson setup --buildtype release builddir -Dblas=true -Dcuda=true
+          fi
+
+      - name: Build with Meson
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            ninja -C builddir
+          else
+            ninja -C builddir
+          fi
+
+      - name: Run tests
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            ./builddir/lc0 --test
+          else
+            ./builddir/lc0 --test
+          fi
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: lc0-${{ matrix.os }}
+          path: builddir
