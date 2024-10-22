@@ -40,11 +40,17 @@ jobs:
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-            choco install meson --installargs 'ADD_MESON_TO_PATH=System' -y
+            # choco install meson --installargs 'ADD_MESON_TO_PATH=System' -y
             choco install ninja --installargs 'ADD_NINJA_TO_PATH=System' -y
             curl -sSL http://developer.download.nvidia.com/compute/cuda/10.2/Prod/network_installers/cuda_10.2.89_win10_network.exe -o cuda_installer.exe
             ./cuda_installer.exe -s
 
+      - name: Download Meson
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSL https://github.com/mesonbuild/meson/releases/latest/download/meson-*.msi -o meson_installer.msi
+          msiexec /i meson_installer.msi /qn
+          
       - name: Add Meson to PATH (Windows)
         if: runner.os == 'Windows'
         run: |
