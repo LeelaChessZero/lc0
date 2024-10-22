@@ -40,7 +40,7 @@ jobs:
 
       - name: Configure Meson
         run: |
-          if ( "${{ matrix.os }}" == "windows-latest" ); then
+          if ( "windows-latest" ); then
             meson setup --buildtype release builddir -Dblas=true -Dcuda=true
           else
             meson setup --buildtype release builddir -Dblas=true -Dcuda=true
@@ -48,7 +48,7 @@ jobs:
 
       - name: Build with Meson
         run: |
-          if ( "${{ matrix.os }}" == "windows-latest" ); then
+          if ( "windows-latest" ); then
             ninja -C builddir
           else
             ninja -C builddir
@@ -56,10 +56,10 @@ jobs:
 
       - name: Run tests
         run: |
-          if ( "${{ matrix.os }}" == "windows-latest" ); then
-            ./builddir/lc0 --test
+          if ( "windows-latest" ); then
+            ./builddir/lc0 --benchmark
           else
-            ./builddir/lc0 --test
+            ./builddir/lc0 --benchmark
           fi
 
       - name: Upload a Build Artifact
