@@ -50,11 +50,12 @@ jobs:
         run: |
           curl -sSL https://github.com/mesonbuild/meson/releases/download/1.6.0/meson-1.6.0-64.msi -o meson_installer.msi
           msiexec /i meson_installer.msi /qn
-          
-      - name: Add Meson to PATH (Windows)
+
+      - name: Set Meson Path
         if: runner.os == 'Windows'
         run: |
-          setx PATH "%PATH%;C:\Program Files\Meson"
+          echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" >> $Env:GITHUB_ENV
+        shell: pwsh
 
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
