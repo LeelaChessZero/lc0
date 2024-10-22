@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-2022]
 
     runs-on: ${{ matrix.os }}
 
@@ -49,7 +49,10 @@ jobs:
       - name: Set Meson Path
         if: runner.os == 'Windows'
         run: |
-          echo "$env:Path += 'C:\Program Files\Meson\meson.exe'" >> $Env:GITHUB_ENV
+         echo "C:\Program Files\Meson" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+         echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+         shell: pwsh
+
 
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
