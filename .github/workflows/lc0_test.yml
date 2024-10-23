@@ -49,7 +49,7 @@ jobs:
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
         run: |
-            ${{ matrix.os.meson.exe }} setup --buildtype release build -Dblas=true -Dcudnn=true
+            ${{ matrix.os.meson }} setup --buildtype release build -Dblas=true -Dcudnn=true
 
       - name: Configure Meson(Linux)      
         if: runner.os == 'Linux'
