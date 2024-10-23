@@ -46,19 +46,10 @@ jobs:
             #choco install ninja --installargs 'ADD_NINJA_TO_PATH=System' -y
             Start-Process PowerShell -Verb RunAs
 
-      - name: Set Meson Path
-        if: runner.os == 'Windows'
-        run: |
-         meson: ${{ matrix.os.meson.exe }}
-         #echo "C:\Program Files\Meson" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-         #echo "$env:Path += ';C:\Program Files\Meson\meson.exe'" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-         #pwsh
-
-
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
         run: |
-            meson setup --buildtype release build -Dblas=true -Dcudnn=true
+            ${{ matrix.os.meson.exe }} setup --buildtype release build -Dblas=true -Dcudnn=true
 
       - name: Configure Meson(Linux)      
         if: runner.os == 'Linux'
