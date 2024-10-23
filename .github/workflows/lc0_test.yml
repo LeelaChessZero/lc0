@@ -56,7 +56,7 @@ jobs:
       - name: Configure Meson(Linux)      
         if: runner.os == 'Linux'
         run: |
-            meson setup --buildtype release builddir -Dblas=true -Dcudnn=true
+            meson setup --buildtype release builddir -Dblas=true -Dcudnn=false
 
       - name: Build with Meson(Windows)
         if: runner.os == 'Windows'
