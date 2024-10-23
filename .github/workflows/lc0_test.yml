@@ -36,7 +36,7 @@ jobs:
           sudo apt-get install -y libblas-dev 
           sudo apt-get install -y libopenblas-dev
           # Install CUDA
-          sudo apt-get install -y nvidia-cuda-toolkit=12.2
+          sudo apt-get install -y nvidia-cuda-toolkit
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -50,7 +50,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
             IF [ '${{ matrix.os.meson }}' == 'meson' ]; then 
-             meson setup --buildtype release build -Dblas=true -Dcudnn=true
+             meson setup --buildtype release build -Dblas=true -Dcudnn=false
              FI
 
       - name: Configure Meson(Linux)      
