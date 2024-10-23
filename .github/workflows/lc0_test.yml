@@ -67,15 +67,10 @@ jobs:
         run: |
             ninja -C builddir
 
-      - name: Set Network Variables
-        run: |
-          set NET=791556
-          #set NET_HASH=f404e156ceb2882470fd8c032b8754af0fa0b71168328912eaef14671a256e34
-
       - name: Download Network
         run: |
          cd builddir
-         curl -L https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -o %NET%.pb.gz
+         curl -L https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -o T79.pb.gz
 
       - name: Update file timestamp
         run: |
