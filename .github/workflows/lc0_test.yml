@@ -36,7 +36,7 @@ jobs:
           sudo apt-get install -y libblas-dev 
           sudo apt-get install -y libopenblas-dev
           # Install CUDA
-          sudo apt-get install -y nvidia-cuda-toolkit
+          # sudo apt-get install -y nvidia-cuda-toolkit
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -74,7 +74,7 @@ jobs:
 
       - name: Update file timestamp
         run: |
-         touch -t 201801010000.00 %NET%.pb.gz
+         touch -t 201801010000.00 T79.pb.gz
 
       - name: Run tests
         run: ./builddir/lc0 benchmark
