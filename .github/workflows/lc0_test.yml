@@ -49,7 +49,9 @@ jobs:
       - name: Configure Meson(Windows)
         if: runner.os == 'Windows'
         run: |
-            ${{ matrix.os.meson }} setup --buildtype release build -Dblas=true -Dcudnn=true
+            IF [ ${{ matrix.os.meson }} == meson]; then 
+             meson setup --buildtype release build -Dblas=true -Dcudnn=true
+             FI
 
       - name: Configure Meson(Linux)      
         if: runner.os == 'Linux'
