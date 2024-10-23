@@ -74,13 +74,12 @@ jobs:
 
       - name: Download Network
         run: |
-         curl -L http://training.lczero.org/get_network?sha=%NET_HASH% -o c:\cache\%NET%.pb.gz
-         c:\cache\%NET%.pb.gz
+         curl -L http://training.lczero.org/get_network?sha=%NET_HASH% -o %NET%.pb.gz
          shell: cmd
 
       - name: Update file timestamp
         run: |
-         touch -t 201801010000.00 c:\cache\%NET%.pb.gz
+         touch -t 201801010000.00 %NET%.pb.gz
          shell: cmd 
 
       - name: Run tests
