@@ -77,7 +77,7 @@ jobs:
          touch -t 201801010000.00 T79.pb.gz
 
       - name: Run tests
-        run: ./builddir/lc0 benchmark --num-positions=7 --backend-opts=batch=7 --threads=60
+        run: ./builddir/lc0 benchmark --num-positions=7  --minibatch-size=7 --threads=60
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v4.4.3
