@@ -74,8 +74,8 @@ jobs:
 
       - name: Download Network
         run: |
-         if not exist c:\cache\%NET%.pb.gz curl -L http://training.lczero.org/get_network?sha=%NET_HASH% -o c:\cache\%NET%.pb.gz
-         if not exist c:\cache\%NET%.pb.gz (echo c:\cache\%NET%.pb.gz does not exist)
+         curl -L http://training.lczero.org/get_network?sha=%NET_HASH% -o c:\cache\%NET%.pb.gz
+         c:\cache\%NET%.pb.gz (echo c:\cache\%NET%.pb.gz does not exist)
          shell: cmd
 
       - name: Update file timestamp
