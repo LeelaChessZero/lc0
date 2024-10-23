@@ -75,12 +75,12 @@ jobs:
       - name: Download Network
         run: |
          curl -L https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -o %NET%.pb.gz
-         shell: cmd
+         cmd
 
       - name: Update file timestamp
         run: |
          touch -t 201801010000.00 %NET%.pb.gz
-         shell: cmd 
+         cmd 
 
       - name: Run tests
         run: ./builddir/lc0 benchmark
