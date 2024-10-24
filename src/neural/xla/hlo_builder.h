@@ -115,7 +115,9 @@ class HloBuilder {
   HloFlow Maximum(HloFlow lhs, HloFlow rhs);
   HloFlow Reshape(HloFlow input, const HloTensorType& new_shape);
   HloFlow Dot(HloFlow lhs, HloFlow rhs,
-              const pblczero::XlaDotDimensionNumbers& dimension_numbers);
+              const pblczero::XlaDotDimensionNumbers& dimension_numbers,
+              const pblczero::XlaShapeProto::Type out_type =
+                  pblczero::XlaShapeProto::PRIMITIVE_TYPE_INVALID);
   HloFlow Slice(
       HloFlow input,
       const std::vector<pblczero::HloInstructionProto::SliceDimensions>& slice);
@@ -140,6 +142,8 @@ class HloBuilder {
   // Direction is one of "EQ", "NE", "LT", "LE", "GT", "GE".
   HloFlow Compare(HloFlow lhs, HloFlow rhs, std::string_view direction);
   HloFlow Select(HloFlow condition, HloFlow on_true, HloFlow on_false);
+  HloFlow RoundNearestEven(HloFlow input);
+  HloFlow Clamp(HloFlow min, HloFlow input, HloFlow max);
   // Insert a computation into the module, under given name. Dependent
   // computations are also merged into the module.
   HloComputation AddComputation(std::string_view name,
