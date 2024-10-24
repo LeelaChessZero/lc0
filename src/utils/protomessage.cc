@@ -39,7 +39,6 @@ uint64_t ReadFixed(const std::uint8_t** iter, size_t size,
 }
 
 void WriteFixed(uint64_t value, size_t size, std::string* out) {
-  out->reserve(out->size() + size);
   for (size_t i = 0; i < size; ++i) {
     out->push_back(static_cast<char>(static_cast<uint8_t>(value)));
     value /= 256;
