@@ -503,6 +503,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Squeeze"] = &Onnx2HloConverter::OpSqueeze;
     onnx_op_to_builder_["Sub"] = &Onnx2HloConverter::OpSub;
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
+    onnx_op_to_builder_["Tile"] = &Onnx2HloConverter::OpTile;
     onnx_op_to_builder_["Transpose"] = &Onnx2HloConverter::OpTranspose;
     onnx_op_to_builder_["Unsqueeze"] = &Onnx2HloConverter::OpUnsqueeze;
   }
@@ -1565,6 +1566,21 @@ class Onnx2HloConverter {
     }
     auto flow = builder_.Dot(inputs[0], inputs[1], dn);
     return {builder_.Transpose(flow, perm)};
+  }
+
+  std::vector<HloFlow> OpTile(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* input = GetInput(node, 0);
+    const auto repeats = *GetConstantInputAsVec<int64_t>(node, 1);
+    std::vector<int64_t> shape;
+    HloTensorType input_shape(input->shape());
+    if (input_shape.Rank() != repeats.size()) {
+      throw Exception("Incompatible shapes");
+    }
+    for (size_t i = 0; i < repeats.size(); ++i) {
+      shape.push_back(input_shape.GetDimension(i) * repeats[i]);
+    }
+    return {DoBroadcast(input, shape)};
   }
 
   /////////////////////////////////////////////////////////////////////////////
