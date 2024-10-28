@@ -474,6 +474,8 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Gather"] = &Onnx2HloConverter::OpGather;
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
+    onnx_op_to_builder_["Greater"] = &Onnx2HloConverter::OpGreater;
+    onnx_op_to_builder_["Exp"] = &Onnx2HloConverter::OpExp;
     onnx_op_to_builder_["Expand"] = &Onnx2HloConverter::OpExpand;
     onnx_op_to_builder_["Identity"] = &Onnx2HloConverter::OpIdentity;
     onnx_op_to_builder_["LayerNormalization"] =
@@ -502,6 +504,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Tanh"] = &Onnx2HloConverter::OpTanh;
     onnx_op_to_builder_["Transpose"] = &Onnx2HloConverter::OpTranspose;
     onnx_op_to_builder_["Unsqueeze"] = &Onnx2HloConverter::OpUnsqueeze;
+    onnx_op_to_builder_["Where"] = &Onnx2HloConverter::OpWhere;
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -1490,6 +1493,31 @@ class Onnx2HloConverter {
     flow = builder_.LogPlusOne(flow);
     flow = builder_.Tanh(flow);
     return {builder_.Multiply(flow, input)};
+  }
+
+  std::vector<HloFlow> OpExp(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {});
+    auto* input = GetInput(node, 0);
+    return {builder_.Exponential(input)};
+  }
+
+  std::vector<HloFlow> OpGreater(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 2, {});
+    auto* lhs = GetInput(node, 0);
+    auto* rhs = GetInput(node, 1);
+    std::tie(lhs, rhs) = EqualizeShape(lhs, rhs);
+    return {builder_.Compare(lhs, rhs, "GT")};
+  }
+
+  std::vector<HloFlow> OpWhere(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 3, {});
+    auto* pred = GetInput(node, 0);
+    auto* on_true = GetInput(node, 1);
+    auto* on_false = GetInput(node, 2);
+    std::tie(on_true, on_false) = EqualizeShape(on_true, on_false);
+    std::tie(pred, on_true) = EqualizeShape(pred, on_true);
+    std::tie(pred, on_false) = EqualizeShape(pred, on_false);
+    return {builder_.Select(pred, on_true, on_false)};
   }
 
   /////////////////////////////////////////////////////////////////////////////
