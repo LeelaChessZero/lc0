@@ -333,6 +333,21 @@ class ResidualBlock : public BaseLayer<DataType> {
   DataType* b2_;
 };
 
+// calibration factors and weights for INT8
+// (in GPU memory when int8_inf_ is set, otherwise in CPU memory)
+struct MatMulQuantizationData {
+  int8_t* weights_int8;            // int8 quantized weights
+  float* input_quantize_factors;   // per-column scaling factors for input
+                                   // quantization
+  float* output_scaling_factors;   // per-column scaling factors for output
+                                   // dequantization
+  float output_scaling_factor;     // single value output dequantization factor
+  float input_quantize_factor;     // single value input quantization factor
+  float output_dequant_factor;
+  float* output_dequant_factors;
+};
+
+
 template <typename DataType>
 class EncoderBlock {
  public:
@@ -340,7 +355,8 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act, float default_eps);
+               ActivationFunction ffn_act, float default_eps, bool fused_mha,
+               bool int8_inference, int blockIndex);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -368,6 +384,18 @@ class EncoderBlock {
   DataType *smol_ln2_gammas, *smol_ln2_betas;
   DataType *smol_global;
 
+
+  // int 8 stuff
+  int blockIndex_;
+  bool int8_inf_, is_quantized_;
+  MatMulQuantizationData qkv_;
+  MatMulQuantizationData q_;
+  MatMulQuantizationData k_;
+  MatMulQuantizationData v_;
+  MatMulQuantizationData mha_dense_;
+  MatMulQuantizationData ffn1_;
+  MatMulQuantizationData ffn2_;
+
   int mha_q_size_;
   int mha_k_size_;
   int mha_v_size_;
@@ -383,6 +411,7 @@ class EncoderBlock {
   float default_eps_;  // value of epsilon where it wasn't specified in training
 
   const bool has_smolgen_;
+  const bool use_fused_mha_;
   const ActivationFunction smolgen_activation_;
   const ActivationFunction ffn_activation_;
 
@@ -476,7 +505,8 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const MultiHeadWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
-                int max_batch_size, bool is_pe_dense_embedding);
+                int max_batch_size, bool is_pe_dense_embedding, bool fused_mha,
+                bool int8_inference);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -507,6 +537,12 @@ class AttentionBody : public BaseLayer<DataType> {
   const bool has_gating_;
   const bool has_smolgen_;
   bool is_pe_dense_embedding_;  // flag for dense position encoding
+  const bool use_fused_mha_;
+  const bool int8_inf_;
+  const bool is_quantized_;
+
+  MatMulQuantizationData emb_ffn1_;
+  MatMulQuantizationData emb_ffn2_;
 };
 
 // The value head implementation
