@@ -50,27 +50,215 @@ namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 
+void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
+                           unsigned int& dtm) {
+  unsigned int wsq[17];
+  unsigned int bsq[17];
+  unsigned char wpc[17];
+  unsigned char bpc[17];
+
+  auto stm = pos.IsBlackToMove() ? tb_BLACK_TO_MOVE : tb_WHITE_TO_MOVE;
+  auto& board = pos.IsBlackToMove() ? pos.GetThemBoard() : pos.GetBoard();
+  auto epsq = tb_NOSQUARE;
+  for (auto sq : board.en_passant()) {
+    // Our internal representation stores en_passant 2 rows away
+    // from the actual sq.
+    if (sq.row() == 0) {
+      epsq = (TB_squares)(sq.as_int() + 16);
+    } else {
+      epsq = (TB_squares)(sq.as_int() - 16);
+    }
+  }
+  int idx = 0;
+  for (auto sq : (board.ours() & board.kings())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_KING;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.knights())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_KNIGHT;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.queens())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_QUEEN;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.rooks())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_ROOK;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.bishops())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_BISHOP;
+    idx++;
+  }
+  for (auto sq : (board.ours() & board.pawns())) {
+    wsq[idx] = (TB_squares)sq.as_int();
+    wpc[idx] = tb_PAWN;
+    idx++;
+  }
+  wsq[idx] = tb_NOSQUARE;
+  wpc[idx] = tb_NOPIECE;
+
+  idx = 0;
+  for (auto sq : (board.theirs() & board.kings())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_KING;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.knights())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_KNIGHT;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.queens())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_QUEEN;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.rooks())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_ROOK;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.bishops())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_BISHOP;
+    idx++;
+  }
+  for (auto sq : (board.theirs() & board.pawns())) {
+    bsq[idx] = (TB_squares)sq.as_int();
+    bpc[idx] = tb_PAWN;
+    idx++;
+  }
+  bsq[idx] = tb_NOSQUARE;
+  bpc[idx] = tb_NOPIECE;
+
+  tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info, &dtm);
+}
+
+bool root_probe_gaviota(const Position& pos, std::vector<Move>* safe_moves) {
+  // if the position is winning the strategy is trivial: shortest mate for the winning side, longest mate for the losing side.
+  // if the position is draw, all non-losing moves are equal. 
+
+  // Generate the list of legal moves.
+  auto root_moves = pos.GetBoard().GenerateLegalMoves();
+
+  // Create a vector to store dtm information in.
+  std::vector<unsigned int> dtms (root_moves.size());
+  // And a vector for info information.
+  std::vector<unsigned int> infos (root_moves.size());
+  unsigned int minimum_dtm = 1000;
+  unsigned int maximum_dtm = 0;
+  unsigned int target_dtm = 0;
+  int dtm_idx = 0;
+  bool at_least_there_is_a_draw = false;
+    
+  // for all legal moves identify minimum and maximum dtm, if any.
+  for (auto& move : root_moves) {
+    Position next_pos = Position(pos, move);
+    unsigned int info;
+    unsigned int dtm;
+    gaviota_tb_probe_hard(next_pos, info, dtm);
+    // LOGFILE << "DTM for move: " << move.as_string() << " is " << dtm << " and info is " << info << "\n";
+    dtms[dtm_idx] = dtm;
+    infos[dtm_idx] = info;
+    dtm_idx++;
+    // info == 0 means draw.
+    // info == 1 and info == 2 implies a decisive move
+
+    // if some moves have info == 1 and others have info == 2, then the info == 1 moves appears to be
+    // moves that lose in a otherwise won position.
+    
+    // when info == 2 && dtm is odd then root is losing
+    // when info == 2 && dtm is even then root is winning does the same hold when info == 1?
+
+    if (info == 2 || info == 1){
+      if(dtm % 2 == 0 || dtm == 0){
+      // root is winning, minimise
+      if(dtm < minimum_dtm) minimum_dtm = dtm;
+      } else {
+	// it root is losing, maximise
+	if(dtm > maximum_dtm) maximum_dtm = dtm;
+      }
+    } else {
+      // Set the draw flag if not already set
+      if (!at_least_there_is_a_draw){
+	at_least_there_is_a_draw = true;
+      }
+    }
+  }
+
+  // Set a target DTM if the game is not drawn, as implied by
+  // minium_dtm or maximum_dtm are changed from there default values
+  if (minimum_dtm != 1000) {
+    target_dtm = minimum_dtm;
+      // LOGFILE << "Winning, opting for lowest dtm = " << target_dtm;    
+  } else {
+    // Only care about how to lose when actually losing.
+    if (!at_least_there_is_a_draw) {
+      target_dtm = maximum_dtm;
+      // LOGFILE << "Losing, opting for highest dtm = " << target_dtm;
+    }
+  }
+  
+  if (minimum_dtm != 1000 || !at_least_there_is_a_draw) {
+    dtm_idx = 0;
+    for (auto& move : root_moves) {
+      if (dtms[dtm_idx] == target_dtm && /* stalemate is also dtm 0, make sure to pick a proper mate */ infos[dtm_idx] != 0) {
+	safe_moves->push_back(move);
+      }
+      dtm_idx++;
+    }
+  } else {
+    // LOGFILE << "Drawing is optimal exclude losing moves";
+    // Draw is the optimal outcome, but keep only drawing moves (info == 0 means draw).
+    dtm_idx = 0;
+    for (auto& move : root_moves) {
+      if (infos[dtm_idx] == 0) {
+	safe_moves->push_back(move);
+      }
+      dtm_idx++;
+    }
+  }
+  return true;
+}
+
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
                             const PositionHistory& history, bool fast_play,
-                            std::atomic<int>* tb_hits, bool* dtz_success) {
+                            std::atomic<int>* tb_hits, bool* dtz_success,
+			    std::unique_ptr<bool>* gaviotaEnabled) {
   assert(tb_hits);
   assert(dtz_success);
   // Search moves overrides tablebase.
   if (!searchmoves.empty()) return searchmoves;
   const auto& board = history.Last().GetBoard();
   MoveList root_moves;
-  if (!syzygy_tb || !board.castlings().no_legal_castle() ||
-      (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality()) {
-    return root_moves;
-  }
-  if (syzygy_tb->root_probe(
+  
+  // Select TB to use.
+  // If gaviota is available and at most 5 pieces left, then use gaviota, else use syzygy.
+
+  if (gaviotaEnabled && (board.ours() | board.theirs()).count() <= 5 &&
+      root_probe_gaviota(history.Last(), &root_moves)){
+    tb_hits->fetch_add(1, std::memory_order_acq_rel);
+  } else {
+    // Try syzygy instead
+    if (!syzygy_tb || !board.castlings().no_legal_castle() ||
+	(board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality()) {
+      return root_moves;
+    }
+    if (syzygy_tb->root_probe(
           history.Last(), fast_play || history.DidRepeatSinceLastZeroingMove(),
           false, &root_moves)) {
-    *dtz_success = true;
-    tb_hits->fetch_add(1, std::memory_order_acq_rel);
-  } else if (syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
-    tb_hits->fetch_add(1, std::memory_order_acq_rel);
+      *dtz_success = true;
+      tb_hits->fetch_add(1, std::memory_order_acq_rel);
+    } else if (syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
+      tb_hits->fetch_add(1, std::memory_order_acq_rel);
+    }
   }
   return root_moves;
 }
@@ -155,7 +343,7 @@ Search::Search(const NodeTree& tree, Network* network,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
                bool ponder, const OptionsDict& options, NNCache* cache,
-               SyzygyTablebase* syzygy_tb)
+               SyzygyTablebase* syzygy_tb, std::unique_ptr<bool>* gaviotaEnabled)
     : ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
@@ -169,7 +357,7 @@ Search::Search(const NodeTree& tree, Network* network,
       initial_visits_(root_node_->GetN()),
       root_move_filter_(MakeRootMoveFilter(
           searchmoves_, syzygy_tb_, played_history_,
-          params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
+          params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_, gaviotaEnabled)),
       uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),

@@ -96,6 +96,7 @@ class EngineController {
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
+  std::unique_ptr<bool> gaviotaEnabled_ = nullptr;
   std::unique_ptr<Network> network_;
   NNCache cache_;
 
