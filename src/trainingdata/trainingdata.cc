@@ -156,7 +156,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
       float p = 0;
       for (size_t i = 0; i < legal_moves.size(); i++) {
         if (move == legal_moves[i]) {
-          p = Pfloat16ToFloat(nneval->p[i]);
+          p = nneval->p[i];
           break;
         }
       }

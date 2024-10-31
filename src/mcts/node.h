@@ -92,9 +92,9 @@ class Edge {
 
   // Returns or sets value of Move policy prior returned from the neural net
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
-  float GetP() const { return Pfloat16ToFloat(p_); }
-  void SetP(float val) { p_ = FloatToPfloat16(val); }
-  void SetPCompressed(uint16_t p) { p_ = p; }
+  float GetP() const { return p_; }
+  void SetP(float val) { p_ = val; }
+  void SetP(pfloat16 p) { p_ = p; }
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -107,7 +107,7 @@ class Edge {
 
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
-  uint16_t p_ = 0;
+  pfloat16 p_;
   friend class Node;
 };
 

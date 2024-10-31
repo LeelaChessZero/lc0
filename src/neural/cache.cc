@@ -114,6 +114,10 @@ void CachingComputation::ComputeBlocking() {
   if (parent_->GetBatchSize() == 0) return;
   parent_->ComputeBlocking();
 
+  // Intermediate array to store values when processing policy.
+  // There are never more than 256 valid legal moves in any legal position.
+  std::array<float, 256> intermediate;
+
   // Fill cache with data from NN.
   for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
@@ -125,9 +129,6 @@ void CachingComputation::ComputeBlocking() {
 
     // Calculate maximum first.
     float max_p = -std::numeric_limits<float>::infinity();
-    // Intermediate array to store values when processing policy.
-    // There are never more than 256 valid legal moves in any legal position.
-    std::array<float, 256> intermediate;
     int counter = 0;
     for (auto x : item.probabilities_to_cache) {
       float p = parent_->GetPVal(item.idx_in_parent, x);
@@ -145,9 +146,9 @@ void CachingComputation::ComputeBlocking() {
     // Normalize P values to add up to 1.0.
     const float scale = total > 0.0f ? 1.0f / total : 1.0f;
     for (size_t ct = 0; ct < item.probabilities_to_cache.size(); ct++) {
-      uint16_t p = FloatToPfloat16(intermediate[ct] * scale);
+      pfloat16 p = intermediate[ct] * scale;
       req->p[ct] = p;
-      item.probabilities_to_cache[ct] = p;
+      std::memcpy(&item.probabilities_to_cache[ct], &p, sizeof(pfloat16));
     }
     cache_->Insert(item.hash, std::move(req));
   }
@@ -171,10 +172,12 @@ float CachingComputation::GetMVal(int sample) const {
   return item.lock->m;
 }
 
-uint16_t CachingComputation::GetPVal(int sample, int move_ct) const {
+pfloat16 CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) {
-    return item.probabilities_to_cache[move_ct];
+    pfloat16 r;
+    std::memcpy(&r, &item.probabilities_to_cache[move_ct], sizeof(pfloat16));
+    return r;
   }
   return item.lock->p[move_ct];
 }

@@ -59,21 +59,29 @@ namespace lczero {
 // subtracting the two bits from the input and checking for a negative result
 // (the subtraction works despite crossing from exponent to significand). This
 // is combined with the round-to-nearest addition (1<<11) into one op.
-static inline uint16_t FloatToPfloat16(const float &p) {
-  assert(0.0f <= p && p <= 1.0f);
-  constexpr int32_t roundings = (1 << 11) - (3 << 28);
-  int32_t tmp;
-  std::memcpy(&tmp, &p, sizeof(float));
-  tmp += roundings;
-  return (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
-}
 
-static inline float Pfloat16ToFloat(const uint16_t &p) {
-  // Reshift into place and set the assumed-set exponent bits.
-  uint32_t tmp = (static_cast<uint32_t>(p) << 12) | (3 << 28);
-  float ret;
-  std::memcpy(&ret, &tmp, sizeof(uint32_t));
-  return ret;
-}
+class pfloat16 {
+ public:
+  pfloat16() { value = 0; }
 
+  pfloat16(const float &p) {
+    assert(0.0f <= p && p <= 1.0f);
+    constexpr int32_t roundings = (1 << 11) - (3 << 28);
+    int32_t tmp;
+    std::memcpy(&tmp, &p, sizeof(float));
+    tmp += roundings;
+    value = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
+  }
+
+  operator float() const {
+    // Reshift into place and set the assumed-set exponent bits.
+    uint32_t tmp = (static_cast<uint32_t>(value) << 12) | (3 << 28);
+    float ret;
+    std::memcpy(&ret, &tmp, sizeof(uint32_t));
+    return ret;
+  }
+
+ private:
+  uint16_t value = 0;
+};
 }  // namespace lczero

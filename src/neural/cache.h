@@ -29,6 +29,7 @@
 #include "mcts/node.h"
 #include "neural/network.h"
 #include "utils/cache.h"
+#include "utils/pfloat16.h"
 #include "utils/smallarray.h"
 
 namespace lczero {
@@ -39,7 +40,7 @@ struct CachedNNRequest {
   float d;
   float m;
   // Store p only for valid moves.
-  std::vector<uint16_t> p;
+  std::vector<pfloat16> p;
 };
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
@@ -78,7 +79,7 @@ class CachingComputation {
   // Returns estimated remaining moves.
   float GetMVal(int sample) const;
   // Returns compressed P value @move_id of @sample.
-  uint16_t GetPVal(int sample, int move_ct) const;
+  pfloat16 GetPVal(int sample, int move_ct) const;
   // Pops last input from the computation. Only allowed for inputs which were
   // cached.
   void PopCacheHit();

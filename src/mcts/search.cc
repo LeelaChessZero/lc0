@@ -2210,7 +2210,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // softmax.
   int idx = 0;
   for (auto& edge : node->Edges()) {
-    edge.edge()->SetPCompressed(computation.GetPVal(idx_in_computation, idx++));
+    edge.edge()->SetP(computation.GetPVal(idx_in_computation, idx++));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {

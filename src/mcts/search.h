@@ -44,6 +44,7 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
+#include "utils/pfloat16.h"
 
 namespace lczero {
 
@@ -365,7 +366,7 @@ class SearchWorker {
 
     float GetMVal(int) const { return entry.m; }
 
-    uint16_t GetPVal(int, int move_ct) const { return entry.p[move_ct]; }
+    pfloat16 GetPVal(int, int move_ct) const { return entry.p[move_ct]; }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
