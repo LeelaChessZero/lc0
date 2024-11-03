@@ -930,7 +930,7 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-__device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
+__device__ __forceinline__ float shared_warp_sum(float x) {
   // compute warp-wide sum
   float s = warpReduce(x);
 
@@ -954,6 +954,113 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 
   // s now contains the sum across C dimension
   return sum[threadIdx.z][0];
+}
+
+// Each thread processes 4 elements
+template <typename T>
+__global__ void rms_norm_kernel(int N, int C, T* output, const T* input,
+                                  const T* skip, const T* gammas, float ep,
+                                  float alpha, ActivationFunction act) {
+  int n = blockIdx.x * blockDim.z + threadIdx.z;
+  if (n >= N) return;
+  int c = (threadIdx.y * 32 + threadIdx.x) * 16;
+  bool oobThread = c >= C;
+
+  int biasIndex = c;
+  int tensorIndex = n * C + c;
+
+  float val[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  float oth[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+  const bool fp16 = std::is_same<half, T>::value;
+
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      half inp[8];
+      copyAs<uint4>(&inp[0], &skip[tensorIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<uint4>(&oth[0], &skip[tensorIndex]);
+      copyAs<uint4>(&oth[4], &skip[tensorIndex + 4]);
+      copyAs<uint4>(&oth[8], &skip[tensorIndex + 8]);
+      copyAs<uint4>(&oth[12], &skip[tensorIndex + 12]);
+    }
+  }
+
+  float s = 0;
+  if (!oobThread) {
+    // {1, 2}. Fused activation and squared reduced mean
+    for (int i = 0; i < 16; i++) {
+      val[i] = activate(val[i], act) + oth[i] * alpha;
+      s += val[i] * val[i] + ep;
+    }
+  }
+
+  s = shared_warp_sum(s);
+  float factor = rsqrtf(s / C);
+
+  if (!oobThread) {
+    // Load from memory (16 elements a time)
+    if (fp16) {
+      half inp[8];
+      copyAs<uint4>(&inp[0], &gammas[biasIndex]);
+      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+      copyAs<uint4>(&inp[0], &gammas[biasIndex + 8]);
+      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+    } else {
+      copyAs<uint4>(&oth[0], &gammas[biasIndex]);
+      copyAs<uint4>(&oth[4], &gammas[biasIndex + 4]);
+      copyAs<uint4>(&oth[8], &gammas[biasIndex + 8]);
+      copyAs<uint4>(&oth[12], &gammas[biasIndex + 12]);
+    }
+  }
+
+  // 3. Normalize
+  for (int i = 0; i < 16; i++) {
+    val[i] = val[i] * factor * oth[i];
+  }
+
+  if (!oobThread) {
+    // Write to memory
+    if (fp16) {
+      half op[8];
+      for (int i = 0; i < 8; i++) op[i] = (half)val[i];
+      copyAs<uint4>(&output[tensorIndex], &op[0]);
+      for (int i = 0; i < 8; i++) op[i] = (half)val[i + 8];
+      copyAs<uint4>(&output[tensorIndex + 8], &op[0]);
+    } else {
+      copyAs<uint4>(&output[tensorIndex], &val[0]);
+      copyAs<uint4>(&output[tensorIndex + 4], &val[4]);
+      copyAs<uint4>(&output[tensorIndex + 8], &val[8]);
+      copyAs<uint4>(&output[tensorIndex + 12], &val[12]);
+    }
+  }
+}
+
+template <typename T>
+void RMSNorm(int N, int C, T* output, const T* input, const T* skip,
+               const T* gammas, float ep, float alpha, ActivationFunction act,
+               cudaStream_t stream) {
+  // process 4 elements per thread to achieve close to peak memory bandwidth
+  if (C % 16 != 0) throw Exception("unsupported filter size");
+  if (C > 16384) throw Exception("unsupported filter size");
+
+  dim3 blockDim, gridDim;
+  blockDim.x = 32;
+  blockDim.y = DivUp(C / 16, 32);
+  blockDim.z =
+      std::min(std::max(512 / (blockDim.x * blockDim.y), 1u), (unsigned int)N);
+  gridDim.x = DivUp(N, blockDim.z);
+  gridDim.y = 1;
+  gridDim.z = 1;
+
+  rms_norm_kernel<T><<<gridDim, blockDim, 0, stream>>>(
+      N, C, output, input, skip, gammas, ep, alpha, act);
+
+  ReportCUDAErrors(cudaGetLastError());
 }
 
 // Each thread processes 4 elements
@@ -1035,7 +1142,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
       }
     }
 
-  s = shared_sum_for_layer_norm(s);
+  s = shared_warp_sum(s);
   float mean = s / C;
 
   // 2. Compute varience
@@ -1046,7 +1153,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
       float d_sq = d * d;
       s += d_sq;
     }
-  s = shared_sum_for_layer_norm(s);
+  s = shared_warp_sum(s);
   float var = s / C;
 
   if (!oobThread) {
