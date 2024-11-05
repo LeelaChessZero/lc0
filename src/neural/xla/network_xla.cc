@@ -174,7 +174,7 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
                        const pblczero::NetworkFormat& format)
     : runner_(std::move(runner)),
       options_(options),
-      capabilities_{format.input(), format.moves_left()} {}
+      capabilities_{format.input(), format.output(), format.moves_left()} {}
 
 // Converts ONNX model to HLO (for various batch sizes) and adds them to the
 // XlaRunner.
@@ -302,6 +302,9 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
     onnx_converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(
             opts.GetOrDefault<std::string>("datatype", "f32"));
+    onnx_converter_options.opset = 22;  // For full onnx bfloat16 support.
+    onnx_converter_options.alt_mish =
+        opts.GetOrDefault<bool>("alt_mish", false);
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
                                     max_batch_size, steps, io_type);
@@ -311,7 +314,7 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                       w->format().network_format());
 }
 
-REGISTER_NETWORK("xla", MakeXlaNetwork, -34)
+REGISTER_NETWORK("xla", MakeXlaNetwork, 34)
 
 }  // namespace
 }  // namespace lczero

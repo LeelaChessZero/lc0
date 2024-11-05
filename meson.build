@@ -75,16 +75,16 @@ gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
 
 # Handle submodules.
 git = find_program('git', required: false)
-if run_command('scripts/checkdir.py', 'libs/lczero-common/proto').returncode() != 0
+if run_command('scripts/checkdir.py', 'libs/lczero-common/proto', check : false).returncode() != 0
   if git.found()
-    if run_command(git, 'status').returncode() == 0
+    if run_command(git, 'status', check : false).returncode() == 0
       message('updating git submodule libs/lczero-common')
-      run_command(git, 'submodule', 'update', '--init', '--recursive')
+      run_command(git, 'submodule', 'update', '--init', '--recursive', check : false)
     else
       message('cloning lczero-common.git into libs/lczero-common')
       run_command(git, 'clone', '--depth=1',
                   'https://github.com/LeelaChessZero/lczero-common.git',
-                  'libs/lczero-common/')
+                  'libs/lczero-common/', check : false)
     endif
   else
     error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
@@ -101,12 +101,12 @@ common_files += pb_files
 # Extract git short revision.
 short_rev = 'unknown'
 if git.found()
-  r = run_command(git, 'rev-parse', '--short', 'HEAD')
+  r = run_command(git, 'rev-parse', '--short', 'HEAD', check : false)
   if r.returncode() == 0
     # Now let's check if the working directory is clean.
-    if run_command(git, 'diff-index', '--quiet', 'HEAD').returncode() == 0
+    if run_command(git, 'diff-index', '--quiet', 'HEAD', check : false).returncode() == 0
       short_rev = r.stdout().strip()
-      if run_command(git, 'describe', '--exact-match', '--tags').returncode() == 0
+      if run_command(git, 'describe', '--exact-match', '--tags', check : false).returncode() == 0
         short_rev = ''
       endif
     else
@@ -140,7 +140,7 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
-# ONNX protobufs.
+# ONNX and HLO protobufs.
 gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
   arguments : [
     '--proto_path=@CURRENT_SOURCE_DIR@/src',
@@ -148,6 +148,9 @@ gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
     '@INPUT@'])
 
 files += gen_proto_src.process('src/neural/onnx/onnx.proto',
+  preserve_path_from : meson.current_source_dir() + '/src/')
+
+files += gen_proto_src.process('src/neural/xla/hlo.proto',
   preserve_path_from : meson.current_source_dir() + '/src/')
 
 #############################################################################
@@ -208,6 +211,9 @@ files += [
   'src/neural/onnx/adapters.cc',
   'src/neural/onnx/builder.cc',
   'src/neural/onnx/converter.cc',
+  'src/neural/xla/hlo_builder.cc',
+  'src/neural/xla/onnx2hlo.cc',
+  'src/neural/xla/print_hlo.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/multigame.cc',
@@ -272,7 +278,7 @@ if get_option('build_backends')
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
       mkl_inc = get_option('mkl_include')
-      if run_command('scripts/checkdir.py', mkl_inc).returncode() == 0
+      if run_command('scripts/checkdir.py', mkl_inc, check : false).returncode() == 0
         includes += include_directories(mkl_inc)
       endif
       if cc.has_header('mkl.h')
@@ -459,7 +465,7 @@ if get_option('build_backends')
       cuda_files += 'src/neural/cuda/network_cuda.cc'
     endif
     foreach d : get_option('cudnn_include')
-      if run_command('scripts/checkdir.py', d).returncode() == 0
+      if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
         includes += include_directories(d, is_system: true)
       endif
     endforeach
@@ -467,7 +473,7 @@ if get_option('build_backends')
 
     cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
-    nvcc_help = run_command(nvcc, '-h').stdout()
+    nvcc_help = run_command(nvcc, '-h', check : false).stdout()
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
         cuda_arguments += ['-Xcompiler', '-MT']
@@ -491,7 +497,21 @@ if get_option('build_backends')
     elif get_option('native_cuda') and nvcc_help.contains('-arch=native')
       nvcc_extra_args = ['-arch=native']
     elif nvcc_help.contains('-arch=all-major')
-      nvcc_extra_args = ['-arch=all-major']
+      nvcc_extra_args = ['-arch=all-major', '-Wno-deprecated-gpu-targets']
+    else
+      nvcc_extra_args = ['-Wno-deprecated-gpu-targets']
+      # Fallback for cuda versions without -arch=all-major.
+      foreach x : ['35', '50', '60', '70', '80']
+        if nvcc_help.contains('sm_' + x)
+          nvcc_extra_args += '-gencode=arch=compute_' + x + ',code=sm_' + x
+        endif
+      endforeach
+      # For forward compatibility.
+      if nvcc_help.contains('sm_80') # Cuda 11+
+        nvcc_extra_args += '-gencode=arch=compute_80,code=compute_80'
+      elif nvcc_help.contains('sm_75') # Cuda 10+
+        nvcc_extra_args += '-gencode=arch=compute_75,code=compute_75'
+      endif
     endif
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
@@ -509,34 +529,6 @@ if get_option('build_backends')
       command : [nvcc, nvcc_extra_args, cuda_arguments]
     )
 
-    # Handling of fp16 cuda code: If nvcc_extra_args is empty add options to
-    # generate code for the major fp16 capable architectures.
-    if nvcc_extra_args == []
-      # Fallback for cuda versions < 11.5 that don't support -arch=all-major.
-      nvcc_arch = '-arch=compute_70'
-      nvcc_sm_list = ['sm_70', 'sm_75', 'sm_80', 'sm_90']
-      if host_machine.system() != 'windows'
-        nvcc_arch = '-arch=compute_60'
-        nvcc_sm_list += ['sm_60']
-        if ['arm', 'aarch64'].contains(host_machine.cpu_family())
-          message('Compiling for Jetson.')
-          nvcc_arch = '-arch=compute_53'
-          nvcc_sm_list = ['sm_53', 'sm_62', 'sm_72', 'sm_87']
-        endif
-      endif
-      nvcc_extra_args = [nvcc_arch]
-      foreach x : nvcc_sm_list
-        if nvcc_help.contains(x)
-          nvcc_extra_args += '-code=' + x
-        endif
-      endforeach
-      # For forward compatibility.
-      if nvcc_help.contains('sm_80') # Cuda 11+
-        nvcc_extra_args += '-gencode=arch=compute_80,code=compute_80'
-      elif nvcc_help.contains('sm_75') # Cuda 10+
-        nvcc_extra_args += '-gencode=arch=compute_75,code=compute_75'
-      endif
-    endif
     files += custom_target('cuda fp16 code',
       input : 'src/neural/cuda/fp16_kernels.cu',
       output : outputname,
@@ -629,14 +621,6 @@ if get_option('build_backends')
   ## ~~~~~~~~
   ## XLA
   ## ~~~~~~~~
-  files += [
-        'src/neural/xla/hlo_builder.cc',
-        'src/neural/xla/onnx2hlo.cc',
-        'src/neural/xla/print_hlo.cc',
-  ]
-  files += gen_proto_src.process('src/neural/xla/hlo.proto',
-      preserve_path_from : meson.current_source_dir() + '/src/')
-
   if get_option('xla')
       files += [
         'src/neural/xla/network_xla.cc',
@@ -645,6 +629,7 @@ if get_option('build_backends')
         'src/neural/xla/xla_tensor.cc',
       ]
       deps += cc.find_library('dl', required: false)
+      has_backends = true
   endif
 
 endif # if get_option('build_backends')

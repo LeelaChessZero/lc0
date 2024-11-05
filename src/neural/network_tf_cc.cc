@@ -438,6 +438,7 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const OptionsDict& options,
                           bool wdl)
     : scope_(Scope::NewRootScope()),
       capabilities_{file.format().network_format().input(),
+                    file.format().network_format().output(),
                     file.format().network_format().moves_left()},
       wdl_(wdl) {
   const LegacyWeights weights(file.weights());

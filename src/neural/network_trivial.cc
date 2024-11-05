@@ -462,6 +462,7 @@ class TrivialNetwork : public Network {
                 options.GetOrDefault<int>(
                     "input_mode",
                     pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)),
+            pblczero::NetworkFormat::OUTPUT_CLASSICAL,
             pblczero::NetworkFormat::MOVES_LEFT_NONE} {}
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<TrivialNetworkComputation>();
@@ -473,6 +474,7 @@ class TrivialNetwork : public Network {
  private:
   NetworkCapabilities capabilities_{
       pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+      pblczero::NetworkFormat::OUTPUT_CLASSICAL,
       pblczero::NetworkFormat::MOVES_LEFT_NONE};
 };
 }  // namespace

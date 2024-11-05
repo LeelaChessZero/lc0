@@ -344,6 +344,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       steps_(steps),
       capabilities_{file.format().network_format().input(),
+                    file.format().network_format().output(),
                     file.format().network_format().moves_left()},
       fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
       bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
@@ -436,7 +437,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     }
     converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
-    converter_options.relax_op_types = false;
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
