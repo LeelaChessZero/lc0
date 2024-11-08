@@ -140,6 +140,9 @@ class Search {
   // Ensure that all shared collisions are cancelled and clear them out.
   void CancelSharedCollisions();
 
+  // WDL conversion formula based on random walk model.
+  inline double WDLRescale(float& v, float& d, float sign, bool invert);
+
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -201,6 +204,10 @@ class Search {
 
   std::unique_ptr<UciResponder> uci_responder_;
   ContemptMode contempt_mode_;
+  float wdl_rescale_ratio_;
+  float wdl_rescale_diff_;
+  float wdl_eval_objectivity_;
+  float wdl_max_s_;
   friend class SearchWorker;
 };
 
