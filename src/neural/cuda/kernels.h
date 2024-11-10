@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #include "cuda_common.h"
 #include "neural/shared/activation.h"
 

@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #include "shader_shared.h"
 
 #if USE_FP16_MATH == 1
