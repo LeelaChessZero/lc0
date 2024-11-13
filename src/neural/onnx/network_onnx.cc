@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2021-2023 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
 #include "onnxruntime_cxx_api.h"
+#include "utils/bf16_utils.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
@@ -82,11 +83,13 @@ class OnnxComputation : public NetworkComputation {
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider, int gpu, int threads, bool fp16,
-              int batch_size, int steps);
+              OnnxProvider provider, int gpu, int threads, int batch_size,
+              int steps);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
+    } else if (bf16_) {
+      return std::make_unique<OnnxComputation<Ort::BFloat16_t>>(this);
     } else {
       return std::make_unique<OnnxComputation<float>>(this);
     }
@@ -94,6 +97,11 @@ class OnnxNetwork : public Network {
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
+  int GetMiniBatchSize() const override {
+    return batch_size_ == -1 ? Network::GetMiniBatchSize()
+                             : batch_size_ * steps_;
+  }
+  bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;
@@ -112,6 +120,7 @@ class OnnxNetwork : public Network {
   int mlh_head_ = -1;
   NetworkCapabilities capabilities_;
   bool fp16_;
+  bool bf16_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
   static constexpr int max_batch_size_ = 1024;
@@ -160,6 +169,11 @@ float AsFloat(Ort::Float16_t x) {
   std::memcpy(&tmp, reinterpret_cast<uint16_t*>(&x), sizeof(uint16_t));
   return FP16toFP32(tmp);
 }
+float AsFloat(Ort::BFloat16_t x) {
+  uint16_t tmp;
+  std::memcpy(&tmp, reinterpret_cast<uint16_t*>(&x), sizeof(uint16_t));
+  return BF16toFP32(tmp);
+}
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
@@ -195,6 +209,10 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
 void AsDataType(float x, float* y) { *y = x; }
 void AsDataType(float x, Ort::Float16_t* y) {
   uint16_t tmp = FP32toFP16(x);
+  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
+}
+void AsDataType(float x, Ort::BFloat16_t* y) {
+  uint16_t tmp = FP32toBF16(x);
   std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
 }
 
@@ -321,13 +339,15 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
 }
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
-                         OnnxProvider provider, int gpu, int threads, bool fp16,
+                         OnnxProvider provider, int gpu, int threads,
                          int batch_size, int steps)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       steps_(steps),
       capabilities_{file.format().network_format().input(),
+                    file.format().network_format().output(),
                     file.format().network_format().moves_left()},
-      fp16_(fp16),
+      fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
+      bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
       batch_size_(batch_size),
       provider_(provider) {
   // Sanity checks.
@@ -391,64 +411,36 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   if (batch_size <= 0) batch_size = -1;  // Variable batch size.
 
-  bool fp16 = opts.GetOrDefault<bool>(
-      "fp16", kProvider == OnnxProvider::CPU ? false : true);
-
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
-                                         false, batch_size, steps);
+                                         batch_size, steps);
   } else {
-    if (w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT &&
-        w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
-        w->format().network_format().network() !=
-            pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
-      throw Exception("Network format " +
-                      pblczero::NetworkFormat::NetworkStructure_Name(
-                          w->format().network_format().network()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CLASSICAL &&
-        w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_CONVOLUTION &&
-        w->format().network_format().policy() !=
-            pblczero::NetworkFormat::POLICY_ATTENTION) {
-      throw Exception("Policy format " +
-                      pblczero::NetworkFormat::PolicyFormat_Name(
-                          w->format().network_format().policy()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().value() !=
-            pblczero::NetworkFormat::VALUE_CLASSICAL &&
-        w->format().network_format().value() !=
-            pblczero::NetworkFormat::VALUE_WDL) {
-      throw Exception("Value format " +
-                      pblczero::NetworkFormat::ValueFormat_Name(
-                          w->format().network_format().value()) +
-                      " is not supported by the ONNX backend.");
-    }
-    if (w->format().network_format().default_activation() !=
-            pblczero::NetworkFormat::DEFAULT_ACTIVATION_RELU &&
-        w->format().network_format().default_activation() !=
-            pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH) {
-      throw Exception("Default activation " +
-                      pblczero::NetworkFormat::DefaultActivation_Name(
-                          w->format().network_format().default_activation()) +
-                      " is not supported by the ONNX backend.");
-    }
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
-    converter_options.data_type_ =
-        fp16 ? WeightsToOnnxConverterOptions::DataType::kFloat16
-             : WeightsToOnnxConverterOptions::DataType::kFloat32;
+    converter_options.alt_layernorm = opts.GetOrDefault<bool>(
+        "alt_layernorm", kProvider == OnnxProvider::DML ? true : false);
+    converter_options.no_shape = opts.GetOrDefault<bool>("no_shape", false);
+    converter_options.policy_head =
+        opts.GetOrDefault<std::string>("policy_head", "vanilla");
+    converter_options.value_head =
+        opts.GetOrDefault<std::string>("value_head", "winner");
+
+    std::string datatype;
+    if (opts.IsDefault<std::string>("datatype")) {
+      bool fp16 = opts.GetOrDefault<bool>(
+          "fp16", kProvider == OnnxProvider::CPU ? false : true);
+      datatype = fp16 ? "f16" : "f32";
+    } else {
+      datatype = opts.Get<std::string>("datatype");
+    }
+    converter_options.data_type =
+        WeightsToOnnxConverterOptions::StringToDataType(datatype);
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
-                                         threads, fp16, batch_size, steps);
+                                         threads, batch_size, steps);
   }
 }
 

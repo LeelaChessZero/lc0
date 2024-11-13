@@ -49,12 +49,27 @@ message TensorProto {
     COMPLEX64 = 14;
     COMPLEX128 = 15;
     BFLOAT16 = 16;
+    FLOAT8E4M3FN = 17;
+    FLOAT8E4M3FNUZ = 18;
+    FLOAT8E5M2 = 19;
+    FLOAT8E5M2FNUZ = 20;
   }
   repeated int64 dims = 1;
   optional DataType data_type = 2;
   optional string name = 8;
   optional bytes raw_data = 9;
   optional string doc_string = 12;
+  repeated StringStringEntryProto external_data = 13;
+  enum DataLocation {
+    DEFAULT = 0;
+    EXTERNAL = 1;
+  }
+  optional DataLocation data_location = 14;
+}
+
+message StringStringEntryProto {
+  optional string key = 1;
+  optional string value = 2;
 }
 
 message AttributeProto {

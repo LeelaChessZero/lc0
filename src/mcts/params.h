@@ -127,8 +127,11 @@ class SearchParams {
   }
   float GetWDLRescaleRatio() const { return kWDLRescaleParams.ratio; }
   float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
+  float GetWDLMaxS() const { return kWDLMaxS; }
   float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
-  int GetMaxOutOfOrderEvals() const { return kMaxOutOfOrderEvals; }
+  float GetMaxOutOfOrderEvalsFactor() const {
+    return kMaxOutOfOrderEvalsFactor;
+  }
   float GetNpsLimit() const { return kNpsLimit; }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
 
@@ -211,11 +214,12 @@ class SearchParams {
   static const OptionId kContemptMaxValueId;
   static const OptionId kWDLCalibrationEloId;
   static const OptionId kWDLContemptAttenuationId;
+  static const OptionId kWDLMaxSId;
   static const OptionId kWDLEvalObjectivityId;
   static const OptionId kWDLDrawRateTargetId;
   static const OptionId kWDLDrawRateReferenceId;
   static const OptionId kWDLBookExitBiasId;
-  static const OptionId kMaxOutOfOrderEvalsId;
+  static const OptionId kMaxOutOfOrderEvalsFactorId;
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;
   static const OptionId kTaskWorkersPerSearchWorkerId;
@@ -273,8 +277,9 @@ class SearchParams {
   const float kDrawScore;
   const float kContempt;
   const WDLRescaleParams kWDLRescaleParams;
+  const float kWDLMaxS;
   const float kWDLEvalObjectivity;
-  const int kMaxOutOfOrderEvals;
+  const float kMaxOutOfOrderEvalsFactor;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
   const int kTaskWorkersPerSearchWorker;

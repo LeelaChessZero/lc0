@@ -374,6 +374,7 @@ void DxContext::ScheduleUpload(DXAlloc alloc, const void* data, size_t size) {
 DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
     : dx_context_(options),
       capabilities_{file.format().network_format().input(),
+                    file.format().network_format().output(),
                     file.format().network_format().moves_left()} {
   LegacyWeights weights(file.weights());
 

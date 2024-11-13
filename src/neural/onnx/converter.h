@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
 
@@ -34,8 +36,8 @@ namespace lczero {
 
 // Options to use when converting "old" weights to ONNX weights format.
 struct WeightsToOnnxConverterOptions {
-  enum class DataType { kFloat32, kFloat16 };
-  DataType data_type_ = DataType::kFloat32;
+  enum class DataType { kFloat32, kFloat16, kBFloat16 };
+  DataType data_type = DataType::kFloat32;
   std::string input_planes_name = "/input/planes";
   std::string output_policy_head = "/output/policy";
   std::string output_wdl = "/output/wdl";
@@ -43,7 +45,13 @@ struct WeightsToOnnxConverterOptions {
   std::string output_mlh = "/output/mlh";
   int batch_size = -1;
   int opset = 17;
-  bool alt_mish = false;
+  bool alt_mish = false;       // Use "Mish" approximation (fp32 only).
+  bool alt_layernorm = false;  // Discrete "LayerNormalization" implementation.
+  bool no_shape = false;       // Avoid use of "Shape" operator.
+  std::string policy_head = "vanilla";
+  std::string value_head = "winner";
+
+  static DataType StringToDataType(const std::string&);
 };
 
 // Converts "classical" weights file to weights file with embedded ONNX model.

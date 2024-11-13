@@ -593,6 +593,34 @@ void BoolOption::ValidateBoolString(const std::string& val) {
 }
 
 /////////////////////////////////////////////////////////////////
+// ButtonOption
+/////////////////////////////////////////////////////////////////
+
+ButtonOption::ButtonOption(const OptionId& id) : Option(id) {}
+
+void ButtonOption::SetValue(const std::string& /*value*/, OptionsDict* dict) {
+  dict->Set<ValueType>(GetId(), true);
+}
+
+bool ButtonOption::ProcessLongFlag(const std::string& /*flag*/,
+                                   const std::string& /*value*/,
+                                   OptionsDict* /*dict*/) {
+  return false;
+}
+
+bool ButtonOption::ProcessShortFlag(char /*flag*/, OptionsDict* /*dict*/) {
+  return false;
+}
+
+std::string ButtonOption::GetHelp(const OptionsDict& /*dict*/) const {
+  return "";
+}
+
+std::string ButtonOption::GetOptionString(const OptionsDict& /*dict*/) const {
+  return "type button";
+}
+
+/////////////////////////////////////////////////////////////////
 // ChoiceOption
 /////////////////////////////////////////////////////////////////
 
