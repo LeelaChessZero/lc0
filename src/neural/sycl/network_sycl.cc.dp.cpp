@@ -216,6 +216,7 @@ class SyclNetwork : public Network {
  public:
   SyclNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
+                      file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
     LegacyWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
