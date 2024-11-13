@@ -17,9 +17,8 @@ for line in lines:
     link_flag = 'xilink.exe' in line
   if link_flag:
     line = line.replace('xilink.exe', 'icx')
-    if 'rspfile_content' in line:
-      line = line.replace('/MACHINE:x64', '-fsycl')
-      line = line.replace('/OUT:', '-o ')
+    line = line.replace('/MACHINE:x64', '-fsycl')
+    line = line.replace('/OUT:', '-o ')
     line = line.replace('/SUBSYSTEM:CONSOLE', '')
     line = line.replace('/OPT:REF', '')
   # Replace msvc compatible dependencies with gcc ones as icx output with /showincludes includes
