@@ -55,7 +55,7 @@
 #ifdef USE_HIPBLAS 
 #include "hipblas.h"
 #include "cuBlasContext.h"
-#elifdef USE_CUBLAS
+#elif defined(USE_CUBLAS)
 #include <sycl/backend/cuda.hpp>
 #include <cublas_v2.h>
 #include <cuda.h>
@@ -64,8 +64,6 @@
 #else
 #include "oneapi/mkl.hpp"
 #include "oneapi/mkl/blas.hpp"
-//#include "dpct/lib_common_utils.hpp"
-//#include "dpct/blas_utils.hpp"
 #endif
 
 #include "sycl_common.h"
@@ -83,7 +81,7 @@
 #define transpose_type hipblasOperation_t 
 #define transpose_type_transpose HIPBLAS_OP_T  
 #define transpose_type_notranspose HIPBLAS_OP_N 
-#elifdef USE_CUBLAS
+#elif defined(USE_CUBLAS)
 #define transpose_type cublasOperation_t 
 #define transpose_type_transpose CUBLAS_OP_T  
 #define transpose_type_notranspose CUBLAS_OP_N 
@@ -286,7 +284,7 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
         
         });
   });
-  #elifdef USE_HIPBLAS
+  #elif defined(USE_HIPBLAS)
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
    
 
@@ -341,7 +339,7 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   });
 
   
-  #elifdef USE_HIPBLAS
+  #elif defined(USE_HIPBLAS)
   sycl_queue.submit([&](sycl::handler &cgh) {
         
         cgh.host_task([=](sycl::interop_handle ih) {
@@ -433,7 +431,7 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
         });
     });
 
-#elifdef USE_HIPBLAS
+#elif defined(USE_HIPBLAS)
     hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
 
     sycl_queue.submit([&](sycl::handler &cgh) {
@@ -480,7 +478,7 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
         });
     });  
     
-#elifdef USE_HIPBLAS
+#elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
       cgh.host_task([=](sycl::interop_handle ih) {
         auto hipStreamHandle =
@@ -625,7 +623,7 @@ template <>
         
        });
    });  
-#elifdef USE_HIPBLAS
+#elif defined(USE_HIPBLAS)
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   sycl_queue.submit([&](sycl::handler &cgh) {
     cgh.host_task([=](sycl::interop_handle ih) {
@@ -689,7 +687,7 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
         
       });
   });  
-  #elifdef USE_HIPBLAS
+  #elif defined(USE_HIPBLAS)
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   sycl_queue.submit([&](sycl::handler &cgh) {
         
@@ -1015,7 +1013,7 @@ template <>
          });   
    });
   
-#elifdef USE_HIPBLAS
+#elif defined(USE_HIPBLAS)
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
 
   sycl_queue.submit([&](sycl::handler &cgh) {
@@ -1084,7 +1082,7 @@ template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const
 
         });
     });
-    #elifdef USE_HIPBLAS
+    #elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
         cgh.host_task([=](sycl::interop_handle ih) {
@@ -1127,7 +1125,7 @@ template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const
 
         });
      });
-     #elifdef USE_HIPBLAS
+     #elif defined(USE_HIPBLAS)
      sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
         cgh.host_task([=](sycl::interop_handle ih) {
@@ -1314,7 +1312,7 @@ template <>
         
          });   
    });
-#elifdef USE_HIPBLAS
+#elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
       cgh.host_task([=](sycl::interop_handle ih) {
          auto hipStreamHandle =
@@ -1382,7 +1380,7 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
 
         });   
     });
-    #elifdef USE_HIPBLAS
+    #elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
         
         cgh.host_task([=](sycl::interop_handle ih) {
@@ -1428,7 +1426,7 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
 
         });
     });
-    #elifdef USE_HIPBLAS
+    #elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
         
         cgh.host_task([=](sycl::interop_handle ih) {
@@ -1966,7 +1964,7 @@ static void cublasXgemm(transpose_type transa,
         });
       });
   }
-  #elifdef USE_HIPBLAS
+  #elif defined(USE_HIPBLAS)
     hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
     sycl_queue.submit([&](sycl::handler &cgh) {
       cgh.host_task([=](sycl::interop_handle ih) {  
@@ -2032,7 +2030,7 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
       });
     });
   }
-  #elifdef USE_HIPBLAS
+  #elif defined(USE_HIPBLAS)
     hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
 
      sycl_queue.submit([&](sycl::handler &cgh) {
@@ -2107,7 +2105,7 @@ static void cublasXGemmBatched(transpose_type transa,
     });
   }
 
-  #elifdef USE_HIPBLAS
+  #elif defined(USE_HIPBLAS)
 
    hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   

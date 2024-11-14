@@ -83,7 +83,7 @@ class cuBlasContextManager{
     }
 };
 
-#elifdef USE_HIPBLAS
+#elif defined(USE_HIPBLAS)
 
 
 #include "hip/hip_runtime.h" 
