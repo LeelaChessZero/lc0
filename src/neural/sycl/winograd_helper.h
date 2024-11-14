@@ -953,12 +953,6 @@ void FilterTransform(int N, int C, T* transformedFilter, const T* filter, sycl::
         filterTransform_kernel(N, C, N * C, transformedFilter, filter,
                                item_ct1);
       });
-
-  /*
-  DPCT1010:44: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename T, bool nhcw>
@@ -981,12 +975,6 @@ void InputTransform(int N, int C, T* transformed_input, const T* input,
                                          item_ct1);
         });
   }
-
-  /*
-  DPCT1010:45: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
@@ -1017,11 +1005,6 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
           });
     });
   }
-  /*
-  DPCT1010:46: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 }  // namespace cudnn_backend

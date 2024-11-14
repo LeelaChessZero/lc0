@@ -55,43 +55,19 @@ struct InputsOutputs {
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left, sycl::queue& m_ct1,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
                 bool cublasDisableTensorCores = false): q_ct1(m_ct1) {
-    
-    
   #ifdef USE_CUBLAS
     cublasHandle_t h= cuBlasContextManager::getcuBlasHandle_t();
   #endif                
-
-
-    //ReportCUDAErrors(cudaHostAlloc( &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t), 0));
-    //ReportCUDAErrors(cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
     input_masks_mem_shared_ = malloc_host<uint64_t>(maxBatchSize * kInputPlanes, q_ct1);
-
-
-    //ReportCUDAErrors(cudaHostAlloc(&input_val_mem_, maxBatchSize * kInputPlanes * sizeof(float), 0));
-    //ReportCUDAErrors(cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
-    CERR << maxBatchSize << " " << kInputPlanes;  
     input_val_mem_shared_ = malloc_host<float>(maxBatchSize * kInputPlanes, q_ct1);
-
-    
-    
-    
-    //ReportCUDAErrors(cudaHostAlloc(&op_policy_mem_, maxBatchSize * kNumOutputPolicy * sizeof(float), 0));
     // Seperate device memory copy for policy output.
     // It's faster to write to device memory and then copy to host memory
     // than having the kernel write directly to it.
-    //ReportCUDAErrors(cudaMalloc(&op_policy_mem_gpu_, maxBatchSize * kNumOutputPolicy * sizeof(float)));
     op_policy_mem_ = malloc_host<float>(maxBatchSize * kNumOutputPolicy, q_ct1);
     op_policy_mem_gpu_ = malloc_device<float>(maxBatchSize * kNumOutputPolicy, q_ct1);
-
-
-    //ReportCUDAErrors(cudaHostAlloc(&op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(float), 0));
-    //ReportCUDAErrors(cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
     op_value_mem_shared_ = malloc_host<float>(maxBatchSize * (wdl ? 3 : 1), q_ct1);
 
-
     if (moves_left) {
-      //ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_, maxBatchSize * sizeof(float), 0));
-      //ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_, op_moves_left_mem_, 0));
       op_moves_left_mem_shared_ = malloc_host<float>(maxBatchSize, q_ct1);
     }
 
@@ -99,17 +75,10 @@ struct InputsOutputs {
     if (tensor_mem_size) {
       multi_stream_ = true;
       scratch_mem_ = (void*)sycl::malloc_device( scratch_size, q_ct1);
-      
       for (auto& mem : tensor_mem_) {
-       
         mem = (void*)sycl::malloc_device(tensor_mem_size, q_ct1);
         q_ct1.memset(mem, 0, tensor_mem_size);
       }
-
-      //ReportCUBLASErrors(DPCT_CHECK_ERROR(cublas_ = &dpct::get_default_queue()));
-     
-      //ReportCUBLASErrors(0);
-      //ReportCUBLASErrors(DPCT_CHECK_ERROR(cublas_ = stream_));
     } else {
       multi_stream_ = false;
     }

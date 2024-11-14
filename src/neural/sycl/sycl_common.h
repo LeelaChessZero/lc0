@@ -76,11 +76,11 @@ static constexpr int kMaxResBlockFusingSeFp16AmpereSmem =
     sizeof(sycl::half);  // shared memory used by the special
                          // kernel
 
+#ifdef USE_CUBLAS
 void CublasError(int status, const char* file, const int& line);
-void CudaError(dpct::err0 status, const char* file, const int& line);
 
 #define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
+#endif
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 

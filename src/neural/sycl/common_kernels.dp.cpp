@@ -100,8 +100,6 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
       [=](sycl::nd_item<3> item_ct1) {
         addVectors_kernel(c, a, b, size, asize, bsize, activation, item_ct1);
       });
-  
-  ReportCUDAErrors(0);
 }
 
 template <typename T>
@@ -136,8 +134,6 @@ void addVectorsHNC_NHC(T* a, T* b, int N, int H, int C,
                        [=](sycl::nd_item<3> item_ct1) {
                          addVectorsHNC_NHC_kernel(a, b, N, H, C, item_ct1);
                        });
-
-  ReportCUDAErrors(0);
 }
 
 template <typename T, ActivationFunction act>
@@ -274,12 +270,6 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
       throw Exception(
           "unsupported activation in addBiasBatched. Add in switch-case here");
   }
-
-  /*
-  DPCT1010:49: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename T, ActivationFunction act>
@@ -420,12 +410,6 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
       throw Exception(
           "unsupported activation in addBiasBatched. Add in switch-case here");
   }
-
-  /*
-  DPCT1010:50: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename T>
@@ -467,11 +451,6 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
       [=](sycl::nd_item<3> item_ct1) {
         addBias_NCHW_kernel(c, a, b, N, C, H, W, activation, item_ct1);
       });
-  /*
-  DPCT1010:51: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename dT, typename sT>
@@ -600,12 +579,6 @@ void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
         batchNorm_kernel(output, input, skipInput, N, C, H, W, means,
                          var_multipliers, activation, item_ct1);
       });
-
-  /*
-  DPCT1010:52: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 void expandPlanes_kernel_Fp32_NCHW(float* output,
@@ -682,11 +655,6 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
                                         shVals_acc_ct1.get_pointer());
         });
   });
-  /*
-  DPCT1010:54: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 // TODO: Can optimize using shared memory if this becomes a bottleneck.
@@ -727,11 +695,6 @@ void expandPlanes_Fp16_NHWC(sycl::half* output, const uint64_t* masks,
           expandPlanes_kernel_Fp16_NHWC(output, masks, values, n, item_ct1);
         });
   }
-  /*
-  DPCT1010:55: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 void expandPlanes_kernel_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
@@ -809,11 +772,6 @@ void expandPlanes_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
           });
     });
   }
-  /*
-  DPCT1010:57: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename T>
@@ -1008,11 +966,6 @@ void globalAvgPool(int N, int C, T* output, const T* input,
                                N * C, C, item_ct1);
         });
   }
-  /*
-  DPCT1010:58: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename T>
@@ -1045,8 +998,6 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                              N * C * 8 * 8, C, activation, item_ct1);
         });
   }
-  
-  ReportCUDAErrors(0);
 }
 
 template <typename T>
@@ -1085,11 +1036,6 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
                                              (short*)indices, N, inputSize,
                                              usedSize, outputSize, item_ct1);
                        });
-  /*
-  DPCT1010:60: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template <typename T = float, bool use_se, ActivationFunction activation,
@@ -1158,12 +1104,6 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           });
     });
   }
-
-  /*
-  DPCT1010:61: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 // softmax along C dimension which is assumed to be 64
@@ -1326,12 +1266,6 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2, sycl::que
           });
     });
   }
-
-  /*
-  DPCT1010:65: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 __dpct_inline__ float shared_sum_for_layer_norm(
@@ -1550,12 +1484,6 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
           });
     });
   }
-
-  /*
-  DPCT1010:68: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 // Compute promotion logits in a single kernel
@@ -1750,8 +1678,6 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                          input_gating_kernel<T>(output, input, mult, add, HW, C,
                                                 item_ct1);
                        });
-
-  ReportCUDAErrors(0);
 }
 
 // Template instantiation.

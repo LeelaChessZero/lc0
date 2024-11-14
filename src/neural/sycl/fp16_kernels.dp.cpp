@@ -466,11 +466,6 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
     // TODO: support other sizes.
     return false;
   }
-  /*
-  DPCT1010:72: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
   return true;
 }
 
@@ -837,11 +832,6 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
           });
     });
   }
-  /*
-  DPCT1010:73: SYCL uses exceptions to report errors and does not use the error
-  codes. The call was replaced with 0. You need to rewrite this code.
-  */
-  ReportCUDAErrors(0);
 }
 
 template void FilterTransform<sycl::half>(int N, int C, sycl::half* transformedFilter,

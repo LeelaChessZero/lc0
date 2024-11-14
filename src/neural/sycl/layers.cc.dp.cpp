@@ -2596,12 +2596,8 @@ AttentionBody<DataType>::AttentionBody(const LegacyWeights& weights,
 
   {
     size_t size = 64 * kNumPosEncodingChannels * sizeof(float);
-    
     pos_encoding_ = (float *)sycl::malloc_device(size, sycl_queue_);
-    //ReportCUDAErrors(cudaMalloc(&pos_encoding_, size));
-    
     sycl_queue_.memcpy(pos_encoding_, kPosEncoding, size); 
-    //ReportCUDAErrors(cudaMemcpy(pos_encoding_, kPosEncoding, size, cudaMemcpyHostToDevice));
   }
 
   if (has_gating_) {
@@ -2737,6 +2733,7 @@ template class AttentionBody<float>;
 template class EmbeddingLayer<sycl::half>;
 template class EmbeddingLayer<float>;
 
+#ifdef USE_CUBLAS
 // Misc error handling stuff.
 const char* CublasGetErrorString(int status) {
   switch (status) {
@@ -2772,28 +2769,7 @@ void CublasError(int status, const char* file, const int& line) {
     throw Exception(message);
   }
 }
-
-void CudaError(dpct::err0 status, const char* file, const int& line) {
-  /*
-  DPCT1000:75: Error handling if-stmt was detected but could not be rewritten.
-  */
-  if (status != 0) {
-    char message[128];
-    /*
-    DPCT1009:76: SYCL uses exceptions to report errors and does not use the
-    error codes. The original code was commented out and a warning string was
-    inserted. You need to rewrite this code.
-    */
-    /*
-    DPCT1001:74: The statement could not be removed.
-    */
-    sprintf(
-        message, "CUDA error: %s (%s:%d) ",
-        "cudaGetErrorString is not supported" /*cudaGetErrorString(status)*/,
-        file, line);
-    throw Exception(message);
-  }
-}
+#endif
 
 }  // namespace cudnn_backend
 }  // namespace lczero
