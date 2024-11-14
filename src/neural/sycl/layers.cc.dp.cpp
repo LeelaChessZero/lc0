@@ -127,45 +127,32 @@ SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
       numFc1Out_(fc1Outputs),
       addPrevLayerBias_(addPrevLayerBias),
       act_(activation) {
-  ReportCUDAErrors(DPCT_CHECK_ERROR(
-      w1_ = (DataType*)sycl::malloc_device(C * numFc1Out_ * sizeof(DataType), sycl_queue_)));
-  ReportCUDAErrors(DPCT_CHECK_ERROR(
-      w2_ = (DataType*)sycl::malloc_device(
-          2 * C * numFc1Out_ * sizeof(DataType), sycl_queue_)));
+  w1_ = (DataType*)sycl::malloc_device(C * numFc1Out_ * sizeof(DataType),
+                                       sycl_queue_);
+  w2_ = (DataType*)sycl::malloc_device(2 * C * numFc1Out_ * sizeof(DataType),
+                                       sycl_queue_);
 
   if (kUseFusedSELayer && nhwc_) {
-    ReportCUDAErrors(DPCT_CHECK_ERROR(
-        w1_t_ = (DataType*)sycl::malloc_device(
-            C * numFc1Out_ * sizeof(DataType), sycl_queue_)));
-    ReportCUDAErrors(DPCT_CHECK_ERROR(
-        w2_t_ = (DataType*)sycl::malloc_device(
-            2 * C * numFc1Out_ * sizeof(DataType), sycl_queue_)));
+    w1_t_ = (DataType*)sycl::malloc_device(C * numFc1Out_ * sizeof(DataType),
+                                           sycl_queue_);
+    w2_t_ = (DataType*)sycl::malloc_device(2 * C * numFc1Out_ * sizeof(DataType),
+                                           sycl_queue_);
   }
 
-  ReportCUDAErrors(DPCT_CHECK_ERROR(
-      b1_ = (DataType*)sycl::malloc_device(numFc1Out_ * sizeof(DataType),
-                                           sycl_queue_)));
-  ReportCUDAErrors(DPCT_CHECK_ERROR(
-      b2_ = (DataType*)sycl::malloc_device(2 * C * sizeof(DataType),
-                                           sycl_queue_)));
+  b1_ = (DataType*)sycl::malloc_device(numFc1Out_ * sizeof(DataType),
+                                       sycl_queue_);
+  b2_ = (DataType*)sycl::malloc_device(2 * C * sizeof(DataType), sycl_queue_);
 
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(bPrev_ = (DataType*)sycl::malloc_device(
-                           C * sizeof(DataType), sycl_queue_)));
+  bPrev_ = (DataType*)sycl::malloc_device(C * sizeof(DataType), sycl_queue_);
 }
 
 template <typename DataType>
 SELayer<DataType>::~SELayer() {
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(w1_, sycl_queue_)));
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(w2_, sycl_queue_)));
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(b1_, sycl_queue_)));
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(b2_, sycl_queue_)));
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(bPrev_, sycl_queue_)));
+  sycl::free(w1_, sycl_queue_);
+  sycl::free(w2_, sycl_queue_);
+  sycl::free(b1_, sycl_queue_);
+  sycl::free(b2_, sycl_queue_);
+  sycl::free(bPrev_, sycl_queue_);
 }
 
 template <>
@@ -744,10 +731,8 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
 
 template <typename DataType>
 FCLayer<DataType>::~FCLayer() {
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(weights_, sycl_queue_)));
-  ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(biases_, sycl_queue_)));
+  sycl::free(weights_, sycl_queue_);
+  sycl::free(biases_, sycl_queue_);
 }
 
 template <typename DataType>
@@ -831,16 +816,10 @@ void PolicyMapLayer<DataType>::LoadWeights(const short* cpuWeight,
         else
           convertedWeights[hw * Cin + c] = -1;
       }
-    ReportCUDAErrors(
-        DPCT_CHECK_ERROR(sycl_queue_
-                             .memcpy(weights_, convertedWeights.data(),
-                                     used_size_ * sizeof(short))
-                             .wait()));
+    sycl_queue_.memcpy(weights_, convertedWeights.data(),
+                       used_size_ * sizeof(short)).wait();
   } else {
-    ReportCUDAErrors(
-        DPCT_CHECK_ERROR(sycl_queue_
-                             .memcpy(weights_, cpuWeight, weight_size)
-                             .wait()));
+    sycl_queue_.memcpy(weights_, cpuWeight, weight_size).wait();
   }
 }
 
@@ -1240,19 +1219,13 @@ void FusedWinogradConvSELayer<DataType>::Eval(
 
 template <typename DataType>
 FusedWinogradConvSELayer<DataType>::~FusedWinogradConvSELayer() {
-  ReportCUDAErrors(DPCT_CHECK_ERROR(
-      sycl::free(transformed_weights_, sycl_queue_)));
-  if (use_bias_) ReportCUDAErrors(
-      DPCT_CHECK_ERROR(sycl::free(biases_, sycl_queue_)));
+  sycl::free(transformed_weights_, sycl_queue_);
+  if (use_bias_) sycl::free(biases_, sycl_queue_);
   if (has_se_) {
-    ReportCUDAErrors(
-        DPCT_CHECK_ERROR(sycl::free(w1_, sycl_queue_)));
-    ReportCUDAErrors(
-        DPCT_CHECK_ERROR(sycl::free(w2_, sycl_queue_)));
-    ReportCUDAErrors(
-        DPCT_CHECK_ERROR(sycl::free(b1_, sycl_queue_)));
-    ReportCUDAErrors(
-        DPCT_CHECK_ERROR(sycl::free(b2_, sycl_queue_)));
+    sycl::free(w1_, sycl_queue_);
+    sycl::free(w2_, sycl_queue_);
+    sycl::free(b1_, sycl_queue_);
+    sycl::free(b2_, sycl_queue_);
   }
 }
 
