@@ -298,7 +298,7 @@ class SyclNetwork : public Network {
         residual_single_layer_weight_size * numBlocks_ * 2;
     size_t transformed_residual_weight_size = residual_weight_size * 4;
 
-    int global_mem_size = sycl_queue_->get_device().get_info<sycl::info::device::max_mem_alloc_size>();
+    size_t global_mem_size = sycl_queue_->get_device().get_info<sycl::info::device::max_mem_alloc_size>();
 
     if (transformed_residual_weight_size > 0.4 * global_mem_size) {
       CERR << "WARNING: Low GPU video memory. You may run into OOM errors. Try "
@@ -1200,16 +1200,16 @@ std::unique_ptr<Network> MakeSyclNetworkAuto(
   
   try{
     
-      CERR << "Trying to switch to [cuda-fp16]...";
+      CERR << "Trying to switch to [sycl-fp16]...";
       dpct::has_capability_or_fail(dpct::dev_mgr::instance().get_device(gpu_id), {sycl::aspect::fp16});
-      CERR << "Switched to [cuda-fp16]...";
+      CERR << "Switched to [sycl-fp16]...";
       return MakeSyclNetwork<sycl::half>(weights, options);
      }
      catch (sycl::exception const& exc) {
       CERR << "Device does not support cuda-fp16";         
       }
     
-    CERR << "Switched to [sycl-fp32]...";
+    CERR << "Switched to [sycl]...";
     return MakeSyclNetwork<float>(weights, options);
   } 
 
