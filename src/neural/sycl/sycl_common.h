@@ -52,11 +52,7 @@
 
 #include "utils/exception.h"
 
-#ifdef USE_CUDNN
-#include <cudnn.h>
-#else
 typedef void* cudnnHandle_t;
-#endif
 
 //#if CUBLAS_VER_MAJOR < 11
 //#define CUBLAS_PEDANTIC_MATH CUBLAS_DEFAULT_MATH
@@ -80,15 +76,9 @@ static constexpr int kMaxResBlockFusingSeFp16AmpereSmem =
     sizeof(sycl::half);  // shared memory used by the special
                          // kernel
 
-#ifdef USE_CUDNN
-void CudnnError(cudnnStatus_t status, const char* file, const int& line);
-#endif
 void CublasError(int status, const char* file, const int& line);
 void CudaError(dpct::err0 status, const char* file, const int& line);
 
-#ifdef USE_CUDNN
-#define ReportCUDNNErrors(status) CudnnError(status, __FILE__, __LINE__)
-#endif
 #define ReportCUBLASErrors(status) CublasError(status, __FILE__, __LINE__)
 #define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 

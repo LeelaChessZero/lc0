@@ -56,19 +56,6 @@
 #include "neural/network_legacy.h"
 #include "neural/shared/activation.h"
 
-/*
-#ifdef USE_CUDNN
-#include <cudnn.h>
-#else
-typedef void* cudnnHandle_t;
-#endif
-*/
-
-
-
-
-
-
 namespace lczero {
 namespace sycldnn_backend {
 
@@ -116,60 +103,6 @@ class BaseLayer {
                                DataType* Out, int M, int N, int K,
                                int batchSize, sycl::queue &sycl_queue);
 };
-
-/*
-#ifdef USE_CUDNN
-template <typename DataType>
-class ConvLayer : public BaseLayer<DataType> {
-  using BaseLayer<DataType>::C;
-  using BaseLayer<DataType>::H;
-  using BaseLayer<DataType>::W;
-  using BaseLayer<DataType>::GetC;
-  using BaseLayer<DataType>::GetH;
-  using BaseLayer<DataType>::GetW;
-  using BaseLayer<DataType>::nhwc_;
-
- public:
-  ConvLayer(BaseLayer<DataType>* ip, int C, int H, int W, int size, int Cin,
-            ActivationFunction activation = ACTIVATION_NONE, bool bias = false);
-
-  ConvLayer(bool nhwc, int C, int H, int W, int size, int Cin,
-            ActivationFunction activation = ACTIVATION_NONE, bool bias = false);
-
-  ~ConvLayer();
-  void LoadWeights(float* pfilter, float* pBias, void* scratch);
-  //void Eval(int N, DataType* output, const DataType* input,
-  //          const DataType* input2, void* scratch, size_t scratch_size,
-  //          cudnnHandle_t cudnn, cublasHandle_t cublas, cudaStream_t stream,
-  //          DataType*** = nullptr) override;
-
-  void Eval(int N, DataType* output, const DataType* input,
-            const DataType* input2, void* scratch, size_t scratch_size,
-            sycl::queue &sycl_queue) override;
-
-
- private:
-  const int c_input_;
-  const int filter_size_;
-  const ActivationFunction act_;
-  const bool use_bias_;
-
-  DataType* biases = nullptr;
-  DataType* weights = nullptr;
-
-  cudnnFilterDescriptor_t filter_desc_;
-  cudnnConvolutionDescriptor_t conv_desc_;
-  cudnnConvolutionFwdAlgo_t conv_algo_;
-
-  cudnnTensorDescriptor_t bias_desc_;
-  cudnnTensorDescriptor_t in_tensor_desc_;
-  cudnnTensorDescriptor_t out_tensor_desc_;
-  cudnnActivationDescriptor_t activation_;
-
-  void init();
-};
-
-#endif */
 
 template <typename DataType>
 class FCLayer : public BaseLayer<DataType> {
