@@ -21,6 +21,7 @@ for line in lines:
     line = line.replace('/OUT:', '-o ')
     line = line.replace('/SUBSYSTEM:CONSOLE', '')
     line = line.replace('/OPT:REF', '')
+    line = line.replace('/PDB:', '/Fd')
   # Replace msvc compatible dependencies with gcc ones as icx output with /showincludes includes
   # temporary header files causing full project rebuildsqu.
   if line.startswith('rule') or line.startswith('build'):
