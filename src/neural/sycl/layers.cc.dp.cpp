@@ -95,63 +95,6 @@
 
 
 namespace lczero {
-
-#if 0
-// debug code to dump allocation in GPU memory
-template <typename T>
-void dumpTensor(T* memory, int elements, const char* message, bool only_summary = false) {
-    const bool fp16 = std::is_same<half, T>::value;
-    printf("\n%s\n", message);
-    int elementSize = (int) (fp16 ? sizeof(half) : sizeof(float));
-    int bytes = elements * elementSize;
-    void *temp = malloc(bytes);
-    cudaMemcpy(temp, memory, bytes, cudaMemcpyDeviceToHost);
-    float maxval = -std::numeric_limits<float>::max();
-    float minval = std::numeric_limits<float>::max();
-    int nans = 0;
-    int nanss[10] {};
-
-    for (int i = 0; i < elements; i++)
-    {
-        float val;
-        if (fp16) 
-        {
-            half *arr = (half*)temp;
-            val = (float)arr[i];
-        }
-        else
-        {
-            float *arr = (float *)temp;
-            val = arr[i];
-        }
-        maxval = std::max(maxval, val);
-        minval = std::min(minval, val);
-
-        if (std::isnan(val)) {
-          if (nans < 10) nanss[nans] = i;
-          nans++;
-        }
-
-        if (!only_summary || i < 2 || i == elements - 1) {
-          // printf("%8.4f ", val);
-          // if ((i % 8) == 7) printf("\n");
-          printf("%i;%.6f\n", i, val);
-        }
-    }
-    free(temp);
-    if (maxval == -std::numeric_limits<float>::max())
-       maxval = std::numeric_limits<double>::quiet_NaN();
-    if (minval == std::numeric_limits<float>::max())
-       minval = std::numeric_limits<double>::quiet_NaN();
-
-    printf("Max: %.6f, Min: %.6f, NaNs: %i of %i", maxval, minval, nans, elements);
-    printf("\nNaN indices: ");
-    for (int i=0; i<nans && i<10; i++) printf("%i ", nanss[i]);
-    if (nans > 10) printf("......");
-    printf("\n");
-}
-#endif
-
 namespace sycldnn_backend {
 
 // Use Single kernel for entire SE operation.

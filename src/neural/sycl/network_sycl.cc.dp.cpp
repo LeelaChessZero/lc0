@@ -1103,54 +1103,6 @@ class SyclNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void showInfo() const try {
-    int version;
-    /*
-    DPCT1043:92: The version-related API is different in SYCL. An initial code
-    was generated, but you need to adjust it.
-    */
-    int ret = DPCT_CHECK_ERROR(
-        version = dpct::get_current_device().get_major_version());
-    switch (ret) {
-      case 3:
-        throw Exception("CUDA driver and/or runtime could not be initialized");
-      case 35:
-        throw Exception("No CUDA driver, or one older than the CUDA library");
-      case 100:
-        throw Exception("No CUDA-capable devices detected");
-    }
-    int major = version / 1000;
-    int minor = (version - major * 1000) / 10;
-    int pl = version - major * 1000 - minor * 10;
-    CERR << "CUDA Runtime version: " << major << "." << minor << "." << pl;
-    if (version != DPCT_COMPAT_RT_VERSION) {
-      major = DPCT_COMPAT_RT_VERSION / 1000;
-      minor = (DPCT_COMPAT_RT_VERSION - major * 1000) / 10;
-      pl = DPCT_COMPAT_RT_VERSION - major * 1000 - minor * 10;
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
-              "version "
-           << major << "." << minor << "." << pl;
-    }
-    /*
-    DPCT1043:91: The version-related API is different in SYCL. An initial code
-    was generated, but you need to adjust it.
-    */
-    version = dpct::get_current_device().get_major_version();
-    major = version / 1000;
-    minor = (version - major * 1000) / 10;
-    pl = version - major * 1000 - minor * 10;
-    CERR << "Latest version of CUDA supported by the driver: " << major << "."
-         << minor << "." << pl;
-    if (version < DPCT_COMPAT_RT_VERSION) {
-      CERR << "WARNING: code was compiled with unsupported CUDA version.";
-    }
-  }
-  catch (sycl::exception const& exc) {
-    std::cerr << exc.what() << "Exception caught at file:" << __FILE__
-              << ", line:" << __LINE__ << std::endl;
-    std::exit(1);
-  }
-
   void showDeviceInfo(const sycl::queue & mqueue) const {
     CERR << "GPU: " << mqueue.get_device().get_info<sycl::info::device::name>();
     CERR << "GPU memory: " << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>();
