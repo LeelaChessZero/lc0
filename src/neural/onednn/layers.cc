@@ -35,6 +35,12 @@ namespace lczero {
 
 namespace onednn_backend {
 
+#if DNNL_VERSION_MAJOR < 3
+#define APPEND_ELTWISE(A, B, C) append_eltwise(1.0f, A, B, C)
+#else
+#define APPEND_ELTWISE(A, B, C) append_eltwise(A, B, C)
+#endif
+
 BaseLayer::BaseLayer(int c, int h, int w, BaseLayer* ip)
     : input_(ip), C(c), H(h), W(w) {
   if (ip) {
@@ -55,7 +61,8 @@ ConvLayer::ConvLayer(BaseLayer* ip, int C, int H, int W, int filter, int Cin,
       use_skip_(skip) {}
 
 void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
-                            dnnl::engine& eng, dnnl::stream& stream) {
+                            const dnnl::engine& eng,
+                            const dnnl::stream& stream) {
   auto filter_md =
       dnnl::memory::desc({C, c_input_, filter_size_, filter_size_}, data_type_,
                          dnnl::memory::format_tag::oihw);
@@ -68,9 +75,9 @@ void ConvLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
   dnnl::reorder(b1, bias_mem).execute(stream, b1, bias_mem);
 }
 
-void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                     dnnl::engine& eng, dnnl::stream& stream) {
-  std::lock_guard<std::mutex> lock(lock_);
+void ConvLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                     const dnnl::memory& scratch, const dnnl::engine& eng,
+                     const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
   if (last_batch_ != N) {
     auto t_in_md = dnnl::memory::desc({N, c_input_, H, W}, data_type_,
                                       dnnl::memory::format_tag::any);
@@ -79,45 +86,62 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
         dnnl::memory::desc({C, c_input_, filter_size_, filter_size_},
                            data_type_, dnnl::memory::format_tag::any);
 
-    auto t_out_md = dnnl::memory::desc({N, C, H, W}, data_type_,
-                                       dnnl::memory::format_tag::any);
+    auto t_out_md = use_skip_
+                        ? output.get_desc()
+                        : dnnl::memory::desc({N, C, H, W}, data_type_,
+                                             dnnl::memory::format_tag::any);
 
     const int padding = filter_size_ / 2;
+    dnnl::post_ops conv_ops;
+    if (use_skip_) {
+      conv_ops.append_sum();
+    }
+    if (activation_ == ACTIVATION_RELU) {
+      conv_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+    } else if (activation_ == ACTIVATION_TANH) {
+      conv_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+    }
+    dnnl::primitive_attr conv_attr;
+    conv_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+    conv_attr.set_post_ops(conv_ops);
+#if DNNL_VERSION_MAJOR < 3
     auto conv_d = dnnl::convolution_forward::desc(
         dnnl::prop_kind::forward_inference,
         filter_size_ == 3 ? convolution_type_
                           : dnnl::algorithm::convolution_auto,
         t_in_md, t_filter_md, bias_mem.get_desc(), t_out_md, {1, 1},
         {padding, padding}, {padding, padding});
-    dnnl::post_ops conv_ops;
-    if (use_skip_) {
-      conv_ops.append_sum();
-    }
-    if (activation_ == ACTIVATION_RELU) {
-      conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
-    } else if (activation_ == ACTIVATION_TANH) {
-      conv_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
-    }
-    dnnl::primitive_attr conv_attr;
-    conv_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
-    conv_attr.set_post_ops(conv_ops);
     auto conv_pd =
         dnnl::convolution_forward::primitive_desc(conv_d, conv_attr, eng);
-    auto scratchpad_md = conv_pd.scratchpad_desc();
+#else
+    auto conv_pd = dnnl::convolution_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference,
+        filter_size_ == 3 ? convolution_type_
+                          : dnnl::algorithm::convolution_auto,
+        t_in_md, t_filter_md, bias_mem.get_desc(), t_out_md, {1, 1},
+        {padding, padding}, {padding, padding}, conv_attr);
+#endif
+    scratchpad_md = conv_pd.scratchpad_desc();
     conv_ = dnnl::convolution_forward(conv_pd);
 
     in_md = conv_pd.src_desc();
-    out_md = conv_pd.dst_desc();
+    out_md = use_skip_ ? output.get_desc() : conv_pd.dst_desc();
 
     // Apparently convolution doesn't go well with mish post op.
     if (activation_ == ACTIVATION_MISH) {
+      dnnl::primitive_attr mish_attr;
+      mish_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+#if DNNL_VERSION_MAJOR < 3
       auto mish_d = dnnl::eltwise_forward::desc(
           dnnl::prop_kind::forward_inference, dnnl::algorithm::eltwise_mish,
           out_md, 0.f, 0.f);
-      dnnl::primitive_attr mish_attr;
-      mish_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
       auto mish_pd =
           dnnl::eltwise_forward::primitive_desc(mish_d, mish_attr, eng);
+#else
+      auto mish_pd = dnnl::eltwise_forward::primitive_desc(
+          eng, dnnl::prop_kind::forward_inference,
+          dnnl::algorithm::eltwise_mish, out_md, out_md, 0.f, 0.f, mish_attr);
+#endif
       mish_ = dnnl::eltwise_forward(mish_pd);
       if (scratchpad_md.get_size() < mish_pd.scratchpad_desc().get_size()) {
         scratchpad_md = mish_pd.scratchpad_desc();
@@ -142,42 +166,29 @@ void ConvLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       scratchpad_md = in_reorder_pd.scratchpad_desc();
     }
 
-    if (use_skip_) {
-      auto skip_reorder_pd = dnnl::reorder::primitive_desc(
-          eng, output.get_desc(), eng, out_md, reorder_attr);
-      skip_reorder_ = dnnl::reorder(skip_reorder_pd);
-      if (scratchpad_md.get_size() <
-          skip_reorder_pd.scratchpad_desc().get_size()) {
-        scratchpad_md = skip_reorder_pd.scratchpad_desc();
-      }
-    }
-
-    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
-
     last_batch_ = N;
   }
 
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
+  }
+
+  dnnl::memory in;
   if (in_md != input.get_desc()) {
-    auto tmp = dnnl::memory(in_md, eng);
     in_reorder_.execute(stream, {{DNNL_ARG_SRC, input},
-                                 {DNNL_ARG_DST, tmp},
+                                 {DNNL_ARG_DST, scratch},
                                  {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-    input = tmp;
+    in = scratch;
+  } else {
+    in = input;
   }
 
-  if (!output || out_md != output.get_desc()) {
-    if (use_skip_) {
-      auto tmp = dnnl::memory(out_md, eng);
-      skip_reorder_.execute(stream, {{DNNL_ARG_SRC, output},
-                                     {DNNL_ARG_DST, tmp},
-                                     {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-      output = tmp;
-    } else {
-      output = dnnl::memory(out_md, eng);
-    }
+  if (out_md != output.get_desc()) {
+    output = dnnl::memory(out_md, eng, output.get_data_handle());
   }
 
-  conv_.execute(stream, {{DNNL_ARG_SRC, input},
+  conv_.execute(stream, {{DNNL_ARG_SRC, in},
                          {DNNL_ARG_WEIGHTS, conv_filter_mem},
                          {DNNL_ARG_BIAS, bias_mem},
                          {DNNL_ARG_DST, output},
@@ -196,8 +207,8 @@ SELayer::SELayer(BaseLayer* ip, int fc1Outputs, ActivationFunction activation)
       activation_(activation) {}
 
 void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
-                          dnnl::memory& b2, dnnl::engine& eng,
-                          dnnl::stream& stream) {
+                          dnnl::memory& b2, const dnnl::engine& eng,
+                          const dnnl::stream& stream) {
   auto filter_md = dnnl::memory::desc({numFc1Out_, C}, data_type_,
                                       dnnl::memory::format_tag::ab);
   filter_mem = dnnl::memory(filter_md, eng);
@@ -221,9 +232,9 @@ void SELayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::memory& w2,
   dnnl::reorder(b2, bias2_mem).execute(stream, b2, bias2_mem);
 }
 
-void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                   dnnl::engine& eng, dnnl::stream& stream) {
-  std::lock_guard<std::mutex> lock(lock_);
+void SELayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                   const dnnl::memory& scratch, const dnnl::engine& eng,
+                   const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
   if (last_batch_ != N) {
     // Also the broadcast input memory format for the binary primitives.
     auto t_pool_out_md = dnnl::memory::desc({N, C, 1, 1}, data_type_,
@@ -245,36 +256,49 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     auto t_fc2_out_md = dnnl::memory::desc({N, 2 * C}, data_type_,
                                            dnnl::memory::format_tag::any);
 
+    dnnl::primitive_attr pooling_attr;
+    pooling_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+#if DNNL_VERSION_MAJOR < 3
     auto pooling_d = dnnl::pooling_forward::desc(
         dnnl::prop_kind::forward_inference, dnnl::algorithm::pooling_avg,
         input.get_desc(), t_pool_out_md, {1, 1}, {H, W}, {0, 0}, {0, 0});
-    dnnl::primitive_attr pooling_attr;
-    pooling_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     auto pooling_pd =
         dnnl::pooling_forward::primitive_desc(pooling_d, pooling_attr, eng);
+#else
+    auto pooling_pd = dnnl::pooling_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference,
+        dnnl::algorithm::pooling_avg_exclude_padding, input.get_desc(),
+        t_pool_out_md, {1, 1}, {H, W}, {0, 0}, {0, 0}, {0, 0}, pooling_attr);
+#endif
     pooling_ = dnnl::pooling_forward(pooling_pd);
-    auto scratchpad_md = pooling_pd.scratchpad_desc();
+    scratchpad_md = pooling_pd.scratchpad_desc();
 
     // This is also the optimized memory format descriptor for the binary
     // primitives.
     pool_out_md = pooling_pd.dst_desc();
 
-    auto fc_d = dnnl::inner_product_forward::desc(
-        dnnl::prop_kind::forward_inference, t_fc1_in_md, t_filter_md,
-        bias_mem.get_desc(), t_fc1_out_md);
     dnnl::post_ops fc_ops;
     if (activation_ == ACTIVATION_RELU) {
-      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+      fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
     } else if (activation_ == ACTIVATION_MISH) {
-      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+      fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
     } else if (activation_ == ACTIVATION_TANH) {
-      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+      fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
     dnnl::primitive_attr fc_attr;
     fc_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     fc_attr.set_post_ops(fc_ops);
+#if DNNL_VERSION_MAJOR < 3
+    auto fc_d = dnnl::inner_product_forward::desc(
+        dnnl::prop_kind::forward_inference, t_fc1_in_md, t_filter_md,
+        bias_mem.get_desc(), t_fc1_out_md);
     auto fc_pd =
         dnnl::inner_product_forward::primitive_desc(fc_d, fc_attr, eng);
+#else
+    auto fc_pd = dnnl::inner_product_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference, t_fc1_in_md, t_filter_md,
+        bias_mem.get_desc(), t_fc1_out_md, fc_attr);
+#endif
     fc_ = dnnl::inner_product_forward(fc_pd);
     if (scratchpad_md.get_size() < fc_pd.scratchpad_desc().get_size()) {
       scratchpad_md = fc_pd.scratchpad_desc();
@@ -288,13 +312,19 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       filter_mem = tmp;
     }
 
+    dnnl::primitive_attr fc2_attr;
+    fc2_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+#if DNNL_VERSION_MAJOR < 3
     auto fc2_d = dnnl::inner_product_forward::desc(
         dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2_md,
         bias2_mem.get_desc(), t_fc2_out_md);
-    dnnl::primitive_attr fc2_attr;
-    fc2_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     auto fc2_pd =
         dnnl::inner_product_forward::primitive_desc(fc2_d, fc2_attr, eng);
+#else
+    auto fc2_pd = dnnl::inner_product_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference, fc1_out_md, t_filter2_md,
+        bias2_mem.get_desc(), t_fc2_out_md, fc2_attr);
+#endif
     fc2_ = dnnl::inner_product_forward(fc2_pd);
     if (scratchpad_md.get_size() < fc2_pd.scratchpad_desc().get_size()) {
       scratchpad_md = fc2_pd.scratchpad_desc();
@@ -308,59 +338,78 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 
     fc2_out_md = fc2_pd.dst_desc();
 
+    dnnl::primitive_attr sigmoid_attr;
+    sigmoid_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+#if DNNL_VERSION_MAJOR < 3
     auto sigmoid_d = dnnl::eltwise_forward::desc(
         dnnl::prop_kind::forward_inference, dnnl::algorithm::eltwise_logistic,
         pool_out_md, 0.f, 0.f);
-    dnnl::primitive_attr sigmoid_attr;
-    sigmoid_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     auto sigmoid_pd =
         dnnl::eltwise_forward::primitive_desc(sigmoid_d, sigmoid_attr, eng);
+#else
+    auto sigmoid_pd = dnnl::eltwise_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference,
+        dnnl::algorithm::eltwise_logistic, pool_out_md, pool_out_md, 0.f, 0.f,
+        sigmoid_attr);
+#endif
     sigmoid_ = dnnl::eltwise_forward(sigmoid_pd);
     if (scratchpad_md.get_size() < sigmoid_pd.scratchpad_desc().get_size()) {
       scratchpad_md = sigmoid_pd.scratchpad_desc();
     }
 
-    auto mul_d =
-        dnnl::binary::desc(dnnl::algorithm::binary_mul, input.get_desc(),
-                           pool_out_md, output.get_desc());
     dnnl::post_ops mul_ops;
     mul_ops.append_sum();
     if (eng.get_kind() == dnnl::engine::kind::gpu) {
       // Using binary post-ops is a gain on gpu but a huge loss on cpu.
       mul_ops.append_binary(dnnl::algorithm::binary_add, pool_out_md);
       if (activation_ == ACTIVATION_RELU) {
-        mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+        mul_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
       } else if (activation_ == ACTIVATION_MISH) {
-        mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+        mul_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
       } else if (activation_ == ACTIVATION_TANH) {
-        mul_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+        mul_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
       }
     }
     dnnl::primitive_attr mul_attr;
     mul_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     mul_attr.set_post_ops(mul_ops);
+#if DNNL_VERSION_MAJOR < 3
+    auto mul_d =
+        dnnl::binary::desc(dnnl::algorithm::binary_mul, input.get_desc(),
+                           pool_out_md, output.get_desc());
     auto mul_pd = dnnl::binary::primitive_desc(mul_d, mul_attr, eng);
+#else
+    auto mul_pd = dnnl::binary::primitive_desc(eng, dnnl::algorithm::binary_mul,
+                                               input.get_desc(), pool_out_md,
+                                               output.get_desc(), mul_attr);
+#endif
     mul_ = dnnl::binary(mul_pd);
     if (scratchpad_md.get_size() < mul_pd.scratchpad_desc().get_size()) {
       scratchpad_md = mul_pd.scratchpad_desc();
     }
 
     if (eng.get_kind() != dnnl::engine::kind::gpu) {
-      auto add_d =
-          dnnl::binary::desc(dnnl::algorithm::binary_add, output.get_desc(),
-                             pool_out_md, output.get_desc());
       dnnl::post_ops add_ops;
       if (activation_ == ACTIVATION_RELU) {
-        add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+        add_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
       } else if (activation_ == ACTIVATION_MISH) {
-        add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+        add_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
       } else if (activation_ == ACTIVATION_TANH) {
-        add_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+        add_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
       }
       dnnl::primitive_attr add_attr;
       add_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
       add_attr.set_post_ops(add_ops);
+#if DNNL_VERSION_MAJOR < 3
+      auto add_d =
+          dnnl::binary::desc(dnnl::algorithm::binary_add, output.get_desc(),
+                             pool_out_md, output.get_desc());
       auto add_pd = dnnl::binary::primitive_desc(add_d, add_attr, eng);
+#else
+      auto add_pd = dnnl::binary::primitive_desc(
+          eng, dnnl::algorithm::binary_add, output.get_desc(), pool_out_md,
+          output.get_desc(), add_attr);
+#endif
       add_ = dnnl::binary(add_pd);
       if (scratchpad_md.get_size() < add_pd.scratchpad_desc().get_size()) {
         scratchpad_md = add_pd.scratchpad_desc();
@@ -395,14 +444,24 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       scratchpad_md = add_reorder_pd.scratchpad_desc();
     }
 
-    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
+    buf1 = dnnl::memory(pool_out_md, eng);
+    if (fc1_out_md.get_size() > pool_out_md.get_size()) {
+      buf2 = dnnl::memory(fc1_out_md, eng);
+    } else {
+      buf2 = dnnl::memory(pool_out_md, eng);
+    }
 
     last_batch_ = N;
   }
 
-  auto pool_out_mem = dnnl::memory(pool_out_md, eng);
-  auto fc1_out_mem = dnnl::memory(fc1_out_md, eng);
-  auto fc2_out_mem = dnnl::memory(fc2_out_md, eng);
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
+  }
+
+  auto& pool_out_mem = buf1;
+  auto& fc1_out_mem = buf2;
+  auto& fc2_out_mem = scratch;
 
   pooling_.execute(stream, {{DNNL_ARG_SRC, input},
                             {DNNL_ARG_DST, pool_out_mem},
@@ -410,10 +469,10 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 
   dnnl::memory fc1_in_mem;
   if (fc1_in_md != pool_out_md) {
-    fc1_in_mem = dnnl::memory(fc1_in_md, eng);
     fc1_reorder_.execute(stream, {{DNNL_ARG_SRC, pool_out_mem},
-                                  {DNNL_ARG_DST, fc1_in_mem},
+                                  {DNNL_ARG_DST, scratch},
                                   {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
+    fc1_in_mem = scratch;
   } else {
     fc1_in_mem = pool_out_mem;
   }
@@ -430,8 +489,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                         {DNNL_ARG_DST, fc2_out_mem},
                         {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 
-  dnnl::memory mul_in_mem;
-  mul_in_mem = dnnl::memory(pool_out_md, eng);
+  auto& mul_in_mem = buf1;
   mul_reorder_.execute(stream, {{DNNL_ARG_SRC, fc2_out_mem},
                                 {DNNL_ARG_DST, mul_in_mem},
                                 {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
@@ -440,8 +498,7 @@ void SELayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                             {DNNL_ARG_DST, mul_in_mem},
                             {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
 
-  dnnl::memory add_in_mem;
-  add_in_mem = dnnl::memory(pool_out_md, eng);
+  auto& add_in_mem = buf2;
   add_reorder_.execute(stream, {{DNNL_ARG_SRC, fc2_out_mem},
                                 {DNNL_ARG_DST, add_in_mem},
                                 {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
@@ -470,8 +527,8 @@ FCLayer::FCLayer(BaseLayer* ip, int C, int H, int W,
                  ActivationFunction activation)
     : BaseLayer(C, H, W, ip), activation_(activation) {}
 
-void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
-                          dnnl::stream& stream) {
+void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
+                          const dnnl::engine& eng, const dnnl::stream& stream) {
   const int num_outputs = C * H * W;
 
   auto filter_md = dnnl::memory::desc(
@@ -486,9 +543,9 @@ void FCLayer::LoadWeights(dnnl::memory& w1, dnnl::memory& b1, dnnl::engine& eng,
   dnnl::reorder(b1, bias_mem).execute(stream, b1, bias_mem);
 }
 
-void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                   dnnl::engine& eng, dnnl::stream& stream) {
-  std::lock_guard<std::mutex> lock(lock_);
+void FCLayer::Eval(int N, dnnl::memory& output, const dnnl::memory& input,
+                   const dnnl::memory& scratch, const dnnl::engine& eng,
+                   const dnnl::stream& stream, dnnl::memory& scratchpad_mem) {
   if (last_batch_ != N) {
     const int num_outputs = C * H * W;
 
@@ -503,24 +560,30 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     auto t_out_md = dnnl::memory::desc({N, C, H, W}, data_type_,
                                        dnnl::memory::format_tag::any);
 
-    auto fc_d = dnnl::inner_product_forward::desc(
-        dnnl::prop_kind::forward_inference, t_in_md, t_filter_md,
-        bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}));
     dnnl::post_ops fc_ops;
     if (activation_ == ACTIVATION_RELU) {
-      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
+      fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_relu, 0.0f, 0.0f);
     } else if (activation_ == ACTIVATION_MISH) {
-      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
+      fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_mish, 0.0f, 0.0f);
     } else if (activation_ == ACTIVATION_TANH) {
-      fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
+      fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_tanh, 0.0f, 0.0f);
     }
     dnnl::primitive_attr fc_attr;
     fc_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     fc_attr.set_post_ops(fc_ops);
+#if DNNL_VERSION_MAJOR < 3
+    auto fc_d = dnnl::inner_product_forward::desc(
+        dnnl::prop_kind::forward_inference, t_in_md, t_filter_md,
+        bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}));
     auto fc_pd =
         dnnl::inner_product_forward::primitive_desc(fc_d, fc_attr, eng);
+#else
+    auto fc_pd = dnnl::inner_product_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference, t_in_md, t_filter_md,
+        bias_mem.get_desc(), t_out_md.reshape({N, num_outputs}), fc_attr);
+#endif
     fc_ = dnnl::inner_product_forward(fc_pd);
-    auto scratchpad_md = fc_pd.scratchpad_desc();
+    scratchpad_md = fc_pd.scratchpad_desc();
 
     in_md = fc_pd.src_desc();
     out_md = fc_pd.dst_desc().reshape({N, C, H, W});
@@ -539,24 +602,29 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       scratchpad_md = in_reorder_pd.scratchpad_desc();
     }
 
-    scratchpad_mem = dnnl::memory(fc_pd.scratchpad_desc(), eng);
-
     last_batch_ = N;
   }
 
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
+  }
+
+  dnnl::memory in;
   if (in_md != input.get_desc()) {
-    auto tmp = dnnl::memory(in_md, eng);
     in_reorder_.execute(stream, {{DNNL_ARG_SRC, input},
-                                 {DNNL_ARG_DST, tmp},
+                                 {DNNL_ARG_DST, scratch},
                                  {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-    input = tmp;
+    in = scratch;
+  } else {
+    in = input;
   }
 
-  if (!output || out_md != output.get_desc()) {
-    output = dnnl::memory(out_md, eng);
+  if (out_md != output.get_desc()) {
+    output = dnnl::memory(out_md, eng, output.get_data_handle());
   }
 
-  fc_.execute(stream, {{DNNL_ARG_SRC, input},
+  fc_.execute(stream, {{DNNL_ARG_SRC, in},
                        {DNNL_ARG_WEIGHTS, filter_mem},
                        {DNNL_ARG_BIAS, bias_mem},
                        {DNNL_ARG_DST, output},
@@ -566,8 +634,8 @@ void FCLayer::Eval(int N, dnnl::memory& output, dnnl::memory& input,
 void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
                                       dnnl::memory& w2, dnnl::memory& b2,
                                       dnnl::memory& w3, dnnl::memory& b3,
-                                      dnnl::memory& w4, dnnl::engine& eng,
-                                      dnnl::stream& stream) {
+                                      dnnl::memory& w4, const dnnl::engine& eng,
+                                      const dnnl::stream& stream) {
   auto fc_filter_md = dnnl::memory::desc({C, embedding_size_}, data_type_,
                                          dnnl::memory::format_tag::ab);
   fc_filter_mem = dnnl::memory(fc_filter_md, eng);
@@ -599,9 +667,12 @@ void AttentionPolicyHead::LoadWeights(dnnl::memory& w1, dnnl::memory& b1,
   dnnl::reorder(w4, pmul_mem).execute(stream, w4, pmul_mem);
 }
 
-void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
-                               dnnl::engine& eng, dnnl::stream& stream) {
-  std::lock_guard<std::mutex> lock(lock_);
+void AttentionPolicyHead::Eval(int N, dnnl::memory& output,
+                               const dnnl::memory& input,
+                               const dnnl::memory& scratch,
+                               const dnnl::engine& eng,
+                               const dnnl::stream& stream,
+                               dnnl::memory& scratchpad_mem) {
   if (last_batch_ != N) {
     in_md = dnnl::memory::desc({N, C, H, W}, data_type_,
                                dnnl::memory::format_tag::nhwc);
@@ -613,35 +684,46 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
     fc_out_mem = dnnl::memory(fc_out_md, eng);
     auto foo_md = dnnl::memory::desc({N, H, W, C}, data_type_,
                                      dnnl::memory::format_tag::nchw);
-    auto fc_d = dnnl::inner_product_forward::desc(
-        dnnl::prop_kind::forward_inference, foo_md.reshape({N * H * W, C}),
-        fc_filter_mem.get_desc(), fc_bias_mem.get_desc(), fc_out_md);
     dnnl::post_ops fc_ops;
     // SELU activation.
-    fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_elu, 1.67326324f,
-                          0.0f);
-    fc_ops.append_eltwise(1.0f, dnnl::algorithm::eltwise_linear, 1.05070098f,
-                          0.0f);
+    fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_elu, 1.67326324f, 0.0f);
+    fc_ops.APPEND_ELTWISE(dnnl::algorithm::eltwise_linear, 1.05070098f, 0.0f);
     dnnl::primitive_attr fc_attr;
     fc_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     fc_attr.set_post_ops(fc_ops);
+#if DNNL_VERSION_MAJOR < 3
+    auto fc_d = dnnl::inner_product_forward::desc(
+        dnnl::prop_kind::forward_inference, foo_md.reshape({N * H * W, C}),
+        fc_filter_mem.get_desc(), fc_bias_mem.get_desc(), fc_out_md);
     auto fc_pd =
         dnnl::inner_product_forward::primitive_desc(fc_d, fc_attr, eng);
+#else
+    auto fc_pd = dnnl::inner_product_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference, foo_md.reshape({N * H * W, C}),
+        fc_filter_mem.get_desc(), fc_bias_mem.get_desc(), fc_out_md, fc_attr);
+#endif
     fc_ = dnnl::inner_product_forward(fc_pd);
-    auto scratchpad_md = fc_pd.scratchpad_desc();
+    scratchpad_md = fc_pd.scratchpad_desc();
 
     // Q
     auto fcQK_out_md = dnnl::memory::desc({N * 64, policy_d_model_}, data_type_,
                                           dnnl::memory::format_tag::ab);
     fcQ_out_mem = dnnl::memory(fcQK_out_md, eng);
 
+    dnnl::primitive_attr common_attr;
+    common_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+#if DNNL_VERSION_MAJOR < 3
     auto fcQK_d = dnnl::inner_product_forward::desc(
         dnnl::prop_kind::forward_inference, fc_out_md,
         fcQ_filter_mem.get_desc(), fcQ_bias_mem.get_desc(), fcQK_out_md);
-    dnnl::primitive_attr common_attr;
-    common_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
     auto fcQK_pd =
         dnnl::inner_product_forward::primitive_desc(fcQK_d, common_attr, eng);
+#else
+    auto fcQK_pd = dnnl::inner_product_forward::primitive_desc(
+        eng, dnnl::prop_kind::forward_inference, fc_out_md,
+        fcQ_filter_mem.get_desc(), fcQ_bias_mem.get_desc(), fcQK_out_md,
+        common_attr);
+#endif
     fcQK_ = dnnl::inner_product_forward(fcQK_pd);
     if (scratchpad_md.get_size() < fcQK_pd.scratchpad_desc().get_size()) {
       scratchpad_md = fcQK_pd.scratchpad_desc();
@@ -656,11 +738,20 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
                                        dnnl::memory::format_tag::acb);
     auto mul_C_md =
         dnnl::memory::desc({N, 64, 64}, data_type_, {64 * 67, 64, 1});
-    auto mul_d = dnnl::matmul::desc(mul_A_md, mul_B_md, mul_C_md);
     dnnl::primitive_attr mul_attr;
     mul_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+#if DNNL_VERSION_MAJOR < 3
     mul_attr.set_output_scales(0, {1.0f / scaling});
+    auto mul_d = dnnl::matmul::desc(mul_A_md, mul_B_md, mul_C_md);
     auto mul_pd = dnnl::matmul::primitive_desc(mul_d, mul_attr, eng);
+#else
+    dnnl::post_ops mul_ops;
+    mul_ops.append_eltwise(dnnl::algorithm::eltwise_linear, 1.0f / scaling,
+                           0.0f);
+    mul_attr.set_post_ops(mul_ops);
+    auto mul_pd = dnnl::matmul::primitive_desc(eng, mul_A_md, mul_B_md,
+                                               mul_C_md, mul_attr);
+#endif
     mul_ = dnnl::matmul(mul_pd);
     if (scratchpad_md.get_size() < mul_pd.scratchpad_desc().get_size()) {
       scratchpad_md = mul_pd.scratchpad_desc();
@@ -680,12 +771,18 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       if (scratchpad_md.get_size() < reorder_pd.scratchpad_desc().get_size()) {
         scratchpad_md = reorder_pd.scratchpad_desc();
       }
-
+#if DNNL_VERSION_MAJOR < 3
       auto pmul_d = dnnl::matmul::desc(
           pmul_mem.get_desc(),
           mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 0}),
           mul_A_md.submemory_desc({N, 4, 8}, {0, 0, 0}));
       auto pmul_pd = dnnl::matmul::primitive_desc(pmul_d, common_attr, eng);
+#else
+      auto pmul_pd = dnnl::matmul::primitive_desc(
+          eng, pmul_mem.get_desc(),
+          mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 0}),
+          mul_A_md.submemory_desc({N, 4, 8}, {0, 0, 0}), common_attr);
+#endif
       pmul_ = dnnl::matmul(pmul_pd);
       if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
         scratchpad_md = pmul_pd.scratchpad_desc();
@@ -700,11 +797,18 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       }
 
     } else {
+#if DNNL_VERSION_MAJOR < 3
       auto pmul_d = dnnl::matmul::desc(
           pmul_mem.get_desc(),
           mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 56}),
           promo_md);
       auto pmul_pd = dnnl::matmul::primitive_desc(pmul_d, common_attr, eng);
+#else
+      auto pmul_pd = dnnl::matmul::primitive_desc(
+          eng, pmul_mem.get_desc(),
+          mul_B_md.submemory_desc({N, policy_d_model_, 8}, {0, 0, 56}),
+          promo_md, common_attr);
+#endif
       pmul_ = dnnl::matmul(pmul_pd);
       if (scratchpad_md.get_size() < pmul_pd.scratchpad_desc().get_size()) {
         scratchpad_md = pmul_pd.scratchpad_desc();
@@ -718,25 +822,30 @@ void AttentionPolicyHead::Eval(int N, dnnl::memory& output, dnnl::memory& input,
       scratchpad_md = in_reorder_pd.scratchpad_desc();
     }
 
-    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
-
     last_batch_ = N;
   }
 
+  if (!scratchpad_mem ||
+      scratchpad_mem.get_desc().get_size() < scratchpad_md.get_size()) {
+    scratchpad_mem = dnnl::memory(scratchpad_md, eng);
+  }
+
+  dnnl::memory in;
   // Convert to NHWC.
   if (in_md != input.get_desc()) {
-    auto tmp = dnnl::memory(in_md, eng);
     in_reorder_.execute(stream, {{DNNL_ARG_SRC, input},
-                                 {DNNL_ARG_DST, tmp},
+                                 {DNNL_ARG_DST, scratch},
                                  {DNNL_ARG_SCRATCHPAD, scratchpad_mem}});
-    input = tmp;
+    in = scratch;
+  } else {
+    in = input;
   }
 
-  if (!output || out_md != output.get_desc()) {
-    output = dnnl::memory(out_md, eng);
+  if (out_md != output.get_desc()) {
+    output = dnnl::memory(out_md, eng, output.get_data_handle());
   }
 
-  fc_.execute(stream, {{DNNL_ARG_SRC, input},
+  fc_.execute(stream, {{DNNL_ARG_SRC, in},
                        {DNNL_ARG_WEIGHTS, fc_filter_mem},
                        {DNNL_ARG_BIAS, fc_bias_mem},
                        {DNNL_ARG_DST, fc_out_mem},
