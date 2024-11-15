@@ -65,9 +65,7 @@ void Benchmark::Run() {
     auto option_dict = options.GetOptionsDict();
 
     auto network = NetworkFactory::LoadNetwork(option_dict);
-    std::cout << "Loaded Network."; 
 
-    
     const int visits = option_dict.Get<int>(kNodesId);
     const int movetime = option_dict.Get<int>(kMovetimeId);
     const std::string fen = option_dict.Get<std::string>(kFenId);
@@ -128,7 +126,7 @@ void Benchmark::Run() {
               << "\nNodes searched  : " << total_playouts
               << "\nNodes/second    : "
               << std::lround(1000.0 * total_playouts / (total_time + 1))
-              << std::endl; 
+              << std::endl;
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
   }
