@@ -102,6 +102,8 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
   const bool is_simple =
       CommandLine::BinaryName().find("simple") != std::string::npos;
+  options->AddContext("white");
+  options->AddContext("black");
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
@@ -140,11 +142,11 @@ void EngineController::ResetMoveTimer() {
 }
 
 // Updates values from Uci options.
-void EngineController::UpdateFromUciOptions() {
+void EngineController::UpdateFromUciOptions(const OptionsDict& options) {
   SharedLock lock(busy_mutex_);
 
   // Syzygy tablebases.
-  std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId);
+  std::string tb_paths = options.Get<std::string>(kSyzygyTablebaseId);
   if (!tb_paths.empty() && tb_paths != tb_paths_) {
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
     CERR << "Loading Syzygy tablebases from " << tb_paths;
@@ -160,17 +162,17 @@ void EngineController::UpdateFromUciOptions() {
 
   // Network.
   const auto network_configuration =
-      NetworkFactory::BackendConfiguration(options_);
+      NetworkFactory::BackendConfiguration(options);
   if (network_configuration_ != network_configuration) {
-    network_ = NetworkFactory::LoadNetwork(options_);
+    network_ = NetworkFactory::LoadNetwork(options);
     network_configuration_ = network_configuration;
   }
 
   // Cache size.
-  cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId));
+  cache_.SetCapacity(options.Get<int>(kNNCacheSizeId));
 
   // Check whether we can update the move timer in "Go".
-  strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
+  strict_uci_timing_ = options.Get<bool>(kStrictUciTiming);
 }
 
 void EngineController::EnsureReady() {
@@ -188,9 +190,8 @@ void EngineController::NewGame() {
   cache_.Clear();
   search_.reset();
   tree_.reset();
-  CreateFreshTimeManager();
+  CreateFreshTimeManager(options_.GetSubdict("white"));
   current_position_ = {ChessBoard::kStartposFen, {}};
-  UpdateFromUciOptions();
 }
 
 void EngineController::SetPosition(const std::string& fen,
@@ -218,23 +219,20 @@ Position EngineController::ApplyPositionMoves() {
   return pos;
 }
 
-void EngineController::SetupPosition(
+bool EngineController::SetupPosition(
     const std::string& fen, const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   search_.reset();
-
-  UpdateFromUciOptions();
 
   if (!tree_) tree_ = std::make_unique<NodeTree>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  const bool is_same_game = tree_->ResetToPosition(fen, moves);
-  if (!is_same_game) CreateFreshTimeManager();
+  return tree_->ResetToPosition(fen, moves);
 }
 
-void EngineController::CreateFreshTimeManager() {
-  time_manager_ = MakeTimeManager(options_);
+void EngineController::CreateFreshTimeManager(const OptionsDict& options) {
+  time_manager_ = MakeTimeManager(options);
 }
 
 namespace {
@@ -354,29 +352,37 @@ void EngineController::Go(const GoParams& params) {
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.
+  bool is_same_game;
   if (params.ponder && !current_position_.moves.empty()) {
     std::vector<std::string> moves(current_position_.moves);
     std::string ponder_move = moves.back();
     moves.pop_back();
-    SetupPosition(current_position_.fen, moves);
+    is_same_game = SetupPosition(current_position_.fen, moves);
     responder = std::make_unique<PonderResponseTransformer>(
         std::move(responder), ponder_move);
   } else {
-    SetupPosition(current_position_.fen, current_position_.moves);
+    is_same_game =
+        SetupPosition(current_position_.fen, current_position_.moves);
   }
 
-  if (!options_.Get<bool>(kUciChess960)) {
+  auto& options =
+      options_.GetSubdict(tree_->IsBlackToMove() ? "black" : "white");
+
+  UpdateFromUciOptions(options);
+  if (!is_same_game) CreateFreshTimeManager(options);
+
+  if (!options.Get<bool>(kUciChess960)) {
     // Remap FRC castling to legacy castling.
     responder = std::make_unique<Chess960Transformer>(
         std::move(responder), tree_->HeadPosition().GetBoard());
   }
 
-  if (!options_.Get<bool>(kShowWDL)) {
+  if (!options.Get<bool>(kShowWDL)) {
     // Strip WDL information from the response.
     responder = std::make_unique<WDLResponseFilter>(std::move(responder));
   }
 
-  if (!options_.Get<bool>(kShowMovesleft)) {
+  if (!options.Get<bool>(kShowMovesleft)) {
     // Strip movesleft information from the response.
     responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
   }
@@ -394,11 +400,11 @@ void EngineController::Go(const GoParams& params) {
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
-      options_, &cache_, syzygy_tb_.get());
+      options, &cache_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
-  search_->StartThreads(options_.Get<int>(kThreadsOptionId));
+  search_->StartThreads(options.Get<int>(kThreadsOptionId));
 }
 
 void EngineController::PonderHit() {
@@ -445,6 +451,10 @@ void EngineLoop::CmdIsReady() {
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
   options_.SetUciOption(name, value, context);
+  if (context.empty()) {
+    options_.SetUciOption(name, value, "white");
+    options_.SetUciOption(name, value, "black");
+  }
   // Set the log filename for the case it was set in UCI option.
   Logging::Get().SetFilename(
       options_.GetOptionsDict().Get<std::string>(kLogFileId));
