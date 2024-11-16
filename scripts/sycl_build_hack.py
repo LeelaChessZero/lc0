@@ -23,7 +23,7 @@ for line in lines:
     line = line.replace('/OPT:REF', '')
     line = line.replace('/PDB:', '/Fd')
   # Replace msvc compatible dependencies with gcc ones as icx output with /showincludes includes
-  # temporary header files causing full project rebuildsqu.
+  # temporary header files causing full project rebuilds.
   if line.startswith('rule') or line.startswith('build'):
     dep_flag = 'cpp_COMPILER' in line
   if dep_flag:
