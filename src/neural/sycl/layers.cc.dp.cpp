@@ -2054,6 +2054,7 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
     #endif
 }
 
+#if defined(USE_CUBLAS) || defined(USE_HIPBLAS)
 template <typename DataType>
 static void cublasXGemmBatched(transpose_type transa,
                                transpose_type transb, int m, int n,
@@ -2105,7 +2106,7 @@ static void cublasXGemmBatched(transpose_type transa,
     });
   }
 
-  #elif defined(USE_HIPBLAS)
+  #else
 
    hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   
@@ -2148,14 +2149,9 @@ static void cublasXGemmBatched(transpose_type transa,
 
     });
   }
-  #else
-    int64_t strideA = transa == transpose_type_transpose ? lda * m : lda * k;
-    int64_t strideB = transb == transpose_type_transpose ? ldb * k : ldb * n;
-    int64_t strideC = ldc * n;
-
-    oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const DataType *)A, lda, strideA, (const DataType *)B, ldb, strideB, beta, (DataType *)C, ldc, strideC, batchCount);
   #endif
 }
+#endif
 
 // input/output tensor is in_out_tensor, others are used as scratch.
 template <typename DataType>
@@ -2284,6 +2280,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   float factor = 1.0f / sqrt((float)depth);
 
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
+#if defined(USE_CUBLAS) || defined(USE_HIPBLAS)
   {
     if (*offset_pointers == nullptr) {
       std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_ * 5);
@@ -2330,6 +2327,29 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         // 64 * 64 /*strideC*/,
         N * encoder_heads_, sycl_queue_);
   }
+#else
+  for (int i = 0; i < encoder_heads_; i++) {
+    int offset = i * depth;
+    // layout of the output: encoder_heads_ * Batch * 64 * 64
+    int outOffset = i * N * 64 * 64;
+    cublasXGemmStridedBatched<DataType>(
+        transpose_type_transpose, transpose_type_notranspose,
+        64 /*M*/, 64 /*N*/,
+        depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
+                      // transform
+        factor,       // to handle "/ tf.math.sqrt(dk)"
+        mha_k + offset /*A*/,
+        d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
+                          // other "depth" slices / heads
+        64 * d_model,     /*strideA*/
+        mha_q + offset /*B*/,
+        d_model /*LDB*/,  // to skip over other other "depth" slices / heads
+        64 * d_model,     /*strideB*/
+        0.0f,
+        buffer1 + outOffset /*C*/,  // output (matmul_qk) goes to buffer1
+        64 /*LDC*/, 64 * 64 /*strideC*/, N, sycl_queue);
+  }
+#endif
 
   // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
   // attention_weights -> buffer1
@@ -2342,6 +2362,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
             (const DataType*)nullptr, sycl_queue_);
   }
 
+#if defined(USE_CUBLAS) || defined(USE_HIPBLAS)
   {
     cublasXGemmBatched<DataType>(transpose_type_notranspose,
         transpose_type_notranspose, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
@@ -2360,6 +2381,23 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         // 64 * d_model /*strideC*/,
         N * encoder_heads_, sycl_queue_);
   }
+#else
+  // output = tf.matmul(attention_weights, v)
+  for (int i = 0; i < encoder_heads_; i++) {
+    int offset = i * depth;  // for output and "v" matrix
+    // layout: encoder_heads_ * Batch*64*64
+    int weightsOffset = i * N * 64 * 64;
+    cublasXGemmStridedBatched<DataType>(
+        transpose_type_notranspose, transpose_type_notranspose,
+        depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
+        mha_v + offset /*A*/,  // "v" matrix
+        d_model /*LDA*/,       // to skip over other "depth" slices / heads
+        64 * d_model,          /*strideA*/
+        buffer1 + weightsOffset /*B*/, 64 /*LDB*/, 64 * 64, /*strideB*/
+        0.0f, buffer2 + offset /*C*/,  // output goes to buffer2
+        d_model /*LDC*/, 64 * d_model /*strideC*/, N, sycl_queue);
+  }
+#endif
 
   // #final dense layer (mha_dense), buffer2 -> buffer1
   {
