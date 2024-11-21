@@ -41,7 +41,7 @@
     You should have received a copy of the GNU General Public License
    along with this program.  If not, see <https://www.gnu.org/licenses/>. 
    
-   SPDX-License-Identifier: GNU General Public License v3.0 only
+   SPDX-License-Identifier:GNU General Public License v3.0 or later
 */
 
 #include <iostream>
