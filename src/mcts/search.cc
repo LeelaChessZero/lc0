@@ -2189,7 +2189,16 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    computation_->ComputeBlocking(); 
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end_time - start_time;
+    if (elapsed.count() > 1.0) {
+        std::cout << "Warning: Computation took " << elapsed.count()  << " seconds, which is longer than expected." << std::endl;
+    }
+  
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
