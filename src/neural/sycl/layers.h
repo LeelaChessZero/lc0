@@ -74,7 +74,6 @@ class BaseLayer {
 
   BaseLayer(int c, int h, int w, BaseLayer* ip, sycl::queue& sycl_queue);
   BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc, sycl::queue& sycl_queue);
-  BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc, bool use_gemm_ex, sycl::queue& sycl_queue);
   virtual ~BaseLayer() = default;
   size_t GetOutputSize(int N) const { return sizeof(DataType) * N * C * H * W; }
 
@@ -97,7 +96,6 @@ class BaseLayer {
   int W;
 
   bool nhwc_;  // tensor layout
-  const bool use_gemm_ex_;
 
   void cublasRowMajorMatrixMul(const DataType* A, const DataType* B,
                                DataType* Out, int M, int N, int K,
@@ -204,7 +202,7 @@ class FusedWinogradConvSELayer : public BaseLayer<DataType> {
  public:
   FusedWinogradConvSELayer(BaseLayer<DataType>* ip, int C, int H, int W,
                            int Cin, ActivationFunction activation, bool bias,
-                           bool skipAdd, bool se, int se_k, bool use_gemm_ex, 
+                           bool skipAdd, bool se, int se_k, 
                            sycl::queue &sycl_queue, bool op_nhcw = false);
 
   ~FusedWinogradConvSELayer();
@@ -246,7 +244,7 @@ class Conv1Layer : public BaseLayer<DataType> {
 
  public:
   Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W, int Cin,
-             ActivationFunction activation, bool bias, bool use_gemm_ex, sycl::queue &sycl_queue);
+             ActivationFunction activation, bool bias, sycl::queue &sycl_queue);
 
   ~Conv1Layer();
   void LoadWeights(float* pfilter, float* pBias, void* scratch);
@@ -280,7 +278,7 @@ class ResidualBlock : public BaseLayer<DataType> {
 
  public:
   ResidualBlock(BaseLayer<DataType>* ip, int C, bool se, int se_k,
-                bool use_gemm_ex, bool first, bool last,
+                bool first, bool last,
                 ActivationFunction activation, int shared_mem_size, sycl::queue &sycl_queue);
 
   ~ResidualBlock();
@@ -326,8 +324,6 @@ class EncoderBlock {
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, sycl::queue &sycl_queue,
             DataType*** offset_pointers);
-
-  
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;

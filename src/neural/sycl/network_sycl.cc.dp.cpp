@@ -328,8 +328,6 @@ class SyclNetwork : public Network {
     DPCT1005:86: The SYCL device version is different from CUDA Compute
     Compatibility. You may need to rewrite this code.
     */
-    //const bool use_gemm_ex = deviceProp.get_major_version() >= 5;
-    const bool use_gemm_ex = true;
 
     // 0. Check for SE.
     has_se_ = false;
@@ -381,7 +379,7 @@ class SyclNetwork : public Network {
       {
         auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
             nullptr, kNumFilters, 8, 8, kNumInputPlanes, act, true, false,
-            false, 0, use_gemm_ex,  *sycl_queue_, use_res_block_winograd_fuse_opt_);
+            false, 0,  *sycl_queue_, use_res_block_winograd_fuse_opt_);
 
         inputConv->LoadWeights(&weights.input.weights[0],
                                &weights.input.biases[0], scratch_mem_);
@@ -396,7 +394,7 @@ class SyclNetwork : public Network {
         /*   
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
-              getLastLayer(), kNumFilters, has_se, se_k, use_gemm_ex,
+              getLastLayer(), kNumFilters, has_se, se_k,
               block == 0, block == (numBlocks_ - 1), act,
               deviceProp.sharedMemPerBlockOptin);
           layer->LoadWeights0(&weights.residual[block].conv1.weights[0],
@@ -415,7 +413,7 @@ class SyclNetwork : public Network {
         } else { */
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
               getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, false,
-              false, 0, use_gemm_ex, *sycl_queue_);
+              false, 0, *sycl_queue_);
 
           conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
                              &weights.residual[block].conv1.biases[0],
@@ -424,7 +422,7 @@ class SyclNetwork : public Network {
 
           auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
               getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, true,
-              has_se, se_k, use_gemm_ex, *sycl_queue_);
+              has_se, se_k, *sycl_queue_);
           conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
                              &weights.residual[block].conv2.biases[0],
                              scratch_mem_);
@@ -482,7 +480,7 @@ class SyclNetwork : public Network {
       assert(!attn_body_);  // not supported with attention body
       auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
           resi_last_, kNumFilters, 8, 8, kNumFilters, act, true, false, false,
-          0, use_gemm_ex, *sycl_queue_);
+          0, *sycl_queue_);
 
       conv1->LoadWeights(&weights.policy1.weights[0],
                          &weights.policy1.biases[0], scratch_mem_);
@@ -493,7 +491,7 @@ class SyclNetwork : public Network {
       // No relu
       auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
           getLastLayer(), pol_channels, 8, 8, kNumFilters, ACTIVATION_NONE,
-          true, false, false, 0, use_gemm_ex, *sycl_queue_);
+          true, false, false, 0, *sycl_queue_);
 
       conv2->LoadWeights(&weights.policy.weights[0], &weights.policy.biases[0],
                          scratch_mem_);
@@ -509,7 +507,7 @@ class SyclNetwork : public Network {
       assert(!attn_body_);  // not supported with attention body
       auto convPol = std::make_unique<Conv1Layer<DataType>>(
           resi_last_, weights.policy.biases.size(), 8, 8, kNumFilters, act,
-          true, use_gemm_ex, *sycl_queue_);
+          true, *sycl_queue_);
       convPol->LoadWeights(&weights.policy.weights[0],
                            &weights.policy.biases[0], scratch_mem_);
       network_.emplace_back(std::move(convPol));
@@ -531,7 +529,7 @@ class SyclNetwork : public Network {
       } else {
         auto convVal = std::make_unique<Conv1Layer<DataType>>(
             resi_last_, weights.value.biases.size(), 8, 8, kNumFilters, act,
-            true, use_gemm_ex, *sycl_queue_);
+            true, *sycl_queue_);
         convVal->LoadWeights(&weights.value.weights[0],
                              &weights.value.biases[0], scratch_mem_);
         network_.emplace_back(std::move(convVal));
@@ -568,7 +566,7 @@ class SyclNetwork : public Network {
       } else {
         auto convMov = std::make_unique<Conv1Layer<DataType>>(
             resi_last_, weights.moves_left.biases.size(), 8, 8, kNumFilters,
-            act, true, use_gemm_ex, *sycl_queue_);
+            act, true, *sycl_queue_);
         convMov->LoadWeights(&weights.moves_left.weights[0],
                              &weights.moves_left.biases[0], scratch_mem_);
         network_.emplace_back(std::move(convMov));

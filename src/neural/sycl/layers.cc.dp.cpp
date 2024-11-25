@@ -101,13 +101,9 @@ namespace sycldnn_backend {
 static constexpr bool kUseFusedSELayer = true;
 
 template <typename DataType>
-BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc, sycl::queue& sycl_queue)
-    : input_(ip), C(c), H(h), W(w), nhwc_(nhwc), use_gemm_ex_(false), sycl_queue_(sycl_queue) {}
-
-template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, bool nhwc,
-                               bool gemm_ex, sycl::queue& sycl_queue)
-    : input_(ip), C(c), H(h), W(w), nhwc_(nhwc), use_gemm_ex_(gemm_ex), sycl_queue_(sycl_queue) {}
+                               sycl::queue& sycl_queue)
+    : input_(ip), C(c), H(h), W(w), nhwc_(nhwc), sycl_queue_(sycl_queue) {}
 
 template <typename DataType>
 BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, sycl::queue& sycl_queue)
@@ -116,7 +112,7 @@ BaseLayer<DataType>::BaseLayer(int c, int h, int w, BaseLayer* ip, sycl::queue& 
       H(h),
       W(w),
       nhwc_(ip ? ip->nhwc_ : false),
-      use_gemm_ex_(false), sycl_queue_(sycl_queue) {}
+      sycl_queue_(sycl_queue) {}
 
 template <typename DataType>
 SELayer<DataType>::SELayer(BaseLayer<DataType>* ip, int fc1Outputs,
@@ -156,8 +152,6 @@ SELayer<DataType>::~SELayer() {
 template <>
 void SELayer<float>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
                                  float* prevLayerBias, void* /*scratch*/) {
- 
- 
   const size_t num_weights1 = C * numFc1Out_;
   const size_t weight_size1 = sizeof(float) * num_weights1;
 
@@ -265,7 +259,6 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
 
   #ifdef USE_CUBLAS
   cublasHandle_t handle = cuBlasContextManager::getcuBlasHandle_t();
-   
 
   sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
@@ -280,13 +273,11 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
                                  numFc1Out_));
 
         cudaStreamSynchronize(cudaStreamHandle);
-        
-        
+
         });
   });
   #elif defined(USE_HIPBLAS)
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
-   
 
   sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
@@ -301,8 +292,6 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
                                  numFc1Out_);
 
         hipStreamSynchronize(hipStreamHandle);
-        
-        
         });
   });  
   #else
@@ -310,9 +299,6 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   oneapi::mkl::blas::column_major::gemm(sycl_queue, transpose_type_transpose,
         transpose_type_notranspose, numFc1Out_, N, C, alpha, w1_, C, op2,
         C, beta, op1, numFc1Out_);
-
-  
-  
 
   #endif 
 
@@ -338,7 +324,6 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
         });
   });
 
-  
   #elif defined(USE_HIPBLAS)
   sycl_queue.submit([&](sycl::handler &cgh) {
         
@@ -359,9 +344,6 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
     oneapi::mkl::blas::column_major::gemm(sycl_queue, transpose_type_transpose,
         transpose_type_notranspose, 2 * C, N, numFc1Out_, alpha, w2_,
         numFc1Out_, op1, numFc1Out_, beta, op2, 2 * C);
-
-   
-
   #endif
 
   addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE, sycl_queue);
@@ -375,8 +357,6 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
 template <>
 void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* input,
                          const sycl::half* input2, void* scratch, size_t scratch_size, sycl::queue &sycl_queue, sycl::half***) {
-
-
   //CERR << "SELayer<sycl::half>::Eval. ";
 
   bool se_done = false;
@@ -398,8 +378,6 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
     //half_raw one_h{0x3C00};
     //half_raw zero_h{0};
 
-    
-    
     #ifdef USE_CUBLAS
     __half_raw one_h{0x3C00};
     __half_raw zero_h{0};
@@ -458,7 +436,6 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
 
     addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, act_, sycl_queue);
 
-    
     #ifdef USE_CUBLAS
 
     sycl_queue_.submit([&](sycl::handler &cgh) {
@@ -504,9 +481,6 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
     
     addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE, sycl_queue);
 
-
-      
-  
     // 4. (Optional prev layer bias add), Global scale, residual add, relu and
     // bias.
     globalScale(N, C, output, input, op2, bPrev_, nhwc_, act_, sycl_queue);
@@ -561,9 +535,6 @@ void FCLayer<sycl::half>::LoadWeights(float* cpuWeight, float* cpuBias,
 template <>
 void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
                                  void* /*scratch*/) {
-
-  
-
   const size_t num_weights =
       C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
   const size_t weight_size = sizeof(float) * num_weights;
@@ -707,8 +678,6 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
       });
   });
   #else
-    
-
    //printf("3\n");
    oneapi::mkl::blas::column_major::gemm(sycl_queue, transpose_type_transpose,
         transpose_type_notranspose, num_outputs, N, num_inputs, alpha,
@@ -716,8 +685,6 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
         num_outputs);
     
     //event.wait();
-  
-
   #endif
 
 
@@ -837,18 +804,15 @@ void PolicyMapLayer<DataType>::Eval(
 }
 
 template <typename DataType> PolicyMapLayer<DataType>::~PolicyMapLayer() {
-  
-  
   free(weights_, sycl_queue_);
-  
 }
 
 template <typename DataType>
 FusedWinogradConvSELayer<DataType>::FusedWinogradConvSELayer(
     BaseLayer<DataType>* ip, int C, int H, int W, int Cin,
     ActivationFunction activation, bool bias, bool skip_add, bool se, int se_k,
-    bool use_gemm_ex, sycl::queue &sycl_queue, bool op_nhcw)
-    : BaseLayer<DataType>(C, H, W, ip, false, use_gemm_ex, sycl_queue),
+    sycl::queue &sycl_queue, bool op_nhcw)
+    : BaseLayer<DataType>(C, H, W, ip, false, sycl_queue),
       c_input_(Cin),
       act_(activation),
       use_bias_(bias),
@@ -968,10 +932,6 @@ template <>
  void BaseLayer<sycl::half>::cublasRowMajorMatrixMul(const sycl::half* A, const sycl::half* B,
                                                sycl::half* Out, int M, int N, int K,
                                                int batchSize, sycl::queue &sycl_queue) {
-   
-  
-   
-
    // Need to initialize 1.0 and 0.0 as hexadecimal for fp16 because typecasting
    // float to sycl::half type doesn't work before CUDA 10.0
    #ifdef USE_CUBLAS
@@ -1062,9 +1022,7 @@ template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   #endif
 
-  if (use_gemm_ex_) {
-
-   // printf("use_gemm_ex_\n");
+  {
     #ifdef USE_CUBLAS
     sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
@@ -1100,48 +1058,6 @@ template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const
         });
     });  
     #else
-        
-      oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transpose_type_notranspose,
-            transpose_type_notranspose, N_, M_, K_, floatOne, B, N_, N_ * K_, A, K_, K_ * M_, floatZero, Out, N_, N_ * M_, batchSize);
-
-      
-
-    #endif
-  } else {
-
-    #ifdef USE_CUBLAS
-     sycl_queue.submit([&](sycl::handler &cgh) {
-        //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
-        cgh.host_task([=](sycl::interop_handle ih) {
-            auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
-            cublasSetStream(handle, cudaStreamHandle); 
-
-          // Much slower on RTX 2060.. why? Maybe a cublas bug :-/
-          ReportCUBLASErrors(cublasSgemmStridedBatched( handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, N, N * K, A, K,
-              K * M, &floatZero, Out, N, N * M, batchSize));
-
-          
-          cudaStreamSynchronize(cudaStreamHandle);
-
-        });
-     });
-     #elif defined(USE_HIPBLAS)
-     sycl_queue.submit([&](sycl::handler &cgh) {
-        //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
-        cgh.host_task([=](sycl::interop_handle ih) {
-            auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
-            hipblasSetStream(handle, hipStreamHandle); 
-
-          // Much slower on RTX 2060.. why? Maybe a cublas bug :-/
-          hipblasSgemmStridedBatched( handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, N, N * K, A, K,
-              K * M, &floatZero, Out, N, N * M, batchSize);
-
-          
-          hipStreamSynchronize(hipStreamHandle);
-
-        });
-     });
-     #else
       oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transpose_type_notranspose,
             transpose_type_notranspose, N_, M_, K_, floatOne, B, N_, N_ * K_, A, K_, K_ * M_, floatZero, Out, N_, N_ * M_, batchSize);
     #endif
@@ -1230,8 +1146,8 @@ FusedWinogradConvSELayer<DataType>::~FusedWinogradConvSELayer() {
 template <typename DataType>
 Conv1Layer<DataType>::Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
                                  int Cin, ActivationFunction activation,
-                                 bool bias, bool use_gemm_ex, sycl::queue& sycl_queue)
-    : BaseLayer<DataType>(C, H, W, ip, false, use_gemm_ex, sycl_queue),
+                                 bool bias, sycl::queue& sycl_queue)
+    : BaseLayer<DataType>(C, H, W, ip, false, sycl_queue),
       c_input_(Cin),
       act_(activation),
       use_bias_(bias) {
@@ -1241,7 +1157,6 @@ Conv1Layer<DataType>::Conv1Layer(BaseLayer<DataType>* ip, int C, int H, int W,
   weights_ = (DataType *)sycl::malloc_device(weight_size, sycl_queue_);
 
   if (use_bias_) {
-    
     const size_t bias_size = sizeof(DataType) * C;
     //CERR << "Conv1Layer using bias " << bias_size; 
     biases_ = (DataType *)sycl::malloc_device(bias_size, sycl_queue_);
@@ -1258,8 +1173,6 @@ template <typename DataType> void Conv1Layer<DataType>::LoadWeights(float* pfilt
   copyTypeConverted((DataType*)weights_, (float*)scratch, C * c_input_ * 1 * 1, sycl_queue_);
 
   if (pBias) {
-    
-    
     sycl_queue_.memcpy(scratch, pBias, bias_size).wait();
     copyTypeConverted((DataType*)biases_, (float*)scratch, C, sycl_queue_);
   }
@@ -1357,11 +1270,8 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
    hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   #endif
 
-
   // NOTE strideB set to 0 below!
-  if (use_gemm_ex_){
-
-   
+  {
     #ifdef USE_CUBLAS
     sycl_queue.submit([&](sycl::handler &cgh) {
         
@@ -1403,54 +1313,7 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
         sycl_queue, transpose_type_notranspose,
         transpose_type_notranspose, N_, M_, K_, floatOne, B, N_, N_ * K_, A, K_,
         0, floatZero, Out, N_, N_ * M_, batchSize); 
-    #endif
-
-        
-  } else {
-    
-
-    #ifdef USE_CUBLAS
-    sycl_queue.submit([&](sycl::handler &cgh) {
-        
-        cgh.host_task([=](sycl::interop_handle ih) {
-  
-         auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
-         cublasSetStream(handle, cudaStreamHandle);
-    
-        // Much slower on RTX 2060.. why? Maybe a cublas bug :-/
-        ReportCUBLASErrors(cublasSgemmStridedBatched(
-        handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, N, N * K, A, K,
-        0, &floatZero, Out, N, N * M, batchSize));
-
-        cudaStreamSynchronize(cudaStreamHandle);
-
-        });
-    });
-    #elif defined(USE_HIPBLAS)
-    sycl_queue.submit([&](sycl::handler &cgh) {
-        
-        cgh.host_task([=](sycl::interop_handle ih) {
-  
-         auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
-         hipblasSetStream(handle, hipStreamHandle);
-    
-        // Much slower on RTX 2060.. why? Maybe a cublas bug :-/
-        hipblasSgemmStridedBatched(
-        handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, N, N * K, A, K, 0, &floatZero, Out, N, N * M, batchSize);
-
-        hipStreamSynchronize(hipStreamHandle);
-
-        });
-    });
-    #else
-      oneapi::mkl::blas::column_major::gemm_batch(
-        sycl_queue, transpose_type_notranspose,
-        transpose_type_notranspose, N_, M_, K_, floatOne, B, N_, N_ * K_, A, K_,
-        0, floatZero, Out, N_, N_ * M_, batchSize);    
-      
-     
-    #endif
-
+    #endif     
   }
 }
 
@@ -1489,9 +1352,10 @@ Conv1Layer<DataType>::~Conv1Layer() {
 
 template <typename DataType>
 ResidualBlock<DataType>::ResidualBlock(BaseLayer<DataType>* ip, int C, bool se,
-                                       int se_k, bool use_gemm_ex, bool first,
+                                       int se_k, bool first,
                                        bool last, ActivationFunction activation,
-                                       int shared_mem_size, sycl::queue& sycl_queue) : BaseLayer<DataType>(C, 8, 8, ip, ip->isNHWC(), use_gemm_ex, sycl_queue),
+                                       int shared_mem_size, sycl::queue& sycl_queue)
+    : BaseLayer<DataType>(C, 8, 8, ip, ip->isNHWC(), sycl_queue),
       has_se_(se),
       se_k_(se_k),
       c_input_(C),
