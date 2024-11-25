@@ -2301,8 +2301,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
       *offset_pointers = sycl::malloc_device<DataType*>(
                                encoder_heads_ * max_batch_size_ * 5,
                                sycl_queue_);
-      
-      
+
       sycl_queue.memcpy(*offset_pointers, offsets.data(),
                       encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)).wait();
     }
@@ -2327,6 +2326,37 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         // 64 * 64 /*strideC*/,
         N * encoder_heads_, sycl_queue_);
   }
+
+  // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
+  // attention_weights -> buffer1
+  if (has_smolgen_) {
+    // Add smolgen weights to the scaled matmul_qk attention logits before
+    // softmax.
+    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, sycl_queue_);
+  } else {
+    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
+            (const DataType*)nullptr, sycl_queue_);
+  }
+
+  {
+    cublasXGemmBatched<DataType>(transpose_type_notranspose,
+        transpose_type_notranspose, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
+        *offset_pointers + encoder_heads_ * max_batch_size_ *
+                               3,  // mha_v + offset /*A*/,  // "v" matrix
+        d_model /*LDA*/,           // to skip over other "depth" slices / heads
+        // 64 * d_model,          /*strideA*/
+        *offset_pointers + encoder_heads_ * max_batch_size_ *
+                               2,  // buffer1 + weightsOffset /*B*/,
+        64 /*LDB*/,                // 64 * 64, /*strideB*/
+        0.0f,
+        *offset_pointers +
+            encoder_heads_ * max_batch_size_ *
+                4,  // buffer2 + offset /*C*/,  // output goes to buffer2
+        d_model /*LDC*/,
+        // 64 * d_model /*strideC*/,
+        N * encoder_heads_, sycl_queue_);
+  }
+
 #else
   for (int i = 0; i < encoder_heads_; i++) {
     int offset = i * depth;
@@ -2349,39 +2379,19 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         buffer1 + outOffset /*C*/,  // output (matmul_qk) goes to buffer1
         64 /*LDC*/, 64 * 64 /*strideC*/, N, sycl_queue);
   }
-#endif
+
+  // Add smolgen weights to the scaled matmul_qk attention logits.
+  // smolgen weights need to be transposed first, kernel handles that.
+  if (has_smolgen_) {
+    addVectorsHNC_NHC<DataType>(buffer1, buffer2, N, encoder_heads_, 64 * 64,
+                                sycl_queue);
+  }
 
   // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
   // attention_weights -> buffer1
-  if (has_smolgen_) {
-    // Add smolgen weights to the scaled matmul_qk attention logits before
-    // softmax.
-    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, sycl_queue_);
-  } else {
-    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
-            (const DataType*)nullptr, sycl_queue_);
-  }
+  Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
+          (const DataType*)nullptr, sycl_queue_);
 
-#if defined(USE_CUBLAS) || defined(USE_HIPBLAS)
-  {
-    cublasXGemmBatched<DataType>(transpose_type_notranspose,
-        transpose_type_notranspose, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
-        *offset_pointers + encoder_heads_ * max_batch_size_ *
-                               3,  // mha_v + offset /*A*/,  // "v" matrix
-        d_model /*LDA*/,           // to skip over other "depth" slices / heads
-        // 64 * d_model,          /*strideA*/
-        *offset_pointers + encoder_heads_ * max_batch_size_ *
-                               2,  // buffer1 + weightsOffset /*B*/,
-        64 /*LDB*/,                // 64 * 64, /*strideB*/
-        0.0f,
-        *offset_pointers +
-            encoder_heads_ * max_batch_size_ *
-                4,  // buffer2 + offset /*C*/,  // output goes to buffer2
-        d_model /*LDC*/,
-        // 64 * d_model /*strideC*/,
-        N * encoder_heads_, sycl_queue_);
-  }
-#else
   // output = tf.matmul(attention_weights, v)
   for (int i = 0; i < encoder_heads_; i++) {
     int offset = i * depth;  // for output and "v" matrix

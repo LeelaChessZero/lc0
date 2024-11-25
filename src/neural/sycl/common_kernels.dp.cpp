@@ -194,7 +194,7 @@ void addBiasBatched(T* output, const T* input, const T* bias, int Batch, int N,
                     int C, ActivationFunction activation, sycl::queue &sycl_queue) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 4 != 0) throw Exception("unsupported filter size");
-  if (C > 4096) throw Exception("unsupported filter size");
+  if (C > 2048) throw Exception("unsupported filter size");
 
   sycl::range<3> blockDim(1, 1, 1), gridDim(1, 1, 1);
   blockDim[2] = C / 4;
@@ -1455,14 +1455,13 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
                float alpha, ActivationFunction act, sycl::queue &sycl_queue) {
   // process 4 elements per thread to achieve close to peak memory bandwidth
   if (C % 16 != 0) throw Exception("unsupported filter size");
-  if (C > 16384) throw Exception("unsupported filter size");
+  if (C > 8192) throw Exception("unsupported filter size");
 
   sycl::range<3> blockDim(1, 1, 1), gridDim(1, 1, 1);
   blockDim[2] = 32;
   blockDim[1] = DivUp(C / 16, 32);
-  unsigned int tmp = 512 / (blockDim[2] * blockDim[1]);
-  blockDim[0] = sycl::min(sycl::max(tmp, 1u), (unsigned int)N);
-  gridDim[2] = DivUp(N, blockDim[0]);
+  blockDim[0] = 1;
+  gridDim[2] = N;
   gridDim[1] = 1;
   gridDim[0] = 1;
 
@@ -1666,7 +1665,7 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   // Block y position indicates batch
   // Each thread computes a single output element
   sycl::range<3> blockSize(1, 1, 1), gridSize(1, 1, 1);
-  blockSize[2] = DivUp(1024, HW);
+  blockSize[2] = DivUp(512, HW);
   blockSize[1] = HW;
   blockSize[0] = 1;
   gridSize[2] = DivUp(C, blockSize[2]);
