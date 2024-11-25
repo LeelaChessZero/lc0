@@ -1,0 +1,44 @@
+
+<!doctype html>
+<meta charset="utf-8">
+
+<title> Lc0 Web Test </title>
+
+<style> @import "@xterm/xterm/css/xterm.css"; </style>
+
+<script type="module">
+
+import {Lc0} from "lc0"
+import {Terminal} from "@xterm/xterm"
+
+let response = await fetch("net.onnx")
+let lc0 = Lc0(response.body)
+
+let terminal = new Terminal()
+terminal.open(document.querySelector("div"))
+
+let show = async out =>
+{
+	for await (let line of out) terminal.writeln(line)
+}
+
+show(lc0)
+show(lc0.stderr)
+
+let line = ""
+terminal.onData(data =>
+{
+	if (data === "\x7F") return
+	if (data === "\r") data = "\r\n"
+	terminal.write(data)
+	if (data === "\r\n") {
+		lc0.post(line)
+		line = ""
+		return
+	}
+	line += data
+})
+
+</script>
+
+<div></div>

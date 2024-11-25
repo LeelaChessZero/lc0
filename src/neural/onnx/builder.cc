@@ -143,6 +143,7 @@ std::string OnnxBuilder::Conv(const std::string& name,
   node->add_input(AddInitializer(name + "/w/bias", bias_weights));
   AddIntsAttribute(node, "pads", {pads, pads, pads, pads});
   AddIntsAttribute(node, "kernel_shape", {shape, shape});
+  AddIntsAttribute(node, "dilations", {1, 1});
   return out;
 }
 
@@ -289,7 +290,9 @@ std::string OnnxBuilder::Identity(const std::string& name,
 std::string OnnxBuilder::Selu(const std::string& name,
                               const std::string& input) {
   auto* node = model_.mutable_graph()->add_node();
-  return PopulateStdNodeFields(node, name, input, "Selu");
+  auto out = PopulateStdNodeFields(node, name + "/elu", input, "Elu");
+  AddFloatAttribute(node, "alpha", 1.0507);
+  return Mul(name, out, FloatOnnxConst({1.67326}, {1}));
 }
 
 std::vector<std::string> OnnxBuilder::Split(const std::string& name,

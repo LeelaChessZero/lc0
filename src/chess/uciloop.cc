@@ -37,6 +37,10 @@
 #include <unordered_set>
 #include <utility>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "utils/exception.h"
 #include "utils/logging.h"
 #include "utils/string.h"
@@ -127,12 +131,37 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
                  const std::string& key) {
   return params.find(key) != params.end();
 }
+
+#ifdef __EMSCRIPTEN__
+
+extern "C" {
+
+EM_ASYNC_JS(char*, lc0web_get_line, (), {
+  return stringToNewUTF8(String(await globalThis.lc0web_get_line()))
+});
+
+}
+
+bool GetLine(std::string& line) {
+  char *cline = lc0web_get_line();
+  line = cline;
+  free(cline);
+  return true;
+}
+
+#else
+
+bool GetLine(std::string& line) {
+  return std::getline(std::cin, line);
+}
+
+#endif
 }  // namespace
 
 void UciLoop::RunLoop() {
   std::cout.setf(std::ios::unitbuf);
   std::string line;
-  while (std::getline(std::cin, line)) {
+  while (GetLine(line)) {
     LOGFILE << ">> " << line;
     try {
       auto command = ParseCommand(line);
