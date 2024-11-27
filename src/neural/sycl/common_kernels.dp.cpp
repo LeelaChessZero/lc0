@@ -1610,7 +1610,9 @@ void preprocess_for_attention_body_kernel(
     const sycl::nd_item<3> &item_ct1) {
   int n = item_ct1.get_group(2);
   int hw = item_ct1.get_group(1);
-  int c = item_ct1.get_local_id(2);
+  int c = item_ct1.get_local_id(2) +
+          item_ct1.get_local_range(2) * item_ct1.get_group(0);
+  if (c >= input_size + encoding_size) return;
 
   T op;
   if (c >= input_size) {
@@ -1640,11 +1642,14 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
   // (kInputPlanes + kNumPosEncodingChannels) threads
   // Each thread computes a single output element
   sycl::range<3> gridSize = sycl::range<3>(1, 64, N);
-  int blockSize = input_size + encoding_size;
-  
+  sycl::range<3> blockSize(1, 1, 1);
+  blockSize[2] = sycl::min(input_size + encoding_size, 512);
+  blockSize[1] = 1;
+  blockSize[0] = 1;
+  gridSize[0] = DivUp(input_size + encoding_size, blockSize[2]);
+
   sycl_queue.parallel_for(
-      sycl::nd_range<3>(gridSize * sycl::range<3>(1, 1, blockSize),
-                        sycl::range<3>(1, 1, blockSize)),
+      sycl::nd_range<3>(gridSize * blockSize, blockSize),
       [=](sycl::nd_item<3> item_ct1) {
         preprocess_for_attention_body_kernel<T>(output, input, encoding,
                                                 input_size, encoding_size,
