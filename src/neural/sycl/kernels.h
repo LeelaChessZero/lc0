@@ -163,7 +163,10 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
 
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
-                                     const float* encoding, int N, sycl::queue &sycl_queue);
+                                     const T* encoding, int N, int input_size,
+                                     int encoding_size,
+                                     bool is_pe_dense_embedding,
+                                     sycl::queue &sycl_queue);
 
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,

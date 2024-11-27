@@ -90,7 +90,8 @@ struct InputsOutputs {
     sycl::free(input_masks_mem_shared_, q_ct1);
     sycl::free(input_val_mem_shared_, q_ct1);
     sycl::free(op_value_mem_shared_, q_ct1);
-    sycl::free(op_moves_left_mem_shared_, q_ct1);
+    if (op_moves_left_mem_shared_ != nullptr)
+        sycl::free(op_moves_left_mem_shared_, q_ct1);
     sycl::free(op_policy_mem_gpu_, q_ct1);
 
     if (multi_stream_) {
@@ -112,7 +113,7 @@ struct InputsOutputs {
   uint64_t* input_masks_mem_shared_;
   float* input_val_mem_shared_;
   float* op_value_mem_shared_;
-  float* op_moves_left_mem_shared_;
+  float* op_moves_left_mem_shared_ = nullptr;
 
   // GPU pointers for the above allocations.
   //uint64_t* input_masks_mem_gpu_;
