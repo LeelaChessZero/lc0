@@ -300,7 +300,7 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
         transpose_type_notranspose, numFc1Out_, N, C, alpha, w1_, C, op2,
         C, beta, op1, numFc1Out_);
 
-  #endif 
+  #endif
 
   addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, act_, sycl_queue);
 
@@ -1313,7 +1313,7 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
         sycl_queue, transpose_type_notranspose,
         transpose_type_notranspose, N_, M_, K_, floatOne, B, N_, N_ * K_, A, K_,
         0, floatZero, Out, N_, N_ * M_, batchSize); 
-    #endif     
+    #endif
   }
 }
 
@@ -1922,7 +1922,6 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
     #endif
 }
 
-#if defined(USE_CUBLAS) || defined(USE_HIPBLAS)
 template <typename DataType>
 static void cublasXGemmBatched(transpose_type transa,
                                transpose_type transb, int m, int n,
@@ -1931,7 +1930,6 @@ static void cublasXGemmBatched(transpose_type transa,
                                int ldc, int batchCount, sycl::queue &sycl_queue) {
 
   const bool fp16 = std::is_same<sycl::half, DataType>::value;
-  
 
   #ifdef USE_CUBLAS
   cublasHandle_t handle = cuBlasContextManager::getcuBlasHandle_t();
@@ -1974,7 +1972,7 @@ static void cublasXGemmBatched(transpose_type transa,
     });
   }
 
-  #else
+  #elif defined(USE_HIPBLAS)
 
    hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   
@@ -2017,9 +2015,25 @@ static void cublasXGemmBatched(transpose_type transa,
 
     });
   }
+
+  #else
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
+
+    oneapi::mkl::blas::column_major::gemm_batch(
+        sycl_queue, &transa, &transb, &m, &n, &k,  (const sycl::half*)&alpha_h,
+        (const sycl::half **)A, &lda, (const sycl::half **)B, &ldb,
+        (const sycl::half*)&beta_h, (sycl::half **)C, &ldc, 1, &batchCount);
+  } else {
+    oneapi::mkl::blas::column_major::gemm_batch(
+        sycl_queue, &transa, &transb, &m, &n, &k,  &alpha, (const float **)A,
+        &lda, (const float **)B, &ldb, &beta, (float **)C, &ldc, 1,
+        &batchCount);
+  }
+
   #endif
 }
-#endif
 
 // input/output tensor is in_out_tensor, others are used as scratch.
 template <typename DataType>
@@ -2146,7 +2160,6 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   float factor = 1.0f / sqrt((float)depth);
 
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
-#if defined(USE_CUBLAS) || defined(USE_HIPBLAS)
   {
     if (*offset_pointers == nullptr) {
       std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_ * 5);
@@ -2222,58 +2235,6 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         // 64 * d_model /*strideC*/,
         N * encoder_heads_, sycl_queue_);
   }
-
-#else
-  for (int i = 0; i < encoder_heads_; i++) {
-    int offset = i * depth;
-    // layout of the output: encoder_heads_ * Batch * 64 * 64
-    int outOffset = i * N * 64 * 64;
-    cublasXGemmStridedBatched<DataType>(
-        transpose_type_transpose, transpose_type_notranspose,
-        64 /*M*/, 64 /*N*/,
-        depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
-                      // transform
-        factor,       // to handle "/ tf.math.sqrt(dk)"
-        mha_k + offset /*A*/,
-        d_model /*LDA*/,  // (d_model = depth * encoder_heads_) to skip over
-                          // other "depth" slices / heads
-        64 * d_model,     /*strideA*/
-        mha_q + offset /*B*/,
-        d_model /*LDB*/,  // to skip over other other "depth" slices / heads
-        64 * d_model,     /*strideB*/
-        0.0f,
-        buffer1 + outOffset /*C*/,  // output (matmul_qk) goes to buffer1
-        64 /*LDC*/, 64 * 64 /*strideC*/, N, sycl_queue);
-  }
-
-  // Add smolgen weights to the scaled matmul_qk attention logits.
-  // smolgen weights need to be transposed first, kernel handles that.
-  if (has_smolgen_) {
-    addVectorsHNC_NHC<DataType>(buffer1, buffer2, N, encoder_heads_, 64 * 64,
-                                sycl_queue);
-  }
-
-  // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
-  // attention_weights -> buffer1
-  Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
-          (const DataType*)nullptr, sycl_queue_);
-
-  // output = tf.matmul(attention_weights, v)
-  for (int i = 0; i < encoder_heads_; i++) {
-    int offset = i * depth;  // for output and "v" matrix
-    // layout: encoder_heads_ * Batch*64*64
-    int weightsOffset = i * N * 64 * 64;
-    cublasXGemmStridedBatched<DataType>(
-        transpose_type_notranspose, transpose_type_notranspose,
-        depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
-        mha_v + offset /*A*/,  // "v" matrix
-        d_model /*LDA*/,       // to skip over other "depth" slices / heads
-        64 * d_model,          /*strideA*/
-        buffer1 + weightsOffset /*B*/, 64 /*LDB*/, 64 * 64, /*strideB*/
-        0.0f, buffer2 + offset /*C*/,  // output goes to buffer2
-        d_model /*LDC*/, 64 * d_model /*strideC*/, N, sycl_queue);
-  }
-#endif
 
   // #final dense layer (mha_dense), buffer2 -> buffer1
   {
