@@ -129,6 +129,7 @@ class SearchParams {
   float GetWDLRescaleDiff() const { return kWDLRescaleParams.diff; }
   float GetWDLMaxS() const { return kWDLMaxS; }
   float GetWDLEvalObjectivity() const { return kWDLEvalObjectivity; }
+  bool GetSwapColors() const { return kSwapColors; }
   float GetMaxOutOfOrderEvalsFactor() const {
     return kMaxOutOfOrderEvalsFactor;
   }
@@ -219,6 +220,7 @@ class SearchParams {
   static const OptionId kWDLDrawRateTargetId;
   static const OptionId kWDLDrawRateReferenceId;
   static const OptionId kWDLBookExitBiasId;
+  static const OptionId kSwapColorsId;
   static const OptionId kMaxOutOfOrderEvalsFactorId;
   static const OptionId kNpsLimitId;
   static const OptionId kSolidTreeThresholdId;
@@ -279,6 +281,7 @@ class SearchParams {
   const WDLRescaleParams kWDLRescaleParams;
   const float kWDLMaxS;
   const float kWDLEvalObjectivity;
+  const bool kSwapColors;
   const float kMaxOutOfOrderEvalsFactor;
   const float kNpsLimit;
   const int kSolidTreeThreshold;
