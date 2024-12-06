@@ -1551,7 +1551,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
 }
 
 void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
-                                                    int depth) {
+                    int depth, bool revert_two_fold_visits) {
   // Check whether first repetition was before root. If yes, remove
   // terminal status of node and revert all visits in the tree.
   // Length of repetition was stored in m_. This code will only do
@@ -1571,6 +1571,8 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
     const auto terminal_visits = child_node->GetN();
     for (Node* node_to_revert = child_node; node_to_revert != nullptr;
          node_to_revert = node_to_revert->GetParent()) {
+      // Don't revert any nodes if RevertTwoFoldVisits is false.
+      if (!revert_two_fold_visits) break;
       // Revert all visits on twofold draw when making it non terminal.
       node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
                                            terminal_visits);
@@ -1580,11 +1582,19 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
       if (depth_counter > depth) break;
       // If wl != 0, we would have to switch signs at each depth.
     }
-    // Mark the prior twofold draw as non terminal to extend it again.
-    child_node->MakeNotTerminal();
-    // When reverting the visits, we also need to revert the initial
-    // visits, as we reused fewer nodes than anticipated.
-    search_->initial_visits_ -= terminal_visits;
+    if (revert_two_fold_visits) {
+      // Mark the prior twofold draw as non terminal to extend it again.
+      child_node->MakeNotTerminal(0);
+      // When reverting the visits, we also need to revert the initial
+      // visits, as we reused fewer nodes than anticipated.
+      search_->initial_visits_ -= terminal_visits;
+    } else {
+      // Mark the prior twofold draw as non terminal to extend it again,
+      // but let it keep its visits.
+      child_node->MakeNotTerminal(terminal_visits);
+      // Don't revert terminal visits if RevertTwoFoldVisits is false.
+    }
+
     // Max depth doesn't change when reverting the visits, and
     // cum_depth_ only counts the average depth of new nodes, not reused
     // ones.
@@ -1833,7 +1843,8 @@ void SearchWorker::PickNodesToExtendTask(
         // Probably best place to check for two-fold draws consistently.
         // Depth starts with 1 at root, so real depth is depth - 1.
         EnsureNodeTwoFoldCorrectForDepth(
-            child_node, current_path.size() + base_depth + 1 - 1);
+            child_node, current_path.size() + base_depth + 1 - 1,
+            params_.GetRevertTwoFoldVisits());
 
         bool decremented = false;
         if (child_node->TryStartScoreUpdate()) {

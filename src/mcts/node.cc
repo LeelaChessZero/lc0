@@ -314,9 +314,9 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
   }
 }
 
-void Node::MakeNotTerminal() {
+void Node::MakeNotTerminal(uint32_t visits) {
   terminal_type_ = Terminal::NonTerminal;
-  n_ = 0;
+  n_ = visits;
 
   // If we have edges, we've been extended (1 visit), so include children too.
   if (edges_) {

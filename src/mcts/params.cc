@@ -218,6 +218,10 @@ const OptionId SearchParams::kTwoFoldDrawsId{
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
     "these positions are reverted when the first occurrence is played "
     "and not in the search tree anymore."};
+const OptionId SearchParams::kRevertTwoFoldVisitsId{
+    "revert-two-fold-visits", "RevertTwoFoldVisits",
+    "If enabled, twofold draw visits will be reverted to keep the number of "
+    "visits in the tree consistent. Not recommended in fast time controls."};
 const OptionId SearchParams::kTemperatureId{
     "temperature", "Temperature",
     "Tau value from softmax formula for the first move. If equal to 0, the "
@@ -502,6 +506,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
+  options->Add<BoolOption>(kRevertTwoFoldVisitsId) = false;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
   options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;
@@ -624,6 +629,7 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
                                                       : kCpuctFactorId)),
       kTwoFoldDraws(options.Get<bool>(kTwoFoldDrawsId)),
+      kRevertTwoFoldVisits(options.Get<bool>(kRevertTwoFoldVisitsId)),
       kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),
       kFpuAbsolute(options.Get<std::string>(kFpuStrategyId) == "absolute"),
