@@ -791,19 +791,19 @@ static const NSInteger kMinSubBatchSize = 20;
         rpeTensor = [self transposeTensor:rpeTensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/transpose_1", label]];
         rpeTensor = [self transposeTensor:rpeTensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_2", label]];
         // Reshape rpe for the matmul.
-        rpeTensor = [self reshapeTensor:rpeTensor
-                              withShape:@[@(heads * queries), @(depth), @(keys)]
-                                   name:[NSString stringWithFormat:@"%@/reshape_1", label]];
+//        rpeTensor = [self reshapeTensor:rpeTensor
+//                              withShape:@[@(heads * queries), @(depth), @(keys)]
+//                                   name:[NSString stringWithFormat:@"%@/reshape_1", label]];
     } else if (type == 1) {
         // RPE-K
         // rpe: [D, H, Q, K] -> [H, K, D, Q]
         rpeTensor = [self transposeTensor:rpeTensor dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_1", label]];
         rpeTensor = [self transposeTensor:rpeTensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/transpose_2", label]];
         rpeTensor = [self transposeTensor:rpeTensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_3", label]];
-        // Reshape rpe for the matmul.
-        rpeTensor = [self reshapeTensor:rpeTensor
-                              withShape:@[@(heads * keys), @(depth), @(queries)]
-                                   name:[NSString stringWithFormat:@"%@/reshape_1", label]];
+//        // Reshape rpe for the matmul.
+//        rpeTensor = [self reshapeTensor:rpeTensor
+//                              withShape:@[@(heads * keys), @(depth), @(queries)]
+//                                   name:[NSString stringWithFormat:@"%@/reshape_1", label]];
     } else if (type == 2) {
         // RPE-V
         // rpe: [D, H, Q, K] -> [H, Q, K, D]
@@ -811,9 +811,9 @@ static const NSInteger kMinSubBatchSize = 20;
         rpeTensor = [self transposeTensor:rpeTensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose_2", label]];
         rpeTensor = [self transposeTensor:rpeTensor dimension:2 withDimension:3 name:[NSString stringWithFormat:@"%@/transpose_3", label]];
         // Reshape rpe for the matmul.
-        rpeTensor = [self reshapeTensor:rpeTensor
-                              withShape:@[@(heads * queries), @(keys), @(depth)]
-                                   name:[NSString stringWithFormat:@"%@/reshape_1", label]];
+//        rpeTensor = [self reshapeTensor:rpeTensor
+//                              withShape:@[@(heads * queries), @(keys), @(depth)]
+//                                   name:[NSString stringWithFormat:@"%@/reshape_1", label]];
     }
 
     // Second transpose Nabc -> abNc to allow abNc × abcd -> abNd, where N is the batch dimension.
@@ -821,16 +821,16 @@ static const NSInteger kMinSubBatchSize = 20;
     // x: [B, H, K, D] -> [H, K, B, D] # RPE-K
     // x: [B, H, Q, K] -> [H, Q, B, K] # RPE-V
     tensor = [self transposeTensor:tensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/a_transpose_1", label]];
-    tensor = [self transposeTensor:tensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/a_transpose_2", label]];
-    if (type == 2) {
-        tensor = [self reshapeTensor:tensor
-                           withShape:@[@(heads * queries), @(-1), @(keys)]
-                                name:[NSString stringWithFormat:@"%@/reshape_2", label]];
-    } else {
-        tensor = [self reshapeTensor:tensor
-                           withShape:@[@(heads * queries), @(-1), @(depth)]
-                                name:[NSString stringWithFormat:@"%@/reshape_2", label]];
-    }
+//    tensor = [self transposeTensor:tensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/a_transpose_2", label]];
+//    if (type == 2) {
+//        tensor = [self reshapeTensor:tensor
+//                           withShape:@[@(heads * queries), @(-1), @(keys)]
+//                                name:[NSString stringWithFormat:@"%@/reshape_2", label]];
+//    } else {
+//        tensor = [self reshapeTensor:tensor
+//                           withShape:@[@(heads * queries), @(-1), @(depth)]
+//                                name:[NSString stringWithFormat:@"%@/reshape_2", label]];
+//    }
     
 
     // Finally matrix multiplication and squeeze.
@@ -842,8 +842,8 @@ static const NSInteger kMinSubBatchSize = 20;
                                                     name:[NSString stringWithFormat:@"%@/rpe/matmul", label]];
 
     // Reverse the last reshape and transposition.
-    NSUInteger dim = type == 2 ? depth : keys;
-    tensor = [self reshapeTensor:tensor withShape:@[@(heads), @(queries), @(-1), @(dim)] name:[NSString stringWithFormat:@"%@/reshape_3", label]];
+//    NSUInteger dim = type == 2 ? depth : keys;
+//    tensor = [self reshapeTensor:tensor withShape:@[@(heads), @(queries), @(-1), @(dim)] name:[NSString stringWithFormat:@"%@/reshape_3", label]];
     tensor = [self transposeTensor:tensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/a_transpose_4", label]];
     tensor = [self transposeTensor:tensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/a_transpose_5", label]];
 

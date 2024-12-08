@@ -222,7 +222,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
                                              epsilon:isPeDenseEmbedding ? 1e-3 : 1e-6
                                             normtype:@"layernorm"
                                                label:[NSString stringWithFormat:@"encoder_%zu", i]];
-            break;
         }
     }
 
@@ -296,10 +295,10 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
 
     // Select the outputs to be run through the inference graph.
     if (moves_left) {
-        [graph setResultTensors:@[layer, value, mlh]];
+        [graph setResultTensors:@[policy, value, mlh]];
     }
     else {
-        [graph setResultTensors:@[layer, value]];
+        [graph setResultTensors:@[policy, value]];
     }
 }
 
