@@ -25,7 +25,7 @@ jobs:
           name: Build GCC
           command: |
             cd build-gcc
-            ninja -j 1 -v
+            ninja -j 4
   "mac":
     macos:
       xcode: 14.1.0
