@@ -706,10 +706,8 @@ template <typename T>
 void globalAvgPool(int N, int C, T* output, const T* input,
                    const T* prevLayerBias, bool nhwc) {
   const int kPlaneSize = 64;
-
-  const bool fp16 = std::is_same<half, T>::value;
   if (nhwc) {
-    assert(fp16);
+    assert((std::is_same<half, T>::value));
     // For NHWC fp16, simply launch N blocks, each with C threads.
     globalAvgPool_kernel_NHWC_fp16<<<N, C>>>((half*)output, (half*)input,
                                              (half*)prevLayerBias,
@@ -734,14 +732,12 @@ template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                  const T* prevLayerBias, bool nhwc,
                  ActivationFunction activation) {
-  const bool fp16 = std::is_same<half, T>::value;
-
   // Each thread writes one output.
   const int kBlockSize = 256;
   const int kBlocks = DivUp(N * 8 * 8 * C, kBlockSize);
 
   if (nhwc) {
-    assert(fp16);
+    assert((std::is_same<half, T>::value));
     globalScale_kernel_fp16_nhwc<<<kBlocks, kBlockSize>>>(
         (half*)output, (half*)input, (half*)scaleBias, (half*)prevLayerBias,
         N * C * 8 * 8, C, 8 * 8 * C, activation);
@@ -1007,27 +1003,36 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   }
 
   if (!oobThread) {
-    // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
-      copyAs<uint4>(&inp[0], &skip[tensorIndex]);
-      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
-      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
-    } else {
-      copyAs<uint4>(&oth[0], &skip[tensorIndex]);
-      copyAs<uint4>(&oth[4], &skip[tensorIndex + 4]);
-      copyAs<uint4>(&oth[8], &skip[tensorIndex + 8]);
-      copyAs<uint4>(&oth[12], &skip[tensorIndex + 12]);
+    if (skip != nullptr) {
+      // Load from memory (16 elements a time)
+      if (fp16) {
+        half inp[8];
+        copyAs<uint4>(&inp[0], &skip[tensorIndex]);
+        for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+        copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
+        for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+      } else {
+        copyAs<uint4>(&oth[0], &skip[tensorIndex]);
+        copyAs<uint4>(&oth[4], &skip[tensorIndex + 4]);
+        copyAs<uint4>(&oth[8], &skip[tensorIndex + 8]);
+        copyAs<uint4>(&oth[12], &skip[tensorIndex + 12]);
+      }
     }
   }
 
   // 1. Compute mean
   float s = 0;
   if (!oobThread)
-    for (int i = 0; i < 16; i++) {
-      val[i] = activate(val[i], act) + oth[i] * alpha;
-      s += val[i];
+    if (skip != nullptr) {
+      for (int i = 0; i < 16; i++) {
+        val[i] = activate(val[i], act) * alpha + oth[i];
+        s += val[i];
+      }
+    } else {
+      for (int i = 0; i < 16; i++) {
+        val[i] = activate(val[i], act) * alpha;
+        s += val[i];
+      }
     }
 
   s = shared_sum_for_layer_norm(s);
@@ -1226,21 +1231,26 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
 }
 
 template <typename T>
-__global__ void preprocess_for_attention_body_kernel(T* output, const T* input,
-                                                     const float* encoding) {
+__global__ void preprocess_for_attention_body_kernel(
+    T* output, const T* input, const T* encoding, int input_size,
+    int encoding_size, bool is_pe_dense_embedding) {
   int n = blockIdx.x;
   int hw = blockIdx.y;
   int c = threadIdx.x;
 
   T op;
-  if (c >= kInputPlanes) {
-    // concatenate from fixed pos encoding array
-    op = (T)(encoding[64 * hw + (c - kInputPlanes)]);
+  if (c >= input_size) {
+    // concatenate from position encoding array
+    if (is_pe_dense_embedding) {
+      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size + (c - input_size)]);
+    } else {
+      op = (T)(encoding[64 * hw + (c - input_size)]);
+    }
   } else {
-    op = input[n * kInputPlanes * 64 + c * 64 + hw];  // nchw
+    op = input[n * input_size * 64 + c * 64 + hw];  // nchw
   }
 
-  constexpr int outputC = kInputPlanes + kNumPosEncodingChannels;
+  int outputC = input_size + encoding_size;
 
   // convert to nhwc
   output[n * 64 * outputC + hw * outputC + c] = op;
@@ -1248,15 +1258,18 @@ __global__ void preprocess_for_attention_body_kernel(T* output, const T* input,
 
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
-                                     const float* encoding, int N,
+                                     const T* encoding, int N, int input_size,
+                                     int encoding_size,
+                                     bool is_pe_dense_embedding,
                                      cudaStream_t stream) {
   // N * 64 blocks
   // (kInputPlanes + kNumPosEncodingChannels) threads
   // Each thread computes a single output element
   dim3 gridSize = dim3(N, 64);
-  int blockSize = kInputPlanes + kNumPosEncodingChannels;
-  preprocess_for_attention_body_kernel<T>
-      <<<gridSize, blockSize, 0, stream>>>(output, input, encoding);
+  int blockSize = input_size + encoding_size;
+  preprocess_for_attention_body_kernel<T><<<gridSize, blockSize, 0, stream>>>(
+      output, input, encoding, input_size, encoding_size,
+      is_pe_dense_embedding);
 }
 
 template <typename T>
@@ -1563,16 +1576,15 @@ template void convertNCHWtoNHWC<half, half>(half* output_tensor,
                                             int Cin, int Nout, int Cout, int H,
                                             int W);
 
-template void inputPreprocessForAttentionBody<half>(half* output,
-                                                    const half* input,
-                                                    const float* encoding,
-                                                    int N, cudaStream_t stream);
+template void inputPreprocessForAttentionBody<half>(
+    half* output, const half* input, const half* encoding, int N,
+    int input_size, int encoding_size, bool is_pe_dense_embedding,
+    cudaStream_t stream);
 
-template void inputPreprocessForAttentionBody<float>(float* output,
-                                                     const float* input,
-                                                     const float* encoding,
-                                                     int N,
-                                                     cudaStream_t stream);
+template void inputPreprocessForAttentionBody<float>(
+    float* output, const float* input, const float* encoding, int N,
+    int input_size, int encoding_size, bool is_pe_dense_embedding,
+    cudaStream_t stream);
 
 template void applyInputGating<half>(half* output, const half* input,
                                      const half* mult, const half* add, int N,

@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #include "cuda_common.h"
 #include "neural/shared/activation.h"
 
@@ -147,7 +149,9 @@ void ComputePromotionLogits(int N, int C, T* output, const T* keys,
 
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
-                                     const float* encoding, int N,
+                                     const T* encoding, int N, int input_size,
+                                     int encoding_size,
+                                     bool is_pe_dense_embedding,
                                      cudaStream_t stream);
 
 template <typename T>

@@ -29,11 +29,12 @@ jobs:
   "mac":
     macos:
       xcode: 14.1.0
+    resource_class: macos.m1.medium.gen1
     steps:
       - checkout
       - run:
           name: "Pull Submodules"
-          command: git submodule update --init --no-single-branch
+          command: git submodule update --init
       - run:
           name: Install build tools
           command: |
@@ -45,13 +46,13 @@ jobs:
       - run:
           name: Build lc0
           command: |
-            meson build --buildtype=release -Dgtest=false -Dopencl=false
+            meson build --buildtype=release -Dgtest=false -Dopencl=false  --cross-file cross-files/x86_64-darwin
             cd build
             ninja
       - run:
           name: Build lc0 arm
           command: |
-            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false --cross-file cross-files/aarch64-darwin
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false
             cd build-arm
             ninja
       - run:
@@ -59,7 +60,7 @@ jobs:
           command: lipo -create -o /tmp/lc0 build/lc0 build-arm/lc0
       - store_artifacts:
           path: /tmp/lc0
-          destination: lc0-macos_12.5.1
+          destination: lc0-macos_12.6.1
 workflows:
   version: 2
   builds:

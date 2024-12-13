@@ -7,18 +7,18 @@ environment:
   matrix:
   - NAME: gpu-nvidia-cudnn
   - NAME: gpu-nvidia-cuda
-  - NAME: gpu-dx12
-  - NAME: gpu-opencl
+#  - NAME: gpu-dx12
+#  - NAME: gpu-opencl
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
-  - NAME: onednn
+#  - NAME: onednn
   - NAME: onnx-dml
   - NAME: android
 for:
 -
   matrix:
     only:
-    - NAME: gpu-opencl
+#    - NAME: gpu-opencl
     - NAME: cpu-dnnl
   skip_non_tags: true
 clone_folder: c:\projects\lc0
@@ -86,10 +86,10 @@ install:
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r19c-windows-x86_64.zip -oC:\ndk
 - cmd: IF %NAME%==android set PATH=C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64\bin;%PATH%
 - cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/aarch64-linux-android >crossfile-aarch64
-- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-aarch64.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.27/openblas-android-aarch64.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 7z x openblas-android-aarch64.zip -oC:\cache\OpenBLAS
 - cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/armv7a-linux-android >crossfile-armv7a
-- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-armv7a.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.27/openblas-android-armv7a.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a 7z x openblas-android-armv7a.zip -oC:\cache\OpenBLAS
 - cmd: set PKG_FOLDER="C:\cache"
 - cmd: IF NOT EXIST c:\cache mkdir c:\cache
@@ -109,8 +109,8 @@ cache:
   - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: IF %BLAS%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
-- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
+- cmd: IF %BLAS%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
+- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: SET BUILD_BLAS=%BLAS%
 - cmd: IF %OPENCL%==true SET BUILD_BLAS=true
 - cmd: IF %DX%==true SET BUILD_BLAS=true

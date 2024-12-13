@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #include "neural/network.h"
 
 namespace lczero {
@@ -92,6 +94,8 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
     ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(op_value_mem_));
+    if (op_moves_left_mem_ != nullptr)
+      ReportCUDAErrors(cudaFreeHost(op_moves_left_mem_));
 
     if (multi_stream_) {
       for (auto mem : tensor_mem_) {
@@ -110,7 +114,7 @@ struct InputsOutputs {
   float* input_val_mem_;
   float* op_policy_mem_;
   float* op_value_mem_;
-  float* op_moves_left_mem_;
+  float* op_moves_left_mem_ = nullptr;
 
   // GPU pointers for the above allocations.
   uint64_t* input_masks_mem_gpu_;

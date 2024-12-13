@@ -43,7 +43,7 @@
 static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
 
 @interface Lc0NetworkGraph : MPSGraph {
-  @public
+@public
     // Keep the device and command queue objects around for ease of use.
     MPSGraphDevice * _device;
     id<MTLCommandQueue> _queue;
@@ -67,7 +67,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 +(Lc0NetworkGraph * _Nonnull) getGraphAt:(NSNumber * _Nonnull)index;
 
 +(void) graphWithDevice:(id<MTLDevice> __nonnull)device
-                index:(NSNumber * _Nonnull)index;
+                  index:(NSNumber * _Nonnull)index;
 
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
 
@@ -107,13 +107,15 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                   activation:(NSString * __nullable)activation
                                                        label:(NSString * __nonnull)label;
 
--(nonnull MPSGraphTensor *) addEncoderLayerWithParent:parent
-                                        legacyWeights:(lczero::LegacyWeights::EncoderLayer &)weights
+-(nonnull MPSGraphTensor *) addEncoderLayerWithParent:(MPSGraphTensor * __nonnull)parent
+                                        legacyWeights:(lczero::MultiHeadWeights::EncoderLayer &)weights
                                                 heads:(NSUInteger)heads
                                         embeddingSize:(NSUInteger)embeddingSize
                                     smolgenActivation:(NSString * __nullable)smolgenActivation
                                         ffnActivation:(NSString * __nonnull)ffnActivation
                                                 alpha:(float)alpha
+                                              epsilon:(float)epsilon
+                                             normtype:(NSString * __nonnull)normtype
                                                 label:(NSString * __nonnull)label;
 
 -(nonnull MPSGraphTensor *) addLayerNormalizationWithParent:(MPSGraphTensor * __nonnull)parent
@@ -124,12 +126,18 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                     epsilon:(float)epsilon
                                                       label:(NSString * __nonnull)label;
 
+-(nonnull MPSGraphTensor *) addRmsNormalizationWithParent:(MPSGraphTensor * __nonnull)parent
+                                    scaledSecondaryTensor:(MPSGraphTensor * __nullable)secondary
+                                                   gammas:(float * __nonnull)gammas
+                                                    alpha:(float)alpha
+                                                    label:(NSString * __nonnull)label;
+
 -(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
                                               withKeys:(MPSGraphTensor * __nonnull)keys
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
-                                               smolgen:(lczero::LegacyWeights::Smolgen * __nullable)smolgen
+                                               smolgen:(lczero::MultiHeadWeights::Smolgen * __nullable)smolgen
                                      smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label;
 
@@ -157,10 +165,33 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                   type:(NSString * __nullable)type
                                                  label:(NSString * __nonnull)label;
 
+-(nonnull MPSGraphTensor *) dynamicPositionEncodingWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                                        width:(const NSUInteger)width
+                                                      weights:(float * __nonnull)weights
+                                                       biases:(float * __nonnull)biases
+                                                        label:(NSString * __nonnull)label;
+
 -(nonnull MPSGraphTensor *) addGatingLayerWithParent:(MPSGraphTensor * __nonnull)parent
                                              weights:(const float * __nonnull)weights
                                        withOperation:(NSString * __nonnull)op
                                                label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) makePolicyHeadWithTensor:(MPSGraphTensor * __nonnull)policy
+                                     attentionPolicy:(BOOL)attentionPolicy
+                                   convolutionPolicy:(BOOL)convolutionPolicy
+                                       attentionBody:(BOOL)attentionBody
+                                   defaultActivation:(NSString * __nullable)defaultActivation
+                                   smolgenActivation:(NSString * __nullable)smolgenActivation
+                                       ffnActivation:(NSString * __nullable)ffnActivation
+                                          policyHead:(lczero::MultiHeadWeights::PolicyHead &)head
+                                               label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) makeValueHeadWithTensor:(MPSGraphTensor * __nonnull)value
+                                      attentionBody:(BOOL)attentionBody
+                                            wdlHead:(BOOL)wdl
+                                  defaultActivation:(NSString * __nullable)defaultActivation
+                                          valueHead:(lczero::MultiHeadWeights::ValueHead &)head
+                                              label:(NSString * __nonnull)label;
 
 -(void) setGlobalSmolgenWeights:(float * __nonnull)weights;
 

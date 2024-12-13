@@ -32,8 +32,7 @@
 #include <shared_mutex>
 #include <thread>
 
-#if !defined(__arm__) && !defined(__aarch64__) && !defined(_M_ARM) && \
-    !defined(_M_ARM64)
+#if defined(__x86_64__)
 #include <emmintrin.h>
 #endif
 
@@ -126,8 +125,7 @@ class CAPABILITY("mutex") SharedMutex {
 };
 
 static inline void SpinloopPause() {
-#if !defined(__arm__) && !defined(__aarch64__) && !defined(_M_ARM) && \
-    !defined(_M_ARM64)
+#if defined(__x86_64__)
   _mm_pause();
 #endif
 }
