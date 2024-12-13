@@ -5,6 +5,8 @@ jobs:
       - image: nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
     steps:
       - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
       - run:
           name: Install build tools
           command: |
