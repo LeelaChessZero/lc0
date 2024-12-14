@@ -1098,22 +1098,21 @@ std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
 
 std::unique_ptr<Network> MakeSyclNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-    int gpu_id = options.GetOrDefault<int>("gpu", 0);
-  
-  try{
-    
-      CERR << "Trying to switch to [sycl-fp16]...";
-      dpct::has_capability_or_fail(dpct::dev_mgr::instance().get_device(gpu_id), {sycl::aspect::fp16});
-      CERR << "Switched to [sycl-fp16]...";
-      return MakeSyclNetwork<sycl::half>(weights, options);
-     }
-     catch (sycl::exception const& exc) {
-      CERR << "Device does not support sycl-fp16";
-      }
-    
-    CERR << "Switched to [sycl]...";
-    return MakeSyclNetwork<float>(weights, options);
-  } 
+  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+
+  try {
+    CERR << "Trying to switch to [sycl-fp16]...";
+    dpct::has_capability_or_fail(dpct::dev_mgr::instance().get_device(gpu_id),
+                                 {sycl::aspect::fp16});
+    CERR << "Switched to [sycl-fp16]...";
+    return MakeSyclNetwork<sycl::half>(weights, options);
+  } catch (std::exception& e) {
+    CERR << "Device does not support sycl-fp16";
+  }
+
+  CERR << "Switched to [sycl]...";
+  return MakeSyclNetwork<float>(weights, options);
+}
 
 REGISTER_NETWORK("sycl-auto", MakeSyclNetworkAuto, 132)
 REGISTER_NETWORK("sycl", MakeSyclNetwork<float>, 131)
