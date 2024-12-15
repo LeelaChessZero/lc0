@@ -336,7 +336,9 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
     if (q >= max_q) {
       max_q = q;
       best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
-      wdl = {500*(1+q-d),1000*d,500*(1-q-d)};
+      wdl = {static_cast<int>(std::round(500 * (1 + q - d))),
+             static_cast<int>(std::round(1000 * d)),
+             static_cast<int>(std::round(500 * (1 - q - d)))};
     }
     history.Pop();
   }
@@ -346,7 +348,7 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
   thinking.seldepth = 1;
   thinking.score = 90 * tan(1.5637541897 * max_q);
   thinking.wdl = wdl;
-  thinking.nodes = tree->GetCurrentHead()->Edges().size();
+  thinking.nodes = tree->GetCurrentHead()->GetNumEdges();
   infos.push_back(thinking);
   responder->OutputThinkingInfo(&infos);
   BestMoveInfo info(best);
