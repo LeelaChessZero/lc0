@@ -998,6 +998,7 @@ class SyclNetwork : public Network {
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
   void showDeviceInfo(const sycl::queue & mqueue) const {
+    CERR << "PLATFORM: " << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>();
     CERR << "GPU: " << mqueue.get_device().get_info<sycl::info::device::name>();
     CERR << "GPU memory: " << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>();
     CERR << "GPU clock frequency: " << mqueue.get_device().get_info<sycl::info::device::max_clock_frequency>(); 
