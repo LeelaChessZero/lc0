@@ -46,6 +46,14 @@
 namespace lczero {
 using namespace cudnn_backend;
 
+#if 0
+namespace cudnn_backend {
+template <typename T>
+void dumpTensor(const T* memory, int elements, const char* message,
+                bool only_summary = false, bool cpu_tensor = false);
+}
+#endif
+
 template <typename DataType>
 class CudaNetwork;
 
@@ -311,6 +319,11 @@ class CudaNetwork : public Network {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
     }
 
+    bool use_fused_mha = false;
+    if (deviceProp.major >= 8 && fp16) {
+      use_fused_mha = options.GetOrDefault<bool>("fused_mha", true);
+    }
+
     const bool use_gemm_ex = deviceProp.major >= 5;
 
     // 0. Check for SE.
@@ -362,7 +375,7 @@ class CudaNetwork : public Network {
         sizeof(DataType);
 
     const size_t attentionBodySize =
-        getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
+        getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType) * 2;
     scratch_size_ = std::max(scratch_size_,
                              std::max(attentionPolicySize, attentionBodySize));
 
@@ -372,6 +385,17 @@ class CudaNetwork : public Network {
                           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH;
 
     ActivationFunction act = mish_net ? ACTIVATION_MISH : ACTIVATION_RELU;
+
+    // @todo can we auto-detect by checking for scaling factors?
+    // @todo or otherwise assert that weights file isn't quantized.
+    use_int8_ = options.GetOrDefault<bool>("int8", false);
+
+    if (use_int8_) {
+      if (!fp16)
+        throw Exception("INT8 is supported only with cuda-fp16 backend.");
+      if (!attn_body_)
+        throw Exception("INT8 only supported for attention body networks");
+    }
 
     // 2. Build the network, and copy the weights to GPU memory.
 
@@ -458,7 +482,8 @@ class CudaNetwork : public Network {
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
-              InputEmbedding::INPUT_EMBEDDING_PE_DENSE);
+              InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
+          use_fused_mha, use_int8_);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -760,7 +785,6 @@ class CudaNetwork : public Network {
                             scratch_mem, scratch_size_, nullptr, cublas,
                             stream);  // policy map layer  // POLICY output
       }
-
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, nullptr, cublas,
@@ -941,7 +965,8 @@ class CudaNetwork : public Network {
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
                                           // tower
   bool multi_stream_;                     // run multiple parallel network evals
-  bool allow_cache_opt_;  // try to fit residual block activations in L2 cache
+  bool allow_cache_opt_;                  // try to fit residual block activations in L2 cache
+  bool use_int8_;                         // try to use INT8 (works only with cuda-fp16 backend)
 
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
