@@ -291,6 +291,7 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
   }
 
   std::vector<float> comp_q;
+  std::vector<float> comp_d;
   int batch_size = options.Get<int>(SearchParams::kMiniBatchSizeId);
   if (batch_size == 0) batch_size = network->GetMiniBatchSize();
 
@@ -302,37 +303,50 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
     }
     comp->ComputeBlocking();
 
-    for (int j = 0; j < batch_size; j++) comp_q.push_back(comp->GetQVal(j));
+    for (int j = 0; j < batch_size; j++) {
+      comp_q.push_back(comp->GetQVal(j));
+      comp_d.push_back(comp->GetDVal(j));
+    }
   }
 
   Move best;
   int comp_idx = 0;
   float max_q = std::numeric_limits<float>::lowest();
+  ThinkingInfo::WDL wdl;
   for (auto edge : tree->GetCurrentHead()->Edges()) {
     history.Append(edge.GetMove());
     auto result = history.ComputeGameResult();
     float q = -1;
+    float d = 0;
     if (result == GameResult::UNDECIDED) {
       // NN eval is for side to move perspective - so if its good, its bad for
       // us.
       q = -comp_q[comp_idx];
+      d = comp_d[comp_idx];
       comp_idx++;
     } else if (result == GameResult::DRAW) {
       q = 0;
+      d = 1;
     } else {
       // A legal move to a non-drawn terminal without tablebases must be a
       // win.
       q = 1;
+      d = 0;
     }
     if (q >= max_q) {
       max_q = q;
       best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
+      wdl = {500*(1+q-d),1000*d,500*(1-q-d)};
     }
     history.Pop();
   }
   std::vector<ThinkingInfo> infos;
   ThinkingInfo thinking;
   thinking.depth = 1;
+  thinking.seldepth = 1;
+  thinking.score = 90 * tan(1.5637541897 * max_q);
+  thinking.wdl = wdl;
+  thinking.nodes = tree->GetCurrentHead()->Edges().size();
   infos.push_back(thinking);
   responder->OutputThinkingInfo(&infos);
   BestMoveInfo info(best);
