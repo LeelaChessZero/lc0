@@ -49,7 +49,7 @@ jobs:
       - run:
           name: Install build tools
           command: |
-            pip3 install meson==0.63
+            pip3 install meson==1.3.0
             pip3 install ninja
             curl -LJOs https://github.com/ispc/ispc/releases/download/v1.21.0/ispc-v1.21.0-macOS.universal.tar.gz
             tar xf ispc-v1.21.0-macOS.universal.tar.gz
