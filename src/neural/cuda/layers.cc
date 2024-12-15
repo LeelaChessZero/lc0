@@ -76,9 +76,9 @@ void dumpTensor(T* memory, int elements, const char* message, bool only_summary 
         }
 
         if (!only_summary || i < 2 || i == elements - 1) {
-          // printf("%8.4f ", val);
-          // if ((i % 8) == 7) printf("\n");
-          printf("%i;%.6f\n", i, val);
+           printf("%8.4f ", val);
+           if ((i % 8) == 7) printf("\n");
+          //printf("%i;%.6f\n", i, val);
         }
     }
     free(temp);
@@ -1475,8 +1475,9 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
         nullptr, 0,  // smolgen weights not implemented in
                      // policy encoder heads yet.
         max_batch_size, ACTIVATION_SWISH, act_,
-        1e-6);  // attentionbody nets don't have policy encoders, so using old
-                // epsilon for backward compatibility with T78.
+        1e-6,  // attentionbody nets don't have policy encoders, so using old
+               // epsilon for backward compatibility with T78.
+        false);
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1486,7 +1487,7 @@ EncoderBlock<DataType>::EncoderBlock(
     const MultiHeadWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
-    ActivationFunction ffn_act, float default_eps)
+    ActivationFunction ffn_act, float default_eps, bool fused_mha)
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
@@ -1494,7 +1495,8 @@ EncoderBlock<DataType>::EncoderBlock(
       has_smolgen_(cpu_weights.mha.has_smolgen),
       smolgen_activation_(smolgen_act),
       ffn_activation_(ffn_act),
-      max_batch_size_(max_batch_size) {
+      max_batch_size_(max_batch_size),
+      use_fused_mha_(fused_mha) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1761,6 +1763,18 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // shape(k)[-1] = depth
   float factor = 1.0f / sqrt((float)depth);
 
+#ifdef USE_CUTLASS
+  if (use_fused_mha_) {
+    // TODO: check if we need skip in a different tensor than same tensor as
+    // output!
+    bool success =
+        fusedMHA(buffer2, mha_q, mha_k, mha_v, has_smolgen_ ? buffer2 : nullptr,
+                 N, encoder_heads_, depth, stream);
+
+    ReportCUDAErrors(cudaGetLastError());
+    if (!success) throw Exception("Some error running fused MHA");
+  } else
+#endif
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
     if (*offset_pointers == nullptr) {
@@ -1786,6 +1800,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                      encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*),
                      cudaMemcpyHostToDevice));
     }
+
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 /*M*/, 64 /*N*/,
         depth /*K*/,  // A/B, and M/N are swapped for row-major to col-major
@@ -1806,20 +1821,18 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         64 /*LDC*/,
         // 64 * 64 /*strideC*/,
         N * encoder_heads_);
-  }
 
-  // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
-  // attention_weights -> buffer1
-  if (has_smolgen_) {
-    // Add smolgen weights to the scaled matmul_qk attention logits before
-    // softmax.
-    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, stream);
-  } else {
-    Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
-            (const DataType*)nullptr, stream);
-  }
+    // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
+    // attention_weights -> buffer1
+    if (has_smolgen_) {
+      // Add smolgen weights to the scaled matmul_qk attention logits before
+      // softmax.
+      Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, stream);
+    } else {
+      Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
+              (const DataType*)nullptr, stream);
+    }
 
-  {
     cublasXGemmBatched<DataType>(
         cublas, CUBLAS_OP_N, CUBLAS_OP_N, depth /*M*/, 64 /*N*/, 64 /*K*/, 1.0f,
         *offset_pointers + encoder_heads_ * max_batch_size_ *
@@ -2046,7 +2059,8 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                                        void* scratch, Activations activations,
                                        int num_res_blocks, int input_c,
                                        int max_batch_size,
-                                       bool is_pe_dense_embedding)
+                                       bool is_pe_dense_embedding,
+                                       bool fused_mha)
     : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr),
       embedding_op_size_(weights.ip_emb_b.size()),
       encoder_head_count_(weights.encoder_head_count),
@@ -2056,7 +2070,8 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
       has_gating_(weights.ip_mult_gate.size() > 0 &&
                   weights.ip_add_gate.size() > 0),
       has_smolgen_(weights.has_smolgen),
-      is_pe_dense_embedding_(is_pe_dense_embedding) {
+      is_pe_dense_embedding_(is_pe_dense_embedding),
+      use_fused_mha_(fused_mha) {
   allocAndUpload<DataType>(&ip_emb_w_, weights.ip_emb_w, scratch);
   allocAndUpload<DataType>(&ip_emb_b_, weights.ip_emb_b, scratch);
 
@@ -2111,7 +2126,7 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        is_pe_dense_embedding_ ? 1e-3 : 1e-6);
+        is_pe_dense_embedding_ ? 1e-3 : 1e-6, use_fused_mha_);
     encoder_weights_.emplace_back(pW);
   }
 }
