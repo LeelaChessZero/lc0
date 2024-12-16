@@ -7,17 +7,18 @@ environment:
   matrix:
   - NAME: gpu-nvidia-cudnn
   - NAME: gpu-nvidia-cuda
-  - NAME: gpu-dx12
-  - NAME: gpu-opencl
+#  - NAME: gpu-dx12
+#  - NAME: gpu-opencl
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
-  - NAME: onednn
+#  - NAME: onednn
+  - NAME: onnx-dml
   - NAME: android
 for:
 -
   matrix:
     only:
-    - NAME: gpu-opencl
+#    - NAME: gpu-opencl
     - NAME: cpu-dnnl
   skip_non_tags: true
 clone_folder: c:\projects\lc0
@@ -28,6 +29,7 @@ install:
 - cmd: set OPENCL=false
 - cmd: set BLAS=false
 - cmd: set ONEDNN=false
+- cmd: set ONNX_DML=false
 - cmd: set GTEST=false
 - cmd: set ANDROID=false
 - cmd: IF %NAME%==android set ANDROID=true
@@ -40,17 +42,21 @@ install:
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set GTEST=true
 - cmd: IF %NAME%==onednn set ONEDNN=true
-- cmd: set NET=744204
-- cmd: set NET_HASH=0f2f738e314bf618384045d4320a55333375d273d093adb805a4268ee53b519c
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET=753723
-- cmd: IF NOT %BLAS%==true IF NOT %ANDROID%==true set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
+- cmd: IF %NAME%==onnx-dml set ONNX_DML=true
+- cmd: set NET=753723
+- cmd: set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
+- cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET=791556
+- cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET_HASH=f404e156ceb2882470fd8c032b8754af0fa0b71168328912eaef14671a256e34
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: set DNNL_NAME=dnnl_win_1.5.0_cpu_vcomp
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.5/dnnl_win_1.5.0_cpu_vcomp.zip
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_1.5.0_cpu_vcomp.zip -oC:\cache
-- cmd: IF %NAME%==onednn set DNNL_NAME=dnnl_win_2.6.0_cpu_vcomp_gpu_vcomp
-- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/borg323/oneDNN/releases/download/v2.6/dnnl_win_2.6.0_cpu_vcomp_gpu_vcomp.zip
-- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_2.6.0_cpu_vcomp_gpu_vcomp.zip -oC:\cache
+- cmd: IF %NAME%==onednn set DNNL_NAME=dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp
+- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/borg323/oneDNN/releases/download/v2.7.2/dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip
+- cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip -oC:\cache
+- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-dml-1.13.1 appveyor DownloadFile https://github.com/borg323/onnxruntime/releases/download/v1.13.1/onnxruntime-win-x64-dml-1.13.1.zip
+- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-dml-1.13.1 7z x onnxruntime-win-x64-dml-1.13.1.zip -oC:\cache
+- cmd: IF %NAME%==onnx-dml set ONNX_NAME=onnxruntime-win-x64-dml-1.13.1
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
@@ -80,10 +86,10 @@ install:
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r19c-windows-x86_64.zip -oC:\ndk
 - cmd: IF %NAME%==android set PATH=C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64\bin;%PATH%
 - cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/aarch64-linux-android >crossfile-aarch64
-- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-aarch64.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.27/openblas-android-aarch64.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 7z x openblas-android-aarch64.zip -oC:\cache\OpenBLAS
 - cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/armv7a-linux-android >crossfile-armv7a
-- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.8-2/openblas-android-armv7a.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.27/openblas-android-armv7a.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-armv7a 7z x openblas-android-armv7a.zip -oC:\cache\OpenBLAS
 - cmd: set PKG_FOLDER="C:\cache"
 - cmd: IF NOT EXIST c:\cache mkdir c:\cache
@@ -103,16 +109,22 @@ cache:
   - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
 - cmd: git submodule update --init --recursive
-- cmd: IF %BLAS%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
-- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MINIBATCH_SIZE 7 & echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
+- cmd: IF %BLAS%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
+- cmd: IF %ANDROID%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: SET BUILD_BLAS=%BLAS%
 - cmd: IF %OPENCL%==true SET BUILD_BLAS=true
 - cmd: IF %DX%==true SET BUILD_BLAS=true
 - cmd: SET EMBED=false
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==true SET EMBED=true
+- cmd: SET POPCNT=true
+- cmd: IF %NAME%==cpu-openblas SET POPCNT=false
+- cmd: SET F16C=true
+- cmd: IF %NAME%==cpu-openblas SET F16C=false
+- cmd: IF %CUDA%==true SET F16C=false
 - cmd: SET EXTRA=
 - cmd: IF %ANDROID%==false SET EXTRA=-Db_vscrt=md
-- cmd: IF %ANDROID%==false meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dpopcnt=false -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
+- cmd: IF %ONNX_DML%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\lib -Donnx_include=C:\cache\%ONNX_NAME%\include
+- cmd: IF %ANDROID%==false meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
 - cmd: IF %ANDROID%==true meson arm64-v8a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-aarch64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-aarch64\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-aarch64
 - cmd: IF %ANDROID%==true meson armeabi-v7a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-armv7a\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-armv7a\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-armv7a -Dispc=false -Dneon=false
 build_script:

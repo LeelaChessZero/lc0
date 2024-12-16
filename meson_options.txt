@@ -63,6 +63,11 @@ option('ispc_native_only',
        value: true,
        description: 'use ispc and enable native arch only')
 
+option('native_cuda',
+       type: 'boolean',
+       value: true,
+       description: 'build cuda code for native arch only (if supported)')
+
 option('cudnn',
        type: 'boolean',
        value: true,
@@ -113,6 +118,11 @@ option('accelerate',
        value: true,
        description: 'Enable Accelerate BLAS support')
 
+option('metal',
+       type: 'feature',
+       value: 'auto',
+       description: 'Enable Metal backend')
+
 option('malloc',
        type : 'string',
        value: '',
@@ -127,6 +137,11 @@ option('popcnt',
        type: 'boolean',
        value: true,
        description: 'Use the popcnt instruction')
+
+option('f16c',
+       type: 'boolean',
+       value: true,
+       description: 'Use natice fp16 conversion instructions')
 
 option('pext',
        type: 'boolean',
@@ -172,3 +187,18 @@ option('onnx_include',
        type: 'string',
        value: '',
        description: 'Paths to ONNX runtime includes')
+
+option('xla',
+       type: 'boolean',
+       value: false,
+       description: 'Enable XLA backend')
+
+option('lc0',
+       type: 'boolean',
+       value: true,
+       description: 'Build Lc0')
+
+option('rescorer',
+       type: 'boolean',
+       value: false,
+       description: 'Build rescorer')

@@ -1047,6 +1047,11 @@ class SyzygyTablebaseImpl {
     }
     *mapping = statbuf.st_size;
     base_address = mmap(nullptr, statbuf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+#if defined(MADV_RANDOM)
+    // For context: <https://github.com/official-stockfish/Stockfish/pull/1829>
+    // and <https://github.com/official-stockfish/Stockfish/pull/3094>.
+    madvise(base_address, statbuf.st_size, MADV_RANDOM);
+#endif
     ::close(fd);
     if (base_address == MAP_FAILED) {
       throw Exception("Could not mmap() " + fname);
@@ -1621,7 +1626,7 @@ int SyzygyTablebase::probe_dtz(const Position& pos, ProbeState* result) {
 //
 // A return value false indicates that not all probes were successful.
 bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
-                                 std::vector<Move>* safe_moves) {
+                                 bool win_only, std::vector<Move>* safe_moves) {
   ProbeState result;
   auto root_moves = pos.GetBoard().GenerateLegalMoves();
   // Obtain 50-move counter for the root position
@@ -1631,7 +1636,7 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
   int dtz;
   std::vector<int> ranks;
   ranks.reserve(root_moves.size());
-  int best_rank = -1000;
+  int best_rank = (win_only ? 1 : -1000);
   // Probe and rank each move
   for (auto& m : root_moves) {
     Position next_pos = Position(pos, m);
