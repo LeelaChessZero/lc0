@@ -2,7 +2,7 @@ version: '{build}'
 configuration: Release
 platform: x64
 image:
-- Visual Studio 2017
+- Visual Studio 2019
 environment:
   matrix:
   - NAME: gpu-nvidia-cudnn
@@ -47,7 +47,7 @@ install:
 - cmd: set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
 - cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET=791556
 - cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET_HASH=f404e156ceb2882470fd8c032b8754af0fa0b71168328912eaef14671a256e34
-- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: set DNNL_NAME=dnnl_win_1.5.0_cpu_vcomp
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.5/dnnl_win_1.5.0_cpu_vcomp.zip
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_1.5.0_cpu_vcomp.zip -oC:\cache
@@ -65,26 +65,26 @@ install:
 - cmd: IF %ISPC%==true IF NOT EXIST C:\cache\ispc-v1.13.0-windows appveyor DownloadFile https://github.com/ispc/ispc/releases/download/v1.13.0/ispc-v1.13.0-windows.zip
 - cmd: IF %ISPC%==true IF NOT EXIST C:\cache\ispc-v1.13.0-windows 7z x ispc-v1.13.0-windows.zip -oC:\cache\ispc-v1.13.0-windows
 - cmd: IF %ISPC%==true set PATH=C:\cache\ispc-v1.13.0-windows\bin;%PATH%
-- cmd: set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0"
+- cmd: set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.1"
 - cmd: IF %CUDNN%==true IF NOT EXIST "%CUDA_PATH%\cuda" set CUDNN_INSTALL=1
-- cmd: IF DEFINED CUDNN_INSTALL appveyor DownloadFile https://developer.nvidia.com/compute/cuda/10.0/Prod/network_installers/cuda_10.0.130_win10_network
-- cmd: IF DEFINED CUDNN_INSTALL cuda_10.0.130_win10_network -s nvcc_10.0 cublas_dev_10.0 cublas_10.0 cudart_10.0
-- cmd: IF DEFINED CUDNN_INSTALL appveyor DownloadFile http://developer.download.nvidia.com/compute/redist/cudnn/v7.4.2/cudnn-10.0-windows10-x64-v7.4.2.24.zip
-- cmd: IF DEFINED CUDNN_INSTALL 7z x cudnn-10.0-windows10-x64-v7.4.2.24.zip -o"%CUDA_PATH%"
+- cmd: IF DEFINED CUDNN_INSTALL appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/10.1/Prod/network_installers/cuda_10.1.243_win10_network.exe
+- cmd: IF DEFINED CUDNN_INSTALL cuda_10.1.243_win10_network -s nvcc_10.1 cublas_dev_10.1 cublas_10.1 cudart_10.1
+- cmd: IF DEFINED CUDNN_INSTALL appveyor DownloadFile https://developer.download.nvidia.com/compute/redist/cudnn/v7.5.1/cudnn-10.1-windows10-x64-v7.5.1.10.zip
+- cmd: IF DEFINED CUDNN_INSTALL 7z x cudnn-10.1-windows10-x64-v7.5.1.10.zip -o"%CUDA_PATH%"
 - cmd: IF %CUDNN%==false set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1"
 - cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" set CUDA_INSTALL=1
 - cmd: IF DEFINED CUDA_INSTALL appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/11.1.0/network_installers/cuda_11.1.0_win10_network.exe
 - cmd: IF DEFINED CUDA_INSTALL cuda_11.1.0_win10_network.exe -s nvcc_11.1 cublas_dev_11.1 cublas_11.1 cudart_11.1 documentation_11.1
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
-- cmd: set PATH=C:\Python36;C:\Python36\scripts;%PATH%
-- cmd: pip3 install --upgrade meson==0.55.3
-- cmd: set MIMALLOC_PATH=C:\cache\mimalloc-1.7.1
-- cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" appveyor DownloadFile https://github.com/microsoft/mimalloc/archive/refs/tags/v1.7.1.zip
-- cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" 7z x v1.7.1.zip -oC:\cache\
-- cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%"\out msbuild "%MIMALLOC_PATH%"\ide\vs2017\mimalloc-override.vcxproj /p:Configuration=Release /m
-- cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 appveyor DownloadFile https://dl.google.com/android/repository/android-ndk-r19c-windows-x86_64.zip
-- cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r19c-windows-x86_64.zip -oC:\ndk
-- cmd: IF %NAME%==android set PATH=C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64\bin;%PATH%
+- cmd: set PATH=C:\Python310;C:\Python310\scripts;%PATH%
+#- cmd: pip3 install --upgrade meson==0.55.3
+- cmd: set MIMALLOC_PATH=C:\cache\mimalloc-1.8.7
+- cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" appveyor DownloadFile https://github.com/microsoft/mimalloc/archive/refs/tags/v1.8.7.zip
+- cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" 7z x v1.8.7.zip -oC:\cache\
+- cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%"\out msbuild "%MIMALLOC_PATH%"\ide\vs2019\mimalloc-override.vcxproj /p:Configuration=Release /m
+- cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64 appveyor DownloadFile https://dl.google.com/android/repository/android-ndk-r27c-windows.zip
+- cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r27c-windows.zip -oC:\ndk
+- cmd: IF %NAME%==android set PATH=C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64\bin;%PATH%
 - cmd: IF %NAME%==android sed "s/clang+*/&.cmd/" cross-files/aarch64-linux-android >crossfile-aarch64
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 appveyor DownloadFile https://github.com/borg323/OpenBLAS/releases/download/android-0.3.27/openblas-android-aarch64.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\cache\OpenBLAS\android-aarch64 7z x openblas-android-aarch64.zip -oC:\cache\OpenBLAS
@@ -103,10 +103,10 @@ install:
 - cmd: cd C:\projects\lc0
 cache:
   - C:\cache
-  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0'
+  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.1'
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1'
   - C:\projects\lc0\subprojects\packagecache
-  - C:\ndk\android-ndk-r19c\toolchains\llvm\prebuilt\windows-x86_64
+  - C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
 - cmd: git submodule update --init --recursive
 - cmd: IF %BLAS%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
@@ -124,7 +124,7 @@ before_build:
 - cmd: SET EXTRA=
 - cmd: IF %ANDROID%==false SET EXTRA=-Db_vscrt=md
 - cmd: IF %ONNX_DML%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\lib -Donnx_include=C:\cache\%ONNX_NAME%\include
-- cmd: IF %ANDROID%==false meson build --backend vs2017 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
+- cmd: IF %ANDROID%==false meson build --backend vs2019 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
 - cmd: IF %ANDROID%==true meson arm64-v8a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-aarch64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-aarch64\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-aarch64
 - cmd: IF %ANDROID%==true meson armeabi-v7a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-armv7a\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-armv7a\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-armv7a -Dispc=false -Dneon=false
 build_script:
