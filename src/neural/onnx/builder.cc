@@ -38,8 +38,8 @@
 namespace lczero {
 
 OnnxBuilder::OnnxBuilder(int opset) : opset_(opset) {
-  if (opset < 7 || opset > 18) {
-    throw Exception("Only ONNX opsets between 7 and 18 are supported.");
+  if (opset < 7 || opset > 22) {
+    throw Exception("Only ONNX opsets between 7 and 22 are supported.");
   }
   model_.set_ir_version(4);
   model_.set_domain("org.lczero.models.*");

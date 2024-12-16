@@ -124,7 +124,16 @@ void XlaRunner::AddModule(size_t minibatch_size,
   pblczero::CompileOptionsProto options;
   options.mutable_executable_build_options()->set_num_replicas(1);
   options.mutable_executable_build_options()->set_num_partitions(1);
-  options.mutable_executable_build_options()->set_device_ordinal(device_);
+  options.mutable_executable_build_options()
+      ->mutable_device_assignment()
+      ->set_replica_count(1);
+  options.mutable_executable_build_options()
+      ->mutable_device_assignment()
+      ->set_computation_count(1);
+  options.mutable_executable_build_options()
+      ->mutable_device_assignment()
+      ->add_computation_devices()
+      ->add_replica_device_ids(device_);
   auto executable = pjrt_client_->CompileHlo(module.OutputAsString(),
                                              options.OutputAsString());
   executables_.push_back({minibatch_size, std::move(executable)});
