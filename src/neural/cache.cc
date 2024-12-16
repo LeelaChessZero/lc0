@@ -176,7 +176,8 @@ pfloat16 CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
   if (item.idx_in_parent >= 0) {
     pfloat16 r;
-    std::memcpy(&r, &item.probabilities_to_cache[move_ct], sizeof(pfloat16));
+    std::memcpy(&r, (pfloat16*)&item.probabilities_to_cache[move_ct],
+                sizeof(pfloat16));
     return r;
   }
   return item.lock->p[move_ct];
