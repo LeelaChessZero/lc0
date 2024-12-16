@@ -73,6 +73,8 @@ class pfloat16 {
     value = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
   }
 
+  pfloat16(const pfloat16 &) = default;
+
   operator float() const {
     // Reshift into place and set the assumed-set exponent bits.
     uint32_t tmp = (static_cast<uint32_t>(value) << 12) | (3 << 28);

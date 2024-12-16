@@ -59,13 +59,12 @@ class CachingComputation {
   // How many inputs are not found in cache and will be forwarded to a wrapped
   // computation.
   int GetCacheMisses() const;
-  // Total number of times AddInput/AddInputByHash were (successfully) called.
+  // Total number of times AddInput was (successfully) called.
   int GetBatchSize() const;
   // Check if entry is in the cache.
   bool CacheLookup(const PositionHistory& history, const MoveList& moves = {},
                    CachedNNRequest* entry = nullptr);
   // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
-  // @hash is a hash to store/lookup it in the cache.
   void AddInput(const PositionHistory& history, const MoveList& moves);
   // Undos last AddInput. If it was a cache miss, the it's actually not removed
   // from parent's batch.
