@@ -273,7 +273,7 @@ pblczero::XlaLiteralProto ConstOpMax(const pblczero::XlaLiteralProto& lhs,
             typename std::remove_reference<decltype(lhs)>::type::value_type;
         std::transform(lhs.begin(), lhs.end(), rhs.begin(),
                        std::back_inserter(*dst),
-                       [](T a, T b) { return std::max(a, b); });
+                       [](const T &a, const T &b) { return std::max(a, b); });
       });
   return result;
 }

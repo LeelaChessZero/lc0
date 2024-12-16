@@ -1,5 +1,5 @@
 
-# Tested with Android NDK r19c, default toolchain
+# Tested with Android NDK r27c, default toolchain
 # Targeting API level 21
 
 # Set the toolchain path on your environment
@@ -17,8 +17,8 @@ cpp_link_args = ['-llog', '-static-libstdc++']
 [binaries]
 c = 'aarch64-linux-android21-clang'
 cpp = 'aarch64-linux-android21-clang++'
-ar = 'aarch64-linux-android-ar'
-strip = 'aarch64-linux-android-strip'
-ld = 'aarch64-linux-android-ld'
-ranlib = 'aarch64-linux-android-ranlib'
-as = 'aarch64-linux-android-as'
+ar = 'llvm-ar'
+strip = 'llvm-strip'
+ld = 'ld'
+ranlib = 'llvm-ranlib'
+as = 'aarch64-linux-android21-clang'

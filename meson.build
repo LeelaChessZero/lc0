@@ -15,7 +15,7 @@
 # along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 
 project('lc0', 'cpp',
-        default_options : ['cpp_std=c++17', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
+        default_options : ['cpp_std=c++20', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.55')
 
 cc = meson.get_compiler('cpp')
@@ -181,12 +181,7 @@ common_files += [
 ]
 
 files += [
-  'src/benchmark/backendbench.cc',
-  'src/benchmark/benchmark.cc',
   'src/engine.cc',
-  'src/lc0ctl/describenet.cc',
-  'src/lc0ctl/leela2onnx.cc',
-  'src/lc0ctl/onnx2leela.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
   'src/mcts/stoppers/alphazero.cc',
@@ -197,27 +192,33 @@ files += [
   'src/mcts/stoppers/smooth.cc',
   'src/mcts/stoppers/stoppers.cc',
   'src/mcts/stoppers/timemgr.cc',
+  'src/neural/backends/network_check.cc',
+  'src/neural/backends/network_demux.cc',
+  'src/neural/backends/network_mux.cc',
+  'src/neural/backends/network_random.cc',
+  'src/neural/backends/network_record.cc',
+  'src/neural/backends/network_rr.cc',
+  'src/neural/backends/network_trivial.cc',
   'src/neural/cache.cc',
   'src/neural/factory.cc',
   'src/neural/loader.cc',
-  'src/neural/network_check.cc',
-  'src/neural/network_demux.cc',
   'src/neural/network_legacy.cc',
-  'src/neural/network_mux.cc',
-  'src/neural/network_random.cc',
-  'src/neural/network_record.cc',
-  'src/neural/network_rr.cc',
-  'src/neural/network_trivial.cc',
   'src/neural/onnx/adapters.cc',
   'src/neural/onnx/builder.cc',
   'src/neural/onnx/converter.cc',
   'src/neural/xla/hlo_builder.cc',
   'src/neural/xla/onnx2hlo.cc',
   'src/neural/xla/print_hlo.cc',
+  'src/neural/xla/xla_tensor.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
   'src/selfplay/multigame.cc',
   'src/selfplay/tournament.cc',
+  'src/tools/backendbench.cc',
+  'src/tools/benchmark.cc',
+  'src/tools/describenet.cc',
+  'src/tools/leela2onnx.cc',
+  'src/tools/onnx2leela.cc',
   'src/utils/histogram.cc',
   'src/utils/numa.cc',
   'src/utils/weights_adapter.cc',
@@ -248,7 +249,7 @@ if get_option('build_backends')
   tf_tensorflow_cc_lib = dependency('tensorflow_cc', required: false)
   if get_option('tensorflow') and tf_dl_lib.found() and tf_tensorflow_cc_lib.found()
     deps += [tf_dl_lib, tf_tensorflow_cc_lib]
-    files += 'src/neural/network_tf_cc.cc'
+    files += 'src/neural/backends/network_tf_cc.cc'
     has_backends = true
   endif
 
@@ -373,25 +374,25 @@ if get_option('build_backends')
     endif
 
     blas_files = [
-    'src/neural/blas/convolution1.cc',
-    'src/neural/blas/fully_connected_layer.cc',
-    'src/neural/blas/se_unit.cc',
-    'src/neural/blas/network_blas.cc',
-    'src/neural/blas/winograd_convolution3.cc'
+    'src/neural/backends/blas/convolution1.cc',
+    'src/neural/backends/blas/fully_connected_layer.cc',
+    'src/neural/backends/blas/se_unit.cc',
+    'src/neural/backends/blas/network_blas.cc',
+    'src/neural/backends/blas/winograd_convolution3.cc'
     ]
 
     shared_files = [
-    'src/neural/shared/activation.cc',
-    'src/neural/shared/winograd_filter.cc',
+    'src/neural/backends/shared/activation.cc',
+    'src/neural/backends/shared/winograd_filter.cc',
     ]
 
     files += blas_files
     has_backends = true
 
     if get_option('ispc') and ispc.found()
-      files += iscp_gen.process('src/neural/blas/winograd_transform.ispc')
-      files += iscp_gen.process('src/neural/blas/layer_norm.ispc')
-      files += iscp_gen.process('src/neural/shared/activation.ispc')
+      files += iscp_gen.process('src/neural/backends/blas/winograd_transform.ispc')
+      files += iscp_gen.process('src/neural/backends/blas/layer_norm.ispc')
+      files += iscp_gen.process('src/neural/backends/shared/activation.ispc')
       add_project_arguments('-DUSE_ISPC', language : 'cpp')
     endif
 
@@ -421,15 +422,15 @@ if get_option('build_backends')
   if get_option('opencl') and has_opencl
 
     opencl_files = [
-      'src/neural/opencl/network_opencl.cc',
-      'src/neural/opencl/OpenCL.cc',
-      'src/neural/opencl/OpenCLTuner.cc',
-      'src/neural/opencl/OpenCLBuffers.cc',
+      'src/neural/backends/opencl/network_opencl.cc',
+      'src/neural/backends/opencl/OpenCL.cc',
+      'src/neural/backends/opencl/OpenCLTuner.cc',
+      'src/neural/backends/opencl/OpenCLBuffers.cc',
     ]
 
     shared_files = [
-    'src/neural/shared/activation.cc',
-    'src/neural/shared/winograd_filter.cc',
+    'src/neural/backends/shared/activation.cc',
+    'src/neural/backends/shared/winograd_filter.cc',
     ]
 
     if not opencl_framework.found()
@@ -455,21 +456,21 @@ if get_option('build_backends')
 
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
     deps += [cu_blas, cu_dart]
-    cuda_files = ['src/neural/cuda/layers.cc']
+    cuda_files = ['src/neural/backends/cuda/layers.cc']
     if get_option('cudnn') and cu_dnn.found()
       deps += cu_dnn
-      cuda_files += 'src/neural/cuda/network_cudnn.cc'
-      cuda_files += 'src/neural/cuda/network_cuda.cc' # To support newer nets.
+      cuda_files += 'src/neural/backends/cuda/network_cudnn.cc'
+      cuda_files += 'src/neural/backends/cuda/network_cuda.cc' # To support newer nets.
       add_project_arguments('-DUSE_CUDNN', language : 'cpp')
     elif get_option('plain_cuda')
-      cuda_files += 'src/neural/cuda/network_cuda.cc'
+      cuda_files += 'src/neural/backends/cuda/network_cuda.cc'
     endif
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
         includes += include_directories(d, is_system: true)
       endif
     endforeach
-    includes += include_directories('src/neural/cuda/')
+    includes += include_directories('src/neural/backends/cuda/')
 
     cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
@@ -523,16 +524,16 @@ if get_option('build_backends')
     endif
 	 files += cuda_files
     files += custom_target('cuda fp32 code',
-      input : 'src/neural/cuda/common_kernels.cu',
+      input : 'src/neural/backends/cuda/common_kernels.cu',
       output : outputname,
-      depend_files: 'src/neural/cuda/winograd_helper.inc',
+      depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
       command : [nvcc, nvcc_extra_args, cuda_arguments]
     )
 
     files += custom_target('cuda fp16 code',
-      input : 'src/neural/cuda/fp16_kernels.cu',
+      input : 'src/neural/backends/cuda/fp16_kernels.cu',
       output : outputname,
-      depend_files: 'src/neural/cuda/winograd_helper.inc',
+      depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
       command : [nvcc, nvcc_extra_args, cuda_arguments]
     )
     has_backends = true
@@ -548,14 +549,14 @@ if get_option('build_backends')
     dx_dxgi = cc.find_library('dxgi')
 
     dx_files = [
-      'src/neural/dx/network_dx.cc',
-      'src/neural/dx/shader_wrapper.cc',
-      'src/neural/dx/layers_dx.cc',
+      'src/neural/backends/dx/network_dx.cc',
+      'src/neural/backends/dx/shader_wrapper.cc',
+      'src/neural/backends/dx/layers_dx.cc',
     ]
     files += dx_files
     deps += [dx_d3d12, dx_dxgi]
 
-    subdir('src/neural/dx/shaders')
+    subdir('src/neural/backends/dx/shaders')
 
     has_backends = true
   endif
@@ -564,8 +565,8 @@ if get_option('build_backends')
     includes += include_directories(get_option('dnnl_dir') + '/include')
     deps += [ dnnl_lib, dependency('openmp', required:true) ]
     files += [
-      'src/neural/onednn/network_onednn.cc',
-      'src/neural/onednn/layers.cc',
+      'src/neural/backends/onednn/network_onednn.cc',
+      'src/neural/backends/onednn/layers.cc',
     ]
     has_backends = true
   endif
@@ -586,7 +587,7 @@ if get_option('build_backends')
       includes += include_directories(get_option('onnx_include') + '/../providers/cpu',
                                       is_system: true)
     endif
-    files += 'src/neural/onnx/network_onnx.cc'
+    files += 'src/neural/backends/network_onnx.cc'
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
       add_project_arguments('-DUSE_ROCM', language : 'cpp')
@@ -607,9 +608,9 @@ if get_option('build_backends')
     deps += metal_frameworks
 
     files += [
-      'src/neural/metal/network_metal.cc',
-      'src/neural/metal/mps/NetworkGraph.mm',
-      'src/neural/metal/mps/MetalNetworkBuilder.mm',
+      'src/neural/backends/metal/network_metal.cc',
+      'src/neural/backends/metal/mps/NetworkGraph.mm',
+      'src/neural/backends/metal/mps/MetalNetworkBuilder.mm',
     ]
 
     has_backends = true
@@ -623,10 +624,9 @@ if get_option('build_backends')
   ## ~~~~~~~~
   if get_option('xla')
       files += [
-        'src/neural/xla/network_xla.cc',
-        'src/neural/xla/pjrt.cc',
-        'src/neural/xla/xla_runner.cc',
-        'src/neural/xla/xla_tensor.cc',
+        'src/neural/backends/xla/network_xla.cc',
+        'src/neural/backends/xla/pjrt.cc',
+        'src/neural/backends/xla/xla_runner.cc',
       ]
       deps += cc.find_library('dl', required: false)
       has_backends = true
@@ -702,7 +702,7 @@ endif
 if get_option('rescorer')
   deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
   executable('rescorer', 'src/rescorer_main.cc',
-       [common_files, 'src/rescorer/rescoreloop.cc'],
+       [common_files, 'src/trainingdata/rescoreloop.cc'],
        include_directories: includes, dependencies: deps, install: true)
 endif
 
