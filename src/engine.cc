@@ -96,6 +96,7 @@ std::uint64_t Perft(const ChessBoard& board, int max_depth, bool dump = false,
   std::uint64_t total_count = 0;
 
   auto moves = board.GenerateLegalMoves();
+  if (depth == max_depth - 1) return moves.size();
 
   for (const auto& move : moves) {
     auto new_board = board;
