@@ -1741,7 +1741,8 @@ void SearchWorker::PickNodesToExtendTask(
         int index = child->Index();
         visited_pol += current_pol[index];
         // Apply policy decay and store the value.
-        current_pol[index] = ComputePolicyDecay(factor, current_pol[index]);
+        current_pol[index] = ComputePolicyDecay(policy_decay_factor,
+                                                current_pol[index]);
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
