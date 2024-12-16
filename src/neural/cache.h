@@ -26,20 +26,21 @@
 */
 #pragma once
 
+#include "mcts/node.h"
 #include "neural/network.h"
 #include "utils/cache.h"
+#include "utils/pfloat16.h"
 #include "utils/smallarray.h"
 
 namespace lczero {
 
 struct CachedNNRequest {
-  CachedNNRequest(size_t size) : p(size) {}
-  typedef std::pair<uint16_t, float> IdxAndProb;
+  CachedNNRequest(size_t size = 0) : p(size) {}
   float q;
   float d;
   float m;
-  // TODO(mooskagh) Don't really need index if using perfect hash.
-  SmallArray<IdxAndProb> p;
+  // Store p only for valid moves.
+  std::vector<pfloat16> p;
 };
 
 typedef HashKeyedCache<CachedNNRequest> NNCache;
@@ -51,24 +52,20 @@ typedef HashKeyedCacheLock<CachedNNRequest> NNCacheLock;
 class CachingComputation {
  public:
   CachingComputation(std::unique_ptr<NetworkComputation> parent,
-                     NNCache* cache);
+                     pblczero::NetworkFormat::InputFormat input_format,
+                     lczero::FillEmptyHistory history_fill, float softmax_temp,
+                     int history_length, NNCache* cache);
 
   // How many inputs are not found in cache and will be forwarded to a wrapped
   // computation.
   int GetCacheMisses() const;
-  // Total number of times AddInput/AddInputByHash were (successfully) called.
+  // Total number of times AddInput was (successfully) called.
   int GetBatchSize() const;
-  // Adds input by hash only. If that hash is not in cache, returns false
-  // and does nothing. Otherwise adds.
-  bool AddInputByHash(uint64_t hash);
-  // Adds input by hash with existing lock. Assumes the given lock holds a real
-  // reference.
-  void AddInputByHash(uint64_t hash, NNCacheLock&& lock);
-  // Adds a sample to the batch.
-  // @hash is a hash to store/lookup it in the cache.
-  // @probabilities_to_cache is which indices of policy head to store.
-  void AddInput(uint64_t hash, InputPlanes&& input,
-                std::vector<uint16_t>&& probabilities_to_cache);
+  // Check if entry is in the cache.
+  bool CacheLookup(const PositionHistory& history, const MoveList& moves = {},
+                   CachedNNRequest* entry = nullptr);
+  // Adds a sample to the batch. Also calls EncodePositionForNN() if needed.
+  void AddInput(const PositionHistory& history, const MoveList& moves);
   // Undos last AddInput. If it was a cache miss, the it's actually not removed
   // from parent's batch.
   void PopLastInputHit();
@@ -80,8 +77,8 @@ class CachingComputation {
   float GetDVal(int sample) const;
   // Returns estimated remaining moves.
   float GetMVal(int sample) const;
-  // Returns P value @move_id of @sample.
-  float GetPVal(int sample, int move_id) const;
+  // Returns compressed P value @move_id of @sample.
+  pfloat16 GetPVal(int sample, int move_ct) const;
   // Pops last input from the computation. Only allowed for inputs which were
   // cached.
   void PopCacheHit();
@@ -94,11 +91,15 @@ class CachingComputation {
     uint64_t hash;
     NNCacheLock lock;
     int idx_in_parent = -1;
+    // Initially the move indices, after computation the policy values.
     std::vector<uint16_t> probabilities_to_cache;
-    mutable int last_idx = 0;
   };
 
   std::unique_ptr<NetworkComputation> parent_;
+  pblczero::NetworkFormat::InputFormat input_format_;
+  lczero::FillEmptyHistory history_fill_;
+  float softmax_temp_;
+  int history_length_;
   NNCache* cache_;
   std::vector<WorkItem> batch_;
 };
