@@ -42,8 +42,108 @@ const OptionId kInteractiveId{
 const OptionId kLogFileId{"logfile", "LogFile",
   "Write log to that file. Special value <stderr> to "
   "output the log to the console."};
-}  // namespace
 
+std::string MoveToSan(const Move in_move, const ChessBoard& board) {
+  auto move = in_move;
+  if (board.flipped()) move.Mirror();
+  auto from = move.from();
+  auto to = board.GetModernMove(move).to();
+
+  std::string res;
+
+  if (board.pawns().get(from)) {
+    if (board.theirs().get(to) ||
+        (from.row() == 4 && board.en_passant().get(7, to.col()))) {
+      res = std::string(1, 'a' + in_move.from().col()) + 'x' +
+            in_move.to().as_string();
+    } else {
+      res = in_move.to().as_string();
+    }
+
+    auto promotion = move.promotion();
+    switch (promotion) {
+      case Move::Promotion::Queen:
+        return res + "=Q";
+      case Move::Promotion::Rook:
+        return res + "=R";
+      case Move::Promotion::Bishop:
+        return res + "=B";
+      case Move::Promotion::Knight:
+        return res + "=N";
+      default:
+        return res;
+    }
+  }
+
+  if ((board.ours() & board.rooks()).get(to) &&
+      (board.ours() & board.kings()).get(from)) {
+    if (from.col() < to.col()) return "O-O";
+    return "O-O-O";
+  }
+
+  int count = 0;
+  int c_count = 0;
+  int r_count = 0;
+  if (board.kings().get(from)) {
+    res = 'K';
+    count = 1;
+  } else if (board.bishops().get(from)) {
+    res = 'B';
+    for (auto sq : board.bishops() & board.ours()) {
+      int dx = abs(sq.row() - to.row());
+      int dy = abs(sq.col() - to.col());
+      if (dx != dy) continue;
+      count++;
+      if (sq.col() == from.col()) c_count++;
+      if (sq.row() == from.row()) r_count++;
+    }
+  } else if (board.queens().get(from)) {
+    res = 'Q';
+    for (auto sq : board.queens() & board.ours()) {
+      int dx = abs(sq.row() - to.row());
+      int dy = abs(sq.col() - to.col());
+      if (dx != dy && dx != 0 && dy != 0) continue;
+      count++;
+      if (sq.col() == from.col()) c_count++;
+      if (sq.row() == from.row()) r_count++;
+    }
+  } else if (board.rooks().get(from)) {
+    res = 'R';
+    for (auto sq : board.rooks() & board.ours()) {
+      int dx = abs(sq.row() - to.row());
+      int dy = abs(sq.col() - to.col());
+      if (dx != 0 && dy != 0) continue;
+      count++;
+      if (sq.col() == from.col()) c_count++;
+      if (sq.row() == from.row()) r_count++;
+    }
+  } else {
+    res = 'N';
+    for (auto sq : board.knights() & board.ours()) {
+      int dx = abs(sq.row() - to.row());
+      int dy = abs(sq.col() - to.col());
+      if (dx + dy != 3 || dx == 0 || dy == 0) continue;
+      count++;
+      if (sq.col() == from.col()) c_count++;
+      if (sq.row() == from.row()) r_count++;
+    }
+  }
+  if (count > 1) {
+    if (c_count == 1) {
+      res += std::string(1, 'a' + in_move.from().col());
+    } else if (r_count == 1) {
+      res += std::string(1, '1' + in_move.from().row());
+    } else {
+      res += in_move.from().as_string();
+    }
+  }
+  if (board.theirs().get(to)) {
+    res += 'x';
+  }
+  res += in_move.to().as_string();
+  return res;
+}
+}  // namespace
 
 SelfPlayLoop::SelfPlayLoop() {}
 
@@ -129,8 +229,31 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
                                                               : "blackwon");
   }
   if (!info.moves.empty()) {
-    res += " moves";
-    for (const auto& move : info.moves) res += " " + move.as_string();
+    res += " san ";
+    ChessBoard board;
+    int move_no = 1;
+    if (!info.initial_fen.empty() &&
+        info.initial_fen != ChessBoard::kStartposFen) {
+      board.SetFromFen(info.initial_fen, nullptr, &move_no);
+    } else {
+      board.SetFromFen(ChessBoard::kStartposFen);
+    }
+    if (board.flipped()) res += std::to_string(move_no) + "...";
+
+    for (auto move : info.moves) {
+      if (!board.flipped()) {
+        res += std::to_string(move_no) + ".";
+      }
+      res += MoveToSan(move, board) + " ";
+
+      if (board.flipped()) {
+        move.Mirror();
+        move_no++;
+      }
+      board.ApplyMove(move);
+      board.Mirror();
+    }
+    res.pop_back();  // Remove last space.
   }
   if (!info.initial_fen.empty() &&
       info.initial_fen != ChessBoard::kStartposFen) {
