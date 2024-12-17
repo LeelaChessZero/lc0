@@ -126,12 +126,12 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
 
   // "go nodes" stopper.
   int64_t node_limit = 0;
-  if (params.nodes) {
+  if (params.nodes.has_value()) {
     if (options.Get<bool>(kNodesAsPlayoutsId)) {
       stopper->AddStopper(std::make_unique<PlayoutsStopper>(
           *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
     } else {
-      node_limit = *params.nodes;
+      node_limit = 4000000000;
     }
   }
   // always limit nodes to avoid exceeding the limit 4000000000. That number is
