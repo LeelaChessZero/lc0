@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include "mcts/node.h"
+#include "search/z9mcts/node.h"
 #include "trainingdata/writer.h"
 
 namespace lczero {
@@ -72,7 +72,7 @@ struct V6TrainingData {
   float played_d;
   float played_m;
   // The folowing may be NaN if not found in cache.
-  float orig_q;      // For value repair.
+  float orig_q;  // For value repair.
   float orig_d;
   float orig_m;
   uint32_t visits;

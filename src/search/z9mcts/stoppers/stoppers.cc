@@ -25,10 +25,10 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/stoppers.h"
+#include "search/z9mcts/stoppers/stoppers.h"
 
-#include "mcts/node.h"
 #include "neural/cache.h"
+#include "search/z9mcts/node.h"
 
 namespace lczero {
 

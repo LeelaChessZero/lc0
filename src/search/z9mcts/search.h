@@ -36,11 +36,11 @@
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
-#include "mcts/node.h"
-#include "mcts/params.h"
-#include "mcts/stoppers/timemgr.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "search/z9mcts/node.h"
+#include "search/z9mcts/params.h"
+#include "search/z9mcts/stoppers/timemgr.h"
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
@@ -229,9 +229,7 @@ class SearchWorker {
     }
     for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() {
-        this->RunTasks(i);
-      });
+      task_threads_.emplace_back([this, i]() { this->RunTasks(i); });
     }
     target_minibatch_size_ = params_.GetMiniBatchSize();
     if (target_minibatch_size_ == 0) {

@@ -29,8 +29,8 @@
 
 #include <algorithm>
 
-#include "mcts/stoppers/common.h"
-#include "mcts/stoppers/factory.h"
+#include "search/z9mcts/stoppers/common.h"
+#include "search/z9mcts/stoppers/factory.h"
 #include "utils/random.h"
 
 namespace lczero {

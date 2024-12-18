@@ -30,8 +30,8 @@
 #include <optional>
 #include <vector>
 
-#include "mcts/node.h"
-#include "mcts/stoppers/timemgr.h"
+#include "search/z9mcts/node.h"
+#include "search/z9mcts/stoppers/timemgr.h"
 
 namespace lczero {
 
@@ -54,7 +54,7 @@ class ChainedSearchStopper : public SearchStopper {
 class VisitsStopper : public SearchStopper {
  public:
   VisitsStopper(int64_t limit, bool populate_remaining_playouts)
-    : nodes_limit_(limit ? limit : 4000000000ll),
+      : nodes_limit_(limit ? limit : 4000000000ll),
         populate_remaining_playouts_(populate_remaining_playouts) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
