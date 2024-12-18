@@ -28,6 +28,7 @@
 #include "search/z9mcts/stoppers/stoppers.h"
 
 namespace lczero {
+namespace z9mcts {
 
 namespace {
 
@@ -73,4 +74,5 @@ std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
     int64_t move_overhead, const OptionsDict& params) {
   return std::make_unique<AlphazeroTimeManager>(move_overhead, params);
 }
+}  // namespace z9mcts
 }  // namespace lczero

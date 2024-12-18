@@ -28,6 +28,7 @@
 #include "search/z9mcts/stoppers/common.h"
 
 namespace lczero {
+namespace z9mcts {
 
 const OptionId kNNCacheSizeId{
     "nncache", "NNCacheSize",
@@ -190,4 +191,5 @@ std::unique_ptr<TimeManager> MakeCommonTimeManager(
                                              move_overhead);
 }
 
+}  // namespace z9mcts
 }  // namespace lczero

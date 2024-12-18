@@ -31,6 +31,7 @@
 #include "search/z9mcts/node.h"
 
 namespace lczero {
+namespace z9mcts {
 
 ///////////////////////////
 // ChainedSearchStopper
@@ -267,4 +268,5 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   return false;
 }
 
+}  // namespace z9mcts
 }  // namespace lczero

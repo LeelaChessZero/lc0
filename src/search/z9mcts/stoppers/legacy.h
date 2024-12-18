@@ -31,10 +31,12 @@
 #include "utils/optionsdict.h"
 
 namespace lczero {
+namespace z9mcts {
 
 float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness);
 
 std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params);
 
+}  // namespace z9mcts
 }  // namespace lczero

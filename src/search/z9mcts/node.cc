@@ -41,6 +41,7 @@
 #include "utils/hashcat.h"
 
 namespace lczero {
+namespace z9mcts {
 
 /////////////////////////////////////////////////////////////////////////
 // Node garbage collector
@@ -537,4 +538,5 @@ void NodeTree::DeallocateTree() {
   current_head_ = nullptr;
 }
 
+}  // namespace z9mcts
 }  // namespace lczero

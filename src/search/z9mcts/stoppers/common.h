@@ -32,6 +32,7 @@
 #include "utils/optionsparser.h"
 
 namespace lczero {
+namespace z9mcts {
 
 enum class RunType { kUci, kSimpleUci, kSelfplay };
 void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
@@ -48,4 +49,5 @@ std::unique_ptr<TimeManager> MakeCommonTimeManager(
     std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
     int64_t move_overhead);
 
+}  // namespace z9mcts
 }  // namespace lczero

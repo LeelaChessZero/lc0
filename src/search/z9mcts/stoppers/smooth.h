@@ -31,8 +31,10 @@
 #include "utils/optionsdict.h"
 
 namespace lczero {
+namespace z9mcts {
 
 std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params);
 
+}
 }  // namespace lczero

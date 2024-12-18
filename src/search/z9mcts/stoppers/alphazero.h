@@ -30,8 +30,10 @@
 #include "utils/optionsdict.h"
 
 namespace lczero {
+namespace z9mcts {
 
 std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
     int64_t move_overhead, const OptionsDict& params);
 
+}
 }  // namespace lczero

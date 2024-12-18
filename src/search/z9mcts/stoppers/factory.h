@@ -33,6 +33,7 @@
 #include "utils/optionsparser.h"
 
 namespace lczero {
+namespace z9mcts {
 
 // Populates UCI/command line flags with time management options.
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
@@ -40,4 +41,5 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
 // Creates a new time manager for a new search.
 std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& dict);
 
+}  // namespace z9mcts
 }  // namespace lczero
