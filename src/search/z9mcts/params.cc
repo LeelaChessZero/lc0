@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/params.h"
+#include "search/z9mcts/params.h"
 
 #include <algorithm>
 #include <cctype>
@@ -46,6 +46,7 @@
 #endif
 
 namespace lczero {
+namespace z9mcts {
 
 namespace {
 FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
@@ -696,4 +697,5 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
+}  // namespace z9mcts
 }  // namespace lczero

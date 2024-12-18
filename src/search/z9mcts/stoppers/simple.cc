@@ -25,9 +25,10 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/stoppers.h"
+#include "search/z9mcts/stoppers/stoppers.h"
 
 namespace lczero {
+namespace z9mcts {
 
 namespace {
 
@@ -38,7 +39,8 @@ class SimpleTimeManager : public TimeManager {
         base_pct_(params.GetOrDefault<float>("base-pct", 1.4f)),
         ply_pct_(params.GetOrDefault<float>("ply-pct", 0.049f)),
         time_factor_(params.GetOrDefault<float>("time-factor", 1.5f)),
-        opening_bonus_pct_(params.GetOrDefault<float>("opening-bonus-pct", 0.0f)) {
+        opening_bonus_pct_(
+            params.GetOrDefault<float>("opening-bonus-pct", 0.0f)) {
     if (base_pct_ <= 0.0f || base_pct_ > 100.0f) {
       throw Exception("base-pct value to be in range [0.0, 100.0]");
     }
@@ -126,4 +128,5 @@ std::unique_ptr<TimeManager> MakeSimpleTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params) {
   return std::make_unique<SimpleTimeManager>(move_overhead, params);
 }
+}  // namespace z9mcts
 }  // namespace lczero

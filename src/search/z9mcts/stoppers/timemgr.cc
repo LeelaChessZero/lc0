@@ -25,11 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/timemgr.h"
+#include "search/z9mcts/stoppers/timemgr.h"
 
-#include "mcts/stoppers/stoppers.h"
+#include "search/z9mcts/stoppers/stoppers.h"
 
 namespace lczero {
+namespace z9mcts {
 
 StoppersHints::StoppersHints() { Reset(); }
 
@@ -64,4 +65,5 @@ void StoppersHints::Reset() {
   estimated_nps_.reset();
 }
 
+}  // namespace z9mcts
 }  // namespace lczero

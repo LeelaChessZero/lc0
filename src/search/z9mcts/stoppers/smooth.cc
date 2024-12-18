@@ -25,17 +25,18 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/smooth.h"
+#include "search/z9mcts/stoppers/smooth.h"
 
 #include <functional>
 #include <iomanip>
 #include <optional>
 
-#include "mcts/stoppers/legacy.h"
-#include "mcts/stoppers/stoppers.h"
+#include "search/z9mcts/stoppers/legacy.h"
+#include "search/z9mcts/stoppers/stoppers.h"
 #include "utils/mutex.h"
 
 namespace lczero {
+namespace z9mcts {
 namespace {
 
 class Params {
@@ -636,4 +637,5 @@ std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
   return std::make_unique<SmoothTimeManager>(move_overhead, params);
 }
 
+}  // namespace z9mcts
 }  // namespace lczero

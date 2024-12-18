@@ -111,8 +111,9 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
   }
 }
 
-void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
-                              Eval best_eval, Eval played_eval,
+void V6TrainingDataArray::Add(const z9mcts::Node* node,
+                              const PositionHistory& history,
+                              z9mcts::Eval best_eval, z9mcts::Eval played_eval,
                               bool best_is_proven, Move best_move,
                               Move played_move, const NNCacheLock& nneval) {
   V6TrainingData result;
@@ -234,7 +235,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   result.result_q = 0;
   result.result_d = 1;
 
-  Eval orig_eval;
+  z9mcts::Eval orig_eval;
   if (nneval) {
     orig_eval.wl = nneval->q;
     orig_eval.d = nneval->d;

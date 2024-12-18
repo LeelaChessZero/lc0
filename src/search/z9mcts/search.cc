@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/search.h"
+#include "search/z9mcts/search.h"
 
 #include <algorithm>
 #include <array>
@@ -37,14 +37,15 @@
 #include <sstream>
 #include <thread>
 
-#include "mcts/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
+#include "search/z9mcts/node.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
 
 namespace lczero {
+namespace z9mcts {
 
 namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
@@ -2466,4 +2467,5 @@ void SearchWorker::UpdateCounters() {
   }
 }
 
+}  // namespace z9mcts
 }  // namespace lczero
