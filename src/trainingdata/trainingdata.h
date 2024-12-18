@@ -96,9 +96,10 @@ class V6TrainingDataArray {
         input_format_(input_format) {}
 
   // Add a chunk.
-  void Add(const Node* node, const PositionHistory& history, Eval best_eval,
-           Eval played_eval, bool best_is_proven, Move best_move,
-           Move played_move, const NNCacheLock& nneval);
+  void Add(const z9mcts::Node* node, const PositionHistory& history,
+           z9mcts::Eval best_eval, z9mcts::Eval played_eval,
+           bool best_is_proven, Move best_move, Move played_move,
+           const NNCacheLock& nneval);
 
   // Writes training data to a file.
   void Write(TrainingDataWriter* writer, GameResult result,

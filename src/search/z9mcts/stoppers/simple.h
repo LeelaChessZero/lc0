@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "search/z9mcts/stoppers/timemgr.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {

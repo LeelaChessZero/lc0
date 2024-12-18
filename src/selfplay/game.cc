@@ -74,7 +74,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
   options->Add<BoolOption>(kUciChess960) = false;
-  PopulateTimeManagementOptions(RunType::kSelfplay, options);
+  z9mcts::PopulateTimeManagementOptions(z9mcts::RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
 }
@@ -84,17 +84,17 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
     : options_{white, black},
       chess960_{white.uci_options->Get<bool>(kUciChess960) ||
                 black.uci_options->Get<bool>(kUciChess960)},
-      training_data_(SearchParams(*white.uci_options).GetHistoryFill(),
-                     SearchParams(*black.uci_options).GetHistoryFill(),
+      training_data_(z9mcts::SearchParams(*white.uci_options).GetHistoryFill(),
+                     z9mcts::SearchParams(*black.uci_options).GetHistoryFill(),
                      white.network->GetCapabilities().input_format) {
   orig_fen_ = opening.start_fen;
-  tree_[0] = std::make_shared<NodeTree>();
+  tree_[0] = std::make_shared<z9mcts::NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
-    tree_[1] = std::make_shared<NodeTree>();
+    tree_[1] = std::make_shared<z9mcts::NodeTree>();
     tree_[1]->ResetToPosition(orig_fen_, {});
   }
   int ply = 0;
@@ -178,7 +178,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             std::move(responder), tree_[idx]->HeadPosition().GetBoard());
       }
 
-      search_ = std::make_unique<Search>(
+      search_ = std::make_unique<z9mcts::Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers), /* infinite */ false, /* ponder */ false,
@@ -238,7 +238,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     }
 
     auto node = tree_[idx]->GetCurrentHead();
-    Eval played_eval = best_eval;
+    z9mcts::Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
@@ -310,7 +310,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
-  for (Node* node = tree_[0]->GetCurrentHead();
+  for (z9mcts::Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
     moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove());
   }
@@ -355,18 +355,19 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   training_data_.Write(writer, game_result_, adjudicated_);
 }
 
-std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
-    const {
-  auto result = std::make_unique<ChainedSearchStopper>();
+std::unique_ptr<z9mcts::ChainedSearchStopper>
+SelfPlayLimits::MakeSearchStopper() const {
+  auto result = std::make_unique<z9mcts::ChainedSearchStopper>();
 
   // always set VisitsStopper to avoid exceeding the limit 4000000000, the
   // default value when visits = 0
-  result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
+  result->AddStopper(std::make_unique<z9mcts::VisitsStopper>(visits, false));
   if (playouts >= 0) {
-    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
+    result->AddStopper(
+        std::make_unique<z9mcts::PlayoutsStopper>(playouts, false));
   }
   if (movetime >= 0) {
-    result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
+    result->AddStopper(std::make_unique<z9mcts::TimeLimitStopper>(movetime));
   }
   return result;
 }
