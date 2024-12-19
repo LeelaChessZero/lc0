@@ -36,16 +36,17 @@
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
-#include "mcts/node.h"
-#include "mcts/params.h"
-#include "mcts/stoppers/timemgr.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "search/classic/node.h"
+#include "search/classic/params.h"
+#include "search/classic/stoppers/timemgr.h"
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
 namespace lczero {
+namespace classic {
 
 class Search {
  public:
@@ -229,9 +230,7 @@ class SearchWorker {
     }
     for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() {
-        this->RunTasks(i);
-      });
+      task_threads_.emplace_back([this, i]() { this->RunTasks(i); });
     }
     target_minibatch_size_ = params_.GetMiniBatchSize();
     if (target_minibatch_size_ == 0) {
@@ -497,4 +496,5 @@ class SearchWorker {
   bool exiting_ = false;
 };
 
+}  // namespace classic
 }  // namespace lczero

@@ -29,9 +29,9 @@
 
 #include <numeric>
 
-#include "mcts/search.h"
-#include "mcts/stoppers/factory.h"
-#include "mcts/stoppers/stoppers.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
+#include "search/classic/stoppers/stoppers.h"
 
 namespace lczero {
 namespace {
@@ -51,8 +51,8 @@ void Benchmark::Run() {
   OptionsParser options;
   NetworkFactory::PopulateOptions(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
-  options.Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 200000;
-  SearchParams::Populate(&options);
+  options.Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 200000;
+  classic::SearchParams::Populate(&options);
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
   options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
@@ -86,22 +86,24 @@ void Benchmark::Run() {
       std::cout << "\nPosition: " << cnt++ << "/" << testing_positions.size()
                 << " " << position << std::endl;
 
-      auto stopper = std::make_unique<ChainedSearchStopper>();
+      auto stopper = std::make_unique<classic::ChainedSearchStopper>();
       if (movetime > -1) {
-        stopper->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
+        stopper->AddStopper(
+            std::make_unique<classic::TimeLimitStopper>(movetime));
       }
       if (visits > -1) {
-        stopper->AddStopper(std::make_unique<VisitsStopper>(visits, false));
+        stopper->AddStopper(
+            std::make_unique<classic::VisitsStopper>(visits, false));
       }
 
       NNCache cache;
-      cache.SetCapacity(option_dict.Get<int>(kNNCacheSizeId));
+      cache.SetCapacity(option_dict.Get<int>(classic::kNNCacheSizeId));
 
-      NodeTree tree;
+      classic::NodeTree tree;
       tree.ResetToPosition(position, {});
 
       const auto start = std::chrono::steady_clock::now();
-      auto search = std::make_unique<Search>(
+      auto search = std::make_unique<classic::Search>(
           tree, network.get(),
           std::make_unique<CallbackUciResponder>(
               std::bind(&Benchmark::OnBestMove, this, std::placeholders::_1),

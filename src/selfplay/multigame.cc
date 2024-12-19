@@ -37,7 +37,7 @@ class PolicyEvaluator : public Evaluator {
     transforms.clear();
     comp_idx = 0;
   }
-  void Gather(NodeTree* tree) override {
+  void Gather(classic::NodeTree* tree) override {
     int transform;
     auto planes =
         EncodePositionForNN(input_format, tree->GetPositionHistory(), 8,
@@ -46,7 +46,7 @@ class PolicyEvaluator : public Evaluator {
     comp->AddInput(std::move(planes));
   }
   void Run() override { comp->ComputeBlocking(); }
-  void MakeBestMove(NodeTree* tree) override {
+  void MakeBestMove(classic::NodeTree* tree) override {
     Move best;
     float max_p = std::numeric_limits<float>::lowest();
     for (auto edge : tree->GetCurrentHead()->Edges()) {
@@ -74,7 +74,7 @@ class ValueEvaluator : public Evaluator {
     input_format = player.network->GetCapabilities().input_format;
     comp_idx = 0;
   }
-  void Gather(NodeTree* tree) override {
+  void Gather(classic::NodeTree* tree) override {
     PositionHistory history = tree->GetPositionHistory();
     for (auto edge : tree->GetCurrentHead()->Edges()) {
       history.Append(edge.GetMove());
@@ -88,7 +88,7 @@ class ValueEvaluator : public Evaluator {
     }
   }
   void Run() override { comp->ComputeBlocking(); }
-  void MakeBestMove(NodeTree* tree) override {
+  void MakeBestMove(classic::NodeTree* tree) override {
     Move best;
     float max_q = std::numeric_limits<float>::lowest();
     PositionHistory history = tree->GetPositionHistory();
@@ -134,7 +134,7 @@ MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
               : std::unique_ptr<Evaluator>(std::make_unique<PolicyEvaluator>());
   trees_.reserve(openings.size());
   for (auto opening : openings) {
-    trees_.push_back(std::make_shared<NodeTree>());
+    trees_.push_back(std::make_shared<classic::NodeTree>());
     trees_.back()->ResetToPosition(opening.start_fen, {});
     results_.push_back(GameResult::UNDECIDED);
 
