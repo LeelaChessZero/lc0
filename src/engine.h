@@ -33,7 +33,7 @@
 #include "neural/cache.h"
 #include "neural/factory.h"
 #include "neural/network.h"
-#include "search/z9mcts/search.h"
+#include "search/classic/search.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 #include "utils/optionsparser.h"
@@ -92,9 +92,9 @@ class EngineController {
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
-  std::unique_ptr<z9mcts::TimeManager> time_manager_;
-  std::unique_ptr<z9mcts::Search> search_;
-  std::unique_ptr<z9mcts::NodeTree> tree_;
+  std::unique_ptr<classic::TimeManager> time_manager_;
+  std::unique_ptr<classic::Search> search_;
+  std::unique_ptr<classic::NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
   NNCache cache_;

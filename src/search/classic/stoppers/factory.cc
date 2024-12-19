@@ -25,20 +25,20 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "search/z9mcts/stoppers/factory.h"
+#include "search/classic/stoppers/factory.h"
 
 #include <optional>
 
 #include "factory.h"
-#include "search/z9mcts/stoppers/alphazero.h"
-#include "search/z9mcts/stoppers/legacy.h"
-#include "search/z9mcts/stoppers/simple.h"
-#include "search/z9mcts/stoppers/smooth.h"
-#include "search/z9mcts/stoppers/stoppers.h"
+#include "search/classic/stoppers/alphazero.h"
+#include "search/classic/stoppers/legacy.h"
+#include "search/classic/stoppers/simple.h"
+#include "search/classic/stoppers/smooth.h"
+#include "search/classic/stoppers/stoppers.h"
 #include "utils/exception.h"
 
 namespace lczero {
-namespace z9mcts {
+namespace classic {
 namespace {
 
 const OptionId kMoveOverheadId{
@@ -110,5 +110,5 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   return MakeCommonTimeManager(std::move(time_manager), options, move_overhead);
 }
 
-}  // namespace z9mcts
+}  // namespace classic
 }  // namespace lczero

@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "search/z9mcts/node.h"
+#include "search/classic/node.h"
 
 #include <algorithm>
 #include <cassert>
@@ -41,7 +41,7 @@
 #include "utils/hashcat.h"
 
 namespace lczero {
-namespace z9mcts {
+namespace classic {
 
 /////////////////////////////////////////////////////////////////////////
 // Node garbage collector
@@ -538,5 +538,5 @@ void NodeTree::DeallocateTree() {
   current_head_ = nullptr;
 }
 
-}  // namespace z9mcts
+}  // namespace classic
 }  // namespace lczero

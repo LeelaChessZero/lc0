@@ -27,14 +27,16 @@
 
 #pragma once
 
-#include "search/z9mcts/stoppers/timemgr.h"
+#include "search/classic/stoppers/timemgr.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
-namespace z9mcts {
+namespace classic {
 
-std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
+float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness);
+
+std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params);
 
-}
+}  // namespace classic
 }  // namespace lczero

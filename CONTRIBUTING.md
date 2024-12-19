@@ -51,7 +51,7 @@ The internal code dependency structure looks like this:
 
  * Code in `src/neural` only depends on `src/utils` and `src/chess`
 
- * Code in `src/search/z9mcts` only depends on `src/utils`, `src/chess` and `src/neural`
+ * Code in `src/search/classic` only depends on `src/utils`, `src/chess` and `src/neural`
 
 
 ### Git history

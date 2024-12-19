@@ -38,15 +38,15 @@
 #include "chess/uciloop.h"
 #include "neural/cache.h"
 #include "neural/network.h"
-#include "search/z9mcts/node.h"
-#include "search/z9mcts/params.h"
-#include "search/z9mcts/stoppers/timemgr.h"
+#include "search/classic/node.h"
+#include "search/classic/params.h"
+#include "search/classic/stoppers/timemgr.h"
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
 namespace lczero {
-namespace z9mcts {
+namespace classic {
 
 class Search {
  public:
@@ -496,5 +496,5 @@ class SearchWorker {
   bool exiting_ = false;
 };
 
-}  // namespace z9mcts
+}  // namespace classic
 }  // namespace lczero

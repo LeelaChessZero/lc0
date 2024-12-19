@@ -29,7 +29,7 @@
 
 #include "neural/cache.h"
 #include "neural/factory.h"
-#include "search/z9mcts/search.h"
+#include "search/classic/search.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {

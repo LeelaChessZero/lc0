@@ -29,7 +29,7 @@
 
 #include "chess/board.h"
 #include "neural/factory.h"
-#include "search/z9mcts/node.h"
+#include "search/classic/node.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -93,7 +93,7 @@ void BackendBenchmark::Run() {
 
     auto network = NetworkFactory::LoadNetwork(option_dict);
 
-    z9mcts::NodeTree tree;
+    classic::NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
 
     // Do any backend initialization outside the loop.

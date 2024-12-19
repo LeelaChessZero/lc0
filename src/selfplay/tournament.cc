@@ -31,8 +31,8 @@
 
 #include "chess/pgn.h"
 #include "neural/factory.h"
-#include "search/z9mcts/search.h"
-#include "search/z9mcts/stoppers/factory.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
 #include "utils/optionsparser.h"
@@ -112,8 +112,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(z9mcts::kNNCacheSizeId, 0, 999999999) = 2000000;
-  z9mcts::SearchParams::Populate(options);
+  options->Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 2000000;
+  classic::SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -2, 999999) = -1;
@@ -139,22 +139,22 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(z9mcts::SearchParams::kMiniBatchSizeId, 32);
-  defaults->Set<float>(z9mcts::SearchParams::kCpuctId, 1.2f);
-  defaults->Set<float>(z9mcts::SearchParams::kCpuctFactorId, 0.0f);
-  defaults->Set<float>(z9mcts::SearchParams::kPolicySoftmaxTempId, 1.0f);
-  defaults->Set<int>(z9mcts::SearchParams::kMaxCollisionVisitsId, 1);
-  defaults->Set<int>(z9mcts::SearchParams::kMaxCollisionEventsId, 1);
-  defaults->Set<int>(z9mcts::SearchParams::kCacheHistoryLengthId, 7);
-  defaults->Set<bool>(z9mcts::SearchParams::kOutOfOrderEvalId, false);
-  defaults->Set<float>(z9mcts::SearchParams::kTemperatureId, 1.0f);
-  defaults->Set<float>(z9mcts::SearchParams::kNoiseEpsilonId, 0.25f);
-  defaults->Set<float>(z9mcts::SearchParams::kFpuValueId, 0.0f);
-  defaults->Set<std::string>(z9mcts::SearchParams::kHistoryFillId, "no");
+  defaults->Set<int>(classic::SearchParams::kMiniBatchSizeId, 32);
+  defaults->Set<float>(classic::SearchParams::kCpuctId, 1.2f);
+  defaults->Set<float>(classic::SearchParams::kCpuctFactorId, 0.0f);
+  defaults->Set<float>(classic::SearchParams::kPolicySoftmaxTempId, 1.0f);
+  defaults->Set<int>(classic::SearchParams::kMaxCollisionVisitsId, 1);
+  defaults->Set<int>(classic::SearchParams::kMaxCollisionEventsId, 1);
+  defaults->Set<int>(classic::SearchParams::kCacheHistoryLengthId, 7);
+  defaults->Set<bool>(classic::SearchParams::kOutOfOrderEvalId, false);
+  defaults->Set<float>(classic::SearchParams::kTemperatureId, 1.0f);
+  defaults->Set<float>(classic::SearchParams::kNoiseEpsilonId, 0.25f);
+  defaults->Set<float>(classic::SearchParams::kFpuValueId, 0.0f);
+  defaults->Set<std::string>(classic::SearchParams::kHistoryFillId, "no");
   defaults->Set<std::string>(NetworkFactory::kBackendId, "multiplexing");
-  defaults->Set<bool>(z9mcts::SearchParams::kStickyEndgamesId, false);
-  defaults->Set<bool>(z9mcts::SearchParams::kTwoFoldDrawsId, false);
-  defaults->Set<int>(z9mcts::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
+  defaults->Set<bool>(classic::SearchParams::kStickyEndgamesId, false);
+  defaults->Set<bool>(classic::SearchParams::kTwoFoldDrawsId, false);
+  defaults->Set<int>(classic::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
 }
 
 SelfPlayTournament::SelfPlayTournament(
@@ -225,12 +225,12 @@ SelfPlayTournament::SelfPlayTournament(
 
   // Initializing cache.
   cache_[0] = std::make_shared<NNCache>(
-      options.GetSubdict("player1").Get<int>(z9mcts::kNNCacheSizeId));
+      options.GetSubdict("player1").Get<int>(classic::kNNCacheSizeId));
   if (kShareTree) {
     cache_[1] = cache_[0];
   } else {
     cache_[1] = std::make_shared<NNCache>(
-        options.GetSubdict("player2").Get<int>(z9mcts::kNNCacheSizeId));
+        options.GetSubdict("player2").Get<int>(classic::kNNCacheSizeId));
   }
 
   // SearchLimits.

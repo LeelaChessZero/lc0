@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include "search/z9mcts/node.h"
+#include "search/classic/node.h"
 #include "trainingdata/writer.h"
 
 namespace lczero {
@@ -96,8 +96,8 @@ class V6TrainingDataArray {
         input_format_(input_format) {}
 
   // Add a chunk.
-  void Add(const z9mcts::Node* node, const PositionHistory& history,
-           z9mcts::Eval best_eval, z9mcts::Eval played_eval,
+  void Add(const classic::Node* node, const PositionHistory& history,
+           classic::Eval best_eval, classic::Eval played_eval,
            bool best_is_proven, Move best_move, Move played_move,
            const NNCacheLock& nneval);
 
