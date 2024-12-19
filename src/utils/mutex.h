@@ -127,6 +127,13 @@ class CAPABILITY("mutex") SharedMutex {
 static inline void SpinloopPause() {
 #if defined(__x86_64__)
   _mm_pause();
+#else
+// Fallback for non-x86_64 architectures - prevents optimization
+#ifdef _MSC_VER
+  __asm {}
+#else
+  asm volatile("");
+#endif
 #endif
 }
 
