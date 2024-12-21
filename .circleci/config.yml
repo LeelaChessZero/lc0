@@ -20,13 +20,13 @@ jobs:
           environment:
             CC: gcc-10
             CXX: g++-10
-          command: meson build-gcc -Dgtest=false -Dopencl_include=/use/local/cuda/include/CL
+          command: meson build-gcc -Dgtest=false -Dopencl_include=/usr/local/cuda/include/CL
       - run:
           name: Meson Clang
           environment:
             CC: clang-12
             CXX: clang++-12
-          command: meson build-clang -Dgtest=false -Dopencl_include=/use/local/cuda/include/CL
+          command: meson build-clang -Dgtest=false -Dopencl_include=/usr/local/cuda/include/CL
       - run:
           name: Build GCC
           command: |
