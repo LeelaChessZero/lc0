@@ -37,11 +37,11 @@ class Evaluator {
   // Run before each batch before any Gather.
   virtual void Reset(const PlayerOptions& player) = 0;
   // Run for each tree.
-  virtual void Gather(NodeTree* tree) = 0;
+  virtual void Gather(classic::NodeTree* tree) = 0;
   // Run once between Gather and Move.
   virtual void Run() = 0;
   // Run for each tree in the same order as Gather.
-  virtual void MakeBestMove(NodeTree* tree) = 0;
+  virtual void MakeBestMove(classic::NodeTree* tree) = 0;
 };
 
 // Plays a bunch of games vs itself.
@@ -63,7 +63,7 @@ class MultiSelfPlayGames {
   std::vector<Move> GetMoves(int index) const {
     std::vector<Move> moves;
     bool flip = !trees_[index]->IsBlackToMove();
-    for (Node* node = trees_[index]->GetCurrentHead();
+    for (classic::Node* node = trees_[index]->GetCurrentHead();
          node != trees_[index]->GetGameBeginNode(); node = node->GetParent()) {
       moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove(flip));
       flip = !flip;
@@ -77,7 +77,7 @@ class MultiSelfPlayGames {
   PlayerOptions options_[2];
   // Node tree for player1 and player2. If the tree is shared between players,
   // tree_[0] == tree_[1].
-  std::vector<std::shared_ptr<NodeTree>> trees_;
+  std::vector<std::shared_ptr<classic::NodeTree>> trees_;
   std::vector<GameResult> results_;
   bool abort_ = false;
   std::mutex mutex_;

@@ -27,11 +27,14 @@
 
 #pragma once
 
+#include "search/classic/stoppers/timemgr.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
+namespace classic {
 
-std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
-    int64_t move_overhead, const OptionsDict& params);
+std::unique_ptr<TimeManager> MakeSimpleTimeManager(int64_t move_overhead,
+                                                   const OptionsDict& params);
 
+}
 }  // namespace lczero

@@ -33,10 +33,11 @@
 #include <vector>
 
 #include "chess/uciloop.h"
-#include "mcts/node.h"
+#include "search/classic/node.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
+namespace classic {
 
 // Various statistics that search sends to stoppers for their stopping decision.
 // It is expected that this structure will grow.
@@ -108,4 +109,5 @@ class TimeManager {
                                                     const NodeTree& tree) = 0;
 };
 
+}  // namespace classic
 }  // namespace lczero

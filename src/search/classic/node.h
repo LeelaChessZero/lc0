@@ -42,6 +42,7 @@
 #include "utils/mutex.h"
 
 namespace lczero {
+namespace classic {
 
 // Children of a node are stored the following way:
 // * Edges and Nodes edges point to are stored separately.
@@ -659,4 +660,5 @@ class NodeTree {
   PositionHistory history_;
 };
 
+}  // namespace classic
 }  // namespace lczero
