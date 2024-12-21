@@ -47,6 +47,7 @@ struct WeightsToOnnxConverterOptions {
   int opset = 17;
   bool alt_mish = false;       // Use "Mish" approximation (fp32 only).
   bool alt_layernorm = false;  // Discrete "LayerNormalization" implementation.
+  bool alt_selu = false;       // Implement "SELU" using "ELU".
   bool no_shape = false;       // Avoid use of "Shape" operator.
   std::string policy_head = "vanilla";
   std::string value_head = "winner";
