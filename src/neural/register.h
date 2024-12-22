@@ -37,7 +37,9 @@ namespace lczero {
 class BackendManager {
  public:
   static BackendManager* Get();
-  void AddBackend(std::unique_ptr<BackendFactory> factory);
+  void AddBackend(std::unique_ptr<BackendFactory> factory) {
+    algorithms_.push_back(std::move(factory));
+  }
 
   struct Register {
     Register(std::unique_ptr<BackendFactory> factory) {
