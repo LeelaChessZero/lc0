@@ -133,7 +133,7 @@ int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
 
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
-    std::span<Position> history, int history_planes,
+    std::span<const Position> history, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out) {
   InputPlanes result(kAuxPlaneBase + 8);
 
@@ -242,7 +242,7 @@ InputPlanes EncodePositionForNN(
     if (stop_early && board.castlings().as_int() != castlings.as_int()) break;
     // Enpassants can't be repeated, but we do need to always send the current
     // position.
-    if (stop_early && history_idx != history.size() - 1 &&
+    if (stop_early && history_idx != static_cast<int>(history.size()) - 1 &&
         !board.en_passant().empty()) {
       break;
     }
