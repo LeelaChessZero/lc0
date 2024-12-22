@@ -33,6 +33,7 @@
 
 #include "neural/loader.h"
 #include "neural/network.h"
+#include "neural/wrapper.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -115,15 +116,23 @@ class NetworkFactory {
   friend class Register;
 };
 
-#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter) \
-  namespace {                                                         \
-  static NetworkFactory::Register regH38fhs##counter(                 \
-      name,                                                           \
-      [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
-        return func(w, o);                                            \
-      },                                                              \
-      priority);                                                      \
+#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)     \
+  namespace {                                                             \
+  static NetworkFactory::Register regH38fhs##counter(                     \
+      name,                                                               \
+      [](const std::optional<WeightsFile>& w, const OptionsDict& o) {     \
+        return func(w, o);                                                \
+      },                                                                  \
+      priority);                                                          \
+  static BackendManager::Register regK03nv##counter(                      \
+      std::make_unique<NetworkAsBackendFactory>(                          \
+          name,                                                           \
+          [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
+            return func(w, o);                                            \
+          },                                                              \
+          priority));                                                     \
   }
+
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \
   REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)
 
