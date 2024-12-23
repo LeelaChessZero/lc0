@@ -281,10 +281,9 @@ class GameState {
   }
 
   std::string as_string() const {
-    bool is_black = history_.IsBlackToMove();
-    return (is_black ? history_.Last().GetThemBoard()
-                     : history_.Last().GetBoard())
-        .DebugString();
+    auto board = history_.Last().GetBoard();
+    if (history_.IsBlackToMove()) board.Mirror();
+    return board.DebugString();
   }
 
  private:
