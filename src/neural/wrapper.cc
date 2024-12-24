@@ -27,21 +27,28 @@
 
 #include "neural/wrapper.h"
 
+#include <algorithm>
+#include <numeric>
+
 #include "neural/encoder.h"
+#include "utils/fastmath.h"
 
 namespace lczero {
 namespace {
 
 class NetworkAsBackend : public Backend {
  public:
-  NetworkAsBackend(std::unique_ptr<Network> network)
-      : network_(std::move(network)) {
+  NetworkAsBackend(std::unique_ptr<Network> network,
+                   float softmax_policy_temperature)
+      : network_(std::move(network)),
+        softmax_policy_temperature_(1.0f / softmax_policy_temperature) {
     const NetworkCapabilities& caps = network_->GetCapabilities();
     attrs_.has_mlh = caps.has_mlh();
     attrs_.has_wdl = caps.has_wdl();
     attrs_.runs_on_cpu = network_->IsCpu();
     attrs_.suggested_num_search_threads = network_->GetThreads();
-    attrs_.maximum_batch_size = network_->GetMiniBatchSize();
+    attrs_.recommended_batch_size = network_->GetMiniBatchSize();
+    attrs_.maximum_batch_size = std::numeric_limits<int>::max();
     input_format_ = caps.input_format;
   }
 
@@ -52,6 +59,7 @@ class NetworkAsBackend : public Backend {
   std::unique_ptr<Network> network_;
   BackendAttributes attrs_;
   pblczero::NetworkFormat::InputFormat input_format_;
+  float softmax_policy_temperature_;
   friend class NetworkAsBackendComputation;
 };
 
@@ -64,13 +72,10 @@ class NetworkAsBackendComputation : public BackendComputation {
     transforms_.reserve(backend_->attrs_.maximum_batch_size);
   }
 
-  size_t RemainingBatchSize() const override {
-    return backend_->attrs_.maximum_batch_size - computation_->GetBatchSize();
-  }
+  size_t UsedBatchSize() const override { return computation_->GetBatchSize(); }
 
-  AddInputResult AddInput(const EvalPosition& pos, EvalResultPtr result,
-                          FetchMode mode) override {
-    if (mode == CACHE_ONLY) return REJECTED;
+  AddInputResult AddInput(const EvalPosition& pos,
+                          EvalResultPtr result) override {
     int transform;
     computation_->AddInput(EncodePositionForNN(backend_->input_format_, pos.pos,
                                                8, FillEmptyHistory::FEN_ONLY,
@@ -85,17 +90,33 @@ class NetworkAsBackendComputation : public BackendComputation {
     computation_->ComputeBlocking();
     for (size_t i = 0; i < results_.size(); ++i) {
       const EvalResultPtr& result = results_[i];
-      const std::vector<Move>& moves = moves_[i];
       if (result.q) *result.q = computation_->GetQVal(i);
       if (result.d) *result.d = computation_->GetDVal(i);
       if (result.m) *result.m = computation_->GetMVal(i);
-      if (!result.p.empty()) {
-        auto* p = result.p.data();
-        for (const Move& move : moves) {
-          *p++ = computation_->GetPVal(i, move.as_nn_index(transforms_[i]));
-        }
-      }
+      if (!result.p.empty()) SoftmaxPolicy(result.p, computation_.get(), i);
     }
+  }
+
+  void SoftmaxPolicy(std::span<float> dst,
+                     const NetworkComputation* computation, int idx) {
+    const std::vector<Move>& moves = moves_[idx];
+    const int transform = transforms_[idx];
+    // Copy the values to the destination array and compute the maximum.
+    const float max_p = std::accumulate(
+        moves.begin(), moves.end(), -std::numeric_limits<float>::infinity(),
+        [&, counter = 0](float max_p, const Move& move) mutable {
+          return std::max(max_p, dst[counter++] = computation->GetPVal(
+                                     idx, move.as_nn_index(transform)));
+        });
+    // Compute the softmax and compute the total.
+    const float temperature = backend_->softmax_policy_temperature_;
+    float total = std::accumulate(
+        dst.begin(), dst.end(), 0.0f, [&](float total, float& val) {
+          return total + (val = FastExp((val - max_p) * temperature));
+        });
+    const float scale = total > 0.0f ? 1.0f / total : 1.0f;
+    // Scale the values to sum to 1.0.
+    std::for_each(dst.begin(), dst.end(), [&](float& val) { val *= scale; });
   }
 
  private:
@@ -119,7 +140,9 @@ NetworkAsBackendFactory::NetworkAsBackendFactory(const std::string& name,
 
 std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  return std::make_unique<NetworkAsBackend>(factory_(weights, options));
+  return std::make_unique<NetworkAsBackend>(
+      factory_(weights, options),
+      options.GetOrDefault<float>("policy_temp", 1.359f));
 }
 
 }  // namespace lczero

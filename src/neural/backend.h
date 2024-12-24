@@ -44,8 +44,9 @@ struct BackendAttributes {
   bool has_mlh;
   bool has_wdl;
   bool runs_on_cpu;
-  size_t suggested_num_search_threads;
-  size_t maximum_batch_size;
+  int suggested_num_search_threads;
+  int recommended_batch_size;
+  int maximum_batch_size;
 };
 
 struct EvalResult {
@@ -70,23 +71,14 @@ struct EvalPosition {
 class BackendComputation {
  public:
   virtual ~BackendComputation() = default;
-  virtual size_t RemainingBatchSize() const = 0;
+  virtual size_t UsedBatchSize() const = 0;
   enum AddInputResult {
-    FETCHED_IMMEDIATELY = 1,  // Was in cache, the result is
-                              // already populated.
-    ENQUEUED_FOR_EVAL = 2,    // Will be computed during ComputeBlocking();
-    REJECTED = 3,             // The sample won't be evaluated
-                              // (i.e. because the request was cache-only).
-  };
-  enum FetchMode {
-    CACHE_ONLY = 1,    // Do not enqueue if not in cache.
-    ENQUEUE_ONLY = 2,  // Do not check cache.
-    CACHE_OR_ENQUEUE = 3,
+    ENQUEUED_FOR_EVAL = 0,    // Will be computed during ComputeBlocking();
+    FETCHED_IMMEDIATELY = 1,  // Was in cache, the result is already populated.
   };
   virtual AddInputResult AddInput(
-      const EvalPosition& pos,  // Input position.
-      EvalResultPtr result,     // Where to fetch data into.
-      FetchMode mode) = 0;
+      const EvalPosition& pos,    // Input position.
+      EvalResultPtr result) = 0;  // Where to fetch data into.
   virtual void ComputeBlocking() = 0;
 };
 
@@ -97,13 +89,13 @@ class Backend {
   virtual std::unique_ptr<BackendComputation> CreateComputation() = 0;
 
   // Simple helper with default implementation, to evaluate a batch without
-  // creating a computation explicitly. Uses CACHE_OR_ENQUEUE mode.
+  // creating a computation explicitly.
   virtual std::vector<EvalResult> EvaluateBatch(
       std::span<const EvalPosition> positions);
-  // Similarly, default implementation for probing a cache. Default
-  // implementation creates a single input computation in CACHE_ONLY mode.
-  virtual std::optional<EvalResult> GetCachedEvaluation(
-      const EvalPosition& pos);
+  // Returns the evaluation if it's possible to do immediately.
+  virtual std::optional<EvalResult> GetCachedEvaluation(const EvalPosition&) {
+    return std::nullopt;
+  }
 };
 
 class BackendFactory {

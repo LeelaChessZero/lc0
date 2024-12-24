@@ -38,27 +38,11 @@ std::vector<EvalResult> Backend::EvaluateBatch(
     results.emplace_back();
     EvalResult& result = results.back();
     computation->AddInput(
-        pos,
-        EvalResultPtr{&result.q, &result.d, &result.m,
-                      std::span<float>(result.p.data(), result.p.size())},
-        BackendComputation::CACHE_OR_ENQUEUE);
+        pos, EvalResultPtr{&result.q, &result.d, &result.m,
+                           std::span<float>(result.p.data(), result.p.size())});
   }
   computation->ComputeBlocking();
   return results;
 }
 
-std::optional<EvalResult> Backend::GetCachedEvaluation(
-    const EvalPosition& pos) {
-  EvalResult result;
-  std::unique_ptr<BackendComputation> computation = CreateComputation();
-  if (computation->AddInput(
-          pos,
-          EvalResultPtr{&result.q, &result.d, &result.m,
-                        std::span<float>(result.p.data(), result.p.size())},
-          BackendComputation::CACHE_ONLY) ==
-      BackendComputation::FETCHED_IMMEDIATELY) {
-    return result;
-  }
-  return std::nullopt;
-}
 }  // namespace lczero
