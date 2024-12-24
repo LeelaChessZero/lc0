@@ -48,7 +48,7 @@ class NetworkAsBackend : public Backend {
     attrs_.runs_on_cpu = network_->IsCpu();
     attrs_.suggested_num_search_threads = network_->GetThreads();
     attrs_.recommended_batch_size = network_->GetMiniBatchSize();
-    attrs_.maximum_batch_size = std::numeric_limits<int>::max();
+    attrs_.maximum_batch_size = 1024;
     input_format_ = caps.input_format;
   }
 
