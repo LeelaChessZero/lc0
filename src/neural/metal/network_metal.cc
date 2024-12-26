@@ -203,11 +203,6 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     // The next thread can start using the GPU now.
     lock_.unlock();
 
-    // int start = 0;
-    // for (auto i = 0; i < 16 * 4096; i++) {
-    //   CERR << i + start << ";" << io->op_policy_raw_mem_[i + start];
-    // }
-
     if (attn_policy_) {
       // Promotion offset calculation.
       for (size_t batch = 0; batch < batchSize; batch++) {
