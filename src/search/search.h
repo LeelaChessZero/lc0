@@ -48,9 +48,9 @@ class SyzygyTablebase;
 // constructors.
 struct SearchContext {
   UciResponder* uci_responder = nullptr;
+  const OptionsDict* search_options = nullptr;
   SyzygyTablebase* syzygy_tb = nullptr;
   Backend* backend = nullptr;
-  const OptionsDict* search_options = nullptr;
 };
 
 // Base class for search runs. A separate instance is created for each search
@@ -91,8 +91,8 @@ class SearchBase {
 // to keep.
 class SearchEnvironment {
  public:
-  explicit SearchEnvironment(const SearchContext& context)
-      : context_(context) {}
+  explicit SearchEnvironment(UciResponder* uci, const OptionsDict* dict)
+      : context_{uci, dict} {}
   virtual ~SearchEnvironment() = default;
 
   // Resets search tree, and whatever else is needed to start a new game.
@@ -116,7 +116,7 @@ class SearchFactory {
   virtual void PopulateParams(OptionsParser*) const {}
   // Creates a new environment for the algorithm.
   virtual std::unique_ptr<SearchEnvironment> CreateEnvironment(
-      const SearchContext&) const = 0;
+      UciResponder*, const OptionsDict*) const = 0;
 };
 
 }  // namespace lczero

@@ -60,8 +60,9 @@ class PolicyHeadSearch : public InstamoveSearch {
 class PolicyHeadFactory : public SearchFactory {
   std::string_view GetName() const override { return "policyhead"; }
   std::unique_ptr<SearchEnvironment> CreateEnvironment(
-      const SearchContext& context) const override {
-    return std::make_unique<InstamoveEnvironment<PolicyHeadSearch>>(context);
+      UciResponder* responder, const OptionsDict* options) const override {
+    return std::make_unique<InstamoveEnvironment<PolicyHeadSearch>>(responder,
+                                                                    options);
   }
 };
 
