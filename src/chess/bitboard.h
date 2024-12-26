@@ -87,7 +87,7 @@ class BoardSquare {
 
 // Represents a board as an array of 64 bits.
 // Bit enumeration goes from bottom to top, from left to right:
-// Square a1 is bit 0, square a8 is bit 7, square b1 is bit 8.
+// Square a1 is bit 0, square h1 is bit 7, square a2 is bit 8.
 class BitBoard {
  public:
   constexpr BitBoard(std::uint64_t board) : board_(board) {}
