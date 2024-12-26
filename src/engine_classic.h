@@ -44,12 +44,12 @@ struct CurrentPosition {
   std::vector<std::string> moves;
 };
 
-class EngineController : public EngineControllerBase {
+class EngineClassic : public EngineControllerBase {
  public:
-  EngineController(std::unique_ptr<UciResponder> uci_responder,
-                   const OptionsDict& options);
+  EngineClassic(std::unique_ptr<UciResponder> uci_responder,
+                const OptionsDict& options);
 
-  ~EngineController() {
+  ~EngineClassic() {
     // Make sure search is destructed first, and it still may be running in
     // a separate thread.
     search_.reset();

@@ -85,11 +85,11 @@ int main(int argc, const char** argv) {
       CommandLine::ConsumeCommand("uci");
       // Ordinary UCI engine.
       auto options_parser = std::make_unique<OptionsParser>();
-      EngineController::PopulateOptions(options_parser.get());
+      EngineClassic::PopulateOptions(options_parser.get());
       EngineLoop loop(std::move(options_parser),
                       [](std::unique_ptr<UciResponder> uci_responder,
                          const OptionsDict& options) {
-                        return std::make_unique<EngineController>(
+                        return std::make_unique<EngineClassic>(
                             std::move(uci_responder), options);
                       });
       loop.RunLoop();
