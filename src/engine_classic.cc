@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "engine.h"
+#include "engine_classic.h"
 
 #include <algorithm>
 #include <cmath>

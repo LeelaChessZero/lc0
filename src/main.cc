@@ -26,7 +26,7 @@
 */
 
 #include "chess/board.h"
-#include "engine.h"
+#include "engine_classic.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
 #include "tools/benchmark.h"
