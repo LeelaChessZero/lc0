@@ -411,46 +411,50 @@ void EngineController::Stop() {
   if (search_) search_->Stop();
 }
 
-EngineLoop::EngineLoop()
-    : engine_(
+EngineLoop::EngineLoop(std::unique_ptr<OptionsParser> options,
+                       std::function<std::unique_ptr<EngineControllerBase>(
+                           std::unique_ptr<UciResponder> uci_responder,
+                           const OptionsDict& options)>
+                           engine_factory)
+    : options_(std::move(options)),
+      engine_(engine_factory(
           std::make_unique<CallbackUciResponder>(
               std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1)),
-          options_.GetOptionsDict()) {
-  engine_.PopulateOptions(&options_);
-  options_.Add<StringOption>(kLogFileId);
+          options_->GetOptionsDict())) {
+  options_->Add<StringOption>(kLogFileId);
 }
 
 void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init() || !options_.ProcessAllFlags()) return;
-  const auto options = options_.GetOptionsDict();
+  if (!ConfigFile::Init() || !options_->ProcessAllFlags()) return;
+  const auto options = options_->GetOptionsDict();
   Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-  if (options.Get<bool>(kPreload)) engine_.NewGame();
+  if (options.Get<bool>(kPreload)) engine_->NewGame();
   UciLoop::RunLoop();
 }
 
 void EngineLoop::CmdUci() {
   SendId();
-  for (const auto& option : options_.ListOptionsUci()) {
+  for (const auto& option : options_->ListOptionsUci()) {
     SendResponse(option);
   }
   SendResponse("uciok");
 }
 
 void EngineLoop::CmdIsReady() {
-  engine_.EnsureReady();
+  engine_->EnsureReady();
   SendResponse("readyok");
 }
 
 void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
                               const std::string& context) {
-  options_.SetUciOption(name, value, context);
+  options_->SetUciOption(name, value, context);
   // Set the log filename for the case it was set in UCI option.
   Logging::Get().SetFilename(
-      options_.GetOptionsDict().Get<std::string>(kLogFileId));
+      options_->GetOptionsDict().Get<std::string>(kLogFileId));
 }
 
-void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
+void EngineLoop::CmdUciNewGame() { engine_->NewGame(); }
 
 void EngineLoop::CmdPosition(const std::string& position,
                              const std::vector<std::string>& moves) {
@@ -458,17 +462,13 @@ void EngineLoop::CmdPosition(const std::string& position,
   if (fen.empty()) {
     fen = ChessBoard::kStartposFen;
   }
-  engine_.SetPosition(fen, moves);
+  engine_->SetPosition(fen, moves);
 }
 
-void EngineLoop::CmdFen() {
-  std::string fen = GetFen(engine_.ApplyPositionMoves());
-  return SendResponse(fen);
-}
-void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
+void EngineLoop::CmdGo(const GoParams& params) { engine_->Go(params); }
 
-void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
+void EngineLoop::CmdPonderHit() { engine_->PonderHit(); }
 
-void EngineLoop::CmdStop() { engine_.Stop(); }
+void EngineLoop::CmdStop() { engine_->Stop(); }
 
 }  // namespace lczero

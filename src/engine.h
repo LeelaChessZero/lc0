@@ -45,7 +45,28 @@ struct CurrentPosition {
   std::vector<std::string> moves;
 };
 
-class EngineController {
+class EngineControllerBase {
+ public:
+  virtual ~EngineControllerBase() = default;
+
+  // Blocks.
+  virtual void EnsureReady() = 0;
+
+  // Must not block.
+  virtual void NewGame() = 0;
+
+  // Blocks.
+  virtual void SetPosition(const std::string& fen,
+                           const std::vector<std::string>& moves) = 0;
+
+  // Must not block.
+  virtual void Go(const GoParams& params) = 0;
+  virtual void PonderHit() = 0;
+  // Must not block.
+  virtual void Stop() = 0;
+};
+
+class EngineController : public EngineControllerBase {
  public:
   EngineController(std::unique_ptr<UciResponder> uci_responder,
                    const OptionsDict& options);
@@ -56,23 +77,23 @@ class EngineController {
     search_.reset();
   }
 
-  void PopulateOptions(OptionsParser* options);
+  static void PopulateOptions(OptionsParser* options);
 
   // Blocks.
-  void EnsureReady();
+  void EnsureReady() override;
 
   // Must not block.
-  void NewGame();
+  void NewGame() override;
 
   // Blocks.
   void SetPosition(const std::string& fen,
-                   const std::vector<std::string>& moves);
+                   const std::vector<std::string>& moves) override;
 
   // Must not block.
-  void Go(const GoParams& params);
-  void PonderHit();
+  void Go(const GoParams& params) override;
+  void PonderHit() override;
   // Must not block.
-  void Stop();
+  void Stop() override;
 
   Position ApplyPositionMoves();
 
@@ -118,7 +139,11 @@ class EngineController {
 
 class EngineLoop : public UciLoop {
  public:
-  EngineLoop();
+  EngineLoop(std::unique_ptr<OptionsParser> options,
+             std::function<std::unique_ptr<EngineControllerBase>(
+                 std::unique_ptr<UciResponder> uci_responder,
+                 const OptionsDict& options)>
+                 engine_factory);
 
   void RunLoop() override;
   void CmdUci() override;
@@ -128,14 +153,13 @@ class EngineLoop : public UciLoop {
   void CmdUciNewGame() override;
   void CmdPosition(const std::string& position,
                    const std::vector<std::string>& moves) override;
-  void CmdFen() override;
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
 
  private:
-  OptionsParser options_;
-  EngineController engine_;
+  std::unique_ptr<OptionsParser> options_;
+  std::unique_ptr<EngineControllerBase> engine_;
 };
 
 }  // namespace lczero
