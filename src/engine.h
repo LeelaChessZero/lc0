@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2020 The LCZero Authors
+  Copyright (C) 2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,35 +25,16 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "search/register.h"
+#pragma once
 
-#include <algorithm>
+#include "engine_loop.h"
+#include "search/search.h"
 
 namespace lczero {
 
-SearchManager* SearchManager::Get() {
-  static SearchManager factory;
-  return &factory;
-}
-
-void SearchManager::AddSearchFactory(std::unique_ptr<SearchFactory> algorithm) {
-  algorithms_.push_back(std::move(algorithm));
-}
-
-std::vector<std::string_view> SearchManager::GetSearchesList() const {
-  std::vector<std::string_view> res;
-  res.reserve(algorithms_.size());
-  std::transform(algorithms_.begin(), algorithms_.end(),
-                 std::back_inserter(res),
-                 [](const auto& alg) { return alg->GetName(); });
-  return res;
-}
-
-SearchFactory* SearchManager::GetFactoryByName(std::string_view name) const {
-  auto it =
-      std::find_if(algorithms_.begin(), algorithms_.end(),
-                   [name](const auto& alg) { return alg->GetName() == name; });
-  return it == algorithms_.end() ? nullptr : it->get();
-}
+class Engine : public EngineControllerBase {
+ public:
+  Engine(std::unique_ptr<SearchEnvironment>);
+};
 
 }  // namespace lczero
