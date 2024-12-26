@@ -29,41 +29,19 @@
 
 #include <optional>
 
-#include "chess/uciloop.h"
+#include "engine_loop.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
-#include "utils/optionsparser.h"
 
 namespace lczero {
 
 struct CurrentPosition {
   std::string fen;
   std::vector<std::string> moves;
-};
-
-class EngineControllerBase {
- public:
-  virtual ~EngineControllerBase() = default;
-
-  // Blocks.
-  virtual void EnsureReady() = 0;
-
-  // Must not block.
-  virtual void NewGame() = 0;
-
-  // Blocks.
-  virtual void SetPosition(const std::string& fen,
-                           const std::vector<std::string>& moves) = 0;
-
-  // Must not block.
-  virtual void Go(const GoParams& params) = 0;
-  virtual void PonderHit() = 0;
-  // Must not block.
-  virtual void Stop() = 0;
 };
 
 class EngineController : public EngineControllerBase {
@@ -135,31 +113,6 @@ class EngineController : public EngineControllerBase {
 
   // If true we can reset move_start_time_ in "Go".
   bool strict_uci_timing_;
-};
-
-class EngineLoop : public UciLoop {
- public:
-  EngineLoop(std::unique_ptr<OptionsParser> options,
-             std::function<std::unique_ptr<EngineControllerBase>(
-                 std::unique_ptr<UciResponder> uci_responder,
-                 const OptionsDict& options)>
-                 engine_factory);
-
-  void RunLoop() override;
-  void CmdUci() override;
-  void CmdIsReady() override;
-  void CmdSetOption(const std::string& name, const std::string& value,
-                    const std::string& context) override;
-  void CmdUciNewGame() override;
-  void CmdPosition(const std::string& position,
-                   const std::vector<std::string>& moves) override;
-  void CmdGo(const GoParams& params) override;
-  void CmdPonderHit() override;
-  void CmdStop() override;
-
- private:
-  std::unique_ptr<OptionsParser> options_;
-  std::unique_ptr<EngineControllerBase> engine_;
 };
 
 }  // namespace lczero

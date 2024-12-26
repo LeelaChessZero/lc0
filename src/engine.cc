@@ -42,10 +42,6 @@ namespace {
 const OptionId kThreadsOptionId{
     "threads", "Threads",
     "Number of (CPU) worker threads to use, 0 for the backend default.", 't'};
-const OptionId kLogFileId{"logfile", "LogFile",
-                          "Write log to that file. Special value <stderr> to "
-                          "output the log to the console.",
-                          'l'};
 const OptionId kSyzygyTablebaseId{
     "syzygy-paths", "SyzygyPath",
     "List of Syzygy tablebase directories, list entries separated by system "
@@ -64,8 +60,6 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
-const OptionId kPreload{"preload", "",
-                        "Initialize backend and load net on engine startup."};
 const OptionId kValueOnly{
     "value-only", "ValueOnly",
     "In value only mode all search parameters are ignored and the position is "
@@ -129,7 +123,6 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
 
-  options->Add<BoolOption>(kPreload) = false;
   options->Add<BoolOption>(kValueOnly) = false;
   options->Add<ButtonOption>(kClearTree);
   options->HideOption(kClearTree);
@@ -410,65 +403,5 @@ void EngineController::PonderHit() {
 void EngineController::Stop() {
   if (search_) search_->Stop();
 }
-
-EngineLoop::EngineLoop(std::unique_ptr<OptionsParser> options,
-                       std::function<std::unique_ptr<EngineControllerBase>(
-                           std::unique_ptr<UciResponder> uci_responder,
-                           const OptionsDict& options)>
-                           engine_factory)
-    : options_(std::move(options)),
-      engine_(engine_factory(
-          std::make_unique<CallbackUciResponder>(
-              std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
-              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1)),
-          options_->GetOptionsDict())) {
-  options_->Add<StringOption>(kLogFileId);
-}
-
-void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init() || !options_->ProcessAllFlags()) return;
-  const auto options = options_->GetOptionsDict();
-  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-  if (options.Get<bool>(kPreload)) engine_->NewGame();
-  UciLoop::RunLoop();
-}
-
-void EngineLoop::CmdUci() {
-  SendId();
-  for (const auto& option : options_->ListOptionsUci()) {
-    SendResponse(option);
-  }
-  SendResponse("uciok");
-}
-
-void EngineLoop::CmdIsReady() {
-  engine_->EnsureReady();
-  SendResponse("readyok");
-}
-
-void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
-                              const std::string& context) {
-  options_->SetUciOption(name, value, context);
-  // Set the log filename for the case it was set in UCI option.
-  Logging::Get().SetFilename(
-      options_->GetOptionsDict().Get<std::string>(kLogFileId));
-}
-
-void EngineLoop::CmdUciNewGame() { engine_->NewGame(); }
-
-void EngineLoop::CmdPosition(const std::string& position,
-                             const std::vector<std::string>& moves) {
-  std::string fen = position;
-  if (fen.empty()) {
-    fen = ChessBoard::kStartposFen;
-  }
-  engine_->SetPosition(fen, moves);
-}
-
-void EngineLoop::CmdGo(const GoParams& params) { engine_->Go(params); }
-
-void EngineLoop::CmdPonderHit() { engine_->PonderHit(); }
-
-void EngineLoop::CmdStop() { engine_->Stop(); }
 
 }  // namespace lczero
