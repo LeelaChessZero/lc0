@@ -539,9 +539,6 @@ static const NSInteger kMinSubBatchSize = 20;
                                                        rpeV:encoder.mha.rpe_v.size() > 0 ? encoder.mha.rpe_v.data() : nil
                                           smolgenActivation:smolgenActivation
                                                       label:[NSString stringWithFormat:@"%@/mha", label]];
-//    return [self reshapeTensor:mha
-//                     withShape:@[@(-1), @(64), @(512)]
-//                          name:[NSString stringWithFormat:@"%@/reshape", label]];
 
     // MHA final dense layer.
     mha = [self addFullyConnectedLayerWithParent:mha
@@ -819,9 +816,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                          secondaryTensor:rpeTensor
                                                     name:[NSString stringWithFormat:@"%@/rpe/matmul", label]];
 
-    // Reverse the last reshape and transposition.
-//    NSUInteger dim = type == 2 ? depth : keys;
-//    tensor = [self reshapeTensor:tensor withShape:@[@(heads), @(queries), @(-1), @(dim)] name:[NSString stringWithFormat:@"%@/reshape_3", label]];
+    // Reverse the last transposition back to Nabd.
     tensor = [self transposeTensor:tensor dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/a_transpose_4", label]];
     tensor = [self transposeTensor:tensor dimension:0 withDimension:1 name:[NSString stringWithFormat:@"%@/a_transpose_5", label]];
 
