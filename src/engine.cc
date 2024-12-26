@@ -246,7 +246,7 @@ class PonderResponseTransformer : public TransformingUciResponder {
       : TransformingUciResponder(std::move(parent)),
         ponder_move_(std::move(ponder_move)) {}
 
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) const override {
     // Output all stats from main variation (not necessary the ponder move)
     // but PV only from ponder move.
     ThinkingInfo ponder_info;

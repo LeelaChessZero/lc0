@@ -140,8 +140,8 @@ struct TournamentInfo {
 class UciResponder {
  public:
   virtual ~UciResponder() = default;
-  virtual void OutputBestMove(BestMoveInfo* info) = 0;
-  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) = 0;
+  virtual void OutputBestMove(BestMoveInfo* info) const = 0;
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) const = 0;
 };
 
 // The responder which calls callbacks. Used for easier transition from old
@@ -155,8 +155,8 @@ class CallbackUciResponder : public UciResponder {
   CallbackUciResponder(BestMoveCallback bestmove, ThinkingCallback info)
       : bestmove_callback_(bestmove), info_callback_(info) {}
 
-  void OutputBestMove(BestMoveInfo* info) { bestmove_callback_(*info); }
-  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+  void OutputBestMove(BestMoveInfo* info) const { bestmove_callback_(*info); }
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) const {
     info_callback_(*infos);
   }
 
@@ -169,16 +169,16 @@ class CallbackUciResponder : public UciResponder {
 // where we need to create a copy.
 class NonOwningUciRespondForwarder : public UciResponder {
  public:
-  NonOwningUciRespondForwarder(UciResponder* parent) : parent_(parent) {}
-  virtual void OutputBestMove(BestMoveInfo* info) {
+  NonOwningUciRespondForwarder(const UciResponder* parent) : parent_(parent) {}
+  virtual void OutputBestMove(BestMoveInfo* info) const {
     parent_->OutputBestMove(info);
   }
-  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) const {
     parent_->OutputThinkingInfo(infos);
   }
 
  private:
-  UciResponder* const parent_;
+  const UciResponder* const parent_;
 };
 
 // Base class for uci response transformations.
@@ -187,15 +187,15 @@ class TransformingUciResponder : public UciResponder {
   TransformingUciResponder(std::unique_ptr<UciResponder> parent)
       : parent_(std::move(parent)) {}
 
-  virtual void TransformBestMove(BestMoveInfo*) {}
-  virtual void TransformThinkingInfo(std::vector<ThinkingInfo>*) {}
+  virtual void TransformBestMove(BestMoveInfo*) const {}
+  virtual void TransformThinkingInfo(std::vector<ThinkingInfo>*) const {}
 
  private:
-  virtual void OutputBestMove(BestMoveInfo* info) {
+  virtual void OutputBestMove(BestMoveInfo* info) const {
     TransformBestMove(info);
     parent_->OutputBestMove(info);
   }
-  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) const {
     TransformThinkingInfo(infos);
     parent_->OutputThinkingInfo(infos);
   }
@@ -204,14 +204,14 @@ class TransformingUciResponder : public UciResponder {
 
 class WDLResponseFilter : public TransformingUciResponder {
   using TransformingUciResponder::TransformingUciResponder;
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) const override {
     for (auto& info : *infos) info.wdl.reset();
   }
 };
 
 class MovesLeftResponseFilter : public TransformingUciResponder {
   using TransformingUciResponder::TransformingUciResponder;
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) const override {
     for (auto& info : *infos) info.moves_left.reset();
   }
 };
@@ -224,13 +224,13 @@ class Chess960Transformer : public TransformingUciResponder {
       : TransformingUciResponder(std::move(parent)), head_board_(head_board) {}
 
  private:
-  void TransformBestMove(BestMoveInfo* best_move) override {
+  void TransformBestMove(BestMoveInfo* best_move) const override {
     std::vector<Move> moves({best_move->bestmove, best_move->ponder});
     ConvertToLegacyCastling(head_board_, &moves);
     best_move->bestmove = moves[0];
     best_move->ponder = moves[1];
   }
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) const override {
     for (auto& x : *infos) ConvertToLegacyCastling(head_board_, &x.pv);
   }
   static void ConvertToLegacyCastling(ChessBoard pos,
