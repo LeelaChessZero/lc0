@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "engine_loop.h"
 #include "search/search.h"
 
@@ -35,6 +37,18 @@ namespace lczero {
 class Engine : public EngineControllerBase {
  public:
   Engine(std::unique_ptr<SearchEnvironment>);
+
+ private:
+  void EnsureReady() override {};
+  void NewGame() override {};
+  void SetPosition(const std::string& fen,
+                   const std::vector<std::string>& moves) override {}
+  void Go(const GoParams& params) override {}
+  void PonderHit() override {}
+  void Stop() override {}
+
+  private:
+  std::unique_ptr<SearchEnvironment> search_env_;
 };
 
 }  // namespace lczero

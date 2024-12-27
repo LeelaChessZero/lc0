@@ -27,4 +27,9 @@
 
 #include "engine.h"
 
-namespace lczero {}  // namespace lczero
+namespace lczero {
+
+Engine::Engine(std::unique_ptr<SearchEnvironment> env)
+    : search_env_(std::move(env)) {}
+
+}  // namespace lczero
