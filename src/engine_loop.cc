@@ -51,7 +51,7 @@ EngineLoop::EngineLoop(std::unique_ptr<OptionsParser> options,
               std::bind(&UciLoop::SendInfo, this, std::placeholders::_1)),
           options_->GetOptionsDict())) {
   options_->Add<StringOption>(kLogFileId);
-  options->Add<BoolOption>(kPreload) = false;
+  options_->Add<BoolOption>(kPreload) = false;
 }
 
 void EngineLoop::RunLoop() {
