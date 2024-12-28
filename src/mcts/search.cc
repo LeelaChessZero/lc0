@@ -456,6 +456,18 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
   const float base = params.GetCpuctBase(is_root_node);
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
+
+inline float ComputePolicyDecayFactor(const SearchParams& params, uint32_t N) {
+  const float exponent = params.GetPolicyDecayExponent();
+  const float proportionality_factor = params.GetPolicyDecayFactor();
+  return (exponent == 0.0f || proportionality_factor == 0.0f)
+             ? 1.0f
+             : FastExp(-FastLog(1.0f + proportionality_factor * N) * exponent);
+}
+
+inline float ComputePolicyDecay(const float factor, const float pol) {
+  return factor == 1.0f ? pol : pol / (pol + (1.0f - pol) * factor);
+}
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(Node* node) const {
@@ -1720,10 +1732,17 @@ void SearchWorker::PickNodesToExtendTask(
                                    ? odd_draw_score
                                    : even_draw_score;
       m_evaluator.SetParent(node);
+      // Store the policy decay factor here since it is only dependent on the
+      // visit count of node and not of children.
+      const float policy_decay_factor =
+          ComputePolicyDecayFactor(params_, node->GetN());
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
         int index = child->Index();
         visited_pol += current_pol[index];
+        // Apply policy decay and store the value.
+        current_pol[index] = ComputePolicyDecay(policy_decay_factor,
+                                                current_pol[index]);
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
