@@ -26,7 +26,7 @@
 */
 
 #include "chess/board.h"
-#include "engine.h"
+#include "engine_classic.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
 #include "tools/benchmark.h"
@@ -84,7 +84,14 @@ int main(int argc, const char** argv) {
       // Consuming optional "uci" mode.
       CommandLine::ConsumeCommand("uci");
       // Ordinary UCI engine.
-      EngineLoop loop;
+      auto options_parser = std::make_unique<OptionsParser>();
+      EngineClassic::PopulateOptions(options_parser.get());
+      EngineLoop loop(std::move(options_parser),
+                      [](std::unique_ptr<UciResponder> uci_responder,
+                         const OptionsDict& options) {
+                        return std::make_unique<EngineClassic>(
+                            std::move(uci_responder), options);
+                      });
       loop.RunLoop();
     }
   } catch (std::exception& e) {

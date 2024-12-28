@@ -29,14 +29,13 @@
 
 #include <optional>
 
-#include "chess/uciloop.h"
+#include "engine_loop.h"
 #include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
-#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -45,34 +44,34 @@ struct CurrentPosition {
   std::vector<std::string> moves;
 };
 
-class EngineController {
+class EngineClassic : public EngineControllerBase {
  public:
-  EngineController(std::unique_ptr<UciResponder> uci_responder,
-                   const OptionsDict& options);
+  EngineClassic(std::unique_ptr<UciResponder> uci_responder,
+                const OptionsDict& options);
 
-  ~EngineController() {
+  ~EngineClassic() {
     // Make sure search is destructed first, and it still may be running in
     // a separate thread.
     search_.reset();
   }
 
-  void PopulateOptions(OptionsParser* options);
+  static void PopulateOptions(OptionsParser* options);
 
   // Blocks.
-  void EnsureReady();
+  void EnsureReady() override;
 
   // Must not block.
-  void NewGame();
+  void NewGame() override;
 
   // Blocks.
   void SetPosition(const std::string& fen,
-                   const std::vector<std::string>& moves);
+                   const std::vector<std::string>& moves) override;
 
   // Must not block.
-  void Go(const GoParams& params);
-  void PonderHit();
+  void Go(const GoParams& params) override;
+  void PonderHit() override;
   // Must not block.
-  void Stop();
+  void Stop() override;
 
   Position ApplyPositionMoves();
 
@@ -114,28 +113,6 @@ class EngineController {
 
   // If true we can reset move_start_time_ in "Go".
   bool strict_uci_timing_;
-};
-
-class EngineLoop : public UciLoop {
- public:
-  EngineLoop();
-
-  void RunLoop() override;
-  void CmdUci() override;
-  void CmdIsReady() override;
-  void CmdSetOption(const std::string& name, const std::string& value,
-                    const std::string& context) override;
-  void CmdUciNewGame() override;
-  void CmdPosition(const std::string& position,
-                   const std::vector<std::string>& moves) override;
-  void CmdFen() override;
-  void CmdGo(const GoParams& params) override;
-  void CmdPonderHit() override;
-  void CmdStop() override;
-
- private:
-  OptionsParser options_;
-  EngineController engine_;
 };
 
 }  // namespace lczero

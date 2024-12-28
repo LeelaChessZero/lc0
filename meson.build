@@ -181,7 +181,8 @@ common_files += [
 ]
 
 files += [
-  'src/engine.cc',
+  'src/engine_classic.cc',
+  'src/engine_loop.cc',
   'src/mcts/params.cc',
   'src/mcts/search.cc',
   'src/mcts/stoppers/alphazero.cc',

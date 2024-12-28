@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "engine.h"
+#include "engine_classic.h"
 
 #include <algorithm>
 #include <cmath>
@@ -42,10 +42,6 @@ namespace {
 const OptionId kThreadsOptionId{
     "threads", "Threads",
     "Number of (CPU) worker threads to use, 0 for the backend default.", 't'};
-const OptionId kLogFileId{"logfile", "LogFile",
-                          "Write log to that file. Special value <stderr> to "
-                          "output the log to the console.",
-                          'l'};
 const OptionId kSyzygyTablebaseId{
     "syzygy-paths", "SyzygyPath",
     "List of Syzygy tablebase directories, list entries separated by system "
@@ -64,8 +60,6 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
-const OptionId kPreload{"preload", "",
-                        "Initialize backend and load net on engine startup."};
 const OptionId kValueOnly{
     "value-only", "ValueOnly",
     "In value only mode all search parameters are ignored and the position is "
@@ -92,13 +86,13 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 }  // namespace
 
-EngineController::EngineController(std::unique_ptr<UciResponder> uci_responder,
-                                   const OptionsDict& options)
+EngineClassic::EngineClassic(std::unique_ptr<UciResponder> uci_responder,
+                             const OptionsDict& options)
     : options_(options),
       uci_responder_(std::move(uci_responder)),
       current_position_{ChessBoard::kStartposFen, {}} {}
 
-void EngineController::PopulateOptions(OptionsParser* options) {
+void EngineClassic::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
   const bool is_simple =
       CommandLine::BinaryName().find("simple") != std::string::npos;
@@ -129,18 +123,17 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
 
-  options->Add<BoolOption>(kPreload) = false;
   options->Add<BoolOption>(kValueOnly) = false;
   options->Add<ButtonOption>(kClearTree);
   options->HideOption(kClearTree);
 }
 
-void EngineController::ResetMoveTimer() {
+void EngineClassic::ResetMoveTimer() {
   move_start_time_ = std::chrono::steady_clock::now();
 }
 
 // Updates values from Uci options.
-void EngineController::UpdateFromUciOptions() {
+void EngineClassic::UpdateFromUciOptions() {
   SharedLock lock(busy_mutex_);
 
   // Syzygy tablebases.
@@ -173,14 +166,14 @@ void EngineController::UpdateFromUciOptions() {
   strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
 }
 
-void EngineController::EnsureReady() {
+void EngineClassic::EnsureReady() {
   std::unique_lock<RpSharedMutex> lock(busy_mutex_);
   // If a UCI host is waiting for our ready response, we can consider the move
   // not started until we're done ensuring ready.
   ResetMoveTimer();
 }
 
-void EngineController::NewGame() {
+void EngineClassic::NewGame() {
   // In case anything relies upon defaulting to default position and just calls
   // newgame and goes straight into go.
   ResetMoveTimer();
@@ -193,8 +186,8 @@ void EngineController::NewGame() {
   UpdateFromUciOptions();
 }
 
-void EngineController::SetPosition(const std::string& fen,
-                                   const std::vector<std::string>& moves_str) {
+void EngineClassic::SetPosition(const std::string& fen,
+                                const std::vector<std::string>& moves_str) {
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
   ResetMoveTimer();
@@ -203,7 +196,7 @@ void EngineController::SetPosition(const std::string& fen,
   search_.reset();
 }
 
-Position EngineController::ApplyPositionMoves() {
+Position EngineClassic::ApplyPositionMoves() {
   ChessBoard board;
   int no_capture_ply;
   int game_move;
@@ -218,8 +211,8 @@ Position EngineController::ApplyPositionMoves() {
   return pos;
 }
 
-void EngineController::SetupPosition(
-    const std::string& fen, const std::vector<std::string>& moves_str) {
+void EngineClassic::SetupPosition(const std::string& fen,
+                                  const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   search_.reset();
 
@@ -233,7 +226,7 @@ void EngineController::SetupPosition(
   if (!is_same_game) CreateFreshTimeManager();
 }
 
-void EngineController::CreateFreshTimeManager() {
+void EngineClassic::CreateFreshTimeManager() {
   time_manager_ = MakeTimeManager(options_);
 }
 
@@ -341,7 +334,7 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
 
 }  // namespace
 
-void EngineController::Go(const GoParams& params) {
+void EngineClassic::Go(const GoParams& params) {
   // TODO: should consecutive calls to go be considered to be a continuation and
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
@@ -401,74 +394,14 @@ void EngineController::Go(const GoParams& params) {
   search_->StartThreads(options_.Get<int>(kThreadsOptionId));
 }
 
-void EngineController::PonderHit() {
+void EngineClassic::PonderHit() {
   ResetMoveTimer();
   go_params_.ponder = false;
   Go(go_params_);
 }
 
-void EngineController::Stop() {
+void EngineClassic::Stop() {
   if (search_) search_->Stop();
 }
-
-EngineLoop::EngineLoop()
-    : engine_(
-          std::make_unique<CallbackUciResponder>(
-              std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
-              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1)),
-          options_.GetOptionsDict()) {
-  engine_.PopulateOptions(&options_);
-  options_.Add<StringOption>(kLogFileId);
-}
-
-void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init() || !options_.ProcessAllFlags()) return;
-  const auto options = options_.GetOptionsDict();
-  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-  if (options.Get<bool>(kPreload)) engine_.NewGame();
-  UciLoop::RunLoop();
-}
-
-void EngineLoop::CmdUci() {
-  SendId();
-  for (const auto& option : options_.ListOptionsUci()) {
-    SendResponse(option);
-  }
-  SendResponse("uciok");
-}
-
-void EngineLoop::CmdIsReady() {
-  engine_.EnsureReady();
-  SendResponse("readyok");
-}
-
-void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
-                              const std::string& context) {
-  options_.SetUciOption(name, value, context);
-  // Set the log filename for the case it was set in UCI option.
-  Logging::Get().SetFilename(
-      options_.GetOptionsDict().Get<std::string>(kLogFileId));
-}
-
-void EngineLoop::CmdUciNewGame() { engine_.NewGame(); }
-
-void EngineLoop::CmdPosition(const std::string& position,
-                             const std::vector<std::string>& moves) {
-  std::string fen = position;
-  if (fen.empty()) {
-    fen = ChessBoard::kStartposFen;
-  }
-  engine_.SetPosition(fen, moves);
-}
-
-void EngineLoop::CmdFen() {
-  std::string fen = GetFen(engine_.ApplyPositionMoves());
-  return SendResponse(fen);
-}
-void EngineLoop::CmdGo(const GoParams& params) { engine_.Go(params); }
-
-void EngineLoop::CmdPonderHit() { engine_.PonderHit(); }
-
-void EngineLoop::CmdStop() { engine_.Stop(); }
 
 }  // namespace lczero
