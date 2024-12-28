@@ -964,6 +964,9 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     const auto m_evaluator = network_->GetCapabilities().has_mlh()
                                  ? MEvaluator(params_, root_node_)
                                  : MEvaluator();
+    const float prev_q = root_node_->GetParent() != nullptr
+                             ? root_node_->GetParent()->GetQ(draw_score)
+                             : 0.0f;
     for (const auto& edge : root_node_->Edges()) {
       const auto n = edge.GetN();
       const auto q = edge.GetQ(fpu, draw_score);
@@ -992,6 +995,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       if (max_n < n) {
         max_n = n;
         max_n_has_max_q_plus_m = false;
+        stats->delta_q = q - prev_q;
       }
       if (max_q_plus_m <= q_plus_m) {
         max_n_has_max_q_plus_m = (max_n == n);
