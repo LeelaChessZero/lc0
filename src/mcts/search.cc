@@ -380,7 +380,12 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   if (current_best_edge_ && !edges.empty()) {
     last_outputted_info_edge_ = current_best_edge_.edge();
   }
-
+  // Cutechess treats each UCI-info line atomically, and if we send
+  // multiple lines we have to send the best line last for it to stay
+  // on top. This only matters if multipv is set (above one).
+  if (max_pv > 1) {
+    std::reverse(uci_infos.begin(), uci_infos.end());
+  }
   uci_responder_->OutputThinkingInfo(&uci_infos);
 }
 
