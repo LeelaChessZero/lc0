@@ -33,9 +33,11 @@
 
 #include <atomic>
 #include <cstdint>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <fstream>
 #include <mutex>
 #include <random>
@@ -1407,7 +1409,13 @@ class SyzygyTablebaseImpl {
       idx = type != DTM ? encode_pawn_f(p, ei, be) : encode_pawn_r(p, ei, be);
     }
 
+    auto start = std::chrono::high_resolution_clock::now();
     uint8_t* w = decompress_pairs(ei->precomp, idx);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration = end - start;
+    if (duration.count() > 1) {
+    std::cout << "Warning: Tablebase probing took " << duration.count()  << " seconds, which is longer than expected." << std::endl;
+    }
 
     if (type == WDL) return static_cast<int>(w[0]) - 2;
 
