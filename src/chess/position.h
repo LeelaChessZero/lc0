@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <span>
 #include <string>
 
 #include "chess/board.h"
@@ -64,20 +65,12 @@ class Position {
 
   // Gets board from the point of view of player to move.
   const ChessBoard& GetBoard() const { return us_board_; }
-  // Gets board from the point of view of opponent.
-  const ChessBoard& GetThemBoard() const { return them_board_; }
-  // Gets board from the point of view of the white player.
-  const ChessBoard& GetWhiteBoard() const {
-    return us_board_.flipped() ? them_board_ : us_board_;
-  };
 
   std::string DebugString() const;
 
  private:
   // The board from the point of view of the player to move.
   ChessBoard us_board_;
-  // The board from the point of view of opponent.
-  ChessBoard them_board_;
 
   // How many half-moves without capture or pawn move was there.
   int rule50_ply_ = 0;
@@ -103,7 +96,7 @@ class PositionHistory {
   PositionHistory(PositionHistory&& other) = default;
 
   PositionHistory& operator=(const PositionHistory& other) = default;
-  PositionHistory& operator=(PositionHistory&& other) = default;  
+  PositionHistory& operator=(PositionHistory&& other) = default;
 
   // Returns first position of the game (or fen from which it was initialized).
   const Position& Starting() const { return positions_.front(); }
@@ -146,6 +139,8 @@ class PositionHistory {
 
   // Checks for any repetitions since the last time 50 move rule was reset.
   bool DidRepeatSinceLastZeroingMove() const;
+
+  std::span<const Position> GetPositions() const { return positions_; }
 
  private:
   int ComputeLastMoveRepetitions(int* cycle_length) const;
