@@ -450,8 +450,11 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
 }
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
-                          bool is_root_node) {
-  const float init = params.GetCpuct(is_root_node);
+                          bool is_root_node, int depth) {
+  // scale by depth so that for depth > 5 is cpuct lower than the parameter and for depth < 5 the cpuct is higher.
+  // Let the maximum range be from cpuct * 0.9 to cpuct * 1.4 for depth = 0 to depth = 30
+  // f(0) = 1.1, f(5) = 1, f(30) = 0.8
+  const float init = params.GetCpuct(is_root_node) * (1.07581 - depth * 0.00935484);
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
@@ -465,7 +468,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
+  const float cpuct = ComputeCpuct(params_, node->GetN(), is_root, 0); // depth 0 since this is root.
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   std::vector<EdgeAndNode> edges;
@@ -1735,7 +1738,7 @@ void SearchWorker::PickNodesToExtendTask(
         }
       }
 
-      const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
+      const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node, base_depth - 1);
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       int cache_filled_idx = -1;
@@ -2126,7 +2129,7 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
   typedef std::pair<float, EdgeAndNode> ScoredEdge;
   std::vector<ScoredEdge> scores;
   const float cpuct =
-      ComputeCpuct(params_, node->GetN(), node == search_->root_node_);
+      ComputeCpuct(params_, node->GetN(), node == search_->root_node_, 5); // We don't have depth available here so just set depth=5 to get the normal cpuct value.
   const float puct_mult =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
   const float fpu =
