@@ -964,8 +964,50 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     const auto m_evaluator = network_->GetCapabilities().has_mlh()
                                  ? MEvaluator(params_, root_node_)
                                  : MEvaluator();
+
+    // For smart pruning in time manager to work as intended when dealing with
+    // transpositions, we subtract the transposition visits for each edge.
+    // Step 1: Create a hash list for the PV up to 4 plies.
+    std::vector<uint64_t> pv_hash_list;
+    EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
+    // To make the computation lighter, restrict PV search to top moves.
+    uint32_t pv_visit_threshold = best_edge.GetN() / 10;
+    int hist_length = played_history_.GetLength();
+    unsigned int depth = 0;
+    PositionHistory history_pv = played_history_;
+    for (EdgeAndNode iter = best_edge; iter;
+         iter = GetBestChildNoTemperature(iter.node(), depth)) {
+      if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+      history_pv.Append(iter.GetMove());
+      if (depth > 0) {
+        // There aren't transpositions at 1 ply, so skip the hash calculation.
+        pv_hash_list.push_back(history_pv.Last().Hash());
+      }
+      depth += 1;
+      if (depth >= 4) break; // We only count transpositions until 4 plies.
+    }
     for (const auto& edge : root_node_->Edges()) {
-      const auto n = edge.GetN();
+      // Step 2: For each edge, check whether the PV reaches a position
+      // identical to the best_edge PV at some depth.
+      int n_transpos = 0;
+      unsigned int depth = 0;
+      history_pv.Trim(hist_length);
+      if ((edge != best_edge) && (edge.GetN() > pv_visit_threshold)) {
+        for (EdgeAndNode iter = edge; iter;
+             iter = GetBestChildNoTemperature(iter.node(), depth)) {
+          if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+          history_pv.Append(iter.GetMove());
+          if ((depth > 0) &&
+              (pv_hash_list[depth - 1] == history_pv.Last().Hash())) {
+            n_transpos = iter.GetN();
+            break; // We only care for the first transposition into the PV.
+          }
+          depth += 1;
+          if (depth > pv_hash_list.size()) break;
+      }
+      }
+
+      const auto n = edge.GetN() - n_transpos;
       const auto q = edge.GetQ(fpu, draw_score);
       const auto m = m_evaluator.GetMUtility(edge, q);
       const auto q_plus_m = q + m;
