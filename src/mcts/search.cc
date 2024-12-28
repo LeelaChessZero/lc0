@@ -389,8 +389,9 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
 void Search::MaybeOutputInfo() {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
-  if (!bestmove_is_sent_ && current_best_edge_ &&
-      (current_best_edge_.edge() != last_outputted_info_edge_ ||
+  if (!bestmove_is_sent_ &&
+      ((current_best_edge_ &&
+        current_best_edge_.edge() != last_outputted_info_edge_) ||
        last_outputted_uci_info_.depth !=
            static_cast<int>(cum_depth_ /
                             (total_playouts_ ? total_playouts_ : 1)) ||
@@ -1246,6 +1247,7 @@ void SearchWorker::ExecuteOneIteration() {
       }
       auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
       if (nps > params_.GetNpsLimit()) {
+        search_->MaybeOutputInfo();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       } else {
         break;
