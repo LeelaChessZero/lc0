@@ -639,7 +639,7 @@ class ProtoMessageParser:
                     raise ValueError(f'Field number [{r}] is reserved.')
             elif isinstance(r, range):
                 if any(x.number in r for x in self.fields):
-                    raise ValueError(f'Field range [{r.start} to {r.stop}] '
+                    raise ValueError(f'Field range [{r.start} to {r.stop-1}] '
                                      'is reserved.')
             else:
                 if any(x.name.group(0) == r for x in self.fields):
