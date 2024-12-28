@@ -49,7 +49,8 @@ int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out);
+    FillEmptyHistory fill_empty_history, int* transform_out,
+    bool swap_colors = false);
 
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
