@@ -25,33 +25,33 @@
   Program grant you additional permission to convey the resulting work.
 */
 #include "neural/cache.h"
+
+#include <array>
 #include <cassert>
 #include <iostream>
 
+#include "neural/encoder.h"
+#include "utils/fastmath.h"
+#include "utils/pfloat16.h"
+
 namespace lczero {
 CachingComputation::CachingComputation(
-    std::unique_ptr<NetworkComputation> parent, NNCache* cache)
-    : parent_(std::move(parent)), cache_(cache) {}
+    std::unique_ptr<NetworkComputation> parent,
+    pblczero::NetworkFormat::InputFormat input_format,
+    lczero::FillEmptyHistory history_fill, float softmax_temp,
+    int history_length, NNCache* cache)
+    : parent_(std::move(parent)),
+      input_format_(input_format),
+      history_fill_(history_fill),
+      softmax_temp_(softmax_temp),
+      history_length_(history_length),
+      cache_(cache) {}
 
 int CachingComputation::GetCacheMisses() const {
   return parent_->GetBatchSize();
 }
 
 int CachingComputation::GetBatchSize() const { return batch_.size(); }
-
-bool CachingComputation::AddInputByHash(uint64_t hash) {
-  NNCacheLock lock(cache_, hash);
-  if (!lock) return false;
-  AddInputByHash(hash, std::move(lock));
-  return true;
-}
-
-void CachingComputation::AddInputByHash(uint64_t hash, NNCacheLock&& lock) {
-  assert(lock);
-  batch_.emplace_back();
-  batch_.back().lock = std::move(lock);
-  batch_.back().hash = hash;
-}
 
 void CachingComputation::PopCacheHit() {
   assert(!batch_.empty());
@@ -60,14 +60,47 @@ void CachingComputation::PopCacheHit() {
   batch_.pop_back();
 }
 
-void CachingComputation::AddInput(
-    uint64_t hash, InputPlanes&& input,
-    std::vector<uint16_t>&& probabilities_to_cache) {
-  if (AddInputByHash(hash)) return;
+bool CachingComputation::CacheLookup(const PositionHistory& history,
+                                     const MoveList& moves,
+                                     CachedNNRequest* entry) {
+  const auto hash = history.HashLast(history_length_);
+  NNCacheLock lock(cache_, hash);
+  if (!lock) return false;
+  if (entry != nullptr) {
+    if (moves.size() != lock->p.size()) return false;
+    entry->q = lock->q;
+    entry->d = lock->d;
+    entry->m = lock->m;
+    entry->p.clear();
+    entry->p.resize(lock->p.size());
+    for (size_t i = 0; i < lock->p.size(); i++) entry->p[i] = lock->p[i];
+  }
+  return true;
+}
+
+void CachingComputation::AddInput(const PositionHistory& history,
+                                  const MoveList& moves) {
+  const auto hash = history.HashLast(history_length_);
+  NNCacheLock lock(cache_, hash);
+  if (lock && moves.size() == lock->p.size()) {
+    batch_.emplace_back();
+    batch_.back().lock = std::move(lock);
+    batch_.back().hash = hash;
+    return;
+  }
+
+  int transform;
+  auto input =
+      EncodePositionForNN(input_format_, history, 8, history_fill_, &transform);
+  std::vector<uint16_t> moves_as_nn_index;
+  moves_as_nn_index.reserve(moves.size());
+  for (auto iter = moves.begin(), end = moves.end(); iter != end; ++iter) {
+    moves_as_nn_index.emplace_back(iter->as_nn_index(transform));
+  }
   batch_.emplace_back();
   batch_.back().hash = hash;
   batch_.back().idx_in_parent = parent_->GetBatchSize();
-  batch_.back().probabilities_to_cache = probabilities_to_cache;
+  batch_.back().probabilities_to_cache = std::move(moves_as_nn_index);
   parent_->AddInput(std::move(input));
 }
 
@@ -81,18 +114,41 @@ void CachingComputation::ComputeBlocking() {
   if (parent_->GetBatchSize() == 0) return;
   parent_->ComputeBlocking();
 
+  // Intermediate array to store values when processing policy.
+  // There are never more than 256 valid legal moves in any legal position.
+  std::array<float, 256> intermediate;
+
   // Fill cache with data from NN.
-  for (const auto& item : batch_) {
+  for (auto& item : batch_) {
     if (item.idx_in_parent == -1) continue;
     auto req =
         std::make_unique<CachedNNRequest>(item.probabilities_to_cache.size());
     req->q = parent_->GetQVal(item.idx_in_parent);
     req->d = parent_->GetDVal(item.idx_in_parent);
     req->m = parent_->GetMVal(item.idx_in_parent);
-    int idx = 0;
+
+    // Calculate maximum first.
+    float max_p = -std::numeric_limits<float>::infinity();
+    int counter = 0;
     for (auto x : item.probabilities_to_cache) {
-      req->p[idx++] =
-          std::make_pair(x, parent_->GetPVal(item.idx_in_parent, x));
+      float p = parent_->GetPVal(item.idx_in_parent, x);
+      intermediate[counter++] = p;
+      max_p = std::max(max_p, p);
+    }
+    float total = 0.0;
+    for (int i = 0; i < counter; i++) {
+      // Perform softmax and take into account policy softmax temperature T.
+      // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
+      float p = FastExp((intermediate[i] - max_p) / softmax_temp_);
+      intermediate[i] = p;
+      total += p;
+    }
+    // Normalize P values to add up to 1.0.
+    const float scale = total > 0.0f ? 1.0f / total : 1.0f;
+    for (size_t ct = 0; ct < item.probabilities_to_cache.size(); ct++) {
+      pfloat16 p = intermediate[ct] * scale;
+      req->p[ct] = p;
+      std::memcpy(&item.probabilities_to_cache[ct], &p, sizeof(pfloat16));
     }
     cache_->Insert(item.hash, std::move(req));
   }
@@ -116,22 +172,15 @@ float CachingComputation::GetMVal(int sample) const {
   return item.lock->m;
 }
 
-float CachingComputation::GetPVal(int sample, int move_id) const {
+pfloat16 CachingComputation::GetPVal(int sample, int move_ct) const {
   auto& item = batch_[sample];
-  if (item.idx_in_parent >= 0)
-    return parent_->GetPVal(item.idx_in_parent, move_id);
-  const auto& moves = item.lock->p;
-
-  int total_count = 0;
-  while (total_count < moves.size()) {
-    // Optimization: usually moves are stored in the same order as queried.
-    const auto& move = moves[item.last_idx++];
-    if (item.last_idx == moves.size()) item.last_idx = 0;
-    if (move.first == move_id) return move.second;
-    ++total_count;
+  if (item.idx_in_parent >= 0) {
+    pfloat16 r;
+    std::memcpy(&r, (pfloat16*)&item.probabilities_to_cache[move_ct],
+                sizeof(pfloat16));
+    return r;
   }
-  assert(false);  // Move not found.
-  return 0;
+  return item.lock->p[move_ct];
 }
 
 }  // namespace lczero

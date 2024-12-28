@@ -1258,8 +1258,10 @@ void SearchWorker::ExecuteOneIteration() {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
     std::unique_ptr<NetworkComputation> computation) {
-  computation_ = std::make_unique<CachingComputation>(std::move(computation),
-                                                      search_->cache_);
+  computation_ = std::make_unique<CachingComputation>(
+      std::move(computation), search_->network_->GetCapabilities().input_format,
+      params_.GetHistoryFill(), params_.GetPolicySoftmaxTemp(),
+      params_.GetCacheHistoryLength() + 1, search_->cache_);
   computation_->Reserve(target_minibatch_size_);
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
@@ -1418,16 +1420,8 @@ void SearchWorker::GatherMinibatch() {
       // If there was no OOO, there can stil be collisions.
       // There are no OOO though.
       // Also terminals when OOO is disabled.
-      if (!minibatch_[i].nn_queried) continue;
-      if (minibatch_[i].is_cache_hit) {
-        // Since minibatch_[i] holds cache lock, this is guaranteed to succeed.
-        computation_->AddInputByHash(minibatch_[i].hash,
-                                     std::move(minibatch_[i].lock));
-      } else {
-        computation_->AddInput(minibatch_[i].hash,
-                               std::move(minibatch_[i].input_planes),
-                               std::move(minibatch_[i].probabilities_to_cache));
-      }
+      if (!minibatch_[i].nn_queried || minibatch_[i].is_cache_hit) continue;
+      computation_->AddInput(minibatch_[i].history, minibatch_[i].moves);
     }
 
     // Check for stop at the end so we have at least one node.
@@ -1470,30 +1464,22 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
+      // Initialize position sequence with pre-move position.
+      history.Trim(search_->played_history_.GetLength());
+      history.Reserve(search_->played_history_.GetLength() +
+                      picked_node.moves_to_visit.size());
+      for (size_t i = 0; i < picked_node.moves_to_visit.size(); i++) {
+        history.Append(picked_node.moves_to_visit[i]);
+      }
+
+      picked_node.moves = history.Last().GetBoard().GenerateLegalMoves();
+
+      ExtendNode(node, picked_node.depth, history, picked_node.moves);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
-        picked_node.hash = hash;
-        picked_node.lock = NNCacheLock(search_->cache_, hash);
-        picked_node.is_cache_hit = picked_node.lock;
-        if (!picked_node.is_cache_hit) {
-          int transform;
-          picked_node.input_planes = EncodePositionForNN(
-              search_->network_->GetCapabilities().input_format, history, 8,
-              params_.GetHistoryFill(), &transform);
-          picked_node.probability_transform = transform;
-
-          std::vector<uint16_t>& moves = picked_node.probabilities_to_cache;
-          // Legal moves are known, use them.
-          moves.reserve(node->GetNumEdges());
-          for (const auto& edge : node->Edges()) {
-            moves.emplace_back(edge.GetMove().as_nn_index(transform));
-          }
-        } else {
-          picked_node.probability_transform = TransformForPosition(
-              search_->network_->GetCapabilities().input_format, history);
-        }
+        picked_node.is_cache_hit = computation_->CacheLookup(
+            history, picked_node.moves, &picked_node.entry);
+        if (!picked_node.is_cache_hit) picked_node.history = history;
       }
     }
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
@@ -1939,19 +1925,11 @@ void SearchWorker::PickNodesToExtendTask(
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth,
-                              const std::vector<Move>& moves_to_node,
-                              PositionHistory* history) {
-  // Initialize position sequence with pre-move position.
-  history->Trim(search_->played_history_.GetLength());
-  for (size_t i = 0; i < moves_to_node.size(); i++) {
-    history->Append(moves_to_node[i]);
-  }
-
+                              const PositionHistory& history,
+                              const MoveList& legal_moves) {
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
-  const auto& board = history->Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-
+  const auto& board = history.Last().GetBoard();
   // Check whether it's a draw/lose by position. Importantly, we must check
   // these before doing the by-rule checks below.
   if (legal_moves.empty()) {
@@ -1972,12 +1950,12 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       return;
     }
 
-    if (history->Last().GetRule50Ply() >= 100) {
+    if (history.Last().GetRule50Ply() >= 100) {
       node->MakeTerminal(GameResult::DRAW);
       return;
     }
 
-    const auto repetitions = history->Last().GetRepetitions();
+    const auto repetitions = history.Last().GetRepetitions();
     // Mark two-fold repetitions as draws according to settings.
     // Depth starts with 1 at root, so number of plies in PV is depth - 1.
     if (repetitions >= 2) {
@@ -1985,8 +1963,8 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       return;
     } else if (repetitions == 1 && depth - 1 >= 4 &&
                params_.GetTwoFoldDraws() &&
-               depth - 1 >= history->Last().GetPliesSincePrevRepetition()) {
-      const auto cycle_length = history->Last().GetPliesSincePrevRepetition();
+               depth - 1 >= history.Last().GetPliesSincePrevRepetition()) {
+      const auto cycle_length = history.Last().GetPliesSincePrevRepetition();
       // use plies since first repetition as moves left; exact if forced draw.
       node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
                          Node::Terminal::TwoFold);
@@ -1996,12 +1974,12 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
         board.castlings().no_legal_castle() &&
-        history->Last().GetRule50Ply() == 0 &&
+        history.Last().GetRule50Ply() == 0 &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
       const WDLScore wdl =
-          search_->syzygy_tb_->probe_wdl(history->Last(), &state);
+          search_->syzygy_tb_->probe_wdl(history.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
       if (state != FAIL) {
@@ -2037,35 +2015,23 @@ void SearchWorker::ExtendNode(Node* node, int depth,
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node) {
-  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  if (search_->cache_->ContainsKey(hash)) {
+  if (computation_->CacheLookup(history_)) {
     return true;
   }
-  int transform;
-  auto planes =
-      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
-
-  std::vector<uint16_t> moves;
+  MoveList moves;
 
   if (node && node->HasChildren()) {
     // Legal moves are known, use them.
     moves.reserve(node->GetNumEdges());
     for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
+      moves.emplace_back(edge.GetMove());
     }
   } else {
-    // Cache pseudolegal moves. A bit of a waste, but faster.
-    const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
-    moves.reserve(pseudolegal_moves.size());
-    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
+    // Cache legal moves.
+    moves = history_.Last().GetBoard().GenerateLegalMoves();
   }
 
-  computation_->AddInput(hash, std::move(planes), std::move(moves));
+  computation_->AddInput(history_, moves);
   return false;
 }
 
@@ -2197,6 +2163,10 @@ void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
+    if (node_to_process.is_cache_hit) {
+      FetchSingleNodeResult(&node_to_process, node_to_process, 0);
+      continue;
+    }
     FetchSingleNodeResult(&node_to_process, *computation_, idx_in_computation);
     if (node_to_process.nn_queried) ++idx_in_computation;
   }
@@ -2236,34 +2206,11 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   node_to_process->v = v;
   node_to_process->d = d;
   node_to_process->m = computation.GetMVal(idx_in_computation);
-  // ...and secondly, the policy data.
-  // Calculate maximum first.
-  float max_p = -std::numeric_limits<float>::infinity();
-  // Intermediate array to store values when processing policy.
-  // There are never more than 256 valid legal moves in any legal position.
-  std::array<float, 256> intermediate;
-  int counter = 0;
+  // ...and secondly, the policy data. The cache returns compressed values after
+  // softmax.
+  int idx = 0;
   for (auto& edge : node->Edges()) {
-    float p = computation.GetPVal(
-        idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform));
-    intermediate[counter++] = p;
-    max_p = std::max(max_p, p);
-  }
-  float total = 0.0;
-  for (int i = 0; i < counter; i++) {
-    // Perform softmax and take into account policy softmax temperature T.
-    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    float p =
-        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
-    intermediate[i] = p;
-    total += p;
-  }
-  counter = 0;
-  // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  for (auto& edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
+    edge.edge()->SetP(computation.GetPVal(idx_in_computation, idx++));
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {

@@ -44,6 +44,7 @@
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
+#include "utils/pfloat16.h"
 
 namespace lczero {
 
@@ -331,7 +332,6 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
-    int probability_transform = 0;
 
     // Details only populated in the multigather path.
 
@@ -339,10 +339,9 @@ class SearchWorker {
     std::vector<Move> moves_to_visit;
 
     // Details that are filled in as we go.
-    uint64_t hash;
-    NNCacheLock lock;
-    std::vector<uint16_t> probabilities_to_cache;
-    InputPlanes input_planes;
+    CachedNNRequest entry;
+    MoveList moves;
+    PositionHistory history;
     mutable int last_idx = 0;
     bool ooo_completed = false;
 
@@ -361,26 +360,13 @@ class SearchWorker {
     // Methods to allow NodeToProcess to conform as a 'Computation'. Only safe
     // to call if is_cache_hit is true in the multigather path.
 
-    float GetQVal(int) const { return lock->q; }
+    float GetQVal(int) const { return entry.q; }
 
-    float GetDVal(int) const { return lock->d; }
+    float GetDVal(int) const { return entry.d; }
 
-    float GetMVal(int) const { return lock->m; }
+    float GetMVal(int) const { return entry.m; }
 
-    float GetPVal(int, int move_id) const {
-      const auto& moves = lock->p;
-
-      int total_count = 0;
-      while (total_count < moves.size()) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = moves[last_idx++];
-        if (last_idx == moves.size()) last_idx = 0;
-        if (move.first == move_id) return move.second;
-        ++total_count;
-      }
-      assert(false);  // Move not found.
-      return 0;
-    }
+    pfloat16 GetPVal(int, int move_ct) const { return entry.p[move_ct]; }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
@@ -455,8 +441,8 @@ class SearchWorker {
   void EnsureNodeTwoFoldCorrectForDepth(Node* node, int depth);
   void ProcessPickedTask(int batch_start, int batch_end,
                          TaskWorkspace* workspace);
-  void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
-                  PositionHistory* history);
+  void ExtendNode(Node* node, int depth, const PositionHistory& history,
+                  const MoveList& legal_moves);
   template <typename Computation>
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              const Computation& computation,
