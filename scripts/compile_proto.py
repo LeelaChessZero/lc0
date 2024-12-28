@@ -68,6 +68,7 @@ RESERVED_WORDS = [
     'required',
     'reserved',
     'syntax',
+    'to',
 ] + list(TYPES.keys())
 
 GRAMMAR = ([(r'%s\b' % x, x)
@@ -561,7 +562,13 @@ def ParseReservedFields(lexer):
     while True:
         token, match = lexer.Pick()
         if token == 'number':
-            res.add(int(lexer.Consume('number').group(0)))
+            num = int(lexer.Consume('number').group(0))
+            if lexer.Pick()[0] == 'to':
+                lexer.Consume('to')
+                end = int(lexer.Consume('number').group(0))
+                res.add(range(num, end + 1))
+            else:
+                res.add(num)
         elif token in ['identifier', 'string']:
             res.add(lexer.Consume(token).group(1))
         else:
@@ -630,6 +637,10 @@ class ProtoMessageParser:
             if isinstance(r, int):
                 if any(x.number == r for x in self.fields):
                     raise ValueError(f'Field number [{r}] is reserved.')
+            elif isinstance(r, range):
+                if any(x.number in r for x in self.fields):
+                    raise ValueError(f'Field range [{r.start} to {r.stop}] '
+                                     'is reserved.')
             else:
                 if any(x.name.group(0) == r for x in self.fields):
                     raise ValueError(f'Field name [{r}] is reserved.')
