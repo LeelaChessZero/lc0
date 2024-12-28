@@ -198,6 +198,21 @@ void EngineController::SetPosition(const std::string& fen,
   // Some UCI hosts just call position then immediately call go, while starting
   // the clock on calling 'position'.
   ResetMoveTimer();
+
+  // Check move validity.
+  ChessBoard board;
+  board.SetFromFen(fen);
+  for (std::string str : moves_str) {
+    Move move(str);
+    if (board.flipped()) move.Mirror();
+    MoveList moves = board.GenerateLegalMoves();
+    if (std::find(moves.begin(), moves.end(), move) == moves.end()) {
+      throw Exception("Invalid move " + str + "!");
+    }
+    board.ApplyMove(move);
+    board.Mirror();
+  }
+
   SharedLock lock(busy_mutex_);
   current_position_ = CurrentPosition{fen, moves_str};
   search_.reset();
