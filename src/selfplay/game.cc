@@ -29,8 +29,8 @@
 
 #include <algorithm>
 
-#include "mcts/stoppers/common.h"
-#include "mcts/stoppers/factory.h"
+#include "search/classic/stoppers/common.h"
+#include "search/classic/stoppers/factory.h"
 #include "utils/random.h"
 
 namespace lczero {
@@ -74,7 +74,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
   options->Add<BoolOption>(kUciChess960) = false;
-  PopulateTimeManagementOptions(RunType::kSelfplay, options);
+  PopulateTimeManagementOptions(classic::RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
 }
@@ -84,17 +84,17 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
     : options_{white, black},
       chess960_{white.uci_options->Get<bool>(kUciChess960) ||
                 black.uci_options->Get<bool>(kUciChess960)},
-      training_data_(SearchParams(*white.uci_options).GetHistoryFill(),
-                     SearchParams(*black.uci_options).GetHistoryFill(),
+      training_data_(classic::SearchParams(*white.uci_options).GetHistoryFill(),
+                     classic::SearchParams(*black.uci_options).GetHistoryFill(),
                      white.network->GetCapabilities().input_format) {
   orig_fen_ = opening.start_fen;
-  tree_[0] = std::make_shared<NodeTree>();
+  tree_[0] = std::make_shared<classic::NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
-    tree_[1] = std::make_shared<NodeTree>();
+    tree_[1] = std::make_shared<classic::NodeTree>();
     tree_[1]->ResetToPosition(orig_fen_, {});
   }
   int ply = 0;
@@ -166,7 +166,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       auto stoppers = options_[idx].search_limits.MakeSearchStopper();
-      PopulateIntrinsicStoppers(stoppers.get(), *options_[idx].uci_options);
+      classic::PopulateIntrinsicStoppers(stoppers.get(),
+                                         *options_[idx].uci_options);
 
       std::unique_ptr<UciResponder> responder =
           std::make_unique<CallbackUciResponder>(
@@ -178,7 +179,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
             std::move(responder), tree_[idx]->HeadPosition().GetBoard());
       }
 
-      search_ = std::make_unique<Search>(
+      search_ = std::make_unique<classic::Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
           std::move(stoppers), /* infinite */ false, /* ponder */ false,
@@ -238,7 +239,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     }
 
     auto node = tree_[idx]->GetCurrentHead();
-    Eval played_eval = best_eval;
+    classic::Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
@@ -310,7 +311,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
-  for (Node* node = tree_[0]->GetCurrentHead();
+  for (classic::Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
     moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove());
   }
@@ -355,18 +356,19 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   training_data_.Write(writer, game_result_, adjudicated_);
 }
 
-std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
-    const {
-  auto result = std::make_unique<ChainedSearchStopper>();
+std::unique_ptr<classic::ChainedSearchStopper>
+SelfPlayLimits::MakeSearchStopper() const {
+  auto result = std::make_unique<classic::ChainedSearchStopper>();
 
   // always set VisitsStopper to avoid exceeding the limit 4000000000, the
   // default value when visits = 0
-  result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
+  result->AddStopper(std::make_unique<classic::VisitsStopper>(visits, false));
   if (playouts >= 0) {
-    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
+    result->AddStopper(
+        std::make_unique<classic::PlayoutsStopper>(playouts, false));
   }
   if (movetime >= 0) {
-    result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
+    result->AddStopper(std::make_unique<classic::TimeLimitStopper>(movetime));
   }
   return result;
 }

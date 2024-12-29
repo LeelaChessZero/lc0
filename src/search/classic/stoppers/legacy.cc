@@ -25,11 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/legacy.h"
+#include "search/classic/stoppers/legacy.h"
 
-#include "mcts/stoppers/stoppers.h"
+#include "search/classic/stoppers/stoppers.h"
 
 namespace lczero {
+namespace classic {
 
 float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness) {
   // An analysis of chess games shows that the distribution of game lengths
@@ -169,4 +170,5 @@ std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
                                                    const OptionsDict& params) {
   return std::make_unique<LegacyTimeManager>(move_overhead, params);
 }
+}  // namespace classic
 }  // namespace lczero

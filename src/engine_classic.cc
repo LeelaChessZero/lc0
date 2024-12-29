@@ -31,8 +31,8 @@
 #include <cmath>
 #include <functional>
 
-#include "mcts/search.h"
-#include "mcts/stoppers/factory.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
@@ -98,16 +98,16 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
       CommandLine::BinaryName().find("simple") != std::string::npos;
   NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
-  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
-  SearchParams::Populate(options);
+  options->Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 2000000;
+  classic::SearchParams::Populate(options);
 
   ConfigFile::PopulateOptions(options);
   if (is_simple) {
     options->HideAllOptions();
     options->UnhideOption(kThreadsOptionId);
     options->UnhideOption(NetworkFactory::kWeightsId);
-    options->UnhideOption(SearchParams::kContemptId);
-    options->UnhideOption(SearchParams::kMultiPvId);
+    options->UnhideOption(classic::SearchParams::kContemptId);
+    options->UnhideOption(classic::SearchParams::kMultiPvId);
   }
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
@@ -117,8 +117,9 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kShowWDL) = false;
   options->Add<BoolOption>(kShowMovesleft) = false;
 
-  PopulateTimeManagementOptions(is_simple ? RunType::kSimpleUci : RunType::kUci,
-                                options);
+  PopulateTimeManagementOptions(
+      is_simple ? classic::RunType::kSimpleUci : classic::RunType::kUci,
+      options);
 
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
@@ -160,7 +161,7 @@ void EngineClassic::UpdateFromUciOptions() {
   }
 
   // Cache size.
-  cache_.SetCapacity(options_.Get<int>(kNNCacheSizeId));
+  cache_.SetCapacity(options_.Get<int>(classic::kNNCacheSizeId));
 
   // Check whether we can update the move timer in "Go".
   strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
@@ -218,7 +219,7 @@ void EngineClassic::SetupPosition(const std::string& fen,
 
   UpdateFromUciOptions();
 
-  if (!tree_) tree_ = std::make_unique<NodeTree>();
+  if (!tree_) tree_ = std::make_unique<classic::NodeTree>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
@@ -227,7 +228,7 @@ void EngineClassic::SetupPosition(const std::string& fen,
 }
 
 void EngineClassic::CreateFreshTimeManager() {
-  time_manager_ = MakeTimeManager(options_);
+  time_manager_ = classic::MakeTimeManager(options_);
 }
 
 namespace {
@@ -265,7 +266,8 @@ class PonderResponseTransformer : public TransformingUciResponder {
   std::string ponder_move_;
 };
 
-void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
+void ValueOnlyGo(classic::NodeTree* tree, Network* network,
+                 const OptionsDict& options,
                  std::unique_ptr<UciResponder> responder) {
   auto input_format = network->GetCapabilities().input_format;
 
@@ -284,7 +286,7 @@ void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
   }
 
   std::vector<float> comp_q;
-  int batch_size = options.Get<int>(SearchParams::kMiniBatchSizeId);
+  int batch_size = options.Get<int>(classic::SearchParams::kMiniBatchSizeId);
   if (batch_size == 0) batch_size = network->GetMiniBatchSize();
 
   for (size_t i = 0; i < planes.size(); i += batch_size) {
@@ -383,7 +385,7 @@ void EngineClassic::Go(const GoParams& params) {
   }
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
-  search_ = std::make_unique<Search>(
+  search_ = std::make_unique<classic::Search>(
       *tree_, network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,

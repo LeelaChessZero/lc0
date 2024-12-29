@@ -25,12 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/stoppers.h"
+#include "search/classic/stoppers/stoppers.h"
 
-#include "mcts/node.h"
+#include "search/classic/node.h"
 #include "neural/cache.h"
 
 namespace lczero {
+namespace classic {
 
 ///////////////////////////
 // ChainedSearchStopper
@@ -267,4 +268,5 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   return false;
 }
 
+}  // namespace classic
 }  // namespace lczero

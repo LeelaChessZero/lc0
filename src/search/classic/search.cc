@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/search.h"
+#include "search/classic/search.h"
 
 #include <algorithm>
 #include <array>
@@ -37,7 +37,7 @@
 #include <sstream>
 #include <thread>
 
-#include "mcts/node.h"
+#include "search/classic/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
 #include "utils/fastmath.h"
@@ -45,6 +45,7 @@
 #include "utils/spinhelper.h"
 
 namespace lczero {
+namespace classic {
 
 namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
@@ -2466,4 +2467,5 @@ void SearchWorker::UpdateCounters() {
   }
 }
 
+}  // namespace classic
 }  // namespace lczero

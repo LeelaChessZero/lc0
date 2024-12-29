@@ -30,10 +30,11 @@
 #include <optional>
 #include <vector>
 
-#include "mcts/node.h"
-#include "mcts/stoppers/timemgr.h"
+#include "search/classic/node.h"
+#include "search/classic/stoppers/timemgr.h"
 
 namespace lczero {
+namespace classic {
 
 // Combines multiple stoppers into one.
 class ChainedSearchStopper : public SearchStopper {
@@ -151,4 +152,5 @@ class SmartPruningStopper : public SearchStopper {
   std::optional<int64_t> first_eval_time_ GUARDED_BY(mutex_);
 };
 
+}  // namespace classic
 }  // namespace lczero

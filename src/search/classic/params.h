@@ -32,6 +32,7 @@
 #include "utils/optionsparser.h"
 
 namespace lczero {
+namespace classic {
 
 enum class ContemptMode { PLAY, WHITE, BLACK, NONE };
 
@@ -295,4 +296,5 @@ class SearchParams {
   const bool kSearchSpinBackoff;
 };
 
+}  // namespace classic
 }  // namespace lczero
