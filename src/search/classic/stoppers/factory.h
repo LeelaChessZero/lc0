@@ -27,8 +27,8 @@
 
 #pragma once
 
-#include "mcts/stoppers/common.h"
-#include "mcts/stoppers/timemgr.h"
+#include "search/classic/stoppers/common.h"
+#include "search/classic/stoppers/timemgr.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 

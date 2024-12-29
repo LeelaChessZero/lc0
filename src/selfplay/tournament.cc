@@ -30,8 +30,8 @@
 #include <fstream>
 
 #include "chess/pgn.h"
-#include "mcts/search.h"
-#include "mcts/stoppers/factory.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
 #include "neural/factory.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"

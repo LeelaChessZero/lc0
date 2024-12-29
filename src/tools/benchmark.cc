@@ -29,9 +29,9 @@
 
 #include <numeric>
 
-#include "mcts/search.h"
-#include "mcts/stoppers/factory.h"
-#include "mcts/stoppers/stoppers.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
+#include "search/classic/stoppers/stoppers.h"
 
 namespace lczero {
 namespace {

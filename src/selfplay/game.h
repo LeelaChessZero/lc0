@@ -30,10 +30,10 @@
 #include "chess/pgn.h"
 #include "chess/position.h"
 #include "chess/uciloop.h"
-#include "mcts/search.h"
-#include "mcts/stoppers/stoppers.h"
 #include "neural/cache.h"
 #include "neural/network.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/stoppers.h"
 #include "trainingdata/trainingdata.h"
 #include "utils/optionsparser.h"
 

@@ -25,16 +25,16 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/factory.h"
+#include "search/classic/stoppers/factory.h"
 
 #include <optional>
 
 #include "factory.h"
-#include "mcts/stoppers/alphazero.h"
-#include "mcts/stoppers/legacy.h"
-#include "mcts/stoppers/simple.h"
-#include "mcts/stoppers/smooth.h"
-#include "mcts/stoppers/stoppers.h"
+#include "search/classic/stoppers/alphazero.h"
+#include "search/classic/stoppers/legacy.h"
+#include "search/classic/stoppers/simple.h"
+#include "search/classic/stoppers/smooth.h"
+#include "search/classic/stoppers/stoppers.h"
 #include "utils/exception.h"
 
 namespace lczero {

@@ -28,7 +28,7 @@
 #include "tools/backendbench.h"
 
 #include "chess/board.h"
-#include "mcts/node.h"
+#include "search/classic/node.h"
 #include "neural/factory.h"
 #include "utils/optionsparser.h"
 

@@ -31,8 +31,8 @@
 #include <cmath>
 #include <functional>
 
-#include "mcts/search.h"
-#include "mcts/stoppers/factory.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"

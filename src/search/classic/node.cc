@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/node.h"
+#include "search/classic/node.h"
 
 #include <algorithm>
 #include <cassert>

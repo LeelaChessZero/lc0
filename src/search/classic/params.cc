@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/params.h"
+#include "search/classic/params.h"
 
 #include <algorithm>
 #include <cctype>

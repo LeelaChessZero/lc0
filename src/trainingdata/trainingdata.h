@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include "mcts/node.h"
+#include "search/classic/node.h"
 #include "trainingdata/writer.h"
 
 namespace lczero {

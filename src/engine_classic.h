@@ -30,10 +30,10 @@
 #include <optional>
 
 #include "engine_loop.h"
-#include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/factory.h"
 #include "neural/network.h"
+#include "search/classic/search.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 

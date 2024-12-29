@@ -30,8 +30,8 @@
 #include <optional>
 #include <vector>
 
-#include "mcts/node.h"
-#include "mcts/stoppers/timemgr.h"
+#include "search/classic/node.h"
+#include "search/classic/stoppers/timemgr.h"
 
 namespace lczero {
 namespace classic {
