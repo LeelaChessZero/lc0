@@ -46,6 +46,7 @@
 #endif
 
 namespace lczero {
+namespace classic {
 
 namespace {
 FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
@@ -696,4 +697,5 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
+}  // namespace classic
 }  // namespace lczero

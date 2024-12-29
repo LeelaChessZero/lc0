@@ -46,6 +46,7 @@
 #include "utils/mutex.h"
 
 namespace lczero {
+namespace classic {
 
 class Search {
  public:
@@ -497,4 +498,5 @@ class SearchWorker {
   bool exiting_ = false;
 };
 
+}  // namespace classic
 }  // namespace lczero

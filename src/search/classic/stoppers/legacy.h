@@ -27,25 +27,16 @@
 
 #pragma once
 
-#include "mcts/stoppers/stoppers.h"
+#include "mcts/stoppers/timemgr.h"
 #include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
 
 namespace lczero {
+namespace classic {
 
-enum class RunType { kUci, kSimpleUci, kSelfplay };
-void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
+float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness);
 
-// Option ID for a cache size. It's used from multiple places and there's no
-// really nice place to declare, so let it be here.
-extern const OptionId kNNCacheSizeId;
+std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
+                                                   const OptionsDict& params);
 
-// Populates KLDGain and SmartPruning stoppers.
-void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options);
-
-std::unique_ptr<TimeManager> MakeCommonTimeManager(
-    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
-    int64_t move_overhead);
-
+}  // namespace classic
 }  // namespace lczero

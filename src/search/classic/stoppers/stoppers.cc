@@ -31,6 +31,7 @@
 #include "neural/cache.h"
 
 namespace lczero {
+namespace classic {
 
 ///////////////////////////
 // ChainedSearchStopper
@@ -267,4 +268,5 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   return false;
 }
 
+}  // namespace classic
 }  // namespace lczero

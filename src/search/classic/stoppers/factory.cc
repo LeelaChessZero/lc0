@@ -38,6 +38,7 @@
 #include "utils/exception.h"
 
 namespace lczero {
+namespace classic {
 namespace {
 
 const OptionId kMoveOverheadId{
@@ -109,4 +110,5 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   return MakeCommonTimeManager(std::move(time_manager), options, move_overhead);
 }
 
+}  // namespace classic
 }  // namespace lczero

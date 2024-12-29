@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2019 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,43 +25,29 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts/stoppers/timemgr.h"
+#pragma once
 
 #include "mcts/stoppers/stoppers.h"
+#include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
+namespace classic {
 
-StoppersHints::StoppersHints() { Reset(); }
+enum class RunType { kUci, kSimpleUci, kSelfplay };
+void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
 
-void StoppersHints::UpdateEstimatedRemainingTimeMs(int64_t v) {
-  if (v < remaining_time_ms_) remaining_time_ms_ = v;
-}
-int64_t StoppersHints::GetEstimatedRemainingTimeMs() const {
-  return remaining_time_ms_;
-}
+// Option ID for a cache size. It's used from multiple places and there's no
+// really nice place to declare, so let it be here.
+extern const OptionId kNNCacheSizeId;
 
-void StoppersHints::UpdateEstimatedRemainingPlayouts(int64_t v) {
-  if (v < remaining_playouts_) remaining_playouts_ = v;
-}
-int64_t StoppersHints::GetEstimatedRemainingPlayouts() const {
-  // Even if we exceeded limits, don't go crazy by not allowing any playouts.
-  return std::max(decltype(remaining_playouts_){1}, remaining_playouts_);
-}
+// Populates KLDGain and SmartPruning stoppers.
+void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
+                               const OptionsDict& options);
 
-void StoppersHints::UpdateEstimatedNps(float v) { estimated_nps_ = v; }
+std::unique_ptr<TimeManager> MakeCommonTimeManager(
+    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
+    int64_t move_overhead);
 
-std::optional<float> StoppersHints::GetEstimatedNps() const {
-  return estimated_nps_;
-}
-
-void StoppersHints::Reset() {
-  // Slightly more than 3 years.
-  remaining_time_ms_ = 100000000000;
-  // Type for N in nodes is currently uint32_t, so set limit in order not to
-  // overflow it.
-  remaining_playouts_ = 4000000000;
-  // NPS is not known.
-  estimated_nps_.reset();
-}
-
+}  // namespace classic
 }  // namespace lczero

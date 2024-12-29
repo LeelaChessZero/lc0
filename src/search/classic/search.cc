@@ -45,6 +45,7 @@
 #include "utils/spinhelper.h"
 
 namespace lczero {
+namespace classic {
 
 namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
@@ -2466,4 +2467,5 @@ void SearchWorker::UpdateCounters() {
   }
 }
 
+}  // namespace classic
 }  // namespace lczero
