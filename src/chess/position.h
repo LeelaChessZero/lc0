@@ -29,6 +29,7 @@
 
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "chess/board.h"
 
@@ -41,6 +42,8 @@ class Position {
   Position(const Position& parent, Move m);
   // From particular position.
   Position(const ChessBoard& board, int rule50_ply, int game_ply);
+  // From fen.
+  static Position FromFen(std::string_view fen);
 
   uint64_t Hash() const;
   bool IsBlackToMove() const { return us_board_.flipped(); }

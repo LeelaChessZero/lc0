@@ -42,13 +42,14 @@ class Engine : public EngineControllerBase {
   void EnsureReady() override {};
   void NewGame() override {};
   void SetPosition(const std::string& fen,
-                   const std::vector<std::string>& moves) override {}
+                   const std::vector<std::string>& moves) override;
   void Go(const GoParams& params) override {}
   void PonderHit() override {}
   void Stop() override {}
 
-  private:
+ private:
   std::unique_ptr<SearchEnvironment> search_env_;
+  std::unique_ptr<SearchBase> search_;
 };
 
 }  // namespace lczero

@@ -27,9 +27,35 @@
 
 #include "engine.h"
 
+#include <algorithm>
+
+#include "chess/gamestate.h"
+#include "chess/position.h"
+
 namespace lczero {
 
 Engine::Engine(std::unique_ptr<SearchEnvironment> env)
     : search_env_(std::move(env)) {}
+
+namespace {
+GameState MakeGameState(const std::string& fen,
+                        const std::vector<std::string>& moves) {
+  GameState state;
+  state.startpos = Position::FromFen(fen);
+  state.moves.reserve(moves.size());
+  bool is_black = state.startpos.IsBlackToMove();
+  std::transform(moves.begin(), moves.end(), std::back_inserter(state.moves),
+                 [&](const std::string& move) {
+                   return Move(move, is_black);
+                   is_black = !is_black;
+                 });
+  return state;
+}
+}  // namespace
+
+void Engine::SetPosition(const std::string& fen,
+                         const std::vector<std::string>& moves) {
+  search_ = search_env_->CreateSearch(MakeGameState(fen, moves));
+}
 
 }  // namespace lczero

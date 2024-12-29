@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include <span>
+#include <vector>
 
 #include "chess/position.h"
 
@@ -37,7 +37,7 @@ namespace lczero {
 // state. Somewhat mirrors usi `position <fen> moves ...` command.
 struct GameState {
   Position startpos;
-  std::span<Move> moves;
+  std::vector<Move> moves;
 
   // Returns the position of the last move in the list.
   Position CurrentPosition() const;
