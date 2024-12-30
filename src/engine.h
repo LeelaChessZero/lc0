@@ -37,19 +37,24 @@ namespace lczero {
 class Engine : public EngineControllerBase {
  public:
   Engine(std::unique_ptr<SearchEnvironment>);
+  ~Engine() override;
 
  private:
   void EnsureReady() override {};
-  void NewGame() override {};
+  void NewGame() override;
   void SetPosition(const std::string& fen,
                    const std::vector<std::string>& moves) override;
-  void Go(const GoParams& params) override {}
+  void Go(const GoParams& params) override;
   void PonderHit() override {}
-  void Stop() override {}
+  void Stop() override;
 
  private:
+  void EnsureBackendCreated();
+  void EnsureSearchStopped();
+
   std::unique_ptr<SearchEnvironment> search_env_;
   std::unique_ptr<SearchBase> search_;
+  std::unique_ptr<Backend> backend_;
 };
 
 }  // namespace lczero

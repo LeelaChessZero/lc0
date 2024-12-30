@@ -31,11 +31,14 @@
 
 #include "chess/gamestate.h"
 #include "chess/position.h"
+#include "neural/backend.h"
 
 namespace lczero {
 
 Engine::Engine(std::unique_ptr<SearchEnvironment> env)
     : search_env_(std::move(env)) {}
+
+Engine::~Engine() {}
 
 namespace {
 GameState MakeGameState(const std::string& fen,
@@ -53,9 +56,32 @@ GameState MakeGameState(const std::string& fen,
 }
 }  // namespace
 
+void Engine::EnsureSearchStopped() {
+  if (!search_) return;
+  search_->Abort();
+  search_->Wait();
+}
+
+void Engine::EnsureBackendCreated() {
+  if (backend_) return;
+}
+
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
+  EnsureBackendCreated();
+  EnsureSearchStopped();
   search_ = search_env_->CreateSearch(MakeGameState(fen, moves));
+}
+
+void Engine::NewGame() { SetPosition(ChessBoard::kStartposFen, {}); }
+
+void Engine::Go(const GoParams& params) {
+  if (!search_) NewGame();
+  search_->Start(params);
+}
+
+void Engine::Stop() {
+  if (search_) search_->Stop();
 }
 
 }  // namespace lczero
