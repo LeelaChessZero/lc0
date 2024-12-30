@@ -30,10 +30,10 @@
 #include <optional>
 
 #include "engine_loop.h"
-#include "mcts/search.h"
 #include "neural/cache.h"
 #include "neural/factory.h"
 #include "neural/network.h"
+#include "search/classic/search.h"
 #include "syzygy/syzygy.h"
 #include "utils/mutex.h"
 
@@ -91,9 +91,9 @@ class EngineClassic : public EngineControllerBase {
   RpSharedMutex busy_mutex_;
   using SharedLock = std::shared_lock<RpSharedMutex>;
 
-  std::unique_ptr<TimeManager> time_manager_;
-  std::unique_ptr<Search> search_;
-  std::unique_ptr<NodeTree> tree_;
+  std::unique_ptr<classic::TimeManager> time_manager_;
+  std::unique_ptr<classic::Search> search_;
+  std::unique_ptr<classic::NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
   NNCache cache_;
