@@ -27,6 +27,8 @@
 
 #include "neural/shared_params.h"
 
+#include "neural/factory.h"
+
 // TODO Remove the "NEW" prefixes when "classic" search goes off the old network
 // interface and these parameters are removes from there.
 
@@ -42,11 +44,36 @@ const OptionId SharedBackendParams::kHistoryFill{
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
+const OptionId SharedBackendParams::kWeightsId{
+    "weights", "WeightsFile",
+    "Path from which to load network weights.\nSetting it to <autodiscover> "
+    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
+    "file date) file which looks like weights.",
+    'w'};
+const OptionId SharedBackendParams::kBackendId{
+    "backend", "Backend", "Neural network computational backend to use.", 'b'};
+const OptionId SharedBackendParams::kBackendOptionsId{
+    "backend-opts", "BackendOptions",
+    "Parameters of neural network backend. "
+    "Exact parameters differ per backend.",
+    'o'};
 
 void SharedBackendParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kPolicySoftmaxTemp, 0.1f, 10.0f) = 1.359f;
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFill, history_fill_opt) = "fen_only";
+
+#if defined(EMBED)
+  constexpr const char* kEmbed = "<built in>";
+  options->Add<StringOption>(SharedBackendParams::kWeightsId) = kEmbed;
+#else
+  constexpr const char* kAutoDiscover = "<autodiscover>";
+  options->Add<StringOption>(SharedBackendParams::kWeightsId) = kAutoDiscover;
+#endif
+  const auto backends = NetworkFactory::Get()->GetBackendsList();
+  options->Add<ChoiceOption>(SharedBackendParams::kBackendId, backends) =
+      backends.empty() ? "<none>" : backends[0];
+  options->Add<StringOption>(SharedBackendParams::kBackendOptionsId);
 }
 
 }  // namespace lczero

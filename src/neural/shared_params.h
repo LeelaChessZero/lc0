@@ -37,6 +37,10 @@ namespace lczero {
 struct SharedBackendParams {
   static const OptionId kPolicySoftmaxTemp;
   static const OptionId kHistoryFill;
+  static const OptionId kWeightsId;
+  static const OptionId kBackendId;
+  static const OptionId kBackendOptionsId;
+
   static void Populate(OptionsParser*);
 
  private:

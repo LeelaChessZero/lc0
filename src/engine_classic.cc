@@ -31,6 +31,7 @@
 #include <cmath>
 #include <functional>
 
+#include "neural/shared_params.h"
 #include "search/classic/search.h"
 #include "search/classic/stoppers/factory.h"
 #include "utils/commandline.h"
@@ -96,7 +97,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
   const bool is_simple =
       CommandLine::BinaryName().find("simple") != std::string::npos;
-  NetworkFactory::PopulateOptions(options);
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   options->Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 2000000;
   classic::SearchParams::Populate(options);
@@ -105,7 +105,7 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   if (is_simple) {
     options->HideAllOptions();
     options->UnhideOption(kThreadsOptionId);
-    options->UnhideOption(NetworkFactory::kWeightsId);
+    options->UnhideOption(SharedBackendParams::kWeightsId);
     options->UnhideOption(classic::SearchParams::kContemptId);
     options->UnhideOption(classic::SearchParams::kMultiPvId);
   }

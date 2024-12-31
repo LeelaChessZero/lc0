@@ -29,6 +29,7 @@
 
 #include <numeric>
 
+#include "neural/shared_params.h"
 #include "search/classic/search.h"
 #include "search/classic/stoppers/factory.h"
 #include "search/classic/stoppers/stoppers.h"
@@ -49,7 +50,7 @@ const OptionId kNumPositionsId{"num-positions", "",
 
 void Benchmark::Run() {
   OptionsParser options;
-  NetworkFactory::PopulateOptions(&options);
+  SharedBackendParams::Populate(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options.Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 200000;
   classic::SearchParams::Populate(&options);
