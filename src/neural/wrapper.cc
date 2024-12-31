@@ -31,6 +31,7 @@
 #include <numeric>
 
 #include "neural/encoder.h"
+#include "neural/shared_params.h"
 #include "utils/fastmath.h"
 
 namespace lczero {
@@ -140,8 +141,13 @@ NetworkAsBackendFactory::NetworkAsBackendFactory(const std::string& name,
 
 std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+  const std::string backend_options =
+      options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
+  OptionsDict network_options;
+  network_options.AddSubdictFromString(backend_options);
+
   return std::make_unique<NetworkAsBackend>(
-      factory_(weights, options),
+      factory_(weights, network_options),
       options.GetOrDefault<float>("policy_temp", 1.359f));
 }
 
