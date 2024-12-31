@@ -92,8 +92,8 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   const std::string backend_options =
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
 
-  constexpr char* kAutoDiscover = "<autodiscover>";
-  constexpr char* kEmbed = "<built in>";
+  constexpr const char* kAutoDiscover = "<autodiscover>";
+  constexpr const char* kEmbed = "<built in>";
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
