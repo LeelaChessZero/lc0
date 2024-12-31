@@ -143,7 +143,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(classic::SearchParams::kMiniBatchSizeId, 32);
   defaults->Set<float>(classic::SearchParams::kCpuctId, 1.2f);
   defaults->Set<float>(classic::SearchParams::kCpuctFactorId, 0.0f);
-  defaults->Set<float>(classic::SearchParams::kPolicySoftmaxTempId, 1.0f);
+  defaults->Set<float>(SharedBackendParams::kPolicySoftmaxTemp, 1.0f);
   defaults->Set<int>(classic::SearchParams::kMaxCollisionVisitsId, 1);
   defaults->Set<int>(classic::SearchParams::kMaxCollisionEventsId, 1);
   defaults->Set<int>(classic::SearchParams::kCacheHistoryLengthId, 7);
@@ -151,7 +151,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(classic::SearchParams::kTemperatureId, 1.0f);
   defaults->Set<float>(classic::SearchParams::kNoiseEpsilonId, 0.25f);
   defaults->Set<float>(classic::SearchParams::kFpuValueId, 0.0f);
-  defaults->Set<std::string>(classic::SearchParams::kHistoryFillId, "no");
+  defaults->Set<std::string>(SharedBackendParams::kHistoryFill, "no");
   defaults->Set<std::string>(SharedBackendParams::kBackendId, "multiplexing");
   defaults->Set<bool>(classic::SearchParams::kStickyEndgamesId, false);
   defaults->Set<bool>(classic::SearchParams::kTwoFoldDrawsId, false);

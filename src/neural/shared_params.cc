@@ -29,17 +29,13 @@
 
 #include "neural/factory.h"
 
-// TODO Remove the "NEW" prefixes when "classic" search goes off the old network
-// interface and these parameters are removes from there.
-
 namespace lczero {
 const OptionId SharedBackendParams::kPolicySoftmaxTemp{
-    "new-policy-softmax-temp", "NEWPolicyTemperature",
+    "policy-softmax-temp", "PolicyTemperature",
     "Policy softmax temperature. Higher values make priors of move candidates "
     "closer to each other, widening the search."};
-
 const OptionId SharedBackendParams::kHistoryFill{
-    "new-history-fill-new", "NEWHistoryFill",
+    "history-fill-new", "HistoryFill",
     "Neural network uses 7 previous board positions in addition to the current "
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "

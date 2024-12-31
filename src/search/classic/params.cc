@@ -31,6 +31,7 @@
 #include <cctype>
 #include <cmath>
 
+#include "neural/shared_params.h"
 #include "utils/exception.h"
 #include "utils/string.h"
 
@@ -296,10 +297,6 @@ const OptionId SearchParams::kCacheHistoryLengthId{
     "this value is less than history that NN uses to eval a position, it's "
     "possble that the search will use eval of the same position with different "
     "history taken from cache."};
-const OptionId SearchParams::kPolicySoftmaxTempId{
-    "policy-softmax-temp", "PolicyTemperature",
-    "Policy softmax temperature. Higher values make priors of move candidates "
-    "closer to each other, widening the search."};
 const OptionId SearchParams::kMaxCollisionVisitsId{
     "max-collision-visits", "MaxCollisionVisits",
     "Total allowed node collision visits, per batch."};
@@ -338,12 +335,6 @@ const OptionId SearchParams::kScoreTypeId{
     "score-type", "ScoreType",
     "What to display as score. Either centipawns (the UCI default), win "
     "percentage or Q (the actual internal score) multiplied by 100."};
-const OptionId SearchParams::kHistoryFillId{
-    "history-fill", "HistoryFill",
-    "Neural network uses 7 previous board positions in addition to the current "
-    "one. During the first moves of the game such historical positions don't "
-    "exist, but they can be synthesized. This parameter defines when to "
-    "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SearchParams::kMovesLeftMaxEffectId{
     "moves-left-max-effect", "MovesLeftMaxEffect",
     "Maximum bonus to add to the score of a node based on how much "
@@ -522,7 +513,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kFpuStrategyAtRootId, fpu_strategy) = "same";
   options->Add<FloatOption>(kFpuValueAtRootId, -100.0f, 100.0f) = 1.0f;
   options->Add<IntOption>(kCacheHistoryLengthId, 0, 7) = 0;
-  options->Add<FloatOption>(kPolicySoftmaxTempId, 0.1f, 10.0f) = 1.359f;
   options->Add<IntOption>(kMaxCollisionEventsId, 1, 65536) = 917;
   options->Add<IntOption>(kMaxCollisionVisitsId, 1, 100000000) = 80000;
   options->Add<IntOption>(kMaxCollisionVisitsScalingStartId, 1, 100000) = 28;
@@ -546,7 +536,6 @@ void SearchParams::Populate(OptionsParser* options) {
                                          "WDL_mu"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "WDL_mu";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
-  options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0345f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.8f;
   options->Add<FloatOption>(kMovesLeftSlopeId, 0.0f, 1.0f) = 0.0027f;
@@ -637,13 +626,15 @@ SearchParams::SearchParams(const OptionsDict& options)
                           ? kFpuValue
                           : options.Get<float>(kFpuValueAtRootId)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId)),
-      kPolicySoftmaxTemp(options.Get<float>(kPolicySoftmaxTempId)),
+      kPolicySoftmaxTemp(
+          options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp)),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId)),
       kMaxCollisionVisits(options.Get<int>(kMaxCollisionVisitsId)),
       kOutOfOrderEval(options.Get<bool>(kOutOfOrderEvalId)),
       kStickyEndgames(options.Get<bool>(kStickyEndgamesId)),
       kSyzygyFastPlay(options.Get<bool>(kSyzygyFastPlayId)),
-      kHistoryFill(EncodeHistoryFill(options.Get<std::string>(kHistoryFillId))),
+      kHistoryFill(EncodeHistoryFill(
+          options.Get<std::string>(SharedBackendParams::kHistoryFill))),
       kMiniBatchSize(options.Get<int>(kMiniBatchSizeId)),
       kMovesLeftMaxEffect(options.Get<float>(kMovesLeftMaxEffectId)),
       kMovesLeftThreshold(options.Get<float>(kMovesLeftThresholdId)),
