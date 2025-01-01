@@ -66,19 +66,16 @@ BackendFactory* BackendManager::GetFactoryByName(std::string_view name) const {
 
 std::unique_ptr<Backend> BackendManager::CreateFromParams(
     const OptionsDict& options) const {
-  std::string net_path =
-      options.Get<std::string>(SharedBackendParams::kWeightsId);
   const std::string backend =
       options.Get<std::string>(SharedBackendParams::kBackendId);
-  return CreateFromName(backend, LoadWeights(net_path), options);
+  return CreateFromName(backend, options);
 }
 
 std::unique_ptr<Backend> BackendManager::CreateFromName(
-    std::string_view name, const std::optional<WeightsFile>& weights,
-    const OptionsDict& options) const {
+    std::string_view name, const OptionsDict& options) const {
   BackendFactory* factory = GetFactoryByName(name);
   if (!factory) throw Exception("Unknown backend: " + std::string(name));
-  return factory->Create(weights, options);
+  return factory->Create(options);
 }
 
 }  // namespace lczero

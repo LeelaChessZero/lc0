@@ -42,7 +42,7 @@
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "utils/logging.h"
+#include "utils/optionsdict.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -221,6 +221,10 @@ std::optional<WeightsFile> LoadWeights(std::string_view location) {
     CERR << "Loading weights file from: " << location;
   }
   return LoadWeightsFromFile(net_path);
+}
+
+std::optional<WeightsFile> LoadWeightsFromOptions(const OptionsDict& options) {
+  return LoadWeights(options.Get<std::string>(SharedBackendParams::kWeightsId));
 }
 
 std::string DiscoverWeightsFile() {

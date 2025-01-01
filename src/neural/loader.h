@@ -37,6 +37,7 @@
 
 namespace lczero {
 
+class OptionsDict;
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
 
@@ -51,6 +52,9 @@ WeightsFile LoadWeightsFromFile(const std::string& filename);
 // * "<embed>" -- weights are embedded in the binary.
 // * filename -- reads weights from the file.
 std::optional<WeightsFile> LoadWeights(std::string_view location);
+
+// Extracts location from the "backend" parameter of options, and loads weights.
+std::optional<WeightsFile> LoadWeightsFromOptions(const OptionsDict& options);
 
 // Tries to find a file which looks like a weights file, and located in
 // directory of binary_name or one of subdirectories. If there are several such
