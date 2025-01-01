@@ -35,6 +35,9 @@ namespace lczero {
 // Backend parameters that appear in UCI interface and are in use by most
 // backends.
 struct SharedBackendParams {
+  static const constexpr char* kEmbed = "<built in>";
+  static const constexpr char* kAutoDiscover = "<autodiscover>";
+
   static const OptionId kPolicySoftmaxTemp;
   static const OptionId kHistoryFill;
   static const OptionId kWeightsId;
