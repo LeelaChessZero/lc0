@@ -31,6 +31,7 @@
 
 #include "chess/pgn.h"
 #include "neural/factory.h"
+#include "neural/shared_params.h"
 #include "search/classic/search.h"
 #include "search/classic/stoppers/factory.h"
 #include "selfplay/game.h"
@@ -110,7 +111,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
     dict->AddSubdict("black")->AddAliasDict(&options->GetOptionsDict("black"));
   }
 
-  NetworkFactory::PopulateOptions(options);
+  SharedBackendParams::Populate(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
   options->Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 2000000;
   classic::SearchParams::Populate(options);
@@ -142,7 +143,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(classic::SearchParams::kMiniBatchSizeId, 32);
   defaults->Set<float>(classic::SearchParams::kCpuctId, 1.2f);
   defaults->Set<float>(classic::SearchParams::kCpuctFactorId, 0.0f);
-  defaults->Set<float>(classic::SearchParams::kPolicySoftmaxTempId, 1.0f);
+  defaults->Set<float>(SharedBackendParams::kPolicySoftmaxTemp, 1.0f);
   defaults->Set<int>(classic::SearchParams::kMaxCollisionVisitsId, 1);
   defaults->Set<int>(classic::SearchParams::kMaxCollisionEventsId, 1);
   defaults->Set<int>(classic::SearchParams::kCacheHistoryLengthId, 7);
@@ -150,8 +151,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<float>(classic::SearchParams::kTemperatureId, 1.0f);
   defaults->Set<float>(classic::SearchParams::kNoiseEpsilonId, 0.25f);
   defaults->Set<float>(classic::SearchParams::kFpuValueId, 0.0f);
-  defaults->Set<std::string>(classic::SearchParams::kHistoryFillId, "no");
-  defaults->Set<std::string>(NetworkFactory::kBackendId, "multiplexing");
+  defaults->Set<std::string>(SharedBackendParams::kHistoryFill, "no");
+  defaults->Set<std::string>(SharedBackendParams::kBackendId, "multiplexing");
   defaults->Set<bool>(classic::SearchParams::kStickyEndgamesId, false);
   defaults->Set<bool>(classic::SearchParams::kTwoFoldDrawsId, false);
   defaults->Set<int>(classic::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
@@ -658,9 +659,9 @@ void SelfPlayTournament::SaveResults() {
   if (kTournamentResultsFile.empty()) return;
   std::ofstream output(kTournamentResultsFile, std::ios_base::app);
   auto p1name =
-      player_options_[0][0].Get<std::string>(NetworkFactory::kWeightsId);
+      player_options_[0][0].Get<std::string>(SharedBackendParams::kWeightsId);
   auto p2name =
-      player_options_[1][0].Get<std::string>(NetworkFactory::kWeightsId);
+      player_options_[1][0].Get<std::string>(SharedBackendParams::kWeightsId);
 
   output << std::endl;
   output << "[White \"" << p1name << "\"]" << std::endl;

@@ -27,6 +27,7 @@
 
 #include "engine_loop.h"
 
+#include "neural/shared_params.h"
 #include "utils/configfile.h"
 
 namespace lczero {
@@ -52,6 +53,7 @@ EngineLoop::EngineLoop(std::unique_ptr<OptionsParser> options,
           options_->GetOptionsDict())) {
   options_->Add<StringOption>(kLogFileId);
   options_->Add<BoolOption>(kPreload) = false;
+  SharedBackendParams::Populate(options_.get());
 }
 
 void EngineLoop::RunLoop() {

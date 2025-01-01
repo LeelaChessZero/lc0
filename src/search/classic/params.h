@@ -191,7 +191,6 @@ class SearchParams {
   static const OptionId kFpuStrategyAtRootId;
   static const OptionId kFpuValueAtRootId;
   static const OptionId kCacheHistoryLengthId;
-  static const OptionId kPolicySoftmaxTempId;
   static const OptionId kMaxCollisionEventsId;
   static const OptionId kMaxCollisionVisitsId;
   static const OptionId kOutOfOrderEvalId;
@@ -200,7 +199,6 @@ class SearchParams {
   static const OptionId kMultiPvId;
   static const OptionId kPerPvCountersId;
   static const OptionId kScoreTypeId;
-  static const OptionId kHistoryFillId;
   static const OptionId kMovesLeftMaxEffectId;
   static const OptionId kMovesLeftThresholdId;
   static const OptionId kMovesLeftConstantFactorId;

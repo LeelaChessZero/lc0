@@ -165,6 +165,7 @@ common_files += [
   'src/neural/decoder.cc',
   'src/neural/encoder.cc',
   'src/neural/register.cc',
+  'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
   'src/search/classic/node.cc',
   'src/syzygy/syzygy.cc',

@@ -31,17 +31,27 @@
 #include <numeric>
 
 #include "neural/encoder.h"
+#include "neural/shared_params.h"
 #include "utils/fastmath.h"
 
 namespace lczero {
 namespace {
 
+FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
+  if (history_fill == "fen_only") return FillEmptyHistory::FEN_ONLY;
+  if (history_fill == "always") return FillEmptyHistory::ALWAYS;
+  assert(history_fill == "no");
+  return FillEmptyHistory::NO;
+}
+
 class NetworkAsBackend : public Backend {
  public:
-  NetworkAsBackend(std::unique_ptr<Network> network,
-                   float softmax_policy_temperature)
+  NetworkAsBackend(std::unique_ptr<Network> network, const OptionsDict& options)
       : network_(std::move(network)),
-        softmax_policy_temperature_(1.0f / softmax_policy_temperature) {
+        softmax_policy_temperature_(
+            1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp)),
+        fill_empty_history_(EncodeHistoryFill(
+            options.Get<std::string>(SharedBackendParams::kHistoryFill))) {
     const NetworkCapabilities& caps = network_->GetCapabilities();
     attrs_.has_mlh = caps.has_mlh();
     attrs_.has_wdl = caps.has_wdl();
@@ -60,6 +70,7 @@ class NetworkAsBackend : public Backend {
   BackendAttributes attrs_;
   pblczero::NetworkFormat::InputFormat input_format_;
   float softmax_policy_temperature_;
+  FillEmptyHistory fill_empty_history_;
   friend class NetworkAsBackendComputation;
 };
 
@@ -140,9 +151,13 @@ NetworkAsBackendFactory::NetworkAsBackendFactory(const std::string& name,
 
 std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  return std::make_unique<NetworkAsBackend>(
-      factory_(weights, options),
-      options.GetOrDefault<float>("policy_temp", 1.359f));
+  const std::string backend_options =
+      options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
+  OptionsDict network_options;
+  network_options.AddSubdictFromString(backend_options);
+
+  return std::make_unique<NetworkAsBackend>(factory_(weights, network_options),
+                                            options);
 }
 
 }  // namespace lczero
