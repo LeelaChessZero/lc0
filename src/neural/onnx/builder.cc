@@ -38,8 +38,8 @@
 namespace lczero {
 
 OnnxBuilder::OnnxBuilder(int opset) : opset_(opset) {
-  if (opset < 7 || opset > 18) {
-    throw Exception("Only ONNX opsets between 7 and 18 are supported.");
+  if (opset < 7 || opset > 22) {
+    throw Exception("Only ONNX opsets between 7 and 22 are supported.");
   }
   model_.set_ir_version(4);
   model_.set_domain("org.lczero.models.*");
@@ -462,7 +462,8 @@ std::string OnnxBuilder::Cast(const std::string& name, const std::string& input,
 
 std::string OnnxBuilder::ReduceMean(const std::string& name,
                                     const std::string& input,
-                                    std::initializer_list<int> axes) {
+                                    std::initializer_list<int> axes,
+                                    bool keepdims) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "ReduceMean");
   if (opset_ < 18) {
@@ -473,6 +474,7 @@ std::string OnnxBuilder::ReduceMean(const std::string& name,
         Int64OnnxConst(std::vector<int64_t>(begin(axes), end(axes)),
                        {static_cast<int>(axes.size())})));
   }
+  AddIntAttribute(node, "keepdims", keepdims);
   return out;
 }
 

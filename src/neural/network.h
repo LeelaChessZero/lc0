@@ -84,6 +84,7 @@ class NetworkComputation {
 
 struct NetworkCapabilities {
   pblczero::NetworkFormat::InputFormat input_format;
+  pblczero::NetworkFormat::OutputFormat output_format;
   pblczero::NetworkFormat::MovesLeftFormat moves_left;
   // TODO expose information of whether GetDVal() is usable or always zero.
 
@@ -95,10 +96,20 @@ struct NetworkCapabilities {
                       std::to_string(input_format) + " vs " +
                       std::to_string(other.input_format));
     }
+    if (output_format != other.output_format) {
+      throw Exception("Incompatible output formats, " +
+                      std::to_string(output_format) + " vs " +
+                      std::to_string(other.output_format));
+    }
+    if (!other.has_mlh()) moves_left = pblczero::NetworkFormat::MOVES_LEFT_NONE;
   }
 
   bool has_mlh() const {
     return moves_left != pblczero::NetworkFormat::MOVES_LEFT_NONE;
+  }
+
+  bool has_wdl() const {
+    return output_format == pblczero::NetworkFormat::OUTPUT_WDL;
   }
 };
 

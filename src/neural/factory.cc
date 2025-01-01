@@ -30,26 +30,11 @@
 #include <algorithm>
 
 #include "neural/loader.h"
+#include "neural/shared_params.h"
 #include "utils/commandline.h"
 #include "utils/logging.h"
 
 namespace lczero {
-
-const OptionId NetworkFactory::kWeightsId{
-    "weights", "WeightsFile",
-    "Path from which to load network weights.\nSetting it to <autodiscover> "
-    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
-    "file date) file which looks like weights.",
-    'w'};
-const OptionId NetworkFactory::kBackendId{
-    "backend", "Backend", "Neural network computational backend to use.", 'b'};
-const OptionId NetworkFactory::kBackendOptionsId{
-    "backend-opts", "BackendOptions",
-    "Parameters of neural network backend. "
-    "Exact parameters differ per backend.",
-    'o'};
-const char* kAutoDiscover = "<autodiscover>";
-const char* kEmbed = "<built in>";
 
 NetworkFactory* NetworkFactory::Get() {
   static NetworkFactory factory;
@@ -59,18 +44,6 @@ NetworkFactory* NetworkFactory::Get() {
 NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
                                    int priority) {
   NetworkFactory::Get()->RegisterNetwork(name, factory, priority);
-}
-
-void NetworkFactory::PopulateOptions(OptionsParser* options) {
-#if defined(EMBED)
-  options->Add<StringOption>(NetworkFactory::kWeightsId) = kEmbed;
-#else
-  options->Add<StringOption>(NetworkFactory::kWeightsId) = kAutoDiscover;
-#endif
-  const auto backends = NetworkFactory::Get()->GetBackendsList();
-  options->Add<ChoiceOption>(NetworkFactory::kBackendId, backends) =
-      backends.empty() ? "<none>" : backends[0];
-  options->Add<StringOption>(NetworkFactory::kBackendOptionsId);
 }
 
 void NetworkFactory::RegisterNetwork(const std::string& name,
@@ -99,9 +72,10 @@ std::unique_ptr<Network> NetworkFactory::Create(
 
 NetworkFactory::BackendConfiguration::BackendConfiguration(
     const OptionsDict& options)
-    : weights_path(options.Get<std::string>(kWeightsId)),
-      backend(options.Get<std::string>(kBackendId)),
-      backend_options(options.Get<std::string>(kBackendOptionsId)) {}
+    : weights_path(options.Get<std::string>(SharedBackendParams::kWeightsId)),
+      backend(options.Get<std::string>(SharedBackendParams::kBackendId)),
+      backend_options(
+          options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {}
 
 bool NetworkFactory::BackendConfiguration::operator==(
     const BackendConfiguration& other) const {
@@ -111,10 +85,15 @@ bool NetworkFactory::BackendConfiguration::operator==(
 
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
-  std::string net_path = options.Get<std::string>(kWeightsId);
-  const std::string backend = options.Get<std::string>(kBackendId);
+  std::string net_path =
+      options.Get<std::string>(SharedBackendParams::kWeightsId);
+  const std::string backend =
+      options.Get<std::string>(SharedBackendParams::kBackendId);
   const std::string backend_options =
-      options.Get<std::string>(kBackendOptionsId);
+      options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
+
+  constexpr const char* kAutoDiscover = "<autodiscover>";
+  constexpr const char* kEmbed = "<built in>";
 
   if (net_path == kAutoDiscover) {
     net_path = DiscoverWeightsFile();
