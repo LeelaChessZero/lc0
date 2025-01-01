@@ -168,8 +168,6 @@ class CoreMLNetwork : public Network {
   int batch_size_;
   bool wdl_;
   bool moves_left_;
-  bool conv_policy_;
-  bool attn_policy_;
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
   std::unique_ptr<coreml_backend::CoreML> coreml_;

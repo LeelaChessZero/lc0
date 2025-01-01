@@ -54,12 +54,6 @@ CoreMLNetwork::CoreMLNetwork(const WeightsFile& file,
   max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
   batch_size_ = options.GetOrDefault<int>("batch", 64);
 
-  conv_policy_ = file.format().network_format().policy() ==
-                 pblczero::NetworkFormat::POLICY_CONVOLUTION;
-
-  attn_policy_ = file.format().network_format().policy() ==
-                 pblczero::NetworkFormat::POLICY_ATTENTION;
-
   wdl_ = file.format().network_format().value() ==
          pblczero::NetworkFormat::VALUE_WDL;
 
