@@ -50,7 +50,9 @@ class PolicyHeadSearch : public InstamoveSearch {
         std::vector<EvalPosition>{EvalPosition{positions, legal_moves}});
     const size_t best_move_idx =
         std::max_element(res[0].p.begin(), res[0].p.end()) - res[0].p.begin();
-    return legal_moves[best_move_idx];
+    Move best_move = legal_moves[best_move_idx];
+    if (positions.back().IsBlackToMove()) best_move.Mirror();
+    return best_move;
   }
 
  private:
