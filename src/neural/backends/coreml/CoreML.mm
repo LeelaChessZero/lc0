@@ -57,8 +57,8 @@ CoreML::CoreML(bool wdl, bool moves_left) {
                  NSLog(@"Initializing model with the compiled model URL...");
                  NSError* modelInitError = nil;
                  MLModelConfiguration* configuration = [[MLModelConfiguration alloc] init];
-                 // configuration.computeUnits = MLComputeUnitsCPUOnly;
-                 // configuration.computeUnits = MLComputeUnitsCPUAndGPU;
+                //  configuration.computeUnits = MLComputeUnitsCPUOnly;
+                //  configuration.computeUnits = MLComputeUnitsCPUAndGPU;
                  // configuration.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
                  configuration.computeUnits = MLComputeUnitsAll;
                  MLModel* mlmodel = [MLModel modelWithContentsOfURL:compiledModelURL

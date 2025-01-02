@@ -636,9 +636,9 @@ if get_option('build_backends')
     deps += coreml_frameworks
 
     files += [
-      'src/neural/coreml/network_coreml.cc',
-      'src/neural/coreml/CoreML.mm',
-      'src/neural/coreml/CoreMLModel.mm',
+      'src/neural/backends/coreml/network_coreml.cc',
+      'src/neural/backends/coreml/CoreML.mm',
+      'src/neural/backends/coreml/CoreMLModel.mm',
     ]
 
     has_backends = true

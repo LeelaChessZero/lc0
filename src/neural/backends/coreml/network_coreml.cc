@@ -48,6 +48,7 @@ void CoreMLNetworkComputation::ComputeBlocking() {
 CoreMLNetwork::CoreMLNetwork(const WeightsFile& file,
                              const OptionsDict& options)
     : capabilities_{file.format().network_format().input(),
+                    file.format().network_format().output(),
                     file.format().network_format().moves_left()} {
   LegacyWeights weights(file.weights());
 
