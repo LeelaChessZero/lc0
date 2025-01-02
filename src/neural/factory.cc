@@ -92,11 +92,13 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   const std::string backend_options =
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
 
-  std::optional<WeightsFile> weights = LoadWeights(net_path);
+  std::optional<WeightsFile> weights;
+  if (!net_path.empty()) weights = LoadWeights(net_path);
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
 
-  auto ptr = NetworkFactory::Get()->Create(backend, weights, network_options);
+  auto ptr = NetworkFactory::Get()->Create(backend, std::move(weights),
+                                           network_options);
   network_options.CheckAllOptionsRead(backend);
   return ptr;
 }

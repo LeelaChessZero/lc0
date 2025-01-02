@@ -155,8 +155,14 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
   OptionsDict network_options;
   network_options.AddSubdictFromString(backend_options);
+
+  std::string net_path =
+      options.Get<std::string>(SharedBackendParams::kWeightsId);
+  std::optional<WeightsFile> weights;
+  if (!net_path.empty()) weights = LoadWeights(net_path);
+
   return std::make_unique<NetworkAsBackend>(
-      factory_(LoadWeightsFromOptions(options), network_options), options);
+      factory_(std::move(weights), network_options), options);
 }
 
 }  // namespace lczero

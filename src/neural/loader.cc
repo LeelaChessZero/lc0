@@ -210,8 +210,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
   return ParseWeightsProto(buffer);
 }
 
-std::optional<WeightsFile> LoadWeights(std::string_view location) {
-  if (location.empty()) return std::nullopt;
+WeightsFile LoadWeights(std::string_view location) {
   std::string net_path = std::string(location);
   if (net_path == SharedBackendParams::kAutoDiscover) {
     net_path = DiscoverWeightsFile();
@@ -223,7 +222,7 @@ std::optional<WeightsFile> LoadWeights(std::string_view location) {
   return LoadWeightsFromFile(net_path);
 }
 
-std::optional<WeightsFile> LoadWeightsFromOptions(const OptionsDict& options) {
+WeightsFile LoadWeightsFromOptions(const OptionsDict& options) {
   return LoadWeights(options.Get<std::string>(SharedBackendParams::kWeightsId));
 }
 

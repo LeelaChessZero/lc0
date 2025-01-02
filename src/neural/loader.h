@@ -47,14 +47,13 @@ using WeightsFile = pblczero::Net;
 WeightsFile LoadWeightsFromFile(const std::string& filename);
 
 // Read weights from the "locations", which is one of:
-// * Empty string -- returns std::nullopt.
 // * "<autodiscover>" -- tries to find a file which looks like a weights file.
 // * "<embed>" -- weights are embedded in the binary.
 // * filename -- reads weights from the file.
-std::optional<WeightsFile> LoadWeights(std::string_view location);
+WeightsFile LoadWeights(std::string_view location);
 
 // Extracts location from the "backend" parameter of options, and loads weights.
-std::optional<WeightsFile> LoadWeightsFromOptions(const OptionsDict& options);
+WeightsFile LoadWeightsFromOptions(const OptionsDict& options);
 
 // Tries to find a file which looks like a weights file, and located in
 // directory of binary_name or one of subdirectories. If there are several such
