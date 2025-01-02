@@ -36,6 +36,7 @@ namespace lczero {
 
 class Position {
  public:
+  Position() = default;
   // From parent position and move.
   Position(const Position& parent, Move m);
   // From particular position.
