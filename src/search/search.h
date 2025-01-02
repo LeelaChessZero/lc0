@@ -60,7 +60,7 @@ class SearchBase {
   explicit SearchBase(const SearchContext& context) : context_(context) {}
   virtual ~SearchBase() = default;
 
-  // Start the search. Must not black, should return immediately.
+  // Start the search. Must not block, should return immediately.
   virtual void Start(const GoParams&) = 0;
   // Wait for the search to finish. This is blocking.
   virtual void Wait() = 0;
@@ -73,7 +73,7 @@ class SearchBase {
   // done).
   virtual SearchArtifacts GetArtifacts() const {
     throw Exception(
-        "Training data generation is not supported for this backend.");
+        "Training data generation is not supported for this search algorithm.");
   }
 
  protected:
