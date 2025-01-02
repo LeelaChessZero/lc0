@@ -32,11 +32,12 @@
 #include "chess/gamestate.h"
 #include "chess/position.h"
 #include "neural/backend.h"
+#include "neural/register.h"
 
 namespace lczero {
 
-Engine::Engine(std::unique_ptr<SearchEnvironment> env)
-    : search_env_(std::move(env)) {}
+Engine::Engine(std::unique_ptr<SearchEnvironment> env, const OptionsDict& opts)
+    : options_(opts), search_env_(std::move(env)) {}
 
 Engine::~Engine() {}
 
@@ -64,6 +65,8 @@ void Engine::EnsureSearchStopped() {
 
 void Engine::EnsureBackendCreated() {
   if (backend_) return;
+  backend_ = BackendManager::Get()->CreateFromParams(options_);
+  search_env_->SetBackend(backend_.get());
 }
 
 void Engine::SetPosition(const std::string& fen,

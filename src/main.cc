@@ -104,7 +104,8 @@ int main(int argc, const char** argv) {
               std::move(options_parser), [factory](UciResponder& uci_responder,
                                                    const OptionsDict& options) {
                 return std::make_unique<Engine>(
-                    factory->CreateEnvironment(&uci_responder, &options));
+                    factory->CreateEnvironment(&uci_responder, &options),
+                    options);
               });
           loop.RunLoop();
         }

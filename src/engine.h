@@ -36,7 +36,7 @@ namespace lczero {
 
 class Engine : public EngineControllerBase {
  public:
-  Engine(std::unique_ptr<SearchEnvironment>);
+  Engine(std::unique_ptr<SearchEnvironment>, const OptionsDict&);
   ~Engine() override;
 
  private:
@@ -52,6 +52,7 @@ class Engine : public EngineControllerBase {
   void EnsureBackendCreated();
   void EnsureSearchStopped();
 
+  const OptionsDict& options_;
   std::unique_ptr<SearchEnvironment> search_env_;
   std::unique_ptr<SearchBase> search_;
   std::unique_ptr<Backend> backend_;
