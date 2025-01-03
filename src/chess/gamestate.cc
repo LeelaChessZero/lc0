@@ -30,6 +30,8 @@
 #include <algorithm>
 #include <numeric>
 
+#include "utils/logging.h"
+
 namespace lczero {
 
 Position GameState::CurrentPosition() const {
@@ -43,7 +45,11 @@ std::vector<Position> GameState::GetPositions() const {
   positions.reserve(moves.size() + 1);
   positions.push_back(startpos);
   std::transform(moves.begin(), moves.end(), std::back_inserter(positions),
-                 [&](const Move& m) { return Position(positions.back(), m); });
+                 [&](Move m) {
+                   const Position& prev_pos = positions.back();
+                   if (prev_pos.IsBlackToMove()) m.Mirror();
+                   return Position(positions.back(), m);
+                 });
   return positions;
 }
 

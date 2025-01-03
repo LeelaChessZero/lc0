@@ -89,7 +89,7 @@ class NetworkAsBackendComputation : public BackendComputation {
                           EvalResultPtr result) override {
     int transform;
     computation_->AddInput(EncodePositionForNN(backend_->input_format_, pos.pos,
-                                               8, FillEmptyHistory::FEN_ONLY,
+                                               8, backend_->fill_empty_history_,
                                                &transform));
     results_.push_back(result);
     moves_.emplace_back(pos.legal_moves.begin(), pos.legal_moves.end());

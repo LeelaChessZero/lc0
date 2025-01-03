@@ -40,17 +40,16 @@ const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
 }  // namespace
 
-EngineLoop::EngineLoop(std::unique_ptr<OptionsParser> options,
-                       std::function<std::unique_ptr<EngineControllerBase>(
-                           std::unique_ptr<UciResponder> uci_responder,
-                           const OptionsDict& options)>
-                           engine_factory)
-    : options_(std::move(options)),
-      engine_(engine_factory(
-          std::make_unique<CallbackUciResponder>(
-              std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
-              std::bind(&UciLoop::SendInfo, this, std::placeholders::_1)),
-          options_->GetOptionsDict())) {
+EngineLoop::EngineLoop(
+    std::unique_ptr<OptionsParser> options,
+    std::function<std::unique_ptr<EngineControllerBase>(
+        UciResponder& uci_responder, const OptionsDict& options)>
+        engine_factory)
+    : uci_responder_(std::make_unique<CallbackUciResponder>(
+          [&](auto&& arg) { return SendBestMove(arg); },
+          [&](auto&& arg) { return SendInfo(arg); })),
+      options_(std::move(options)),
+      engine_(engine_factory(*uci_responder_, options_->GetOptionsDict())) {
   options_->Add<StringOption>(kLogFileId);
   options_->Add<BoolOption>(kPreload) = false;
   SharedBackendParams::Populate(options_.get());

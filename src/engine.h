@@ -25,25 +25,37 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/backend.h"
+#pragma once
+
+#include <vector>
+
+#include "engine_loop.h"
+#include "search/search.h"
 
 namespace lczero {
 
-std::vector<EvalResult> Backend::EvaluateBatch(
-    std::span<const EvalPosition> positions) {
-  std::vector<EvalResult> results;
-  results.reserve(positions.size());
-  std::unique_ptr<BackendComputation> computation = CreateComputation();
-  for (const EvalPosition& pos : positions) {
-    results.emplace_back();
-    EvalResult& result = results.back();
-    result.p.resize(pos.legal_moves.size());
-    computation->AddInput(
-        pos, EvalResultPtr{&result.q, &result.d, &result.m,
-                           std::span<float>(result.p.data(), result.p.size())});
-  }
-  computation->ComputeBlocking();
-  return results;
-}
+class Engine : public EngineControllerBase {
+ public:
+  Engine(std::unique_ptr<SearchEnvironment>, const OptionsDict&);
+  ~Engine() override;
+
+ private:
+  void EnsureReady() override {};
+  void NewGame() override;
+  void SetPosition(const std::string& fen,
+                   const std::vector<std::string>& moves) override;
+  void Go(const GoParams& params) override;
+  void PonderHit() override {}
+  void Stop() override;
+
+ private:
+  void EnsureBackendCreated();
+  void EnsureSearchStopped();
+
+  const OptionsDict& options_;
+  std::unique_ptr<SearchEnvironment> search_env_;
+  std::unique_ptr<SearchBase> search_;
+  std::unique_ptr<Backend> backend_;
+};
 
 }  // namespace lczero

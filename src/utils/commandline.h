@@ -47,7 +47,7 @@ class CommandLine {
 
   // If the first command line parameter is @command, remove it and return
   // true. Otherwise return false.
-  static bool ConsumeCommand(const std::string& command);
+  static bool ConsumeCommand(std::string_view command);
 
   // Command line arguments.
   static const std::vector<std::string>& Arguments() { return arguments_; }

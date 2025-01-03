@@ -99,6 +99,8 @@ class SearchEnvironment {
   virtual void NewGame() {}
   // Sets the position to search from in the future searches.
   virtual std::unique_ptr<SearchBase> CreateSearch(const GameState&) = 0;
+  // Sets the backend to be used by the search.
+  virtual void SetBackend(Backend* backend) { context_.backend = backend; }
 
  protected:
   SearchContext context_;

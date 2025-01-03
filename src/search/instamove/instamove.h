@@ -45,6 +45,7 @@ class InstamoveSearch : public SearchBase {
   virtual Move GetBestMove() = 0;
 
   void Start(const GoParams& go_params) final {
+    responded_bestmove_.store(false, std::memory_order_relaxed);
     bestmove_ = GetBestMove();
     if (!go_params.infinite && !go_params.ponder) RespondBestMove();
   }

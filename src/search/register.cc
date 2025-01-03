@@ -27,6 +27,8 @@
 
 #include "search/register.h"
 
+#include <algorithm>
+
 namespace lczero {
 
 SearchManager* SearchManager::Get() {
@@ -36,6 +38,22 @@ SearchManager* SearchManager::Get() {
 
 void SearchManager::AddSearchFactory(std::unique_ptr<SearchFactory> algorithm) {
   algorithms_.push_back(std::move(algorithm));
+}
+
+std::vector<std::string_view> SearchManager::GetSearchesList() const {
+  std::vector<std::string_view> res;
+  res.reserve(algorithms_.size());
+  std::transform(algorithms_.begin(), algorithms_.end(),
+                 std::back_inserter(res),
+                 [](const auto& alg) { return alg->GetName(); });
+  return res;
+}
+
+SearchFactory* SearchManager::GetFactoryByName(std::string_view name) const {
+  auto it =
+      std::find_if(algorithms_.begin(), algorithms_.end(),
+                   [name](const auto& alg) { return alg->GetName() == name; });
+  return it == algorithms_.end() ? nullptr : it->get();
 }
 
 }  // namespace lczero

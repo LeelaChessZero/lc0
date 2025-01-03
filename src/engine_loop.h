@@ -60,8 +60,7 @@ class EngineLoop : public UciLoop {
  public:
   EngineLoop(std::unique_ptr<OptionsParser> options,
              std::function<std::unique_ptr<EngineControllerBase>(
-                 std::unique_ptr<UciResponder> uci_responder,
-                 const OptionsDict& options)>
+                 UciResponder& uci_responder, const OptionsDict& options)>
                  engine_factory);
 
   void RunLoop() override;
@@ -77,6 +76,7 @@ class EngineLoop : public UciLoop {
   void CmdStop() override;
 
  private:
+  std::unique_ptr<UciResponder> uci_responder_;
   std::unique_ptr<OptionsParser> options_;
   std::unique_ptr<EngineControllerBase> engine_;
 };

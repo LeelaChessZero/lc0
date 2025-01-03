@@ -188,6 +188,7 @@ common_files += [
 files += [
   'src/engine_classic.cc',
   'src/engine_loop.cc',
+  'src/engine.cc',
   'src/neural/backends/network_check.cc',
   'src/neural/backends/network_demux.cc',
   'src/neural/backends/network_mux.cc',
