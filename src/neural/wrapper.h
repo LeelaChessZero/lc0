@@ -43,10 +43,9 @@ class NetworkAsBackendFactory : public BackendFactory {
   NetworkAsBackendFactory(const std::string& name, FactoryFunc factory,
                           int priority = 0);
 
-  virtual int GetPriority() const { return priority_; }
-  virtual std::string_view GetName() const { return name_; }
-  virtual std::unique_ptr<Backend> Create(const std::optional<WeightsFile>&,
-                                          const OptionsDict&);
+  int GetPriority() const override { return priority_; }
+  std::string_view GetName() const override { return name_; }
+  std::unique_ptr<Backend> Create(const OptionsDict&) override;
 
  private:
   std::string name_;

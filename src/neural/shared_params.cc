@@ -60,10 +60,8 @@ void SharedBackendParams::Populate(OptionsParser* options) {
   options->Add<ChoiceOption>(kHistoryFill, history_fill_opt) = "fen_only";
 
 #if defined(EMBED)
-  constexpr const char* kEmbed = "<built in>";
   options->Add<StringOption>(SharedBackendParams::kWeightsId) = kEmbed;
 #else
-  constexpr const char* kAutoDiscover = "<autodiscover>";
   options->Add<StringOption>(SharedBackendParams::kWeightsId) = kAutoDiscover;
 #endif
   const auto backends = NetworkFactory::Get()->GetBackendsList();

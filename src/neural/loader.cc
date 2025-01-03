@@ -37,11 +37,12 @@
 #include <sstream>
 #include <string>
 
+#include "neural/shared_params.h"
 #include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "utils/logging.h"
+#include "utils/optionsdict.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -127,13 +128,11 @@ void FixOlderWeightsFile(WeightsFile* file) {
     net->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
-  } else if (network_format ==
-                 nf::NETWORK_SE_WITH_HEADFORMAT &&
+  } else if (network_format == nf::NETWORK_SE_WITH_HEADFORMAT &&
              file->weights().encoder().size() > 0) {
     // Attention body network made with old protobuf.
     auto* net = file->mutable_format()->mutable_network_format();
-    net->set_network(
-        nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+    net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
     if (file->weights().has_smolgen_w()) {
       // Need to override activation defaults for smolgen.
       net->set_ffn_activation(nf::ACTIVATION_RELU_2);
@@ -209,6 +208,22 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
   }
 
   return ParseWeightsProto(buffer);
+}
+
+WeightsFile LoadWeights(std::string_view location) {
+  std::string net_path = std::string(location);
+  if (net_path == SharedBackendParams::kAutoDiscover) {
+    net_path = DiscoverWeightsFile();
+  } else if (net_path == SharedBackendParams::kEmbed) {
+    net_path = CommandLine::BinaryName();
+  } else {
+    CERR << "Loading weights file from: " << location;
+  }
+  return LoadWeightsFromFile(net_path);
+}
+
+WeightsFile LoadWeightsFromOptions(const OptionsDict& options) {
+  return LoadWeights(options.Get<std::string>(SharedBackendParams::kWeightsId));
 }
 
 std::string DiscoverWeightsFile() {

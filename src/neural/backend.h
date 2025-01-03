@@ -104,8 +104,7 @@ class BackendFactory {
   // Higher priority is higher.
   virtual int GetPriority() const = 0;
   virtual std::string_view GetName() const = 0;
-  virtual std::unique_ptr<Backend> Create(const std::optional<WeightsFile>&,
-                                          const OptionsDict&) = 0;
+  virtual std::unique_ptr<Backend> Create(const OptionsDict&) = 0;
 };
 
 }  // namespace lczero

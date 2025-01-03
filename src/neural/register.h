@@ -41,6 +41,22 @@ class BackendManager {
     algorithms_.push_back(std::move(factory));
   }
 
+  // Returns list of backend names, sorted by priority (higher priority first).
+  std::vector<std::string> GetBackendsList() const;
+
+  // Creates a backend from the parameters. Extracts the weights file and the
+  // backend from the options.
+  std::unique_ptr<Backend> CreateFromParams(const OptionsDict& options) const;
+
+  // Creates a backend from the name. Backend name from the options is ignored.
+  // Note that unlike the WeightsFactory, the "options" parameter contains
+  // top-level parameters rather than `backend-opts`.
+  std::unique_ptr<Backend> CreateFromName(std::string_view name,
+                                          const OptionsDict& options) const;
+
+  // Returns a backend factory by name. Returns nullptr if not found.
+  BackendFactory* GetFactoryByName(std::string_view name) const;
+
   struct Register {
     Register(std::unique_ptr<BackendFactory> factory) {
       BackendManager::Get()->AddBackend(std::move(factory));
