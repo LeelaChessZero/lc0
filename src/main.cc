@@ -26,7 +26,9 @@
 */
 
 #include "chess/board.h"
+#include "engine.h"
 #include "engine_classic.h"
+#include "search/register.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
 #include "tools/benchmark.h"
@@ -62,6 +64,13 @@ int main(int argc, const char** argv) {
     CommandLine::RegisterMode("describenet",
                               "Shows details about the Leela network.");
 
+    for (const std::string_view search_name :
+         SearchManager::Get()->GetSearchNames()) {
+      CommandLine::RegisterMode(
+          std::string(search_name),
+          "Use \"" + std::string(search_name) + "\" search");
+    }
+
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
       SelfPlayLoop loop;
@@ -81,18 +90,39 @@ int main(int argc, const char** argv) {
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
     } else {
-      // Consuming optional "uci" mode.
-      CommandLine::ConsumeCommand("uci");
-      // Ordinary UCI engine.
       auto options_parser = std::make_unique<OptionsParser>();
-      EngineClassic::PopulateOptions(options_parser.get());
-      EngineLoop loop(std::move(options_parser),
-                      [](std::unique_ptr<UciResponder> uci_responder,
-                         const OptionsDict& options) {
-                        return std::make_unique<EngineClassic>(
-                            std::move(uci_responder), options);
-                      });
-      loop.RunLoop();
+
+      bool used_new_search = false;
+      for (const std::string_view search_name :
+           SearchManager::Get()->GetSearchNames()) {
+        if (CommandLine::ConsumeCommand(search_name)) {
+          used_new_search = true;
+          SearchFactory* factory =
+              SearchManager::Get()->GetFactoryByName(search_name);
+          factory->PopulateParams(options_parser.get());
+          EngineLoop loop(
+              std::move(options_parser), [factory](UciResponder& uci_responder,
+                                                   const OptionsDict& options) {
+                return std::make_unique<Engine>(
+                    factory->CreateEnvironment(&uci_responder, &options),
+                    options);
+              });
+          loop.RunLoop();
+        }
+      }
+
+      if (!used_new_search) {
+        // Consuming optional "uci" mode.
+        CommandLine::ConsumeCommand("uci");
+        // Ordinary UCI engine.
+        EngineClassic::PopulateOptions(options_parser.get());
+        EngineLoop loop(
+            std::move(options_parser),
+            [](UciResponder& uci_responder, const OptionsDict& options) {
+              return std::make_unique<EngineClassic>(uci_responder, options);
+            });
+        loop.RunLoop();
+      }
     }
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;

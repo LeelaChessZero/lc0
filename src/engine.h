@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2020 The LCZero Authors
+  Copyright (C) 2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,35 +25,37 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "search/register.h"
+#pragma once
 
-#include <algorithm>
+#include <vector>
+
+#include "engine_loop.h"
+#include "search/search.h"
 
 namespace lczero {
 
-SearchManager* SearchManager::Get() {
-  static SearchManager factory;
-  return &factory;
-}
+class Engine : public EngineControllerBase {
+ public:
+  Engine(std::unique_ptr<SearchEnvironment>, const OptionsDict&);
+  ~Engine() override;
 
-void SearchManager::AddSearchFactory(std::unique_ptr<SearchFactory> algorithm) {
-  algorithms_.push_back(std::move(algorithm));
-}
+ private:
+  void EnsureReady() override {};
+  void NewGame() override;
+  void SetPosition(const std::string& fen,
+                   const std::vector<std::string>& moves) override;
+  void Go(const GoParams& params) override;
+  void PonderHit() override {}
+  void Stop() override;
 
-std::vector<std::string_view> SearchManager::GetSearchNames() const {
-  std::vector<std::string_view> res;
-  res.reserve(algorithms_.size());
-  std::transform(algorithms_.begin(), algorithms_.end(),
-                 std::back_inserter(res),
-                 [](const auto& alg) { return alg->GetName(); });
-  return res;
-}
+ private:
+  void EnsureBackendCreated();
+  void EnsureSearchStopped();
 
-SearchFactory* SearchManager::GetFactoryByName(std::string_view name) const {
-  auto it =
-      std::find_if(algorithms_.begin(), algorithms_.end(),
-                   [name](const auto& alg) { return alg->GetName() == name; });
-  return it == algorithms_.end() ? nullptr : it->get();
-}
+  const OptionsDict& options_;
+  std::unique_ptr<SearchEnvironment> search_env_;
+  std::unique_ptr<SearchBase> search_;
+  std::unique_ptr<Backend> backend_;
+};
 
 }  // namespace lczero

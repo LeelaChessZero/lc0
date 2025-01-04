@@ -87,10 +87,10 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 }  // namespace
 
-EngineClassic::EngineClassic(std::unique_ptr<UciResponder> uci_responder,
+EngineClassic::EngineClassic(UciResponder& uci_responder,
                              const OptionsDict& options)
     : options_(options),
-      uci_responder_(std::move(uci_responder)),
+      uci_responder_(&uci_responder),
       current_position_{ChessBoard::kStartposFen, {}} {}
 
 void EngineClassic::PopulateOptions(OptionsParser* options) {
@@ -344,7 +344,7 @@ void EngineClassic::Go(const GoParams& params) {
   go_params_ = params;
 
   std::unique_ptr<UciResponder> responder =
-      std::make_unique<NonOwningUciRespondForwarder>(uci_responder_.get());
+      std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.

@@ -42,6 +42,12 @@ class SearchManager {
   static SearchManager* Get();
   void AddSearchFactory(std::unique_ptr<SearchFactory>);
 
+  std::vector<std::string_view> GetSearchNames() const;
+
+  // Returns the factory for the given algorithm name. Returns nullptr if not
+  // found.
+  SearchFactory* GetFactoryByName(std::string_view name) const;
+
   struct Register {
     Register(std::unique_ptr<SearchFactory> factory) {
       SearchManager::Get()->AddSearchFactory(std::move(factory));

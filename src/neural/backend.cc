@@ -37,6 +37,7 @@ std::vector<EvalResult> Backend::EvaluateBatch(
   for (const EvalPosition& pos : positions) {
     results.emplace_back();
     EvalResult& result = results.back();
+    result.p.resize(pos.legal_moves.size());
     computation->AddInput(
         pos, EvalResultPtr{&result.q, &result.d, &result.m,
                            std::span<float>(result.p.data(), result.p.size())});
