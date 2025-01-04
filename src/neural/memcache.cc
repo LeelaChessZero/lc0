@@ -33,6 +33,9 @@
 namespace lczero {
 namespace {
 
+// TODO For now it uses the hash of the current position, ignoring repetitions
+// and history. We'll likely need to have configurable hash function that we'll
+// also reuse as a tree hash key.
 uint64_t ComputeEvalPositionHash(const EvalPosition& pos) {
   return pos.pos.back().Hash();
 }
