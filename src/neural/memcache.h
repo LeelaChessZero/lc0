@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,23 +27,14 @@
 
 #pragma once
 
-#include "search/classic/stoppers/stoppers.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include "neural/backend.h"
 
 namespace lczero {
-namespace classic {
 
-enum class RunType { kUci, kSimpleUci, kSelfplay };
-void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
+// Creates a caching backend wrapper, which returns values immediately if they
+// are found, and forwards the request to the wrapped backend otherwise (and
+// caches the result).
+std::unique_ptr<Backend> CreateMemCache(std::unique_ptr<Backend> parent,
+                                        size_t capacity);
 
-// Populates KLDGain and SmartPruning stoppers.
-void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options);
-
-std::unique_ptr<TimeManager> MakeCommonTimeManager(
-    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
-    int64_t move_overhead);
-
-}  // namespace classic
 }  // namespace lczero

@@ -98,7 +98,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   const bool is_simple =
       CommandLine::BinaryName().find("simple") != std::string::npos;
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
-  options->Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 2000000;
   classic::SearchParams::Populate(options);
 
   ConfigFile::PopulateOptions(options);
@@ -161,7 +160,7 @@ void EngineClassic::UpdateFromUciOptions() {
   }
 
   // Cache size.
-  cache_.SetCapacity(options_.Get<int>(classic::kNNCacheSizeId));
+  cache_.SetCapacity(options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
 
   // Check whether we can update the move timer in "Go".
   strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);

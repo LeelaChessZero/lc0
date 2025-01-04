@@ -27,13 +27,10 @@
 
 #include "search/classic/stoppers/common.h"
 
+#include "neural/shared_params.h"
+
 namespace lczero {
 namespace classic {
-
-const OptionId kNNCacheSizeId{
-    "nncache", "NNCacheSize",
-    "Number of positions to store in a memory cache. A large cache can speed "
-    "up searching, but takes memory."};
 
 namespace {
 const OptionId kRamLimitMbId{
@@ -117,7 +114,8 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
   const bool infinite = params.infinite || params.ponder || params.mate;
 
   // RAM limit watching stopper.
-  const auto cache_size_mb = options.Get<int>(kNNCacheSizeId);
+  const auto cache_size_mb =
+      options.Get<int>(SharedBackendParams::kNNCacheSizeId);
   const int ram_limit = options.Get<int>(kRamLimitMbId);
   if (ram_limit) {
     stopper->AddStopper(std::make_unique<MemoryWatchingStopper>(
