@@ -65,7 +65,7 @@ int main(int argc, const char** argv) {
                               "Shows details about the Leela network.");
 
     for (const std::string_view search_name :
-         SearchManager::Get()->GetSearchesList()) {
+         SearchManager::Get()->GetSearchNames()) {
       CommandLine::RegisterMode(
           std::string(search_name),
           "Use \"" + std::string(search_name) + "\" search");
@@ -94,7 +94,7 @@ int main(int argc, const char** argv) {
 
       bool used_new_search = false;
       for (const std::string_view search_name :
-           SearchManager::Get()->GetSearchesList()) {
+           SearchManager::Get()->GetSearchNames()) {
         if (CommandLine::ConsumeCommand(search_name)) {
           used_new_search = true;
           SearchFactory* factory =

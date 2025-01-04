@@ -42,7 +42,7 @@ class BackendManager {
   }
 
   // Returns list of backend names, sorted by priority (higher priority first).
-  std::vector<std::string> GetBackendsList() const;
+  std::vector<std::string> GetBackendNames() const;
 
   // Creates a backend from the parameters. Extracts the weights file and the
   // backend from the options.

@@ -40,7 +40,7 @@ void SearchManager::AddSearchFactory(std::unique_ptr<SearchFactory> algorithm) {
   algorithms_.push_back(std::move(algorithm));
 }
 
-std::vector<std::string_view> SearchManager::GetSearchesList() const {
+std::vector<std::string_view> SearchManager::GetSearchNames() const {
   std::vector<std::string_view> res;
   res.reserve(algorithms_.size());
   std::transform(algorithms_.begin(), algorithms_.end(),

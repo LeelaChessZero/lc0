@@ -38,7 +38,7 @@ BackendManager* BackendManager::Get() {
   return &instance;
 }
 
-std::vector<std::string> BackendManager::GetBackendsList() const {
+std::vector<std::string> BackendManager::GetBackendNames() const {
   std::vector<std::pair<int, std::string>> priority_and_names;
   std::transform(algorithms_.begin(), algorithms_.end(),
                  std::back_inserter(priority_and_names),

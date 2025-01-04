@@ -30,8 +30,6 @@
 #include <algorithm>
 #include <numeric>
 
-#include "utils/logging.h"
-
 namespace lczero {
 
 Position GameState::CurrentPosition() const {
