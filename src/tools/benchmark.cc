@@ -52,7 +52,8 @@ void Benchmark::Run() {
   OptionsParser options;
   SharedBackendParams::Populate(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
-  options.Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 200000;
+  options.GetMutableDefaultsOptions()->Set(SharedBackendParams::kNNCacheSizeId,
+                                           200000);
   classic::SearchParams::Populate(&options);
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
@@ -98,7 +99,8 @@ void Benchmark::Run() {
       }
 
       NNCache cache;
-      cache.SetCapacity(option_dict.Get<int>(classic::kNNCacheSizeId));
+      cache.SetCapacity(
+          option_dict.Get<int>(SharedBackendParams::kNNCacheSizeId));
 
       classic::NodeTree tree;
       tree.ResetToPosition(position, {});

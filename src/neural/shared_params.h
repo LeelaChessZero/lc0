@@ -43,6 +43,7 @@ struct SharedBackendParams {
   static const OptionId kWeightsId;
   static const OptionId kBackendId;
   static const OptionId kBackendOptionsId;
+  static const OptionId kNNCacheSizeId;
 
   static void Populate(OptionsParser*);
 

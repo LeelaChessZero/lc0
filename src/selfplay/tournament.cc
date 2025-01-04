@@ -113,7 +113,6 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
 
   SharedBackendParams::Populate(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 2000000;
   classic::SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
@@ -225,13 +224,14 @@ SelfPlayTournament::SelfPlayTournament(
   }
 
   // Initializing cache.
-  cache_[0] = std::make_shared<NNCache>(
-      options.GetSubdict("player1").Get<int>(classic::kNNCacheSizeId));
+  cache_[0] = std::make_shared<NNCache>(options.GetSubdict("player1").Get<int>(
+      SharedBackendParams::kNNCacheSizeId));
   if (kShareTree) {
     cache_[1] = cache_[0];
   } else {
-    cache_[1] = std::make_shared<NNCache>(
-        options.GetSubdict("player2").Get<int>(classic::kNNCacheSizeId));
+    cache_[1] =
+        std::make_shared<NNCache>(options.GetSubdict("player2").Get<int>(
+            SharedBackendParams::kNNCacheSizeId));
   }
 
   // SearchLimits.

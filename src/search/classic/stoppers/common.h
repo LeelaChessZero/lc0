@@ -37,10 +37,6 @@ namespace classic {
 enum class RunType { kUci, kSimpleUci, kSelfplay };
 void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
 
-// Option ID for a cache size. It's used from multiple places and there's no
-// really nice place to declare, so let it be here.
-extern const OptionId kNNCacheSizeId;
-
 // Populates KLDGain and SmartPruning stoppers.
 void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options);
