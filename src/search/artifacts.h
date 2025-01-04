@@ -27,27 +27,11 @@
 
 #pragma once
 
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
-
 namespace lczero {
 
-// Backend parameters that appear in UCI interface and are in use by most
-// backends.
-struct SharedBackendParams {
-  static const constexpr char* kEmbed = "<built in>";
-  static const constexpr char* kAutoDiscover = "<autodiscover>";
-
-  static const OptionId kPolicySoftmaxTemp;
-  static const OptionId kHistoryFill;
-  static const OptionId kWeightsId;
-  static const OptionId kBackendId;
-  static const OptionId kBackendOptionsId;
-
-  static void Populate(OptionsParser*);
-
- private:
-  SharedBackendParams() = delete;
-};
+// Contains the search artifacts that are needed e.g. to build the training
+// data. The selfplay loop would fetch this from search to build training data
+// frames.
+struct SearchArtifacts {};
 
 }  // namespace lczero

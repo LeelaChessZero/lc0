@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2024 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,29 +25,17 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
-
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include "search/register.h"
 
 namespace lczero {
 
-// Backend parameters that appear in UCI interface and are in use by most
-// backends.
-struct SharedBackendParams {
-  static const constexpr char* kEmbed = "<built in>";
-  static const constexpr char* kAutoDiscover = "<autodiscover>";
+SearchManager* SearchManager::Get() {
+  static SearchManager factory;
+  return &factory;
+}
 
-  static const OptionId kPolicySoftmaxTemp;
-  static const OptionId kHistoryFill;
-  static const OptionId kWeightsId;
-  static const OptionId kBackendId;
-  static const OptionId kBackendOptionsId;
-
-  static void Populate(OptionsParser*);
-
- private:
-  SharedBackendParams() = delete;
-};
+void SearchManager::AddSearchFactory(std::unique_ptr<SearchFactory> algorithm) {
+  algorithms_.push_back(std::move(algorithm));
+}
 
 }  // namespace lczero

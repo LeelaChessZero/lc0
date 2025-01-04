@@ -27,27 +27,22 @@
 
 #pragma once
 
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include <span>
+
+#include "chess/position.h"
 
 namespace lczero {
 
-// Backend parameters that appear in UCI interface and are in use by most
-// backends.
-struct SharedBackendParams {
-  static const constexpr char* kEmbed = "<built in>";
-  static const constexpr char* kAutoDiscover = "<autodiscover>";
+// A structure that is passed to Search/SearchEnvironment to provide the game
+// state. Somewhat mirrors usi `position <fen> moves ...` command.
+struct GameState {
+  Position startpos;
+  std::span<Move> moves;
 
-  static const OptionId kPolicySoftmaxTemp;
-  static const OptionId kHistoryFill;
-  static const OptionId kWeightsId;
-  static const OptionId kBackendId;
-  static const OptionId kBackendOptionsId;
-
-  static void Populate(OptionsParser*);
-
- private:
-  SharedBackendParams() = delete;
+  // Returns the position of the last move in the list.
+  Position CurrentPosition() const;
+  // Returns positions after all moves, including the starting and the last one.
+  std::vector<Position> GetPositions() const;
 };
 
 }  // namespace lczero

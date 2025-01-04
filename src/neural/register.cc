@@ -27,11 +27,55 @@
 
 #include "neural/register.h"
 
+#include <algorithm>
+
+#include "neural/shared_params.h"
+
 namespace lczero {
 
 BackendManager* BackendManager::Get() {
   static BackendManager instance;
   return &instance;
+}
+
+std::vector<std::string> BackendManager::GetBackendsList() const {
+  std::vector<std::pair<int, std::string>> priority_and_names;
+  std::transform(algorithms_.begin(), algorithms_.end(),
+                 std::back_inserter(priority_and_names),
+                 [](const std::unique_ptr<BackendFactory>& factory) {
+                   return std::make_pair(factory->GetPriority(),
+                                         std::string(factory->GetName()));
+                 });
+  std::sort(priority_and_names.begin(), priority_and_names.end(),
+            std::greater<>());
+  std::vector<std::string> result;
+  std::transform(priority_and_names.begin(), priority_and_names.end(),
+                 std::back_inserter(result),
+                 [](const std::pair<int, std::string>& p) { return p.second; });
+  return result;
+}
+
+BackendFactory* BackendManager::GetFactoryByName(std::string_view name) const {
+  auto iter =
+      std::find_if(algorithms_.begin(), algorithms_.end(),
+                   [name](const std::unique_ptr<BackendFactory>& factory) {
+                     return factory->GetName() == name;
+                   });
+  return iter == algorithms_.end() ? nullptr : iter->get();
+}
+
+std::unique_ptr<Backend> BackendManager::CreateFromParams(
+    const OptionsDict& options) const {
+  const std::string backend =
+      options.Get<std::string>(SharedBackendParams::kBackendId);
+  return CreateFromName(backend, options);
+}
+
+std::unique_ptr<Backend> BackendManager::CreateFromName(
+    std::string_view name, const OptionsDict& options) const {
+  BackendFactory* factory = GetFactoryByName(name);
+  if (!factory) throw Exception("Unknown backend: " + std::string(name));
+  return factory->Create(options);
 }
 
 }  // namespace lczero

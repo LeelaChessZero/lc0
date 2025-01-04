@@ -25,29 +25,26 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include "chess/gamestate.h"
 
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include <algorithm>
+#include <numeric>
 
 namespace lczero {
 
-// Backend parameters that appear in UCI interface and are in use by most
-// backends.
-struct SharedBackendParams {
-  static const constexpr char* kEmbed = "<built in>";
-  static const constexpr char* kAutoDiscover = "<autodiscover>";
+Position GameState::CurrentPosition() const {
+  return std::accumulate(
+      moves.begin(), moves.end(), startpos,
+      [](const Position& pos, Move m) { return Position(pos, m); });
+}
 
-  static const OptionId kPolicySoftmaxTemp;
-  static const OptionId kHistoryFill;
-  static const OptionId kWeightsId;
-  static const OptionId kBackendId;
-  static const OptionId kBackendOptionsId;
-
-  static void Populate(OptionsParser*);
-
- private:
-  SharedBackendParams() = delete;
-};
+std::vector<Position> GameState::GetPositions() const {
+  std::vector<Position> positions;
+  positions.reserve(moves.size() + 1);
+  positions.push_back(startpos);
+  std::transform(moves.begin(), moves.end(), std::back_inserter(positions),
+                 [&](const Move& m) { return Position(positions.back(), m); });
+  return positions;
+}
 
 }  // namespace lczero

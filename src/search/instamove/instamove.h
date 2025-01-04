@@ -27,27 +27,54 @@
 
 #pragma once
 
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include <atomic>
+
+#include "chess/uciloop.h"
+#include "search/search.h"
+
+// Base class for instamove searches (e.g. policy head and value head).
+// The classes should only implement GetBestMove() method.
 
 namespace lczero {
 
-// Backend parameters that appear in UCI interface and are in use by most
-// backends.
-struct SharedBackendParams {
-  static const constexpr char* kEmbed = "<built in>";
-  static const constexpr char* kAutoDiscover = "<autodiscover>";
-
-  static const OptionId kPolicySoftmaxTemp;
-  static const OptionId kHistoryFill;
-  static const OptionId kWeightsId;
-  static const OptionId kBackendId;
-  static const OptionId kBackendOptionsId;
-
-  static void Populate(OptionsParser*);
+class InstamoveSearch : public SearchBase {
+ public:
+  using SearchBase::SearchBase;
 
  private:
-  SharedBackendParams() = delete;
+  virtual Move GetBestMove() = 0;
+
+  void Start(const GoParams& go_params) final {
+    bestmove_ = GetBestMove();
+    if (!go_params.infinite && !go_params.ponder) RespondBestMove();
+  }
+  void Wait() final {
+    while (!responded_bestmove_.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+  void Stop() final { RespondBestMove(); }
+  void Abort() final { responded_bestmove_.store(true); }
+  void RespondBestMove() {
+    if (responded_bestmove_.exchange(true)) return;
+    BestMoveInfo info{bestmove_};
+    uci_responder()->OutputBestMove(&info);
+  }
+
+  Move bestmove_;
+  std::atomic<bool> responded_bestmove_{false};
+};
+
+template <typename SearchClass>
+class InstamoveEnvironment : public SearchEnvironment {
+ public:
+  using SearchEnvironment::SearchEnvironment;
+
+ private:
+  std::unique_ptr<SearchBase> CreateSearch(
+      const GameState& game_state) override {
+    return std::make_unique<SearchClass>(context_, game_state);
+  }
 };
 
 }  // namespace lczero

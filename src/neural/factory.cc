@@ -92,25 +92,13 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   const std::string backend_options =
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
 
-  constexpr const char* kAutoDiscover = "<autodiscover>";
-  constexpr const char* kEmbed = "<built in>";
-
-  if (net_path == kAutoDiscover) {
-    net_path = DiscoverWeightsFile();
-  } else if (net_path == kEmbed) {
-    net_path = CommandLine::BinaryName();
-  } else {
-    CERR << "Loading weights file from: " << net_path;
-  }
   std::optional<WeightsFile> weights;
-  if (!net_path.empty()) {
-    weights = LoadWeightsFromFile(net_path);
-  }
-
+  if (!net_path.empty()) weights = LoadWeights(net_path);
   OptionsDict network_options(&options);
   network_options.AddSubdictFromString(backend_options);
 
-  auto ptr = NetworkFactory::Get()->Create(backend, weights, network_options);
+  auto ptr = NetworkFactory::Get()->Create(backend, std::move(weights),
+                                           network_options);
   network_options.CheckAllOptionsRead(backend);
   return ptr;
 }

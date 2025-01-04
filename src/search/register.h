@@ -27,27 +27,36 @@
 
 #pragma once
 
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include <memory>
+#include <vector>
+
+#include "search/search.h"
 
 namespace lczero {
 
-// Backend parameters that appear in UCI interface and are in use by most
-// backends.
-struct SharedBackendParams {
-  static const constexpr char* kEmbed = "<built in>";
-  static const constexpr char* kAutoDiscover = "<autodiscover>";
+class SearchFactory;
 
-  static const OptionId kPolicySoftmaxTemp;
-  static const OptionId kHistoryFill;
-  static const OptionId kWeightsId;
-  static const OptionId kBackendId;
-  static const OptionId kBackendOptionsId;
+// A singleton class that keeps one instance of each search algorithm's factory.
+class SearchManager {
+ public:
+  static SearchManager* Get();
+  void AddSearchFactory(std::unique_ptr<SearchFactory>);
 
-  static void Populate(OptionsParser*);
+  struct Register {
+    Register(std::unique_ptr<SearchFactory> factory) {
+      SearchManager::Get()->AddSearchFactory(std::move(factory));
+    }
+  };
 
  private:
-  SharedBackendParams() = delete;
+  SearchManager() = default;
+
+  std::vector<std::unique_ptr<SearchFactory>> algorithms_;
 };
+
+#define REGISTER_SEARCH(alg)                                                   \
+  namespace {                                                                  \
+  static SearchManager::Register reg3b50Y##algorithm(std::make_unique<alg>()); \
+  }
 
 }  // namespace lczero
