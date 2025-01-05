@@ -140,6 +140,8 @@ class Search {
   // Ensure that all shared collisions are cancelled and clear them out.
   void CancelSharedCollisions();
 
+  PositionHistory GetPositionHistoryAtNode(const Node* node) const;
+
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};

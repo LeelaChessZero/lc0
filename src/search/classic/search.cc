@@ -598,18 +598,34 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
   }
 }
 
-std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
+PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
+  PositionHistory history(played_history_);
+  for (const Node* n = node; n != root_node_; n = n->GetParent()) {
+    history.Append(n->GetOwnEdge()->GetMove());
+  }
+  return history;
+}
+
+namespace {
+std::vector<Move> GetNodeLegalMoves(const Node* node, const ChessBoard& board) {
   if (!node) return {};
   std::vector<Move> moves;
-  for (; node != root_node_; node = node->GetParent()) {
-    moves.push_back(node->GetOwnEdge()->GetMove());
+  if (node && node->HasChildren()) {
+    moves.reserve(node->GetNumEdges());
+    std::transform(node->Edges().begin(), node->Edges().end(),
+                   std::back_inserter(moves),
+                   [](const auto& edge) { return edge.GetMove(); });
+    return moves;
   }
-  PositionHistory history(played_history_);
-  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
-    history.Append(*iter);
-  }
+  return board.GenerateLegalMoves();
+}
+}  // namespace
+
+std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
+  if (!node) return {};
+  PositionHistory history = GetPositionHistoryAtNode(node);
   std::vector<Move> legal_moves =
-      history.Last().GetBoard().GenerateLegalMoves();
+      GetNodeLegalMoves(node, history.Last().GetBoard());
   return backend_->GetCachedEvaluation(
       EvalPosition{history.GetPositions(), legal_moves});
 }
