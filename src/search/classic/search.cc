@@ -2047,36 +2047,17 @@ void SearchWorker::ExtendNode(Node* node, int depth,
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node) {
-  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  if (search_->cache_->ContainsKey(hash)) {
-    return true;
-  }
-  int transform;
-  auto planes =
-      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
-
-  std::vector<uint16_t> moves;
-
+  std::vector<Move> moves;
   if (node && node->HasChildren()) {
     // Legal moves are known, use them.
     moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
-    }
+    for (const auto& edge : node->Edges()) moves.emplace_back(edge.GetMove());
   } else {
-    // Cache pseudolegal moves. A bit of a waste, but faster.
-    const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
-    moves.reserve(pseudolegal_moves.size());
-    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
+    moves = history_.Last().GetBoard().GenerateLegalMoves();
   }
-
-  computation_->AddInput(hash, std::move(planes), std::move(moves));
-  return false;
+  return computation_->AddInput(EvalPosition{history_.GetPositions(), moves},
+                                EvalResultPtr{}) ==
+         BackendComputation::FETCHED_IMMEDIATELY;
 }
 
 // 2b. Copy collisions into shared collisions.
