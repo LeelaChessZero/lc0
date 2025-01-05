@@ -264,7 +264,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
-  const auto display_cache_usage = params_.GetDisplayCacheUsage();
   const auto draw_score = GetDrawScore(false);
 
   std::vector<ThinkingInfo> uci_infos;
@@ -276,10 +275,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   common_info.time = GetTimeSinceStart();
   if (!per_pv_counters) {
     common_info.nodes = total_playouts_ + initial_visits_;
-  }
-  if (display_cache_usage) {
-    common_info.hashfull =
-        cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   }
   if (nps_start_time_) {
     const auto time_since_first_batch_ms =

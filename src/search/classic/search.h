@@ -162,7 +162,6 @@ class Search {
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
   Node* root_node_;
-  NNCache* cache_;
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
