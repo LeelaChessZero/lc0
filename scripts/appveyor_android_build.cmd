@@ -1,7 +1,7 @@
 cd arm64-v8a
 ninja
-llvm-strip lc0
+aarch64-linux-android-strip lc0
 cd C:\projects\lc0
 cd armeabi-v7a
 ninja
-llvm-strip lc0
+arm-linux-androideabi-strip lc0

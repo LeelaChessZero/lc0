@@ -63,8 +63,9 @@ namespace lczero {
 
 Position::Position(const Position& parent, Move m)
     : rule50_ply_(parent.rule50_ply_ + 1), ply_count_(parent.ply_count_ + 1) {
-  us_board_ = parent.us_board_;
-  const bool is_zeroing = us_board_.ApplyMove(m);
+  them_board_ = parent.us_board_;
+  const bool is_zeroing = them_board_.ApplyMove(m);
+  us_board_ = them_board_;
   us_board_.Mirror();
   if (is_zeroing) rule50_ply_ = 0;
 }
@@ -72,6 +73,8 @@ Position::Position(const Position& parent, Move m)
 Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
     : rule50_ply_(rule50_ply), repetitions_(0), ply_count_(game_ply) {
   us_board_ = board;
+  them_board_ = board;
+  them_board_.Mirror();
 }
 
 uint64_t Position::Hash() const {
@@ -127,7 +130,7 @@ int PositionHistory::ComputeLastMoveRepetitions(int* cycle_length) const {
   // TODO(crem) implement hash/cache based solution.
   if (last.GetRule50Ply() < 4) return 0;
 
-  for (int idx = positions_.size() - 5; idx >= 0; idx -= 2) {
+  for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
       *cycle_length = positions_.size() - 1 - idx;
@@ -159,8 +162,7 @@ uint64_t PositionHistory::HashLast(int positions) const {
 
 std::string GetFen(const Position& pos) {
   std::string result;
-  ChessBoard board = pos.GetBoard();
-  if (board.flipped()) board.Mirror();
+  const ChessBoard& board = pos.GetWhiteBoard();
   for (int row = 7; row >= 0; --row) {
     int emptycounter = 0;
     for (int col = 0; col < 8; ++col) {

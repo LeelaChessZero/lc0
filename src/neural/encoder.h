@@ -27,8 +27,6 @@
 
 #pragma once
 
-#include <span>
-
 #include "chess/position.h"
 #include "neural/network.h"
 #include "proto/net.pb.h"
@@ -51,11 +49,6 @@ InputPlanes EncodePositionForNN(
     const PositionHistory& history, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out,
     bool swap_colors = false);
-
-InputPlanes EncodePositionForNN(
-    pblczero::NetworkFormat::InputFormat input_format,
-    std::span<const Position> positions, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out);
 
 bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format);
 bool IsCanonicalArmageddonFormat(
