@@ -74,6 +74,12 @@ Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
   us_board_ = board;
 }
 
+Position Position::FromFen(std::string_view fen) {
+  Position pos;
+  pos.us_board_.SetFromFen(std::string(fen), &pos.rule50_ply_, &pos.ply_count_);
+  return pos;
+}
+
 uint64_t Position::Hash() const {
   return HashCat({us_board_.Hash(), static_cast<unsigned long>(repetitions_)});
 }

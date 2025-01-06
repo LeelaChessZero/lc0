@@ -56,7 +56,7 @@ void CommandLine::Init(int argc, const char** argv) {
   LOGFILE << "Command line: " << binary_ << params.str();
 }
 
-bool CommandLine::ConsumeCommand(const std::string& command) {
+bool CommandLine::ConsumeCommand(std::string_view command) {
   if (arguments_.empty()) return false;
   if (arguments_[0] != command) return false;
   arguments_.erase(arguments_.begin());
