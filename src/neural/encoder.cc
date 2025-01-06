@@ -330,9 +330,11 @@ InputPlanes EncodePositionForNN(
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     const PositionHistory& history, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out) {
+    FillEmptyHistory fill_empty_history, int* transform_out,
+    bool swap_colors) {
   return EncodePositionForNN(input_format, history.GetPositions(),
-                             history_planes, fill_empty_history, transform_out);
+                             history_planes, fill_empty_history, transform_out,
+                             swap_colors);
 }
 
 }  // namespace lczero
