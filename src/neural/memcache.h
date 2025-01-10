@@ -34,9 +34,9 @@ namespace lczero {
 class CachingBackend : public Backend {
  public:
   // Clears the cache.
-  virtual void Clear() = 0;
+  virtual void ClearCache() = 0;
   // Sets the maximum number of items in the cache.
-  virtual void SetCapacity(size_t capacity) = 0;
+  virtual void SetCacheCapacity(size_t capacity) = 0;
 };
 
 // Creates a caching backend wrapper, which returns values immediately if they

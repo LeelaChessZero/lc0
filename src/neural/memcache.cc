@@ -68,8 +68,10 @@ class MemCache : public CachingBackend {
   std::unique_ptr<BackendComputation> CreateComputation() override;
   std::optional<EvalResult> GetCachedEvaluation(const EvalPosition&) override;
 
-  void Clear() override { cache_.Clear(); }
-  void SetCapacity(size_t capacity) override { cache_.SetCapacity(capacity); }
+  void ClearCache() override { cache_.Clear(); }
+  void SetCacheCapacity(size_t capacity) override {
+    cache_.SetCapacity(capacity);
+  }
 
  private:
   Backend* wrapped_backend_;
