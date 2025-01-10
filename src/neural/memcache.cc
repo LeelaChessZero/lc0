@@ -55,7 +55,7 @@ void CachedValueToEvalResult(const CachedValue& cv, const EvalResultPtr& ptr) {
   std::copy(cv.p.get(), cv.p.get() + ptr.p.size(), ptr.p.begin());
 }
 
-class MemCache : public Backend {
+class MemCache : public CachingBackend {
  public:
   MemCache(Backend* wrapped, size_t capacity)
       : wrapped_backend_(wrapped),
@@ -67,6 +67,9 @@ class MemCache : public Backend {
   }
   std::unique_ptr<BackendComputation> CreateComputation() override;
   std::optional<EvalResult> GetCachedEvaluation(const EvalPosition&) override;
+
+  void Clear() override { cache_.Clear(); }
+  void SetCapacity(size_t capacity) override { cache_.SetCapacity(capacity); }
 
  private:
   Backend* wrapped_backend_;
@@ -151,7 +154,8 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
 
 }  // namespace
 
-std::unique_ptr<Backend> CreateMemCache(Backend* wrapped, size_t capacity) {
+std::unique_ptr<CachingBackend> CreateMemCache(Backend* wrapped,
+                                               size_t capacity) {
   return std::make_unique<MemCache>(wrapped, capacity);
 }
 
