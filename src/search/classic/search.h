@@ -340,7 +340,6 @@ class SearchWorker {
     std::vector<Move> moves_to_visit;
 
     // Details that are filled in as we go.
-    mutable int last_idx = 0;
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
