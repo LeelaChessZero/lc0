@@ -94,10 +94,14 @@ class MemCacheComputation : public BackendComputation {
   }
   virtual AddInputResult AddInput(const EvalPosition& pos,
                                   EvalResultPtr result) override {
+    assert(pos.legal_moves.size() == result.p.size() || result.p.empty());
     const uint64_t hash = ComputeEvalPositionHash(pos);
     {
       HashKeyedCacheLock<CachedValue> lock(&memcache_->cache_, hash);
-      if (lock.holds_value()) {
+      // Sometimes search queries NN without passing the legal moves. It is
+      // still cached in this case, but in subsequent queries we only return it
+      // legal moves are not passed again.
+      if (lock.holds_value() && (pos.legal_moves.empty() || lock->p)) {
         CachedValueToEvalResult(**lock, result);
         return AddInputResult::FETCHED_IMMEDIATELY;
       }
@@ -108,10 +112,10 @@ class MemCacheComputation : public BackendComputation {
     value->p.reset(pos.legal_moves.empty() ? nullptr
                                            : new float[pos.legal_moves.size()]);
     return wrapped_computation_->AddInput(
-        pos, EvalResultPtr{&value->q,
-                           &value->d,
-                           &value->m,
-                           {value->p.get(), pos.legal_moves.size()}});
+        pos, EvalResultPtr{&value->q, &value->d, &value->m,
+                           value->p ? std::span<float>{value->p.get(),
+                                                       pos.legal_moves.size()}
+                                    : std::span<float>{}});
   }
 
   virtual void ComputeBlocking() override {
@@ -141,7 +145,9 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
     const EvalPosition& pos) {
   const uint64_t hash = ComputeEvalPositionHash(pos);
   HashKeyedCacheLock<CachedValue> lock(&cache_, hash);
-  if (!lock.holds_value()) return std::nullopt;
+  if (!lock.holds_value() || (!pos.legal_moves.empty() && !lock->p)) {
+    return std::nullopt;
+  }
   EvalResult result;
   result.d = lock->d;
   result.q = lock->q;
