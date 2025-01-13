@@ -2190,7 +2190,6 @@ void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process);
-    if (node_to_process.nn_queried) ++idx_in_computation;
   }
 }
 
