@@ -321,6 +321,8 @@ class SearchWorker {
     float d;
     // Estimated remaining plies left.
     float m;
+    // Policy value per legal move.
+    std::vector<float> p;
     int multivisit = 0;
     // If greater than multivisit, and other parameters don't imply a lower
     // limit, multivist could be increased to this value without additional
@@ -338,11 +340,8 @@ class SearchWorker {
     std::vector<Move> moves_to_visit;
 
     // Details that are filled in as we go.
-    uint64_t hash;
-    NNCacheLock lock;
-    std::vector<uint16_t> probabilities_to_cache;
-    InputPlanes input_planes;
-    mutable int last_idx = 0;
+    PositionHistory position_history;
+    MoveList legal_moves;
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
@@ -355,30 +354,6 @@ class SearchWorker {
     }
     static NodeToProcess Visit(Node* node, uint16_t depth) {
       return NodeToProcess(node, depth, false, 1, 0);
-    }
-
-    // Methods to allow NodeToProcess to conform as a 'Computation'. Only safe
-    // to call if is_cache_hit is true in the multigather path.
-
-    float GetQVal(int) const { return lock->q; }
-
-    float GetDVal(int) const { return lock->d; }
-
-    float GetMVal(int) const { return lock->m; }
-
-    float GetPVal(int, int move_id) const {
-      const auto& moves = lock->p;
-
-      int total_count = 0;
-      while (total_count < moves.size()) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = moves[last_idx++];
-        if (last_idx == moves.size()) last_idx = 0;
-        if (move.first == move_id) return move.second;
-        ++total_count;
-      }
-      assert(false);  // Move not found.
-      return 0;
     }
 
    private:
@@ -456,10 +431,7 @@ class SearchWorker {
                          TaskWorkspace* workspace);
   void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
                   PositionHistory* history);
-  template <typename Computation>
-  void FetchSingleNodeResult(NodeToProcess* node_to_process,
-                             const Computation& computation,
-                             int idx_in_computation);
+  void FetchSingleNodeResult(NodeToProcess* node_to_process);
   void RunTasks(int tid);
   void ResetTasks();
   // Returns how many tasks there were.
