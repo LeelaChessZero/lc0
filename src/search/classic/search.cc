@@ -37,9 +37,9 @@
 #include <sstream>
 #include <thread>
 
-#include "search/classic/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
+#include "search/classic/node.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
@@ -150,20 +150,20 @@ class MEvaluator {
 
 }  // namespace
 
-Search::Search(const NodeTree& tree, Network* network,
+Search::Search(const NodeTree& tree, Backend* backend,
                std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
-               bool ponder, const OptionsDict& options, NNCache* cache,
+               bool ponder, const OptionsDict& options,
                SyzygyTablebase* syzygy_tb)
     : ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
-      cache_(cache),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
-      network_(network),
+      backend_(backend),
+      backend_attributes_(backend->GetAttributes()),
       params_(options),
       searchmoves_(searchmoves),
       start_time_(start_time),
@@ -264,7 +264,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
-  const auto display_cache_usage = params_.GetDisplayCacheUsage();
   const auto draw_score = GetDrawScore(false);
 
   std::vector<ThinkingInfo> uci_infos;
@@ -276,10 +275,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   common_info.time = GetTimeSinceStart();
   if (!per_pv_counters) {
     common_info.nodes = total_playouts_ + initial_visits_;
-  }
-  if (display_cache_usage) {
-    common_info.hashfull =
-        cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   }
   if (nps_start_time_) {
     const auto time_since_first_batch_ms =
@@ -341,7 +336,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       const float centipawn_fallback_threshold = 0.996f;
       float centipawn_score = 45 * tan(1.56728071628 * wl);
       uci_info.score =
-          network_->GetCapabilities().has_wdl() && mu_uci != 0.0f &&
+          backend_attributes_.has_wdl && mu_uci != 0.0f &&
                   std::abs(wl) + d < centipawn_fallback_threshold &&
                   (std::abs(mu_uci) < 1.0f ||
                    std::abs(centipawn_score) < std::abs(100 * mu_uci))
@@ -361,7 +356,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       wdl_d = 0;
     }
     uci_info.wdl = ThinkingInfo::WDL{wdl_w, wdl_d, wdl_l};
-    if (network_->GetCapabilities().has_mlh()) {
+    if (backend_attributes_.has_mlh) {
       uci_info.moves_left = static_cast<int>(
           (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
     }
@@ -522,7 +517,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
     } else {
-      NNCacheLock nneval = GetCachedNNEval(n);
+      std::optional<EvalResult> nneval = GetCachedNNEval(n);
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -546,9 +541,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   };
 
   std::vector<std::string> infos;
-  const auto m_evaluator = network_->GetCapabilities().has_mlh()
-                               ? MEvaluator(params_, node)
-                               : MEvaluator();
+  const auto m_evaluator =
+      backend_attributes_.has_mlh ? MEvaluator(params_, node) : MEvaluator();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
@@ -604,20 +598,36 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
   }
 }
 
-NNCacheLock Search::GetCachedNNEval(const Node* node) const {
-  if (!node) return {};
-
-  std::vector<Move> moves;
-  for (; node != root_node_; node = node->GetParent()) {
-    moves.push_back(node->GetOwnEdge()->GetMove());
-  }
+PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
   PositionHistory history(played_history_);
-  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
-    history.Append(*iter);
+  for (const Node* n = node; n != root_node_; n = n->GetParent()) {
+    history.Append(n->GetOwnEdge()->GetMove());
   }
-  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
-  NNCacheLock nneval(cache_, hash);
-  return nneval;
+  return history;
+}
+
+namespace {
+std::vector<Move> GetNodeLegalMoves(const Node* node, const ChessBoard& board) {
+  if (!node) return {};
+  std::vector<Move> moves;
+  if (node && node->HasChildren()) {
+    moves.reserve(node->GetNumEdges());
+    std::transform(node->Edges().begin(), node->Edges().end(),
+                   std::back_inserter(moves),
+                   [](const auto& edge) { return edge.GetMove(); });
+    return moves;
+  }
+  return board.GenerateLegalMoves();
+}
+}  // namespace
+
+std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
+  if (!node) return {};
+  PositionHistory history = GetPositionHistoryAtNode(node);
+  std::vector<Move> legal_moves =
+      GetNodeLegalMoves(node, history.Last().GetBoard());
+  return backend_->GetCachedEvaluation(
+      EvalPosition{history.GetPositions(), legal_moves});
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,
@@ -902,7 +912,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
   if (how_many == 0 && threads_.size() == 0) {
-    how_many = network_->GetThreads() + !network_->IsCpu();
+    how_many = backend_attributes_.suggested_num_search_threads +
+               !backend_attributes_.runs_on_cpu;
   }
   thread_count_.store(how_many, std::memory_order_release);
   // First thread is a watchdog thread.
@@ -911,8 +922,8 @@ void Search::StartThreads(size_t how_many) {
   }
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
-    threads_.emplace_back([this, i]() {
-      SearchWorker worker(this, params_, i);
+    threads_.emplace_back([this]() {
+      SearchWorker worker(this, params_);
       worker.RunBlocking();
     });
   }
@@ -962,7 +973,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     float max_q_plus_m = -1000;
     uint64_t max_n = 0;
     bool max_n_has_max_q_plus_m = true;
-    const auto m_evaluator = network_->GetCapabilities().has_mlh()
+    const auto m_evaluator = backend_attributes_.has_mlh
                                  ? MEvaluator(params_, root_node_)
                                  : MEvaluator();
     for (const auto& edge : root_node_->Edges()) {
@@ -1168,7 +1179,7 @@ void SearchWorker::RunTasks(int tid) {
 
 void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
-  InitializeIteration(search_->network_->NewComputation());
+  InitializeIteration(search_->backend_->CreateComputation());
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     std::unique_ptr<SpinHelper> spin_helper;
@@ -1258,10 +1269,8 @@ void SearchWorker::ExecuteOneIteration() {
 // 1. Initialize internal structures.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
-    std::unique_ptr<NetworkComputation> computation) {
-  computation_ = std::make_unique<CachingComputation>(std::move(computation),
-                                                      search_->cache_);
-  computation_->Reserve(target_minibatch_size_);
+    std::unique_ptr<BackendComputation> computation) {
+  computation_ = std::move(computation);
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
 }
@@ -1317,7 +1326,7 @@ void SearchWorker::GatherMinibatch() {
   while (minibatch_size < target_minibatch_size_ &&
          number_out_of_order_ < max_out_of_order_) {
     // If there's something to process without touching slow neural net, do it.
-    if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
+    if (minibatch_size > 0 && computation_->UsedBatchSize() == 0) return;
 
     // If there is backend work to be done, and the backend is idle - exit
     // immediately.
@@ -1326,7 +1335,8 @@ void SearchWorker::GatherMinibatch() {
     // be keeping the backend busy. Which would mean that threads=1 has a
     // massive nps drop.
     if (thread_count > 1 && minibatch_size > 0 &&
-        computation_->GetCacheMisses() > params_.GetIdlingMinimumWork() &&
+        static_cast<int>(computation_->UsedBatchSize()) >
+            params_.GetIdlingMinimumWork() &&
         thread_count - search_->backend_waiting_counter_.load(
                            std::memory_order_relaxed) >
             params_.GetThreadIdlingThreshold()) {
@@ -1528,7 +1538,7 @@ int SearchWorker::WaitForTasks() {
 
 void SearchWorker::PickNodesToExtend(int collision_limit) {
   ResetTasks();
-  if (task_workers_ > 0 && !search_->network_->IsCpu()) {
+  if (task_workers_ > 0 && !search_->backend_attributes_.runs_on_cpu) {
     // While nothing is ready yet - wake the task runners so they are ready to
     // receive quickly.
     Mutex::Lock lock(picking_tasks_mutex_);
@@ -2089,13 +2099,13 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
   if (search_->stop_.load(std::memory_order_acquire)) return;
-  if (computation_->GetCacheMisses() > 0 &&
-      computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
+  if (computation_->UsedBatchSize() > 0 &&
+      computation_->UsedBatchSize() < params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
     PrefetchIntoCache(
         search_->root_node_,
-        params_.GetMaxPrefetchBatch() - computation_->GetCacheMisses(), false);
+        params_.GetMaxPrefetchBatch() - computation_->UsedBatchSize(), false);
   }
 }
 
