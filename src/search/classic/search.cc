@@ -2204,6 +2204,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
     node_to_process->m = node->GetM();
     return;
   }
+  node_to_process->v = -node_to_process->v;
   // For NN results, we need to populate policy as well as value.
   // First the value...
   if (params_.GetWDLRescaleRatio() != 1.0f ||
