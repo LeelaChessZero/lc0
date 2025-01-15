@@ -315,14 +315,7 @@ class SearchWorker {
 
     // The node to extend.
     Node* node;
-    // Value from NN's value head, or -1/0/1 for terminal nodes.
-    float v;
-    // Draw probability for NN's with WDL value head.
-    float d;
-    // Estimated remaining plies left.
-    float m;
-    // Policy value per legal move.
-    std::vector<float> p;
+    std::unique_ptr<EvalResult> eval;
     int multivisit = 0;
     // If greater than multivisit, and other parameters don't imply a lower
     // limit, multivist could be increased to this value without additional
@@ -360,6 +353,7 @@ class SearchWorker {
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
                   int max_count)
         : node(node),
+          eval(std::make_unique<EvalResult>()),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),

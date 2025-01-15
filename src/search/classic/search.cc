@@ -1431,17 +1431,17 @@ void SearchWorker::GatherMinibatch() {
       // Also terminals when OOO is disabled.
       if (!minibatch_[i].nn_queried) continue;
       if (minibatch_[i].is_cache_hit) continue;
-      minibatch_[i].p.resize(minibatch_[i].legal_moves.size());
+      minibatch_[i].eval->p.resize(minibatch_[i].legal_moves.size());
       computation_->AddInput(
           EvalPosition{
               .pos = minibatch_[i].position_history.GetPositions(),
               .legal_moves = minibatch_[i].legal_moves,
           },
           EvalResultPtr{
-              .q = &minibatch_[i].v,
-              .d = &minibatch_[i].d,
-              .m = &minibatch_[i].m,
-              .p = minibatch_[i].p,
+              .q = &minibatch_[i].eval->q,
+              .d = &minibatch_[i].eval->d,
+              .m = &minibatch_[i].eval->m,
+              .p = minibatch_[i].eval->p,
           });
     }
 
@@ -1499,10 +1499,10 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
         });
         picked_node.is_cache_hit = cache_lookup.has_value();
         if (picked_node.is_cache_hit) {
-          picked_node.v = cache_lookup->q;
-          picked_node.d = cache_lookup->d;
-          picked_node.m = cache_lookup->m;
-          picked_node.p = cache_lookup->p;
+          picked_node.eval->q = cache_lookup->q;
+          picked_node.eval->d = cache_lookup->d;
+          picked_node.eval->m = cache_lookup->m;
+          picked_node.eval->p = cache_lookup->p;
         }
       }
     }
@@ -2199,12 +2199,12 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.
-    node_to_process->v = node->GetWL();
-    node_to_process->d = node->GetD();
-    node_to_process->m = node->GetM();
+    node_to_process->eval->q = node->GetWL();
+    node_to_process->eval->d = node->GetD();
+    node_to_process->eval->m = node->GetM();
     return;
   }
-  node_to_process->v = -node_to_process->v;
+  node_to_process->eval->q = -node_to_process->eval->q;
   // For NN results, we need to populate policy as well as value.
   // First the value...
   if (params_.GetWDLRescaleRatio() != 1.0f ||
@@ -2214,7 +2214,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
     bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
                     search_->played_history_.Last().IsBlackToMove();
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-    WDLRescale(node_to_process->v, node_to_process->d,
+    WDLRescale(node_to_process->eval->q, node_to_process->eval->d,
                params_.GetWDLRescaleRatio(),
                search_->contempt_mode_ == ContemptMode::NONE
                    ? 0
@@ -2222,7 +2222,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
                sign, false, params_.GetWDLMaxS());
   }
   for (size_t p_idx = 0; auto& edge : node->Edges()) {
-    edge.edge()->SetP(node_to_process->p[p_idx++]);
+    edge.edge()->SetP(node_to_process->eval->p[p_idx++]);
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
@@ -2263,9 +2263,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
 
   // Backup V value up to a root. After 1 visit, V = Q.
-  float v = node_to_process.v;
-  float d = node_to_process.d;
-  float m = node_to_process.m;
+  float v = node_to_process.eval->q;
+  float d = node_to_process.eval->d;
+  float m = node_to_process.eval->m;
   int n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
