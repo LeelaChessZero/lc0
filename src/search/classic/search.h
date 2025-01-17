@@ -327,14 +327,10 @@ class SearchWorker {
     bool is_collision = false;
     int probability_transform = 0;
 
-    // Details only populated in the multigather path.
-
     // Only populated for visits,
     std::vector<Move> moves_to_visit;
 
     // Details that are filled in as we go.
-    PositionHistory position_history;
-    MoveList legal_moves;
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
@@ -434,6 +430,7 @@ class SearchWorker {
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
+  Mutex computation_addinput_mutex_;
   std::unique_ptr<BackendComputation> computation_;
   int task_workers_;
   int target_minibatch_size_;

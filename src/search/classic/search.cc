@@ -1425,25 +1425,6 @@ void SearchWorker::GatherMinibatch() {
         }
       }
     }
-    for (size_t i = new_start; i < minibatch_.size(); i++) {
-      // If there was no OOO, there can stil be collisions.
-      // There are no OOO though.
-      // Also terminals when OOO is disabled.
-      if (!minibatch_[i].nn_queried) continue;
-      if (minibatch_[i].is_cache_hit) continue;
-      minibatch_[i].eval->p.resize(minibatch_[i].legal_moves.size());
-      computation_->AddInput(
-          EvalPosition{
-              .pos = minibatch_[i].position_history.GetPositions(),
-              .legal_moves = minibatch_[i].legal_moves,
-          },
-          EvalResultPtr{
-              .q = &minibatch_[i].eval->q,
-              .d = &minibatch_[i].eval->d,
-              .m = &minibatch_[i].eval->m,
-              .p = minibatch_[i].eval->p,
-          });
-    }
 
     // Check for stop at the end so we have at least one node.
     for (size_t i = new_start; i < minibatch_.size(); i++) {
@@ -1488,22 +1469,20 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        picked_node.legal_moves.reserve(node->GetNumEdges());
+        MoveList legal_moves;
+        legal_moves.reserve(node->GetNumEdges());
         std::transform(node->Edges().begin(), node->Edges().end(),
-                       std::back_inserter(picked_node.legal_moves),
+                       std::back_inserter(legal_moves),
                        [](const auto& edge) { return edge.GetMove(); });
-        picked_node.position_history = history;
-        auto cache_lookup = search_->backend_->GetCachedEvaluation(EvalPosition{
-            .pos = picked_node.position_history.GetPositions(),
-            .legal_moves = picked_node.legal_moves,
-        });
-        picked_node.is_cache_hit = cache_lookup.has_value();
-        if (picked_node.is_cache_hit) {
-          picked_node.eval->q = cache_lookup->q;
-          picked_node.eval->d = cache_lookup->d;
-          picked_node.eval->m = cache_lookup->m;
-          picked_node.eval->p = cache_lookup->p;
-        }
+        picked_node.eval->p.resize(legal_moves.size());
+        Mutex::Lock lock(computation_addinput_mutex_);
+        picked_node.is_cache_hit = computation_->AddInput(
+                                       EvalPosition{
+                                           .pos = history.GetPositions(),
+                                           .legal_moves = legal_moves,
+                                       },
+                                       picked_node.eval->AsPtr()) ==
+                                   BackendComputation::FETCHED_IMMEDIATELY;
       }
     }
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
