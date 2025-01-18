@@ -87,10 +87,12 @@ class NetworkAsBackendComputation : public BackendComputation {
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
     int transform;
-    const size_t idx = entries_.emplace_back(
-        EncodePositionForNN(backend_->input_format_, pos.pos, 8,
-                            backend_->fill_empty_history_, &transform),
-        MoveList(pos.legal_moves.begin(), pos.legal_moves.end()), result, 0);
+    const size_t idx = entries_.emplace_back(Entry{
+        .input = EncodePositionForNN(backend_->input_format_, pos.pos, 8,
+                                     backend_->fill_empty_history_, &transform),
+        .legal_moves = MoveList(pos.legal_moves.begin(), pos.legal_moves.end()),
+        .result = result,
+        .transform = 0});
     entries_[idx].transform = transform;
     return ENQUEUED_FOR_EVAL;
   }
