@@ -72,6 +72,11 @@ class AtomicVector {
     size_.store(0, std::memory_order_relaxed);
   }
 
+  T* begin() { return reinterpret_cast<T*>(data_); }
+  T* end() { return reinterpret_cast<T*>(data_) + size(); }
+  const T* begin() const { return reinterpret_cast<const T*>(data_); }
+  const T* end() const { return reinterpret_cast<const T*>(data_) + size(); }
+
  private:
   const size_t capacity_;
   std::atomic<size_t> size_;

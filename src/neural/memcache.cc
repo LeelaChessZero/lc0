@@ -28,6 +28,7 @@
 #include "neural/memcache.h"
 
 #include "neural/cache.h"
+#include "utils/atomic_vector.h"
 #include "utils/smallarray.h"
 
 namespace lczero {
@@ -79,11 +80,8 @@ class MemCacheComputation : public BackendComputation {
   MemCacheComputation(std::unique_ptr<BackendComputation> wrapped_computation,
                       MemCache* memcache)
       : wrapped_computation_(std::move(wrapped_computation)),
-        memcache_(memcache) {
-    keys_.reserve(memcache_->max_batch_size_);
-    values_.reserve(memcache_->max_batch_size_);
-    result_ptrs_.reserve(memcache_->max_batch_size_);
-  }
+        memcache_(memcache),
+        entries_(memcache->max_batch_size_) {}
 
  private:
   size_t UsedBatchSize() const override {
@@ -99,10 +97,11 @@ class MemCacheComputation : public BackendComputation {
         return AddInputResult::FETCHED_IMMEDIATELY;
       }
     }
-    keys_.push_back(hash);
-    auto value = std::make_unique<CachedValue>();
-    value->p.reset(new float[result.p.size()]);
-    result_ptrs_.push_back(result);
+    size_t entry_idx = entries_.emplace_back(
+        Entry{hash, std::make_unique<CachedValue>(), result});
+    auto& value = entries_[entry_idx].value;
+    value->p.reset(pos.legal_moves.empty() ? nullptr
+                                           : new float[pos.legal_moves.size()]);
     return wrapped_computation_->AddInput(
         pos, EvalResultPtr{&value->q,
                            &value->d,
@@ -112,17 +111,21 @@ class MemCacheComputation : public BackendComputation {
 
   virtual void ComputeBlocking() override {
     wrapped_computation_->ComputeBlocking();
-    for (size_t i = 0; i < keys_.size(); ++i) {
-      CachedValueToEvalResult(*values_[i], result_ptrs_[i]);
-      memcache_->cache_.Insert(keys_[i], std::move(values_[i]));
+    for (auto& entry : entries_) {
+      CachedValueToEvalResult(*entry.value, entry.result_ptr);
+      memcache_->cache_.Insert(entry.key, std::move(entry.value));
     }
   }
 
+  struct Entry {
+    uint64_t key;
+    std::unique_ptr<CachedValue> value;
+    EvalResultPtr result_ptr;
+  };
+
   std::unique_ptr<BackendComputation> wrapped_computation_;
-  std::vector<uint64_t> keys_;
-  std::vector<std::unique_ptr<CachedValue>> values_;
-  std::vector<EvalResultPtr> result_ptrs_;
   MemCache* memcache_;
+  AtomicVector<Entry> entries_;
 };
 
 std::unique_ptr<BackendComputation> MemCache::CreateComputation() {
