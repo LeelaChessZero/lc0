@@ -154,7 +154,7 @@ void EngineClassic::UpdateFromUciOptions() {
                        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
     network_configuration_ = network_configuration;
   } else {
-    // Still update the cache size.
+    // If network is not changed, cache size still may have changed.
     backend_->SetCacheCapacity(
         options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
   }
