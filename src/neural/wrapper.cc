@@ -32,6 +32,7 @@
 
 #include "neural/encoder.h"
 #include "neural/shared_params.h"
+#include "utils/atomic_vector.h"
 #include "utils/fastmath.h"
 
 namespace lczero {
@@ -77,30 +78,28 @@ class NetworkAsBackend : public Backend {
 class NetworkAsBackendComputation : public BackendComputation {
  public:
   NetworkAsBackendComputation(NetworkAsBackend* backend)
-      : backend_(backend), computation_(backend_->network_->NewComputation()) {
-    results_.reserve(backend_->attrs_.maximum_batch_size);
-    moves_.reserve(backend_->attrs_.maximum_batch_size);
-    transforms_.reserve(backend_->attrs_.maximum_batch_size);
-  }
+      : backend_(backend),
+        computation_(backend_->network_->NewComputation()),
+        entries_(backend_->attrs_.maximum_batch_size) {}
 
   size_t UsedBatchSize() const override { return computation_->GetBatchSize(); }
 
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
     int transform;
-    computation_->AddInput(EncodePositionForNN(backend_->input_format_, pos.pos,
-                                               8, backend_->fill_empty_history_,
-                                               &transform));
-    results_.push_back(result);
-    moves_.emplace_back(pos.legal_moves.begin(), pos.legal_moves.end());
-    transforms_.push_back(transform);
+    const size_t idx = entries_.emplace_back(
+        EncodePositionForNN(backend_->input_format_, pos.pos, 8,
+                            backend_->fill_empty_history_, &transform),
+        MoveList(pos.legal_moves.begin(), pos.legal_moves.end()), result, 0);
+    entries_[idx].transform = transform;
     return ENQUEUED_FOR_EVAL;
   }
 
   void ComputeBlocking() override {
+    for (auto& entry : entries_) computation_->AddInput(std::move(entry.input));
     computation_->ComputeBlocking();
-    for (size_t i = 0; i < results_.size(); ++i) {
-      const EvalResultPtr& result = results_[i];
+    for (size_t i = 0; i < entries_.size(); ++i) {
+      const EvalResultPtr& result = entries_[i].result;
       if (result.q) *result.q = computation_->GetQVal(i);
       if (result.d) *result.d = computation_->GetDVal(i);
       if (result.m) *result.m = computation_->GetMVal(i);
@@ -110,8 +109,8 @@ class NetworkAsBackendComputation : public BackendComputation {
 
   void SoftmaxPolicy(std::span<float> dst,
                      const NetworkComputation* computation, int idx) {
-    const std::vector<Move>& moves = moves_[idx];
-    const int transform = transforms_[idx];
+    const std::vector<Move>& moves = entries_[idx].legal_moves;
+    const int transform = entries_[idx].transform;
     // Copy the values to the destination array and compute the maximum.
     const float max_p = std::accumulate(
         moves.begin(), moves.end(), -std::numeric_limits<float>::infinity(),
@@ -131,11 +130,16 @@ class NetworkAsBackendComputation : public BackendComputation {
   }
 
  private:
+  struct Entry {
+    InputPlanes input;
+    MoveList legal_moves;
+    EvalResultPtr result;
+    int transform;
+  };
+
   NetworkAsBackend* backend_;
   std::unique_ptr<NetworkComputation> computation_;
-  std::vector<std::vector<Move>> moves_;
-  std::vector<EvalResultPtr> results_;
-  std::vector<int> transforms_;
+  AtomicVector<Entry> entries_;
 };
 
 std::unique_ptr<BackendComputation> NetworkAsBackend::CreateComputation() {
