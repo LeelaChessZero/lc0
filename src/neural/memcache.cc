@@ -141,8 +141,11 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
   result.d = lock->d;
   result.q = lock->q;
   result.m = lock->m;
-  std::copy(lock->p.get(), lock->p.get() + pos.legal_moves.size(),
-            result.p.begin());
+  if (lock->p) {
+    result.p.reserve(pos.legal_moves.size());
+    std::copy(lock->p.get(), lock->p.get() + pos.legal_moves.size(),
+              std::back_inserter(result.p));
+  }
   return result;
 }
 
