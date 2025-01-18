@@ -430,7 +430,6 @@ class SearchWorker {
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
-  Mutex computation_addinput_mutex_;
   std::unique_ptr<BackendComputation> computation_;
   int task_workers_;
   int target_minibatch_size_;

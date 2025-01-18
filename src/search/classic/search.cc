@@ -1475,7 +1475,6 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
                        std::back_inserter(legal_moves),
                        [](const auto& edge) { return edge.GetMove(); });
         picked_node.eval->p.resize(legal_moves.size());
-        Mutex::Lock lock(computation_addinput_mutex_);
         picked_node.is_cache_hit = computation_->AddInput(
                                        EvalPosition{
                                            .pos = history.GetPositions(),
