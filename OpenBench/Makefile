@@ -1,7 +1,13 @@
-
 ifndef EXE
 	EXE = $(CURDIR)/lc0
 endif
 
 all:
-	cd .. && sh ./build.sh && mv build/release/lc0 $(EXE)
+ifdef EVALFILE
+	../build.sh -Dembed=true && mv ../build/release/lc0 $(EXE)
+	cat $(EVALFILE) >> $(EXE)
+	perl -e "printf '%sLc0!', pack('V', -s '$(EVALFILE)')" >> $(EXE)
+else
+	../build.sh && mv ../build/release/lc0 $(EXE)
+endif
+	
