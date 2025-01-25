@@ -459,8 +459,6 @@ class SearchWorker {
                          TaskWorkspace* workspace);
   void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
                   PositionHistory* history);
-
-  Move GetOpponentMove(const PositionHistory& pos);
   
   template <typename Computation>
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
