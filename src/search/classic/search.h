@@ -50,7 +50,7 @@ namespace classic {
 
 class Search {
  public:
-  Search(const NodeTree& tree, Network* network,
+  Search(const NodeTree& tree, Network* network, Network* opponent_network,
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
@@ -169,6 +169,7 @@ class Search {
   const PositionHistory& played_history_;
 
   Network* const network_;
+  Network* const opponent_network_;
   const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
@@ -458,6 +459,9 @@ class SearchWorker {
                          TaskWorkspace* workspace);
   void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
                   PositionHistory* history);
+
+  Move GetOpponentMove(const PositionHistory& pos);
+  
   template <typename Computation>
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              const Computation& computation,
@@ -471,6 +475,7 @@ class SearchWorker {
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
   std::unique_ptr<CachingComputation> computation_;
+  std::unique_ptr<CachingComputation> opponent_computation_;
   int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;

@@ -95,6 +95,7 @@ class EngineClassic : public EngineControllerBase {
   std::unique_ptr<classic::NodeTree> tree_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;
   std::unique_ptr<Network> network_;
+  std::unique_ptr<Network> opponent_network_;
   NNCache cache_;
 
   // Store current TB and network settings to track when they change so that

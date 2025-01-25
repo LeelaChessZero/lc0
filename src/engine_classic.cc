@@ -105,6 +105,7 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
     options->HideAllOptions();
     options->UnhideOption(kThreadsOptionId);
     options->UnhideOption(SharedBackendParams::kWeightsId);
+    options->UnhideOption(SharedBackendParams::kOpponentWeightsId);
     options->UnhideOption(classic::SearchParams::kContemptId);
     options->UnhideOption(classic::SearchParams::kMultiPvId);
   }
@@ -156,6 +157,7 @@ void EngineClassic::UpdateFromUciOptions() {
       NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
     network_ = NetworkFactory::LoadNetwork(options_);
+    opponent_network_ = NetworkFactory::LoadOpponentNetwork(options_);
     network_configuration_ = network_configuration;
   }
 
@@ -385,7 +387,7 @@ void EngineClassic::Go(const GoParams& params) {
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<classic::Search>(
-      *tree_, network_.get(), std::move(responder),
+      *tree_, network_.get(), opponent_network_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
       options_, &cache_, syzygy_tb_.get());

@@ -73,6 +73,8 @@ std::unique_ptr<Network> NetworkFactory::Create(
 NetworkFactory::BackendConfiguration::BackendConfiguration(
     const OptionsDict& options)
     : weights_path(options.Get<std::string>(SharedBackendParams::kWeightsId)),
+      opponent_weights_path(
+          options.Get<std::string>(SharedBackendParams::kOpponentWeightsId)),
       backend(options.Get<std::string>(SharedBackendParams::kBackendId)),
       backend_options(
           options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {}
@@ -87,6 +89,26 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
     const OptionsDict& options) {
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);
+  const std::string backend =
+      options.Get<std::string>(SharedBackendParams::kBackendId);
+  const std::string backend_options =
+      options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
+
+  std::optional<WeightsFile> weights;
+  if (!net_path.empty()) weights = LoadWeights(net_path);
+  OptionsDict network_options(&options);
+  network_options.AddSubdictFromString(backend_options);
+
+  auto ptr = NetworkFactory::Get()->Create(backend, std::move(weights),
+                                           network_options);
+  network_options.CheckAllOptionsRead(backend);
+  return ptr;
+}
+
+std::unique_ptr<Network> NetworkFactory::LoadOpponentNetwork(
+    const OptionsDict& options) {
+  std::string net_path =
+      options.Get<std::string>(SharedBackendParams::kOpponentWeightsId);
   const std::string backend =
       options.Get<std::string>(SharedBackendParams::kBackendId);
   const std::string backend_options =

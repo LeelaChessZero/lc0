@@ -67,11 +67,13 @@ class NetworkFactory {
   // Helper function to load the network from the options. Returns nullptr
   // if no network options changed since the previous call.
   static std::unique_ptr<Network> LoadNetwork(const OptionsDict& options);
+  static std::unique_ptr<Network> LoadOpponentNetwork(const OptionsDict& options);
 
   struct BackendConfiguration {
     BackendConfiguration() = default;
     BackendConfiguration(const OptionsDict& options);
     std::string weights_path;
+    std::string opponent_weights_path;
     std::string backend;
     std::string backend_options;
     bool operator==(const BackendConfiguration& other) const;
@@ -79,8 +81,8 @@ class NetworkFactory {
       return !operator==(other);
     }
     bool operator<(const BackendConfiguration& other) const {
-      return std::tie(weights_path, backend, backend_options) <
-             std::tie(other.weights_path, other.backend, other.backend_options);
+      return std::tie(weights_path, opponent_weights_path, backend, backend_options) <
+             std::tie(other.weights_path, other.opponent_weights_path, other.backend, other.backend_options);
     }
   };
 

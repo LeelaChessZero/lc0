@@ -46,6 +46,12 @@ const OptionId SharedBackendParams::kWeightsId{
     "makes it search in ./ and ./weights/ subdirectories for the latest (by "
     "file date) file which looks like weights.",
     'w'};
+const OptionId SharedBackendParams::kOpponentWeightsId{
+    "opponent_weights", "OpponentWeightsFile",
+    "Path from which to load network weights.\nSetting it to <autodiscover> "
+    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
+    "file date) file which looks like weights.",
+    'O'};
 const OptionId SharedBackendParams::kBackendId{
     "backend", "Backend", "Neural network computational backend to use.", 'b'};
 const OptionId SharedBackendParams::kBackendOptionsId{
@@ -68,6 +74,8 @@ void SharedBackendParams::Populate(OptionsParser* options) {
 #else
   options->Add<StringOption>(SharedBackendParams::kWeightsId) = kAutoDiscover;
 #endif
+  options->Add<StringOption>(SharedBackendParams::kOpponentWeightsId) =
+      kAutoDiscover;
   const auto backends = NetworkFactory::Get()->GetBackendsList();
   options->Add<ChoiceOption>(SharedBackendParams::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
