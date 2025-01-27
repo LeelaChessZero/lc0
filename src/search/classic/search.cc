@@ -2007,7 +2007,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       // transform.
       InputPlanes input_planes = EncodePositionForNN(
           search_->opponent_network_->GetCapabilities().input_format,
-          *history,                  // Position history
+          *history,              // Position history
           8,                     // Number of history planes (adjust as needed)
           FillEmptyHistory::NO,  // Fill empty history if required
           &transform);           // Capture the transformation applied
@@ -2026,7 +2026,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       float best_p = std::numeric_limits<float>::lowest();
       Move best_move;
 
-      for(const auto& m : legal_moves) {
+      for (const auto& m : legal_moves) {
         auto nn_idx = m.as_nn_index(transform);
         float p = opp_eval->GetPVal(0, nn_idx);
         if (p > best_p) {
@@ -2034,8 +2034,9 @@ void SearchWorker::ExtendNode(Node* node, int depth,
           best_move = m;
         }
       }
-      
+
       node->CreateSingleChildNode(best_move);
+      node->MakeSolid();
 
       return;
     }
