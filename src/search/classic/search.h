@@ -459,7 +459,11 @@ class SearchWorker {
                          TaskWorkspace* workspace);
   void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
                   PositionHistory* history);
-  
+
+  bool IsOpponentNode(Node* node) const;
+
+  MoveList PredictOpponentMove(const PositionHistory* history);
+
   template <typename Computation>
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              const Computation& computation,

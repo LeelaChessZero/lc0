@@ -1996,51 +1996,6 @@ void SearchWorker::ExtendNode(Node* node, int depth,
       return;
     }
 
-
-    bool is_odd_depth = (depth % 2 == 0);
-    bool opponent_moving = is_odd_depth;
-
-    if (opponent_moving) {
-      int transform = 0;  // Variable to capture the transformation applied.
-
-      // 1) Encode the entire PositionHistory into input planes and capture the
-      // transform.
-      InputPlanes input_planes = EncodePositionForNN(
-          search_->opponent_network_->GetCapabilities().input_format,
-          *history,              // Position history
-          8,                     // Number of history planes (adjust as needed)
-          FillEmptyHistory::NO,  // Fill empty history if required
-          &transform);           // Capture the transformation applied
-
-      // 2) Create a NetworkComputation instance for the opponent network.
-      std::unique_ptr<NetworkComputation> opp_eval =
-          search_->opponent_network_->NewComputation();
-
-      // 3) Add the input to the neural network computation.
-      opp_eval->AddInput(std::move(input_planes));
-
-      // 4) Run the neural network forward pass.
-      opp_eval->ComputeBlocking();
-
-      // 5) Retrieve the policy output by accessing PVal for each move.
-      float best_p = std::numeric_limits<float>::lowest();
-      Move best_move;
-
-      for (const auto& m : legal_moves) {
-        auto nn_idx = m.as_nn_index(transform);
-        float p = opp_eval->GetPVal(0, nn_idx);
-        if (p > best_p) {
-          best_p = p;
-          best_move = m;
-        }
-      }
-
-      node->CreateSingleChildNode(best_move);
-      node->MakeSolid();
-
-      return;
-    }
-
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
         board.castlings().no_legal_castle() &&
@@ -2079,8 +2034,56 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     }
   }
 
-  // Add legal moves as edges of this node.
-  node->CreateEdges(legal_moves);
+  if (IsOpponentNode(node)) {
+    node->CreateEdges(PredictOpponentMove(history));
+  } else {
+    // Add legal moves as edges of this node.
+    node->CreateEdges(legal_moves);
+  }
+}
+
+bool SearchWorker::IsOpponentNode(Node* node) const {
+  if (node == search_->root_node_ || node->GetParent() == nullptr) return false;
+  return !IsOpponentNode(node->GetParent());
+}
+
+MoveList SearchWorker::PredictOpponentMove(const PositionHistory* history) {
+  int transform = 0;  // Variable to capture the transformation applied.
+
+  // 1) Encode the entire PositionHistory into input planes and capture the
+  // transform.
+  InputPlanes input_planes = EncodePositionForNN(
+      search_->opponent_network_->GetCapabilities().input_format,
+      *history,              // Position history
+      8,                     // Number of history planes (adjust as needed)
+      FillEmptyHistory::NO,  // Fill empty history if required
+      &transform);           // Capture the transformation applied
+
+  // 2) Create a NetworkComputation instance for the opponent network.
+  std::unique_ptr<NetworkComputation> opp_eval =
+      search_->opponent_network_->NewComputation();
+
+  // 3) Add the input to the neural network computation.
+  opp_eval->AddInput(std::move(input_planes));
+
+  // 4) Run the neural network forward pass.
+  opp_eval->ComputeBlocking();
+
+  // 5) Retrieve the policy output by accessing PVal for each move.
+  float best_p = std::numeric_limits<float>::lowest();
+  Move best_move;
+
+  const MoveList legal_moves = history->Last().GetBoard().GenerateLegalMoves();
+  for (const auto& m : legal_moves) {
+    auto nn_idx = m.as_nn_index(transform);
+    float p = opp_eval->GetPVal(0, nn_idx);
+    if (p > best_p) {
+      best_p = p;
+      best_move = m;
+    }
+  }
+
+  return {best_move};
 }
 
 // Returns whether node was already in cache.
