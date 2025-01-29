@@ -30,8 +30,14 @@
 namespace lczero {
 namespace contempt {
 
+const OptionId SearchParams::kScLimitId{
+    "search-contempt-node-limit", "ScLimit",
+    "UCT until this number of nodes"
+    "thompson sampling beyond this limit."};
+
 void SearchParams::Populate(OptionsParser* options) {
   classic::SearchParams::Populate(options);
+  options->Add<IntOption>(kScLimitId, 1, 1000000000) = 1000000000;
 }
 
 SearchParams::SearchParams(const OptionsDict& options)

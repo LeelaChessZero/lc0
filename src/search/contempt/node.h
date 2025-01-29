@@ -95,6 +95,8 @@ class Edge {
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
   float GetP() const;
   void SetP(float val);
+  void SetP_frozen(float val);
+  float GetP_frozen() const;
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -108,6 +110,7 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+  uint16_t p_frozen_ = 0;
   friend class Node;
 };
 
@@ -189,11 +192,27 @@ class Node {
     }
   }
 
+  void CopyPolicy_frozen(int max_needed, float* output) const {
+    if (!edges_) return;
+    int loops = std::min(static_cast<int>(num_edges_), max_needed);
+    for (int i = 0; i < loops; i++) {
+      output[i] = edges_[i].GetP_frozen();
+    }
+  }
+
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
                     Terminal type = Terminal::EndOfGame);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
+
+  void SetNodeLimitFrozen(bool value);
+  void SetNodeLimitFrozenLock(bool value);
+  bool GetNodeLimitFrozen();
+  bool GetNodeLimitFrozenLock();
+  uint8_t GetVisitedNumberOfEdges();
+  void SetVisitedNumberOfEdges(int value);
+
   void SetBounds(GameResult lower, GameResult upper);
 
   // If this node is not in the process of being expanded by another thread
@@ -319,6 +338,7 @@ class Node {
   // 1 byte fields.
   // Number of edges in @edges_.
   uint8_t num_edges_ = 0;
+  uint8_t num_visited_edges_ = 0;
 
   // Bit fields using parts of uint8_t fields initialized in the constructor.
   // Whether or not this node end game (with a winning of either sides or draw).
@@ -328,6 +348,8 @@ class Node {
   GameResult upper_bound_ : 2;
   // Whether the child_ is actually an array of equal length to edges.
   bool solid_children_ : 1;
+  bool node_limit_frozen_ = false;
+  bool node_limit_frozen_lock_ = false;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;

@@ -35,6 +35,7 @@
 #include <iterator>
 #include <sstream>
 #include <thread>
+#include <random>
 
 #include "neural/encoder.h"
 #include "search/contempt/node.h"
@@ -218,6 +219,42 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
   }
 }
 }  // namespace
+
+namespace {
+int find_index (std::array<float,256> arr, int size, float val) {
+
+	int l1 = -1;
+	int l2 = size-1;
+	int l3;
+
+	float l1_val;
+
+	while (l2 - l1 >= 2) {
+	l3 = (l1 + l2)/2;
+
+	if(l1 <0) {
+		l1_val=-1;
+	} else {
+		l1_val=arr[l1];
+	}
+
+	if (val < arr[l3]) {
+		l2 = l3;
+	} else if (val > arr[l3]) {
+		l1 = l3;
+	} else if (val == arr[l3]) {
+		if (val > l1_val) {
+			l2 = l3;
+		} else if (val < arr[l2]) {
+			l1 = l3;
+		}
+
+	}
+
+	}
+	return l2;
+}	
+}
 
 namespace {
 // WDL conversion formula based on random walk model.
@@ -1595,6 +1632,7 @@ void SearchWorker::PickNodesToExtendTask(
 
   // These 2 are 'filled pre-emptively'.
   std::array<float, 256> current_pol;
+  std::array<float, 256> current_cumulative_pol_frozen;
   std::array<float, 256> current_util;
 
   // These 3 are 'filled on demand'.
@@ -1698,6 +1736,145 @@ void SearchWorker::PickNodesToExtendTask(
       const float draw_score = ((current_path.size() + base_depth) % 2 == 0)
                                    ? odd_draw_score
                                    : even_draw_score;
+
+      bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 0);
+
+      //int opponent_node_limit = 400;
+      //int opponent_node_limit = 20;
+      //int opponent_node_limit = 28;
+      int opponent_node_limit = params_.GetScLimit();
+      int current_node_count = node->GetN();
+      bool node_limit_frozen = node->GetNodeLimitFrozen();
+      bool node_limit_frozen_lock = node->GetNodeLimitFrozenLock();
+
+      if (is_opponent_node && current_node_count > opponent_node_limit) {
+	      if( !(node_limit_frozen) ) {
+		      if (!node_limit_frozen_lock) {
+                              //LOGFILE << "opponent_node_limit is: " << opponent_node_limit;
+			      node->SetNodeLimitFrozenLock(true);
+			      float sum_n = 0;
+			      float sum_p=0;
+			      int indchild =0;
+			      for (Node* child : node->VisitedNodes()) {
+				      sum_n = sum_n + child->GetN();
+				      indchild++;
+			      }
+			      for (Node* child : node->VisitedNodes()) {
+				      sum_p = sum_p + child->GetN()/sum_n;
+				      child->GetOwnEdge()->SetP_frozen(sum_p);
+			      }
+		              node->SetNodeLimitFrozen(true);
+			      node->SetVisitedNumberOfEdges(indchild);
+			      node->SetNodeLimitFrozenLock(false);
+		      }
+	      }
+      }
+
+      node_limit_frozen = node->GetNodeLimitFrozen();
+      node_limit_frozen_lock = node->GetNodeLimitFrozenLock();
+
+      if (is_opponent_node && node_limit_frozen && !(node_limit_frozen_lock)) {
+
+	       std::mt19937_64 rng;
+               uint64_t timeSeed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+               std::seed_seq ss{uint32_t(timeSeed & 0xffffffff), uint32_t(timeSeed>>32)};
+               rng.seed(ss);
+               std::uniform_real_distribution<double> unif(0, 1);
+               node->CopyPolicy_frozen(max_needed, current_cumulative_pol_frozen.data());
+	       int visited_num_nodes = int(node->GetVisitedNumberOfEdges());
+	       std::array<int,256> tmp_visit_array;
+	       for (int i=0; i<visited_num_nodes; i++) {
+		       tmp_visit_array[i] = 0;
+	       }
+	       for (int i=0; i<cur_limit; i++) {
+		double currentRandomNumber = unif(rng);
+		float search_value = currentRandomNumber;
+		int number;
+		number = find_index(current_cumulative_pol_frozen, visited_num_nodes, search_value);
+		int b = number;
+		number = b;
+		tmp_visit_array[number] = tmp_visit_array[number] + 1;
+	       }
+
+	       int cache_filled_idx = -1;
+               for (int i=0; i<visited_num_nodes; i++) {
+                       bool can_exit = false;
+                       best_edge.Reset();
+
+                       if (i > cache_filled_idx) {
+                         if (i == 0) {
+                           cur_iters[i] = node->Edges();
+                         } else {
+                           cur_iters[i] = cur_iters[i - 1];
+                           ++cur_iters[i];
+                         }
+                         current_nstarted[i] = cur_iters[i].GetNStarted();
+                       }
+                       int nstarted = current_nstarted[i];
+                       if (i > cache_filled_idx) {
+                         cache_filled_idx++;
+                       }		       
+
+
+		       int new_visits = tmp_visit_array[i];
+		       best_edge = cur_iters[i];
+
+		       if (can_exit) break;
+
+                       if (nstarted == 0) {
+                         // One more loop will get 2 unvisited nodes, which is sufficient to
+                         // ensure second best is correct. This relies upon the fact that
+                         // edges are sorted in policy decreasing order.
+                         can_exit = true;
+                       }
+
+		       new_visits = tmp_visit_array[i];
+
+                       if (i >= vtp_last_filled.back()) {
+                         auto* vtp_array = visits_to_perform.back().get()->data();
+                         std::fill(vtp_array + (vtp_last_filled.back() + 1),
+                                   vtp_array + i + 1, 0);
+                       }
+                       (*visits_to_perform.back())[i] += new_visits;
+                       cur_limit -= new_visits;
+                       Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
+               
+                       // Probably best place to check for two-fold draws consistently.
+                       // Depth starts with 1 at root, so real depth is depth - 1.
+                       EnsureNodeTwoFoldCorrectForDepth(
+                           child_node, current_path.size() + base_depth + 1 - 1);		       
+
+                       bool decremented = false;
+                       if (child_node->TryStartScoreUpdate()) {
+                         current_nstarted[i]++;
+                         new_visits -= 1;
+                         decremented = true;
+                         if (child_node->GetN() > 0 && !child_node->IsTerminal()) {
+                           child_node->IncrementNInFlight(new_visits);
+                           current_nstarted[i] += new_visits;
+                         }
+                       }
+                       if ((decremented &&
+                            (child_node->GetN() == 0 || child_node->IsTerminal()))) {
+                         // Reduce 1 for the visits_to_perform to ensure the collision created
+                         // doesn't include this visit.
+                         (*visits_to_perform.back())[i] -= 1;
+                         receiver->push_back(NodeToProcess::Visit(
+                             child_node,
+                             static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
+                         completed_visits++;
+                         receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
+                         receiver->back().moves_to_visit = moves_to_path;
+                         receiver->back().moves_to_visit.push_back(best_edge.GetMove());
+                       }
+                       if (i > vtp_last_filled.back() &&
+                           (*visits_to_perform.back())[i] > 0) {
+                         vtp_last_filled.back() = i;
+                       }		       
+	       }	       
+
+      } else {
+
       m_evaluator.SetParent(node);
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
@@ -1844,6 +2021,7 @@ void SearchWorker::PickNodesToExtendTask(
             (*visits_to_perform.back())[best_idx] > 0) {
           vtp_last_filled.back() = best_idx;
         }
+      }
       }
       is_root_node = false;
       // Actively do any splits now rather than waiting for potentially long

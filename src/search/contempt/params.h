@@ -43,8 +43,10 @@ class SearchParams : public classic::SearchParams {
   static void Populate(OptionsParser* options);
 
   // Parameter getters.
+  int GetScLimit() const { return options_.Get<int>(kScLimitId); }
 
   // Search parameter IDs.
+  static const OptionId kScLimitId;
 };
 
 }  // namespace contempt
