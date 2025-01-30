@@ -47,7 +47,7 @@ install:
 - cmd: set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
 - cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET=791556
 - cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET_HASH=f404e156ceb2882470fd8c032b8754af0fa0b71168328912eaef14671a256e34
-- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
+#- cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" amd64
 - cmd: set DNNL_NAME=dnnl_win_1.5.0_cpu_vcomp
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/oneapi-src/oneDNN/releases/download/v1.5/dnnl_win_1.5.0_cpu_vcomp.zip
 - cmd: IF %NAME%==cpu-dnnl IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_1.5.0_cpu_vcomp.zip -oC:\cache

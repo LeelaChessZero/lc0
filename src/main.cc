@@ -75,7 +75,8 @@ int main(int argc, const char** argv) {
       // Selfplay mode.
       SelfPlayLoop loop;
       loop.RunLoop();
-    } else if (CommandLine::ConsumeCommand("benchmark")) {
+    } else if (CommandLine::ConsumeCommand("benchmark") ||
+               CommandLine::ConsumeCommand("bench")) {
       // Benchmark mode.
       Benchmark benchmark;
       benchmark.Run();
