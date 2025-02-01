@@ -175,12 +175,12 @@ void EngineClassic::NewGame() {
   // newgame and goes straight into go.
   ResetMoveTimer();
   SharedLock lock(busy_mutex_);
-  backend_->ClearCache();
   search_.reset();
   tree_.reset();
   CreateFreshTimeManager();
   current_position_ = {ChessBoard::kStartposFen, {}};
   UpdateFromUciOptions();
+  backend_->ClearCache();
 }
 
 void EngineClassic::SetPosition(const std::string& fen,
