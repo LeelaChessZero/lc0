@@ -82,7 +82,7 @@ class NetworkAsBackendComputation : public BackendComputation {
         computation_(backend_->network_->NewComputation()),
         entries_(backend_->attrs_.maximum_batch_size) {}
 
-  size_t UsedBatchSize() const override { return computation_->GetBatchSize(); }
+  size_t UsedBatchSize() const override { return entries_.size(); }
 
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
