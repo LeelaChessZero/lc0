@@ -202,3 +202,8 @@ option('rescorer',
        type: 'boolean',
        value: false,
        description: 'Build rescorer')
+
+option('openbench',
+       type: 'boolean',
+       value: false,
+       description: 'Build openbench-friendly version')

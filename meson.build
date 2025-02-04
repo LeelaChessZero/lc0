@@ -702,6 +702,10 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+if get_option('openbench')
+  add_project_arguments('-DOPENBENCH', language : 'cpp')
+endif
+
 if get_option('lc0')
   files += common_files
   executable('lc0', 'src/main.cc',

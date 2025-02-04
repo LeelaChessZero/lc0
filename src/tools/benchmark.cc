@@ -57,9 +57,14 @@ void Benchmark::Run() {
   classic::SearchParams::Populate(&options);
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
-  options.Add<IntOption>(kMovetimeId, -1, 999999999) = 500;
   options.Add<StringOption>(kFenId) = "";
+#if defined(OPENBENCH)
+  options.Add<IntOption>(kMovetimeId, -1, 999999999) = 500;
   options.Add<IntOption>(kNumPositionsId, 1, 34) = 10;
+#else
+  options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
+  options.Add<IntOption>(kNumPositionsId, 1, 34) = 34;
+#endif
 
   if (!options.ProcessAllFlags()) return;
 

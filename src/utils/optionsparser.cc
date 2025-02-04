@@ -140,6 +140,9 @@ bool OptionsParser::ProcessAllFlags() {
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
   auto show_help = false;
+#if defined(OPENBENCH)
+  ShowHidden();
+#endif
   if (CommandLine::BinaryName().find("pro") != std::string::npos) {
     ShowHidden();
   }
