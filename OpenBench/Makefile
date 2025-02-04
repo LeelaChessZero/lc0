@@ -3,6 +3,7 @@ ifndef EXE
 endif
 
 all:
+	chmod +x ../build.sh
 ifdef EVALFILE
 	../build.sh -Dembed=true && mv ../build/release/lc0 $(EXE)
 	cat $(EVALFILE) >> $(EXE)
