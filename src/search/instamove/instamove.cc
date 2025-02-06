@@ -128,7 +128,9 @@ class ValueHeadSearch : public InstamoveSearch {
                     500 * (1 - results[best_idx].q - results[best_idx].d)))},
     }};
     uci_responder()->OutputThinkingInfo(&infos);
-    return legal_moves[best_idx];
+    Move best_move = legal_moves[best_idx];
+    if (history.IsBlackToMove()) best_move.Mirror();
+    return best_move;
   }
 
  private:
