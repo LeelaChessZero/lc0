@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "neural/backend.h"
 #include "search/classic/node.h"
 #include "trainingdata/writer.h"
 
@@ -76,7 +77,7 @@ struct V6TrainingData {
   float orig_d;
   float orig_m;
   uint32_t visits;
-  // Indices in the probabilities array.
+  // Indices in the probabilities array.std::optional<EvalResult>
   uint16_t played_idx;
   uint16_t best_idx;
   // Kullback-Leibler divergence between visits and policy (denominator)
@@ -99,7 +100,8 @@ class V6TrainingDataArray {
   void Add(const classic::Node* node, const PositionHistory& history,
            classic::Eval best_eval, classic::Eval played_eval,
            bool best_is_proven, Move best_move, Move played_move,
-           const NNCacheLock& nneval);
+           std::span<Move> legal_moves,
+           const std::optional<EvalResult>& nneval);
 
   // Writes training data to a file.
   void Write(TrainingDataWriter* writer, GameResult result,

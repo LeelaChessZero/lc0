@@ -361,9 +361,6 @@ const OptionId SearchParams::kMovesLeftQuadraticFactorId{
     "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
     "A factor which is multiplied by the square of Q of parent node and the "
     "base moves left effect."};
-const OptionId SearchParams::kDisplayCacheUsageId{
-    "display-cache-usage", "DisplayCacheUsage",
-    "Display cache fullness through UCI info `hash` section."};
 const OptionId SearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
@@ -543,7 +540,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kMovesLeftScaledFactorId, -2.0f, 2.0f) = 1.6521f;
   options->Add<FloatOption>(kMovesLeftQuadraticFactorId, -1.0f, 1.0f) =
       -0.6521f;
-  options->Add<BoolOption>(kDisplayCacheUsageId) = false;
   options->Add<IntOption>(kMaxConcurrentSearchersId, 0, 128) = 1;
   options->Add<FloatOption>(kDrawScoreId, -1.0f, 1.0f) = 0.0f;
   std::vector<std::string> mode = {"play", "white_side_analysis",
@@ -578,7 +574,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
-  options->HideOption(kDisplayCacheUsageId);
   options->HideOption(kRootHasOwnCpuctParamsId);
   options->HideOption(kCpuctAtRootId);
   options->HideOption(kCpuctBaseAtRootId);
@@ -643,7 +638,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMovesLeftScaledFactor(options.Get<float>(kMovesLeftScaledFactorId)),
       kMovesLeftQuadraticFactor(
           options.Get<float>(kMovesLeftQuadraticFactorId)),
-      kDisplayCacheUsage(options.Get<bool>(kDisplayCacheUsageId)),
       kMaxConcurrentSearchers(options.Get<int>(kMaxConcurrentSearchersId)),
       kDrawScore(options.Get<float>(kDrawScoreId)),
       kContempt(GetContempt(options.Get<std::string>(kUCIOpponentId),

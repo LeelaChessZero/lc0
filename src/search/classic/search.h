@@ -36,11 +36,11 @@
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
+#include "neural/backend.h"
+#include "neural/cache.h"
 #include "search/classic/node.h"
 #include "search/classic/params.h"
 #include "search/classic/stoppers/timemgr.h"
-#include "neural/cache.h"
-#include "neural/network.h"
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
@@ -50,13 +50,12 @@ namespace classic {
 
 class Search {
  public:
-  Search(const NodeTree& tree, Network* network,
+  Search(const NodeTree& tree, Backend* network,
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
          std::unique_ptr<SearchStopper> stopper, bool infinite, bool ponder,
-         const OptionsDict& options, NNCache* cache,
-         SyzygyTablebase* syzygy_tb);
+         const OptionsDict& options, SyzygyTablebase* syzygy_tb);
 
   ~Search();
 
@@ -97,7 +96,7 @@ class Search {
   void ResetBestMove();
 
   // Returns NN eval for a given node from cache, if that node is cached.
-  NNCacheLock GetCachedNNEval(const Node* node) const;
+  std::optional<EvalResult> GetCachedNNEval(const Node* node) const;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -141,6 +140,8 @@ class Search {
   // Ensure that all shared collisions are cancelled and clear them out.
   void CancelSharedCollisions();
 
+  PositionHistory GetPositionHistoryAtNode(const Node* node) const;
+
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -163,12 +164,12 @@ class Search {
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
   Node* root_node_;
-  NNCache* cache_;
   SyzygyTablebase* syzygy_tb_;
   // Fixed positions which happened before the search.
   const PositionHistory& played_history_;
 
-  Network* const network_;
+  Backend* const backend_;
+  BackendAttributes backend_attributes_;
   const SearchParams params_;
   const MoveList searchmoves_;
   const std::chrono::steady_clock::time_point start_time_;
@@ -210,16 +211,14 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  SearchWorker(Search* search, const SearchParams& params, int id)
+  SearchWorker(Search* search, const SearchParams& params)
       : search_(search),
         history_(search_->played_history_),
         params_(params),
-        moves_left_support_(search_->network_->GetCapabilities().moves_left !=
-                            pblczero::NetworkFormat::MOVES_LEFT_NONE) {
-    search_->network_->InitThread(id);
+        moves_left_support_(search_->backend_attributes_.has_mlh) {
     task_workers_ = params.GetTaskWorkersPerSearchWorker();
     if (task_workers_ < 0) {
-      if (search_->network_->IsCpu()) {
+      if (search_->backend_attributes_.runs_on_cpu) {
         task_workers_ = 0;
       } else {
         int working_threads = std::max(
@@ -230,13 +229,12 @@ class SearchWorker {
     }
     for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() {
-        this->RunTasks(i);
-      });
+      task_threads_.emplace_back([this, i]() { this->RunTasks(i); });
     }
     target_minibatch_size_ = params_.GetMiniBatchSize();
     if (target_minibatch_size_ == 0) {
-      target_minibatch_size_ = search_->network_->GetMiniBatchSize();
+      target_minibatch_size_ =
+          search_->backend_attributes_.recommended_batch_size;
     }
     max_out_of_order_ =
         std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvalsFactor() *
@@ -284,7 +282,7 @@ class SearchWorker {
   // The same operations one by one:
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
-  void InitializeIteration(std::unique_ptr<NetworkComputation> computation);
+  void InitializeIteration(std::unique_ptr<BackendComputation> computation);
 
   // 2. Gather minibatch.
   void GatherMinibatch();
@@ -317,12 +315,7 @@ class SearchWorker {
 
     // The node to extend.
     Node* node;
-    // Value from NN's value head, or -1/0/1 for terminal nodes.
-    float v;
-    // Draw probability for NN's with WDL value head.
-    float d;
-    // Estimated remaining plies left.
-    float m;
+    std::unique_ptr<EvalResult> eval;
     int multivisit = 0;
     // If greater than multivisit, and other parameters don't imply a lower
     // limit, multivist could be increased to this value without additional
@@ -334,17 +327,10 @@ class SearchWorker {
     bool is_collision = false;
     int probability_transform = 0;
 
-    // Details only populated in the multigather path.
-
     // Only populated for visits,
     std::vector<Move> moves_to_visit;
 
     // Details that are filled in as we go.
-    uint64_t hash;
-    NNCacheLock lock;
-    std::vector<uint16_t> probabilities_to_cache;
-    InputPlanes input_planes;
-    mutable int last_idx = 0;
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
@@ -359,34 +345,11 @@ class SearchWorker {
       return NodeToProcess(node, depth, false, 1, 0);
     }
 
-    // Methods to allow NodeToProcess to conform as a 'Computation'. Only safe
-    // to call if is_cache_hit is true in the multigather path.
-
-    float GetQVal(int) const { return lock->q; }
-
-    float GetDVal(int) const { return lock->d; }
-
-    float GetMVal(int) const { return lock->m; }
-
-    float GetPVal(int, int move_id) const {
-      const auto& moves = lock->p;
-
-      int total_count = 0;
-      while (total_count < moves.size()) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = moves[last_idx++];
-        if (last_idx == moves.size()) last_idx = 0;
-        if (move.first == move_id) return move.second;
-        ++total_count;
-      }
-      assert(false);  // Move not found.
-      return 0;
-    }
-
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
                   int max_count)
         : node(node),
+          eval(std::make_unique<EvalResult>()),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
@@ -458,10 +421,7 @@ class SearchWorker {
                          TaskWorkspace* workspace);
   void ExtendNode(Node* node, int depth, const std::vector<Move>& moves_to_add,
                   PositionHistory* history);
-  template <typename Computation>
-  void FetchSingleNodeResult(NodeToProcess* node_to_process,
-                             const Computation& computation,
-                             int idx_in_computation);
+  void FetchSingleNodeResult(NodeToProcess* node_to_process);
   void RunTasks(int tid);
   void ResetTasks();
   // Returns how many tasks there were.
@@ -470,7 +430,7 @@ class SearchWorker {
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;
-  std::unique_ptr<CachingComputation> computation_;
+  std::unique_ptr<BackendComputation> computation_;
   int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;
