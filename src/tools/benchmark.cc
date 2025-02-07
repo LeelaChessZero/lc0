@@ -48,7 +48,7 @@ const OptionId kNumPositionsId{"num-positions", "",
                                "The number of benchmark positions to test."};
 }  // namespace
 
-void Benchmark::Run() {
+void Benchmark::Run(bool run_shorter_benchmark) {
   OptionsParser options;
   SharedBackendParams::Populate(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
@@ -57,9 +57,14 @@ void Benchmark::Run() {
   classic::SearchParams::Populate(&options);
 
   options.Add<IntOption>(kNodesId, -1, 999999999) = -1;
-  options.Add<IntOption>(kMovetimeId, -1, 999999999) = 500;
   options.Add<StringOption>(kFenId) = "";
-  options.Add<IntOption>(kNumPositionsId, 1, 34) = 10;
+  if (run_shorter_benchmark) {
+    options.Add<IntOption>(kMovetimeId, -1, 999999999) = 500;
+    options.Add<IntOption>(kNumPositionsId, 1, 34) = 10;
+  } else {
+    options.Add<IntOption>(kMovetimeId, -1, 999999999) = 10000;
+    options.Add<IntOption>(kNumPositionsId, 1, 34) = 34;
+  }
 
   if (!options.ProcessAllFlags()) return;
 
