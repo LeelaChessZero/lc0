@@ -259,19 +259,19 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
     auto from = SingleSquare(pawndiff);
     if (knightdiff.count() == 1) {
       auto to = SingleSquare(knightdiff);
-      return Move::WhitePromotion(from, to, PieceType::Knight);
+      return Move::WhitePromotion(from, to, kKnight);
     }
     if (bishopdiff.count() == 1) {
       auto to = SingleSquare(bishopdiff);
-      return Move::WhitePromotion(from, to, PieceType::Bishop);
+      return Move::WhitePromotion(from, to, kBishop);
     }
     if (rookdiff.count() == 1) {
       auto to = SingleSquare(rookdiff);
-      return Move::WhitePromotion(from, to, PieceType::Rook);
+      return Move::WhitePromotion(from, to, kRook);
     }
     if (queendiff.count() == 1) {
       auto to = SingleSquare(queendiff);
-      return Move::WhitePromotion(from, to, PieceType::Queen);
+      return Move::WhitePromotion(from, to, kQueen);
     }
     assert(false);
     return Move();

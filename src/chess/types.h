@@ -33,14 +33,33 @@
 
 namespace lczero {
 
-enum class PieceType : uint8_t { Knight, Bishop, Rook, Queen, Pawn, King };
+struct PieceType {
+  uint8_t idx;
+  static constexpr PieceType FromIdx(uint8_t idx) { return PieceType{idx}; }
+  static constexpr PieceType Parse(char c);
+  std::string ToString(bool uppercase = false) const {
+    return std::string(1, "nbrqpk"[idx] + (uppercase ? 'A' - 'a' : 0));
+  }
+  bool CanPromoteInto() const { return idx < 4; }
+  bool IsValid() const { return idx < 6; }
+
+ private:
+  constexpr explicit PieceType(uint8_t idx) : idx(idx) {}
+};
+
+constexpr PieceType kKnight = PieceType::FromIdx(0),
+                    kBishop = PieceType::FromIdx(1),
+                    kRook = PieceType::FromIdx(2),
+                    kQueen = PieceType::FromIdx(3),
+                    kPawn = PieceType::FromIdx(4),
+                    kKing = PieceType::FromIdx(5);
 
 struct File {
   uint8_t idx;
   File() : idx(0x80) {}  // Not on board.
   bool on_board() const { return idx < 8; }
   static constexpr File FromIdx(uint8_t idx) { return File{idx}; }
-  static constexpr File Parse(char c) { return File(c - 'a'); }
+  static constexpr File Parse(char c) { return File(std::tolower(c) - 'a'); }
   constexpr std::string ToString(bool uppercase = false) const {
     return std::string(1, (uppercase ? 'a' : 'A') + idx);
   }
@@ -144,7 +163,7 @@ class Move {
   static constexpr Move WhitePromotion(Square from, Square to,
                                        PieceType promotion_piece) {
     return Move((from.as_idx() << 6) | to.as_idx() | (1 << 12) |
-                (static_cast<uint16_t>(promotion_piece) << 13));
+                (promotion_piece.idx << 13));
   }
   static constexpr Move WhiteCastling(File king, File rook) {
     return Move((king.idx << 6) | rook.idx | kCastling);
@@ -163,7 +182,9 @@ class Move {
   Square from() const { return Square::FromIdx((data_ & kFromMask) >> 6); }
   Square to() const { return Square::FromIdx(data_ & kToMask); }
   bool is_promotion() const { return data_ & kIsPromoMask; }
-  PieceType promotion() const { return PieceType((data_ & kPieceMask) >> 13); }
+  PieceType promotion() const {
+    return PieceType::FromIdx((data_ & kPieceMask) >> 13);
+  }
   bool is_castling() const { return (data_ & kSpecialMask) == kCastling; }
   bool is_en_passant() const { return (data_ & kSpecialMask) == kEnPassant; }
   // TODO remove this once UciReponder starts using std::optional for ponder.
