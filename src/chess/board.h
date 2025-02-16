@@ -107,6 +107,12 @@ class ChessBoard {
   // Returns the same move but with castling encoded in modern way.
   Move GetModernMove(Move move) const;
 
+  // Parses a move from move_str.
+  //  If flip_if_black is true, the move is parsed from the point of
+  // view of the player to move. This is a temporary paramter until we make Move
+  // always to be from the point of view of white.
+  Move ParseMove(std::string_view move_str, bool flip_if_black) const;
+
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
                     rooks_.as_int(), bishops_.as_int(), pawns_.as_int(),
