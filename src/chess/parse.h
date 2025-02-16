@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2024 The LCZero Authors
+  Copyright (C) 2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,30 +25,18 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "chess/gamestate.h"
+#pragma once
 
-#include <algorithm>
-#include <numeric>
+#include "chess/position.h"
+#include "chess/types.h"
 
 namespace lczero {
 
-Position GameState::CurrentPosition() const {
-  return std::accumulate(
-      moves.begin(), moves.end(), startpos,
-      [](const Position& pos, Move m) { return Position(pos, m); });
-}
-
-std::vector<Position> GameState::GetPositions() const {
-  std::vector<Position> positions;
-  positions.reserve(moves.size() + 1);
-  positions.push_back(startpos);
-  std::transform(moves.begin(), moves.end(), std::back_inserter(positions),
-                 [&](Move m) {
-                   const Position& prev_pos = positions.back();
-                   if (prev_pos.IsBlackToMove()) m.Flip();
-                   return Position(positions.back(), m);
-                 });
-  return positions;
-}
+// Parses a move from move_str. The board is needed to set up move
+// attributes. If flip_if_black is true, the move is parsed from the point of
+// view of the player to move. This is a temporary paramter until we make Move
+// always to be from the point of view of white.
+Move ParseMove(const ChessBoard& board, std::string_view move_str,
+               bool flip_if_black);
 
 }  // namespace lczero

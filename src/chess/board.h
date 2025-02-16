@@ -31,6 +31,7 @@
 #include <string>
 
 #include "chess/bitboard.h"
+#include "chess/types.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -43,10 +44,10 @@ class KingAttackInfo {
  public:
   bool in_check() const { return attack_lines_.as_int(); }
   bool in_double_check() const { return double_check_; }
-  bool is_pinned(const BoardSquare square) const {
+  bool is_pinned(const Square square) const {
     return pinned_pieces_.get(square);
   }
-  bool is_on_attack_line(const BoardSquare square) const {
+  bool is_on_attack_line(const Square square) const {
     return attack_lines_.get(square);
   }
 
@@ -89,7 +90,7 @@ class ChessBoard {
   // counter should be removed.
   bool ApplyMove(Move move);
   // Checks if the square is under attack from "theirs" (black).
-  bool IsUnderAttack(BoardSquare square) const;
+  bool IsUnderAttack(Square square) const;
   // Generates the king attack info used for legal move detection.
   KingAttackInfo GenerateKingAttackInfo() const;
   // Checks if "our" (white) king is under check.
@@ -111,8 +112,8 @@ class ChessBoard {
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
                     rooks_.as_int(), bishops_.as_int(), pawns_.as_int(),
-                    (static_cast<uint32_t>(our_king_.as_int()) << 24) |
-                        (static_cast<uint32_t>(their_king_.as_int()) << 16) |
+                    (static_cast<uint32_t>(our_king_.as_idx()) << 24) |
+                        (static_cast<uint32_t>(their_king_.as_idx()) << 16) |
                         (static_cast<uint32_t>(castlings_.as_int()) << 8) |
                         static_cast<uint32_t>(flipped_)});
   }
@@ -120,10 +121,10 @@ class ChessBoard {
   class Castlings {
    public:
     Castlings()
-        : our_queenside_rook_(FILE_A),
-          their_queenside_rook_(FILE_A),
-          our_kingside_rook_(FILE_H),
-          their_kingside_rook_(FILE_H),
+        : our_queenside_rook_(kFileA),
+          their_queenside_rook_(kFileA),
+          our_kingside_rook_(kFileH),
+          their_kingside_rook_(kFileH),
           data_(0) {}
 
     void set_we_can_00() { data_ |= 1; }
@@ -154,17 +155,17 @@ class ChessBoard {
     std::string as_string() const {
       if (data_ == 0) return "-";
       std::string result;
-      if (our_queenside_rook() == FILE_A && our_kingside_rook() == FILE_H &&
-          their_queenside_rook() == FILE_A && their_kingside_rook() == FILE_H) {
+      if (our_queenside_rook() == kFileA && our_kingside_rook() == kFileH &&
+          their_queenside_rook() == kFileA && their_kingside_rook() == kFileH) {
         if (we_can_00()) result += 'K';
         if (we_can_000()) result += 'Q';
         if (they_can_00()) result += 'k';
         if (they_can_000()) result += 'q';
       } else {
-        if (we_can_00()) result += 'A' + our_kingside_rook();
-        if (we_can_000()) result += 'A' + our_queenside_rook();
-        if (they_can_00()) result += 'a' + their_kingside_rook();
-        if (they_can_000()) result += 'a' + their_queenside_rook();
+        if (we_can_00()) result += our_kingside_rook().ToString(true);
+        if (we_can_000()) result += our_queenside_rook().ToString(true);
+        if (they_can_00()) result += their_kingside_rook().ToString(false);
+        if (they_can_000()) result += their_queenside_rook().ToString(false);
       }
       return result;
     }
@@ -177,10 +178,10 @@ class ChessBoard {
       if (they_can_00()) result += 'k';
       if (they_can_000()) result += 'q';
       result += '[';
-      result += 'A' + our_queenside_rook();
-      result += 'A' + our_kingside_rook();
-      result += 'a' + their_queenside_rook();
-      result += 'a' + their_kingside_rook();
+      result += our_queenside_rook().ToString(true);
+      result += our_kingside_rook().ToString(true);
+      result += their_queenside_rook().ToString(false);
+      result += their_kingside_rook().ToString(false);
       result += ']';
       return result;
     }
@@ -195,12 +196,12 @@ class ChessBoard {
       return data_ == other.data_;
     }
 
-    uint8_t our_queenside_rook() const { return our_queenside_rook_; }
-    uint8_t our_kingside_rook() const { return our_kingside_rook_; }
-    uint8_t their_queenside_rook() const { return their_queenside_rook_; }
-    uint8_t their_kingside_rook() const { return their_kingside_rook_; }
-    void SetRookPositions(uint8_t our_left, uint8_t our_right,
-                          uint8_t their_left, uint8_t their_right) {
+    File our_queenside_rook() const { return our_queenside_rook_; }
+    File our_kingside_rook() const { return our_kingside_rook_; }
+    File their_queenside_rook() const { return their_queenside_rook_; }
+    File their_kingside_rook() const { return their_kingside_rook_; }
+    void SetRookPositions(File our_left, File our_right, File their_left,
+                          File their_right) {
       our_queenside_rook_ = our_left;
       our_kingside_rook_ = our_right;
       their_queenside_rook_ = their_left;
@@ -209,11 +210,11 @@ class ChessBoard {
 
    private:
     // Position of "left" (queenside) rook in starting game position.
-    uint8_t our_queenside_rook_;
-    uint8_t their_queenside_rook_;
+    File our_queenside_rook_;
+    File their_queenside_rook_;
     // Position of "right" (kingside) rook in starting position.
-    uint8_t our_kingside_rook_;
-    uint8_t their_kingside_rook_;
+    File our_kingside_rook_;
+    File their_kingside_rook_;
 
     // - Bit 0 -- "our" side's kingside castle.
     // - Bit 1 -- "our" side's queenside castle.
@@ -236,7 +237,7 @@ class ChessBoard {
            rooks_ - bishops_;
   }
   BitBoard kings() const {
-    return our_king_.as_board() | their_king_.as_board();
+    return BitBoard::FromSquare(our_king_) | BitBoard::FromSquare(their_king_);
   }
   const Castlings& castlings() const { return castlings_; }
   bool flipped() const { return flipped_; }
@@ -251,31 +252,6 @@ class ChessBoard {
   }
 
   bool operator!=(const ChessBoard& other) const { return !operator==(other); }
-
-  enum Square : uint8_t {
-    // clang-format off
-    A1 = 0, B1, C1, D1, E1, F1, G1, H1,
-    A2, B2, C2, D2, E2, F2, G2, H2,
-    A3, B3, C3, D3, E3, F3, G3, H3,
-    A4, B4, C4, D4, E4, F4, G4, H4,
-    A5, B5, C5, D5, E5, F5, G5, H5,
-    A6, B6, C6, D6, E6, F6, G6, H6,
-    A7, B7, C7, D7, E7, F7, G7, H7,
-    A8, B8, C8, D8, E8, F8, G8, H8,
-    // clang-format on
-  };
-
-  enum File : uint8_t {
-    // clang-format off
-    FILE_A = 0, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H
-    // clang-format on
-  };
-
-  enum Rank : uint8_t {
-    // clang-format off
-    RANK_1 = 0, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8
-    // clang-format on
-  };
 
  private:
   // All white pieces.
@@ -292,8 +268,8 @@ class ChessBoard {
   // same for black pawns. Those "fake" pawns are not present in our_pieces_ and
   // their_pieces_ bitboards.
   BitBoard pawns_;
-  BoardSquare our_king_;
-  BoardSquare their_king_;
+  Square our_king_;
+  Square their_king_;
   Castlings castlings_;
   bool flipped_ = false;  // aka "Black to move".
 };

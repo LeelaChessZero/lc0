@@ -261,9 +261,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       PositionHistory history_copy = tree_[idx]->GetPositionHistory();
       Move move_for_history = move;
-      if (tree_[idx]->IsBlackToMove()) {
-        move_for_history.Mirror();
-      }
+      if (tree_[idx]->IsBlackToMove()) move_for_history.Flip();
       history_copy.Append(move_for_history);
       // Ensure not to discard games that are already decided.
       if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
@@ -326,7 +324,7 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
     if (!chess960_) move = pos.GetBoard().GetLegacyMove(move);
     pos = Position(pos, move);
     // Position already flipped, therefore flip the move if white to move.
-    if (!pos.IsBlackToMove()) move.Mirror();
+    if (!pos.IsBlackToMove()) move.Flip();
     result.push_back(move);
   }
   return result;

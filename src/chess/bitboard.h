@@ -32,10 +32,12 @@
 #include <string>
 #include <vector>
 
+#include "chess/types.h"
 #include "utils/bititer.h"
 
 namespace lczero {
 
+/*
 // Stores a coordinates of a single square.
 class BoardSquare {
  public:
@@ -84,6 +86,7 @@ class BoardSquare {
  private:
   std::uint8_t square_ = 0;  // Only lower six bits should be set.
 };
+*/
 
 // Represents a board as an array of 64 bits.
 // Bit enumeration goes from bottom to top, from left to right:
@@ -94,6 +97,9 @@ class BitBoard {
   BitBoard() = default;
   BitBoard(const BitBoard&) = default;
   BitBoard& operator=(const BitBoard&) = default;
+  constexpr static BitBoard FromSquare(Square square) {
+    return BitBoard(1ULL << square.as_idx());
+  }
 
   std::uint64_t as_int() const { return board_; }
   void clear() { board_ = 0; }
@@ -134,30 +140,15 @@ class BitBoard {
 
   // Sets the value for given square to 1 if cond is true.
   // Otherwise does nothing (doesn't reset!).
-  void set_if(BoardSquare square, bool cond) { set_if(square.as_int(), cond); }
-  void set_if(std::uint8_t pos, bool cond) {
-    board_ |= (std::uint64_t(cond) << pos);
+  void set_if(Square square, bool cond) {
+    board_ |= (static_cast<uint64_t>(cond) << square.as_idx());
   }
-  void set_if(int row, int col, bool cond) {
-    set_if(BoardSquare(row, col), cond);
-  }
-
   // Sets value of given square to 1.
-  void set(BoardSquare square) { set(square.as_int()); }
-  void set(std::uint8_t pos) { board_ |= (std::uint64_t(1) << pos); }
-  void set(int row, int col) { set(BoardSquare(row, col)); }
-
+  void set(Square square) { board_ |= (1ULL << square.as_idx()); }
   // Sets value of given square to 0.
-  void reset(BoardSquare square) { reset(square.as_int()); }
-  void reset(std::uint8_t pos) { board_ &= ~(std::uint64_t(1) << pos); }
-  void reset(int row, int col) { reset(BoardSquare(row, col)); }
-
+  void reset(Square square) { board_ &= ~(1ULL << square.as_idx()); }
   // Gets value of a square.
-  bool get(BoardSquare square) const { return get(square.as_int()); }
-  bool get(std::uint8_t pos) const {
-    return board_ & (std::uint64_t(1) << pos);
-  }
-  bool get(int row, int col) const { return get(BoardSquare(row, col)); }
+  bool get(Square square) const { return board_ & (1ULL << square.as_idx()); }
 
   // Returns whether all bits of a board are set to 0.
   bool empty() const { return board_ == 0; }
@@ -176,18 +167,16 @@ class BitBoard {
     return board_ != other.board_;
   }
 
-  BitIterator<BoardSquare> begin() const { return board_; }
-  BitIterator<BoardSquare> end() const { return 0; }
+  using Iterator =
+      BitIterator<Square, [](uint64_t x) { return Square::FromIdx(x); }>;
+  Iterator begin() const { return board_; }
+  Iterator end() const { return 0; }
 
   std::string DebugString() const {
     std::string res;
     for (int i = 7; i >= 0; --i) {
-      for (int j = 0; j < 8; ++j) {
-        if (get(i, j))
-          res += '#';
-        else
-          res += '.';
-      }
+      for (int j = 0; j < 8; ++j)
+        res += get({File::FromIdx(i), Rank::FromIdx(j)}) ? '#' : '.';
       res += '\n';
     }
     return res;
@@ -215,8 +204,8 @@ class BitBoard {
   }
 
   // Returns bitboard with one bit reset.
-  friend BitBoard operator-(const BitBoard& a, const BoardSquare& b) {
-    return {a.board_ & ~b.as_board()};
+  friend BitBoard operator-(const BitBoard& a, const Square& b) {
+    return {a.board_ & ~(1ULL << b.as_idx())};
   }
 
   // Returns difference (bitwise AND-NOT) of two boards.
@@ -228,6 +217,7 @@ class BitBoard {
   std::uint64_t board_ = 0;
 };
 
+/*
 class Move {
  public:
   enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
@@ -296,9 +286,9 @@ class Move {
   };
 };
 
-using MoveList = std::vector<Move>;
-
 // Gets the move from the NN move index, undoing the given transform.
 Move MoveFromNNIndex(int idx, int transform);
+
+*/
 
 }  // namespace lczero
