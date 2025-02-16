@@ -236,10 +236,10 @@ class Chess960Transformer : public TransformingUciResponder {
   static void ConvertToLegacyCastling(ChessBoard pos,
                                       std::vector<Move>* moves) {
     for (auto& move : *moves) {
-      if (pos.flipped()) move.Mirror();
+      if (pos.flipped()) move.Flip();
       move = pos.GetLegacyMove(move);
       pos.ApplyMove(move);
-      if (pos.flipped()) move.Mirror();
+      if (pos.flipped()) move.Flip();
       pos.Mirror();
     }
   }

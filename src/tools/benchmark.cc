@@ -146,14 +146,14 @@ void Benchmark::Run(bool run_shorter_benchmark) {
 }
 
 void Benchmark::OnBestMove(const BestMoveInfo& move) {
-  std::cout << "bestmove " << move.bestmove.as_string() << std::endl;
+  std::cout << "bestmove " << move.bestmove.ToString(true) << std::endl;
 }
 
 void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos) {
   std::string line = "Benchmark time " + std::to_string(infos[0].time);
   line += " ms, " + std::to_string(infos[0].nodes) + " nodes, ";
   line += std::to_string(infos[0].nps) + " nps";
-  if (!infos[0].pv.empty()) line += ", move " + infos[0].pv[0].as_string();
+  if (!infos[0].pv.empty()) line += ", move " + infos[0].pv[0].ToString(true);
   std::cout << line << std::endl;
 }
 
