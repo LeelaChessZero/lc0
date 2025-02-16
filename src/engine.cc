@@ -30,7 +30,6 @@
 #include <algorithm>
 
 #include "chess/gamestate.h"
-#include "chess/parse.h"
 #include "chess/position.h"
 #include "neural/backend.h"
 #include "neural/register.h"
@@ -50,7 +49,7 @@ GameState MakeGameState(const std::string& fen,
   ChessBoard cur_board = state.startpos.GetBoard();
   state.moves.reserve(moves.size());
   for (const auto& move : moves) {
-    Move m = ParseMove(cur_board, move, cur_board.flipped());
+    Move m = cur_board.ParseMove(move, cur_board.flipped());
     state.moves.push_back(m);
     cur_board.ApplyMove(m);
     cur_board.Mirror();

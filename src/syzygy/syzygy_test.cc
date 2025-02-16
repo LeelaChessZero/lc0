@@ -31,8 +31,6 @@
 
 #include <iostream>
 
-#include "chess/parse.h"
-
 namespace lczero {
 
 // Try to find syzygy relative to current working directory.
@@ -56,21 +54,21 @@ void TestValidRootExpectation(
   MoveList allowed_moves_wdl;
   tablebase->root_probe_wdl(history.Last(), &allowed_moves_wdl);
   for (auto move_str : valid_moves) {
-    Move move = ParseMove(board, move_str, true);
+    Move move = board.ParseMove(move_str, true);
     EXPECT_TRUE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
                           move) != allowed_moves_dtz.end());
     EXPECT_TRUE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
                           move) != allowed_moves_wdl.end());
   }
   for (auto move_str : invalid_moves) {
-    Move move = ParseMove(board, move_str, true);
+    Move move = board.ParseMove(move_str, true);
     EXPECT_FALSE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
                            move) != allowed_moves_dtz.end());
     EXPECT_FALSE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
                            move) != allowed_moves_wdl.end());
   }
   for (auto move_str : invalid_dtz_only) {
-    Move move = ParseMove(board, move_str, true);
+    Move move = board.ParseMove(move_str, true);
     EXPECT_FALSE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
                            move) != allowed_moves_dtz.end());
     EXPECT_TRUE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),

@@ -1198,4 +1198,33 @@ std::string ChessBoard::DebugString() const {
   return result;
 }
 
+// Move ParseMove(const ChessBoard& board, std::string_view move_str,
+//                bool flip_if_black) {
+//   auto complain = [&move_str]() {
+//     throw Exception("Invalid move string: " + std::string(move_str));
+//   };
+//   auto maybe_flip = [&board, flip_if_black](Move move) {
+//     if (flip_if_black && board.flipped()) move.Flip();
+//     return move;
+//   };
+//   if (move_str.size() < 4 || move_str.size() > 5) complain();
+//   File from_file = File::Parse(move_str[0]);
+//   Rank from_rank = Rank::Parse(move_str[1]);
+//   File to_file = File::Parse(move_str[2]);
+//   Rank to_rank = Rank::Parse(move_str[3]);
+//   if (!from_file.on_board() || !from_rank.on_board() || !to_file.on_board()
+//   ||
+//       !to_rank.on_board()) {
+//     complain();
+//   }
+//   Square from(from_file, from_rank);
+//   Square to(to_file, to_rank);
+
+//   if (move_str.size() == 5) {
+//     // Promotion.
+//     PieceType promotion = PieceType::Parse(move_str[4]);
+//     if (!promotion.CanPromoteInto()) complain();
+//     return maybe_flip(Move::WhitePromotion(from, to, promotion));
+//   }
+
 }  // namespace lczero

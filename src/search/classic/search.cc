@@ -37,7 +37,6 @@
 #include <sstream>
 #include <thread>
 
-#include "chess/parse.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
 #include "search/classic/node.h"
