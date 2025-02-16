@@ -17,7 +17,7 @@
 */
 
 #include "chess/board.h"
-s
+
 #include <gtest/gtest.h>
 
 #include <iostream>
@@ -83,7 +83,7 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
     new_board.ApplyMove(move);
     if (new_board.IsUnderCheck()) {
       if (iter != legal_moves.end()) {
-        EXPECT_NE(iter->as_packed_int(), move.as_packed_int())
+        EXPECT_NE(*iter, move)
             << board.DebugString() << "legal:[" << iter->ToString(true)
             << "]==pseudo:(" << move.ToString(true) << ") Under check:\n"
             << new_board.DebugString();
@@ -91,10 +91,10 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
       continue;
     }
 
-    EXPECT_EQ(iter->as_packed_int(), move.as_packed_int())
-        << board.DebugString() << "legal:[" << iter->ToString(true)
-        << "]pseudo:(" << move.ToString(true) << ") after:\n"
-        << new_board.DebugString();
+    EXPECT_EQ(*iter, move) << board.DebugString() << "legal:["
+                           << iter->ToString(true) << "]pseudo:("
+                           << move.ToString(true) << ") after:\n"
+                           << new_board.DebugString();
 
     new_board.Mirror();
     ++iter;

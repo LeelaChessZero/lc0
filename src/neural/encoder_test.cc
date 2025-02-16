@@ -20,6 +20,8 @@
 
 #include <gtest/gtest.h>
 
+#include "chess/parse.h"
+
 namespace lczero {
 
 auto kAllSquaresMask = std::numeric_limits<std::uint64_t>::max();
@@ -290,7 +292,7 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
   history.Reset(board, 0, 1);
 
   // 1. Nf3
-  history.Append(Move("g1f3", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "g1f3", false));
 
   InputPlanes encoded_planes =
       EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
@@ -305,7 +307,7 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounter) {
   EXPECT_EQ(fifty_move_counter_plane.value, 1.0f);
 
   // 1. Nf3 Nf6
-  history.Append(Move("g8f6", true));
+  history.Append(ParseMove(history.Last().GetBoard(), "g8f6", true));
 
   encoded_planes =
       EncodePositionForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
@@ -326,7 +328,7 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounterFormat3) {
   history.Reset(board, 0, 1);
 
   // 1. Nf3
-  history.Append(Move("g1f3", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "g1f3", false));
 
   InputPlanes encoded_planes = EncodePositionForNN(
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
@@ -340,7 +342,7 @@ TEST(EncodePositionForNN, EncodeFiftyMoveCounterFormat3) {
   EXPECT_EQ(fifty_move_counter_plane.value, 1.0f);
 
   // 1. Nf3 Nf6
-  history.Append(Move("g8f6", true));
+  history.Append(ParseMove(history.Last().GetBoard(), "g8f6", true));
 
   encoded_planes = EncodePositionForNN(
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
@@ -426,10 +428,10 @@ TEST(EncodePositionForNN, EncodeEnpassantFormat3) {
   board.SetFromFen(ChessBoard::kStartposFen);
   history.Reset(board, 0, 1);
   // Move to en passant.
-  history.Append(Move("e2e4", false));
-  history.Append(Move("g2g3", false));
-  history.Append(Move("e4e5", false));
-  history.Append(Move("f2f4", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e2e4", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "g2g3", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e4e5", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "f2f4", false));
 
   InputPlanes encoded_planes = EncodePositionForNN(
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
@@ -447,7 +449,7 @@ TEST(EncodePositionForNN, EncodeEnpassantFormat3) {
   }
 
   // Boring move.
-  history.Append(Move("g1f3", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "g1f3", false));
 
   encoded_planes = EncodePositionForNN(
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
@@ -466,7 +468,7 @@ TEST(EncodePositionForNN, EncodeEnpassantFormat3) {
   }
 
   // Another boring move.
-  history.Append(Move("g1f3", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "g1f3", false));
 
   encoded_planes = EncodePositionForNN(
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
@@ -493,11 +495,11 @@ TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
   board.SetFromFen(ChessBoard::kStartposFen);
   history.Reset(board, 0, 1);
   // Move to break castling and king offside.
-  history.Append(Move("e2e4", false));
-  history.Append(Move("e2e4", false));
-  history.Append(Move("e1e2", false));
-  history.Append(Move("e1e2", false));
-  history.Append(Move("e2d3", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e2e4", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e2e4", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e1e2", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e1e2", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e2d3", false));
   // Their king offside, but not ours.
 
   int transform;
@@ -514,7 +516,7 @@ TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
   EXPECT_EQ(their_king_plane.mask, 1ull << 43);
   EXPECT_EQ(their_king_plane.value, 1.0f);
 
-  history.Append(Move("e2e3", false));
+  history.Append(ParseMove(history.Last().GetBoard(), "e2e3", false));
 
   // Our king offside, but theirs is not.
   encoded_planes = EncodePositionForNN(
