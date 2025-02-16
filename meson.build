@@ -160,6 +160,7 @@ common_files += [
   'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/gamestate.cc',
+  'src/chess/parse.cc',
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
   'src/neural/backend.cc',
