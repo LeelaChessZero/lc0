@@ -172,8 +172,7 @@ static const BitBoard kPawnAttacks[] = {
     0x0000000000000000ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
     0x0000000000000000ULL};
 
-static constexpr PieceType kPromotions[] = {
-    PieceType::Queen, PieceType::Rook, PieceType::Bishop, PieceType::Knight};
+static constexpr PieceType kPromotions[] = {kQueen, kRook, kBishop, kKnight};
 
 // Magic bitboard routines and structures.
 // We use so-called "fancy" magic bitboards.
@@ -650,14 +649,14 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Promotion.
   if (move.is_promotion()) {
-    switch (move.promotion()) {
-      case PieceType::Rook:
+    switch (move.promotion().idx) {
+      case kRook.idx:
         rooks_.set(to);
         break;
-      case PieceType::Bishop:
+      case kBishop.idx:
         bishops_.set(to);
         break;
-      case PieceType::Queen:
+      case kQueen.idx:
         rooks_.set(to);
         bishops_.set(to);
         break;

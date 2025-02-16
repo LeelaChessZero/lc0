@@ -177,13 +177,13 @@ class PgnReader {
       case -1:
         return std::nullopt;
       case 2:
-        return PieceType::Queen;
+        return kQueen;
       case 3:
-        return PieceType::Bishop;
+        return kBishop;
       case 4:
-        return PieceType::Knight;
+        return kKnight;
       case 5:
-        return PieceType::Rook;
+        return kRook;
       default:
         // 0 and 1 are pawn and king, which are not legal promotions, other
         // numbers don't correspond to a known piece type.
@@ -210,9 +210,9 @@ class PgnReader {
       auto king_board = board.kings() & board.ours();
       Square king_sq(kFileA, Rank::FromIdx(GetLowestBit(king_board.as_int())));
       m = Move::WhiteCastling(king_sq.file(),
-                                san.substr(3, 2) == "-O"
-                                    ? board.castlings().our_queenside_rook()
-                                    : board.castlings().our_kingside_rook());
+                              san.substr(3, 2) == "-O"
+                                  ? board.castlings().our_queenside_rook()
+                                  : board.castlings().our_kingside_rook());
       return m;
     }
     if (p != 0) idx++;
@@ -285,9 +285,8 @@ class PgnReader {
         if (c1 != -1 && sq.file().idx != c1) continue;
         std::optional<PieceType> promotion = PieceToPieceType(p2);
         Square to(File::FromIdx(c2), Rank::FromIdx(sr2));
-        Move move_to_find = promotion
-                                ? Move::WhitePromotion(sq, to, *promotion)
-                                : Move::White(sq, to);
+        Move move_to_find = promotion ? Move::WhitePromotion(sq, to, *promotion)
+                                      : Move::White(sq, to);
         if (std::find(plm.begin(), plm.end(), move_to_find) == plm.end()) {
           continue;
         }
