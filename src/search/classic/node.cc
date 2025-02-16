@@ -469,7 +469,7 @@ void NodeTree::MakeMove(Move move) {
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
-    if (board.IsSameMove(n.GetMove(), move)) {
+    if (n.GetMove() == move) {
       new_head = n.GetOrSpawnNode(current_head_);
       // Ensure head is not terminal, so search can extend or visit children of
       // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
