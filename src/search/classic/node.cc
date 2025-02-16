@@ -35,6 +35,7 @@
 #include <sstream>
 #include <thread>
 
+#include "chess/parse.h"
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
@@ -124,7 +125,7 @@ NodeGarbageCollector gNodeGc;
 Move Edge::GetMove(bool as_opponent) const {
   if (!as_opponent) return move_;
   Move m = move_;
-  m.Mirror();
+  m.Flip();
   return m;
 }
 
@@ -177,7 +178,8 @@ float Edge::GetP() const {
 
 std::string Edge::DebugString() const {
   std::ostringstream oss;
-  oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
+  oss << "Move: " << move_.ToString(true) << " p_: " << p_
+      << " GetP: " << GetP();
   return oss.str();
 }
 
@@ -237,8 +239,7 @@ std::string Node::DebugString() const {
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
       << " Edges:" << static_cast<int>(num_edges_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2
-      << " Solid:" << solid_children_;
+      << static_cast<int>(upper_bound_) - 2 << " Solid:" << solid_children_;
   return oss.str();
 }
 
@@ -275,7 +276,8 @@ bool Node::MakeSolid() {
   while (old_child) {
     int index = old_child->index_;
     new_children[index] = std::move(*old_child.get());
-    // This isn't needed, but it helps crash things faster if something has gone wrong.
+    // This isn't needed, but it helps crash things faster if something has gone
+    // wrong.
     old_child->parent_ = nullptr;
     gNodeGc.AddToGcQueue(std::move(old_child));
     new_children[index].UpdateChildrenParents();
@@ -350,9 +352,7 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void Node::CancelScoreUpdate(int multivisit) {
-  n_in_flight_ -= multivisit;
-}
+void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
@@ -464,7 +464,7 @@ std::string EdgeAndNode::DebugString() const {
 /////////////////////////////////////////////////////////////////////////
 
 void NodeTree::MakeMove(Move move) {
-  if (HeadPosition().IsBlackToMove()) move.Mirror();
+  if (HeadPosition().IsBlackToMove()) move.Flip();
   const auto& board = HeadPosition().GetBoard();
 
   Node* new_head = nullptr;
@@ -496,7 +496,7 @@ void NodeTree::TrimTreeAtHead() {
 }
 
 bool NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<Move>& moves) {
+                               const std::vector<std::string>& moves) {
   ChessBoard starting_board;
   int no_capture_ply;
   int full_moves;
@@ -519,7 +519,8 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
   for (const auto& move : moves) {
-    MakeMove(move);
+    Move m = ParseMove(HeadPosition().GetBoard(), move, IsBlackToMove());
+    MakeMove(m);
     if (old_head == current_head_) seen_old_head = true;
   }
 

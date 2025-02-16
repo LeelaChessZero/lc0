@@ -28,6 +28,7 @@
 #pragma once
 
 #include <thread>
+
 #include "chess/uciloop.h"
 #include "selfplay/tournament.h"
 #include "utils/optionsparser.h"
@@ -45,6 +46,7 @@ class SelfPlayLoop : public UciLoop {
   void CmdUci() override;
   void CmdSetOption(const std::string& name, const std::string& value,
                     const std::string& context) override;
+  bool IsChess960() const override { return true; }
 
  private:
   void SendGameInfo(const GameInfo& move);
