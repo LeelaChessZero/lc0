@@ -35,7 +35,6 @@
 #include <sstream>
 #include <thread>
 
-#include "chess/parse.h"
 #include "neural/encoder.h"
 #include "neural/network.h"
 #include "utils/exception.h"
@@ -519,7 +518,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
   for (const auto& move : moves) {
-    Move m = ParseMove(HeadPosition().GetBoard(), move, IsBlackToMove());
+    Move m = HeadPosition().GetBoard().ParseMove(move, true);
     MakeMove(m);
     if (old_head == current_head_) seen_old_head = true;
   }

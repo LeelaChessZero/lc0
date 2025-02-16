@@ -31,7 +31,6 @@
 #include <cmath>
 #include <functional>
 
-#include "chess/parse.h"
 #include "neural/shared_params.h"
 #include "search/classic/search.h"
 #include "search/classic/stoppers/factory.h"
@@ -70,7 +69,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
     const auto legal_moves = board.GenerateLegalMoves();
     const auto end = legal_moves.end();
     for (const auto& move : moves) {
-      const Move m = ParseMove(board, move, board.flipped());
+      const Move m = board.ParseMove(move, true);
       if (std::find(legal_moves.begin(), end, m) != end) result.emplace_back(m);
     }
     if (result.empty()) throw Exception("No legal searchmoves.");
@@ -198,7 +197,7 @@ Position EngineClassic::ApplyPositionMoves() {
   int game_ply = 2 * game_move - (board.flipped() ? 1 : 2);
   Position pos(board, no_capture_ply, game_ply);
   for (std::string move_str : current_position_.moves) {
-    Move move = ParseMove(pos.GetBoard(), move_str, pos.IsBlackToMove());
+    Move move = pos.GetBoard().ParseMove(move_str, true);
     pos = Position(pos, move);
   }
   return pos;
@@ -278,7 +277,7 @@ void EngineClassic::Go(const GoParams& params) {
     SetupPosition(current_position_.fen, moves);
     responder = std::make_unique<PonderResponseTransformer>(
         std::move(responder),
-        ParseMove(tree_->HeadPosition().GetBoard(), ponder_move, false));
+        tree_->HeadPosition().GetBoard().ParseMove(ponder_move, false));
   } else {
     SetupPosition(current_position_.fen, current_position_.moves);
   }
