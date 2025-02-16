@@ -166,6 +166,8 @@ class Move {
   PieceType promotion() const { return PieceType((data_ & kPieceMask) >> 13); }
   bool is_castling() const { return (data_ & kSpecialMask) == kCastling; }
   bool is_en_passant() const { return (data_ & kSpecialMask) == kEnPassant; }
+  // TODO remove this once UciReponder starts using std::optional for ponder.
+  bool is_null() const { return data_ == 0; }
 
   uint16_t raw_data() const { return data_; }
 

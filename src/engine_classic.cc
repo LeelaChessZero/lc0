@@ -51,9 +51,6 @@ const OptionId kSyzygyTablebaseId{
     's'};
 const OptionId kPonderId{"", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
-const OptionId kUciChess960{
-    "chess960", "UCI_Chess960",
-    "Castling moves are encoded as \"king takes rook\"."};
 const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
                         "Show win, draw and lose probability."};
 const OptionId kShowMovesleft{"show-movesleft", "UCI_ShowMovesLeft",
@@ -108,7 +105,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
-  options->Add<BoolOption>(kUciChess960) = false;
   options->Add<BoolOption>(kShowWDL) = false;
   options->Add<BoolOption>(kShowMovesleft) = false;
 
@@ -281,16 +277,10 @@ void EngineClassic::Go(const GoParams& params) {
     moves.pop_back();
     SetupPosition(current_position_.fen, moves);
     responder = std::make_unique<PonderResponseTransformer>(
-        std::move(responder), 
+        std::move(responder),
         ParseMove(tree_->HeadPosition().GetBoard(), ponder_move, false));
   } else {
     SetupPosition(current_position_.fen, current_position_.moves);
-  }
-
-  if (!options_.Get<bool>(kUciChess960)) {
-    // Remap FRC castling to legacy castling.
-    responder = std::make_unique<Chess960Transformer>(
-        std::move(responder), tree_->HeadPosition().GetBoard());
   }
 
   if (!options_.Get<bool>(kShowWDL)) {

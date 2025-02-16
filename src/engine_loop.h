@@ -74,6 +74,7 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
+  bool IsChess960() const override;
 
  private:
   std::unique_ptr<UciResponder> uci_responder_;

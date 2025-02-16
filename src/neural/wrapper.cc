@@ -118,7 +118,7 @@ class NetworkAsBackendComputation : public BackendComputation {
         moves.begin(), moves.end(), -std::numeric_limits<float>::infinity(),
         [&, counter = 0](float max_p, const Move& move) mutable {
           return std::max(max_p, dst[counter++] = computation->GetPVal(
-                                     idx, move.as_nn_index(transform)));
+                                     idx, MoveToNNIndex(move, transform)));
         });
     // Compute the softmax and compute the total.
     const float temperature = backend_->softmax_policy_temperature_;
