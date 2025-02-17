@@ -38,7 +38,7 @@ struct PieceType {
   static constexpr PieceType FromIdx(uint8_t idx) { return PieceType{idx}; }
   static constexpr PieceType Parse(char c);
   std::string ToString(bool uppercase = false) const {
-    return std::string(1, "nbrqpk"[idx] + (uppercase ? 'A' - 'a' : 0));
+    return std::string(1, "nqrbpk"[idx] + (uppercase ? 'A' - 'a' : 0));
   }
   bool CanPromoteInto() const { return idx < 4; }
   bool IsValid() const { return idx < 6; }
@@ -230,6 +230,34 @@ class Move {
 
 inline int operator-(File a, File b) { return static_cast<int>(a.idx) - b.idx; }
 inline int operator-(Rank a, Rank b) { return static_cast<int>(a.idx) - b.idx; }
+
+inline constexpr PieceType PieceType::Parse(char c) {
+  switch (tolower(c)) {
+    case 'n':
+      return kKnight;
+    case 'q':
+      return kQueen;
+    case 'r':
+      return kRook;
+    case 'b':
+      return kBishop;
+    case 'p':
+      return kPawn;
+    case 'k':
+      return kKing;
+    default:
+      return PieceType{6};
+  }
+}
+
+inline std::string Move::ToString(bool is_chess960) const {
+  if (is_castling() && !is_chess960) {
+    return from().ToString() + (to().file() > from().file() ? "g" : "c") +
+           to().rank().ToString();
+  }
+  return from().ToString() + to().ToString() +
+         (is_promotion() ? promotion().ToString(false) : "");
+}
 
 using MoveList = std::vector<Move>;
 
