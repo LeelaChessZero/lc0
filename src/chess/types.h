@@ -107,46 +107,16 @@ class Square {
   constexpr Square() = default;
   constexpr Square(File file, Rank rank) : idx_(rank.idx * 8 + file.idx) {}
   static constexpr Square FromIdx(uint8_t idx) { return Square{idx}; }
-  static Square Parse(std::string_view);
-  //  constexpr BoardSquare(std::uint8_t num) : square_(num) {}
-  //  // From row(bottom to top), and col(left to right), 0-based.
-  //  constexpr BoardSquare(int row, int col) : BoardSquare(row * 8 + col) {}
-  //  // From Square name, e.g e4. Only lowercase.
-  //  BoardSquare(const std::string& str, bool black = false)
-  //      : BoardSquare(black ? '8' - str[1] : str[1] - '1', str[0] - 'a') {}
-  //  constexpr std::uint8_t as_int() const { return square_; }
-  //  constexpr std::uint64_t as_board() const { return 1ULL << square_; }
-  //  void set(int row, int col) { square_ = row * 8 + col; }
-
-  //  // 0-based, bottom to top.
-  //  int row() const { return square_ / 8; }
-  //  // 0-based, left to right.
-  //  int col() const { return square_ % 8; }
-
-  // Row := 7 - row.  Col remains the same.
-  void Flip() { idx_ ^= 0b111000; }
-
-  //  // Checks whether coordinate is within 0..7.
-  //  static bool IsValidCoord(int x) { return x >= 0 && x < 8; }
-
-  //  // Checks whether coordinates are within 0..7.
-  //  static bool IsValid(int row, int col) {
-  //    return IsValidCoord(row) && IsValidCoord(col);
-  //  }
-
-  constexpr bool operator==(const Square& other) const = default;
-  constexpr bool operator!=(const Square& other) const = default;
-
-  //  // Returns the square in algebraic notation (e.g. "e4").
-  //  std::string as_string() const {
-  //    return std::string(1, 'a' + col()) + std::string(1, '1' + row());
-  //  }
-
+  static constexpr Square Parse(std::string_view);
   File file() const { return File::FromIdx(idx_ % 8); }
   Rank rank() const { return Rank::FromIdx(idx_ / 8); }
+  // Flips the ranks. 1 becomes 8, 2 becomes 7, etc. Files remain the same.
+  void Flip() { idx_ ^= 0b111000; }
   constexpr std::string ToString(bool uppercase = false) const {
     return file().ToString(uppercase) + rank().ToString();
   }
+  constexpr bool operator==(const Square& other) const = default;
+  constexpr bool operator!=(const Square& other) const = default;
   constexpr uint8_t as_idx() const { return idx_; }
 
  private:
@@ -230,6 +200,10 @@ class Move {
 
 inline int operator-(File a, File b) { return static_cast<int>(a.idx) - b.idx; }
 inline int operator-(Rank a, Rank b) { return static_cast<int>(a.idx) - b.idx; }
+
+inline constexpr Square Square::Parse(std::string_view str) {
+  return Square(File::Parse(str[0]), Rank::Parse(str[1]));
+}
 
 inline constexpr PieceType PieceType::Parse(char c) {
   switch (tolower(c)) {
