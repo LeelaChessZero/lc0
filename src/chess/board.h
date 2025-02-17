@@ -108,10 +108,12 @@ class ChessBoard {
   Move GetModernMove(Move move) const;
 
   // Parses a move from move_str.
-  //  If flip_if_black is true, the move is parsed from the point of
-  // view of the player to move. This is a temporary paramter until we make Move
-  // always to be from the point of view of white.
-  Move ParseMove(std::string_view move_str, bool flip_if_black) const;
+  // The input string should be in the "normal" notation rather than from the
+  // player to move, i.e. "e7e5" for the black pawn move.
+  // Output is currently "from the player to move" perspective (i.e. from=E2,
+  // to=E4 for the same black move). This is temporary, plan is to change it
+  // soon.
+  Move ParseMove(std::string_view move_str) const;
 
   uint64_t Hash() const {
     return HashCat({our_pieces_.as_int(), their_pieces_.as_int(),
