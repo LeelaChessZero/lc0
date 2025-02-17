@@ -518,7 +518,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
   for (const auto& move : moves) {
-    Move m = HeadPosition().GetBoard().ParseMove(move, true);
+    Move m = HeadPosition().GetBoard().ParseMove(move);
     MakeMove(m);
     if (old_head == current_head_) seen_old_head = true;
   }

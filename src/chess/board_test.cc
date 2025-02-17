@@ -2232,7 +2232,7 @@ TEST(ChessBoard, InvalidFEN) {
 TEST(ChessBoard, InvalidEnPassantFromKnightPromotion) {
   ChessBoard board;
   board.SetFromFen("Q3b3/2P2pnk/3R3p/p7/1pp1p3/PnP1P2P/2B2PP1/5RK1 w - - 1 31");
-  board.ApplyMove(board.ParseMove("c7c8", true));
+  board.ApplyMove(board.ParseMove("c7c8"));
   EXPECT_TRUE(board.en_passant().empty());
 }
 

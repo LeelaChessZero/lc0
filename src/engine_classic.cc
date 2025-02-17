@@ -69,7 +69,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
     const auto legal_moves = board.GenerateLegalMoves();
     const auto end = legal_moves.end();
     for (const auto& move : moves) {
-      const Move m = board.ParseMove(move, true);
+      const Move m = board.ParseMove(move);
       if (std::find(legal_moves.begin(), end, m) != end) result.emplace_back(m);
     }
     if (result.empty()) throw Exception("No legal searchmoves.");
@@ -197,7 +197,7 @@ Position EngineClassic::ApplyPositionMoves() {
   int game_ply = 2 * game_move - (board.flipped() ? 1 : 2);
   Position pos(board, no_capture_ply, game_ply);
   for (std::string move_str : current_position_.moves) {
-    Move move = pos.GetBoard().ParseMove(move_str, true);
+    Move move = pos.GetBoard().ParseMove(move_str);
     pos = Position(pos, move);
   }
   return pos;
@@ -275,9 +275,10 @@ void EngineClassic::Go(const GoParams& params) {
     std::string ponder_move = moves.back();
     moves.pop_back();
     SetupPosition(current_position_.fen, moves);
-    responder = std::make_unique<PonderResponseTransformer>(
-        std::move(responder),
-        tree_->HeadPosition().GetBoard().ParseMove(ponder_move, false));
+    Move move = tree_->HeadPosition().GetBoard().ParseMove(ponder_move);
+    if (tree_->IsBlackToMove()) move.Flip();
+    responder =
+        std::make_unique<PonderResponseTransformer>(std::move(responder), move);
   } else {
     SetupPosition(current_position_.fen, current_position_.moves);
   }

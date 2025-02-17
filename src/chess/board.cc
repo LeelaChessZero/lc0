@@ -1198,33 +1198,49 @@ std::string ChessBoard::DebugString() const {
   return result;
 }
 
-// Move ParseMove(const ChessBoard& board, std::string_view move_str,
-//                bool flip_if_black) {
-//   auto complain = [&move_str]() {
-//     throw Exception("Invalid move string: " + std::string(move_str));
-//   };
-//   auto maybe_flip = [&board, flip_if_black](Move move) {
-//     if (flip_if_black && board.flipped()) move.Flip();
-//     return move;
-//   };
-//   if (move_str.size() < 4 || move_str.size() > 5) complain();
-//   File from_file = File::Parse(move_str[0]);
-//   Rank from_rank = Rank::Parse(move_str[1]);
-//   File to_file = File::Parse(move_str[2]);
-//   Rank to_rank = Rank::Parse(move_str[3]);
-//   if (!from_file.on_board() || !from_rank.on_board() || !to_file.on_board()
-//   ||
-//       !to_rank.on_board()) {
-//     complain();
-//   }
-//   Square from(from_file, from_rank);
-//   Square to(to_file, to_rank);
+Move ChessBoard::ParseMove(std::string_view move_str) const {
+  auto complain = [&move_str]() {
+    throw Exception("Invalid move string: " + std::string(move_str));
+  };
+  if (move_str.size() < 4 || move_str.size() > 5) complain();
+  File from_file = File::Parse(move_str[0]);
+  Rank from_rank = Rank::Parse(move_str[1]);
+  File to_file = File::Parse(move_str[2]);
+  Rank to_rank = Rank::Parse(move_str[3]);
+  if (!from_file.on_board() || !from_rank.on_board() || !to_file.on_board() ||
+      !to_rank.on_board()) {
+    complain();
+  }
+  if (flipped_) {
+    from_rank.Flip();
+    to_rank.Flip();
+  }
+  Square from(from_file, from_rank);
+  Square to(to_file, to_rank);
 
-//   if (move_str.size() == 5) {
-//     // Promotion.
-//     PieceType promotion = PieceType::Parse(move_str[4]);
-//     if (!promotion.CanPromoteInto()) complain();
-//     return maybe_flip(Move::WhitePromotion(from, to, promotion));
-//   }
+  if (move_str.size() == 5) {
+    // Promotion.
+    PieceType promotion = PieceType::Parse(move_str[4]);
+    if (!promotion.CanPromoteInto()) complain();
+    return Move::WhitePromotion(from, to, promotion);
+  }
+  if (from == our_king_ && our_pieces_.get(to)) {
+    // FRC-style castling.
+    return Move::WhiteCastling(from.file(), to.file());
+  }
+  if (from == our_king_ && from == kSquareE1 && to == kSquareG1) {
+    // Kingside castling.
+    return Move::WhiteCastling(from.file(), kFileH);
+  }
+  if (from == our_king_ && from == kSquareE1 && to == kSquareC1) {
+    // Qeenside castling.
+    return Move::WhiteCastling(from.file(), kFileA);
+  }
+  if (from.file() != to.file() && pawns_.get(from) && !their_pieces_.get(to)) {
+    // En passant.
+    return Move::WhiteEnPassant(from, to);
+  }
+  return Move::White(from, to);
+}
 
 }  // namespace lczero

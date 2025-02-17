@@ -83,6 +83,7 @@ struct Rank {
   bool on_board() const { return idx < 8; }
   static constexpr Rank FromIdx(uint8_t idx) { return Rank{idx}; }
   static constexpr Rank Parse(char c) { return Rank(c - '1'); }
+  void Flip() { idx ^= 0b111; }
   constexpr std::string ToString() const { return std::string(1, '1' + idx); }
   auto operator<=>(const Rank& other) const = default;
   void operator++() { ++idx; }
@@ -153,6 +154,12 @@ class Square {
   // 0 is a1, 1 is b1, 8 is a2, 63 is h8.
   uint8_t idx_;
 };
+
+constexpr Square kSquareA1 = Square(kFileA, kRank1),
+                 kSquareC1 = Square(kFileC, kRank1),
+                 kSquareE1 = Square(kFileE, kRank1),
+                 kSquareG1 = Square(kFileG, kRank1),
+                 kSquareH1 = Square(kFileH, kRank1);
 
 class Move {
  public:
