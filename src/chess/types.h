@@ -48,9 +48,9 @@ struct PieceType {
 };
 
 constexpr PieceType kKnight = PieceType::FromIdx(0),
-                    kBishop = PieceType::FromIdx(1),
+                    kQueen = PieceType::FromIdx(1),
                     kRook = PieceType::FromIdx(2),
-                    kQueen = PieceType::FromIdx(3),
+                    kBishop = PieceType::FromIdx(3),
                     kPawn = PieceType::FromIdx(4),
                     kKing = PieceType::FromIdx(5);
 
@@ -63,6 +63,7 @@ struct File {
   constexpr std::string ToString(bool uppercase = false) const {
     return std::string(1, (uppercase ? 'a' : 'A') + idx);
   }
+  void Flop() { idx ^= 0b111; }
   auto operator<=>(const File& other) const = default;
   void operator++() { ++idx; }
   void operator+=(int delta) { idx += delta; }
@@ -169,8 +170,8 @@ class Move {
   }
   static constexpr Move WhitePromotion(Square from, Square to,
                                        PieceType promotion_piece) {
-    return Move((from.as_idx() << 6) | to.as_idx() | (1 << 12) |
-                (promotion_piece.idx << 13));
+    return Move((from.as_idx() << 6) | to.as_idx() | kPromotion |
+                (promotion_piece.idx << 12));
   }
   static constexpr Move WhiteCastling(File king, File rook) {
     return Move((king.idx << 6) | rook.idx | kCastling);
@@ -188,9 +189,9 @@ class Move {
 
   Square from() const { return Square::FromIdx((data_ & kFromMask) >> 6); }
   Square to() const { return Square::FromIdx(data_ & kToMask); }
-  bool is_promotion() const { return data_ & kIsPromoMask; }
+  bool is_promotion() const { return data_ & kPromotion; }
   PieceType promotion() const {
-    return PieceType::FromIdx((data_ & kPieceMask) >> 13);
+    return PieceType::FromIdx((data_ & kPieceMask) >> 12);
   }
   bool is_castling() const { return (data_ & kSpecialMask) == kCastling; }
   bool is_en_passant() const { return (data_ & kSpecialMask) == kEnPassant; }
@@ -201,29 +202,29 @@ class Move {
 
  private:
   explicit constexpr Move(uint16_t data) : data_(data) {}
-  enum SpecialMove : uint16_t {
-    kCastling = 0b0010000000000000,
-    kEnPassant = 0b0100000000000000
-  };
 
   // Move encoding using 16 bits:
   // - bits  0-5:  "to" square (6 bits)
   // - bits  6-11: "from" square (6 bits)
-  // - bit   12:   is_promotion flag
-  // - bits  13-14: if is_promotion:  promotion piece type
+  // - bits  12-13: if is_promotion:  promotion piece type
   //                if !is_promotion: SpecialMove
+  // - bit   14:   is_promotion flag
   // - bit   15:   reserved (potentially for side-to-move)
   // Castling is always encoded as a "king takes rook" move.
   uint16_t data_ = 0;
 
   enum Masks : uint16_t {
-    kToMask = 0b0000000000111111,
-    kFromMask = 0b0000111111000000,
-    kIsPromoMask = 0b0001000000000000,
-    kPieceMask = 0b0110000000000000,
+    // clang-format off
+    kToMask      = 0b0000000000111111,
+    kFromMask    = 0b0000111111000000,
     kSpecialMask = 0b0111000000000000,
+    kCastling    = 0b0001000000000000,
+    kEnPassant   = 0b0010000000000000,
+    kPromotion   = 0b0100000000000000,
+    kPieceMask   = 0b0011000000000000,
     // If/when we have side-to-move bit, also flip it here.
-    kFlipMask = 0b0000111000111000,
+    kFlipMask    = 0b0000111000111000,
+    // clang-format on
   };
 };
 
