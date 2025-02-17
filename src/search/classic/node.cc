@@ -464,7 +464,6 @@ std::string EdgeAndNode::DebugString() const {
 
 void NodeTree::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Flip();
-  const auto& board = HeadPosition().GetBoard();
 
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
@@ -476,7 +475,6 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
-  move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->child_.get();
   current_head_ =

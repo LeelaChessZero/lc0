@@ -728,40 +728,6 @@ bool ChessBoard::IsUnderAttack(Square square) const {
   return false;
 }
 
-/*
-bool ChessBoard::IsSameMove(Move move1, Move move2) const {
-  // If moves are equal, it's the same move.
-  if (move1 == move2) return true;
-  // Explicitly check all legacy castling moves. Need to check for king, for
-  // e.g. rook e1a1 and e1c1 are different moves.
-  if (move1.from() != move2.from() || move1.from() != E1 ||
-      our_king_ != move1.from()) {
-    return false;
-  }
-  if (move1.to() == A1 && move2.to() == C1) return true;
-  if (move1.to() == C1 && move2.to() == A1) return true;
-  if (move1.to() == G1 && move2.to() == H1) return true;
-  if (move1.to() == H1 && move2.to() == G1) return true;
-  return false;
-}
-
-Move ChessBoard::GetLegacyMove(Move move) const {
-  if (our_king_ != move.from() || !our_pieces_.get(move.to())) {
-    return move;
-  }
-  if (move == Move(E1, H1)) return Move(E1, G1);
-  if (move == Move(E1, A1)) return Move(E1, C1);
-  return move;
-}
-
-Move ChessBoard::GetModernMove(Move move) const {
-  if (our_king_ != E1 || move.from() != E1) return move;
-  if (move == Move(E1, G1) && !our_pieces_.get(G1)) return Move(E1, H1);
-  if (move == Move(E1, C1) && !our_pieces_.get(C1)) return Move(E1, A1);
-  return move;
-}
-  */
-
 KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   KingAttackInfo king_attack_info;
 

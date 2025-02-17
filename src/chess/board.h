@@ -102,10 +102,6 @@ class ChessBoard {
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
   bool IsLegalMove(Move move, const KingAttackInfo& king_attack_info) const;
-  // Returns the same move but with castling encoded in legacy way.
-  Move GetLegacyMove(Move move) const;
-  // Returns the same move but with castling encoded in modern way.
-  Move GetModernMove(Move move) const;
 
   // Parses a move from move_str.
   // The input string should be in the "normal" notation rather than from the
