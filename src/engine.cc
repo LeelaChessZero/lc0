@@ -49,7 +49,7 @@ GameState MakeGameState(const std::string& fen,
   ChessBoard cur_board = state.startpos.GetBoard();
   state.moves.reserve(moves.size());
   for (const auto& move : moves) {
-    Move m = cur_board.ParseMove(move, cur_board.flipped());
+    Move m = cur_board.ParseMove(move);
     state.moves.push_back(m);
     cur_board.ApplyMove(m);
     cur_board.Mirror();
