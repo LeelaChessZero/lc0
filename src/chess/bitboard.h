@@ -95,8 +95,6 @@ class BitBoard {
  public:
   constexpr BitBoard(std::uint64_t board) : board_(board) {}
   BitBoard() = default;
-  BitBoard(const BitBoard&) = default;
-  BitBoard& operator=(const BitBoard&) = default;
   constexpr static BitBoard FromSquare(Square square) {
     return BitBoard(1ULL << square.as_idx());
   }
@@ -159,13 +157,8 @@ class BitBoard {
   // Flips black and white side of a board.
   void Mirror() { board_ = ReverseBytesInBytes(board_); }
 
-  bool operator==(const BitBoard& other) const {
-    return board_ == other.board_;
-  }
-
-  bool operator!=(const BitBoard& other) const {
-    return board_ != other.board_;
-  }
+  bool operator==(const BitBoard& other) const = default;
+  bool operator!=(const BitBoard& other) const = default;
 
   using Iterator =
       BitIterator<Square, [](uint64_t x) { return Square::FromIdx(x); }>;
@@ -216,79 +209,5 @@ class BitBoard {
  private:
   std::uint64_t board_ = 0;
 };
-
-/*
-class Move {
- public:
-  enum class Promotion : std::uint8_t { None, Queen, Rook, Bishop, Knight };
-  Move() = default;
-  constexpr Move(BoardSquare from, BoardSquare to)
-      : data_(to.as_int() + (from.as_int() << 6)) {}
-  constexpr Move(BoardSquare from, BoardSquare to, Promotion promotion)
-      : data_(to.as_int() + (from.as_int() << 6) +
-              (static_cast<uint8_t>(promotion) << 12)) {}
-  Move(const std::string& str, bool black = false);
-  Move(const char* str, bool black = false) : Move(std::string(str), black) {}
-
-  BoardSquare to() const { return BoardSquare(data_ & kToMask); }
-  BoardSquare from() const { return BoardSquare((data_ & kFromMask) >> 6); }
-  Promotion promotion() const { return Promotion((data_ & kPromoMask) >> 12); }
-
-  void SetTo(BoardSquare to) { data_ = (data_ & ~kToMask) | to.as_int(); }
-  void SetFrom(BoardSquare from) {
-    data_ = (data_ & ~kFromMask) | (from.as_int() << 6);
-  }
-  void SetPromotion(Promotion promotion) {
-    data_ = (data_ & ~kPromoMask) | (static_cast<uint8_t>(promotion) << 12);
-  }
-  // 0 .. 16384, knight promotion and no promotion is the same.
-  uint16_t as_packed_int() const;
-
-  // 0 .. 1857, to use in neural networks.
-  // Transform is a bit field which describes a transform to be applied to the
-  // the move before converting it to an index.
-  uint16_t as_nn_index(int transform) const;
-
-  explicit operator bool() const { return data_ != 0; }
-  bool operator==(const Move& other) const { return data_ == other.data_; }
-
-  void Mirror() { data_ ^= 0b111000111000; }
-
-  std::string as_string() const {
-    std::string res = from().as_string() + to().as_string();
-    switch (promotion()) {
-      case Promotion::None:
-        return res;
-      case Promotion::Queen:
-        return res + 'q';
-      case Promotion::Rook:
-        return res + 'r';
-      case Promotion::Bishop:
-        return res + 'b';
-      case Promotion::Knight:
-        return res + 'n';
-    }
-    assert(false);
-    return "Error!";
-  }
-
- private:
-  uint16_t data_ = 0;
-  // Move, using the following encoding:
-  // bits 0..5 "to"-square
-  // bits 6..11 "from"-square
-  // bits 12..14 promotion value
-
-  enum Masks : uint16_t {
-    kToMask = 0b0000000000111111,
-    kFromMask = 0b0000111111000000,
-    kPromoMask = 0b0111000000000000,
-  };
-};
-
-// Gets the move from the NN move index, undoing the given transform.
-Move MoveFromNNIndex(int idx, int transform);
-
-*/
 
 }  // namespace lczero
