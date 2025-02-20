@@ -32,4 +32,4 @@ pause
 cd build
 
 msbuild /m /p:Configuration=Release /p:Platform=x64 /p:WholeProgramOptimization=true ^
-/p:PreferredToolArchitecture=x64 rescorer.sln /filelogger
+/p:PreferredToolArchitecture=x64 lc0.sln /filelogger
