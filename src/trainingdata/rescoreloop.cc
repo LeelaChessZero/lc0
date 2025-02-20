@@ -254,7 +254,7 @@ void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
   unsigned char bpc[17];
 
   auto stm = pos.IsBlackToMove() ? tb_BLACK_TO_MOVE : tb_WHITE_TO_MOVE;
-  auto& board = pos.IsBlackToMove() ? pos.GetThemBoard() : pos.GetBoard();
+  auto& board = pos.GetBoard();
   auto epsq = tb_NOSQUARE;
   for (auto sq : board.en_passant()) {
     // Our internal representation stores en_passant 2 rows away
