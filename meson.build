@@ -718,6 +718,7 @@ if get_option('rescorer')
   'src/neural/factory.cc',
   'src/neural/loader.cc', 
   ]
+  meson.add_postconf_script('scripts/gaviota_buid_hack.py')
   executable('rescorer', 'src/rescorer_main.cc',
        [common_files, 'src/trainingdata/rescoreloop.cc'],
        include_directories: includes, dependencies: deps, install: true)
