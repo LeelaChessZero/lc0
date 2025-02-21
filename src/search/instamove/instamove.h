@@ -40,7 +40,10 @@ namespace lczero {
 
 class InstamoveSearch : public SearchBase {
  public:
-  using SearchBase::SearchBase;
+  InstamoveSearch(const SearchContext& context) : context_(context) {}
+
+ protected:
+  SearchContext context_;
 
  private:
   virtual Move GetBestMove() = 0;
@@ -60,7 +63,7 @@ class InstamoveSearch : public SearchBase {
   void RespondBestMove() {
     if (responded_bestmove_.exchange(true)) return;
     BestMoveInfo info{bestmove_};
-    uci_responder()->OutputBestMove(&info);
+    context_.uci_responder->OutputBestMove(&info);
   }
 
   Move bestmove_;

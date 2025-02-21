@@ -58,8 +58,8 @@ class BatchSplittingComputation : public BackendComputation {
   size_t UsedBatchSize() const override {
     return wrapped_computation_->UsedBatchSize();
   }
-  virtual AddInputResult AddInput(const EvalPosition& pos,
-                                  EvalResultPtr result) {
+  AddInputResult AddInput(const EvalPosition& pos,
+                          EvalResultPtr result) override {
     if (wrapped_computation_->UsedBatchSize() >= max_batch_size_) {
       ComputeBlocking();
       MakeComputation();
@@ -67,7 +67,7 @@ class BatchSplittingComputation : public BackendComputation {
     return wrapped_computation_->AddInput(pos, result);
   }
 
-  virtual void ComputeBlocking() { wrapped_computation_->ComputeBlocking(); }
+  void ComputeBlocking() override { wrapped_computation_->ComputeBlocking(); }
 
  private:
   void MakeComputation() {

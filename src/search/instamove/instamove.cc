@@ -47,7 +47,7 @@ class PolicyHeadSearch : public InstamoveSearch {
   Move GetBestMove() final {
     const std::vector<Position> positions = game_state_.GetPositions();
     MoveList legal_moves = positions.back().GetBoard().GenerateLegalMoves();
-    std::vector<EvalResult> res = backend()->EvaluateBatch(
+    std::vector<EvalResult> res = context_.backend->EvaluateBatch(
         std::vector<EvalPosition>{EvalPosition{positions, legal_moves}});
     const size_t best_move_idx =
         std::max_element(res[0].p.begin(), res[0].p.end()) - res[0].p.begin();
@@ -76,7 +76,7 @@ class ValueHeadSearch : public InstamoveSearch {
 
   Move GetBestMove() final {
     std::unique_ptr<BackendComputation> computation =
-        backend()->CreateComputation();
+        context_.backend->CreateComputation();
 
     PositionHistory history(game_state_.GetPositions());
     const ChessBoard& board = history.Last().GetBoard();
@@ -127,7 +127,7 @@ class ValueHeadSearch : public InstamoveSearch {
                 static_cast<int>(std::round(
                     500 * (1 - results[best_idx].q - results[best_idx].d)))},
     }};
-    uci_responder()->OutputThinkingInfo(&infos);
+    context_.uci_responder->OutputThinkingInfo(&infos);
     Move best_move = legal_moves[best_idx];
     if (history.IsBlackToMove()) best_move.Mirror();
     return best_move;
