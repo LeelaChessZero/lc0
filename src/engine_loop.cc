@@ -56,7 +56,7 @@ EngineLoop::EngineLoop(
       engine_(engine_factory(*uci_responder_, options_->GetOptionsDict())) {
   options_->Add<StringOption>(kLogFileId);
   options_->Add<BoolOption>(kPreload) = false;
-  options->Add<BoolOption>(kUciChess960) = false;
+  options_->Add<BoolOption>(kUciChess960) = false;
   SharedBackendParams::Populate(options_.get());
 }
 
