@@ -37,57 +37,6 @@
 
 namespace lczero {
 
-/*
-// Stores a coordinates of a single square.
-class BoardSquare {
- public:
-  constexpr BoardSquare() {}
-  // As a single number, 0 to 63, bottom to top, left to right.
-  // 0 is a1, 8 is a2, 63 is h8.
-  constexpr BoardSquare(std::uint8_t num) : square_(num) {}
-  // From row(bottom to top), and col(left to right), 0-based.
-  constexpr BoardSquare(int row, int col) : BoardSquare(row * 8 + col) {}
-  // From Square name, e.g e4. Only lowercase.
-  BoardSquare(const std::string& str, bool black = false)
-      : BoardSquare(black ? '8' - str[1] : str[1] - '1', str[0] - 'a') {}
-  constexpr std::uint8_t as_int() const { return square_; }
-  constexpr std::uint64_t as_board() const { return 1ULL << square_; }
-  void set(int row, int col) { square_ = row * 8 + col; }
-
-  // 0-based, bottom to top.
-  int row() const { return square_ / 8; }
-  // 0-based, left to right.
-  int col() const { return square_ % 8; }
-
-  // Row := 7 - row.  Col remains the same.
-  void Mirror() { square_ = square_ ^ 0b111000; }
-
-  // Checks whether coordinate is within 0..7.
-  static bool IsValidCoord(int x) { return x >= 0 && x < 8; }
-
-  // Checks whether coordinates are within 0..7.
-  static bool IsValid(int row, int col) {
-    return IsValidCoord(row) && IsValidCoord(col);
-  }
-
-  constexpr bool operator==(const BoardSquare& other) const {
-    return square_ == other.square_;
-  }
-
-  constexpr bool operator!=(const BoardSquare& other) const {
-    return square_ != other.square_;
-  }
-
-  // Returns the square in algebraic notation (e.g. "e4").
-  std::string as_string() const {
-    return std::string(1, 'a' + col()) + std::string(1, '1' + row());
-  }
-
- private:
-  std::uint8_t square_ = 0;  // Only lower six bits should be set.
-};
-*/
-
 // Represents a board as an array of 64 bits.
 // Bit enumeration goes from bottom to top, from left to right:
 // Square a1 is bit 0, square h1 is bit 7, square a2 is bit 8.
