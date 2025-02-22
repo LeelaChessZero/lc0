@@ -31,9 +31,8 @@
 
 namespace lczero {
 
-// Creates a caching backend wrapper, which returns values immediately if they
-// are found, and forwards the request to the wrapped backend otherwise (and
-// caches the result).
-std::unique_ptr<Backend> CreateMemCache(Backend* parent, size_t capacity);
+// Creates a backend wrapper that ensures that the maximum batch size of the
+// wrapped backend is respected.
+std::unique_ptr<Backend> CreateBatchSplitingBackend(Backend* parent);
 
 }  // namespace lczero

@@ -30,6 +30,7 @@
 #include <atomic>
 
 #include "chess/uciloop.h"
+#include "neural/batchsplit.h"
 #include "search/search.h"
 
 // Base class for instamove searches (e.g. policy head and value head).
@@ -39,7 +40,10 @@ namespace lczero {
 
 class InstamoveSearch : public SearchBase {
  public:
-  using SearchBase::SearchBase;
+  InstamoveSearch(const SearchContext& context) : context_(context) {}
+
+ protected:
+  SearchContext context_;
 
  private:
   virtual Move GetBestMove() = 0;
@@ -59,7 +63,7 @@ class InstamoveSearch : public SearchBase {
   void RespondBestMove() {
     if (responded_bestmove_.exchange(true)) return;
     BestMoveInfo info{bestmove_};
-    uci_responder()->OutputBestMove(&info);
+    context_.uci_responder->OutputBestMove(&info);
   }
 
   Move bestmove_;
@@ -71,11 +75,18 @@ class InstamoveEnvironment : public SearchEnvironment {
  public:
   using SearchEnvironment::SearchEnvironment;
 
+  void SetBackend(Backend* backend) override {
+    batchsplit_backend_ = CreateBatchSplitingBackend(backend);
+    context_.backend = batchsplit_backend_.get();
+  }
+
  private:
   std::unique_ptr<SearchBase> CreateSearch(
       const GameState& game_state) override {
     return std::make_unique<SearchClass>(context_, game_state);
   }
+
+  std::unique_ptr<Backend> batchsplit_backend_;
 };
 
 }  // namespace lczero

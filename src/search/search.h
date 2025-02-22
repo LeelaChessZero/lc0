@@ -57,7 +57,6 @@ struct SearchContext {
 // (i.e. for each move).
 class SearchBase {
  public:
-  explicit SearchBase(const SearchContext& context) : context_(context) {}
   virtual ~SearchBase() = default;
 
   // Start the search. Must not block, should return immediately.
@@ -75,15 +74,6 @@ class SearchBase {
     throw Exception(
         "Training data generation is not supported for this search algorithm.");
   }
-
- protected:
-  UciResponder* uci_responder() const { return context_.uci_responder; }
-  SyzygyTablebase* syzygy_tb() const { return context_.syzygy_tb; }
-  Backend* backend() const { return context_.backend; }
-  const OptionsDict& search_options() const { return *context_.search_options; }
-
- private:
-  SearchContext context_;
 };
 
 // Search environment keeps the data that has to be shared between searches,

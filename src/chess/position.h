@@ -98,6 +98,8 @@ class PositionHistory {
   PositionHistory() = default;
   PositionHistory(const PositionHistory& other) = default;
   PositionHistory(PositionHistory&& other) = default;
+  PositionHistory(std::span<const Position> positions)
+      : positions_(positions.begin(), positions.end()) {}
 
   PositionHistory& operator=(const PositionHistory& other) = default;
   PositionHistory& operator=(PositionHistory&& other) = default;

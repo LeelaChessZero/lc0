@@ -163,6 +163,7 @@ common_files += [
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
   'src/neural/backend.cc',
+  'src/neural/batchsplit.cc',
   'src/neural/decoder.cc',
   'src/neural/encoder.cc',
   'src/neural/register.cc',
