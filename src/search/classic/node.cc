@@ -463,8 +463,6 @@ std::string EdgeAndNode::DebugString() const {
 /////////////////////////////////////////////////////////////////////////
 
 void NodeTree::MakeMove(Move move) {
-  if (HeadPosition().IsBlackToMove()) move.Flip();
-
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
     if (n.GetMove() == move) {
