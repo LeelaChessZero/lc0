@@ -1184,9 +1184,10 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
   Square from(from_file, from_rank);
   Square to(to_file, to_rank);
 
-  if (move_str.size() == 5) {
+  if (pawns_.get(from) && (to_rank == kRank1 || to_rank == kRank8)) {
     // Promotion.
-    PieceType promotion = PieceType::Parse(move_str[4]);
+    PieceType promotion =
+        move_str.size() > 4 ? PieceType::Parse(move_str[4]) : kKnight;
     if (!promotion.CanPromoteInto()) complain();
     return Move::WhitePromotion(from, to, promotion);
   }
