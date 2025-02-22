@@ -60,7 +60,7 @@ struct File {
   bool on_board() const { return idx < 8; }
   static constexpr File FromIdx(uint8_t idx) { return File{idx}; }
   static constexpr File Parse(char c) { return File(std::tolower(c) - 'a'); }
-  constexpr std::string ToString(bool uppercase = false) const {
+  std::string ToString(bool uppercase = false) const {
     return std::string(1, (uppercase ? 'A' : 'a') + idx);
   }
   void Flop() { idx ^= 0b111; }
@@ -85,7 +85,7 @@ struct Rank {
   static constexpr Rank FromIdx(uint8_t idx) { return Rank{idx}; }
   static constexpr Rank Parse(char c) { return Rank(c - '1'); }
   void Flip() { idx ^= 0b111; }
-  constexpr std::string ToString() const { return std::string(1, '1' + idx); }
+  std::string ToString() const { return std::string(1, '1' + idx); }
   auto operator<=>(const Rank& other) const = default;
   void operator++() { ++idx; }
   void operator+=(int delta) { idx += delta; }
@@ -112,7 +112,7 @@ class Square {
   constexpr Rank rank() const { return Rank::FromIdx(idx_ / 8); }
   // Flips the ranks. 1 becomes 8, 2 becomes 7, etc. Files remain the same.
   void Flip() { idx_ ^= 0b111000; }
-  constexpr std::string ToString(bool uppercase = false) const {
+  std::string ToString(bool uppercase = false) const {
     return file().ToString(uppercase) + rank().ToString();
   }
   constexpr bool operator==(const Square& other) const = default;
