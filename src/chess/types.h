@@ -61,7 +61,7 @@ struct File {
   static constexpr File FromIdx(uint8_t idx) { return File{idx}; }
   static constexpr File Parse(char c) { return File(std::tolower(c) - 'a'); }
   constexpr std::string ToString(bool uppercase = false) const {
-    return std::string(1, (uppercase ? 'a' : 'A') + idx);
+    return std::string(1, (uppercase ? 'A' : 'a') + idx);
   }
   void Flop() { idx ^= 0b111; }
   auto operator<=>(const File& other) const = default;
