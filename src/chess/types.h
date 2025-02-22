@@ -108,8 +108,8 @@ class Square {
   constexpr Square(File file, Rank rank) : idx_(rank.idx * 8 + file.idx) {}
   static constexpr Square FromIdx(uint8_t idx) { return Square{idx}; }
   static constexpr Square Parse(std::string_view);
-  File file() const { return File::FromIdx(idx_ % 8); }
-  Rank rank() const { return Rank::FromIdx(idx_ / 8); }
+  constexpr File file() const { return File::FromIdx(idx_ % 8); }
+  constexpr Rank rank() const { return Rank::FromIdx(idx_ / 8); }
   // Flips the ranks. 1 becomes 8, 2 becomes 7, etc. Files remain the same.
   void Flip() { idx_ ^= 0b111000; }
   constexpr std::string ToString(bool uppercase = false) const {
