@@ -189,20 +189,6 @@ void EngineClassic::SetPosition(const std::string& fen,
   search_.reset();
 }
 
-Position EngineClassic::ApplyPositionMoves() {
-  ChessBoard board;
-  int no_capture_ply;
-  int game_move;
-  board.SetFromFen(current_position_.fen, &no_capture_ply, &game_move);
-  int game_ply = 2 * game_move - (board.flipped() ? 1 : 2);
-  Position pos(board, no_capture_ply, game_ply);
-  for (std::string move_str : current_position_.moves) {
-    Move move = pos.GetBoard().ParseMove(move_str);
-    pos = Position(pos, move);
-  }
-  return pos;
-}
-
 void EngineClassic::SetupPosition(const std::string& fen,
                                   const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);

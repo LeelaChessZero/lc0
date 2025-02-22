@@ -72,8 +72,6 @@ class EngineClassic : public EngineControllerBase {
   // Must not block.
   void Stop() override;
 
-  Position ApplyPositionMoves();
-
  private:
   void UpdateFromUciOptions();
 
