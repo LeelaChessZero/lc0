@@ -149,12 +149,15 @@ void EngineClassic::UpdateFromUciOptions() {
   const auto network_configuration =
       NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
-    network_ = NetworkFactory::LoadNetwork(options_);
+    backend_ =
+        CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
+                       options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
     network_configuration_ = network_configuration;
+  } else {
+    // If network is not changed, cache size still may have changed.
+    backend_->SetCacheCapacity(
+        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
   }
-
-  // Cache size.
-  cache_.SetCapacity(options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
 
   // Check whether we can update the move timer in "Go".
   strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
@@ -172,12 +175,12 @@ void EngineClassic::NewGame() {
   // newgame and goes straight into go.
   ResetMoveTimer();
   SharedLock lock(busy_mutex_);
-  cache_.Clear();
   search_.reset();
   tree_.reset();
   CreateFreshTimeManager();
   current_position_ = {ChessBoard::kStartposFen, {}};
   UpdateFromUciOptions();
+  backend_->ClearCache();
 }
 
 void EngineClassic::SetPosition(const std::string& fen,
@@ -307,10 +310,10 @@ void EngineClassic::Go(const GoParams& params) {
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<classic::Search>(
-      *tree_, network_.get(), std::move(responder),
+      *tree_, backend_.get(), std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
-      options_, &cache_, syzygy_tb_.get());
+      options_, syzygy_tb_.get());
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
