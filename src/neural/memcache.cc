@@ -57,8 +57,8 @@ void CachedValueToEvalResult(const CachedValue& cv, const EvalResultPtr& ptr) {
 
 class MemCache : public CachingBackend {
  public:
-  MemCache(Backend* wrapped, size_t capacity)
-      : wrapped_backend_(wrapped),
+  MemCache(std::unique_ptr<Backend> wrapped, size_t capacity)
+      : wrapped_backend_(std::move(wrapped)),
         cache_(capacity),
         max_batch_size_(wrapped_backend_->GetAttributes().maximum_batch_size) {}
 
@@ -74,7 +74,7 @@ class MemCache : public CachingBackend {
   }
 
  private:
-  Backend* wrapped_backend_;
+  std::unique_ptr<Backend> wrapped_backend_;
   HashKeyedCache<CachedValue> cache_;
   const size_t max_batch_size_;
   friend class MemCacheComputation;
@@ -162,9 +162,9 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
 
 }  // namespace
 
-std::unique_ptr<CachingBackend> CreateMemCache(Backend* wrapped,
+std::unique_ptr<CachingBackend> CreateMemCache(std::unique_ptr<Backend> wrapped,
                                                size_t capacity) {
-  return std::make_unique<MemCache>(wrapped, capacity);
+  return std::make_unique<MemCache>(std::move(wrapped), capacity);
 }
 
 }  // namespace lczero
