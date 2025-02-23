@@ -153,7 +153,7 @@ void V6TrainingDataArray::Add(const classic::Node* node,
   if (nneval) {
     int last_idx = 0;
     for (const auto& child : node->Edges()) {
-      auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+      auto nn_idx = MoveToNNIndex(child.edge()->GetMove(), transform);
       float p = 0;
       for (int i = 0; i < nneval->p.size(); i++) {
         // Optimization: usually moves are stored in the same order as queried.
@@ -171,7 +171,7 @@ void V6TrainingDataArray::Add(const classic::Node* node,
   float total = 0.0;
   auto it = intermediate.begin();
   for (const auto& child : node->Edges()) {
-    auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+    auto nn_idx = MoveToNNIndex(child.edge()->GetMove(), transform);
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (nneval) {
       float P = std::exp(*it - max_p);
@@ -199,10 +199,10 @@ void V6TrainingDataArray::Add(const classic::Node* node,
   uint8_t their_king_side = 1;
   // If frc trained, send the bit mask representing rook position.
   if (Is960CastlingFormat(input_format_)) {
-    our_queen_side <<= castlings.our_queenside_rook();
-    our_king_side <<= castlings.our_kingside_rook();
-    their_queen_side <<= castlings.their_queenside_rook();
-    their_king_side <<= castlings.their_kingside_rook();
+    our_queen_side <<= castlings.our_queenside_rook().idx;
+    our_king_side <<= castlings.our_kingside_rook().idx;
+    their_queen_side <<= castlings.their_queenside_rook().idx;
+    their_king_side <<= castlings.their_kingside_rook().idx;
   }
 
   result.castling_us_ooo = castlings.we_can_000() ? our_queen_side : 0;
@@ -273,11 +273,11 @@ void V6TrainingDataArray::Add(const classic::Node* node,
 
   result.visits = node->GetN();
   if (position.IsBlackToMove()) {
-    best_move.Mirror();
-    played_move.Mirror();
+    best_move.Flip();
+    played_move.Flip();
   }
-  result.best_idx = best_move.as_nn_index(transform);
-  result.played_idx = played_move.as_nn_index(transform);
+  result.best_idx = MoveToNNIndex(best_move, transform);
+  result.played_idx = MoveToNNIndex(played_move, transform);
   result.reserved = 0;
 
   // Unknown here - will be filled in once the full data has been collected.

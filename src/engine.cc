@@ -46,13 +46,14 @@ GameState MakeGameState(const std::string& fen,
                         const std::vector<std::string>& moves) {
   GameState state;
   state.startpos = Position::FromFen(fen);
+  ChessBoard cur_board = state.startpos.GetBoard();
   state.moves.reserve(moves.size());
-  bool is_black = state.startpos.IsBlackToMove();
-  std::transform(moves.begin(), moves.end(), std::back_inserter(state.moves),
-                 [&](const std::string& move) {
-                   return Move(move, is_black);
-                   is_black = !is_black;
-                 });
+  for (const auto& move : moves) {
+    Move m = cur_board.ParseMove(move);
+    state.moves.push_back(m);
+    cur_board.ApplyMove(m);
+    cur_board.Mirror();
+  }
   return state;
 }
 }  // namespace

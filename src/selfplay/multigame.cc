@@ -50,8 +50,8 @@ class PolicyEvaluator : public Evaluator {
     Move best;
     float max_p = std::numeric_limits<float>::lowest();
     for (auto edge : tree->GetCurrentHead()->Edges()) {
-      float p = comp->GetPVal(comp_idx,
-                              edge.GetMove().as_nn_index(transforms[comp_idx]));
+      float p = comp->GetPVal(
+          comp_idx, MoveToNNIndex(edge.GetMove(), transforms[comp_idx]));
       if (p >= max_p) {
         max_p = p;
         best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
