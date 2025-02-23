@@ -1184,7 +1184,10 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
   Square from(from_file, from_rank);
   Square to(to_file, to_rank);
 
-  if (pawns_.get(from) && (to_rank == kRank1 || to_rank == kRank8)) {
+  // Pawns at back ranks are used to encode en-passant, that's why we need to
+  // check that a piece doesn't go from there.
+  if (pawns_.get(from) && (from_rank != kRank1 && from_rank != kRank8) &&
+      (to_rank == kRank1 || to_rank == kRank8)) {
     // Promotion.
     PieceType promotion =
         move_str.size() > 4 ? PieceType::Parse(move_str[4]) : kKnight;
