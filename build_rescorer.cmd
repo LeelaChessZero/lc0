@@ -23,7 +23,7 @@ if exist "C:\Program Files\Microsoft Visual Studio\2022" (
   set backend=vs2017
 )
 
-meson build --backend %backend% --buildtype release -Drescorer=true -Dlc0=false -Dgtest=false -Ddefault_library=static
+meson setup build --backend %backend% --buildtype release -Drescorer=true -Dlc0=false -Dgtest=false -Ddefault_library=static
 
 if errorlevel 1 exit /b
 
@@ -32,4 +32,4 @@ pause
 cd build
 
 msbuild /m /p:Configuration=Release /p:Platform=x64 /p:WholeProgramOptimization=true ^
-/p:PreferredToolArchitecture=x64 rescorer.sln /filelogger
+/p:PreferredToolArchitecture=x64 lc0.sln /filelogger
