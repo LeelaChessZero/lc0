@@ -60,7 +60,7 @@ struct EvalResultPtr {
   float* q = nullptr;
   float* d = nullptr;
   float* m = nullptr;
-  std::span<float> p;
+  std::span<float> p = {};
 };
 
 struct EvalPosition {

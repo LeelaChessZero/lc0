@@ -61,11 +61,6 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
-const OptionId kValueOnly{
-    "value-only", "ValueOnly",
-    "In value only mode all search parameters are ignored and the position is "
-    "evaluated by getting the valuation of every child position and choosing "
-    "the worst for the opponent."};
 const OptionId kClearTree{"", "ClearTree",
                           "Clear the tree before the next search."};
 
@@ -123,7 +118,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
 
-  options->Add<BoolOption>(kValueOnly) = false;
   options->Add<ButtonOption>(kClearTree);
   options->HideOption(kClearTree);
 }
@@ -265,74 +259,6 @@ class PonderResponseTransformer : public TransformingUciResponder {
   std::string ponder_move_;
 };
 
-void ValueOnlyGo(classic::NodeTree* tree, Network* network,
-                 const OptionsDict& options,
-                 std::unique_ptr<UciResponder> responder) {
-  auto input_format = network->GetCapabilities().input_format;
-
-  const auto& board = tree->GetPositionHistory().Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-  tree->GetCurrentHead()->CreateEdges(legal_moves);
-  PositionHistory history = tree->GetPositionHistory();
-  std::vector<InputPlanes> planes;
-  for (auto edge : tree->GetCurrentHead()->Edges()) {
-    history.Append(edge.GetMove());
-    if (history.ComputeGameResult() == GameResult::UNDECIDED) {
-      planes.emplace_back(EncodePositionForNN(
-          input_format, history, 8, FillEmptyHistory::FEN_ONLY, nullptr));
-    }
-    history.Pop();
-  }
-
-  std::vector<float> comp_q;
-  int batch_size = options.Get<int>(classic::SearchParams::kMiniBatchSizeId);
-  if (batch_size == 0) batch_size = network->GetMiniBatchSize();
-
-  for (size_t i = 0; i < planes.size(); i += batch_size) {
-    auto comp = network->NewComputation();
-    for (int j = 0; j < batch_size; j++) {
-      comp->AddInput(std::move(planes[i + j]));
-      if (i + j + 1 == planes.size()) break;
-    }
-    comp->ComputeBlocking();
-
-    for (int j = 0; j < batch_size; j++) comp_q.push_back(comp->GetQVal(j));
-  }
-
-  Move best;
-  int comp_idx = 0;
-  float max_q = std::numeric_limits<float>::lowest();
-  for (auto edge : tree->GetCurrentHead()->Edges()) {
-    history.Append(edge.GetMove());
-    auto result = history.ComputeGameResult();
-    float q = -1;
-    if (result == GameResult::UNDECIDED) {
-      // NN eval is for side to move perspective - so if its good, its bad for
-      // us.
-      q = -comp_q[comp_idx];
-      comp_idx++;
-    } else if (result == GameResult::DRAW) {
-      q = 0;
-    } else {
-      // A legal move to a non-drawn terminal without tablebases must be a
-      // win.
-      q = 1;
-    }
-    if (q >= max_q) {
-      max_q = q;
-      best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
-    }
-    history.Pop();
-  }
-  std::vector<ThinkingInfo> infos;
-  ThinkingInfo thinking;
-  thinking.depth = 1;
-  infos.push_back(thinking);
-  responder->OutputThinkingInfo(&infos);
-  BestMoveInfo info(best);
-  responder->OutputBestMove(&info);
-}
-
 }  // namespace
 
 void EngineClassic::Go(const GoParams& params) {
@@ -373,10 +299,6 @@ void EngineClassic::Go(const GoParams& params) {
   if (!options_.Get<bool>(kShowMovesleft)) {
     // Strip movesleft information from the response.
     responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
-  }
-  if (options_.Get<bool>(kValueOnly)) {
-    ValueOnlyGo(tree_.get(), network_.get(), options_, std::move(responder));
-    return;
   }
 
   if (options_.Get<Button>(kClearTree).TestAndReset()) {
