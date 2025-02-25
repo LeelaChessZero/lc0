@@ -36,7 +36,7 @@ namespace lczero {
 struct PieceType {
   uint8_t idx;
   static constexpr PieceType FromIdx(uint8_t idx) { return PieceType{idx}; }
-  static constexpr PieceType Parse(char c);
+  static PieceType Parse(char c);
   std::string ToString(bool uppercase = false) const {
     return std::string(1, "nqrbpk"[idx] + (uppercase ? 'A' - 'a' : 0));
   }
@@ -205,7 +205,7 @@ inline constexpr Square Square::Parse(std::string_view str) {
   return Square(File::Parse(str[0]), Rank::Parse(str[1]));
 }
 
-inline constexpr PieceType PieceType::Parse(char c) {
+inline PieceType PieceType::Parse(char c) {
   switch (tolower(c)) {
     case 'n':
       return kKnight;
