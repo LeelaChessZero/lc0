@@ -1739,9 +1739,6 @@ void SearchWorker::PickNodesToExtendTask(
 
       bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 0);
 
-      //int opponent_node_limit = 400;
-      //int opponent_node_limit = 20;
-      //int opponent_node_limit = 28;
       int opponent_node_limit = params_.GetScLimit();
       int current_node_count = node->GetN();
       bool node_limit_frozen = node->GetNodeLimitFrozen();
@@ -1750,7 +1747,6 @@ void SearchWorker::PickNodesToExtendTask(
       if (is_opponent_node && current_node_count > opponent_node_limit) {
 	      if( !(node_limit_frozen) ) {
 		      if (!node_limit_frozen_lock) {
-                              //LOGFILE << "opponent_node_limit is: " << opponent_node_limit;
 			      node->SetNodeLimitFrozenLock(true);
 			      float sum_n = 0;
 			      float sum_p=0;
@@ -1773,7 +1769,11 @@ void SearchWorker::PickNodesToExtendTask(
       node_limit_frozen = node->GetNodeLimitFrozen();
       node_limit_frozen_lock = node->GetNodeLimitFrozenLock();
 
-      if (is_opponent_node && node_limit_frozen && !(node_limit_frozen_lock)) {
+      if (is_opponent_node && node_limit_frozen ) {
+
+	       while (node_limit_frozen_lock) {
+                     node_limit_frozen_lock = node->GetNodeLimitFrozenLock();
+	       }
 
 	       std::mt19937_64 rng;
                uint64_t timeSeed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
@@ -1796,6 +1796,8 @@ void SearchWorker::PickNodesToExtendTask(
 		tmp_visit_array[number] = tmp_visit_array[number] + 1;
 	       }
 
+	       cur_limit=0;
+
 	       int cache_filled_idx = -1;
                for (int i=0; i<visited_num_nodes; i++) {
                        bool can_exit = false;
@@ -1810,7 +1812,7 @@ void SearchWorker::PickNodesToExtendTask(
                          }
                          current_nstarted[i] = cur_iters[i].GetNStarted();
                        }
-                       int nstarted = current_nstarted[i];
+
                        if (i > cache_filled_idx) {
                          cache_filled_idx++;
                        }		       
@@ -1821,14 +1823,10 @@ void SearchWorker::PickNodesToExtendTask(
 
 		       if (can_exit) break;
 
-                       if (nstarted == 0) {
-                         // One more loop will get 2 unvisited nodes, which is sufficient to
-                         // ensure second best is correct. This relies upon the fact that
-                         // edges are sorted in policy decreasing order.
-                         can_exit = true;
-                       }
 
 		       new_visits = tmp_visit_array[i];
+
+		       if (new_visits > 0) {
 
                        if (i >= vtp_last_filled.back()) {
                          auto* vtp_array = visits_to_perform.back().get()->data();
@@ -1836,7 +1834,6 @@ void SearchWorker::PickNodesToExtendTask(
                                    vtp_array + i + 1, 0);
                        }
                        (*visits_to_perform.back())[i] += new_visits;
-                       cur_limit -= new_visits;
                        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
                
                        // Probably best place to check for two-fold draws consistently.
@@ -1845,6 +1842,7 @@ void SearchWorker::PickNodesToExtendTask(
                            child_node, current_path.size() + base_depth + 1 - 1);		       
 
                        bool decremented = false;
+
                        if (child_node->TryStartScoreUpdate()) {
                          current_nstarted[i]++;
                          new_visits -= 1;
@@ -1854,6 +1852,7 @@ void SearchWorker::PickNodesToExtendTask(
                            current_nstarted[i] += new_visits;
                          }
                        }
+
                        if ((decremented &&
                             (child_node->GetN() == 0 || child_node->IsTerminal()))) {
                          // Reduce 1 for the visits_to_perform to ensure the collision created
@@ -1867,10 +1866,12 @@ void SearchWorker::PickNodesToExtendTask(
                          receiver->back().moves_to_visit = moves_to_path;
                          receiver->back().moves_to_visit.push_back(best_edge.GetMove());
                        }
+
                        if (i > vtp_last_filled.back() &&
                            (*visits_to_perform.back())[i] > 0) {
                          vtp_last_filled.back() = i;
-                       }		       
+                       }
+		       }		       
 	       }	       
 
       } else {
