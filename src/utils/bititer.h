@@ -90,7 +90,7 @@ inline uint64_t TransposeBitsInBytes(uint64_t v) {
 
 // Iterates over all set bits of the value, lower to upper. The value of
 // dereferenced iterator is bit number (lower to upper, 0 bazed)
-template <typename T, auto Convert = [](uint64_t x) { return T(x); }>
+template <typename T, typename Convert = std::identity>
 class BitIterator {
  public:
   using iterator_category = std::forward_iterator_tag;
@@ -99,11 +99,11 @@ class BitIterator {
   using pointer = T*;
   using reference = T&;
 
-  BitIterator(std::uint64_t value) : value_(value){};
+  BitIterator(std::uint64_t value) : value_(value) {};
   bool operator!=(const BitIterator& other) { return value_ != other.value_; }
 
   void operator++() { value_ &= (value_ - 1); }
-  T operator*() const { return Convert(GetLowestBit(value_)); }
+  T operator*() const { return Convert()(GetLowestBit(value_)); }
 
  private:
   std::uint64_t value_;
