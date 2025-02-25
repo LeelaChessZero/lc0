@@ -109,8 +109,10 @@ class BitBoard {
   bool operator==(const BitBoard& other) const = default;
   bool operator!=(const BitBoard& other) const = default;
 
-  using Iterator =
-      BitIterator<Square, [](uint64_t x) { return Square::FromIdx(x); }>;
+  struct Uin64ToSquare {
+    constexpr Square operator()(uint64_t x) { return Square::FromIdx(x); }
+  };
+  using Iterator = BitIterator<Square, Uin64ToSquare>;
   Iterator begin() const { return board_; }
   Iterator end() const { return 0; }
 
