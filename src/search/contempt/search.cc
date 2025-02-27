@@ -253,7 +253,7 @@ int find_index (std::array<float,256> arr, int size, float val) {
 
 	}
 	return l2;
-}	
+}
 }
 
 namespace {
@@ -1737,7 +1737,11 @@ void SearchWorker::PickNodesToExtendTask(
                                    ? odd_draw_score
                                    : even_draw_score;
 
-      bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 0);
+      // Check whether root moves are from the set perspective.
+      bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
+                       search_->played_history_.Last().IsBlackToMove();
+
+      bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 0) != root_stm;
 
       int opponent_node_limit = params_.GetScLimit();
       int current_node_count = node->GetN();
@@ -1815,7 +1819,7 @@ void SearchWorker::PickNodesToExtendTask(
 
                        if (i > cache_filled_idx) {
                          cache_filled_idx++;
-                       }		       
+                       }
 
 
 		       int new_visits = tmp_visit_array[i];
@@ -1835,11 +1839,11 @@ void SearchWorker::PickNodesToExtendTask(
                        }
                        (*visits_to_perform.back())[i] += new_visits;
                        Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
-               
+
                        // Probably best place to check for two-fold draws consistently.
                        // Depth starts with 1 at root, so real depth is depth - 1.
                        EnsureNodeTwoFoldCorrectForDepth(
-                           child_node, current_path.size() + base_depth + 1 - 1);		       
+                           child_node, current_path.size() + base_depth + 1 - 1);
 
                        bool decremented = false;
 
@@ -1871,8 +1875,8 @@ void SearchWorker::PickNodesToExtendTask(
                            (*visits_to_perform.back())[i] > 0) {
                          vtp_last_filled.back() = i;
                        }
-		       }		       
-	       }	       
+		       }
+	       }
 
       } else {
 
