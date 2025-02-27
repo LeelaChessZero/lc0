@@ -1741,7 +1741,8 @@ void SearchWorker::PickNodesToExtendTask(
       bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
                        search_->played_history_.Last().IsBlackToMove();
 
-      bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 0) != root_stm;
+      bool is_opponent_node = root_stm ==
+                              ((current_path.size() + base_depth) % 2 == 0);
 
       int opponent_node_limit = params_.GetScLimit();
       int current_node_count = node->GetN();
