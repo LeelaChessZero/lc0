@@ -433,9 +433,9 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     if (source == our_king_) {
       for (const auto& delta : kKingMoves) {
         const Rank dst_rank = source.rank() + delta.first;
-        if (!dst_rank.on_board()) continue;
+        if (!dst_rank.IsValid()) continue;
         const File dst_file = source.file() + delta.second;
-        if (!dst_file.on_board()) continue;
+        if (!dst_file.IsValid()) continue;
         const Square destination(dst_file, dst_rank);
         if (our_pieces_.get(destination)) continue;
         if (IsUnderAttack(destination)) continue;
@@ -537,7 +537,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         for (auto direction : {-1, 1}) {
           const auto dst_rank = source.rank() + 1;
           const auto dst_file = source.file() + direction;
-          if (!dst_file.on_board()) continue;
+          if (!dst_file.IsValid()) continue;
           const Square destination(dst_file, dst_rank);
           if (their_pieces_.get(destination)) {
             if (dst_rank == kRank8) {
@@ -984,7 +984,7 @@ void ChessBoard::SetFromFen(std::string_view fen, int* rule50_ply, int* moves) {
     }
     PieceType piece = PieceType::Parse(c);
     if (!piece.IsValid()) complain("invalid character as piece");
-    if (!file.on_board() || !rank.on_board()) complain("piece out of board");
+    if (!file.IsValid() || !rank.IsValid()) complain("piece out of board");
     if (piece == kPawn && (rank == kRank1 || rank == kRank8)) {
       complain("pawn on back rank");
     }
@@ -1031,7 +1031,7 @@ void ChessBoard::SetFromFen(std::string_view fen, int* rule50_ply, int* moves) {
         file = find_rook(theirs, kingside);
       } else {
         file = File::Parse(c);
-        if (!file.on_board()) complain("invalid character in castling");
+        if (!file.IsValid()) complain("invalid character in castling");
         kingside = file > (theirs ? their_king_.file() : our_king_.file());
       }
       if (kingside && theirs) {
@@ -1058,7 +1058,7 @@ void ChessBoard::SetFromFen(std::string_view fen, int* rule50_ply, int* moves) {
     if (pos + 2 >= fen.size()) complain("en passant square expected");
     const File file = File::Parse(fen[pos]);
     const Rank rank = Rank::Parse(fen[pos + 1]);
-    if (!file.on_board() || !rank.on_board()) complain("bad en passant square");
+    if (!file.IsValid() || !rank.IsValid()) complain("bad en passant square");
     if (rank != (flipped() ? kRank3 : kRank6)) complain("bad en passant rank");
     if ((ours() | theirs()).get(Square(file, kRank6))) {
       complain("en passant square occupied");
@@ -1169,8 +1169,8 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
   Rank from_rank = Rank::Parse(move_str[1]);
   File to_file = File::Parse(move_str[2]);
   Rank to_rank = Rank::Parse(move_str[3]);
-  if (!from_file.on_board() || !from_rank.on_board() || !to_file.on_board() ||
-      !to_rank.on_board()) {
+  if (!from_file.IsValid() || !from_rank.IsValid() || !to_file.IsValid() ||
+      !to_rank.IsValid()) {
     complain();
   }
   if (flipped_) {
