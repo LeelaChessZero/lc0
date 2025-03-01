@@ -972,14 +972,14 @@ void ChessBoard::SetFromFen(std::string_view fen, int* rule50_ply, int* moves) {
     const char c = fen[pos];
     if (c == ' ') break;
     if (c == '/') {
-      if (rank == kRank1) complain("too many rows");
+      if (rank == kRank1) complain("too many ranks");
       --rank;
       file = kFileA;
       continue;
     }
     if (c >= '1' && c <= '8') {
       file += c - '0';
-      if (file > File::FromIdx(8)) complain("too many columns");
+      if (file > File::FromIdx(8)) complain("too many files");
       continue;
     }
     PieceType piece = PieceType::Parse(c);
