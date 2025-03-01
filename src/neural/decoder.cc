@@ -121,8 +121,10 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
           castlings.set_they_can_00();
         }
       }
-      castlings.SetRookPositions(our_queenside, our_kingside, their_queenside,
-                                 their_kingside);
+      castlings.our_kingside_rook = our_kingside;
+      castlings.our_queenside_rook = our_queenside;
+      castlings.their_kingside_rook = their_kingside;
+      castlings.their_queenside_rook = their_queenside;
       break;
     }
 

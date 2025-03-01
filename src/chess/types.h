@@ -42,6 +42,8 @@ struct PieceType {
   }
   bool CanPromoteInto() const { return idx < 4; }
   bool IsValid() const { return idx < 6; }
+  bool operator==(const PieceType& other) const = default;
+  bool operator!=(const PieceType& other) const = default;
 
  private:
   constexpr explicit PieceType(uint8_t idx) : idx(idx) {}
@@ -57,7 +59,7 @@ constexpr PieceType kKnight = PieceType::FromIdx(0),
 struct File {
   uint8_t idx;
   File() : idx(0x80) {}  // Not on board.
-  bool on_board() const { return idx < 8; }
+  constexpr bool on_board() const { return idx < 8; }
   static constexpr File FromIdx(uint8_t idx) { return File{idx}; }
   static constexpr File Parse(char c) { return File(std::tolower(c) - 'a'); }
   std::string ToString(bool uppercase = false) const {
@@ -66,6 +68,7 @@ struct File {
   void Flop() { idx ^= 0b111; }
   auto operator<=>(const File& other) const = default;
   void operator++() { ++idx; }
+  void operator--() { --idx; }
   void operator+=(int delta) { idx += delta; }
   File operator+(int delta) const { return File(idx + delta); }
   File operator-(int delta) const { return File(idx - delta); }
@@ -81,12 +84,13 @@ constexpr File kFileA = File::FromIdx(0), kFileB = File::FromIdx(1),
 
 struct Rank {
   uint8_t idx;
-  bool on_board() const { return idx < 8; }
+  constexpr bool on_board() const { return idx < 8; }
   static constexpr Rank FromIdx(uint8_t idx) { return Rank{idx}; }
   static constexpr Rank Parse(char c) { return Rank(c - '1'); }
   void Flip() { idx ^= 0b111; }
   std::string ToString() const { return std::string(1, '1' + idx); }
   auto operator<=>(const Rank& other) const = default;
+  void operator--() { --idx; }
   void operator++() { ++idx; }
   void operator+=(int delta) { idx += delta; }
   Rank operator+(int delta) const { return Rank(idx + delta); }

@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
+#include <utility>
 
 #include "utils/exception.h"
 
@@ -465,7 +466,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
       // For castlings we don't check destination king square for checks, it
       // will be done in legal move check phase.
       if (castlings_.we_can_000()) {
-        const File qrook = castlings_.our_queenside_rook();
+        const File qrook = castlings_.our_queenside_rook;
         if (walk_free(std::min(kFileC, qrook), std::max(kFileD, king), qrook,
                       king) &&
             !range_attacked(king, kFileC)) {
@@ -473,7 +474,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
         }
       }
       if (castlings_.we_can_00()) {
-        const File krook = castlings_.our_kingside_rook();
+        const File krook = castlings_.our_kingside_rook;
         if (walk_free(std::min(kFileF, king), std::max(kFileG, krook), krook,
                       king) &&
             !range_attacked(king, kFileG)) {
@@ -620,10 +621,10 @@ bool ChessBoard::ApplyMove(Move move) {
     rooks_.reset(to);
     bishops_.reset(to);
     pawns_.reset(to);
-    if (to == Square(castlings_.their_kingside_rook(), kRank8)) {
+    if (to == Square(castlings_.their_kingside_rook, kRank8)) {
       castlings_.reset_they_can_00();
     }
-    if (to == Square(castlings_.their_queenside_rook(), kRank8)) {
+    if (to == Square(castlings_.their_queenside_rook, kRank8)) {
       castlings_.reset_they_can_000();
     }
   }
@@ -668,10 +669,10 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Reset castling rights.
   if (from_rank == kRank1 && rooks_.get(from)) {
-    if (from_file == castlings_.our_queenside_rook()) {
+    if (from_file == castlings_.our_queenside_rook) {
       castlings_.reset_we_can_000();
     }
-    if (from_file == castlings_.our_kingside_rook()) {
+    if (from_file == castlings_.our_kingside_rook) {
       castlings_.reset_we_can_00();
     }
   }
@@ -935,161 +936,156 @@ MoveList ChessBoard::GenerateLegalMoves() const {
   return result;
 }
 
-void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
+void ChessBoard::PutPiece(Square square, PieceType piece, bool is_theirs) {
+  (is_theirs ? their_pieces_ : our_pieces_).set(square);
+  if (piece == kKing) (is_theirs ? their_king_ : our_king_) = square;
+  if (piece == kPawn) pawns_.set(square);
+  if (piece == kRook || piece == kQueen) rooks_.set(square);
+  if (piece == kBishop || piece == kQueen) bishops_.set(square);
+}
+
+void ChessBoard::SetFromFen(std::string_view fen, int* rule50_ply, int* moves) {
   Clear();
-  int row = 7;
-  int col = 0;
+  if (rule50_ply) *rule50_ply = 0;
+  if (moves) *moves = 1;
+  Rank rank = kRank8;
+  File file = kFileA;
+  size_t pos = 0;
 
-  // Remove any trailing whitespaces to detect eof after the last field.
-  fen.erase(std::find_if(fen.rbegin(), fen.rend(),
-                         [](char c) { return !std::isspace(c); })
-                .base(),
-            fen.end());
+  auto complain = [&](std::string_view msg) {
+    throw Exception("Bad fen string (" + std::string(msg) +
+                    "): " + std::string(fen));
+  };
+  auto skip_whitespace = [&](std::string_view where = {}) {
+    if (!where.empty() && pos < fen.size() && fen[pos] != ' ') {
+      complain("space expected " + std::string(where));
+    }
+    while (pos < fen.size() && fen[pos] == ' ') ++pos;
+    return pos == fen.size();
+  };
 
-  std::istringstream fen_str(fen);
-  std::string board;
-  fen_str >> board;
-  std::string who_to_move = "w";
-  if (!fen_str.eof()) fen_str >> who_to_move;
-  // Assume no castling rights. Other engines, e.g., Stockfish, assume kings and
-  // rooks on their initial rows can each castle with the outer-most rook.  Our
-  // implementation currently supports 960 castling where white and black rooks
-  // have matching columns, so it's unclear which rights to assume.
-  std::string castlings = "-";
-  if (!fen_str.eof()) fen_str >> castlings;
-  std::string en_passant = "-";
-  if (!fen_str.eof()) fen_str >> en_passant;
-  int rule50_halfmoves = 0;
-  if (!fen_str.eof()) fen_str >> rule50_halfmoves;
-  int total_moves = 1;
-  if (!fen_str.eof()) fen_str >> total_moves;
-  if (!fen_str) throw Exception("Bad fen string: " + fen);
+  // Skip leading whitespaces.
+  skip_whitespace();
 
-  for (char c : board) {
+  // Parse board position.
+  for (; pos < fen.size(); ++pos) {
+    const char c = fen[pos];
+    if (c == ' ') break;
     if (c == '/') {
-      --row;
-      if (row < 0) throw Exception("Bad fen string (too many rows): " + fen);
-      col = 0;
+      if (rank == kRank1) complain("too many rows");
+      --rank;
+      file = kFileA;
       continue;
     }
-    if (std::isdigit(c)) {
-      col += c - '0';
+    if (c >= '1' && c <= '8') {
+      file += c - '0';
+      if (file > File::FromIdx(8)) complain("too many columns");
       continue;
     }
-    if (col >= 8) throw Exception("Bad fen string (too many columns): " + fen);
-
-    Square square(File::FromIdx(col), Rank::FromIdx(row));
-    if (std::isupper(c)) {
-      // White piece.
-      our_pieces_.set(square);
-    } else {
-      // Black piece.
-      their_pieces_.set(square);
+    PieceType piece = PieceType::Parse(c);
+    if (!piece.IsValid()) complain("invalid character as piece");
+    if (!file.on_board() || !rank.on_board()) complain("piece out of board");
+    if (piece == kPawn && (rank == kRank1 || rank == kRank8)) {
+      complain("pawn on back rank");
     }
-
-    if (c == 'K') {
-      our_king_ = square;
-    } else if (c == 'k') {
-      their_king_ = square;
-    } else if (c == 'R' || c == 'r') {
-      rooks_.set(square);
-    } else if (c == 'B' || c == 'b') {
-      bishops_.set(square);
-    } else if (c == 'Q' || c == 'q') {
-      rooks_.set(square);
-      bishops_.set(square);
-    } else if (c == 'P' || c == 'p') {
-      if (row == 7 || row == 0) {
-        throw Exception("Bad fen string (pawn in first/last row): " + fen);
-      }
-      pawns_.set(square);
-    } else if (c == 'N' || c == 'n') {
-      // Do nothing
-    } else {
-      throw Exception("Bad fen string: " + fen);
-    }
-    ++col;
+    PutPiece(Square(file, rank), piece, std::islower(c));
+    ++file;
   }
+  if (skip_whitespace("after the board")) return;
 
-  if (castlings != "-") {
-    File our_left_rook = kFileA;
-    File our_right_rook = kFileH;
-    File their_left_rook = kFileA;
-    File their_right_rook = kFileH;
-    for (char c : castlings) {
-      const bool is_black = std::islower(c);
-      const File king_file = (is_black ? their_king_ : our_king_).file();
-      const auto rooks =
-          (is_black ? their_pieces_ : our_pieces_) & ChessBoard::rooks();
-      auto find_rook = [rooks, king_file, fen](bool forward, Rank rank) {
-        File rook;
-        for (rook = forward ? kFileA : kFileH; rook != king_file;
-             rook += 2 * forward - 1) {
-          if (rooks.get(Square(rook, rank))) {
-            break;
-          }
-        }
-        if (rook == king_file) {
-          throw Exception("Bad fen string (missing rook): " + fen);
-        }
-        return rook;
-      };
-      if (c == 'K') {
-        // Finding rightmost rook.
-        our_right_rook = find_rook(false, kRank1);
-        castlings_.set_we_can_00();
-      } else if (c == 'Q') {
-        // Finding leftmost rook.
-        our_left_rook = find_rook(true, kRank1);
-        castlings_.set_we_can_000();
-      } else if (c >= 'A' && c <= 'H') {
-        File rook_file = File::Parse(c);
-        if (rook_file < king_file) {
-          our_left_rook = rook_file;
-          castlings_.set_we_can_000();
-        } else {
-          our_right_rook = rook_file;
-          castlings_.set_we_can_00();
-        }
-      } else if (c == 'k') {
-        // Finding rightmost rook.
-        their_right_rook = find_rook(false, kRank8);
-        castlings_.set_they_can_00();
-      } else if (c == 'q') {
-        // Finding leftmost rook.
-        their_left_rook = find_rook(true, kRank8);
-        castlings_.set_they_can_000();
-      } else if (c >= 'a' && c <= 'h') {
-        File rook_file = File::Parse(c);
-        if (rook_file < king_file) {
-          their_left_rook = rook_file;
-          castlings_.set_they_can_000();
-        } else {
-          their_right_rook = rook_file;
-          castlings_.set_they_can_00();
-        }
-      } else {
-        throw Exception("Bad fen string (unexpected casting symbol): " + fen);
-      }
-    }
-    castlings_.SetRookPositions(our_left_rook, our_right_rook, their_left_rook,
-                                their_right_rook);
-  }
-
-  if (en_passant != "-") {
-    auto square = Square::Parse(en_passant);
-    if (square.rank() != kRank3 && square.rank() != kRank6)
-      throw Exception("Bad fen string: " + fen + " wrong en passant rank");
-    pawns_.set({square.file(), (square.rank() == kRank3) ? kRank1 : kRank8});
-  }
-
-  if (who_to_move == "b" || who_to_move == "B") {
+  // Parsing side to move.
+  const char side_to_move = std::tolower(fen[pos++]);
+  if (side_to_move == 'b') {
     Mirror();
-  } else if (who_to_move != "w" && who_to_move != "W") {
-    throw Exception("Bad fen string (side to move): " + fen);
+  } else if (side_to_move != 'w') {
+    complain("invalid side to move");
   }
-  if (rule50_ply) *rule50_ply = rule50_halfmoves;
-  if (moves) *moves = total_moves;
+  if (skip_whitespace("after side to move")) return;
+
+  // Parse castling rights.
+  if (fen[pos] == '-') {
+    ++pos;
+  } else {
+    auto find_rook = [&](bool theirs, bool kingside) -> File {
+      const Rank rank = theirs ? kRank8 : kRank1;
+      for (File file = kingside ? kFileH : kFileA;
+           file != (theirs ? their_king_.file() : our_king_.file());
+           kingside ? --file : ++file) {
+        Square sq(file, rank);
+        if (!rooks().get(sq)) continue;
+        if (theirs ? their_pieces_.get(sq) : our_pieces_.get(sq)) {
+          return file;
+        }
+      }
+      complain("missing rook for castling");
+      return kFileA;  // Unreachable.
+    };
+    for (; pos < fen.size(); ++pos) {
+      const char c = fen[pos];
+      if (c == ' ') break;
+      const bool theirs = bool(std::isupper(c)) == flipped();
+      bool kingside = false;
+      File file;
+      if (c == 'K' || c == 'Q' || c == 'k' || c == 'q') {
+        kingside = std::tolower(c) == 'k';
+        file = find_rook(theirs, kingside);
+      } else {
+        file = File::Parse(c);
+        if (!file.on_board()) complain("invalid character in castling");
+        kingside = file > (theirs ? their_king_.file() : our_king_.file());
+      }
+      if (kingside && theirs) {
+        castlings_.set_they_can_00();
+        castlings_.their_kingside_rook = file;
+      } else if (kingside && !theirs) {
+        castlings_.set_we_can_00();
+        castlings_.our_kingside_rook = file;
+      } else if (!kingside && theirs) {
+        castlings_.set_they_can_000();
+        castlings_.their_queenside_rook = file;
+      } else if (!kingside && !theirs) {
+        castlings_.set_we_can_000();
+        castlings_.our_queenside_rook = file;
+      }
+    }
+  }
+  if (skip_whitespace("after castling")) return;
+
+  // Parse en passant square.
+  if (fen[pos] == '-') {
+    ++pos;
+  } else {
+    if (pos + 2 >= fen.size()) complain("en passant square expected");
+    const File file = File::Parse(fen[pos]);
+    const Rank rank = Rank::Parse(fen[pos + 1]);
+    if (!file.on_board() || !rank.on_board()) complain("bad en passant square");
+    if (rank != (flipped() ? kRank3 : kRank6)) complain("bad en passant rank");
+    if ((ours() | theirs()).get(Square(file, kRank6))) {
+      complain("en passant square occupied");
+    }
+    if (!(theirs() & pawns()).get(Square(file, kRank5))) {
+      complain("no pawn to capture en passant");
+    }
+    pawns_.set(Square(file, kRank8));
+    pos += 2;
+  }
+  if (skip_whitespace("after en passant")) return;
+
+  // Parse rule 50 halfmoves.
+  auto parse_int = [&](int* into, std::string_view error_msg) {
+    const std::string_view num = fen.substr(pos, fen.find(' ', pos) - pos);
+    int tmp;
+    auto res = std::from_chars(num.data(), num.data() + num.size(), tmp);
+    if (res.ec != std::errc()) complain(error_msg);
+    if (into) *into = tmp;
+    pos += num.size();
+  };
+  parse_int(rule50_ply, "bad rule 50 halfmoves");
+  if (skip_whitespace("after rule-50 clock")) return;
+
+  // Parse total moves.
+  parse_int(moves, "bad total moves");
+  if (!skip_whitespace("after total moves")) complain("extra characters");
 }
 
 bool ChessBoard::HasMatingMaterial() const {

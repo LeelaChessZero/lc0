@@ -211,8 +211,8 @@ class PgnReader {
       Square king_sq(kFileA, Rank::FromIdx(GetLowestBit(king_board.as_int())));
       m = Move::WhiteCastling(king_sq.file(),
                               san.substr(3, 2) == "-O"
-                                  ? board.castlings().our_queenside_rook()
-                                  : board.castlings().our_kingside_rook());
+                                  ? board.castlings().our_queenside_rook
+                                  : board.castlings().our_kingside_rook);
       return m;
     }
     if (p != 0) idx++;

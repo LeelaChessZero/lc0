@@ -183,10 +183,10 @@ void V6TrainingDataArray::Add(const classic::Node* node,
   uint8_t their_king_side = 1;
   // If frc trained, send the bit mask representing rook position.
   if (Is960CastlingFormat(input_format_)) {
-    our_queen_side <<= castlings.our_queenside_rook().idx;
-    our_king_side <<= castlings.our_kingside_rook().idx;
-    their_queen_side <<= castlings.their_queenside_rook().idx;
-    their_king_side <<= castlings.their_kingside_rook().idx;
+    our_queen_side <<= castlings.our_queenside_rook.idx;
+    our_king_side <<= castlings.our_kingside_rook.idx;
+    their_queen_side <<= castlings.their_queenside_rook.idx;
+    their_king_side <<= castlings.their_kingside_rook.idx;
   }
 
   result.castling_us_ooo = castlings.we_can_000() ? our_queen_side : 0;
