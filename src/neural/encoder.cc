@@ -182,25 +182,24 @@ InputPlanes EncodePositionForNN(
         // h-side (kingside) castling right.
         const auto& cast = board.castlings();
         result[kAuxPlaneBase + 0].mask =
-            (cast.we_can_000() ? BitBoard::FromSquare(
-                                     Square(cast.our_queenside_rook(), kRank1))
-                                     .as_int()
-                               : 0) |
+            (cast.we_can_000()
+                 ? BitBoard::FromSquare(Square(cast.our_queenside_rook, kRank1))
+                       .as_int()
+                 : 0) |
             (cast.they_can_000()
                  ? BitBoard::FromSquare(
-                       Square(cast.their_queenside_rook(), kRank8))
+                       Square(cast.their_queenside_rook, kRank8))
                        .as_int()
                  : 0);
         result[kAuxPlaneBase + 1].mask =
-            (cast.we_can_00() ? BitBoard::FromSquare(
-                                    Square(cast.our_kingside_rook(), kRank1))
-                                    .as_int()
-                              : 0) |
-            (cast.they_can_00()
-                 ? BitBoard::FromSquare(
-                       Square(cast.their_kingside_rook(), kRank8))
+            (cast.we_can_00()
+                 ? BitBoard::FromSquare(Square(cast.our_kingside_rook, kRank1))
                        .as_int()
-                 : 0);
+                 : 0) |
+            (cast.they_can_00() ? BitBoard::FromSquare(
+                                      Square(cast.their_kingside_rook, kRank8))
+                                      .as_int()
+                                : 0);
         break;
       }
       default:

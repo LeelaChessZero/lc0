@@ -74,7 +74,7 @@ class ChessBoard {
   // If @rule50_ply and @moves are not nullptr, they are filled with number
   // of moves without capture and number of full moves since the beginning of
   // the game.
-  void SetFromFen(std::string fen, int* rule50_ply = nullptr,
+  void SetFromFen(std::string_view fen, int* rule50_ply = nullptr,
                   int* moves = nullptr);
   // Nullifies the whole structure.
   void Clear();
@@ -123,10 +123,10 @@ class ChessBoard {
   class Castlings {
    public:
     Castlings()
-        : our_queenside_rook_(kFileA),
-          their_queenside_rook_(kFileA),
-          our_kingside_rook_(kFileH),
-          their_kingside_rook_(kFileH),
+        : our_queenside_rook(kFileA),
+          their_queenside_rook(kFileA),
+          our_kingside_rook(kFileH),
+          their_kingside_rook(kFileH),
           data_(0) {}
 
     void set_we_can_00() { data_ |= 1; }
@@ -146,8 +146,8 @@ class ChessBoard {
     bool no_legal_castle() const { return data_ == 0; }
 
     void Mirror() {
-      std::swap(our_queenside_rook_, their_queenside_rook_);
-      std::swap(our_kingside_rook_, their_kingside_rook_);
+      std::swap(our_queenside_rook, their_queenside_rook);
+      std::swap(our_kingside_rook, their_kingside_rook);
       data_ = ((data_ & 0b11) << 2) + ((data_ & 0b1100) >> 2);
     }
 
@@ -157,17 +157,17 @@ class ChessBoard {
     std::string as_string() const {
       if (data_ == 0) return "-";
       std::string result;
-      if (our_queenside_rook() == kFileA && our_kingside_rook() == kFileH &&
-          their_queenside_rook() == kFileA && their_kingside_rook() == kFileH) {
+      if (our_queenside_rook == kFileA && our_kingside_rook == kFileH &&
+          their_queenside_rook == kFileA && their_kingside_rook == kFileH) {
         if (we_can_00()) result += 'K';
         if (we_can_000()) result += 'Q';
         if (they_can_00()) result += 'k';
         if (they_can_000()) result += 'q';
       } else {
-        if (we_can_00()) result += our_kingside_rook().ToString(true);
-        if (we_can_000()) result += our_queenside_rook().ToString(true);
-        if (they_can_00()) result += their_kingside_rook().ToString(false);
-        if (they_can_000()) result += their_queenside_rook().ToString(false);
+        if (we_can_00()) result += our_kingside_rook.ToString(true);
+        if (we_can_000()) result += our_queenside_rook.ToString(true);
+        if (they_can_00()) result += their_kingside_rook.ToString(false);
+        if (they_can_000()) result += their_queenside_rook.ToString(false);
       }
       return result;
     }
@@ -180,44 +180,25 @@ class ChessBoard {
       if (they_can_00()) result += 'k';
       if (they_can_000()) result += 'q';
       result += '[';
-      result += our_queenside_rook().ToString(true);
-      result += our_kingside_rook().ToString(true);
-      result += their_queenside_rook().ToString(false);
-      result += their_kingside_rook().ToString(false);
+      result += our_queenside_rook.ToString(true);
+      result += our_kingside_rook.ToString(true);
+      result += their_queenside_rook.ToString(false);
+      result += their_kingside_rook.ToString(false);
       result += ']';
       return result;
     }
 
     uint8_t as_int() const { return data_; }
+    bool operator==(const Castlings& other) const = default;
 
-    bool operator==(const Castlings& other) const {
-      assert(our_queenside_rook_ == other.our_queenside_rook_ &&
-             our_kingside_rook_ == other.our_kingside_rook_ &&
-             their_queenside_rook_ == other.their_queenside_rook_ &&
-             their_kingside_rook_ == other.their_kingside_rook_);
-      return data_ == other.data_;
-    }
-
-    File our_queenside_rook() const { return our_queenside_rook_; }
-    File our_kingside_rook() const { return our_kingside_rook_; }
-    File their_queenside_rook() const { return their_queenside_rook_; }
-    File their_kingside_rook() const { return their_kingside_rook_; }
-    void SetRookPositions(File our_left, File our_right, File their_left,
-                          File their_right) {
-      our_queenside_rook_ = our_left;
-      our_kingside_rook_ = our_right;
-      their_queenside_rook_ = their_left;
-      their_kingside_rook_ = their_right;
-    }
+    // Position of "left" (queenside) rook in starting game position.
+    File our_queenside_rook;
+    File their_queenside_rook;
+    // Position of "right" (kingside) rook in starting position.
+    File our_kingside_rook;
+    File their_kingside_rook;
 
    private:
-    // Position of "left" (queenside) rook in starting game position.
-    File our_queenside_rook_;
-    File their_queenside_rook_;
-    // Position of "right" (kingside) rook in starting position.
-    File our_kingside_rook_;
-    File their_kingside_rook_;
-
     // - Bit 0 -- "our" side's kingside castle.
     // - Bit 1 -- "our" side's queenside castle.
     // - Bit 2 -- opponent's side's kingside castle.
@@ -244,18 +225,13 @@ class ChessBoard {
   const Castlings& castlings() const { return castlings_; }
   bool flipped() const { return flipped_; }
 
-  bool operator==(const ChessBoard& other) const {
-    return (our_pieces_ == other.our_pieces_) &&
-           (their_pieces_ == other.their_pieces_) && (rooks_ == other.rooks_) &&
-           (bishops_ == other.bishops_) && (pawns_ == other.pawns_) &&
-           (our_king_ == other.our_king_) &&
-           (their_king_ == other.their_king_) &&
-           (castlings_ == other.castlings_) && (flipped_ == other.flipped_);
-  }
-
-  bool operator!=(const ChessBoard& other) const { return !operator==(other); }
+  bool operator==(const ChessBoard& other) const = default;
+  bool operator!=(const ChessBoard& other) const = default;
 
  private:
+  // Sets the piece on the square.
+  void PutPiece(Square square, PieceType piece, bool is_theirs);
+
   // All white pieces.
   BitBoard our_pieces_;
   // All black pieces.
