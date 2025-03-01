@@ -59,7 +59,7 @@ constexpr PieceType kKnight = PieceType::FromIdx(0),
 struct File {
   uint8_t idx;
   File() : idx(0x80) {}  // Not on board.
-  constexpr bool on_board() const { return idx < 8; }
+  constexpr bool IsValid() const { return idx < 8; }
   static constexpr File FromIdx(uint8_t idx) { return File{idx}; }
   static constexpr File Parse(char c) { return File(std::tolower(c) - 'a'); }
   std::string ToString(bool uppercase = false) const {
@@ -84,7 +84,7 @@ constexpr File kFileA = File::FromIdx(0), kFileB = File::FromIdx(1),
 
 struct Rank {
   uint8_t idx;
-  constexpr bool on_board() const { return idx < 8; }
+  constexpr bool IsValid() const { return idx < 8; }
   static constexpr Rank FromIdx(uint8_t idx) { return Rank{idx}; }
   static constexpr Rank Parse(char c) { return Rank(c - '1'); }
   void Flip() { idx ^= 0b111; }
