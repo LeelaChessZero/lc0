@@ -37,9 +37,9 @@
 #include <sstream>
 #include <thread>
 
-#include "search/classic/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
+#include "search/classic/node.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
@@ -555,9 +555,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
-    print_head(&oss, edge.GetMove(is_black_to_move).as_string(),
-               edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
-               edge.GetP());
+    print_head(&oss, edge.GetMove(is_black_to_move).ToString(true),
+               MoveToNNIndex(edge.GetMove(), 0), edge.GetN(),
+               edge.GetNInFlight(), edge.GetP());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
@@ -596,7 +596,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
       continue;
     }
     if (edge.HasNode()) {
-      LOGFILE << "--- Opponent moves after: " << final_bestmove_.as_string();
+      LOGFILE << "--- Opponent moves after: " << final_bestmove_.ToString(true);
       for (const auto& line : GetVerboseStats(edge.node())) {
         LOGFILE << line;
       }
@@ -1489,7 +1489,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
           // Legal moves are known, use them.
           moves.reserve(node->GetNumEdges());
           for (const auto& edge : node->Edges()) {
-            moves.emplace_back(edge.GetMove().as_nn_index(transform));
+            moves.emplace_back(MoveToNNIndex(edge.GetMove(), transform));
           }
         } else {
           picked_node.probability_transform = TransformForPosition(
@@ -2053,7 +2053,7 @@ bool SearchWorker::AddNodeToComputation(Node* node) {
     // Legal moves are known, use them.
     moves.reserve(node->GetNumEdges());
     for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
+      moves.emplace_back(MoveToNNIndex(edge.GetMove(), transform));
     }
   } else {
     // Cache pseudolegal moves. A bit of a waste, but faster.
@@ -2062,7 +2062,7 @@ bool SearchWorker::AddNodeToComputation(Node* node) {
     moves.reserve(pseudolegal_moves.size());
     for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
          iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
+      moves.emplace_back(MoveToNNIndex(*iter, transform));
     }
   }
 
@@ -2247,7 +2247,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   for (auto& edge : node->Edges()) {
     float p = computation.GetPVal(
         idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform));
+        MoveToNNIndex(edge.GetMove(), node_to_process->probability_transform));
     intermediate[counter++] = p;
     max_p = std::max(max_p, p);
   }

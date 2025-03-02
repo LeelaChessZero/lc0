@@ -25,22 +25,23 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "src/syzygy/syzygy.h"
+
 #include <gtest/gtest.h>
 
 #include <iostream>
-#include "src/syzygy/syzygy.h"
 
 namespace lczero {
 
 // Try to find syzygy relative to current working directory.
 constexpr auto kPaths = "syzygy";
 
-void TestValidRootExpectation(SyzygyTablebase* tablebase,
-                              const std::string& fen,
-                              const MoveList& valid_moves,
-                              const MoveList& invalid_moves,
-                              const MoveList& invalid_dtz_only = {},
-                              bool has_repeated = false) {
+void TestValidRootExpectation(
+    SyzygyTablebase* tablebase, const std::string& fen,
+    const std::vector<std::string>& valid_moves,
+    const std::vector<std::string>& invalid_moves,
+    const std::vector<std::string>& invalid_dtz_only = {},
+    bool has_repeated = false) {
   ChessBoard board;
   PositionHistory history;
   int rule50ply;
@@ -52,19 +53,22 @@ void TestValidRootExpectation(SyzygyTablebase* tablebase,
                         &allowed_moves_dtz);
   MoveList allowed_moves_wdl;
   tablebase->root_probe_wdl(history.Last(), &allowed_moves_wdl);
-  for (auto move : valid_moves) {
+  for (auto move_str : valid_moves) {
+    Move move = board.ParseMove(move_str);
     EXPECT_TRUE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
                           move) != allowed_moves_dtz.end());
     EXPECT_TRUE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
                           move) != allowed_moves_wdl.end());
   }
-  for (auto move : invalid_moves) {
+  for (auto move_str : invalid_moves) {
+    Move move = board.ParseMove(move_str);
     EXPECT_FALSE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
                            move) != allowed_moves_dtz.end());
     EXPECT_FALSE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
                            move) != allowed_moves_wdl.end());
   }
-  for (auto move : invalid_dtz_only) {
+  for (auto move_str : invalid_dtz_only) {
+    Move move = board.ParseMove(move_str);
     EXPECT_FALSE(std::find(allowed_moves_dtz.begin(), allowed_moves_dtz.end(),
                            move) != allowed_moves_dtz.end());
     EXPECT_TRUE(std::find(allowed_moves_wdl.begin(), allowed_moves_wdl.end(),
@@ -135,15 +139,15 @@ TEST(Syzygy, Root3PieceProbes) {
     return;
   }
   TestValidRootExpectation(&tablebase, "5Qk1/8/8/8/8/8/8/4K3 b - - 0 1",
-                           {Move("g8f8", true)}, {Move("g8h7", true)});
+                           {"g8f8"}, {"g8h7"});
   TestValidRootExpectation(&tablebase, "6k1/8/8/8/8/5p2/8/2K5 b - - 0 1",
-                           {Move("f3f2", true)}, {Move("g8h7", true)});
+                           {"f3f2"}, {"g8h7"});
   TestValidRootExpectation(&tablebase, "8/8/8/8/8/k1p5/8/3K4 b - - 0 1",
-                           {Move("a3b3", true)}, {Move("c3c2", true)});
+                           {"a3b3"}, {"c3c2"});
   // WDL doesn't know that with such a high 50 ply count this position has
   // become a blessed loss (draw) for black.
   TestValidRootExpectation(&tablebase, "8/8/8/8/8/8/2Rk4/1K6 b - - 69 71",
-                           {Move("d2d3", true)}, {}, {Move("d2e3", true)});
+                           {"d2d3"}, {}, {"d2e3"});
 }
 
 TEST(Syzygy, Simple4PieceProbes) {
@@ -227,18 +231,17 @@ TEST(Syzygy, Root5PieceProbes) {
     return;
   }
   TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 79 44",
-                           {Move("a5a1", false)}, {}, {Move("a5d5", false)});
+                           {"a5a1"}, {}, {"a5d5"});
   TestValidRootExpectation(&tablebase, "8/8/8/3Q4/k7/3K4/1r6/8 w - - 81 45",
-                           {Move("d5a8", false)}, {}, {Move("d3c3", false)});
+                           {"d5a8"}, {}, {"d3c3"});
 
   // Variant of first test but with plenty of moves left.
   TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 60 44",
-                           {Move("a5a1", false), Move("a5d5", false)}, {}, {});
+                           {"a5a1", "a5d5"}, {}, {});
   // Same, but this time there is a repetition in history, so dtz will enforce
   // choice of equal lowest dtz.
   TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 60 44",
-                           {Move("a5a1", false)}, {}, {Move("a5d5", false)},
-                           true);
+                           {"a5a1"}, {}, {"a5d5"}, true);
 }
 
 }  // namespace lczero

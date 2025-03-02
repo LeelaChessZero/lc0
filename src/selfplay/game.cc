@@ -173,12 +173,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
           std::make_unique<CallbackUciResponder>(
               options_[idx].best_move_callback, options_[idx].info_callback);
 
-      if (!chess960_) {
-        // Remap FRC castling to legacy castling.
-        responder = std::make_unique<Chess960Transformer>(
-            std::move(responder), tree_[idx]->HeadPosition().GetBoard());
-      }
-
       search_ = std::make_unique<classic::Search>(
           *tree_[idx], options_[idx].network, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
@@ -266,9 +260,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       PositionHistory history_copy = tree_[idx]->GetPositionHistory();
       Move move_for_history = move;
-      if (tree_[idx]->IsBlackToMove()) {
-        move_for_history.Mirror();
-      }
+      if (tree_[idx]->IsBlackToMove()) move_for_history.Flip();
       history_copy.Append(move_for_history);
       // Ensure not to discard games that are already decided.
       if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
@@ -320,10 +312,9 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   while (!moves.empty()) {
     Move move = moves.back();
     moves.pop_back();
-    if (!chess960_) move = pos.GetBoard().GetLegacyMove(move);
     pos = Position(pos, move);
     // Position already flipped, therefore flip the move if white to move.
-    if (!pos.IsBlackToMove()) move.Mirror();
+    if (!pos.IsBlackToMove()) move.Flip();
     result.push_back(move);
   }
   return result;
