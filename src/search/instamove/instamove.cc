@@ -25,29 +25,69 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "search/instamove/instamove.h"
-
 #include <algorithm>
 #include <cmath>
 #include <vector>
 
 #include "chess/gamestate.h"
+#include "chess/uciloop.h"
 #include "neural/backend.h"
+#include "neural/batchsplit.h"
 #include "search/register.h"
 #include "search/search.h"
 
 namespace lczero {
-namespace instamove {
+namespace {
+
+class InstamoveSearch : public SearchBase {
+ public:
+  using SearchBase::SearchBase;
+
+ private:
+  virtual Move GetBestMove(const GameState& game_state) = 0;
+
+  void SetPosition(const GameState& game_state) final {
+    game_state_ = game_state;
+  }
+
+  void StartSearch(const GoParams& go_params) final {
+    responded_bestmove_.store(false, std::memory_order_relaxed);
+    bestmove_ = GetBestMove(game_state_);
+    if (!go_params.infinite && !go_params.ponder) RespondBestMove();
+  }
+  void WaitSearch() final {
+    while (!responded_bestmove_.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+  void StopSearch() final { RespondBestMove(); }
+  void AbortSearch() final { responded_bestmove_.store(true); }
+  void RespondBestMove() {
+    if (responded_bestmove_.exchange(true)) return;
+    BestMoveInfo info{bestmove_};
+    uci_responder_->OutputBestMove(&info);
+  }
+
+  void SetBackend(Backend* backend) override {
+    batchsplit_backend_ = CreateBatchSplitingBackend(backend);
+    backend_ = batchsplit_backend_.get();
+  }
+  void StartClock() final {}
+
+  Move bestmove_;
+  std::atomic<bool> responded_bestmove_{false};
+  std::unique_ptr<Backend> batchsplit_backend_;
+  GameState game_state_;
+};
 
 class PolicyHeadSearch : public InstamoveSearch {
  public:
-  PolicyHeadSearch(const SearchContext& context, const GameState& game_state)
-      : InstamoveSearch(context), game_state_(game_state) {}
+  using InstamoveSearch::InstamoveSearch;
 
-  Move GetBestMove() final {
-    const std::vector<Position> positions = game_state_.GetPositions();
+  Move GetBestMove(const GameState& game_state) final {
+    const std::vector<Position> positions = game_state.GetPositions();
     MoveList legal_moves = positions.back().GetBoard().GenerateLegalMoves();
-    std::vector<EvalResult> res = context_.backend->EvaluateBatch(
+    std::vector<EvalResult> res = backend_->EvaluateBatch(
         std::vector<EvalPosition>{EvalPosition{positions, legal_moves}});
     const size_t best_move_idx =
         std::max_element(res[0].p.begin(), res[0].p.end()) - res[0].p.begin();
@@ -55,30 +95,16 @@ class PolicyHeadSearch : public InstamoveSearch {
     if (positions.back().IsBlackToMove()) best_move.Mirror();
     return best_move;
   }
-
- private:
-  const GameState game_state_;
-};
-
-class PolicyHeadFactory : public SearchFactory {
-  std::string_view GetName() const override { return "policyhead"; }
-  std::unique_ptr<SearchEnvironment> CreateEnvironment(
-      UciResponder* responder, const OptionsDict* options) const override {
-    return std::make_unique<InstamoveEnvironment<PolicyHeadSearch>>(responder,
-                                                                    options);
-  }
 };
 
 class ValueHeadSearch : public InstamoveSearch {
  public:
-  ValueHeadSearch(const SearchContext& context, const GameState& game_state)
-      : InstamoveSearch(context), game_state_(game_state) {}
-
-  Move GetBestMove() final {
+  using InstamoveSearch::InstamoveSearch;
+  Move GetBestMove(const GameState& game_state) final {
     std::unique_ptr<BackendComputation> computation =
-        context_.backend->CreateComputation();
+        backend_->CreateComputation();
 
-    PositionHistory history(game_state_.GetPositions());
+    PositionHistory history(game_state.GetPositions());
     const ChessBoard& board = history.Last().GetBoard();
     const std::vector<Move> legal_moves = board.GenerateLegalMoves();
     std::vector<EvalResult> results(legal_moves.size());
@@ -127,27 +153,31 @@ class ValueHeadSearch : public InstamoveSearch {
                 static_cast<int>(std::round(
                     500 * (1 - results[best_idx].q - results[best_idx].d)))},
     }};
-    context_.uci_responder->OutputThinkingInfo(&infos);
+    uci_responder_->OutputThinkingInfo(&infos);
     Move best_move = legal_moves[best_idx];
     if (history.IsBlackToMove()) best_move.Mirror();
     return best_move;
   }
+};
 
- private:
-  const GameState game_state_;
+class PolicyHeadFactory : public SearchFactory {
+  std::string_view GetName() const override { return "policyhead"; }
+  std::unique_ptr<SearchBase> CreateSearch(UciResponder* responder,
+                                           const OptionsDict*) const override {
+    return std::make_unique<PolicyHeadSearch>(responder);
+  }
 };
 
 class ValueHeadFactory : public SearchFactory {
   std::string_view GetName() const override { return "valuehead"; }
-  std::unique_ptr<SearchEnvironment> CreateEnvironment(
-      UciResponder* responder, const OptionsDict* options) const override {
-    return std::make_unique<InstamoveEnvironment<ValueHeadSearch>>(responder,
-                                                                   options);
+  std::unique_ptr<SearchBase> CreateSearch(UciResponder* responder,
+                                           const OptionsDict*) const override {
+    return std::make_unique<ValueHeadSearch>(responder);
   }
 };
 
 REGISTER_SEARCH(PolicyHeadFactory);
 REGISTER_SEARCH(ValueHeadFactory);
 
-}  // namespace instamove
+}  // namespace
 }  // namespace lczero

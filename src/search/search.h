@@ -43,57 +43,47 @@ class OptionsParser;
 class UciResponder;
 class SyzygyTablebase;
 
-// Collection of pointers to objects that search needs but doesn't own. Just a
-// convenience struct in order to avoid passing all of them separately in
-// constructors.
-struct SearchContext {
-  UciResponder* uci_responder = nullptr;
-  const OptionsDict* search_options = nullptr;
-  SyzygyTablebase* syzygy_tb = nullptr;
-  Backend* backend = nullptr;
-};
-
-// Base class for search runs. A separate instance is created for each search
-// (i.e. for each move).
 class SearchBase {
  public:
+  SearchBase(UciResponder* responder) : uci_responder_(responder) {}
   virtual ~SearchBase() = default;
 
-  // Start the search. Must not block, should return immediately.
-  virtual void Start(const GoParams&) = 0;
-  // Wait for the search to finish. This is blocking.
-  virtual void Wait() = 0;
-  // Stops the search as soon as possible and responds with bestmove. Doesn't
-  // block.
-  virtual void Stop() = 0;
-  // Same as Stop(), but doesn't respond with bestmove. Doesn't block.
-  virtual void Abort() = 0;
-  // Return the data needed to build a training data frame (after the search is
-  // done).
-  virtual SearchArtifacts GetArtifacts() const {
-    throw Exception(
-        "Training data generation is not supported for this search algorithm.");
-  }
-};
-
-// Search environment keeps the data that has to be shared between searches,
-// for example the tree of the game, statistics, or whatever time manager wants
-// to keep.
-class SearchEnvironment {
- public:
-  explicit SearchEnvironment(UciResponder* uci, const OptionsDict* dict)
-      : context_{uci, dict} {}
-  virtual ~SearchEnvironment() = default;
+  // Sets objects needed by the search.
+  // They are guarnteed to be set before any other function is called, and after
+  // that, only can be changed while the search is stopped.
+  virtual void SetBackend(Backend* backend) { backend_ = backend; }
+  virtual void SetSyzygyTablebase(SyzygyTablebase* tb) { syzygy_tb_ = tb; }
 
   // Resets search tree, and whatever else is needed to start a new game.
   virtual void NewGame() {}
   // Sets the position to search from in the future searches.
-  virtual std::unique_ptr<SearchBase> CreateSearch(const GameState&) = 0;
-  // Sets the backend to be used by the search.
-  virtual void SetBackend(Backend* backend) { context_.backend = backend; }
+  virtual void SetPosition(const GameState&) = 0;
+  // Start the search. Must not block, should return immediately.
+  virtual void StartSearch(const GoParams&) = 0;
+  // Starts the timer for the search. Must not block, should return immediately.
+  // It can be called either after or befor StartSearch(), particularly:
+  // - In the "strict timing" mode, it's called before SetPosition().
+  // - In normal mode, it's called before StartSearch().
+  // - In Ponder mode, it may potentially be called at `ponderhit` (although
+  // actually we'll stop the search, change the position and start again).
+  virtual void StartClock() = 0;
+  // Wait for the search to finish. This is blocking.
+  virtual void WaitSearch() = 0;
+  // Stops the search as soon as possible and responds with bestmove. Doesn't
+  // block.
+  virtual void StopSearch() = 0;
+  // Same as Stop(), but doesn't respond with bestmove. Doesn't block.
+  virtual void AbortSearch() = 0;
+  // Return the data needed to build a training data frame from the last search.
+  virtual SearchArtifacts GetArtifacts() const {
+    throw Exception(
+        "Training data generation is not supported for this search algorithm.");
+  }
 
  protected:
-  SearchContext context_;
+  UciResponder* uci_responder_ = nullptr;
+  Backend* backend_ = nullptr;
+  SyzygyTablebase* syzygy_tb_ = nullptr;
 };
 
 // Creates an environment for a given search algorithm. One instance of the
@@ -107,7 +97,7 @@ class SearchFactory {
   // Populates the parameters of the algorithm.
   virtual void PopulateParams(OptionsParser*) const {}
   // Creates a new environment for the algorithm.
-  virtual std::unique_ptr<SearchEnvironment> CreateEnvironment(
+  virtual std::unique_ptr<SearchBase> CreateSearch(
       UciResponder*, const OptionsDict*) const = 0;
 };
 
