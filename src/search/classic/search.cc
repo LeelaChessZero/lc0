@@ -37,9 +37,9 @@
 #include <sstream>
 #include <thread>
 
-#include "search/classic/node.h"
 #include "neural/cache.h"
 #include "neural/encoder.h"
+#include "search/classic/node.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
@@ -150,20 +150,20 @@ class MEvaluator {
 
 }  // namespace
 
-Search::Search(const NodeTree& tree, Network* network,
+Search::Search(const NodeTree& tree, Backend* backend,
                std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
-               bool ponder, const OptionsDict& options, NNCache* cache,
+               bool ponder, const OptionsDict& options,
                SyzygyTablebase* syzygy_tb)
     : ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
-      cache_(cache),
       syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
-      network_(network),
+      backend_(backend),
+      backend_attributes_(backend->GetAttributes()),
       params_(options),
       searchmoves_(searchmoves),
       start_time_(start_time),
@@ -264,7 +264,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
-  const auto display_cache_usage = params_.GetDisplayCacheUsage();
   const auto draw_score = GetDrawScore(false);
 
   std::vector<ThinkingInfo> uci_infos;
@@ -276,10 +275,6 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   common_info.time = GetTimeSinceStart();
   if (!per_pv_counters) {
     common_info.nodes = total_playouts_ + initial_visits_;
-  }
-  if (display_cache_usage) {
-    common_info.hashfull =
-        cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   }
   if (nps_start_time_) {
     const auto time_since_first_batch_ms =
@@ -341,7 +336,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       const float centipawn_fallback_threshold = 0.996f;
       float centipawn_score = 45 * tan(1.56728071628 * wl);
       uci_info.score =
-          network_->GetCapabilities().has_wdl() && mu_uci != 0.0f &&
+          backend_attributes_.has_wdl && mu_uci != 0.0f &&
                   std::abs(wl) + d < centipawn_fallback_threshold &&
                   (std::abs(mu_uci) < 1.0f ||
                    std::abs(centipawn_score) < std::abs(100 * mu_uci))
@@ -361,7 +356,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       wdl_d = 0;
     }
     uci_info.wdl = ThinkingInfo::WDL{wdl_w, wdl_d, wdl_l};
-    if (network_->GetCapabilities().has_mlh()) {
+    if (backend_attributes_.has_mlh) {
       uci_info.moves_left = static_cast<int>(
           (1.0f + edge.GetM(1.0f + root_node_->GetM())) / 2.0f);
     }
@@ -522,7 +517,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
     } else {
-      NNCacheLock nneval = GetCachedNNEval(n);
+      std::optional<EvalResult> nneval = GetCachedNNEval(n);
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -546,9 +541,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   };
 
   std::vector<std::string> infos;
-  const auto m_evaluator = network_->GetCapabilities().has_mlh()
-                               ? MEvaluator(params_, node)
-                               : MEvaluator();
+  const auto m_evaluator =
+      backend_attributes_.has_mlh ? MEvaluator(params_, node) : MEvaluator();
   for (const auto& edge : edges) {
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
@@ -604,20 +598,36 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
   }
 }
 
-NNCacheLock Search::GetCachedNNEval(const Node* node) const {
-  if (!node) return {};
-
-  std::vector<Move> moves;
-  for (; node != root_node_; node = node->GetParent()) {
-    moves.push_back(node->GetOwnEdge()->GetMove());
-  }
+PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
   PositionHistory history(played_history_);
-  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
-    history.Append(*iter);
+  for (const Node* n = node; n != root_node_; n = n->GetParent()) {
+    history.Append(n->GetOwnEdge()->GetMove());
   }
-  const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
-  NNCacheLock nneval(cache_, hash);
-  return nneval;
+  return history;
+}
+
+namespace {
+std::vector<Move> GetNodeLegalMoves(const Node* node, const ChessBoard& board) {
+  if (!node) return {};
+  std::vector<Move> moves;
+  if (node && node->HasChildren()) {
+    moves.reserve(node->GetNumEdges());
+    std::transform(node->Edges().begin(), node->Edges().end(),
+                   std::back_inserter(moves),
+                   [](const auto& edge) { return edge.GetMove(); });
+    return moves;
+  }
+  return board.GenerateLegalMoves();
+}
+}  // namespace
+
+std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
+  if (!node) return {};
+  PositionHistory history = GetPositionHistoryAtNode(node);
+  std::vector<Move> legal_moves =
+      GetNodeLegalMoves(node, history.Last().GetBoard());
+  return backend_->GetCachedEvaluation(
+      EvalPosition{history.GetPositions(), legal_moves});
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,
@@ -902,7 +912,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 void Search::StartThreads(size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
   if (how_many == 0 && threads_.size() == 0) {
-    how_many = network_->GetThreads() + !network_->IsCpu();
+    how_many = backend_attributes_.suggested_num_search_threads +
+               !backend_attributes_.runs_on_cpu;
   }
   thread_count_.store(how_many, std::memory_order_release);
   // First thread is a watchdog thread.
@@ -911,8 +922,8 @@ void Search::StartThreads(size_t how_many) {
   }
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
-    threads_.emplace_back([this, i]() {
-      SearchWorker worker(this, params_, i);
+    threads_.emplace_back([this]() {
+      SearchWorker worker(this, params_);
       worker.RunBlocking();
     });
   }
@@ -962,7 +973,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
     float max_q_plus_m = -1000;
     uint64_t max_n = 0;
     bool max_n_has_max_q_plus_m = true;
-    const auto m_evaluator = network_->GetCapabilities().has_mlh()
+    const auto m_evaluator = backend_attributes_.has_mlh
                                  ? MEvaluator(params_, root_node_)
                                  : MEvaluator();
     for (const auto& edge : root_node_->Edges()) {
@@ -1168,7 +1179,7 @@ void SearchWorker::RunTasks(int tid) {
 
 void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
-  InitializeIteration(search_->network_->NewComputation());
+  InitializeIteration(search_->backend_->CreateComputation());
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     std::unique_ptr<SpinHelper> spin_helper;
@@ -1258,10 +1269,8 @@ void SearchWorker::ExecuteOneIteration() {
 // 1. Initialize internal structures.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
-    std::unique_ptr<NetworkComputation> computation) {
-  computation_ = std::make_unique<CachingComputation>(std::move(computation),
-                                                      search_->cache_);
-  computation_->Reserve(target_minibatch_size_);
+    std::unique_ptr<BackendComputation> computation) {
+  computation_ = std::move(computation);
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
 }
@@ -1317,7 +1326,7 @@ void SearchWorker::GatherMinibatch() {
   while (minibatch_size < target_minibatch_size_ &&
          number_out_of_order_ < max_out_of_order_) {
     // If there's something to process without touching slow neural net, do it.
-    if (minibatch_size > 0 && computation_->GetCacheMisses() == 0) return;
+    if (minibatch_size > 0 && computation_->UsedBatchSize() == 0) return;
 
     // If there is backend work to be done, and the backend is idle - exit
     // immediately.
@@ -1326,7 +1335,8 @@ void SearchWorker::GatherMinibatch() {
     // be keeping the backend busy. Which would mean that threads=1 has a
     // massive nps drop.
     if (thread_count > 1 && minibatch_size > 0 &&
-        computation_->GetCacheMisses() > params_.GetIdlingMinimumWork() &&
+        static_cast<int>(computation_->UsedBatchSize()) >
+            params_.GetIdlingMinimumWork() &&
         thread_count - search_->backend_waiting_counter_.load(
                            std::memory_order_relaxed) >
             params_.GetThreadIdlingThreshold()) {
@@ -1415,21 +1425,6 @@ void SearchWorker::GatherMinibatch() {
         }
       }
     }
-    for (size_t i = new_start; i < minibatch_.size(); i++) {
-      // If there was no OOO, there can stil be collisions.
-      // There are no OOO though.
-      // Also terminals when OOO is disabled.
-      if (!minibatch_[i].nn_queried) continue;
-      if (minibatch_[i].is_cache_hit) {
-        // Since minibatch_[i] holds cache lock, this is guaranteed to succeed.
-        computation_->AddInputByHash(minibatch_[i].hash,
-                                     std::move(minibatch_[i].lock));
-      } else {
-        computation_->AddInput(minibatch_[i].hash,
-                               std::move(minibatch_[i].input_planes),
-                               std::move(minibatch_[i].probabilities_to_cache));
-      }
-    }
 
     // Check for stop at the end so we have at least one node.
     for (size_t i = new_start; i < minibatch_.size(); i++) {
@@ -1474,32 +1469,24 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
-        const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
-        picked_node.hash = hash;
-        picked_node.lock = NNCacheLock(search_->cache_, hash);
-        picked_node.is_cache_hit = picked_node.lock;
-        if (!picked_node.is_cache_hit) {
-          int transform;
-          picked_node.input_planes = EncodePositionForNN(
-              search_->network_->GetCapabilities().input_format, history, 8,
-              params_.GetHistoryFill(), &transform);
-          picked_node.probability_transform = transform;
-
-          std::vector<uint16_t>& moves = picked_node.probabilities_to_cache;
-          // Legal moves are known, use them.
-          moves.reserve(node->GetNumEdges());
-          for (const auto& edge : node->Edges()) {
-            moves.emplace_back(edge.GetMove().as_nn_index(transform));
-          }
-        } else {
-          picked_node.probability_transform = TransformForPosition(
-              search_->network_->GetCapabilities().input_format, history);
-        }
+        MoveList legal_moves;
+        legal_moves.reserve(node->GetNumEdges());
+        std::transform(node->Edges().begin(), node->Edges().end(),
+                       std::back_inserter(legal_moves),
+                       [](const auto& edge) { return edge.GetMove(); });
+        picked_node.eval->p.resize(legal_moves.size());
+        picked_node.is_cache_hit = computation_->AddInput(
+                                       EvalPosition{
+                                           .pos = history.GetPositions(),
+                                           .legal_moves = legal_moves,
+                                       },
+                                       picked_node.eval->AsPtr()) ==
+                                   BackendComputation::FETCHED_IMMEDIATELY;
       }
     }
     if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
       // Perform out of order eval for the last entry in minibatch_.
-      FetchSingleNodeResult(&picked_node, picked_node, 0);
+      FetchSingleNodeResult(&picked_node);
       picked_node.ooo_completed = true;
     }
   }
@@ -1528,7 +1515,7 @@ int SearchWorker::WaitForTasks() {
 
 void SearchWorker::PickNodesToExtend(int collision_limit) {
   ResetTasks();
-  if (task_workers_ > 0 && !search_->network_->IsCpu()) {
+  if (task_workers_ > 0 && !search_->backend_attributes_.runs_on_cpu) {
     // While nothing is ready yet - wake the task runners so they are ready to
     // receive quickly.
     Mutex::Lock lock(picking_tasks_mutex_);
@@ -2038,36 +2025,18 @@ void SearchWorker::ExtendNode(Node* node, int depth,
 
 // Returns whether node was already in cache.
 bool SearchWorker::AddNodeToComputation(Node* node) {
-  const auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
-  if (search_->cache_->ContainsKey(hash)) {
-    return true;
-  }
-  int transform;
-  auto planes =
-      EncodePositionForNN(search_->network_->GetCapabilities().input_format,
-                          history_, 8, params_.GetHistoryFill(), &transform);
-
-  std::vector<uint16_t> moves;
-
+  std::vector<Move> moves;
   if (node && node->HasChildren()) {
     // Legal moves are known, use them.
+    assert(false);  // Why would we ever be here?
     moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) {
-      moves.emplace_back(edge.GetMove().as_nn_index(transform));
-    }
+    for (const auto& edge : node->Edges()) moves.emplace_back(edge.GetMove());
   } else {
-    // Cache pseudolegal moves. A bit of a waste, but faster.
-    const auto& pseudolegal_moves =
-        history_.Last().GetBoard().GeneratePseudolegalMoves();
-    moves.reserve(pseudolegal_moves.size());
-    for (auto iter = pseudolegal_moves.begin(), end = pseudolegal_moves.end();
-         iter != end; ++iter) {
-      moves.emplace_back(iter->as_nn_index(transform));
-    }
+    moves = history_.Last().GetBoard().GenerateLegalMoves();
   }
-
-  computation_->AddInput(hash, std::move(planes), std::move(moves));
-  return false;
+  return computation_->AddInput(EvalPosition{history_.GetPositions(), moves},
+                                EvalResultPtr{}) ==
+         BackendComputation::FETCHED_IMMEDIATELY;
 }
 
 // 2b. Copy collisions into shared collisions.
@@ -2089,13 +2058,14 @@ void SearchWorker::MaybePrefetchIntoCache() {
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
   if (search_->stop_.load(std::memory_order_acquire)) return;
-  if (computation_->GetCacheMisses() > 0 &&
-      computation_->GetCacheMisses() < params_.GetMaxPrefetchBatch()) {
+  if (computation_->UsedBatchSize() > 0 &&
+      static_cast<int>(computation_->UsedBatchSize()) <
+          params_.GetMaxPrefetchBatch()) {
     history_.Trim(search_->played_history_.GetLength());
     SharedMutex::SharedLock lock(search_->nodes_mutex_);
     PrefetchIntoCache(
         search_->root_node_,
-        params_.GetMaxPrefetchBatch() - computation_->GetCacheMisses(), false);
+        params_.GetMaxPrefetchBatch() - computation_->UsedBatchSize(), false);
   }
 }
 
@@ -2196,31 +2166,25 @@ void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
-  int idx_in_computation = 0;
   for (auto& node_to_process : minibatch_) {
-    FetchSingleNodeResult(&node_to_process, *computation_, idx_in_computation);
-    if (node_to_process.nn_queried) ++idx_in_computation;
+    FetchSingleNodeResult(&node_to_process);
   }
 }
 
-template <typename Computation>
-void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
-                                         const Computation& computation,
-                                         int idx_in_computation) {
+void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   if (node_to_process->IsCollision()) return;
   Node* node = node_to_process->node;
   if (!node_to_process->nn_queried) {
     // Terminal nodes don't involve the neural NetworkComputation, nor do
     // they require any further processing after value retrieval.
-    node_to_process->v = node->GetWL();
-    node_to_process->d = node->GetD();
-    node_to_process->m = node->GetM();
+    node_to_process->eval->q = node->GetWL();
+    node_to_process->eval->d = node->GetD();
+    node_to_process->eval->m = node->GetM();
     return;
   }
+  node_to_process->eval->q = -node_to_process->eval->q;
   // For NN results, we need to populate policy as well as value.
   // First the value...
-  auto v = -computation.GetQVal(idx_in_computation);
-  auto d = computation.GetDVal(idx_in_computation);
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       (params_.GetWDLRescaleDiff() != 0.0f &&
        search_->contempt_mode_ != ContemptMode::NONE)) {
@@ -2228,43 +2192,15 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     bool root_stm = (search_->contempt_mode_ == ContemptMode::BLACK) ==
                     search_->played_history_.Last().IsBlackToMove();
     auto sign = (root_stm ^ (node_to_process->depth & 1)) ? 1.0f : -1.0f;
-    WDLRescale(v, d, params_.GetWDLRescaleRatio(),
+    WDLRescale(node_to_process->eval->q, node_to_process->eval->d,
+               params_.GetWDLRescaleRatio(),
                search_->contempt_mode_ == ContemptMode::NONE
                    ? 0
                    : params_.GetWDLRescaleDiff(),
                sign, false, params_.GetWDLMaxS());
   }
-  node_to_process->v = v;
-  node_to_process->d = d;
-  node_to_process->m = computation.GetMVal(idx_in_computation);
-  // ...and secondly, the policy data.
-  // Calculate maximum first.
-  float max_p = -std::numeric_limits<float>::infinity();
-  // Intermediate array to store values when processing policy.
-  // There are never more than 256 valid legal moves in any legal position.
-  std::array<float, 256> intermediate;
-  int counter = 0;
-  for (auto& edge : node->Edges()) {
-    float p = computation.GetPVal(
-        idx_in_computation,
-        edge.GetMove().as_nn_index(node_to_process->probability_transform));
-    intermediate[counter++] = p;
-    max_p = std::max(max_p, p);
-  }
-  float total = 0.0;
-  for (int i = 0; i < counter; i++) {
-    // Perform softmax and take into account policy softmax temperature T.
-    // Note that we want to calculate (exp(p-max_p))^(1/T) = exp((p-max_p)/T).
-    float p =
-        FastExp((intermediate[i] - max_p) / params_.GetPolicySoftmaxTemp());
-    intermediate[i] = p;
-    total += p;
-  }
-  counter = 0;
-  // Normalize P values to add up to 1.0.
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  for (auto& edge : node->Edges()) {
-    edge.edge()->SetP(intermediate[counter++] * scale);
+  for (size_t p_idx = 0; auto& edge : node->Edges()) {
+    edge.edge()->SetP(node_to_process->eval->p[p_idx++]);
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
@@ -2305,9 +2241,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       params_.GetStickyEndgames() && node->IsTerminal() && !node->GetN();
 
   // Backup V value up to a root. After 1 visit, V = Q.
-  float v = node_to_process.v;
-  float d = node_to_process.d;
-  float m = node_to_process.m;
+  float v = node_to_process.eval->q;
+  float d = node_to_process.eval->d;
+  float m = node_to_process.eval->m;
   int n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
