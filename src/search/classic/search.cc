@@ -2027,13 +2027,9 @@ void SearchWorker::ExtendNode(Node* node, int depth,
 bool SearchWorker::AddNodeToComputation(Node* node) {
   std::vector<Move> moves;
   if (node && node->HasChildren()) {
-    // Legal moves are known, use them.
-    assert(false);  // Why would we ever be here?
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) moves.emplace_back(edge.GetMove());
-  } else {
-    moves = history_.Last().GetBoard().GenerateLegalMoves();
+    throw Exception("Node already has children, should not end up here.");
   }
+  moves = history_.Last().GetBoard().GenerateLegalMoves();
   return computation_->AddInput(EvalPosition{history_.GetPositions(), moves},
                                 EvalResultPtr{}) ==
          BackendComputation::FETCHED_IMMEDIATELY;

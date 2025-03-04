@@ -325,8 +325,6 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_cache_hit = false;
     bool is_collision = false;
-    int probability_transform = 0;
-
     // Only populated for visits,
     std::vector<Move> moves_to_visit;
 
