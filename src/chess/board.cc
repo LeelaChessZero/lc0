@@ -1162,17 +1162,18 @@ std::string ChessBoard::DebugString() const {
 }
 
 Move ChessBoard::ParseMove(std::string_view move_str) const {
-  auto complain = [&move_str]() {
-    throw Exception("Invalid move string: " + std::string(move_str));
+  auto complain = [&move_str](std::string_view reason) {
+    throw Exception("Invalid move (" + std::string(reason) +
+                    "): " + std::string(move_str));
   };
-  if (move_str.size() < 4 || move_str.size() > 5) complain();
+  if (move_str.size() < 4 || move_str.size() > 5) complain("wrong move size");
   File from_file = File::Parse(move_str[0]);
   Rank from_rank = Rank::Parse(move_str[1]);
   File to_file = File::Parse(move_str[2]);
   Rank to_rank = Rank::Parse(move_str[3]);
   if (!from_file.IsValid() || !from_rank.IsValid() || !to_file.IsValid() ||
       !to_rank.IsValid()) {
-    complain();
+    complain("bad square");
   }
   if (flipped_) {
     from_rank.Flip();
@@ -1180,6 +1181,7 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
   }
   Square from(from_file, from_rank);
   Square to(to_file, to_rank);
+  if (!our_pieces_.get(from)) complain("no piece to move");
 
   // Pawns at back ranks are used to encode en-passant, that's why we need to
   // check that a piece doesn't go from there.
@@ -1188,7 +1190,7 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
     // Promotion.
     PieceType promotion =
         move_str.size() > 4 ? PieceType::Parse(move_str[4]) : kKnight;
-    if (!promotion.CanPromoteInto()) complain();
+    if (!promotion.CanPromoteInto()) complain("invalid promotion");
     return Move::WhitePromotion(from, to, promotion);
   }
   if (from == our_king_ && our_pieces_.get(to)) {

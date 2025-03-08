@@ -427,9 +427,9 @@ TEST(EncodePositionForNN, EncodeEnpassantFormat3) {
   history.Reset(board, 0, 1);
   // Move to en passant.
   history.Append(history.Last().GetBoard().ParseMove("e2e4"));
-  history.Append(history.Last().GetBoard().ParseMove("g2g3"));
+  history.Append(history.Last().GetBoard().ParseMove("g7g6"));
   history.Append(history.Last().GetBoard().ParseMove("e4e5"));
-  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
+  history.Append(history.Last().GetBoard().ParseMove("f7f5"));
 
   InputPlanes encoded_planes = EncodePositionForNN(
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
@@ -466,7 +466,7 @@ TEST(EncodePositionForNN, EncodeEnpassantFormat3) {
   }
 
   // Another boring move.
-  history.Append(history.Last().GetBoard().ParseMove("g1f3"));
+  history.Append(history.Last().GetBoard().ParseMove("g8f5"));
 
   encoded_planes = EncodePositionForNN(
       pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION, history, 8,
@@ -494,9 +494,9 @@ TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
   history.Reset(board, 0, 1);
   // Move to break castling and king offside.
   history.Append(history.Last().GetBoard().ParseMove("e2e4"));
-  history.Append(history.Last().GetBoard().ParseMove("e2e4"));
+  history.Append(history.Last().GetBoard().ParseMove("e7e5"));
   history.Append(history.Last().GetBoard().ParseMove("e1e2"));
-  history.Append(history.Last().GetBoard().ParseMove("e1e2"));
+  history.Append(history.Last().GetBoard().ParseMove("e8e7"));
   history.Append(history.Last().GetBoard().ParseMove("e2d3"));
   // Their king offside, but not ours.
 
@@ -514,7 +514,7 @@ TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
   EXPECT_EQ(their_king_plane.mask, 1ull << 43);
   EXPECT_EQ(their_king_plane.value, 1.0f);
 
-  history.Append(history.Last().GetBoard().ParseMove("e2e3"));
+  history.Append(history.Last().GetBoard().ParseMove("e7e6"));
 
   // Our king offside, but theirs is not.
   encoded_planes = EncodePositionForNN(
