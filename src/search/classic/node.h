@@ -439,6 +439,11 @@ class Edge_Iterator : public EdgeAndNode {
  public:
   using Ptr = std::conditional_t<is_const, const std::unique_ptr<Node>*,
                                  std::unique_ptr<Node>*>;
+  using value_type = Edge_Iterator;
+  using iterator_category = std::forward_iterator_tag;
+  using difference_type = std::ptrdiff_t;
+  using pointer = Edge_Iterator*;
+  using reference = Edge_Iterator&;
 
   // Creates "end()" iterator.
   Edge_Iterator() {}

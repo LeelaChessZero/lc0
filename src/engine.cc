@@ -36,8 +36,8 @@
 
 namespace lczero {
 
-Engine::Engine(std::unique_ptr<SearchEnvironment> env, const OptionsDict& opts)
-    : options_(opts), search_env_(std::move(env)) {}
+Engine::Engine(std::unique_ptr<SearchBase> search, const OptionsDict& opts)
+    : options_(opts), search_(std::move(search)) {}
 
 Engine::~Engine() {}
 
@@ -58,33 +58,33 @@ GameState MakeGameState(const std::string& fen,
 }  // namespace
 
 void Engine::EnsureSearchStopped() {
-  if (!search_) return;
-  search_->Abort();
-  search_->Wait();
+  search_->AbortSearch();
+  search_->WaitSearch();
 }
 
 void Engine::EnsureBackendCreated() {
   if (backend_) return;
   backend_ = BackendManager::Get()->CreateFromParams(options_);
-  search_env_->SetBackend(backend_.get());
+  search_->SetBackend(backend_.get());
 }
 
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
   EnsureBackendCreated();
   EnsureSearchStopped();
-  search_ = search_env_->CreateSearch(MakeGameState(fen, moves));
+  search_->SetPosition(MakeGameState(fen, moves));
+  search_initialized_ = true;
 }
 
 void Engine::NewGame() { SetPosition(ChessBoard::kStartposFen, {}); }
 
 void Engine::Go(const GoParams& params) {
-  if (!search_) NewGame();
-  search_->Start(params);
+  if (!search_initialized_) NewGame();
+  search_->StartSearch(params);
 }
 
 void Engine::Stop() {
-  if (search_) search_->Stop();
+  if (search_) search_->StopSearch();
 }
 
 }  // namespace lczero

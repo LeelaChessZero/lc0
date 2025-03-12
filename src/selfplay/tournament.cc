@@ -31,6 +31,7 @@
 
 #include "chess/pgn.h"
 #include "neural/factory.h"
+#include "neural/memcache.h"
 #include "neural/shared_params.h"
 #include "search/classic/search.h"
 #include "search/classic/stoppers/factory.h"
@@ -217,21 +218,14 @@ SelfPlayTournament::SelfPlayTournament(
     for (const auto& color : {"white", "black"}) {
       const auto& opts = options.GetSubdict(name).GetSubdict(color);
       const auto config = NetworkFactory::BackendConfiguration(opts);
-      if (networks_.find(config) == networks_.end()) {
-        networks_.emplace(config, NetworkFactory::LoadNetwork(opts));
+      if (!backends_.contains(config)) {
+        backends_.emplace(
+            config,
+            CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
+                           options.GetSubdict(name).Get<int>(
+                               SharedBackendParams::kNNCacheSizeId)));
       }
     }
-  }
-
-  // Initializing cache.
-  cache_[0] = std::make_shared<NNCache>(options.GetSubdict("player1").Get<int>(
-      SharedBackendParams::kNNCacheSizeId));
-  if (kShareTree) {
-    cache_[1] = cache_[0];
-  } else {
-    cache_[1] =
-        std::make_shared<NNCache>(options.GetSubdict("player2").Get<int>(
-            SharedBackendParams::kNNCacheSizeId));
   }
 
   // SearchLimits.
@@ -312,10 +306,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
         player_options_[pl_idx][color].Get<bool>(kMoveThinkingId);
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
-    opt.network = networks_[NetworkFactory::BackendConfiguration(
+    opt.backend = backends_[NetworkFactory::BackendConfiguration(
                                 player_options_[pl_idx][color])]
                       .get();
-    opt.cache = cache_[pl_idx].get();
     opt.uci_options = &player_options_[pl_idx][color];
     opt.search_limits = search_limits_[pl_idx][color];
 
@@ -453,11 +446,11 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   }
 
   PlayerOptions options[2];
-  options[0].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
           .get();
-  options[1].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[1][1])]
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][1])]
           .get();
 
   std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game1_iter;
@@ -474,11 +467,11 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   // PLAY GAMEs!
   if (!aborted) game1.Play();
 
-  options[0].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[0][1])]
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][1])]
           .get();
-  options[1].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
           .get();
 
   std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game2_iter;

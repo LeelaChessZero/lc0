@@ -116,7 +116,8 @@ void V6TrainingDataArray::Add(const classic::Node* node,
                               classic::Eval best_eval,
                               classic::Eval played_eval, bool best_is_proven,
                               Move best_move, Move played_move,
-                              const NNCacheLock& nneval) {
+                              std::span<Move> legal_moves,
+                              const std::optional<EvalResult>& nneval) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -149,39 +150,22 @@ void V6TrainingDataArray::Add(const classic::Node* node,
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
   float max_p = -std::numeric_limits<float>::infinity();
-  std::vector<float> intermediate;
-  if (nneval) {
-    int last_idx = 0;
-    for (const auto& child : node->Edges()) {
-      auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
-      float p = 0;
-      for (int i = 0; i < nneval->p.size(); i++) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = nneval->p[last_idx++];
-        if (last_idx == nneval->p.size()) last_idx = 0;
-        if (move.first == nn_idx) {
-          p = move.second;
-          break;
-        }
-      }
-      intermediate.emplace_back(p);
-      max_p = std::max(max_p, p);
-    }
-  }
+  if (nneval) max_p = *std::max_element(nneval->p.begin(), nneval->p.end());
   float total = 0.0;
-  auto it = intermediate.begin();
   for (const auto& child : node->Edges()) {
-    auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+    const Move move = child.GetMove(position.IsBlackToMove());
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (nneval) {
-      float P = std::exp(*it - max_p);
+      size_t move_idx =
+          std::find(legal_moves.begin(), legal_moves.end(), move) -
+          legal_moves.begin();
+      float P = std::exp(nneval->p[move_idx] - max_p);
       if (fracv > 0) {
         kld_sum += fracv * std::log(fracv / P);
       }
       total += P;
-      it++;
     }
-    result.probabilities[nn_idx] = fracv;
+    result.probabilities[move.as_nn_index(0)] = fracv;
   }
   if (nneval) {
     // Add small epsilon for backward compatibility with earlier value of 0.
