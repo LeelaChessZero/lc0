@@ -165,7 +165,7 @@ void V6TrainingDataArray::Add(const classic::Node* node,
       }
       total += P;
     }
-    result.probabilities[move.as_nn_index(0)] = fracv;
+    result.probabilities[MoveToNNIndex(move, transform)] = fracv;
   }
   if (nneval) {
     // Add small epsilon for backward compatibility with earlier value of 0.
