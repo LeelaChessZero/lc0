@@ -107,13 +107,9 @@ int main(int argc, const char** argv) {
               SearchManager::Get()->GetFactoryByName(search_name);
           factory->PopulateParams(options_parser.get());
           StdoutUciResponder uci_responder;
-          EngineLoop loop(&uci_responder, std::move(options_parser),
-                          [factory](UciResponder& uci_responder,
-                                    const OptionsDict& options) {
-                            return std::make_unique<Engine>(
-                                factory->CreateSearch(&uci_responder, &options),
-                                options);
-                          });
+          EngineLoop loop(&uci_responder, options_parser.get(),
+                          std::make_unique<Engine>(
+                              *factory, options_parser->GetOptionsDict()));
           loop.RunLoop();
         }
       }
@@ -125,10 +121,8 @@ int main(int argc, const char** argv) {
         EngineClassic::PopulateOptions(options_parser.get());
         StdoutUciResponder uci_responder;
         EngineLoop loop(
-            &uci_responder, std::move(options_parser),
-            [](UciResponder& uci_responder, const OptionsDict& options) {
-              return std::make_unique<EngineClassic>(uci_responder, options);
-            });
+            &uci_responder, options_parser.get(),
+            std::make_unique<EngineClassic>(options_parser->GetOptionsDict()));
         loop.RunLoop();
       }
     }

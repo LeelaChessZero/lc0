@@ -54,15 +54,17 @@ class EngineControllerBase {
   virtual void PonderHit() = 0;
   // Must not block.
   virtual void Stop() = 0;
+
+  // Register and unregister the UCI responder using observer pattern.
+  virtual void RegisterUciResponder(UciResponder*) = 0;
+  virtual void UnregisterUciResponder(UciResponder*) = 0;
 };
 
 class EngineLoop : public UciLoop {
  public:
-  EngineLoop(StringUciResponder* uci_responder,
-             std::unique_ptr<OptionsParser> options,
-             std::function<std::unique_ptr<EngineControllerBase>(
-                 UciResponder& uci_responder, const OptionsDict& options)>
-                 engine_factory);
+  EngineLoop(StringUciResponder* uci_responder, OptionsParser* options,
+             std::unique_ptr<EngineControllerBase> engine);
+  ~EngineLoop() override;
 
   void RunLoop() override;
   void CmdUci() override;
@@ -77,7 +79,7 @@ class EngineLoop : public UciLoop {
   void CmdStop() override;
 
  private:
-  std::unique_ptr<OptionsParser> options_;
+  OptionsParser* options_;
   std::unique_ptr<EngineControllerBase> engine_;
 };
 
