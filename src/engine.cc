@@ -38,10 +38,9 @@
 
 namespace lczero {
 
-Engine::Engine(std::unique_ptr<SearchBase> search, const OptionsDict& opts)
-    : options_(opts), search_(std::move(search)) {}
-
-Engine::~Engine() {}
+Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
+    : options_(opts),
+      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {}
 
 namespace {
 GameState MakeGameState(const std::string& fen,
@@ -98,6 +97,14 @@ void Engine::Go(const GoParams& params) {
 
 void Engine::Stop() {
   if (search_) search_->StopSearch();
+}
+
+void Engine::RegisterUciResponder(UciResponder* responder) {
+  uci_forwarder_.Register(responder);
+}
+
+void Engine::UnregisterUciResponder(UciResponder* responder) {
+  uci_forwarder_.Unregister(responder);
 }
 
 }  // namespace lczero
