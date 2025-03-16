@@ -44,12 +44,19 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
+                                "The UCI host compensates for lag, waits for "
+                                "the 'readyok' reply before sending 'go' and "
+                                "only then starts timing."};
+
 const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
 }  // namespace
 
 void Engine::PopulateOptions(OptionsParser* options) {
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<BoolOption>(kStrictUciTiming) = false;
+  options->HideOption(kStrictUciTiming);
   options->Add<BoolOption>(kPreload) = false;
 }
 
@@ -121,8 +128,9 @@ void Engine::EnsureSyzygyTablebasesLoaded() {
 
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
-  UpdateBackendConfig();
   EnsureSearchStopped();
+  if (!options_.Get<bool>(kStrictUciTiming)) search_->StartClock();
+  UpdateBackendConfig();
   EnsureSyzygyTablebasesLoaded();
   search_->SetPosition(MakeGameState(fen, moves));
   search_initialized_ = true;
@@ -134,6 +142,7 @@ void Engine::NewGame() {
 }
 
 void Engine::Go(const GoParams& params) {
+  if (options_.Get<bool>(kStrictUciTiming)) search_->StartClock();
   if (!search_initialized_) NewGame();
   search_->StartSearch(params);
 }
