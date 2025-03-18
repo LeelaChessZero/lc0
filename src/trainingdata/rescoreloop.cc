@@ -254,7 +254,7 @@ void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
   unsigned char bpc[17];
 
   auto stm = pos.IsBlackToMove() ? tb_BLACK_TO_MOVE : tb_WHITE_TO_MOVE;
-  ChessBoard board = pos.GetBoard();
+  ChessBoard board = pos.GetBoard(); 
   if (pos.IsBlackToMove()) board.Mirror();
   auto epsq = tb_NOSQUARE;
   for (auto sq : board.en_passant()) {
