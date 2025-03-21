@@ -100,6 +100,14 @@ class Backend {
   virtual std::optional<EvalResult> GetCachedEvaluation(const EvalPosition&) {
     return std::nullopt;
   }
+
+  // Updates the configuration of the backend. This is between searches.
+  // It's up to the backend to detect if the configuration has changed.
+  enum UpdateConfigurationResult {
+    UPDATE_OK = 0,     // Backend handled the update by itself (if needed).
+    NEED_RESTART = 1,  // Recreate the backend.
+  };
+  virtual UpdateConfigurationResult UpdateConfiguration(const OptionsDict&) = 0;
 };
 
 class BackendFactory {

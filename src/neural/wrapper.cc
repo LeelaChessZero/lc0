@@ -49,10 +49,11 @@ class NetworkAsBackend : public Backend {
  public:
   NetworkAsBackend(std::unique_ptr<Network> network, const OptionsDict& options)
       : network_(std::move(network)),
-        softmax_policy_temperature_(
-            1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp)),
-        fill_empty_history_(EncodeHistoryFill(
-            options.Get<std::string>(SharedBackendParams::kHistoryFill))) {
+        backend_opts_(
+            options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
+        weights_path_(
+            options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+    UpdateConfiguration(options);
     const NetworkCapabilities& caps = network_->GetCapabilities();
     attrs_.has_mlh = caps.has_mlh();
     attrs_.has_wdl = caps.has_wdl();
@@ -64,7 +65,23 @@ class NetworkAsBackend : public Backend {
   }
 
   BackendAttributes GetAttributes() const override { return attrs_; }
-  virtual std::unique_ptr<BackendComputation> CreateComputation() override;
+  std::unique_ptr<BackendComputation> CreateComputation() override;
+  UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& options) override {
+    if (backend_opts_ !=
+        options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {
+      return NEED_RESTART;
+    }
+    if (weights_path_ !=
+        options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+      return NEED_RESTART;
+    }
+    softmax_policy_temperature_ =
+        1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp);
+    fill_empty_history_ = EncodeHistoryFill(
+        options.Get<std::string>(SharedBackendParams::kHistoryFill));
+    return UPDATE_OK;
+  }
 
  private:
   std::unique_ptr<Network> network_;
@@ -72,6 +89,9 @@ class NetworkAsBackend : public Backend {
   pblczero::NetworkFormat::InputFormat input_format_;
   float softmax_policy_temperature_;
   FillEmptyHistory fill_empty_history_;
+  const std::string backend_opts_;
+  const std::string weights_path_;
+
   friend class NetworkAsBackendComputation;
 };
 
