@@ -49,11 +49,12 @@ class Engine : public EngineControllerBase {
   void Stop() override;
 
  private:
-  void EnsureBackendCreated();
+  void UpdateBackendConfig();
   void EnsureSearchStopped();
 
   const OptionsDict& options_;
   std::unique_ptr<SearchBase> search_;
+  std::string backend_name_;
   std::unique_ptr<Backend> backend_;
   bool search_initialized_ = false;
 };

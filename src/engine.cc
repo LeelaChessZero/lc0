@@ -33,6 +33,7 @@
 #include "chess/position.h"
 #include "neural/backend.h"
 #include "neural/register.h"
+#include "neural/shared_params.h"
 
 namespace lczero {
 
@@ -63,15 +64,20 @@ void Engine::EnsureSearchStopped() {
   search_->WaitSearch();
 }
 
-void Engine::EnsureBackendCreated() {
-  if (backend_) return;
-  backend_ = BackendManager::Get()->CreateFromParams(options_);
-  search_->SetBackend(backend_.get());
+void Engine::UpdateBackendConfig() {
+  const std::string backend_name =
+      options_.Get<std::string>(SharedBackendParams::kBackendId);
+  if (!backend_ || backend_name != backend_name_ ||
+      backend_->UpdateConfiguration(options_) == Backend::NEED_RESTART) {
+    backend_name_ = backend_name;
+    backend_ = BackendManager::Get()->CreateFromParams(options_);
+    search_->SetBackend(backend_.get());
+  }
 }
 
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
-  EnsureBackendCreated();
+  UpdateBackendConfig();
   EnsureSearchStopped();
   search_->SetPosition(MakeGameState(fen, moves));
   search_initialized_ = true;
