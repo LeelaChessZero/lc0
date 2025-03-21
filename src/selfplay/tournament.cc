@@ -222,8 +222,7 @@ SelfPlayTournament::SelfPlayTournament(
         backends_.emplace(
             config,
             CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
-                           options.GetSubdict(name).Get<int>(
-                               SharedBackendParams::kNNCacheSizeId)));
+                           options.GetSubdict(name)));
       }
     }
   }

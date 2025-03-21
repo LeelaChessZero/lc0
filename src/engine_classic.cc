@@ -145,14 +145,9 @@ void EngineClassic::UpdateFromUciOptions() {
   const auto network_configuration =
       NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
-    backend_ =
-        CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
-                       options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
+    backend_ = CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
+                              options_);
     network_configuration_ = network_configuration;
-  } else {
-    // If network is not changed, cache size still may have changed.
-    backend_->SetCacheCapacity(
-        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
   }
 
   // Check whether we can update the move timer in "Go".
