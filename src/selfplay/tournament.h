@@ -30,8 +30,10 @@
 #include <list>
 
 #include "chess/pgn.h"
+#include "neural/backend.h"
 #include "neural/factory.h"
 #include "selfplay/game.h"
+#include "selfplay/multigame.h"
 #include "utils/mutex.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
@@ -71,10 +73,13 @@ class SelfPlayTournament {
  private:
   void Worker();
   void PlayOneGame(int game_id);
+  void PlayMultiGames(int game_id, size_t game_count);
+  void SaveResults() REQUIRES(mutex_);
 
   Mutex mutex_;
   // Whether first game will be black for player1.
   bool first_game_black_ GUARDED_BY(mutex_) = false;
+  std::unique_ptr<SyzygyTablebase> syzygy_tb_ GUARDED_BY(mutex_);
   std::vector<Opening> discard_pile_ GUARDED_BY(mutex_);
   // Number of games which already started.
   int games_count_ GUARDED_BY(mutex_) = 0;
@@ -85,6 +90,7 @@ class SelfPlayTournament {
   // Abort(). Stored as list and not vector so that threads can keep iterators
   // to them and not worry that it becomes invalid.
   std::list<std::unique_ptr<SelfPlayGame>> games_ GUARDED_BY(mutex_);
+  std::list<std::unique_ptr<MultiSelfPlayGames>> multigames_ GUARDED_BY(mutex_);
   // Place to store tournament stats.
   TournamentInfo tournament_info_ GUARDED_BY(mutex_);
 
@@ -92,9 +98,8 @@ class SelfPlayTournament {
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
   // Map from the backend configuration to a network.
-  std::map<NetworkFactory::BackendConfiguration, std::unique_ptr<Network>>
-      networks_;
-  std::shared_ptr<NNCache> cache_[2];
+  std::map<NetworkFactory::BackendConfiguration, std::unique_ptr<Backend>>
+      backends_;
   // [player1 or player2][white or black].
   const OptionsDict player_options_[2][2];
   SelfPlayLimits search_limits_[2][2];
@@ -108,9 +113,11 @@ class SelfPlayTournament {
   const size_t kParallelism;
   const bool kTraining;
   const float kResignPlaythrough;
+  const int kPolicyGamesSize;
+  const int kValueGamesSize;
+  int multi_games_size_;
+  const std::string kTournamentResultsFile;
   const float kDiscardedStartChance;
-
-  std::unique_ptr<SyzygyTablebase> syzygy_tb_;
 };
 
 }  // namespace lczero

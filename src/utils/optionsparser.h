@@ -97,6 +97,10 @@ class OptionsParser {
                     const std::string& context = "");
   // Hide this option from help and UCI.
   void HideOption(const OptionId& id);
+  // Hide all options defined so far from help and UCI.
+  void HideAllOptions();
+  // Make this option visible from help and UCI.
+  void UnhideOption(const OptionId& id);
   // Processes all flags from the command line and an optional
   // configuration file. Returns false if there is an invalid flag.
   bool ProcessAllFlags();
@@ -210,6 +214,24 @@ class BoolOption : public OptionsParser::Option {
   ValueType GetVal(const OptionsDict&) const;
   void SetVal(OptionsDict* dict, const ValueType& val) const;
   void ValidateBoolString(const std::string& val);
+};
+
+class ButtonOption : public OptionsParser::Option {
+ public:
+  using ValueType = Button;
+  ButtonOption(const OptionId& id);
+
+  void SetValue(const std::string& value, OptionsDict* dict) override;
+
+ private:
+  std::string GetOptionString(const OptionsDict& dict) const override;
+  bool ProcessLongFlag(const std::string& flag, const std::string& value,
+                       OptionsDict* dict) override;
+  std::string GetHelp(const OptionsDict& dict) const override;
+  bool ProcessShortFlag(char flag, OptionsDict* dict) override;
+
+  ValueType GetVal(OptionsDict*) const;
+  void SetVal(OptionsDict* dict, const ValueType& val) const;
 };
 
 class ChoiceOption : public OptionsParser::Option {

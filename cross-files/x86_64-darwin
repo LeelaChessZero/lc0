@@ -1,0 +1,27 @@
+
+[host_machine]
+system = 'darwin'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'
+
+[properties]
+
+
+[binaries]
+c = 'clang'
+cpp = 'clang++'
+objc = 'clang'
+objcpp = 'clang++'
+ar = 'ar'
+ld = 'ld'
+
+[built-in options]
+c_args = ['-arch', 'x86_64']
+cpp_args = ['-arch', 'x86_64']
+objc_args = ['-arch', 'x86_64']
+objcpp_args = ['-arch', 'x86_64']
+c_link_args = ['-arch', 'x86_64']
+cpp_link_args = ['-arch', 'x86_64']
+objc_link_args = ['-arch', 'x86_64']
+objcpp_link_args = ['-arch', 'x86_64']

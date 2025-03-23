@@ -37,11 +37,12 @@
 #include <sstream>
 #include <string>
 
+#include "neural/shared_params.h"
 #include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "utils/logging.h"
+#include "utils/optionsdict.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -117,27 +118,41 @@ void FixOlderWeightsFile(WeightsFile* file) {
     net->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
-  } else if (network_format == pblczero::NetworkFormat::NETWORK_CLASSICAL) {
+  } else if (network_format == nf::NETWORK_CLASSICAL) {
     // Populate policyFormat and valueFormat fields in old protobufs
     // without these fields.
     net->set_network(nf::NETWORK_CLASSICAL_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
-  } else if (network_format == pblczero::NetworkFormat::NETWORK_SE) {
+  } else if (network_format == nf::NETWORK_SE) {
     net->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
-  } else if (network_format ==
-                 pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT &&
+  } else if (network_format == nf::NETWORK_SE_WITH_HEADFORMAT &&
              file->weights().encoder().size() > 0) {
     // Attention body network made with old protobuf.
     auto* net = file->mutable_format()->mutable_network_format();
-    net->set_network(
-        pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+    net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
     if (file->weights().has_smolgen_w()) {
       // Need to override activation defaults for smolgen.
-      net->set_ffn_activation(pblczero::NetworkFormat::ACTIVATION_RELU_2);
-      net->set_smolgen_activation(pblczero::NetworkFormat::ACTIVATION_SWISH);
+      net->set_ffn_activation(nf::ACTIVATION_RELU_2);
+      net->set_smolgen_activation(nf::ACTIVATION_SWISH);
+    }
+  } else if (network_format == nf::NETWORK_AB_LEGACY_WITH_MULTIHEADFORMAT) {
+    net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT);
+  }
+
+  // Get updated network format.
+  if (file->format().network_format().network() ==
+      nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT) {
+    auto weights = file->weights();
+    if (weights.has_policy_heads() && weights.has_value_heads()) {
+      CERR << "Weights file has multihead format, updating format flag";
+      net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT);
+      net->set_input_embedding(nf::INPUT_EMBEDDING_PE_DENSE);
+    }
+    if (!file->format().network_format().has_input_embedding()) {
+      net->set_input_embedding(nf::INPUT_EMBEDDING_PE_MAP);
     }
   }
 }
@@ -193,6 +208,22 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
   }
 
   return ParseWeightsProto(buffer);
+}
+
+WeightsFile LoadWeights(std::string_view location) {
+  std::string net_path = std::string(location);
+  if (net_path == SharedBackendParams::kAutoDiscover) {
+    net_path = DiscoverWeightsFile();
+  } else if (net_path == SharedBackendParams::kEmbed) {
+    net_path = CommandLine::BinaryName();
+  } else {
+    CERR << "Loading weights file from: " << location;
+  }
+  return LoadWeightsFromFile(net_path);
+}
+
+WeightsFile LoadWeightsFromOptions(const OptionsDict& options) {
+  return LoadWeights(options.Get<std::string>(SharedBackendParams::kWeightsId));
 }
 
 std::string DiscoverWeightsFile() {

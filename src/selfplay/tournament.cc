@@ -27,11 +27,16 @@
 
 #include "selfplay/tournament.h"
 
+#include <fstream>
+
 #include "chess/pgn.h"
-#include "mcts/search.h"
-#include "mcts/stoppers/factory.h"
 #include "neural/factory.h"
+#include "neural/memcache.h"
+#include "neural/shared_params.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
 #include "selfplay/game.h"
+#include "selfplay/multigame.h"
 #include "utils/optionsparser.h"
 #include "utils/random.h"
 
@@ -61,6 +66,15 @@ const OptionId kTrainingId{
     "temporary subdirectory that the engine creates."};
 const OptionId kVerboseThinkingId{"verbose-thinking", "VerboseThinking",
                                   "Show verbose thinking messages."};
+const OptionId kPolicyModeSizeId{"policy-mode-size", "PolicyModeSize",
+                                 "Number of games per thread in policy only "
+                                 "mode. Set to 0 to not use policy only mode."};
+const OptionId kValueModeSizeId{"value-mode-size", "ValueModeSize",
+                                "Number of games per thread in value only "
+                                "mode. Set to 0 to not use value only mode."};
+const OptionId kTournamentResultsFileId{
+    "tournament-results-file", "TournamentResultsFile",
+    "Name of file to append the tournament results in fake pgn format."};
 const OptionId kMoveThinkingId{"move-thinking", "MoveThinking",
                                "Show all the per-move thinking."};
 const OptionId kResignPlaythroughId{
@@ -105,10 +119,9 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
     dict->AddSubdict("black")->AddAliasDict(&options->GetOptionsDict("black"));
   }
 
-  NetworkFactory::PopulateOptions(options);
+  SharedBackendParams::Populate(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
-  SearchParams::Populate(options);
+  classic::SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -2, 999999) = -1;
@@ -118,6 +131,9 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kTimeMsId, -1, 999999999) = -1;
   options->Add<BoolOption>(kTrainingId) = false;
   options->Add<BoolOption>(kVerboseThinkingId) = false;
+  options->Add<IntOption>(kPolicyModeSizeId, 0, 1024) = 0;
+  options->Add<IntOption>(kValueModeSizeId, 0, 64) = 0;
+  options->Add<StringOption>(kTournamentResultsFileId) = "";
   options->Add<BoolOption>(kMoveThinkingId) = false;
   options->Add<FloatOption>(kResignPlaythroughId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kDiscardedStartChanceId, 0.0f, 100.0f) = 0.0f;
@@ -133,22 +149,22 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(SearchParams::kMiniBatchSizeId, 32);
-  defaults->Set<float>(SearchParams::kCpuctId, 1.2f);
-  defaults->Set<float>(SearchParams::kCpuctFactorId, 0.0f);
-  defaults->Set<float>(SearchParams::kPolicySoftmaxTempId, 1.0f);
-  defaults->Set<int>(SearchParams::kMaxCollisionVisitsId, 1);
-  defaults->Set<int>(SearchParams::kMaxCollisionEventsId, 1);
-  defaults->Set<int>(SearchParams::kCacheHistoryLengthId, 7);
-  defaults->Set<bool>(SearchParams::kOutOfOrderEvalId, false);
-  defaults->Set<float>(SearchParams::kTemperatureId, 1.0f);
-  defaults->Set<float>(SearchParams::kNoiseEpsilonId, 0.25f);
-  defaults->Set<float>(SearchParams::kFpuValueId, 0.0f);
-  defaults->Set<std::string>(SearchParams::kHistoryFillId, "no");
-  defaults->Set<std::string>(NetworkFactory::kBackendId, "multiplexing");
-  defaults->Set<bool>(SearchParams::kStickyEndgamesId, false);
-  defaults->Set<bool>(SearchParams::kTwoFoldDrawsId, false);
-  defaults->Set<int>(SearchParams::kTaskWorkersPerSearchWorkerId, 0);
+  defaults->Set<int>(classic::SearchParams::kMiniBatchSizeId, 32);
+  defaults->Set<float>(classic::SearchParams::kCpuctId, 1.2f);
+  defaults->Set<float>(classic::SearchParams::kCpuctFactorId, 0.0f);
+  defaults->Set<float>(SharedBackendParams::kPolicySoftmaxTemp, 1.0f);
+  defaults->Set<int>(classic::SearchParams::kMaxCollisionVisitsId, 1);
+  defaults->Set<int>(classic::SearchParams::kMaxCollisionEventsId, 1);
+  defaults->Set<int>(classic::SearchParams::kCacheHistoryLengthId, 7);
+  defaults->Set<bool>(classic::SearchParams::kOutOfOrderEvalId, false);
+  defaults->Set<float>(classic::SearchParams::kTemperatureId, 1.0f);
+  defaults->Set<float>(classic::SearchParams::kNoiseEpsilonId, 0.25f);
+  defaults->Set<float>(classic::SearchParams::kFpuValueId, 0.0f);
+  defaults->Set<std::string>(SharedBackendParams::kHistoryFill, "no");
+  defaults->Set<std::string>(SharedBackendParams::kBackendId, "multiplexing");
+  defaults->Set<bool>(classic::SearchParams::kStickyEndgamesId, false);
+  defaults->Set<bool>(classic::SearchParams::kTwoFoldDrawsId, false);
+  defaults->Set<int>(classic::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
 }
 
 SelfPlayTournament::SelfPlayTournament(
@@ -169,7 +185,12 @@ SelfPlayTournament::SelfPlayTournament(
       kParallelism(options.Get<int>(kParallelGamesId)),
       kTraining(options.Get<bool>(kTrainingId)),
       kResignPlaythrough(options.Get<float>(kResignPlaythroughId)),
+      kPolicyGamesSize(options.Get<int>(kPolicyModeSizeId)),
+      kValueGamesSize(options.Get<int>(kValueModeSizeId)),
+      kTournamentResultsFile(
+          options.Get<std::string>(kTournamentResultsFileId)),
       kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)) {
+  multi_games_size_ = std::max(kPolicyGamesSize, kValueGamesSize);
   std::string opening_book = options.Get<std::string>(kOpeningsFileId);
   if (!opening_book.empty()) {
     PgnReader book_reader;
@@ -185,12 +206,34 @@ SelfPlayTournament::SelfPlayTournament(
       throw Exception(
           "You cannot specify an opening book when replaying games.");
     }
+    if (multi_games_size_ > 0) {
+      throw Exception(
+        "Policy/Value games do not support replaying.");
+    }
     if (!options.IsDefault<int>(kTotalGamesId)) {
       throw Exception("You cannot specify a number of games when replaying.");
     }
     PgnReader book_reader;
     book_reader.AddPgnFile(replay_book, options.Get<int>(kPGgnVariationPlyId));
     games_to_replay_ = book_reader.ReleaseGames();
+  }
+
+  if (kPolicyGamesSize > 0 && kValueGamesSize > 0) {
+    throw Exception("Can't do both policy and value games at the same time.");
+  }
+  if (multi_games_size_ > 0 && openings_.size() == 0) {
+    throw Exception(
+        "Policy/Value games are deterministic, needs opening book to be "
+        "useful.");
+  }
+  if (multi_games_size_ > 0 &&
+      (kTotalGames == -1 ||
+       (kTotalGames > 0 &&
+        static_cast<size_t>(kTotalGames) > openings_.size() * 2))) {
+    throw Exception(
+        "Policy/Value games are deterministic, you do not want to go through "
+        "the "
+        "opening book more than once.");
   }
 
   // If playing just one game, the player1 is white, otherwise randomize.
@@ -203,20 +246,14 @@ SelfPlayTournament::SelfPlayTournament(
     for (const auto& color : {"white", "black"}) {
       const auto& opts = options.GetSubdict(name).GetSubdict(color);
       const auto config = NetworkFactory::BackendConfiguration(opts);
-      if (networks_.find(config) == networks_.end()) {
-        networks_.emplace(config, NetworkFactory::LoadNetwork(opts));
+      if (!backends_.contains(config)) {
+        backends_.emplace(
+            config,
+            CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
+                           options.GetSubdict(name).Get<int>(
+                               SharedBackendParams::kNNCacheSizeId)));
       }
     }
-  }
-
-  // Initializing cache.
-  cache_[0] = std::make_shared<NNCache>(
-      options.GetSubdict("player1").Get<int>(kNNCacheSizeId));
-  if (kShareTree) {
-    cache_[1] = cache_[0];
-  } else {
-    cache_[1] = std::make_shared<NNCache>(
-        options.GetSubdict("player2").Get<int>(kNNCacheSizeId));
   }
 
   // SearchLimits.
@@ -231,11 +268,17 @@ SelfPlayTournament::SelfPlayTournament(
       limits.visits = dict.Get<int>(kVisitsId);
       limits.movetime = dict.Get<int>(kTimeMsId);
 
-      if (limits.playouts == -1 && limits.visits == -1 &&
-          limits.movetime == -1) {
+      if (multi_games_size_ == 0 && limits.playouts == -1 &&
+          limits.visits == -1 && limits.movetime == -1) {
         throw Exception(
             "Please define --visits, --playouts or --movetime, otherwise it's "
             "not clear when to stop search.");
+      } else if (multi_games_size_ > 0 &&
+                 (limits.playouts != -1 || limits.visits != -1 ||
+                  limits.movetime != -1)) {
+        throw Exception(
+            "Policy mode does not need --visits, --playouts or --movetime as "
+            "it has fixed 1 node behaviour.");
       }
     }
   }
@@ -298,10 +341,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
         player_options_[pl_idx][color].Get<bool>(kMoveThinkingId);
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
-    opt.network = networks_[NetworkFactory::BackendConfiguration(
+    opt.backend = backends_[NetworkFactory::BackendConfiguration(
                                 player_options_[pl_idx][color])]
                       .get();
-    opt.cache = cache_[pl_idx].get();
     opt.uci_options = &player_options_[pl_idx][color];
     opt.search_limits = search_limits_[pl_idx][color];
 
@@ -363,11 +405,13 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   // delete it. Need to expose it in games_ member variable only because
   // of possible Abort() that should stop them all.
   std::list<std::unique_ptr<SelfPlayGame>>::iterator game_iter;
+  SyzygyTablebase* syzygy_tb;
   {
     Mutex::Lock lock(mutex_);
     games_.emplace_front(std::make_unique<SelfPlayGame>(options[0], options[1],
                                                         kShareTree, opening));
     game_iter = games_.begin();
+    syzygy_tb = syzygy_tb_.get();
   }
   auto& game = **game_iter;
 
@@ -378,7 +422,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   // PLAY GAME!
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
-  game.Play(player1_threads, player2_threads, kTraining, syzygy_tb_.get(),
+  game.Play(player1_threads, player2_threads, kTraining, syzygy_tb,
             game_to_replay, enable_resign);
 
   // If game was aborted, it's still undecided.
@@ -409,10 +453,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     {
       Mutex::Lock lock(mutex_);
       if (game.GetGameResult() != GameResult::UNDECIDED) {
-        int result =
-            game.GetGameResult() == GameResult::DRAW
-                ? 1
-                : game.GetGameResult() == GameResult::WHITE_WON ? 0 : 2;
+        int result = game.GetGameResult() == GameResult::DRAW        ? 1
+                     : game.GetGameResult() == GameResult::WHITE_WON ? 0
+                                                                     : 2;
         if (player1_black) result = 2 - result;
         ++tournament_info_.results[result][player1_black ? 1 : 0];
       }
@@ -428,24 +471,160 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   }
 }
 
+void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
+  bool use_value = kValueGamesSize > 0;
+  std::vector<Opening> openings;
+  openings.reserve(game_count / 2);
+  size_t opening_basis = game_id / 2;
+  {
+    Mutex::Lock lock(mutex_);
+    for (size_t i = 0; i < game_count / 2; i++) {
+      openings.push_back(openings_[(opening_basis + i) % openings_.size()]);
+    }
+  }
+
+  PlayerOptions options[2];
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
+          .get();
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][1])]
+          .get();
+
+  std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game1_iter;
+  auto aborted = false;
+  {
+    Mutex::Lock lock(mutex_);
+    multigames_.emplace_front(std::make_unique<MultiSelfPlayGames>(
+        options[0], options[1], openings, syzygy_tb_.get(), use_value));
+    game1_iter = multigames_.begin();
+    aborted = abort_;
+  }
+  auto& game1 = **game1_iter;
+
+  // PLAY GAMEs!
+  if (!aborted) game1.Play();
+
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][1])]
+          .get();
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
+          .get();
+
+  std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game2_iter;
+  {
+    Mutex::Lock lock(mutex_);
+    multigames_.emplace_front(std::make_unique<MultiSelfPlayGames>(
+        options[1], options[0], openings, syzygy_tb_.get(), use_value));
+    game2_iter = multigames_.begin();
+    aborted = abort_;
+  }
+  auto& game2 = **game2_iter;
+  // PLAY reverse GAMEs!
+  if (!aborted) game2.Play();
+
+  for (size_t i = 0; i < openings.size(); i++) {
+    auto game1_res = game1.GetGameResult(i);
+    if (game1_res != GameResult::UNDECIDED) {
+      // Game callback.
+      GameInfo game_info;
+      game_info.game_result = game1_res;
+      game_info.is_black = false;
+      game_info.game_id = game_id + 2 * i;
+      game_info.moves = game1.GetMoves(i);
+      game_info.initial_fen = openings[i].start_fen;
+      game_info.play_start_ply = openings[i].moves.size();
+      game_callback_(game_info);
+
+      // Update tournament stats.
+      {
+        Mutex::Lock lock(mutex_);
+        int result = game1_res == GameResult::DRAW        ? 1
+                     : game1_res == GameResult::WHITE_WON ? 0
+                                                          : 2;
+        ++tournament_info_.results[result][0];
+        tournament_callback_(tournament_info_);
+      }
+    }
+    auto game2_res = game2.GetGameResult(i);
+    if (game2_res != GameResult::UNDECIDED) {
+      // Game callback.
+      GameInfo game_info;
+      game_info.game_result = game2_res;
+      game_info.is_black = true;
+      game_info.game_id = game_id + 2 * i + 1;
+      game_info.moves = game2.GetMoves(i);
+      game_info.initial_fen = openings[i].start_fen;
+      game_info.play_start_ply = openings[i].moves.size();
+      game_callback_(game_info);
+
+      // Update tournament stats.
+      {
+        Mutex::Lock lock(mutex_);
+        int result = game2_res == GameResult::DRAW        ? 1
+                     : game2_res == GameResult::WHITE_WON ? 2
+                                                          : 0;
+        ++tournament_info_.results[result][1];
+        tournament_callback_(tournament_info_);
+      }
+    }
+  }
+  {
+    Mutex::Lock lock(mutex_);
+    multigames_.erase(game2_iter);
+    multigames_.erase(game1_iter);
+  }
+}
+
 void SelfPlayTournament::Worker() {
   // Play games while game limit is not reached (or while not aborted).
   while (true) {
     int game_id;
+    int count = 0;
     {
       Mutex::Lock lock(mutex_);
       if (abort_) break;
-      bool mirrored = player_options_[0][0].Get<bool>(kOpeningsMirroredId);
-      if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
-          (kTotalGames == -2 && !openings_.empty() &&
-           games_count_ >=
-               static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)) ||
-          (!games_to_replay_.empty() &&
-           games_count_ >= static_cast<int>(games_to_replay_.size())))
-        break;
-      game_id = games_count_++;
+      if (multi_games_size_) {
+        if (!player_options_[0][0].Get<bool>(kOpeningsMirroredId)) {
+          throw Exception(
+              "Policy/Value multi games mode only supports mirrored openings.");
+        }
+        if (kTotalGames > 0 && kTotalGames % 2 == 1) {
+          throw Exception(
+              "Policy/Value multi games can't support mirrored with an odd "
+              "number "
+              "of games.");
+        }
+        int to_take = 2 * multi_games_size_;
+        int max_take = 2 * multi_games_size_;
+        if (kTotalGames != -1) {
+          int cap = kTotalGames == -2 ? openings_.size() * 2 : kTotalGames;
+          to_take = std::min(max_take, cap - games_count_);
+        }
+        if (to_take <= 0) {
+          break;
+        }
+        game_id = games_count_;
+        count = to_take;
+        games_count_ += to_take;
+      } else {
+        bool mirrored = player_options_[0][0].Get<bool>(kOpeningsMirroredId);
+        if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
+            (kTotalGames == -2 && !openings_.empty() &&
+             games_count_ >=
+                 static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)) ||
+            (!games_to_replay_.empty() &&
+             games_count_ >= static_cast<int>(games_to_replay_.size())))
+          break;
+        game_id = games_count_++;
+      }
     }
-    PlayOneGame(game_id);
+    if (multi_games_size_) {
+      PlayMultiGames(game_id, count);
+    } else {
+      PlayOneGame(game_id);
+    }
   }
 }
 
@@ -462,6 +641,7 @@ void SelfPlayTournament::RunBlocking() {
     Worker();
     Mutex::Lock lock(mutex_);
     if (!abort_) {
+      SaveResults();
       tournament_info_.finished = true;
       tournament_callback_(tournament_info_);
     }
@@ -482,6 +662,7 @@ void SelfPlayTournament::Wait() {
   {
     Mutex::Lock lock(mutex_);
     if (!abort_) {
+      SaveResults();
       tournament_info_.finished = true;
       tournament_callback_(tournament_info_);
     }
@@ -493,6 +674,8 @@ void SelfPlayTournament::Abort() {
   abort_ = true;
   for (auto& game : games_)
     if (game) game->Abort();
+  for (auto& game : multigames_)
+    if (game) game->Abort();
 }
 
 void SelfPlayTournament::Stop() {
@@ -503,6 +686,28 @@ void SelfPlayTournament::Stop() {
 SelfPlayTournament::~SelfPlayTournament() {
   Abort();
   Wait();
+}
+
+void SelfPlayTournament::SaveResults() {
+  if (kTournamentResultsFile.empty()) return;
+  std::ofstream output(kTournamentResultsFile, std::ios_base::app);
+  auto p1name =
+      player_options_[0][0].Get<std::string>(SharedBackendParams::kWeightsId);
+  auto p2name =
+      player_options_[1][0].Get<std::string>(SharedBackendParams::kWeightsId);
+
+  output << std::endl;
+  output << "[White \"" << p1name << "\"]" << std::endl;
+  output << "[Black \"" << p2name << "\"]" << std::endl;
+  output << "[Results \"" << tournament_info_.results[0][0] << " "
+         << tournament_info_.results[2][0] << " "
+         << tournament_info_.results[1][0] << "\"]" << std::endl;
+  output << std::endl;
+  output << "[White \"" << p2name << "\"]" << std::endl;
+  output << "[Black \"" << p1name << "\"]" << std::endl;
+  output << "[Results \"" << tournament_info_.results[2][1] << " "
+         << tournament_info_.results[0][1] << " "
+         << tournament_info_.results[1][1] << "\"]" << std::endl;
 }
 
 }  // namespace lczero
