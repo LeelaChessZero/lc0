@@ -29,7 +29,6 @@
 
 #include <algorithm>
 
-#include "chess/gamestate.h"
 #include "chess/position.h"
 #include "neural/backend.h"
 #include "neural/memcache.h"
@@ -48,25 +47,21 @@ const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
+const OptionId kPonderId{
+    "", "Ponder",
+    "Indicates to the engine that it will be requested to ponder. This "
+    "postpones resetting the search tree until the search is started."};
 
 const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
 }  // namespace
 
 void Engine::PopulateOptions(OptionsParser* options) {
+  options->Add<BoolOption>(kPonderId) = false;
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<BoolOption>(kStrictUciTiming) = false;
   options->HideOption(kStrictUciTiming);
   options->Add<BoolOption>(kPreload) = false;
-}
-
-Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
-    : options_(opts),
-      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {
-  if (options_.Get<bool>(kPreload)) {
-    UpdateBackendConfig();
-    // EnsureSyzygyTablebasesLoaded();
-  }
 }
 
 namespace {
@@ -85,6 +80,15 @@ GameState MakeGameState(const std::string& fen,
   return state;
 }
 }  // namespace
+
+Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
+    : options_(opts),
+      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {
+  if (options_.Get<bool>(kPreload)) {
+    UpdateBackendConfig();
+    EnsureSyzygyTablebasesLoaded();
+  }
+}
 
 void Engine::EnsureSearchStopped() {
   search_->AbortSearch();
@@ -126,14 +130,33 @@ void Engine::EnsureSyzygyTablebasesLoaded() {
   search_->SetSyzygyTablebase(syzygy_tb_.get());
 }
 
+// Initializes the search with either the specified position for the normal
+// search or the position one ply trimmed for the ponder search.
+void Engine::InitializeSearchPosition(bool for_ponder) {
+  assert(last_position_);
+  if (!for_ponder) {
+    search_->SetPosition(*last_position_);
+    return;
+  }
+  if (last_position_->moves.empty()) {
+    throw Exception("Ponder search requires at least one move.");
+  }
+  GameState position = *last_position_;
+  position.moves.pop_back();
+  search_->SetPosition(position);
+  return;
+}
+
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
   EnsureSearchStopped();
-  if (!options_.Get<bool>(kStrictUciTiming)) search_->StartClock();
+  ponder_enabled_ = options_.Get<bool>(kPonderId);
+  strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
+  if (!strict_uci_timing_) search_->StartClock();
   UpdateBackendConfig();
   EnsureSyzygyTablebasesLoaded();
-  search_->SetPosition(MakeGameState(fen, moves));
-  search_initialized_ = true;
+  last_position_ = MakeGameState(fen, moves);
+  if (!ponder_enabled_) InitializeSearchPosition(/*for_ponder=*/false);
 }
 
 void Engine::NewGame() {
@@ -142,12 +165,29 @@ void Engine::NewGame() {
 }
 
 void Engine::Go(const GoParams& params) {
-  if (options_.Get<bool>(kStrictUciTiming)) search_->StartClock();
-  if (!search_initialized_) NewGame();
+  if (!ponder_enabled_ && params.ponder) {
+    throw Exception(
+        "Ponder is not enabled, but the ponder search is requested.");
+  }
+  if (strict_uci_timing_) search_->StartClock();
+  if (!last_position_) NewGame();
+  if (ponder_enabled_) InitializeSearchPosition(params.ponder);
+  last_go_params_ = params;
   search_->StartSearch(params);
 }
 
 void Engine::Stop() { search_->StopSearch(); }
+
+void Engine::PonderHit() {
+  if (!last_go_params_ || !last_go_params_->ponder) {
+    throw Exception("ponderhit while not pondering");
+  }
+  EnsureSearchStopped();
+  search_->StartClock();
+  last_go_params_->ponder = false;
+  InitializeSearchPosition(/*ponder=*/false);
+  search_->StartSearch(*last_go_params_);
+}
 
 void Engine::RegisterUciResponder(UciResponder* responder) {
   uci_forwarder_.Register(responder);
