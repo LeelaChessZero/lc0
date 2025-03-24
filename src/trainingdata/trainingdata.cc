@@ -117,7 +117,8 @@ void V6TrainingDataArray::Add(const classic::Node* node,
                               classic::Eval played_eval, bool best_is_proven,
                               Move best_move, Move played_move,
                               std::span<Move> legal_moves,
-                              const std::optional<EvalResult>& nneval) {
+                              const std::optional<EvalResult>& nneval,
+                              float policy_softmax_temp) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -149,17 +150,16 @@ void V6TrainingDataArray::Add(const classic::Node* node,
   // Set moves probabilities according to their relative amount of visits.
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
-  float max_p = -std::numeric_limits<float>::infinity();
-  if (nneval) max_p = *std::max_element(nneval->p.begin(), nneval->p.end());
   float total = 0.0;
   for (const auto& child : node->Edges()) {
-    const Move move = child.GetMove(position.IsBlackToMove());
+    const Move move = child.GetMove();
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (nneval) {
       size_t move_idx =
           std::find(legal_moves.begin(), legal_moves.end(), move) -
           legal_moves.begin();
-      float P = std::exp(nneval->p[move_idx] - max_p);
+      // Undo any softmax temperature in the cached data.
+      float P = std::pow(nneval->p[move_idx], policy_softmax_temp);
       if (fracv > 0) {
         kld_sum += fracv * std::log(fracv / P);
       }
