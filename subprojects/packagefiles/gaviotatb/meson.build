@@ -24,7 +24,8 @@ gaviotatb_includes = [
   'compression',
   'compression/huffman',
   'compression/liblzf',
-  'compression/lzma'
+  'compression/lzma',
+  'compression/zlib'
 ]
 
 gaviota_lib = static_library('gaviota',

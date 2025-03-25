@@ -101,7 +101,7 @@ class V6TrainingDataArray {
            classic::Eval best_eval, classic::Eval played_eval,
            bool best_is_proven, Move best_move, Move played_move,
            std::span<Move> legal_moves,
-           const std::optional<EvalResult>& nneval);
+           const std::optional<EvalResult>& nneval, float policy_softmax_temp);
 
   // Writes training data to a file.
   void Write(TrainingDataWriter* writer, GameResult result,
