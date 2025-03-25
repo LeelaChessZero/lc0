@@ -98,7 +98,14 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
-
+const OptionId kReplayFileId{
+    "replay-pgn", "ReplayPgnFile",
+    "A path name to a pgn file containing games to replay."};
+const OptionId kPGgnVariationPlyId{"pgn-variation-ply", "PgnVariationPly",
+                                   "Number of ply to keep from each pgn "
+                                   "variation. The default -1 disables pgn "
+                                   "variation handling and also disables pgn "
+                                   "syntax checking inside variations."};
 }  // namespace
 
 void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
@@ -137,6 +144,8 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   options->Add<ChoiceOption>(kOpeningsModeId, openings_modes) = "sequential";
 
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<StringOption>(kReplayFileId) = "";
+  options->Add<IntOption>(kPGgnVariationPlyId, -1, 999999999) = -1;
   SelfPlayGame::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
@@ -182,15 +191,33 @@ SelfPlayTournament::SelfPlayTournament(
           options.Get<std::string>(kTournamentResultsFileId)),
       kDiscardedStartChance(options.Get<float>(kDiscardedStartChanceId)) {
   multi_games_size_ = std::max(kPolicyGamesSize, kValueGamesSize);
-  std::string book = options.Get<std::string>(kOpeningsFileId);
-  if (!book.empty()) {
+  std::string opening_book = options.Get<std::string>(kOpeningsFileId);
+  if (!opening_book.empty()) {
     PgnReader book_reader;
-    book_reader.AddPgnFile(book);
+    book_reader.AddPgnFile(opening_book, options.Get<int>(kPGgnVariationPlyId));
     openings_ = book_reader.ReleaseGames();
     if (options.Get<std::string>(kOpeningsModeId) == "shuffled") {
       Random::Get().Shuffle(openings_.begin(), openings_.end());
     }
   }
+  std::string replay_book = options.Get<std::string>(kReplayFileId);
+  if (!replay_book.empty()) {
+    if (!opening_book.empty()) {
+      throw Exception(
+          "You cannot specify an opening book when replaying games.");
+    }
+    if (multi_games_size_ > 0) {
+      throw Exception(
+        "Policy/Value games do not support replaying.");
+    }
+    if (!options.IsDefault<int>(kTotalGamesId)) {
+      throw Exception("You cannot specify a number of games when replaying.");
+    }
+    PgnReader book_reader;
+    book_reader.AddPgnFile(replay_book, options.Get<int>(kPGgnVariationPlyId));
+    games_to_replay_ = book_reader.ReleaseGames();
+  }
+
   if (kPolicyGamesSize > 0 && kValueGamesSize > 0) {
     throw Exception("Can't do both policy and value games at the same time.");
   }
@@ -208,6 +235,7 @@ SelfPlayTournament::SelfPlayTournament(
         "the "
         "opening book more than once.");
   }
+
   // If playing just one game, the player1 is white, otherwise randomize.
   if (kTotalGames != 1) {
     first_game_black_ = Random::Get().GetBool();
@@ -293,6 +321,13 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       discard_pile_.pop_back();
     }
   }
+  Opening game_to_replay;
+  if (!games_to_replay_.empty()) {
+    game_to_replay = games_to_replay_[game_number];
+    if (game_to_replay.moves.empty()) return;
+    opening.start_fen = game_to_replay.start_fen;
+  }
+
   const int color_idx[2] = {player1_black ? 1 : 0, player1_black ? 0 : 1};
 
   PlayerOptions options[2];
@@ -388,10 +423,11 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   auto player1_threads = player_options_[0][color_idx[0]].Get<int>(kThreadsId);
   auto player2_threads = player_options_[1][color_idx[1]].Get<int>(kThreadsId);
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb,
-            enable_resign);
+            game_to_replay, enable_resign);
 
   // If game was aborted, it's still undecided.
-  if (game.GetGameResult() != GameResult::UNDECIDED) {
+  if (game.GetGameResult() != GameResult::UNDECIDED ||
+      !game_to_replay.moves.empty()) {
     // Game callback.
     GameInfo game_info;
     game_info.game_result = game.GetGameResult();
@@ -416,11 +452,13 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     // Update tournament stats.
     {
       Mutex::Lock lock(mutex_);
-      int result = game.GetGameResult() == GameResult::DRAW        ? 1
-                   : game.GetGameResult() == GameResult::WHITE_WON ? 0
-                                                                   : 2;
-      if (player1_black) result = 2 - result;
-      ++tournament_info_.results[result][player1_black ? 1 : 0];
+      if (game.GetGameResult() != GameResult::UNDECIDED) {
+        int result = game.GetGameResult() == GameResult::DRAW        ? 1
+                     : game.GetGameResult() == GameResult::WHITE_WON ? 0
+                                                                     : 2;
+        if (player1_black) result = 2 - result;
+        ++tournament_info_.results[result][player1_black ? 1 : 0];
+      }
       tournament_info_.move_count_ += game.move_count_;
       tournament_info_.nodes_total_ += game.nodes_total_;
       tournament_callback_(tournament_info_);
@@ -575,7 +613,9 @@ void SelfPlayTournament::Worker() {
         if ((kTotalGames >= 0 && games_count_ >= kTotalGames) ||
             (kTotalGames == -2 && !openings_.empty() &&
              games_count_ >=
-                 static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)))
+                 static_cast<int>(openings_.size()) * (mirrored ? 2 : 1)) ||
+            (!games_to_replay_.empty() &&
+             games_count_ >= static_cast<int>(games_to_replay_.size())))
           break;
         game_id = games_count_++;
       }
