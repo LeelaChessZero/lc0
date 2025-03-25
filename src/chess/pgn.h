@@ -36,6 +36,7 @@
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
+#include "chess/position.h"
 #include "utils/exception.h"
 #include "utils/logging.h"
 
@@ -44,6 +45,7 @@ namespace lczero {
 struct Opening {
   std::string start_fen = ChessBoard::kStartposFen;
   MoveList moves;
+  GameResult result = GameResult::UNDECIDED;
 };
 
 inline bool GzGetLine(gzFile file, std::string& line) {
@@ -64,7 +66,7 @@ inline bool GzGetLine(gzFile file, std::string& line) {
 
 class PgnReader {
  public:
-  void AddPgnFile(const std::string& filepath) {
+  void AddPgnFile(const std::string& filepath, int variation_history_len = 0) {
     const gzFile file = gzopen(filepath.c_str(), "r");
     if (!file) {
       throw Exception(errno == ENOENT ? "Opening book file not found."
@@ -75,21 +77,22 @@ class PgnReader {
     bool in_comment = false;
     bool started = false;
     while (GzGetLine(file, line)) {
+      line_no_++;
       // Check if we have a UTF-8 BOM. If so, just ignore it.
       // Only supposed to exist in the first line, but should not matter.
       if (line.substr(0,3) == "\xEF\xBB\xBF") line = line.substr(3);
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
-      if (line.empty() || line[0] == '[') {
+      if ((line.empty() || line[0] == '[') && !in_comment) {
         if (started) {
-          Flush();
+          Flush("*");
           started = false;
         }
         auto uc_line = line;
         std::transform(
             uc_line.begin(), uc_line.end(), uc_line.begin(),
             [](unsigned char c) { return std::toupper(c); }  // correct
-        );
+            );
         if (uc_line.find("[FEN \"", 0) == 0) {
           auto start_trimmed = line.substr(6);
           cur_startpos_ = start_trimmed.substr(0, start_trimmed.find('"'));
@@ -97,9 +100,6 @@ class PgnReader {
         }
         continue;
       }
-      // Must have at least one non-tag non-empty line in order to be considered
-      // a game.
-      started = true;
       // Handle braced comments.
       int cur_offset = 0;
       while ((in_comment && line.find('}', cur_offset) != std::string::npos) ||
@@ -123,12 +123,78 @@ class PgnReader {
       if (line.empty()) continue;
       std::istringstream iss(line);
       std::string word;
-      while (!iss.eof()) {
+      std::string tmp_word;
+      while (!iss.eof() || !tmp_word.empty()) {
         word.clear();
-        iss >> word;
-        if (word.size() < 2) continue;
+        if (tmp_word.empty()) {
+          iss >> word;
+        } else {
+          word.swap(tmp_word);
+        }
+        if (word[0] == '(') {
+          if (cur_game_.size() == 0) {
+            CERR << "Variation with no move on line " << line_no_ << "!!";
+            throw Exception("Invalid variation.");
+          }
+          variation_stack_.push_back(cur_game_);
+          cur_game_.pop_back();
+          cur_board_.SetFromFen(cur_startpos_);
+          for (auto move : cur_game_) {
+            if (cur_board_.flipped()) {
+              move.Mirror();
+            }
+            cur_board_.ApplyMove(move);
+            cur_board_.Mirror();
+          }
+          tmp_word = word.substr(1);
+          continue;
+        } else if (word[0] == ')') {
+          if (variation_stack_.size() == 0) {
+            CERR << "Too many closing parentheses on line " << line_no_ << "!!";
+            throw Exception("Invalid variation nesting.");
+          }
+          if (variation_history_len >= 0) {
+            int len =
+                variation_stack_.back().size() - 1 - variation_history_len;
+            if (len > 0) {
+              int rule50;
+              int moves;
+              cur_board_.SetFromFen(cur_startpos_, &rule50, &moves);
+              int game_ply = 2 * moves - (cur_board_.flipped() ? 1 : 2);
+              Position pos(cur_board_, rule50, game_ply);
+              for (int i = 0; i < len; i++) {
+                Move move = cur_game_[i];
+                if (pos.IsBlackToMove()) move.Mirror();
+                pos = Position(pos, move);
+              }
+              games_.push_back({GetFen(pos), MoveList(cur_game_.begin() + len,
+                                                      cur_game_.end()),
+                                GameResult::UNDECIDED});
+            } else {
+              games_.push_back(
+                  {cur_startpos_, cur_game_, GameResult::UNDECIDED});
+            }
+          }
+          cur_game_ = variation_stack_.back();
+          variation_stack_.pop_back();
+          cur_board_.SetFromFen(cur_startpos_);
+          for (auto move : cur_game_) {
+            if (cur_board_.flipped()) {
+              move.Mirror();
+            }
+            cur_board_.ApplyMove(move);
+            cur_board_.Mirror();
+          }
+          tmp_word = word.substr(1);
+          continue;
+        }
+        auto idx = word.find_first_of("()");
+        if (idx != std::string::npos) {
+          tmp_word = word.substr(idx);
+          word.resize(idx);
+        }
         // Trim move numbers from front.
-        const auto idx = word.find('.');
+        idx = word.find('.');
         if (idx != std::string::npos) {
           bool all_nums = true;
           for (size_t i = 0; i < idx; i++) {
@@ -139,26 +205,43 @@ class PgnReader {
           }
           if (all_nums) {
             word = word.substr(idx + 1);
+            idx = word.find_first_not_of(".");
+            if (idx == std::string::npos) continue;
+            word = word.substr(idx);
           }
         }
-        // Pure move numbers can be skipped.
-        if (word.size() < 2) continue;
-        // Ignore score line.
-        if (word == "1/2-1/2" || word == "1-0" || word == "0-1" || word == "*")
+        // Pure move numbers can be skipped (also empty).
+        if (word.find_first_not_of("0123456789") == std::string::npos) continue;
+        // Also skip spurious annotations.
+        if (word.find_first_not_of("!?") == std::string::npos) continue;
+        // Ignore "Numeric Annotation Glyph".
+        if (word[0] == '$') continue;
+        // Ignore variations if variation_history_len < 0.
+        if (variation_history_len < 0 && variation_stack_.size() > 0) continue;
+        // Check for result.
+        if (word == "1/2-1/2" || word == "1-0" || word == "0-1" ||
+            word == "*") {
+          Flush(word);
+          started = false;
           continue;
+        }
         cur_game_.push_back(SanToMove(word, cur_board_));
         cur_board_.ApplyMove(cur_game_.back());
         // Board ApplyMove wants mirrored for black, but outside code wants
         // normal, so mirror it back again.
-        // Check equal to 0 since we've already added the position.
-        if ((cur_game_.size() % 2) == 0) {
+        if (cur_board_.flipped()) {
           cur_game_.back().Mirror();
         }
         cur_board_.Mirror();
+        started = true;
       }
     }
+    if (in_comment) {
+      CERR << "Comment reached the end of file!!";
+      throw Exception("Unterminated comment.");
+    }
     if (started) {
-      Flush();
+      Flush("*");
     }
     gzclose(file);
   }
@@ -166,8 +249,20 @@ class PgnReader {
   std::vector<Opening>&& ReleaseGames() { return std::move(games_); }
 
  private:
-  void Flush() {
-    games_.push_back({cur_startpos_, cur_game_});
+  void Flush(std::string termination) {
+    if (variation_stack_.size() > 0) {
+      CERR << "Variation not terminated on line " << line_no_ << "!!";
+      throw Exception("Invalid variation nesting.");
+    }
+    auto result = GameResult::UNDECIDED;
+    if (termination == "1/2-1/2") {
+      result = GameResult::DRAW;
+    } else if (termination == "1-0") {
+      result = GameResult::WHITE_WON;
+    } else if (termination == "0-1") {
+      result = GameResult::BLACK_WON;
+    }
+    games_.push_back({cur_startpos_, cur_game_, result});
     cur_game_.clear();
     cur_board_.SetFromFen(ChessBoard::kStartposFen);
     cur_startpos_ = ChessBoard::kStartposFen;
@@ -188,7 +283,7 @@ class PgnReader {
       default:
         // 0 and 1 are pawn and king, which are not legal promotions, other
         // numbers don't correspond to a known piece type.
-        CERR << "Unexpected promotion!!";
+        CERR << "Unexpected promotion on line " << line_no_ << "!!";
         throw Exception("Trying to create a move with illegal promotion.");
     }
   }
@@ -294,14 +389,14 @@ class PgnReader {
           continue;
         }
         if (pc1 != -1) {
-          CERR << "Ambiguous!!";
+          CERR << "Ambiguous on line " << line_no_ << "!!";
           throw Exception("Opening book move seems ambiguous.");
         }
         pr1 = sq.row();
         pc1 = sq.col();
       }
       if (pc1 == -1) {
-        CERR << "No Match!!";
+        CERR << "No Match on line " << line_no_ << "!!";
         throw Exception("Opening book move seems illegal.");
       }
       r1 = pr1;
@@ -315,9 +410,11 @@ class PgnReader {
     return m;
   }
 
+  int line_no_ = 0;
   ChessBoard cur_board_{ChessBoard::kStartposFen};
   MoveList cur_game_;
   std::string cur_startpos_ = ChessBoard::kStartposFen;
+  std::vector<MoveList> variation_stack_;
   std::vector<Opening> games_;
 };
 
