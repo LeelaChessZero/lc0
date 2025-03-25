@@ -70,7 +70,7 @@ option('native_cuda',
 
 option('cudnn',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable cuDNN backend')
 
 option('plain_cuda',
@@ -80,12 +80,12 @@ option('plain_cuda',
 
 option('opencl',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable OpenCL backend')
 
 option('dx',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable DirectX12 backend')
 
 option('tensorflow',
@@ -105,7 +105,7 @@ option('openblas',
 
 option('mkl',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable MKL BLAS support')
 
 option('dnnl',
