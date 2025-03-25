@@ -36,7 +36,8 @@ using net_t = float;
 #include <string>
 #include <vector>
 
-#include "cl2.hpp"
+#include "opencl.hpp"
+
 #include "neural/backends/opencl/OpenCLBuffers.h"
 #include "neural/backends/opencl/OpenCLParams.h"
 
