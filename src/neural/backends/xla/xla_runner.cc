@@ -198,7 +198,7 @@ std::vector<std::unique_ptr<XlaMutableTensor>> XlaRunner::ExecuteBlocking(
           ->HostToDevice(
               {static_cast<const char*>(inputs[0]->data()), inputs[0]->size()},
               XlaTypeToPjrtType(inputs[0]->type()), new_shape,
-              devices_[0].get())
+              devices_.at(device_).get())
           ->AwaitAndReleaseBuffer();
   // Make a copy to support multiple concurrent calls, not sure if it's needed.
   auto input_buffers = buffers_;
