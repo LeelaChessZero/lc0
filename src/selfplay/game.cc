@@ -299,7 +299,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       training_data_.Add(tree_[idx]->GetCurrentHead(),
                          tree_[idx]->GetPositionHistory(), best_eval,
                          played_eval, best_is_proof, best_move, move,
-                         legal_moves, nneval);
+                         legal_moves, nneval,
+                         search_->GetParams().GetPolicySoftmaxTemp());
     }
     // Must reset the search before mutating the tree.
     search_.reset();
