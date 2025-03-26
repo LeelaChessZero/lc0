@@ -284,7 +284,9 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
     if (rookdiff.count() == 2) {
       auto from = OldPosition(prior[5], kingdiff);
       auto to = OldPosition(prior[3], rookdiff);
-      return Move::WhiteCastling(from.file(), to.file());
+      Move m = Move::WhiteCastling(from.file(), to.file());
+      if (from.rank() == kRank8) m.Flip();
+      return m;
     }
     auto from = OldPosition(prior[5], kingdiff);
     auto to = SingleSquare(planes[11].mask & kingdiff.as_int());
@@ -300,8 +302,11 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
       } else {
         to = Square(to.file() - 1, from.rank());
       }
+      Move m = Move::WhiteCastling(from.file(), to.file());
+      if (from.rank() == kRank8) m.Flip();
+      return m;
     }
-    return Move::WhiteCastling(from.file(), to.file());
+    return Move::White(from, to);
   }
   if (queendiff.count() == 2) {
     auto from = OldPosition(prior[4], queendiff);
@@ -322,6 +327,9 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
       to = from;
       // And since the king didn't move it forms the start position.
       from = kingpos;
+      Move m = Move::WhiteCastling(from.file(), to.file());
+      if (from.rank() == kRank8) m.Flip();
+      return m;
     }
     return Move::White(from, to);
   }
@@ -338,6 +346,13 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
   if (pawndiff.count() == 2) {
     auto from = OldPosition(prior[0], pawndiff);
     auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
+    // Check for enpassant.
+    auto targets = BitBoard(prior[6].mask | prior[7].mask | prior[8].mask |
+                            prior[9].mask | prior[10].mask);
+    targets.Mirror();
+    if (from.file() != to.file() && (targets & pawndiff) == 0) {
+      return Move::WhiteEnPassant(from, to);
+    }
     return Move::White(from, to);
   }
   assert(false);
