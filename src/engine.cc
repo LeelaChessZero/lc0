@@ -81,14 +81,73 @@ GameState MakeGameState(const std::string& fen,
 }
 }  // namespace
 
+class Engine::UciPonderForwarder : public UciResponder {
+ public:
+  UciPonderForwarder(Engine* engine) : engine_(engine) {}
+
+  void OutputBestMove(BestMoveInfo* info) override {
+    if (!wrapped_) return;
+    wrapped_->OutputBestMove(info);
+  }
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    if (!wrapped_) return;
+    if (engine_->last_go_params_ && engine_->last_go_params_->ponder) {
+      assert(engine_->last_position_ &&
+             !engine_->last_position_->moves.empty());
+      const Move ponder_move_ = engine_->last_position_->moves.back();
+      // Output all stats from main variation (not necessary the ponder move)
+      // but PV only from ponder move.
+      ThinkingInfo ponder_info;
+      for (const auto& info : *infos) {
+        if (info.multipv <= 1) {
+          ponder_info = info;
+          if (ponder_info.mate) ponder_info.mate = -*ponder_info.mate;
+          if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+          if (ponder_info.depth > 1) ponder_info.depth--;
+          if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+          if (ponder_info.wdl)
+            std::swap(ponder_info.wdl->w, ponder_info.wdl->l);
+          ponder_info.pv.clear();
+        }
+        if (!info.pv.empty() && info.pv[0] == ponder_move_) {
+          ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
+        }
+      }
+      infos->clear();
+      infos->push_back(ponder_info);
+    }
+    wrapped_->OutputThinkingInfo(infos);
+  }
+
+  void Register(UciResponder* wrapped) {
+    if (wrapped_) {
+      throw Exception("UciPonderForwarder already has a wrapped responder");
+    }
+    wrapped_ = wrapped;
+  }
+  void Unregister(UciResponder* wrapped) {
+    if (wrapped_ != wrapped) {
+      throw Exception("UciPonderForwarder doesn't have this wrapped responder");
+    }
+    wrapped_ = nullptr;
+  }
+
+ private:
+  UciResponder* wrapped_ = nullptr;
+  Engine* const engine_;
+};
+
 Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
-    : options_(opts),
-      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {
+    : uci_forwarder_(std::make_unique<UciPonderForwarder>(this)),
+      options_(opts),
+      search_(factory.CreateSearch(uci_forwarder_.get(), &options_)) {
   if (options_.Get<bool>(kPreload)) {
     UpdateBackendConfig();
     EnsureSyzygyTablebasesLoaded();
   }
 }
+
+Engine::~Engine() = default;
 
 void Engine::EnsureSearchStopped() {
   search_->AbortSearch();
@@ -190,11 +249,11 @@ void Engine::PonderHit() {
 }
 
 void Engine::RegisterUciResponder(UciResponder* responder) {
-  uci_forwarder_.Register(responder);
+  uci_forwarder_->Register(responder);
 }
 
 void Engine::UnregisterUciResponder(UciResponder* responder) {
-  uci_forwarder_.Unregister(responder);
+  uci_forwarder_->Unregister(responder);
 }
 
 }  // namespace lczero

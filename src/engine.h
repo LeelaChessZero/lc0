@@ -40,6 +40,7 @@ namespace lczero {
 class Engine : public EngineControllerBase {
  public:
   Engine(const SearchFactory&, const OptionsDict&);
+  ~Engine() override;
 
   static void PopulateOptions(OptionsParser*);
 
@@ -60,7 +61,8 @@ class Engine : public EngineControllerBase {
   void EnsureSyzygyTablebasesLoaded();
   void InitializeSearchPosition(bool for_ponder);
 
-  UciResponderForwarder uci_forwarder_;
+  class UciPonderForwarder;
+  std::unique_ptr<UciPonderForwarder> uci_forwarder_;
   const OptionsDict& options_;
   std::unique_ptr<SearchBase> search_;  // absl_notnull
   std::string backend_name_;  // Remember the backend name to track changes.
@@ -70,7 +72,7 @@ class Engine : public EngineControllerBase {
   std::string previous_tb_paths_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;  // absl_nullable
 
-  // UCI parameters cache to be consistent between `position` and `go`.  
+  // UCI parameters cache to be consistent between `position` and `go`.
   bool ponder_enabled_ = false;
   bool strict_uci_timing_ = false;
   // Last position set for the search. Used to:
