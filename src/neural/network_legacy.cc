@@ -142,7 +142,10 @@ BaseWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
       dense_w(LayerAdapter(mha.dense_w()).as_vector()),
       dense_b(LayerAdapter(mha.dense_b()).as_vector()),
       smolgen(Smolgen(mha.smolgen())),
-      has_smolgen(mha.has_smolgen()) {}
+      has_smolgen(mha.has_smolgen()),
+      rpe_q(LayerAdapter(mha.rpe_q()).as_vector()),
+      rpe_k(LayerAdapter(mha.rpe_k()).as_vector()),
+      rpe_v(LayerAdapter(mha.rpe_v()).as_vector()) {}
 
 BaseWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
     : dense1_w(LayerAdapter(ffn.dense1_w()).as_vector()),
