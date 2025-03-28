@@ -298,7 +298,7 @@ void OpenCLBuffers::forward(const std::vector<net_t>& input,
   auto pinnedOutBufferHost_val = m_commandqueue.enqueueMapBuffer(
       m_pinnedOutBuffer_val, CL_FALSE, CL_MAP_READ, 0,
       batch_size * m_finalSize_val);
-  void* pinnedOutBufferHost_mov;
+  void* pinnedOutBufferHost_mov = nullptr;
   if (m_finalSize_mov > 0) {
     pinnedOutBufferHost_mov = m_commandqueue.enqueueMapBuffer(
         m_pinnedOutBuffer_mov, CL_FALSE, CL_MAP_READ, 0,
