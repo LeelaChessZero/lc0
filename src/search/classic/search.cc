@@ -600,8 +600,12 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
 
 PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
   PositionHistory history(played_history_);
+  std::vector<Move> rmoves;
   for (const Node* n = node; n != root_node_; n = n->GetParent()) {
-    history.Append(n->GetOwnEdge()->GetMove());
+    rmoves.push_back(n->GetOwnEdge()->GetMove());
+  }
+  for (auto it = rmoves.rbegin(); it != rmoves.rend(); it++) {
+    history.Append(*it);
   }
   return history;
 }
