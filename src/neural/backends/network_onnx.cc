@@ -53,7 +53,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA, DML, ROCM };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
 
 class OnnxNetwork;
 
@@ -103,6 +103,8 @@ class OnnxNetwork : public Network {
   }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
+  Ort::SessionOptions GetOptions(int gpu, int threads, int batch_size);
+
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;
   int steps_;
@@ -124,7 +126,7 @@ class OnnxNetwork : public Network {
   // The batch size to use, or -1 for variable.
   int batch_size_;
   static constexpr int max_batch_size_ = 1024;
-  // For conditional locking if running the DML provider.
+  // For conditional locking if running the DML/ROCM/TRT provider.
   OnnxProvider provider_;
   std::mutex lock_;
 };
@@ -272,7 +274,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     // same to be true for the ROCm execution provider (at least for CNNs).
     // TODO: This may be a onnxruntime/ROCm bug, check onnxruntime 1.16 release.
     if (network_->provider_ == OnnxProvider::DML ||
-        network_->provider_ == OnnxProvider::ROCM) {
+        network_->provider_ == OnnxProvider::ROCM ||
+        network_->provider_ == OnnxProvider::TRT) {
       network_->lock_.lock();
     }
     network_->session_[step - 1].Run(
@@ -280,15 +283,16 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         network_->outputs_cstr_.data(), output_tensors_.data(),
         output_tensors_.size());
     if (network_->provider_ == OnnxProvider::DML ||
-        network_->provider_ == OnnxProvider::ROCM) {
+        network_->provider_ == OnnxProvider::ROCM ||
+        network_->provider_ == OnnxProvider::TRT) {
       network_->lock_.unlock();
     }
     i += batch;
   }
 }
 
-Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
-                               int batch_size) {
+Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
+                                            int batch_size) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -301,7 +305,7 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
             ->AddFreeDimensionOverrideByName(options, "batch", batch_size));
   }
 
-  switch (provider) {
+  switch (provider_) {
     case OnnxProvider::DML:
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
       options.DisableMemPattern();
@@ -312,6 +316,44 @@ Ort::SessionOptions GetOptions(OnnxProvider provider, int gpu, int threads,
       throw Exception("ONNX backend internal error.");
 #endif
       break;
+    case OnnxProvider::TRT: {
+      options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+
+      std::map<std::string, std::string> trt_options;
+      trt_options["device_id"] = std::to_string(gpu);
+      trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
+      trt_options["trt_int8_enable"] = "0";
+      trt_options["trt_engine_cache_enable"] = "1";
+      trt_options["trt_max_partition_iterations"] = "1000";
+      trt_options["trt_min_subgraph_size"] = "1";
+      trt_options["trt_engine_cache_enable"] = "1";
+      trt_options["trt_timing_cache_enable"] = "1";
+      trt_options["trt_layer_norm_fp32_fallback"] = "1";
+      // Looks like we need I/O binding to enable this.
+      // trt_options["trt_cuda_graph_enable"] = "1";
+      if (batch_size < 0) {
+        trt_options["trt_profile_min_shapes"] = inputs_[0] + ":1x112x8x8";
+        trt_options["trt_profile_max_shapes"] =
+            inputs_[0] + ":" + std::to_string(max_batch_size_) + "x112x8x8";
+        trt_options["trt_profile_opt_shapes"] =
+            inputs_[0] + ":" + std::to_string(max_batch_size_ / 4) + "x112x8x8";
+      }
+      std::vector<const char*> keys;
+      std::vector<const char*> values;
+      for (const auto& [key, value] : trt_options) {
+        keys.push_back(key.c_str());
+        values.push_back(value.c_str());
+      }
+
+      const auto& api = Ort::GetApi();
+      OrtTensorRTProviderOptionsV2* trt_options_v2;
+      Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt_options_v2));
+      Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(
+          trt_options_v2, keys.data(), values.data(), keys.size()));
+      options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
+      api.ReleaseTensorRTProviderOptions(trt_options_v2);
+      break;
+    }
     case OnnxProvider::ROCM: {
       OrtROCMProviderOptions rocm_options;
       rocm_options.device_id = gpu;
@@ -356,12 +398,6 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
     batch_size_ = max_batch_size_ / steps_;
   }
 
-  for (int step = 1; step <= steps_; step++)
-    session_.emplace_back(
-        onnx_env_, file.onnx_model().model().data(),
-        file.onnx_model().model().size(),
-        GetOptions(provider, gpu, threads, batch_size_ * step));
-
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
     throw Exception("NN doesn't have input planes defined.");
@@ -391,6 +427,11 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
   std::transform(outputs_.begin(), outputs_.end(),
                  std::back_inserter(outputs_cstr_),
                  [](const auto& x) { return x.c_str(); });
+
+  for (int step = 1; step <= steps_; step++)
+    session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
+                          file.onnx_model().model().size(),
+                          GetOptions(gpu, threads, batch_size_ * step));
 }
 
 template <OnnxProvider kProvider>
@@ -401,10 +442,14 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   int gpu = opts.GetOrDefault<int>("gpu", 0);
 
   int batch_size =
-      opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML ? 16 : -1);
+      opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML   ? 16
+                                      : kProvider == OnnxProvider::TRT ? 32
+                                                                       : -1);
 
-  int steps =
-      opts.GetOrDefault<int>("steps", kProvider == OnnxProvider::DML ? 4 : 1);
+  int steps = opts.GetOrDefault<int>(
+      "steps",
+      (kProvider == OnnxProvider::DML || kProvider == OnnxProvider::TRT) ? 4
+                                                                         : 1);
 
   int threads =
       opts.GetOrDefault<int>("threads", kProvider == OnnxProvider::CPU ? 1 : 0);
@@ -450,6 +495,7 @@ REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
+REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
