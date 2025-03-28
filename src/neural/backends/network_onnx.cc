@@ -338,10 +338,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
         trt_options["trt_profile_opt_shapes"] =
             inputs_[0] + ":" + std::to_string(max_batch_size_ / 4) + "x112x8x8";
       }
-
       std::vector<const char*> keys;
       std::vector<const char*> values;
-      for (const auto & [ key, value ] : trt_options) {
+      for (const auto& [key, value] : trt_options) {
         keys.push_back(key.c_str());
         values.push_back(value.c_str());
       }
@@ -349,14 +348,10 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       const auto& api = Ort::GetApi();
       OrtTensorRTProviderOptionsV2* trt_options_v2;
       Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt_options_v2));
-
       Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(
           trt_options_v2, keys.data(), values.data(), keys.size()));
-
       options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
-
       api.ReleaseTensorRTProviderOptions(trt_options_v2);
-
       break;
     }
     case OnnxProvider::ROCM: {
@@ -446,10 +441,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   int gpu = opts.GetOrDefault<int>("gpu", 0);
 
-  int batch_size = opts.GetOrDefault<int>(
-      "batch", kProvider == OnnxProvider::DML
-                   ? 16
-                   : kProvider == OnnxProvider::TRT ? 32 : -1);
+  int batch_size =
+      opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML   ? 16
+                                      : kProvider == OnnxProvider::TRT ? 32
+                                                                       : -1);
 
   int steps = opts.GetOrDefault<int>(
       "steps",
