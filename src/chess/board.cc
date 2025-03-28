@@ -574,7 +574,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
 }  // namespace lczero
 
 bool ChessBoard::ApplyMove(Move move) {
-  assert(our_pieces_.intersects(move.from().as_board()));
+  assert(our_pieces_.intersects(BitBoard::FromSquare(move.from())));
   const Square& from = move.from();
   const Square& to = move.to();
   const Rank from_rank = from.rank();
