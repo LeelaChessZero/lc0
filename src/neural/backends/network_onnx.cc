@@ -83,8 +83,8 @@ class OnnxComputation : public NetworkComputation {
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider, int gpu, int threads, bool int8,
-              int batch_size, int steps);
+              OnnxProvider provider, int gpu, int threads, int batch_size,
+              int steps);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
@@ -122,7 +122,6 @@ class OnnxNetwork : public Network {
   int mlh_head_ = -1;
   NetworkCapabilities capabilities_;
   bool fp16_;
-  bool int8_;
   bool bf16_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
@@ -323,7 +322,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu);
       trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
-      trt_options["trt_int8_enable"] = int8_ ? "1" : "0";
+      trt_options["trt_int8_enable"] = "0";
       trt_options["trt_engine_cache_enable"] = "1";
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
@@ -387,7 +386,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
 }
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
-                         OnnxProvider provider, int gpu, int threads, bool int8,
+                         OnnxProvider provider, int gpu, int threads,
                          int batch_size, int steps)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       steps_(steps),
@@ -395,7 +394,6 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
       fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
-      int8_(int8),
       bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
       batch_size_(batch_size),
       provider_(provider) {
@@ -463,12 +461,9 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   if (batch_size <= 0) batch_size = -1;  // Variable batch size.
 
-  bool int8 = kProvider != OnnxProvider::TRT ? false : opts.GetOrDefault<bool>(
-                                                           "int8", false);
-
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
-                                         int8, batch_size, steps);
+                                         batch_size, steps);
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
@@ -494,7 +489,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
-    return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu, int8,
+    return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
                                          threads, batch_size, steps);
   }
 }
