@@ -403,7 +403,8 @@ float DotProduct(uint64_t plane, const std::array<float, 64>& weights) {
 }
 
 int NumBits(uint64_t x) {
-  return std::distance(BitIterator<int>(x), BitIterator<int>(0));
+  using Iterator = BitIterator<int>;
+  return std::distance(Iterator(x), Iterator(0));
 }
 
 class TrivialNetworkComputation : public NetworkComputation {

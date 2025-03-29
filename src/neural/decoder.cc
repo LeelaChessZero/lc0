@@ -33,12 +33,12 @@ namespace lczero {
 
 namespace {
 
-BoardSquare SingleSquare(BitBoard input) {
+Square SingleSquare(BitBoard input) {
   for (auto sq : input) {
     return sq;
   }
   assert(false);
-  return BoardSquare();
+  return Square();
 }
 
 BitBoard MaskDiffWithMirror(const InputPlane& cur, const InputPlane& prev) {
@@ -47,7 +47,7 @@ BitBoard MaskDiffWithMirror(const InputPlane& cur, const InputPlane& prev) {
   return BitBoard(cur.mask ^ to_mirror.as_int());
 }
 
-BoardSquare OldPosition(const InputPlane& prev, BitBoard mask_diff) {
+Square OldPosition(const InputPlane& prev, BitBoard mask_diff) {
   auto to_mirror = BitBoard(prev.mask);
   to_mirror.Mirror();
   return SingleSquare(to_mirror & mask_diff);
@@ -95,34 +95,36 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     case pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2:
     case pblczero::NetworkFormat::
         INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON: {
-      int our_queenside = ChessBoard::FILE_A;
-      int their_queenside = ChessBoard::FILE_A;
-      int our_kingside = ChessBoard::FILE_H;
-      int their_kingside = ChessBoard::FILE_H;
+      File our_queenside = kFileA;
+      File their_queenside = kFileA;
+      File our_kingside = kFileH;
+      File their_kingside = kFileH;
       if (planes[kAuxPlaneBase + 0].mask != 0) {
         auto mask = planes[kAuxPlaneBase + 0].mask;
         if ((mask & 0xFFLL) != 0) {
-          our_queenside = GetLowestBit(mask & 0xFFLL);
+          our_queenside = File::FromIdx(GetLowestBit(mask & 0xFFLL));
           castlings.set_we_can_000();
         }
         if (mask >> 56 != 0) {
-          their_queenside = GetLowestBit(mask >> 56);
+          their_queenside = File::FromIdx(GetLowestBit(mask >> 56));
           castlings.set_they_can_000();
         }
       }
       if (planes[kAuxPlaneBase + 1].mask != 0) {
         auto mask = planes[kAuxPlaneBase + 1].mask;
         if ((mask & 0xFFLL) != 0) {
-          our_kingside = GetLowestBit(mask & 0xFFLL);
+          our_kingside.idx = GetLowestBit(mask & 0xFFLL);
           castlings.set_we_can_00();
         }
         if (mask >> 56 != 0) {
-          their_kingside = GetLowestBit(mask >> 56);
+          their_kingside.idx = GetLowestBit(mask >> 56);
           castlings.set_they_can_00();
         }
       }
-      castlings.SetRookPositions(our_queenside, our_kingside, their_queenside,
-                                 their_kingside);
+      castlings.our_kingside_rook = our_kingside;
+      castlings.our_queenside_rook = our_queenside;
+      castlings.their_kingside_rook = their_kingside;
+      castlings.their_queenside_rook = their_queenside;
       break;
     }
 
@@ -161,29 +163,30 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     int emptycounter = 0;
     for (int col = 0; col < 8; ++col) {
       char piece = '\0';
-      if (pawnsOurs.get(row, col)) {
+      Square square(File::FromIdx(col), Rank::FromIdx(row));
+      if (pawnsOurs.get(square)) {
         piece = 'P';
-      } else if (pawnsTheirs.get(row, col)) {
+      } else if (pawnsTheirs.get(square)) {
         piece = 'p';
-      } else if (knightsOurs.get(row, col)) {
+      } else if (knightsOurs.get(square)) {
         piece = 'N';
-      } else if (knightsTheirs.get(row, col)) {
+      } else if (knightsTheirs.get(square)) {
         piece = 'n';
-      } else if (bishopOurs.get(row, col)) {
+      } else if (bishopOurs.get(square)) {
         piece = 'B';
-      } else if (bishopTheirs.get(row, col)) {
+      } else if (bishopTheirs.get(square)) {
         piece = 'b';
-      } else if (rookOurs.get(row, col)) {
+      } else if (rookOurs.get(square)) {
         piece = 'R';
-      } else if (rookTheirs.get(row, col)) {
+      } else if (rookTheirs.get(square)) {
         piece = 'r';
-      } else if (queenOurs.get(row, col)) {
+      } else if (queenOurs.get(square)) {
         piece = 'Q';
-      } else if (queenTheirs.get(row, col)) {
+      } else if (queenTheirs.get(square)) {
         piece = 'q';
-      } else if (kingOurs.get(row, col)) {
+      } else if (kingOurs.get(square)) {
         piece = 'K';
-      } else if (kingTheirs.get(row, col)) {
+      } else if (kingTheirs.get(square)) {
         piece = 'k';
       }
       if (emptycounter > 0 && piece) {
@@ -209,8 +212,9 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
     if (planes[kAuxPlaneBase + 4].mask == 0) {
       fen += "-";
     } else {
-      int col = GetLowestBit(planes[kAuxPlaneBase + 4].mask >> 56);
-      fen += BoardSquare(5, col).as_string();
+      File file =
+          File::FromIdx(GetLowestBit(planes[kAuxPlaneBase + 4].mask >> 56));
+      fen += Square(file, kRank6).ToString();
     }
   } else {
     auto pawndiff = BitBoard(planes[6].mask ^ planes[kPlanesPerBoard + 6].mask);
@@ -220,15 +224,15 @@ void PopulateBoard(pblczero::NetworkFormat::InputFormat input_format,
       auto from =
           SingleSquare(planes[kPlanesPerBoard + 6].mask & pawndiff.as_int());
       auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
-      if (from.col() != to.col() || std::abs(from.row() - to.row()) != 2) {
+      if (from.file() != to.file() || std::abs(from.rank() - to.rank()) != 2) {
         fen += "-";
       } else {
         // TODO: Ensure enpassant is legal rather than setting it blindly?
         // Doesn't matter for rescoring use case as only legal moves will be
         // performed afterwards.
-        fen +=
-            BoardSquare((planes[kAuxPlaneBase + 4].mask != 0) ? 2 : 5, to.col())
-                .as_string();
+        fen += Square(to.file(),
+                      (planes[kAuxPlaneBase + 4].mask != 0) ? kRank3 : kRank6)
+                   .ToString();
       }
     } else {
       fen += "-";
@@ -257,19 +261,19 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
     auto from = SingleSquare(pawndiff);
     if (knightdiff.count() == 1) {
       auto to = SingleSquare(knightdiff);
-      return Move(from, to, Move::Promotion::Knight);
+      return Move::WhitePromotion(from, to, kKnight);
     }
     if (bishopdiff.count() == 1) {
       auto to = SingleSquare(bishopdiff);
-      return Move(from, to, Move::Promotion::Bishop);
+      return Move::WhitePromotion(from, to, kBishop);
     }
     if (rookdiff.count() == 1) {
       auto to = SingleSquare(rookdiff);
-      return Move(from, to, Move::Promotion::Rook);
+      return Move::WhitePromotion(from, to, kRook);
     }
     if (queendiff.count() == 1) {
       auto to = SingleSquare(queendiff);
-      return Move(from, to, Move::Promotion::Queen);
+      return Move::WhitePromotion(from, to, kQueen);
     }
     assert(false);
     return Move();
@@ -280,64 +284,79 @@ Move DecodeMoveFromInput(const InputPlanes& planes, const InputPlanes& prior) {
     if (rookdiff.count() == 2) {
       auto from = OldPosition(prior[5], kingdiff);
       auto to = OldPosition(prior[3], rookdiff);
-      return Move(from, to);
+      Move m = Move::WhiteCastling(from.file(), to.file());
+      if (from.rank() == kRank8) m.Flip();
+      return m;
     }
     auto from = OldPosition(prior[5], kingdiff);
     auto to = SingleSquare(planes[11].mask & kingdiff.as_int());
-    if (std::abs(from.col() - to.col()) > 1) {
+    if (std::abs(from.file() - to.file()) > 1) {
       // Chess 960 castling can leave the rook in place, but the king has moved
       // from one side of the rook to the other - thus has gone at least 2
       // squares, which is impossible for a normal king move. Can't work out the
       // rook location from rookdiff since its empty, but it is known given the
       // direction of the king movement and the knowledge that the rook hasn't
       // moved.
-      if (from.col() > to.col()) {
-        to = BoardSquare(from.row(), to.col() + 1);
+      if (from.file() > to.file()) {
+        to = Square(to.file() + 1, from.rank());
       } else {
-        to = BoardSquare(from.row(), to.col() - 1);
+        to = Square(to.file() - 1, from.rank());
       }
+      Move m = Move::WhiteCastling(from.file(), to.file());
+      if (from.rank() == kRank8) m.Flip();
+      return m;
     }
-    return Move(from, to);
+    return Move::White(from, to);
   }
   if (queendiff.count() == 2) {
     auto from = OldPosition(prior[4], queendiff);
     auto to = SingleSquare(planes[10].mask & queendiff.as_int());
-    return Move(from, to);
+    return Move::White(from, to);
   }
   if (rookdiff.count() == 2) {
     auto from = OldPosition(prior[3], rookdiff);
     auto to = SingleSquare(planes[9].mask & rookdiff.as_int());
     // Only one king, so we can simply grab its current location directly.
     auto kingpos = SingleSquare(planes[11].mask);
-    if (from.row() == kingpos.row() && to.row() == kingpos.row() &&
-        ((from.col() < kingpos.col() && to.col() > kingpos.col()) ||
-         (from.col() > kingpos.col() && to.col() < kingpos.col()))) {
+    if (from.rank() == kingpos.rank() && to.rank() == kingpos.rank() &&
+        ((from.file() < kingpos.file() && to.file() > kingpos.file()) ||
+         (from.file() > kingpos.file() && to.file() < kingpos.file()))) {
       // If the king hasn't moved, this could still be a chess 960 castling move
       // if the rook has passed through the king.
       // Destination of the castling move is where the rook started.
       to = from;
       // And since the king didn't move it forms the start position.
       from = kingpos;
+      Move m = Move::WhiteCastling(from.file(), to.file());
+      if (from.rank() == kRank8) m.Flip();
+      return m;
     }
-    return Move(from, to);
+    return Move::White(from, to);
   }
   if (bishopdiff.count() == 2) {
     auto from = OldPosition(prior[2], bishopdiff);
     auto to = SingleSquare(planes[8].mask & bishopdiff.as_int());
-    return Move(from, to);
+    return Move::White(from, to);
   }
   if (knightdiff.count() == 2) {
     auto from = OldPosition(prior[1], knightdiff);
     auto to = SingleSquare(planes[7].mask & knightdiff.as_int());
-    return Move(from, to);
+    return Move::White(from, to);
   }
   if (pawndiff.count() == 2) {
     auto from = OldPosition(prior[0], pawndiff);
     auto to = SingleSquare(planes[6].mask & pawndiff.as_int());
-    return Move(from, to);
+    // Check for enpassant.
+    auto targets = BitBoard(prior[6].mask | prior[7].mask | prior[8].mask |
+                            prior[9].mask | prior[10].mask);
+    targets.Mirror();
+    if (from.file() != to.file() && (targets & pawndiff) == 0) {
+      return Move::WhiteEnPassant(from, to);
+    }
+    return Move::White(from, to);
   }
   assert(false);
-  return Move();
+  throw Exception("Invalid move encoding");
 }
 
 }  // namespace lczero

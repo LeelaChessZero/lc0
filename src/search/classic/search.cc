@@ -549,9 +549,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
-    print_head(&oss, edge.GetMove(is_black_to_move).as_string(),
-               edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
-               edge.GetP());
+    print_head(&oss, edge.GetMove(is_black_to_move).ToString(true),
+               MoveToNNIndex(edge.GetMove(), 0), edge.GetN(),
+               edge.GetNInFlight(), edge.GetP());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
@@ -590,7 +590,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
       continue;
     }
     if (edge.HasNode()) {
-      LOGFILE << "--- Opponent moves after: " << final_bestmove_.as_string();
+      LOGFILE << "--- Opponent moves after: " << final_bestmove_.ToString(true);
       for (const auto& line : GetVerboseStats(edge.node())) {
         LOGFILE << line;
       }

@@ -30,6 +30,7 @@
 #include <iomanip>
 
 #include "neural/decoder.h"
+#include "neural/encoder.h"
 #include "neural/factory.h"
 #include "neural/network.h"
 #include "utils/histogram.h"
@@ -123,7 +124,7 @@ class CheckComputation : public NetworkComputation {
     std::vector<float> policy;
     policy.reserve(moves.size());
     for (const auto move : moves) {
-      policy.emplace_back(comp->GetPVal(sample, move.as_nn_index(0)));
+      policy.emplace_back(comp->GetPVal(sample, MoveToNNIndex(move, 0)));
       max_p = std::max(max_p, policy.back());
     }
     float total = 0;
