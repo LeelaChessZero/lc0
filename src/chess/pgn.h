@@ -208,7 +208,7 @@ class PgnReader {
     } else if (san.substr(0, 3) == "O-O") {
       Move m;
       auto king_board = board.kings() & board.ours();
-      Square king_sq(kFileA, Rank::FromIdx(GetLowestBit(king_board.as_int())));
+      Square king_sq(File::FromIdx(GetLowestBit(king_board.as_int())), kRank1);
       m = Move::WhiteCastling(king_sq.file(),
                               san.substr(3, 2) == "-O"
                                   ? board.castlings().our_queenside_rook
@@ -284,9 +284,16 @@ class PgnReader {
         if (sr1 != -1 && sq.rank().idx != sr1) continue;
         if (c1 != -1 && sq.file().idx != c1) continue;
         std::optional<PieceType> promotion = PieceToPieceType(p2);
+        std::optional<Square> enpassant = std::nullopt;
+        if (!board.en_passant().empty()) {
+          auto sq = *board.en_passant().begin();
+          enpassant = Square(sq.file(), kRank6);
+        }
         Square to(File::FromIdx(c2), Rank::FromIdx(sr2));
         Move move_to_find = promotion ? Move::WhitePromotion(sq, to, *promotion)
-                                      : Move::White(sq, to);
+                            : enpassant && *enpassant == to
+                                ? Move::WhiteEnPassant(sq, to)
+                                : Move::White(sq, to);
         if (std::find(plm.begin(), plm.end(), move_to_find) == plm.end()) {
           continue;
         }
@@ -308,10 +315,17 @@ class PgnReader {
       }
     }
     std::optional<PieceType> promotion = PieceToPieceType(p2);
+
+    std::optional<Square> enpassant = std::nullopt;
+    if (!board.en_passant().empty()) {
+      auto sq = *board.en_passant().begin();
+      enpassant = Square(sq.file(), kRank6);
+    }
     Square from(File::FromIdx(c1), Rank::FromIdx(r1));
     Square to(File::FromIdx(c2), Rank::FromIdx(r2));
     Move m = promotion ? Move::WhitePromotion(from, to, *promotion)
-                       : Move::White(from, to);
+             : enpassant && *enpassant == to ? Move::WhiteEnPassant(from, to)
+                                             : Move::White(from, to);
     if (board.flipped()) m.Flip();
     return m;
   }
