@@ -120,6 +120,7 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
                                       exit_prob_next * (positions / 2)))) {
       break;
     }
+    if (tree_[0]->IsBlackToMove()) m.Flip();
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
     ply++;
@@ -298,6 +299,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     search_.reset();
 
     // Add best move to the tree.
+    if (tree_[0]->IsBlackToMove()) move.Flip();
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
