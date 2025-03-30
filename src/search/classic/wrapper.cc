@@ -39,6 +39,9 @@ const OptionId kThreadsOptionId{
     "threads", "Threads",
     "Number of (CPU) worker threads to use, 0 for the backend default.", 't'};
 
+const OptionId kClearTree{"", "ClearTree",
+                          "Clear the tree before the next search."};
+
 class ClassicSearch : public SearchBase {
  public:
   ClassicSearch(UciResponder* responder, const OptionsDict* options)
@@ -101,6 +104,8 @@ void ClassicSearch::SetPosition(const GameState& pos) {
 void ClassicSearch::StartSearch(const GoParams& params) {
   auto forwarder =
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
+  if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
+
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
   search_ = std::make_unique<classic::Search>(
       *tree_, backend_, std::move(forwarder),
@@ -124,6 +129,9 @@ class ClassicSearchFactory : public SearchFactory {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
     classic::SearchParams::Populate(parser);
     PopulateTimeManagementOptions(classic::RunType::kUci, parser);
+
+    parser->Add<ButtonOption>(kClearTree);
+    parser->HideOption(kClearTree);
   }
 };
 
