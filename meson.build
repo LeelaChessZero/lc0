@@ -729,6 +729,7 @@ endif
 
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
+  gmock = dependency('gmock', fallback: ['gtest', 'gmock_dep'])
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
@@ -761,6 +762,11 @@ if get_option('gtest')
     include_directories: includes, link_with: lc0_lib,
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
+
+  test('EngineTest',
+    executable('engine_test', 'src/engine_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
+    args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif
 
 
