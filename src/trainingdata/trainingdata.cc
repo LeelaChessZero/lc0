@@ -105,6 +105,17 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
     if (adjudicated && result == GameResult::UNDECIDED) {
       chunk.invariance_info |= 1u << 4;  // Max game length exceeded.
     }
+    if (result == GameResult::UNDECIDED) {
+      // If the game is undecided use the final evaluation as result.
+      bool flip = training_data_.back().side_to_move_or_enpassant;
+      if (IsCanonicalFormat(static_cast<pblczero::NetworkFormat::InputFormat>(
+              chunk.input_format))) {
+        flip = (training_data_.back().invariance_info & (1u << 7)) != 0;
+      }
+      flip ^= black_to_move;
+      chunk.result_q = (flip ? -1 : 1) * training_data_.back().best_q;
+      chunk.result_d = training_data_.back().best_d;
+    }
     chunk.plies_left = m_estimate;
     m_estimate -= 1.0f;
     writer->WriteChunk(chunk);
