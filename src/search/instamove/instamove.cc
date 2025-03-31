@@ -174,8 +174,8 @@ class ValueHeadFactory : public SearchFactory {
   }
 };
 
-REGISTER_SEARCH(PolicyHeadFactory);
-REGISTER_SEARCH(ValueHeadFactory);
+REGISTER_SEARCH(PolicyHeadFactory)
+REGISTER_SEARCH(ValueHeadFactory)
 
 }  // namespace
 }  // namespace lczero
