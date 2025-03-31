@@ -32,34 +32,36 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "chess/types.h"
+
+namespace lczero {
 namespace {
 // GetPieceAt returns the piece found at row, col on board or the null-char '\0'
 // in case no piece there.
 char GetPieceAt(const lczero::ChessBoard& board, int row, int col) {
   char c = '\0';
-  if (board.ours().get(row, col) || board.theirs().get(row, col)) {
-    if (board.pawns().get(row, col)) {
+  const Square square(File::FromIdx(col), Rank::FromIdx(row));
+  if (board.ours().get(square) || board.theirs().get(square)) {
+    if (board.pawns().get(square)) {
       c = 'P';
-    } else if (board.kings().get(row, col)) {
+    } else if (board.kings().get(square)) {
       c = 'K';
-    } else if (board.bishops().get(row, col)) {
+    } else if (board.bishops().get(square)) {
       c = 'B';
-    } else if (board.queens().get(row, col)) {
+    } else if (board.queens().get(square)) {
       c = 'Q';
-    } else if (board.rooks().get(row, col)) {
+    } else if (board.rooks().get(square)) {
       c = 'R';
     } else {
       c = 'N';
     }
-    if (board.theirs().get(row, col)) {
+    if (board.theirs().get(square)) {
       c = std::tolower(c);  // Capitals are for white.
     }
   }
   return c;
 }
-
 }  // namespace
-namespace lczero {
 
 Position::Position(const Position& parent, Move m)
     : rule50_ply_(parent.rule50_ply_ + 1), ply_count_(parent.ply_count_ + 1) {
@@ -187,7 +189,8 @@ std::string GetFen(const Position& pos) {
   std::string enpassant = "-";
   if (!board.en_passant().empty()) {
     auto sq = *board.en_passant().begin();
-    enpassant = BoardSquare(pos.IsBlackToMove() ? 2 : 5, sq.col()).as_string();
+    enpassant = Square(sq.file(), pos.IsBlackToMove() ? kRank3 : kRank6)
+                    .ToString(false);
   }
   result += pos.IsBlackToMove() ? " b" : " w";
   result += " " + board.castlings().as_string();

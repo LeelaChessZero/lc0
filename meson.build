@@ -157,7 +157,6 @@ files += gen_proto_src.process('src/neural/xla/hlo.proto',
 ## Main files
 #############################################################################
 common_files += [
-  'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/gamestate.cc',
   'src/chess/position.cc',
