@@ -124,6 +124,8 @@ class OnnxNetwork : public Network {
   bool bf16_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
+  // The lower limit for variable batch size.
+  int min_batch_size_;
   static constexpr int max_batch_size_ = 1024;
   // For conditional locking if running the DML/ROCM/TRT provider.
   OnnxProvider provider_;
@@ -260,8 +262,10 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
   int batch_size = network_->batch_size_;
-  if (batch_size < 0) batch_size = raw_input_.size();
-
+  if (batch_size < 0) {
+    batch_size = std::max(static_cast<int>(raw_input_.size()),
+                          network_->min_batch_size_);
+  }
   for (size_t i = 0; i < raw_input_.size();) {
     int step = (raw_input_.size() - i + batch_size - 1) / batch_size;
     if (step > network_->steps_) step = network_->steps_;
@@ -331,11 +335,21 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       // Looks like we need I/O binding to enable this.
       // trt_options["trt_cuda_graph_enable"] = "1";
       if (batch_size < 0) {
-        trt_options["trt_profile_min_shapes"] = inputs_[0] + ":1x112x8x8";
+        trt_options["trt_profile_min_shapes"] =
+            inputs_[0] + ":" + std::to_string(min_batch_size_) + "x112x8x8";
         trt_options["trt_profile_max_shapes"] =
             inputs_[0] + ":" + std::to_string(max_batch_size_) + "x112x8x8";
         trt_options["trt_profile_opt_shapes"] =
             inputs_[0] + ":" + std::to_string(max_batch_size_ / 4) + "x112x8x8";
+      } else {
+        trt_options["trt_profile_min_shapes"] =
+            inputs_[0] + ":" + std::to_string(batch_size_) + "x112x8x8";
+        trt_options["trt_profile_max_shapes"] =
+            inputs_[0] + ":" + std::to_string(batch_size_ * steps_) +
+            "x112x8x8";
+        trt_options["trt_profile_opt_shapes"] =
+            inputs_[0] + ":" + std::to_string(batch_size_ * steps_) +
+            "x112x8x8";
       }
       std::vector<const char*> keys;
       std::vector<const char*> values;
@@ -395,6 +409,8 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   steps_ = opts.GetOrDefault<int>(
       "steps",
       (provider == OnnxProvider::DML || provider == OnnxProvider::TRT) ? 4 : 1);
+  min_batch_size_ = opts.GetOrDefault<int>(
+      "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
   int gpu = opts.GetOrDefault<int>("gpu", 0);
   int threads =
       opts.GetOrDefault<int>("threads", provider == OnnxProvider::CPU ? 1 : 0);
