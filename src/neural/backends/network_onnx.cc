@@ -333,6 +333,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       trt_options["trt_engine_cache_prefix"] = "Lc0_ONNX_TRT";
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
+      trt_options["trt_force_sequential_engine_build"] = "1";
       // Looks like we need I/O binding to enable this.
       // trt_options["trt_cuda_graph_enable"] = "1";
       if (batch_size < 0) {
