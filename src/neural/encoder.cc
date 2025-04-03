@@ -133,7 +133,7 @@ int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
 
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
-    const PositionHistory& history, int history_planes,
+    std::span<const Position> history, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out) {
   InputPlanes result(kAuxPlaneBase + 8);
 
@@ -146,7 +146,7 @@ InputPlanes EncodePositionForNN(
   // it for the first board.
   ChessBoard::Castlings castlings;
   {
-    const ChessBoard& board = history.Last().GetBoard();
+    const ChessBoard& board = history.back().GetBoard();
     const bool we_are_black = board.flipped();
     if (IsCanonicalFormat(input_format)) {
       transform = ChooseTransform(board);
@@ -211,9 +211,9 @@ InputPlanes EncodePositionForNN(
       if (we_are_black) result[kAuxPlaneBase + 4].SetAll();
     }
     if (IsHectopliesFormat(input_format)) {
-      result[kAuxPlaneBase + 5].Fill(history.Last().GetRule50Ply() / 100.0f);
+      result[kAuxPlaneBase + 5].Fill(history.back().GetRule50Ply() / 100.0f);
     } else {
-      result[kAuxPlaneBase + 5].Fill(history.Last().GetRule50Ply());
+      result[kAuxPlaneBase + 5].Fill(history.back().GetRule50Ply());
     }
     // Plane kAuxPlaneBase + 6 used to be movecount plane, now it's all zeros
     // unless we need it for canonical armageddon side to move.
@@ -232,18 +232,17 @@ InputPlanes EncodePositionForNN(
       input_format == pblczero::NetworkFormat::
                           INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON;
   bool flip = false;
-  int history_idx = history.GetLength() - 1;
+  int history_idx = history.size() - 1;
   for (int i = 0; i < std::min(history_planes, kMoveHistory);
        ++i, --history_idx) {
-    const Position& position =
-        history.GetPositionAt(history_idx < 0 ? 0 : history_idx);
-    const ChessBoard& board =
-        flip ? position.GetThemBoard() : position.GetBoard();
+    const Position& position = history[history_idx < 0 ? 0 : history_idx];
+    ChessBoard board = position.GetBoard();
+    if (flip) board.Mirror();
     // Castling changes can't be repeated, so we can stop early.
     if (stop_early && board.castlings().as_int() != castlings.as_int()) break;
     // Enpassants can't be repeated, but we do need to always send the current
     // position.
-    if (stop_early && history_idx != history.GetLength() - 1 &&
+    if (stop_early && history_idx != static_cast<int>(history.size()) - 1 &&
         !board.en_passant().empty()) {
       break;
     }
@@ -325,6 +324,14 @@ InputPlanes EncodePositionForNN(
   }
   if (transform_out) *transform_out = transform;
   return result;
+}
+
+InputPlanes EncodePositionForNN(
+    pblczero::NetworkFormat::InputFormat input_format,
+    const PositionHistory& history, int history_planes,
+    FillEmptyHistory fill_empty_history, int* transform_out) {
+  return EncodePositionForNN(input_format, history.GetPositions(),
+                             history_planes, fill_empty_history, transform_out);
 }
 
 }  // namespace lczero

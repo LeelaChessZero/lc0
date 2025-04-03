@@ -68,24 +68,24 @@ struct ThinkingInfo {
   // Hash fullness * 1000
   int hashfull = -1;
   // Moves to mate.
-  std::optional<int> mate;
+  std::optional<int> mate = std::nullopt;
   // Win in centipawns.
-  std::optional<int> score;
+  std::optional<int> score = std::nullopt;
   // Win/Draw/Lose probability * 1000.
   struct WDL {
     int w;
     int d;
     int l;
   };
-  std::optional<WDL> wdl;
+  std::optional<WDL> wdl = std::nullopt;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
   int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.
-  std::vector<Move> pv;
+  std::vector<Move> pv = {};
   // Multipv index.
   int multipv = -1;
   // Freeform comment.
-  std::string comment;
+  std::string comment = "";
 
   // Those are extensions and not really UCI protocol.
   // 1 if it's "player1", 2 if it's "player2"
@@ -93,9 +93,9 @@ struct ThinkingInfo {
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player, if known.
-  std::optional<bool> is_black;
+  std::optional<bool> is_black = std::nullopt;
   // Moves left
-  std::optional<int> moves_left;
+  std::optional<int> moves_left = std::nullopt;
 };
 
 // Is sent when a single game is finished.

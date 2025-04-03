@@ -567,6 +567,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
 }  // namespace lczero
 
 bool ChessBoard::ApplyMove(Move move) {
+  assert(our_pieces_.intersects(move.from().as_board()));
   const auto& from = move.from();
   const auto& to = move.to();
   const auto from_row = from.row();

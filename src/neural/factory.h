@@ -33,6 +33,7 @@
 
 #include "neural/loader.h"
 #include "neural/network.h"
+#include "neural/wrapper.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
@@ -55,9 +56,6 @@ class NetworkFactory {
     Register(const std::string& name, FactoryFunc factory, int priority = 0);
   };
 
-  // Add the network/backend parameters to the options dictionary.
-  static void PopulateOptions(OptionsParser* options);
-
   // Returns list of backend names, sorted by priority (higher priority first).
   std::vector<std::string> GetBackendsList() const;
 
@@ -69,11 +67,6 @@ class NetworkFactory {
   // Helper function to load the network from the options. Returns nullptr
   // if no network options changed since the previous call.
   static std::unique_ptr<Network> LoadNetwork(const OptionsDict& options);
-
-  // Parameter IDs.
-  static const OptionId kWeightsId;
-  static const OptionId kBackendId;
-  static const OptionId kBackendOptionsId;
 
   struct BackendConfiguration {
     BackendConfiguration() = default;
@@ -115,15 +108,23 @@ class NetworkFactory {
   friend class Register;
 };
 
-#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter) \
-  namespace {                                                         \
-  static NetworkFactory::Register regH38fhs##counter(                 \
-      name,                                                           \
-      [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
-        return func(w, o);                                            \
-      },                                                              \
-      priority);                                                      \
+#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)     \
+  namespace {                                                             \
+  static NetworkFactory::Register regH38fhs##counter(                     \
+      name,                                                               \
+      [](const std::optional<WeightsFile>& w, const OptionsDict& o) {     \
+        return func(w, o);                                                \
+      },                                                                  \
+      priority);                                                          \
+  static BackendManager::Register regK03nv##counter(                      \
+      std::make_unique<NetworkAsBackendFactory>(                          \
+          name,                                                           \
+          [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
+            return func(w, o);                                            \
+          },                                                              \
+          priority));                                                     \
   }
+
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \
   REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)
 

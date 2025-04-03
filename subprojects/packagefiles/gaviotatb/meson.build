@@ -24,11 +24,17 @@ gaviotatb_includes = [
   'compression',
   'compression/huffman',
   'compression/liblzf',
-  'compression/lzma'
+  'compression/lzma',
+  'compression/zlib'
 ]
 
+gaviota_lib = static_library('gaviota',
+  gaviotatb_src,
+  c_args : '-Dz_uLong=uLong',
+  include_directories : gaviotatb_includes)
+
+incdir = include_directories('.')
+
 gaviotatb_dep = declare_dependency(
-  sources: gaviotatb_src,
-  include_directories: gaviotatb_includes,
-  compile_args:'-Dz_uLong=uLong'
-)
+  link_with : gaviota_lib,
+  include_directories : gaviotatb_includes)
