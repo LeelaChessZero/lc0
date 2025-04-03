@@ -46,6 +46,7 @@
 #include "onnxruntime_cxx_api.h"
 #include "utils/bf16_utils.h"
 #include "utils/bititer.h"
+#include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 #include "utils/logging.h"
@@ -322,6 +323,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
+      std::string cache_dir = CommandLine::BinaryDirectory() + "/trt_cache";
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu);
       trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
@@ -331,9 +333,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       trt_options["trt_engine_cache_enable"] = "1";
       trt_options["trt_engine_cache_prefix"] =
           "Lc0_ONNX_TRT_batch_" + std::to_string(batch_size) + "_";
-      trt_options["trt_engine_cache_path"] = "./trt_cache";
+      trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
-      trt_options["trt_timing_cache_path"] = "./trt_cache";
+      trt_options["trt_timing_cache_path"] = cache_dir;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
       // Looks like we need I/O binding to enable this.
