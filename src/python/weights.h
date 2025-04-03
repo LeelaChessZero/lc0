@@ -247,7 +247,6 @@ class GameState {
 
     for (const auto& m : moves) {
       Move move(m, history_.IsBlackToMove());
-      move = history_.Last().GetBoard().GetModernMove(move);
       history_.Append(move);
     }
   }

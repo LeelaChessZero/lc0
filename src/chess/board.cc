@@ -29,9 +29,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
+#include <utility>
 
 #include "utils/exception.h"
 
@@ -49,9 +51,7 @@ const ChessBoard ChessBoard::kStartposBoard(ChessBoard::kStartposFen);
 
 const BitBoard ChessBoard::kPawnMask = 0x00FFFFFFFFFFFF00ULL;
 
-void ChessBoard::Clear() {
-  *this = ChessBoard();
-}
+void ChessBoard::Clear() { *this = ChessBoard(); }
 
 void ChessBoard::Mirror() {
   our_pieces_.Mirror();
@@ -60,8 +60,8 @@ void ChessBoard::Mirror() {
   rooks_.Mirror();
   bishops_.Mirror();
   pawns_.Mirror();
-  our_king_.Mirror();
-  their_king_.Mirror();
+  our_king_.Flip();
+  their_king_.Flip();
   std::swap(our_king_, their_king_);
   castlings_.Mirror();
   flipped_ = !flipped_;
@@ -174,12 +174,7 @@ static const BitBoard kPawnAttacks[] = {
     0x0000000000000000ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
     0x0000000000000000ULL};
 
-static const Move::Promotion kPromotions[] = {
-    Move::Promotion::Queen,
-    Move::Promotion::Rook,
-    Move::Promotion::Bishop,
-    Move::Promotion::Knight,
-};
+static constexpr PieceType kPromotions[] = {kQueen, kRook, kBishop, kKnight};
 
 // Magic bitboard routines and structures.
 // We use so-called "fancy" magic bitboards.
@@ -258,6 +253,11 @@ static MagicParams bishop_magic_params[64];
 static BitBoard rook_attacks_table[102400];
 static BitBoard bishop_attacks_table[5248];
 
+namespace {
+constexpr bool IsOnBoard(int x) { return x >= 0 && x < 8; }
+constexpr bool IsOnBoard(int x, int y) { return IsOnBoard(x) && IsOnBoard(y); }
+}  // namespace
+
 // Builds rook or bishop attacks table.
 static void BuildAttacksTable(MagicParams* magic_params,
                               BitBoard* attacks_table,
@@ -267,24 +267,24 @@ static void BuildAttacksTable(MagicParams* magic_params,
 
   // Initialize for all board squares.
   for (unsigned square = 0; square < 64; square++) {
-    const BoardSquare b_sq(square);
+    const Square b_sq = Square::FromIdx(square);
 
     // Calculate relevant occupancy masks.
     BitBoard mask = {0};
 
     for (int j = 0; j < 4; j++) {
       auto direction = directions[j];
-      auto dst_row = b_sq.row();
-      auto dst_col = b_sq.col();
+      auto dst_row = b_sq.rank().idx;
+      auto dst_col = b_sq.file().idx;
       while (true) {
         dst_row += direction.first;
         dst_col += direction.second;
         // If the next square in this direction is invalid, the current square
         // is at the board's edge and should not be added.
-        if (!BoardSquare::IsValid(dst_row + direction.first,
-                                  dst_col + direction.second))
+        if (!IsOnBoard(dst_row + direction.first, dst_col + direction.second))
           break;
-        const BoardSquare destination(dst_row, dst_col);
+        const Square destination(File::FromIdx(dst_col),
+                                 Rank::FromIdx(dst_row));
         mask.set(destination);
       }
     }
@@ -293,7 +293,7 @@ static void BuildAttacksTable(MagicParams* magic_params,
     magic_params[square].mask_ = mask.as_int();
 
     // Cache relevant occupancy board squares.
-    std::vector<BoardSquare> occupancy_squares;
+    std::vector<Square> occupancy_squares;
 
     for (auto occ_sq : BitBoard(magic_params[square].mask_)) {
       occupancy_squares.emplace_back(occ_sq);
@@ -327,13 +327,14 @@ static void BuildAttacksTable(MagicParams* magic_params,
 
       for (int j = 0; j < 4; j++) {
         auto direction = directions[j];
-        auto dst_row = b_sq.row();
-        auto dst_col = b_sq.col();
+        auto dst_row = b_sq.rank().idx;
+        auto dst_col = b_sq.file().idx;
         while (true) {
           dst_row += direction.first;
           dst_col += direction.second;
-          if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-          const BoardSquare destination(dst_row, dst_col);
+          if (!IsOnBoard(dst_row, dst_col)) break;
+          const Square destination(File::FromIdx(dst_col),
+                                   Rank::FromIdx(dst_row));
           attacks.set(destination);
           if (occupancy.get(destination)) break;
         }
@@ -369,10 +370,10 @@ static void BuildAttacksTable(MagicParams* magic_params,
 
 // Returns the rook attacks bitboard for the given rook board square and the
 // given occupied piece bitboard.
-static inline BitBoard GetRookAttacks(const BoardSquare rook_square,
+static inline BitBoard GetRookAttacks(const Square rook_square,
                                       const BitBoard pieces) {
   // Calculate magic index.
-  const uint8_t square = rook_square.as_int();
+  const uint8_t square = rook_square.as_idx();
 
 #if defined(NO_PEXT)
   uint64_t index = pieces.as_int() & rook_magic_params[square].mask_;
@@ -388,10 +389,10 @@ static inline BitBoard GetRookAttacks(const BoardSquare rook_square,
 
 // Returns the bishop attacks bitboard for the given bishop board square and
 // the given occupied piece bitboard.
-static inline BitBoard GetBishopAttacks(const BoardSquare bishop_square,
+static inline BitBoard GetBishopAttacks(const Square bishop_square,
                                         const BitBoard pieces) {
   // Calculate magic index.
-  const uint8_t square = bishop_square.as_int();
+  const uint8_t square = bishop_square.as_idx();
 
 #if defined(NO_PEXT)
   uint64_t index = pieces.as_int() & bishop_magic_params[square].mask_;
@@ -432,50 +433,53 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     // King
     if (source == our_king_) {
       for (const auto& delta : kKingMoves) {
-        const auto dst_row = source.row() + delta.first;
-        const auto dst_col = source.col() + delta.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) continue;
-        const BoardSquare destination(dst_row, dst_col);
+        const Rank dst_rank = source.rank() + delta.first;
+        if (!dst_rank.IsValid()) continue;
+        const File dst_file = source.file() + delta.second;
+        if (!dst_file.IsValid()) continue;
+        const Square destination(dst_file, dst_rank);
         if (our_pieces_.get(destination)) continue;
         if (IsUnderAttack(destination)) continue;
-        result.emplace_back(source, destination);
+        result.emplace_back(Move::White(source, destination));
       }
       // Castlings.
-      auto walk_free = [this](int from, int to, int rook, int king) {
-        for (int i = from; i <= to; ++i) {
+      auto walk_free = [this](File from, File to, File rook, File king) {
+        for (File i = from; i <= to; ++i) {
           if (i == rook || i == king) continue;
-          if (our_pieces_.get(i) || their_pieces_.get(i)) return false;
+          if (our_pieces_.get({i, kRank1}) || their_pieces_.get({i, kRank1})) {
+            return false;
+          }
         }
         return true;
       };
       // @From may be less or greater than @to. @To is not included in check
       // unless it is the same with @from.
-      auto range_attacked = [this](int from, int to) {
-        if (from == to) return IsUnderAttack(from);
+      auto range_attacked = [this](File from, File to) {
+        if (from == to) return IsUnderAttack(Square(from, kRank1));
         const int increment = from < to ? 1 : -1;
         while (from != to) {
-          if (IsUnderAttack(from)) return true;
+          if (IsUnderAttack(Square(from, kRank1))) return true;
           from += increment;
         }
         return false;
       };
-      const uint8_t king = source.col();
+      const File king = source.file();
       // For castlings we don't check destination king square for checks, it
       // will be done in legal move check phase.
       if (castlings_.we_can_000()) {
-        const uint8_t qrook = castlings_.our_queenside_rook();
-        if (walk_free(std::min(static_cast<uint8_t>(C1), qrook),
-                      std::max(static_cast<uint8_t>(D1), king), qrook, king) &&
-            !range_attacked(king, C1)) {
-          result.emplace_back(source, BoardSquare(RANK_1, qrook));
+        const File qrook = castlings_.our_queenside_rook;
+        if (walk_free(std::min(kFileC, qrook), std::max(kFileD, king), qrook,
+                      king) &&
+            !range_attacked(king, kFileC)) {
+          result.emplace_back(Move::WhiteCastling(king, qrook));
         }
       }
       if (castlings_.we_can_00()) {
-        const uint8_t krook = castlings_.our_kingside_rook();
-        if (walk_free(std::min(static_cast<uint8_t>(F1), king),
-                      std::max(static_cast<uint8_t>(G1), krook), krook, king) &&
-            !range_attacked(king, G1)) {
-          result.emplace_back(source, BoardSquare(RANK_1, krook));
+        const File krook = castlings_.our_kingside_rook;
+        if (walk_free(std::min(kFileF, king), std::max(kFileG, krook), krook,
+                      king) &&
+            !range_attacked(king, kFileG)) {
+          result.emplace_back(Move::WhiteCastling(king, krook));
         }
       }
       continue;
@@ -488,7 +492,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
           GetRookAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
 
       for (const auto& destination : attacked) {
-        result.emplace_back(source, destination);
+        result.emplace_back(Move::White(source, destination));
       }
     }
     // Bishop (and queen)
@@ -498,7 +502,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
           GetBishopAttacks(source, our_pieces_ | their_pieces_) - our_pieces_;
 
       for (const auto& destination : attacked) {
-        result.emplace_back(source, destination);
+        result.emplace_back(Move::White(source, destination));
       }
     }
     if (processed_piece) continue;
@@ -506,24 +510,25 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     if ((pawns_ & kPawnMask).get(source)) {
       // Moves forward.
       {
-        const auto dst_row = source.row() + 1;
-        const auto dst_col = source.col();
-        const BoardSquare destination(dst_row, dst_col);
+        const Rank dst_rank = source.rank() + 1;
+        const File dst_file = source.file();
+        const Square destination(dst_file, dst_rank);
 
         if (!our_pieces_.get(destination) && !their_pieces_.get(destination)) {
-          if (dst_row != RANK_8) {
-            result.emplace_back(source, destination);
-            if (dst_row == RANK_3) {
+          if (dst_rank != kRank8) {
+            result.emplace_back(Move::White(source, destination));
+            if (dst_rank == kRank3) {
               // Maybe it'll be possible to move two squares.
-              if (!our_pieces_.get(RANK_4, dst_col) &&
-                  !their_pieces_.get(RANK_4, dst_col)) {
-                result.emplace_back(source, BoardSquare(RANK_4, dst_col));
+              const Square jump_dst(dst_file, kRank4);
+              if (!our_pieces_.get(jump_dst) && !their_pieces_.get(jump_dst)) {
+                result.emplace_back(Move::White(source, jump_dst));
               }
             }
           } else {
             // Promotions
             for (auto promotion : kPromotions) {
-              result.emplace_back(source, destination, promotion);
+              result.emplace_back(
+                  Move::WhitePromotion(source, destination, promotion));
             }
           }
         }
@@ -531,25 +536,27 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
       // Captures.
       {
         for (auto direction : {-1, 1}) {
-          const auto dst_row = source.row() + 1;
-          const auto dst_col = source.col() + direction;
-          if (dst_col < 0 || dst_col >= 8) continue;
-          const BoardSquare destination(dst_row, dst_col);
+          const auto dst_rank = source.rank() + 1;
+          const auto dst_file = source.file() + direction;
+          if (!dst_file.IsValid()) continue;
+          const Square destination(dst_file, dst_rank);
           if (their_pieces_.get(destination)) {
-            if (dst_row == RANK_8) {
+            if (dst_rank == kRank8) {
               // Promotion.
               for (auto promotion : kPromotions) {
-                result.emplace_back(source, destination, promotion);
+                result.emplace_back(
+                    Move::WhitePromotion(source, destination, promotion));
               }
             } else {
               // Ordinary capture.
-              result.emplace_back(source, destination);
+              result.emplace_back(Move::White(source, destination));
             }
-          } else if (dst_row == RANK_6 && pawns_.get(RANK_8, dst_col)) {
+          } else if (dst_rank == kRank6 &&
+                     pawns_.get(Square(dst_file, kRank8))) {
             // En passant.
             // "Pawn" on opponent's file 8 means that en passant is possible.
             // Those fake pawns are reset in ApplyMove.
-            result.emplace_back(source, destination);
+            result.emplace_back(Move::WhiteEnPassant(source, destination));
           }
         }
       }
@@ -558,8 +565,8 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
     // Knight.
     {
       for (const auto destination :
-           kKnightAttacks[source.as_int()] - our_pieces_) {
-        result.emplace_back(source, destination);
+           kKnightAttacks[source.as_idx()] - our_pieces_) {
+        result.emplace_back(Move::White(source, destination));
       }
     }
   }
@@ -567,50 +574,40 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
 }  // namespace lczero
 
 bool ChessBoard::ApplyMove(Move move) {
-  assert(our_pieces_.intersects(move.from().as_board()));
-  const auto& from = move.from();
-  const auto& to = move.to();
-  const auto from_row = from.row();
-  const auto from_col = from.col();
-  const auto to_row = to.row();
-  const auto to_col = to.col();
+  assert(our_pieces_.intersects(BitBoard::FromSquare(move.from())));
+  const Square& from = move.from();
+  const Square& to = move.to();
+  const Rank from_rank = from.rank();
+  const File from_file = from.file();
+  const Rank to_rank = to.rank();
+  const File to_file = to.file();
 
   // Castlings.
   if (from == our_king_) {
     castlings_.reset_we_can_00();
     castlings_.reset_we_can_000();
-    auto do_castling = [this](int king_dst, int rook_src, int rook_dst) {
+    auto do_castling = [this](File king_dst, Square rook_src, File rook_dst) {
       // Remove en passant flags.
       pawns_ &= kPawnMask;
       our_pieces_.reset(our_king_);
       our_pieces_.reset(rook_src);
       rooks_.reset(rook_src);
-      our_pieces_.set(king_dst);
-      our_pieces_.set(rook_dst);
-      rooks_.set(rook_dst);
-      our_king_ = king_dst;
+      our_king_ = Square(king_dst, kRank1);
+      our_pieces_.set(our_king_);
+      Square rook_dst_sq(rook_dst, kRank1);
+      our_pieces_.set(rook_dst_sq);
+      rooks_.set(rook_dst_sq);
     };
-    if (from_row == RANK_1 && to_row == RANK_1) {
-      const auto our_rooks = rooks() & our_pieces_;
-      if (our_rooks.get(to)) {
-        // Castling.
-        if (to_col > from_col) {
-          // Kingside.
-          do_castling(G1, to.as_int(), F1);
-        } else {
-          // Queenside.
-          do_castling(C1, to.as_int(), D1);
-        }
-        return false;
-      } else if (from_col == FILE_E && to_col == FILE_G) {
-        // Non FRC-style e1g1 castling (as opposed to e1h1).
-        do_castling(G1, H1, F1);
-        return false;
-      } else if (from_col == FILE_E && to_col == FILE_C) {
-        // Non FRC-style e1c1 castling (as opposed to e1a1).
-        do_castling(C1, A1, D1);
-        return false;
+    if (move.is_castling()) {
+      // Castling.
+      if (to_file > from_file) {
+        // Kingside.
+        do_castling(kFileG, to, kFileF);
+      } else {
+        // Queenside.
+        do_castling(kFileC, to, kFileD);
       }
+      return false;
     }
   }
 
@@ -620,22 +617,24 @@ bool ChessBoard::ApplyMove(Move move) {
 
   // Remove captured piece.
   bool reset_50_moves = their_pieces_.get(to);
-  their_pieces_.reset(to);
-  rooks_.reset(to);
-  bishops_.reset(to);
-  pawns_.reset(to);
-  if (to.as_int() == A8 + castlings_.their_kingside_rook()) {
-    castlings_.reset_they_can_00();
-  }
-  if (to.as_int() == A8 + castlings_.their_queenside_rook()) {
-    castlings_.reset_they_can_000();
+  if (reset_50_moves) {
+    their_pieces_.reset(to);
+    rooks_.reset(to);
+    bishops_.reset(to);
+    pawns_.reset(to);
+    if (to == Square(castlings_.their_kingside_rook, kRank8)) {
+      castlings_.reset_they_can_00();
+    }
+    if (to == Square(castlings_.their_queenside_rook, kRank8)) {
+      castlings_.reset_they_can_000();
+    }
   }
 
   // En passant.
-  if (from_row == RANK_5 && pawns_.get(from) && from_col != to_col &&
-      pawns_.get(RANK_8, to_col)) {
-    pawns_.reset(RANK_5, to_col);
-    their_pieces_.reset(RANK_5, to_col);
+  if (move.is_en_passant()) {
+    const Square ep_pawn(to_file, kRank5);
+    pawns_.reset(ep_pawn);
+    their_pieces_.reset(ep_pawn);
   }
 
   // Remove en passant flags.
@@ -651,15 +650,15 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Promotion.
-  if (to_row == RANK_8 && pawns_.get(from)) {
-    switch (move.promotion()) {
-      case Move::Promotion::Rook:
+  if (move.is_promotion()) {
+    switch (move.promotion().idx) {
+      case kRook.idx:
         rooks_.set(to);
         break;
-      case Move::Promotion::Bishop:
+      case kBishop.idx:
         bishops_.set(to);
         break;
-      case Move::Promotion::Queen:
+      case kQueen.idx:
         rooks_.set(to);
         bishops_.set(to);
         break;
@@ -670,11 +669,11 @@ bool ChessBoard::ApplyMove(Move move) {
   }
 
   // Reset castling rights.
-  if (from_row == RANK_1 && rooks_.get(from)) {
-    if (from_col == castlings_.our_queenside_rook()) {
+  if (from_rank == kRank1 && rooks_.get(from)) {
+    if (from_file == castlings_.our_queenside_rook) {
       castlings_.reset_we_can_000();
     }
-    if (from_col == castlings_.our_kingside_rook()) {
+    if (from_file == castlings_.our_kingside_rook) {
       castlings_.reset_we_can_00();
     }
   }
@@ -688,23 +687,23 @@ bool ChessBoard::ApplyMove(Move move) {
   pawns_.reset(from);
 
   // Set en passant flag.
-  if (to_row - from_row == 2 && pawns_.get(to)) {
-    BoardSquare ep_sq(to_row - 1, to_col);
-    if (kPawnAttacks[ep_sq.as_int()].intersects(their_pieces_ & pawns_)) {
-      pawns_.set(0, to_col);
+  if (to_rank - from_rank == 2 && pawns_.get(to)) {
+    Square ep_sq(to_file, to_rank - 1);
+    if (kPawnAttacks[ep_sq.as_idx()].intersects(their_pieces_ & pawns_)) {
+      pawns_.set(Square(to_file, kRank1));
     }
   }
   return reset_50_moves;
 }
 
-bool ChessBoard::IsUnderAttack(BoardSquare square) const {
-  const int row = square.row();
-  const int col = square.col();
+bool ChessBoard::IsUnderAttack(Square square) const {
+  const Rank rank = square.rank();
+  const File file = square.file();
   // Check king.
   {
-    const int krow = their_king_.row();
-    const int kcol = their_king_.col();
-    if (std::abs(krow - row) <= 1 && std::abs(kcol - col) <= 1) return true;
+    const Rank krank = their_king_.rank();
+    const File kfile = their_king_.file();
+    if (std::abs(krank - rank) <= 1 && std::abs(kfile - file) <= 1) return true;
   }
   // Check rooks (and queens).
   if (GetRookAttacks(square, our_pieces_ | their_pieces_)
@@ -717,12 +716,12 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
     return true;
   }
   // Check pawns.
-  if (kPawnAttacks[square.as_int()].intersects(their_pieces_ & pawns_)) {
+  if (kPawnAttacks[square.as_idx()].intersects(their_pieces_ & pawns_)) {
     return true;
   }
   // Check knights.
   {
-    if (kKnightAttacks[square.as_int()].intersects(their_pieces_ - their_king_ -
+    if (kKnightAttacks[square.as_idx()].intersects(their_pieces_ - their_king_ -
                                                    rooks_ - bishops_ -
                                                    (pawns_ & kPawnMask))) {
       return true;
@@ -731,60 +730,29 @@ bool ChessBoard::IsUnderAttack(BoardSquare square) const {
   return false;
 }
 
-bool ChessBoard::IsSameMove(Move move1, Move move2) const {
-  // If moves are equal, it's the same move.
-  if (move1 == move2) return true;
-  // Explicitly check all legacy castling moves. Need to check for king, for
-  // e.g. rook e1a1 and e1c1 are different moves.
-  if (move1.from() != move2.from() || move1.from() != E1 ||
-      our_king_ != move1.from()) {
-    return false;
-  }
-  if (move1.to() == A1 && move2.to() == C1) return true;
-  if (move1.to() == C1 && move2.to() == A1) return true;
-  if (move1.to() == G1 && move2.to() == H1) return true;
-  if (move1.to() == H1 && move2.to() == G1) return true;
-  return false;
-}
-
-Move ChessBoard::GetLegacyMove(Move move) const {
-  if (our_king_ != move.from() || !our_pieces_.get(move.to())) {
-    return move;
-  }
-  if (move == Move(E1, H1)) return Move(E1, G1);
-  if (move == Move(E1, A1)) return Move(E1, C1);
-  return move;
-}
-
-Move ChessBoard::GetModernMove(Move move) const {
-  if (our_king_ != E1 || move.from() != E1) return move;
-  if (move == Move(E1, G1) && !our_pieces_.get(G1)) return Move(E1, H1);
-  if (move == Move(E1, C1) && !our_pieces_.get(C1)) return Move(E1, A1);
-  return move;
-}
-
 KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   KingAttackInfo king_attack_info;
 
   // Number of attackers that give check (used for double check detection).
   unsigned num_king_attackers = 0;
 
-  const int row = our_king_.row();
-  const int col = our_king_.col();
+  const int row = our_king_.rank().idx;
+  const int col = our_king_.file().idx;
   // King checks are unnecessary, as kings cannot give check.
   // Check rooks (and queens).
-  if (kRookAttacks[our_king_.as_int()].intersects(their_pieces_ & rooks_)) {
+  if (kRookAttacks[our_king_.as_idx()].intersects(their_pieces_ & rooks_)) {
     for (const auto& direction : kRookDirections) {
       auto dst_row = row;
       auto dst_col = col;
       BitBoard attack_line(0);
       bool possible_pinned_piece_found = false;
-      BoardSquare possible_pinned_piece;
+      Square possible_pinned_piece;
       while (true) {
         dst_row += direction.first;
         dst_col += direction.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-        const BoardSquare destination(dst_row, dst_col);
+        if (!IsOnBoard(dst_row, dst_col)) break;
+        const Square destination(File::FromIdx(dst_col),
+                                 Rank::FromIdx(dst_row));
         if (our_pieces_.get(destination)) {
           if (possible_pinned_piece_found) {
             // No pieces pinned.
@@ -816,18 +784,19 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
     }
   }
   // Check bishops.
-  if (kBishopAttacks[our_king_.as_int()].intersects(their_pieces_ & bishops_)) {
+  if (kBishopAttacks[our_king_.as_idx()].intersects(their_pieces_ & bishops_)) {
     for (const auto& direction : kBishopDirections) {
       auto dst_row = row;
       auto dst_col = col;
       BitBoard attack_line(0);
       bool possible_pinned_piece_found = false;
-      BoardSquare possible_pinned_piece;
+      Square possible_pinned_piece;
       while (true) {
         dst_row += direction.first;
         dst_col += direction.second;
-        if (!BoardSquare::IsValid(dst_row, dst_col)) break;
-        const BoardSquare destination(dst_row, dst_col);
+        if (!IsOnBoard(dst_row, dst_col)) break;
+        const Square destination(File::FromIdx(dst_col),
+                                 Rank::FromIdx(dst_row));
         if (our_pieces_.get(destination)) {
           if (possible_pinned_piece_found) {
             // No pieces pinned.
@@ -860,7 +829,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   }
   // Check pawns.
   const BitBoard attacking_pawns =
-      kPawnAttacks[our_king_.as_int()] & their_pieces_ & pawns_;
+      kPawnAttacks[our_king_.as_idx()] & their_pieces_ & pawns_;
   king_attack_info.attack_lines_ =
       king_attack_info.attack_lines_ | attacking_pawns;
 
@@ -871,7 +840,7 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
 
   // Check knights.
   const BitBoard attacking_knights =
-      kKnightAttacks[our_king_.as_int()] &
+      kKnightAttacks[our_king_.as_idx()] &
       (their_pieces_ - their_king_ - rooks_ - bishops_ - (pawns_ & kPawnMask));
   king_attack_info.attack_lines_ =
       king_attack_info.attack_lines_ | attacking_knights;
@@ -894,8 +863,7 @@ bool ChessBoard::IsLegalMove(Move move,
 
   // En passant. Complex but rare. Just apply
   // and check that we are not under check.
-  if (from.row() == 4 && pawns_.get(from) && from.col() != to.col() &&
-      pawns_.get(7, to.col())) {
+  if (move.is_en_passant()) {
     ChessBoard board(*this);
     board.ApplyMove(move);
     return !board.IsUnderCheck();
@@ -931,8 +899,7 @@ bool ChessBoard::IsLegalMove(Move move,
 
   // King moves.
   if (from == our_king_) {
-    if (from.row() != 0 || to.row() != 0 ||
-        (abs(from.col() - to.col()) == 1 && !our_pieces_.get(to))) {
+    if (!move.is_castling()) {
       // Non-castling move. Already checked during movegen.
       return true;
     }
@@ -948,10 +915,10 @@ bool ChessBoard::IsLegalMove(Move move,
 
   // The piece is pinned. Now check that it stays on the same line w.r.t. the
   // king.
-  const int dx_from = from.col() - our_king_.col();
-  const int dy_from = from.row() - our_king_.row();
-  const int dx_to = to.col() - our_king_.col();
-  const int dy_to = to.row() - our_king_.row();
+  const int dx_from = from.file() - our_king_.file();
+  const int dy_from = from.rank() - our_king_.rank();
+  const int dx_to = to.file() - our_king_.file();
+  const int dy_to = to.rank() - our_king_.rank();
 
   if (dx_from == 0 || dx_to == 0) {
     return (dx_from == dx_to);
@@ -970,158 +937,156 @@ MoveList ChessBoard::GenerateLegalMoves() const {
   return result;
 }
 
-void ChessBoard::SetFromFen(std::string fen, int* rule50_ply, int* moves) {
+void ChessBoard::PutPiece(Square square, PieceType piece, bool is_theirs) {
+  (is_theirs ? their_pieces_ : our_pieces_).set(square);
+  if (piece == kKing) (is_theirs ? their_king_ : our_king_) = square;
+  if (piece == kPawn) pawns_.set(square);
+  if (piece == kRook || piece == kQueen) rooks_.set(square);
+  if (piece == kBishop || piece == kQueen) bishops_.set(square);
+}
+
+void ChessBoard::SetFromFen(std::string_view fen, int* rule50_ply, int* moves) {
   Clear();
-  int row = 7;
-  int col = 0;
+  if (rule50_ply) *rule50_ply = 0;
+  if (moves) *moves = 1;
+  Rank rank = kRank8;
+  File file = kFileA;
+  size_t pos = 0;
 
-  // Remove any trailing whitespaces to detect eof after the last field.
-  fen.erase(std::find_if(fen.rbegin(), fen.rend(),
-                         [](char c) { return !std::isspace(c); })
-                .base(),
-            fen.end());
+  auto complain = [&](std::string_view msg) {
+    throw Exception("Bad fen string (" + std::string(msg) +
+                    "): " + std::string(fen));
+  };
+  auto skip_whitespace = [&](std::string_view where = {}) {
+    if (!where.empty() && pos < fen.size() && fen[pos] != ' ') {
+      complain("space expected " + std::string(where));
+    }
+    while (pos < fen.size() && fen[pos] == ' ') ++pos;
+    return pos == fen.size();
+  };
 
-  std::istringstream fen_str(fen);
-  std::string board;
-  fen_str >> board;
-  std::string who_to_move = "w";
-  if (!fen_str.eof()) fen_str >> who_to_move;
-  // Assume no castling rights. Other engines, e.g., Stockfish, assume kings and
-  // rooks on their initial rows can each castle with the outer-most rook.  Our
-  // implementation currently supports 960 castling where white and black rooks
-  // have matching columns, so it's unclear which rights to assume.
-  std::string castlings = "-";
-  if (!fen_str.eof()) fen_str >> castlings;
-  std::string en_passant = "-";
-  if (!fen_str.eof()) fen_str >> en_passant;
-  int rule50_halfmoves = 0;
-  if (!fen_str.eof()) fen_str >> rule50_halfmoves;
-  int total_moves = 1;
-  if (!fen_str.eof()) fen_str >> total_moves;
-  if (!fen_str) throw Exception("Bad fen string: " + fen);
+  // Skip leading whitespaces.
+  skip_whitespace();
 
-  for (char c : board) {
+  // Parse board position.
+  for (; pos < fen.size(); ++pos) {
+    const char c = fen[pos];
+    if (c == ' ') break;
     if (c == '/') {
-      --row;
-      if (row < 0) throw Exception("Bad fen string (too many rows): " + fen);
-      col = 0;
+      if (rank == kRank1) complain("too many ranks");
+      --rank;
+      file = kFileA;
       continue;
     }
-    if (std::isdigit(c)) {
-      col += c - '0';
+    if (c >= '1' && c <= '8') {
+      file += c - '0';
+      if (file > File::FromIdx(8)) complain("too many files");
       continue;
     }
-    if (col >= 8) throw Exception("Bad fen string (too many columns): " + fen);
-
-    if (std::isupper(c)) {
-      // White piece.
-      our_pieces_.set(row, col);
-    } else {
-      // Black piece.
-      their_pieces_.set(row, col);
+    PieceType piece = PieceType::Parse(c);
+    if (!piece.IsValid()) complain("invalid character as piece");
+    if (!file.IsValid() || !rank.IsValid()) complain("piece out of board");
+    if (piece == kPawn && (rank == kRank1 || rank == kRank8)) {
+      complain("pawn on back rank");
     }
-
-    if (c == 'K') {
-      our_king_.set(row, col);
-    } else if (c == 'k') {
-      their_king_.set(row, col);
-    } else if (c == 'R' || c == 'r') {
-      rooks_.set(row, col);
-    } else if (c == 'B' || c == 'b') {
-      bishops_.set(row, col);
-    } else if (c == 'Q' || c == 'q') {
-      rooks_.set(row, col);
-      bishops_.set(row, col);
-    } else if (c == 'P' || c == 'p') {
-      if (row == 7 || row == 0) {
-        throw Exception("Bad fen string (pawn in first/last row): " + fen);
-      }
-      pawns_.set(row, col);
-    } else if (c == 'N' || c == 'n') {
-      // Do nothing
-    } else {
-      throw Exception("Bad fen string: " + fen);
-    }
-    ++col;
+    PutPiece(Square(file, rank), piece, std::islower(c));
+    ++file;
   }
+  if (skip_whitespace("after the board")) return;
 
-  if (castlings != "-") {
-    uint8_t our_left_rook = FILE_A;
-    uint8_t our_right_rook = FILE_H;
-    uint8_t their_left_rook = FILE_A;
-    uint8_t their_right_rook = FILE_H;
-    for (char c : castlings) {
-      const bool is_black = std::islower(c);
-      const int king_col = (is_black ? their_king_ : our_king_).col();
-      const auto rooks =
-          (is_black ? their_pieces_ : our_pieces_) & ChessBoard::rooks();
-      auto find_rook = [rooks, king_col, fen](bool forward, uint8_t rank) {
-        uint8_t rook;
-        for (rook = forward ? FILE_A : FILE_H; rook != king_col;
-             rook += 2 * forward - 1) {
-          if (rooks.get(rank, rook)) break;
-        }
-        if (rook == king_col) {
-          throw Exception("Bad fen string (missing rook): " + fen);
-        }
-        return rook;
-      };
-      if (c == 'K') {
-        // Finding rightmost rook.
-        our_right_rook = find_rook(false, RANK_1);
-        castlings_.set_we_can_00();
-      } else if (c == 'Q') {
-        // Finding leftmost rook.
-        our_left_rook = find_rook(true, RANK_1);
-        castlings_.set_we_can_000();
-      } else if (c >= 'A' && c <= 'H') {
-        int rook_col = c - 'A';
-        if (rook_col < king_col) {
-          our_left_rook = rook_col;
-          castlings_.set_we_can_000();
-        } else {
-          our_right_rook = rook_col;
-          castlings_.set_we_can_00();
-        }
-      } else if (c == 'k') {
-        // Finding rightmost rook.
-        their_right_rook = find_rook(false, RANK_8);
-        castlings_.set_they_can_00();
-      } else if (c == 'q') {
-        // Finding leftmost rook.
-        their_left_rook = find_rook(true, RANK_8);
-        castlings_.set_they_can_000();
-      } else if (c >= 'a' && c <= 'h') {
-        int rook_col = c - 'a';
-        if (rook_col < king_col) {
-          their_left_rook = rook_col;
-          castlings_.set_they_can_000();
-        } else {
-          their_right_rook = rook_col;
-          castlings_.set_they_can_00();
-        }
-      } else {
-        throw Exception("Bad fen string (unexpected casting symbol): " + fen);
-      }
-    }
-    castlings_.SetRookPositions(our_left_rook, our_right_rook, their_left_rook,
-                                their_right_rook);
-  }
-
-  if (en_passant != "-") {
-    auto square = BoardSquare(en_passant);
-    if (square.row() != RANK_3 && square.row() != RANK_6)
-      throw Exception("Bad fen string: " + fen + " wrong en passant rank");
-    pawns_.set((square.row() == RANK_3) ? RANK_1 : RANK_8, square.col());
-  }
-
-  if (who_to_move == "b" || who_to_move == "B") {
+  // Parsing side to move.
+  const char side_to_move = std::tolower(fen[pos++]);
+  if (side_to_move == 'b') {
     Mirror();
-  } else if (who_to_move != "w" && who_to_move != "W") {
-    throw Exception("Bad fen string (side to move): " + fen);
+  } else if (side_to_move != 'w') {
+    complain("invalid side to move");
   }
-  if (rule50_ply) *rule50_ply = rule50_halfmoves;
-  if (moves) *moves = total_moves;
+  if (skip_whitespace("after side to move")) return;
+
+  // Parse castling rights.
+  if (fen[pos] == '-') {
+    ++pos;
+  } else {
+    auto find_rook = [&](bool theirs, bool kingside) -> File {
+      const Rank rank = theirs ? kRank8 : kRank1;
+      for (File file = kingside ? kFileH : kFileA;
+           file != (theirs ? their_king_.file() : our_king_.file());
+           kingside ? --file : ++file) {
+        Square sq(file, rank);
+        if (!rooks().get(sq)) continue;
+        if (theirs ? their_pieces_.get(sq) : our_pieces_.get(sq)) {
+          return file;
+        }
+      }
+      complain("missing rook for castling");
+      return kFileA;  // Unreachable.
+    };
+    for (; pos < fen.size(); ++pos) {
+      const char c = fen[pos];
+      if (c == ' ') break;
+      const bool theirs = bool(std::isupper(c)) == flipped();
+      bool kingside = false;
+      File file;
+      if (c == 'K' || c == 'Q' || c == 'k' || c == 'q') {
+        kingside = std::tolower(c) == 'k';
+        file = find_rook(theirs, kingside);
+      } else {
+        file = File::Parse(c);
+        if (!file.IsValid()) complain("invalid character in castling");
+        kingside = file > (theirs ? their_king_.file() : our_king_.file());
+      }
+      if (kingside && theirs) {
+        castlings_.set_they_can_00();
+        castlings_.their_kingside_rook = file;
+      } else if (kingside && !theirs) {
+        castlings_.set_we_can_00();
+        castlings_.our_kingside_rook = file;
+      } else if (!kingside && theirs) {
+        castlings_.set_they_can_000();
+        castlings_.their_queenside_rook = file;
+      } else if (!kingside && !theirs) {
+        castlings_.set_we_can_000();
+        castlings_.our_queenside_rook = file;
+      }
+    }
+  }
+  if (skip_whitespace("after castling")) return;
+
+  // Parse en passant square.
+  if (fen[pos] == '-') {
+    ++pos;
+  } else {
+    if (pos + 2 >= fen.size()) complain("en passant square expected");
+    const File file = File::Parse(fen[pos]);
+    const Rank rank = Rank::Parse(fen[pos + 1]);
+    if (!file.IsValid() || !rank.IsValid()) complain("bad en passant square");
+    if (rank != (flipped() ? kRank3 : kRank6)) complain("bad en passant rank");
+    if ((ours() | theirs()).get(Square(file, kRank6))) {
+      complain("en passant square occupied");
+    }
+    if (!(theirs() & pawns()).get(Square(file, kRank5))) {
+      complain("no pawn to capture en passant");
+    }
+    pawns_.set(Square(file, kRank8));
+    pos += 2;
+  }
+  if (skip_whitespace("after en passant")) return;
+
+  // Parse rule 50 halfmoves.
+  auto parse_int = [&](int* into, std::string_view error_msg) {
+    const std::string_view num = fen.substr(pos, fen.find(' ', pos) - pos);
+    int tmp;
+    auto res = std::from_chars(num.data(), num.data() + num.size(), tmp);
+    if (res.ec != std::errc()) complain(error_msg);
+    if (into) *into = tmp;
+    pos += num.size();
+  };
+  parse_int(rule50_ply, "bad rule 50 halfmoves");
+  if (skip_whitespace("after rule-50 clock")) return;
+
+  // Parse total moves.
+  parse_int(moves, "bad total moves");
+  if (!skip_whitespace("after total moves")) complain("extra characters");
 }
 
 bool ChessBoard::HasMatingMaterial() const {
@@ -1151,37 +1116,39 @@ std::string ChessBoard::DebugString() const {
   std::string result;
   for (int i = 7; i >= 0; --i) {
     for (int j = 0; j < 8; ++j) {
-      if (!our_pieces_.get(i, j) && !their_pieces_.get(i, j)) {
-        if (i == 2 && pawns_.get(0, j))
+      File file = File::FromIdx(j);
+      Square square(file, Rank::FromIdx(i));
+      if (!our_pieces_.get(square) && !their_pieces_.get(square)) {
+        if (i == 2 && pawns_.get(Square(file, kRank1)))
           result += '*';
-        else if (i == 5 && pawns_.get(7, j))
+        else if (i == 5 && pawns_.get(Square(file, kRank8)))
           result += '*';
         else
           result += '.';
         continue;
       }
-      if (our_king_ == i * 8 + j) {
+      if (our_king_ == square) {
         result += 'K';
         continue;
       }
-      if (their_king_ == i * 8 + j) {
+      if (their_king_ == square) {
         result += 'k';
         continue;
       }
       char c = '?';
-      if ((pawns_ & kPawnMask).get(i, j)) {
+      if ((pawns_ & kPawnMask).get(square)) {
         c = 'p';
-      } else if (bishops_.get(i, j)) {
-        if (rooks_.get(i, j))
+      } else if (bishops_.get(square)) {
+        if (rooks_.get(square))
           c = 'q';
         else
           c = 'b';
-      } else if (rooks_.get(i, j)) {
+      } else if (rooks_.get(square)) {
         c = 'r';
       } else {
         c = 'n';
       }
-      if (our_pieces_.get(i, j)) c = std::toupper(c);
+      if (our_pieces_.get(square)) c = std::toupper(c);
       result += c;
     }
     if (i == 0) {
@@ -1192,6 +1159,57 @@ std::string ChessBoard::DebugString() const {
     result += '\n';
   }
   return result;
+}
+
+Move ChessBoard::ParseMove(std::string_view move_str) const {
+  auto complain = [&move_str](std::string_view reason) {
+    throw Exception("Invalid move (" + std::string(reason) +
+                    "): " + std::string(move_str));
+  };
+  if (move_str.size() < 4 || move_str.size() > 5) complain("wrong move size");
+  File from_file = File::Parse(move_str[0]);
+  Rank from_rank = Rank::Parse(move_str[1]);
+  File to_file = File::Parse(move_str[2]);
+  Rank to_rank = Rank::Parse(move_str[3]);
+  if (!from_file.IsValid() || !from_rank.IsValid() || !to_file.IsValid() ||
+      !to_rank.IsValid()) {
+    complain("bad square");
+  }
+  if (flipped_) {
+    from_rank.Flip();
+    to_rank.Flip();
+  }
+  Square from(from_file, from_rank);
+  Square to(to_file, to_rank);
+  if (!our_pieces_.get(from)) complain("no piece to move");
+
+  // Pawns at back ranks are used to encode en-passant, that's why we need to
+  // check that a piece doesn't go from there.
+  if (pawns_.get(from) && (from_rank != kRank1 && from_rank != kRank8) &&
+      (to_rank == kRank1 || to_rank == kRank8)) {
+    // Promotion.
+    PieceType promotion =
+        move_str.size() > 4 ? PieceType::Parse(move_str[4]) : kKnight;
+    if (!promotion.CanPromoteInto()) complain("invalid promotion");
+    return Move::WhitePromotion(from, to, promotion);
+  }
+  if (from == our_king_ && our_pieces_.get(to)) {
+    // FRC-style castling.
+    return Move::WhiteCastling(from.file(), to.file());
+  }
+  if (from == our_king_ && from == kSquareE1 && to == kSquareG1) {
+    // Kingside castling.
+    return Move::WhiteCastling(from.file(), kFileH);
+  }
+  if (from == our_king_ && from == kSquareE1 && to == kSquareC1) {
+    // Qeenside castling.
+    return Move::WhiteCastling(from.file(), kFileA);
+  }
+  if (from.file() != to.file() && pawns_.get(from) && !their_pieces_.get(to)) {
+    // En passant.
+    return Move::WhiteEnPassant(from, to);
+  }
+  return Move::White(from, to);
 }
 
 }  // namespace lczero

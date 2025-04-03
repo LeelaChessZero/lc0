@@ -235,8 +235,9 @@ void UciLoop::SendId() {
 }
 
 void UciLoop::SendBestMove(const BestMoveInfo& move) {
-  std::string res = "bestmove " + move.bestmove.as_string();
-  if (move.ponder) res += " ponder " + move.ponder.as_string();
+  const bool c960 = IsChess960();
+  std::string res = "bestmove " + move.bestmove.ToString(c960);
+  if (!move.ponder.is_null()) res += " ponder " + move.ponder.ToString(c960);
   if (move.player != -1) res += " player " + std::to_string(move.player);
   if (move.game_id != -1) res += " gameid " + std::to_string(move.game_id);
   if (move.is_black)
@@ -246,6 +247,7 @@ void UciLoop::SendBestMove(const BestMoveInfo& move) {
 
 void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
   std::vector<std::string> reses;
+  const bool c960 = IsChess960();
   for (const auto& info : infos) {
     std::string res = "info";
     if (info.player != -1) res += " player " + std::to_string(info.player);
@@ -273,7 +275,7 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
 
     if (!info.pv.empty()) {
       res += " pv";
-      for (const auto& move : info.pv) res += " " + move.as_string();
+      for (const auto& move : info.pv) res += " " + move.ToString(c960);
     }
     if (!info.comment.empty()) res += " string " + info.comment;
     reses.push_back(std::move(res));

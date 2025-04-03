@@ -648,7 +648,7 @@ class NodeTree {
   // moves added). Returns false, if the position is completely different,
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
-                       const std::vector<Move>& moves);
+                       const std::vector<std::string>& moves);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
