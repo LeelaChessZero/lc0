@@ -407,12 +407,9 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
       provider_(provider) {
   batch_size_ =
-      opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML   ? 16
-                                      : provider == OnnxProvider::TRT ? 32
-                                                                      : -1);
-  steps_ = opts.GetOrDefault<int>(
-      "steps",
-      (provider == OnnxProvider::DML || provider == OnnxProvider::TRT) ? 4 : 1);
+      opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
+  steps_ =
+      opts.GetOrDefault<int>("steps", provider == OnnxProvider::DML ? 4 : 1);
   min_batch_size_ = opts.GetOrDefault<int>(
       "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
   int gpu = opts.GetOrDefault<int>("gpu", 0);
