@@ -330,8 +330,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
       trt_options["trt_engine_cache_prefix"] =
-          "Lc0_ONNX_TRT_batch_" + std::to_string(batch_size) + "_gpu_" +
-          std::to_string(gpu) + "_";
+          "Lc0_ONNX_TRT_batch_" + std::to_string(batch_size) + "_";
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
