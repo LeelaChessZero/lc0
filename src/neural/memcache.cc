@@ -73,6 +73,11 @@ class MemCache : public CachingBackend {
     cache_.SetCapacity(capacity);
   }
 
+  UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& options) override {
+    return wrapped_backend_->UpdateConfiguration(options);
+  }
+
  private:
   std::unique_ptr<Backend> wrapped_backend_;
   HashKeyedCache<CachedValue> cache_;
