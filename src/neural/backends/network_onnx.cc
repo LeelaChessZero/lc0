@@ -46,6 +46,7 @@
 #include "onnxruntime_cxx_api.h"
 #include "utils/bf16_utils.h"
 #include "utils/bititer.h"
+#include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 #include "utils/logging.h"
@@ -83,8 +84,7 @@ class OnnxComputation : public NetworkComputation {
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider, int gpu, int threads, int batch_size,
-              int steps);
+              OnnxProvider provider);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
@@ -125,6 +125,8 @@ class OnnxNetwork : public Network {
   bool bf16_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
+  // The lower limit for variable batch size.
+  int min_batch_size_;
   static constexpr int max_batch_size_ = 1024;
   // For conditional locking if running the DML/ROCM/TRT provider.
   OnnxProvider provider_;
@@ -261,8 +263,10 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
   int batch_size = network_->batch_size_;
-  if (batch_size < 0) batch_size = raw_input_.size();
-
+  if (batch_size < 0) {
+    batch_size = std::max(static_cast<int>(raw_input_.size()),
+                          network_->min_batch_size_);
+  }
   for (size_t i = 0; i < raw_input_.size();) {
     int step = (raw_input_.size() - i + batch_size - 1) / batch_size;
     if (step > network_->steps_) step = network_->steps_;
@@ -319,24 +323,39 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
+      std::string cache_dir = CommandLine::BinaryDirectory() + "/trt_cache";
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu);
       trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
       trt_options["trt_int8_enable"] = "0";
-      trt_options["trt_engine_cache_enable"] = "1";
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
+      trt_options["trt_engine_cache_prefix"] =
+          "Lc0_ONNX_TRT_batch_" + std::to_string(batch_size) + "_";
+      trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
+      trt_options["trt_timing_cache_path"] = cache_dir;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
+      trt_options["trt_force_sequential_engine_build"] = "1";
       // Looks like we need I/O binding to enable this.
       // trt_options["trt_cuda_graph_enable"] = "1";
       if (batch_size < 0) {
-        trt_options["trt_profile_min_shapes"] = inputs_[0] + ":1x112x8x8";
+        trt_options["trt_profile_min_shapes"] =
+            inputs_[0] + ":" + std::to_string(min_batch_size_) + "x112x8x8";
         trt_options["trt_profile_max_shapes"] =
             inputs_[0] + ":" + std::to_string(max_batch_size_) + "x112x8x8";
         trt_options["trt_profile_opt_shapes"] =
             inputs_[0] + ":" + std::to_string(max_batch_size_ / 4) + "x112x8x8";
+      } else {
+        trt_options["trt_profile_min_shapes"] =
+            inputs_[0] + ":" + std::to_string(batch_size_) + "x112x8x8";
+        trt_options["trt_profile_max_shapes"] =
+            inputs_[0] + ":" + std::to_string(batch_size_ * steps_) +
+            "x112x8x8";
+        trt_options["trt_profile_opt_shapes"] =
+            inputs_[0] + ":" + std::to_string(batch_size_ * steps_) +
+            "x112x8x8";
       }
       std::vector<const char*> keys;
       std::vector<const char*> values;
@@ -380,21 +399,31 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
   return options;
 }
 
-OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict&,
-                         OnnxProvider provider, int gpu, int threads,
-                         int batch_size, int steps)
+OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
+                         OnnxProvider provider)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
-      steps_(steps),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
       fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
       bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
-      batch_size_(batch_size),
       provider_(provider) {
+  batch_size_ =
+      opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
+  steps_ =
+      opts.GetOrDefault<int>("steps", provider == OnnxProvider::DML ? 4 : 1);
+  min_batch_size_ = opts.GetOrDefault<int>(
+      "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
+  int gpu = opts.GetOrDefault<int>("gpu", 0);
+  int threads =
+      opts.GetOrDefault<int>("threads", provider == OnnxProvider::CPU ? 1 : 0);
+
   // Sanity checks.
-  if (batch_size_ < 0) steps_ = 1;
-  if (batch_size_ * steps > max_batch_size_) {
+  if (batch_size_ <= 0) {
+    batch_size_ = -1;  // Variable batch size.
+    steps_ = 1;
+  }
+  if (batch_size_ * steps_ > max_batch_size_) {
     batch_size_ = max_batch_size_ / steps_;
   }
 
@@ -439,26 +468,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& opts) {
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
-  int gpu = opts.GetOrDefault<int>("gpu", 0);
-
-  int batch_size =
-      opts.GetOrDefault<int>("batch", kProvider == OnnxProvider::DML   ? 16
-                                      : kProvider == OnnxProvider::TRT ? 32
-                                                                       : -1);
-
-  int steps = opts.GetOrDefault<int>(
-      "steps",
-      (kProvider == OnnxProvider::DML || kProvider == OnnxProvider::TRT) ? 4
-                                                                         : 1);
-
-  int threads =
-      opts.GetOrDefault<int>("threads", kProvider == OnnxProvider::CPU ? 1 : 0);
-
-  if (batch_size <= 0) batch_size = -1;  // Variable batch size.
-
   if (w->has_onnx_model()) {
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, gpu, threads,
-                                         batch_size, steps);
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
@@ -484,8 +495,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
-    return std::make_unique<OnnxNetwork>(converted, opts, kProvider, gpu,
-                                         threads, batch_size, steps);
+    return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
   }
 }
 
