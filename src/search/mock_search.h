@@ -35,7 +35,8 @@ namespace lczero {
 
 class MockSearch : public SearchBase {
  public:
-  MockSearch() : SearchBase(nullptr) {}
+  using SearchBase::SearchBase;
+  UciResponder* GetUciResponder() const { return uci_responder_; }
   MOCK_METHOD(void, SetBackend, (Backend * backend), (override));
   MOCK_METHOD(void, SetSyzygyTablebase, (SyzygyTablebase * tb), (override));
   MOCK_METHOD(void, NewGame, (), (override));

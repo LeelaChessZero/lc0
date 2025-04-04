@@ -27,42 +27,106 @@
 
 #include "engine.h"
 
+#include <future>
+
 #include "gtest/gtest.h"
 #include "neural/mock_backend.h"
 #include "neural/register.h"
+#include "neural/shared_params.h"
 #include "search/mock_search.h"
 #include "search/search.h"
 
 namespace lczero {
 namespace {
 
+using testing::_;
+using testing::Invoke;
+using testing::Return;
+
 class EngineTest : public ::testing::Test {
  protected:
   EngineTest() {
     auto backend_factory = std::make_unique<MockBackendFactory>();
     backend_factory_ = backend_factory.get();
+    ON_CALL(*backend_factory_, GetName()).WillByDefault(Return("mock"));
+    ON_CALL(*backend_factory_, Create(_))
+        .WillByDefault([this](const OptionsDict&) {
+          auto backend = std::make_unique<MockBackend>();
+          backend_ = backend.get();
+          return backend;
+        });
+
     BackendManager::Get()->AddBackend(std::move(backend_factory));
 
-    auto search = std::make_unique<MockSearch>();
-    search_ = search.get();
-    EXPECT_CALL(search_factory_, CreateSearch(testing::_, testing::_))
-        .WillOnce(testing::Return(std::move(search)));
+    options_.Set<std::string>(SharedBackendParams::kBackendId, "mock");
+    options_.Set<int>(SharedBackendParams::kNNCacheSizeId, 10);
+
+    EXPECT_CALL(search_factory_, CreateSearch(_, _))
+        .WillOnce([&](UciResponder* responder, const OptionsDict* options) {
+          auto search = std::make_unique<MockSearch>(responder);
+          search_ = search.get();
+          return search;
+        });
   }
 
   ~EngineTest() { BackendManager::Get()->RemoveBackend(backend_factory_); }
 
   OptionsDict options_;
-  BackendFactory* backend_factory_ = nullptr;
+  MockBackend* backend_ = nullptr;
+  MockBackendFactory* backend_factory_ = nullptr;
   MockSearchFactory search_factory_;
   MockSearch* search_ = nullptr;
   std::unique_ptr<Engine> engine_;
 };
 
-TEST_F(EngineTest, ExampleTest) {
-  Engine engine(search_factory_, options_);
+class WaitingUciResponder : public UciResponder {
+ public:
+  WaitingUciResponder() {
+    bestmove_promise_ = std::make_unique<std::promise<BestMoveInfo>>();
+  }
 
-  // Add test logic here.
-  EXPECT_TRUE(true);
+  virtual void OutputBestMove(BestMoveInfo* info) override {
+    bestmove_promise_->set_value(*info);
+  }
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {}
+
+  BestMoveInfo Wait() {
+    BestMoveInfo info = bestmove_promise_->get_future().get();
+    bestmove_promise_ = std::make_unique<std::promise<BestMoveInfo>>();
+    return info;
+  }
+
+ private:
+  std::unique_ptr<std::promise<BestMoveInfo>> bestmove_promise_;
+};
+
+TEST_F(EngineTest, BackendReloadByUpdateBackendConfig) {
+  WaitingUciResponder uci_responder;
+  Engine engine(search_factory_, options_);
+  engine.RegisterUciResponder(&uci_responder);
+  EXPECT_EQ(backend_, nullptr);  // Backend not created before the search.
+  EXPECT_CALL(*search_, StartSearch(_)).WillRepeatedly([&](const GoParams&) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    static BestMoveInfo bestmove_info(Move::White(kSquareE1, kSquareA1));
+    search_->GetUciResponder()->OutputBestMove(&bestmove_info);
+  });
+  engine.Go(GoParams{.nodes = 10});
+  uci_responder.Wait();
+  EXPECT_NE(backend_, nullptr);  // Backend created after the search.
+  Backend* prev_backend = backend_;
+  EXPECT_CALL(*backend_, UpdateConfiguration(_))
+      .WillOnce(Return(Backend::UPDATE_OK));
+  engine.NewGame();
+  engine.Go(GoParams{.nodes = 10});
+  uci_responder.Wait();
+  EXPECT_EQ(backend_, prev_backend);  // Backend not recreated.
+  EXPECT_CALL(*backend_, UpdateConfiguration(_))
+      .WillOnce(Return(Backend::NEED_RESTART));
+  engine.Go(GoParams{.nodes = 10});  // Go alone should not restart the backend.
+  uci_responder.Wait();
+  EXPECT_EQ(backend_, prev_backend);
+  engine.NewGame();
+  EXPECT_NE(backend_, prev_backend);  // Backend recreated.
 }
 
 }  // namespace

@@ -39,7 +39,6 @@ class Engine : public EngineControllerBase {
  public:
   Engine(const SearchFactory&, const OptionsDict&);
 
- private:
   void EnsureReady() override {};
   void NewGame() override;
   void SetPosition(const std::string& fen,
