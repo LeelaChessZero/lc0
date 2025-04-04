@@ -40,17 +40,17 @@
 namespace lczero {
 
 struct GoParams {
-  std::optional<std::int64_t> wtime;
-  std::optional<std::int64_t> btime;
-  std::optional<std::int64_t> winc;
-  std::optional<std::int64_t> binc;
-  std::optional<int> movestogo;
-  std::optional<int> depth;
-  std::optional<int> mate;
-  std::optional<int> nodes;
-  std::optional<std::int64_t> movetime;
+  std::optional<std::int64_t> wtime = std::nullopt;
+  std::optional<std::int64_t> btime = std::nullopt;
+  std::optional<std::int64_t> winc = std::nullopt;
+  std::optional<std::int64_t> binc = std::nullopt;
+  std::optional<int> movestogo = std::nullopt;
+  std::optional<int> depth = std::nullopt;
+  std::optional<int> mate = std::nullopt;
+  std::optional<int> nodes = std::nullopt;
+  std::optional<std::int64_t> movetime = std::nullopt;
   bool infinite = false;
-  std::vector<std::string> searchmoves;
+  std::vector<std::string> searchmoves = {};
   bool ponder = false;
 };
 
