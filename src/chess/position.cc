@@ -32,40 +32,41 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "chess/types.h"
+
+namespace lczero {
 namespace {
 // GetPieceAt returns the piece found at row, col on board or the null-char '\0'
 // in case no piece there.
 char GetPieceAt(const lczero::ChessBoard& board, int row, int col) {
   char c = '\0';
-  if (board.ours().get(row, col) || board.theirs().get(row, col)) {
-    if (board.pawns().get(row, col)) {
+  const Square square(File::FromIdx(col), Rank::FromIdx(row));
+  if (board.ours().get(square) || board.theirs().get(square)) {
+    if (board.pawns().get(square)) {
       c = 'P';
-    } else if (board.kings().get(row, col)) {
+    } else if (board.kings().get(square)) {
       c = 'K';
-    } else if (board.bishops().get(row, col)) {
+    } else if (board.bishops().get(square)) {
       c = 'B';
-    } else if (board.queens().get(row, col)) {
+    } else if (board.queens().get(square)) {
       c = 'Q';
-    } else if (board.rooks().get(row, col)) {
+    } else if (board.rooks().get(square)) {
       c = 'R';
     } else {
       c = 'N';
     }
-    if (board.theirs().get(row, col)) {
+    if (board.theirs().get(square)) {
       c = std::tolower(c);  // Capitals are for white.
     }
   }
   return c;
 }
-
 }  // namespace
-namespace lczero {
 
 Position::Position(const Position& parent, Move m)
     : rule50_ply_(parent.rule50_ply_ + 1), ply_count_(parent.ply_count_ + 1) {
-  them_board_ = parent.us_board_;
-  const bool is_zeroing = them_board_.ApplyMove(m);
-  us_board_ = them_board_;
+  us_board_ = parent.us_board_;
+  const bool is_zeroing = us_board_.ApplyMove(m);
   us_board_.Mirror();
   if (is_zeroing) rule50_ply_ = 0;
 }
@@ -73,8 +74,12 @@ Position::Position(const Position& parent, Move m)
 Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
     : rule50_ply_(rule50_ply), repetitions_(0), ply_count_(game_ply) {
   us_board_ = board;
-  them_board_ = board;
-  them_board_.Mirror();
+}
+
+Position Position::FromFen(std::string_view fen) {
+  Position pos;
+  pos.us_board_.SetFromFen(std::string(fen), &pos.rule50_ply_, &pos.ply_count_);
+  return pos;
 }
 
 uint64_t Position::Hash() const {
@@ -130,7 +135,7 @@ int PositionHistory::ComputeLastMoveRepetitions(int* cycle_length) const {
   // TODO(crem) implement hash/cache based solution.
   if (last.GetRule50Ply() < 4) return 0;
 
-  for (int idx = positions_.size() - 3; idx >= 0; idx -= 2) {
+  for (int idx = positions_.size() - 5; idx >= 0; idx -= 2) {
     const auto& pos = positions_[idx];
     if (pos.GetBoard() == last.GetBoard()) {
       *cycle_length = positions_.size() - 1 - idx;
@@ -162,7 +167,8 @@ uint64_t PositionHistory::HashLast(int positions) const {
 
 std::string GetFen(const Position& pos) {
   std::string result;
-  const ChessBoard& board = pos.GetWhiteBoard();
+  ChessBoard board = pos.GetBoard();
+  if (board.flipped()) board.Mirror();
   for (int row = 7; row >= 0; --row) {
     int emptycounter = 0;
     for (int col = 0; col < 8; ++col) {
@@ -183,7 +189,8 @@ std::string GetFen(const Position& pos) {
   std::string enpassant = "-";
   if (!board.en_passant().empty()) {
     auto sq = *board.en_passant().begin();
-    enpassant = BoardSquare(pos.IsBlackToMove() ? 2 : 5, sq.col()).as_string();
+    enpassant = Square(sq.file(), pos.IsBlackToMove() ? kRank3 : kRank6)
+                    .ToString(false);
   }
   result += pos.IsBlackToMove() ? " b" : " w";
   result += " " + board.castlings().as_string();

@@ -111,10 +111,14 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
   }
 }
 
-void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
-                              Eval best_eval, Eval played_eval,
-                              bool best_is_proven, Move best_move,
-                              Move played_move, const NNCacheLock& nneval) {
+void V6TrainingDataArray::Add(const classic::Node* node,
+                              const PositionHistory& history,
+                              classic::Eval best_eval,
+                              classic::Eval played_eval, bool best_is_proven,
+                              Move best_move, Move played_move,
+                              std::span<Move> legal_moves,
+                              const std::optional<EvalResult>& nneval,
+                              float policy_softmax_temp) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -146,40 +150,22 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   // Set moves probabilities according to their relative amount of visits.
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
-  float max_p = -std::numeric_limits<float>::infinity();
-  std::vector<float> intermediate;
-  if (nneval) {
-    int last_idx = 0;
-    for (const auto& child : node->Edges()) {
-      auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
-      float p = 0;
-      for (int i = 0; i < nneval->p.size(); i++) {
-        // Optimization: usually moves are stored in the same order as queried.
-        const auto& move = nneval->p[last_idx++];
-        if (last_idx == nneval->p.size()) last_idx = 0;
-        if (move.first == nn_idx) {
-          p = move.second;
-          break;
-        }
-      }
-      intermediate.emplace_back(p);
-      max_p = std::max(max_p, p);
-    }
-  }
   float total = 0.0;
-  auto it = intermediate.begin();
   for (const auto& child : node->Edges()) {
-    auto nn_idx = child.edge()->GetMove().as_nn_index(transform);
+    const Move move = child.GetMove();
     float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
     if (nneval) {
-      float P = std::exp(*it - max_p);
+      size_t move_idx =
+          std::find(legal_moves.begin(), legal_moves.end(), move) -
+          legal_moves.begin();
+      // Undo any softmax temperature in the cached data.
+      float P = std::pow(nneval->p[move_idx], policy_softmax_temp);
       if (fracv > 0) {
         kld_sum += fracv * std::log(fracv / P);
       }
       total += P;
-      it++;
     }
-    result.probabilities[nn_idx] = fracv;
+    result.probabilities[MoveToNNIndex(move, transform)] = fracv;
   }
   if (nneval) {
     // Add small epsilon for backward compatibility with earlier value of 0.
@@ -197,10 +183,10 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   uint8_t their_king_side = 1;
   // If frc trained, send the bit mask representing rook position.
   if (Is960CastlingFormat(input_format_)) {
-    our_queen_side <<= castlings.our_queenside_rook();
-    our_king_side <<= castlings.our_kingside_rook();
-    their_queen_side <<= castlings.their_queenside_rook();
-    their_king_side <<= castlings.their_kingside_rook();
+    our_queen_side <<= castlings.our_queenside_rook.idx;
+    our_king_side <<= castlings.our_kingside_rook.idx;
+    their_queen_side <<= castlings.their_queenside_rook.idx;
+    their_king_side <<= castlings.their_kingside_rook.idx;
   }
 
   result.castling_us_ooo = castlings.we_can_000() ? our_queen_side : 0;
@@ -234,7 +220,7 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
   result.result_q = 0;
   result.result_d = 1;
 
-  Eval orig_eval;
+  classic::Eval orig_eval;
   if (nneval) {
     orig_eval.wl = nneval->q;
     orig_eval.d = nneval->d;
@@ -271,11 +257,11 @@ void V6TrainingDataArray::Add(const Node* node, const PositionHistory& history,
 
   result.visits = node->GetN();
   if (position.IsBlackToMove()) {
-    best_move.Mirror();
-    played_move.Mirror();
+    best_move.Flip();
+    played_move.Flip();
   }
-  result.best_idx = best_move.as_nn_index(transform);
-  result.played_idx = played_move.as_nn_index(transform);
+  result.best_idx = MoveToNNIndex(best_move, transform);
+  result.played_idx = MoveToNNIndex(played_move, transform);
   result.reserved = 0;
 
   // Unknown here - will be filled in once the full data has been collected.

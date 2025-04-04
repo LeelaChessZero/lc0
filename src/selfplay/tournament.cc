@@ -30,9 +30,11 @@
 #include <fstream>
 
 #include "chess/pgn.h"
-#include "mcts/search.h"
-#include "mcts/stoppers/factory.h"
 #include "neural/factory.h"
+#include "neural/memcache.h"
+#include "neural/shared_params.h"
+#include "search/classic/search.h"
+#include "search/classic/stoppers/factory.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
 #include "utils/optionsparser.h"
@@ -110,10 +112,9 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
     dict->AddSubdict("black")->AddAliasDict(&options->GetOptionsDict("black"));
   }
 
-  NetworkFactory::PopulateOptions(options);
+  SharedBackendParams::Populate(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
-  options->Add<IntOption>(kNNCacheSizeId, 0, 999999999) = 2000000;
-  SearchParams::Populate(options);
+  classic::SearchParams::Populate(options);
 
   options->Add<BoolOption>(kShareTreesId) = true;
   options->Add<IntOption>(kTotalGamesId, -2, 999999) = -1;
@@ -139,22 +140,22 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   SelfPlayGame::PopulateUciParams(options);
 
   auto defaults = options->GetMutableDefaultsOptions();
-  defaults->Set<int>(SearchParams::kMiniBatchSizeId, 32);
-  defaults->Set<float>(SearchParams::kCpuctId, 1.2f);
-  defaults->Set<float>(SearchParams::kCpuctFactorId, 0.0f);
-  defaults->Set<float>(SearchParams::kPolicySoftmaxTempId, 1.0f);
-  defaults->Set<int>(SearchParams::kMaxCollisionVisitsId, 1);
-  defaults->Set<int>(SearchParams::kMaxCollisionEventsId, 1);
-  defaults->Set<int>(SearchParams::kCacheHistoryLengthId, 7);
-  defaults->Set<bool>(SearchParams::kOutOfOrderEvalId, false);
-  defaults->Set<float>(SearchParams::kTemperatureId, 1.0f);
-  defaults->Set<float>(SearchParams::kNoiseEpsilonId, 0.25f);
-  defaults->Set<float>(SearchParams::kFpuValueId, 0.0f);
-  defaults->Set<std::string>(SearchParams::kHistoryFillId, "no");
-  defaults->Set<std::string>(NetworkFactory::kBackendId, "multiplexing");
-  defaults->Set<bool>(SearchParams::kStickyEndgamesId, false);
-  defaults->Set<bool>(SearchParams::kTwoFoldDrawsId, false);
-  defaults->Set<int>(SearchParams::kTaskWorkersPerSearchWorkerId, 0);
+  defaults->Set<int>(classic::SearchParams::kMiniBatchSizeId, 32);
+  defaults->Set<float>(classic::SearchParams::kCpuctId, 1.2f);
+  defaults->Set<float>(classic::SearchParams::kCpuctFactorId, 0.0f);
+  defaults->Set<float>(SharedBackendParams::kPolicySoftmaxTemp, 1.0f);
+  defaults->Set<int>(classic::SearchParams::kMaxCollisionVisitsId, 1);
+  defaults->Set<int>(classic::SearchParams::kMaxCollisionEventsId, 1);
+  defaults->Set<int>(classic::SearchParams::kCacheHistoryLengthId, 7);
+  defaults->Set<bool>(classic::SearchParams::kOutOfOrderEvalId, false);
+  defaults->Set<float>(classic::SearchParams::kTemperatureId, 1.0f);
+  defaults->Set<float>(classic::SearchParams::kNoiseEpsilonId, 0.25f);
+  defaults->Set<float>(classic::SearchParams::kFpuValueId, 0.0f);
+  defaults->Set<std::string>(SharedBackendParams::kHistoryFill, "no");
+  defaults->Set<std::string>(SharedBackendParams::kBackendId, "multiplexing");
+  defaults->Set<bool>(classic::SearchParams::kStickyEndgamesId, false);
+  defaults->Set<bool>(classic::SearchParams::kTwoFoldDrawsId, false);
+  defaults->Set<int>(classic::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
 }
 
 SelfPlayTournament::SelfPlayTournament(
@@ -217,20 +218,14 @@ SelfPlayTournament::SelfPlayTournament(
     for (const auto& color : {"white", "black"}) {
       const auto& opts = options.GetSubdict(name).GetSubdict(color);
       const auto config = NetworkFactory::BackendConfiguration(opts);
-      if (networks_.find(config) == networks_.end()) {
-        networks_.emplace(config, NetworkFactory::LoadNetwork(opts));
+      if (!backends_.contains(config)) {
+        backends_.emplace(
+            config,
+            CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
+                           options.GetSubdict(name).Get<int>(
+                               SharedBackendParams::kNNCacheSizeId)));
       }
     }
-  }
-
-  // Initializing cache.
-  cache_[0] = std::make_shared<NNCache>(
-      options.GetSubdict("player1").Get<int>(kNNCacheSizeId));
-  if (kShareTree) {
-    cache_[1] = cache_[0];
-  } else {
-    cache_[1] = std::make_shared<NNCache>(
-        options.GetSubdict("player2").Get<int>(kNNCacheSizeId));
   }
 
   // SearchLimits.
@@ -311,10 +306,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
         player_options_[pl_idx][color].Get<bool>(kMoveThinkingId);
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
-    opt.network = networks_[NetworkFactory::BackendConfiguration(
+    opt.backend = backends_[NetworkFactory::BackendConfiguration(
                                 player_options_[pl_idx][color])]
                       .get();
-    opt.cache = cache_[pl_idx].get();
     opt.uci_options = &player_options_[pl_idx][color];
     opt.search_limits = search_limits_[pl_idx][color];
 
@@ -452,11 +446,11 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   }
 
   PlayerOptions options[2];
-  options[0].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
           .get();
-  options[1].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[1][1])]
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][1])]
           .get();
 
   std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game1_iter;
@@ -473,11 +467,11 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   // PLAY GAMEs!
   if (!aborted) game1.Play();
 
-  options[0].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[0][1])]
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][1])]
           .get();
-  options[1].network =
-      networks_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
           .get();
 
   std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game2_iter;
@@ -658,9 +652,9 @@ void SelfPlayTournament::SaveResults() {
   if (kTournamentResultsFile.empty()) return;
   std::ofstream output(kTournamentResultsFile, std::ios_base::app);
   auto p1name =
-      player_options_[0][0].Get<std::string>(NetworkFactory::kWeightsId);
+      player_options_[0][0].Get<std::string>(SharedBackendParams::kWeightsId);
   auto p2name =
-      player_options_[1][0].Get<std::string>(NetworkFactory::kWeightsId);
+      player_options_[1][0].Get<std::string>(SharedBackendParams::kWeightsId);
 
   output << std::endl;
   output << "[White \"" << p1name << "\"]" << std::endl;
