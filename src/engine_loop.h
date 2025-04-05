@@ -58,7 +58,8 @@ class EngineControllerBase {
 
 class EngineLoop : public UciLoop {
  public:
-  EngineLoop(std::unique_ptr<OptionsParser> options,
+  EngineLoop(StringUciResponder* uci_responder,
+             std::unique_ptr<OptionsParser> options,
              std::function<std::unique_ptr<EngineControllerBase>(
                  UciResponder& uci_responder, const OptionsDict& options)>
                  engine_factory);
@@ -74,10 +75,8 @@ class EngineLoop : public UciLoop {
   void CmdGo(const GoParams& params) override;
   void CmdPonderHit() override;
   void CmdStop() override;
-  bool IsChess960() const override;
 
  private:
-  std::unique_ptr<UciResponder> uci_responder_;
   std::unique_ptr<OptionsParser> options_;
   std::unique_ptr<EngineControllerBase> engine_;
 };

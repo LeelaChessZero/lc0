@@ -35,6 +35,7 @@
 
 #include "chess/callbacks.h"
 #include "utils/exception.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -53,18 +54,31 @@ struct GoParams {
   bool ponder = false;
 };
 
-class UciLoop {
+class StringUciResponder : public UciResponder {
  public:
-  virtual ~UciLoop() = default;
-  virtual void RunLoop();
+  void PopulateParams(OptionsParser* options);
+
+  void SendId();
+  void OutputBestMove(BestMoveInfo* info) override;
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override;
 
   // Sends response to host.
-  void SendResponse(const std::string& response);
+  void SendRawResponse(const std::string& response);
   // Sends responses to host ensuring they are received as a block.
-  virtual void SendResponses(const std::vector<std::string>& responses);
-  void SendBestMove(const BestMoveInfo& move);
-  void SendInfo(const std::vector<ThinkingInfo>& infos);
-  void SendId();
+  virtual void SendRawResponses(const std::vector<std::string>& responses) = 0;
+
+ private:
+  bool IsChess960() const;
+
+  const OptionsDict* options_ = nullptr;  // absl_nullable
+};
+
+class UciLoop {
+ public:
+  UciLoop(StringUciResponder* uci_responder) : uci_responder_(uci_responder) {}
+
+  virtual ~UciLoop() = default;
+  virtual void RunLoop();
 
   // Command handlers.
   virtual void CmdUci() { throw Exception("Not supported"); }
@@ -87,13 +101,17 @@ class UciLoop {
   virtual void CmdPonderHit() { throw Exception("Not supported"); }
   virtual void CmdStart() { throw Exception("Not supported"); }
 
-  // Temporary hack until old engine controller is gone.
-  virtual bool IsChess960() const = 0;
-
- private:
+ protected:
   bool DispatchCommand(
       const std::string& command,
       const std::unordered_map<std::string, std::string>& params);
+
+  StringUciResponder* uci_responder_;  // absl_nonnull
+};
+
+class StdoutUciResponder : public StringUciResponder {
+ public:
+  void SendRawResponses(const std::vector<std::string>& responses) override;
 };
 
 }  // namespace lczero
