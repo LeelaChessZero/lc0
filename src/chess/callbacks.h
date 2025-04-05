@@ -202,18 +202,4 @@ class TransformingUciResponder : public UciResponder {
   std::unique_ptr<UciResponder> parent_;
 };
 
-class WDLResponseFilter : public TransformingUciResponder {
-  using TransformingUciResponder::TransformingUciResponder;
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    for (auto& info : *infos) info.wdl.reset();
-  }
-};
-
-class MovesLeftResponseFilter : public TransformingUciResponder {
-  using TransformingUciResponder::TransformingUciResponder;
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    for (auto& info : *infos) info.moves_left.reset();
-  }
-};
-
 }  // namespace lczero

@@ -50,10 +50,6 @@ const OptionId kSyzygyTablebaseId{
     's'};
 const OptionId kPonderId{"", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
-const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
-                        "Show win, draw and lose probability."};
-const OptionId kShowMovesleft{"show-movesleft", "UCI_ShowMovesLeft",
-                              "Show estimated moves left."};
 const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
@@ -104,8 +100,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
-  options->Add<BoolOption>(kShowWDL) = false;
-  options->Add<BoolOption>(kShowMovesleft) = false;
 
   PopulateTimeManagementOptions(
       is_simple ? classic::RunType::kSimpleUci : classic::RunType::kUci,
@@ -263,16 +257,6 @@ void EngineClassic::Go(const GoParams& params) {
         std::make_unique<PonderResponseTransformer>(std::move(responder), move);
   } else {
     SetupPosition(current_position_.fen, current_position_.moves);
-  }
-
-  if (!options_.Get<bool>(kShowWDL)) {
-    // Strip WDL information from the response.
-    responder = std::make_unique<WDLResponseFilter>(std::move(responder));
-  }
-
-  if (!options_.Get<bool>(kShowMovesleft)) {
-    // Strip movesleft information from the response.
-    responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
   }
 
   if (options_.Get<Button>(kClearTree).TestAndReset()) {
