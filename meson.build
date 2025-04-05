@@ -719,7 +719,7 @@ if get_option('rescorer')
   'src/neural/loader.cc', 
   ]
   executable('rescorer', 'src/rescorer_main.cc',
-       [common_files, 'src/trainingdata/rescoreloop.cc'],
+       [common_files, 'src/trainingdata/rescorer.cc'],
        include_directories: includes, dependencies: deps, install: true)
 endif
 

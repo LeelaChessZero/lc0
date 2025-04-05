@@ -34,16 +34,6 @@
 
 namespace lczero {
 
-class RescoreLoop : public UciLoop {
- public:
-  RescoreLoop();
-  ~RescoreLoop();
-
-  void RunLoop() override;
-  bool IsChess960() const { return false; }
-
- private:
-  OptionsParser options_;
-};
+void RunRescorer();
 
 }  // namespace lczero
