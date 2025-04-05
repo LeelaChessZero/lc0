@@ -32,6 +32,7 @@
 #include "chess/gamestate.h"
 #include "chess/position.h"
 #include "neural/backend.h"
+#include "neural/memcache.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
 
@@ -67,11 +68,16 @@ void Engine::EnsureSearchStopped() {
 void Engine::UpdateBackendConfig() {
   const std::string backend_name =
       options_.Get<std::string>(SharedBackendParams::kBackendId);
+  const size_t cache_size =
+      options_.Get<int>(SharedBackendParams::kNNCacheSizeId);
   if (!backend_ || backend_name != backend_name_ ||
       backend_->UpdateConfiguration(options_) == Backend::NEED_RESTART) {
     backend_name_ = backend_name;
-    backend_ = BackendManager::Get()->CreateFromParams(options_);
+    backend_ = CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
+                              cache_size);
     search_->SetBackend(backend_.get());
+  } else {
+    backend_->SetCacheSize(cache_size);
   }
 }
 

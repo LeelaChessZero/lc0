@@ -28,6 +28,7 @@
 #include "neural/memcache.h"
 
 #include "neural/cache.h"
+#include "neural/shared_params.h"
 #include "utils/atomic_vector.h"
 #include "utils/smallarray.h"
 
@@ -57,9 +58,9 @@ void CachedValueToEvalResult(const CachedValue& cv, const EvalResultPtr& ptr) {
 
 class MemCache : public CachingBackend {
  public:
-  MemCache(std::unique_ptr<Backend> wrapped, size_t capacity)
+  MemCache(std::unique_ptr<Backend> wrapped, size_t cache_size)
       : wrapped_backend_(std::move(wrapped)),
-        cache_(capacity),
+        cache_(cache_size),
         max_batch_size_(wrapped_backend_->GetAttributes().maximum_batch_size) {}
 
   BackendAttributes GetAttributes() const override {
@@ -69,14 +70,13 @@ class MemCache : public CachingBackend {
   std::optional<EvalResult> GetCachedEvaluation(const EvalPosition&) override;
 
   void ClearCache() override { cache_.Clear(); }
-  void SetCacheCapacity(size_t capacity) override {
-    cache_.SetCapacity(capacity);
-  }
 
   UpdateConfigurationResult UpdateConfiguration(
       const OptionsDict& options) override {
     return wrapped_backend_->UpdateConfiguration(options);
   }
+
+  void SetCacheSize(size_t size) override { cache_.SetCapacity(size); }
 
  private:
   std::unique_ptr<Backend> wrapped_backend_;
@@ -168,8 +168,8 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
 }  // namespace
 
 std::unique_ptr<CachingBackend> CreateMemCache(std::unique_ptr<Backend> wrapped,
-                                               size_t capacity) {
-  return std::make_unique<MemCache>(std::move(wrapped), capacity);
+                                               size_t cache_size) {
+  return std::make_unique<MemCache>(std::move(wrapped), cache_size);
 }
 
 }  // namespace lczero
