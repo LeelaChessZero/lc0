@@ -44,20 +44,22 @@ const OptionId kUciChess960{
 
 }  // namespace
 
-EngineLoop::EngineLoop(
-    std::unique_ptr<OptionsParser> options,
-    std::function<std::unique_ptr<EngineControllerBase>(
-        UciResponder& uci_responder, const OptionsDict& options)>
-        engine_factory)
+EngineLoop::EngineLoop(OptionsParser* options,
+                       std::unique_ptr<EngineControllerBase> engine)
     : uci_responder_(std::make_unique<CallbackUciResponder>(
           [&](auto&& arg) { return SendBestMove(arg); },
           [&](auto&& arg) { return SendInfo(arg); })),
-      options_(std::move(options)),
-      engine_(engine_factory(*uci_responder_, options_->GetOptionsDict())) {
+      options_(options),
+      engine_(std::move(engine)) {
+  engine_->RegisterUciResponder(uci_responder_.get());
   options_->Add<StringOption>(kLogFileId);
   options_->Add<BoolOption>(kPreload) = false;
   options_->Add<BoolOption>(kUciChess960) = false;
-  SharedBackendParams::Populate(options_.get());
+  SharedBackendParams::Populate(options_);
+}
+
+EngineLoop::~EngineLoop() {
+  engine_->UnregisterUciResponder(uci_responder_.get());
 }
 
 void EngineLoop::RunLoop() {

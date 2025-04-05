@@ -40,6 +40,8 @@ class BackendManager {
   void AddBackend(std::unique_ptr<BackendFactory> factory) {
     algorithms_.push_back(std::move(factory));
   }
+  // Removes the backend factory from the list. Currently only used in tests.
+  void RemoveBackend(const BackendFactory* factory);
 
   // Returns list of backend names, sorted by priority (higher priority first).
   std::vector<std::string> GetBackendNames() const;

@@ -35,6 +35,7 @@
 
 #include "chess/bitboard.h"
 #include "chess/position.h"
+#include "utils/exception.h"
 
 namespace lczero {
 
@@ -142,6 +143,34 @@ class UciResponder {
   virtual ~UciResponder() = default;
   virtual void OutputBestMove(BestMoveInfo* info) = 0;
   virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) = 0;
+};
+
+// The responder which forwards the output to another responder, with
+// observer-like subscription model.
+class UciResponderForwarder : public UciResponder {
+ public:
+  void OutputBestMove(BestMoveInfo* info) override {
+    if (wrapped_) wrapped_->OutputBestMove(info);
+  }
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    if (wrapped_) wrapped_->OutputThinkingInfo(infos);
+  }
+  void Register(UciResponder* wrapped) {
+    if (wrapped_) {
+      throw Exception("UciResponderForwarder already has a wrapped responder");
+    }
+    wrapped_ = wrapped;
+  }
+  void Unregister(UciResponder* wrapped) {
+    if (wrapped_ != wrapped) {
+      throw Exception(
+          "UciResponderForwarder doesn't have this wrapped responder");
+    }
+    wrapped_ = nullptr;
+  }
+
+ private:
+  UciResponder* wrapped_ = nullptr;
 };
 
 // The responder which calls callbacks. Used for easier transition from old
