@@ -62,7 +62,7 @@ class EngineTest : public ::testing::Test {
     options_.Set<int>(SharedBackendParams::kNNCacheSizeId, 10);
 
     EXPECT_CALL(search_factory_, CreateSearch(_, _))
-        .WillOnce([&](UciResponder* responder, const OptionsDict* options) {
+        .WillOnce([&](UciResponder* responder, const OptionsDict*) {
           auto search = std::make_unique<MockSearch>(responder);
           search_ = search.get();
           return search;
@@ -82,22 +82,21 @@ class EngineTest : public ::testing::Test {
 class WaitingUciResponder : public UciResponder {
  public:
   WaitingUciResponder() {
-    bestmove_promise_ = std::make_unique<std::promise<BestMoveInfo>>();
+    bestmove_promise_ = std::make_unique<std::promise<void>>();
   }
 
-  virtual void OutputBestMove(BestMoveInfo* info) override {
-    bestmove_promise_->set_value(*info);
+  virtual void OutputBestMove(BestMoveInfo*) override {
+    bestmove_promise_->set_value();
   }
-  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {}
+  virtual void OutputThinkingInfo(std::vector<ThinkingInfo>*) override {}
 
-  BestMoveInfo Wait() {
-    BestMoveInfo info = bestmove_promise_->get_future().get();
-    bestmove_promise_ = std::make_unique<std::promise<BestMoveInfo>>();
-    return info;
+  void Wait() {
+    bestmove_promise_->get_future().wait();
+    bestmove_promise_ = std::make_unique<std::promise<void>>();
   }
 
  private:
-  std::unique_ptr<std::promise<BestMoveInfo>> bestmove_promise_;
+  std::unique_ptr<std::promise<void>> bestmove_promise_;
 };
 
 TEST_F(EngineTest, BackendReloadByUpdateBackendConfig) {
