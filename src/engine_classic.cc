@@ -145,8 +145,9 @@ void EngineClassic::UpdateFromUciOptions() {
   const auto network_configuration =
       NetworkFactory::BackendConfiguration(options_);
   if (network_configuration_ != network_configuration) {
-    backend_ = CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
-                              options_);
+    backend_ =
+        CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
+                       options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
     network_configuration_ = network_configuration;
   }
 
