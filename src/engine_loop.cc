@@ -49,8 +49,8 @@ void RunEngineInternal(SearchFactory* factory) {
   OptionsParser options_parser;
   options_parser.Add<StringOption>(kLogFileId);
   EngineType::PopulateOptions(&options_parser);
-  factory->PopulateParams(&options_parser);       // Search params.
-  uci_responder.PopulateParams(&options_parser);  // UCI params.
+  if (factory) factory->PopulateParams(&options_parser);  // Search params.
+  uci_responder.PopulateParams(&options_parser);          // UCI params.
   SharedBackendParams::Populate(&options_parser);
 
   // Parse flags, show help, initialize logging, read config etc.
