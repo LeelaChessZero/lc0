@@ -105,6 +105,7 @@ int main(int argc, const char** argv) {
           used_new_search = true;
           SearchFactory* factory =
               SearchManager::Get()->GetFactoryByName(search_name);
+          Engine::PopulateOptions(options_parser.get());
           factory->PopulateParams(options_parser.get());
           StdoutUciResponder uci_responder;
           EngineLoop loop(&uci_responder, options_parser.get(),
