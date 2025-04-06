@@ -46,16 +46,14 @@ void Engine::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPreload) = false;
 }
 
-void Engine::Initialize() {
+Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
+    : options_(opts),
+      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {
   if (options_.Get<bool>(kPreload)) {
     UpdateBackendConfig();
     // EnsureSyzygyTablebasesLoaded();
   }
 }
-
-Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
-    : options_(opts),
-      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {}
 
 namespace {
 GameState MakeGameState(const std::string& fen,

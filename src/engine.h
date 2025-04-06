@@ -41,8 +41,6 @@ class Engine : public EngineControllerBase {
 
   static void PopulateOptions(OptionsParser*);
 
-  void Initialize() override;
-
   void EnsureReady() override {};
   void NewGame() override;
   void SetPosition(const std::string& fen,

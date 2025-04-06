@@ -31,6 +31,7 @@
 #include <string>
 
 #include "chess/uciloop.h"
+#include "search/search.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -38,9 +39,6 @@ namespace lczero {
 class EngineControllerBase {
  public:
   virtual ~EngineControllerBase() = default;
-
-  // Called once when the engine is created.
-  virtual void Initialize() = 0;
 
   // Blocks.
   virtual void EnsureReady() = 0;
@@ -66,7 +64,7 @@ class EngineControllerBase {
 class EngineLoop : public UciLoop {
  public:
   EngineLoop(StringUciResponder* uci_responder, OptionsParser* options,
-             std::unique_ptr<EngineControllerBase> engine);
+             EngineControllerBase* engine);
   ~EngineLoop() override;
 
   void RunLoop() override;
@@ -82,8 +80,14 @@ class EngineLoop : public UciLoop {
   void CmdStop() override;
 
  private:
-  OptionsParser* options_;
-  std::unique_ptr<EngineControllerBase> engine_;
+  OptionsParser* options_;        // absl_notnull
+  EngineControllerBase* engine_;  // absl_notnull
 };
+
+// Runs the stdin/stdout UCI loop for the engine.
+void RunEngine(SearchFactory* factory);
+
+// The same but through classic interface. To be gone soon.
+void RunEngineClassic();
 
 }  // namespace lczero

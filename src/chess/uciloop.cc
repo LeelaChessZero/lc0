@@ -223,6 +223,13 @@ bool UciLoop::DispatchCommand(
   return true;
 }
 
+bool UciLoop::ProcessLine(const std::string& line) {
+  auto command = ParseCommand(line);
+  // Ignore empty line.
+  if (command.first.empty()) return true;
+  return DispatchCommand(command.first, command.second);
+}
+
 void StringUciResponder::PopulateParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   options->Add<BoolOption>(kShowWDL) = true;

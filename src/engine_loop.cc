@@ -27,6 +27,10 @@
 
 #include "engine_loop.h"
 
+#include <iostream>
+
+#include "engine.h"
+#include "engine_classic.h"
 #include "neural/shared_params.h"
 #include "utils/configfile.h"
 
@@ -39,13 +43,9 @@ const OptionId kLogFileId{"logfile", "LogFile",
 }  // namespace
 
 EngineLoop::EngineLoop(StringUciResponder* uci_responder,
-                       OptionsParser* options,
-                       std::unique_ptr<EngineControllerBase> engine)
+                       OptionsParser* options, EngineControllerBase* engine)
     : UciLoop(uci_responder), options_(options), engine_(std::move(engine)) {
   engine_->RegisterUciResponder(uci_responder_);
-  options_->Add<StringOption>(kLogFileId);
-  SharedBackendParams::Populate(options_);
-  uci_responder_->PopulateParams(options_);
 }
 
 EngineLoop::~EngineLoop() { engine_->UnregisterUciResponder(uci_responder_); }
@@ -54,7 +54,6 @@ void EngineLoop::RunLoop() {
   if (!ConfigFile::Init() || !options_->ProcessAllFlags()) return;
   const auto options = options_->GetOptionsDict();
   Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-  engine_->Initialize();
   UciLoop::RunLoop();
 }
 
@@ -95,5 +94,50 @@ void EngineLoop::CmdGo(const GoParams& params) { engine_->Go(params); }
 void EngineLoop::CmdPonderHit() { engine_->PonderHit(); }
 
 void EngineLoop::CmdStop() { engine_->Stop(); }
+
+namespace {
+template <typename EngineType>
+void RunEngineInternal(SearchFactory* factory) {
+  StdoutUciResponder uci_responder;
+
+  // Populate options from various sources.
+  OptionsParser options_parser;
+  options_parser.Add<StringOption>(kLogFileId);
+  EngineType::PopulateOptions(&options_parser);
+  factory->PopulateParams(&options_parser);       // Search params.
+  uci_responder.PopulateParams(&options_parser);  // UCI params.
+  SharedBackendParams::Populate(&options_parser);
+
+  // Parse flags, show help, initialize logging, read config etc.
+  if (!ConfigFile::Init() || !options_parser.ProcessAllFlags()) return;
+  const auto options = options_parser.GetOptionsDict();
+  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
+
+  // Create engine.
+  EngineType engine = [&]() {
+    if constexpr (std::is_same_v<EngineType, EngineClassic>) {
+      return EngineType(options);
+    } else {
+      return EngineType(*factory, options);
+    }
+  }();
+  EngineLoop loop(&uci_responder, &options_parser, &engine);
+
+  // Run the stdin loop.
+  std::cout.setf(std::ios::unitbuf);
+  std::string line;
+  while (std::getline(std::cin, line)) {
+    LOGFILE << ">> " << line;
+    try {
+      if (!loop.ProcessLine(line)) break;
+    } catch (Exception& ex) {
+      uci_responder.SendRawResponse(std::string("error ") + ex.what());
+    }
+  }
+}
+}  // namespace
+
+void RunEngine(SearchFactory* factory) { RunEngineInternal<Engine>(factory); }
+void RunEngineClassic() { RunEngineInternal<EngineClassic>(nullptr); }
 
 }  // namespace lczero

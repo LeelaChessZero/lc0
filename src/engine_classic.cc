@@ -78,7 +78,9 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 }  // namespace
 
 EngineClassic::EngineClassic(const OptionsDict& options)
-    : options_(options), current_position_{ChessBoard::kStartposFen, {}} {}
+    : options_(options), current_position_{ChessBoard::kStartposFen, {}} {
+  if (options_.Get<bool>(kPreload)) UpdateFromUciOptions();
+}
 
 void EngineClassic::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -111,10 +113,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   options->HideOption(kClearTree);
 
   options->Add<BoolOption>(kPreload) = false;
-}
-
-void EngineClassic::Initialize() {
-  if (options_.Get<bool>(kPreload)) UpdateFromUciOptions();
 }
 
 void EngineClassic::ResetMoveTimer() {

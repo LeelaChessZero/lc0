@@ -77,6 +77,9 @@ class UciLoop {
  public:
   UciLoop(StringUciResponder* uci_responder) : uci_responder_(uci_responder) {}
 
+  // Returns false if the loop should stop.
+  bool ProcessLine(const std::string& line);
+
   virtual ~UciLoop() = default;
   virtual void RunLoop();
 
