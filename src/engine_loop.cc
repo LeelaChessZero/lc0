@@ -36,9 +36,6 @@ const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
                           "output the log to the console.",
                           'l'};
-const OptionId kPreload{"preload", "",
-                        "Initialize backend and load net on engine startup."};
-
 }  // namespace
 
 EngineLoop::EngineLoop(StringUciResponder* uci_responder,
@@ -47,20 +44,17 @@ EngineLoop::EngineLoop(StringUciResponder* uci_responder,
     : UciLoop(uci_responder), options_(options), engine_(std::move(engine)) {
   engine_->RegisterUciResponder(uci_responder_);
   options_->Add<StringOption>(kLogFileId);
-  options_->Add<BoolOption>(kPreload) = false;
   SharedBackendParams::Populate(options_);
   uci_responder_->PopulateParams(options_);
 }
 
-EngineLoop::~EngineLoop() {
-  engine_->UnregisterUciResponder(uci_responder_);
-}
+EngineLoop::~EngineLoop() { engine_->UnregisterUciResponder(uci_responder_); }
 
 void EngineLoop::RunLoop() {
   if (!ConfigFile::Init() || !options_->ProcessAllFlags()) return;
   const auto options = options_->GetOptionsDict();
   Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-  if (options.Get<bool>(kPreload)) engine_->NewGame();
+  engine_->Initialize();
   UciLoop::RunLoop();
 }
 

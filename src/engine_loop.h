@@ -39,6 +39,9 @@ class EngineControllerBase {
  public:
   virtual ~EngineControllerBase() = default;
 
+  // Called once when the engine is created.
+  virtual void Initialize() = 0;
+
   // Blocks.
   virtual void EnsureReady() = 0;
 
