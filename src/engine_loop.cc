@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2024 The LCZero Authors
+  Copyright (C) 2018-2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -40,62 +40,7 @@ const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
                           "output the log to the console.",
                           'l'};
-}  // namespace
 
-EngineLoop::EngineLoop(StringUciResponder* uci_responder,
-                       OptionsParser* options, EngineControllerBase* engine)
-    : UciLoop(uci_responder), options_(options), engine_(std::move(engine)) {
-  engine_->RegisterUciResponder(uci_responder_);
-}
-
-EngineLoop::~EngineLoop() { engine_->UnregisterUciResponder(uci_responder_); }
-
-void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init() || !options_->ProcessAllFlags()) return;
-  const auto options = options_->GetOptionsDict();
-  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-  UciLoop::RunLoop();
-}
-
-void EngineLoop::CmdUci() {
-  uci_responder_->SendId();
-  for (const auto& option : options_->ListOptionsUci()) {
-    uci_responder_->SendRawResponse(option);
-  }
-  uci_responder_->SendRawResponse("uciok");
-}
-
-void EngineLoop::CmdIsReady() {
-  engine_->EnsureReady();
-  uci_responder_->SendRawResponse("readyok");
-}
-
-void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
-                              const std::string& context) {
-  options_->SetUciOption(name, value, context);
-  // Set the log filename for the case it was set in UCI option.
-  Logging::Get().SetFilename(
-      options_->GetOptionsDict().Get<std::string>(kLogFileId));
-}
-
-void EngineLoop::CmdUciNewGame() { engine_->NewGame(); }
-
-void EngineLoop::CmdPosition(const std::string& position,
-                             const std::vector<std::string>& moves) {
-  std::string fen = position;
-  if (fen.empty()) {
-    fen = ChessBoard::kStartposFen;
-  }
-  engine_->SetPosition(fen, moves);
-}
-
-void EngineLoop::CmdGo(const GoParams& params) { engine_->Go(params); }
-
-void EngineLoop::CmdPonderHit() { engine_->PonderHit(); }
-
-void EngineLoop::CmdStop() { engine_->Stop(); }
-
-namespace {
 template <typename EngineType>
 void RunEngineInternal(SearchFactory* factory) {
   StdoutUciResponder uci_responder;
@@ -121,7 +66,7 @@ void RunEngineInternal(SearchFactory* factory) {
       return EngineType(*factory, options);
     }
   }();
-  EngineLoop loop(&uci_responder, &options_parser, &engine);
+  UciLoop loop(&uci_responder, &options_parser, &engine);
 
   // Run the stdin loop.
   std::cout.setf(std::ios::unitbuf);

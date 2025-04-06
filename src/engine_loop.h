@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2024 The LCZero Authors
+  Copyright (C) 2018-2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -35,54 +35,6 @@
 #include "utils/optionsparser.h"
 
 namespace lczero {
-
-class EngineControllerBase {
- public:
-  virtual ~EngineControllerBase() = default;
-
-  // Blocks.
-  virtual void EnsureReady() = 0;
-
-  // Must not block.
-  virtual void NewGame() = 0;
-
-  // Blocks.
-  virtual void SetPosition(const std::string& fen,
-                           const std::vector<std::string>& moves) = 0;
-
-  // Must not block.
-  virtual void Go(const GoParams& params) = 0;
-  virtual void PonderHit() = 0;
-  // Must not block.
-  virtual void Stop() = 0;
-
-  // Register and unregister the UCI responder using observer pattern.
-  virtual void RegisterUciResponder(UciResponder*) = 0;
-  virtual void UnregisterUciResponder(UciResponder*) = 0;
-};
-
-class EngineLoop : public UciLoop {
- public:
-  EngineLoop(StringUciResponder* uci_responder, OptionsParser* options,
-             EngineControllerBase* engine);
-  ~EngineLoop() override;
-
-  void RunLoop() override;
-  void CmdUci() override;
-  void CmdIsReady() override;
-  void CmdSetOption(const std::string& name, const std::string& value,
-                    const std::string& context) override;
-  void CmdUciNewGame() override;
-  void CmdPosition(const std::string& position,
-                   const std::vector<std::string>& moves) override;
-  void CmdGo(const GoParams& params) override;
-  void CmdPonderHit() override;
-  void CmdStop() override;
-
- private:
-  OptionsParser* options_;        // absl_notnull
-  EngineControllerBase* engine_;  // absl_notnull
-};
 
 // Runs the stdin/stdout UCI loop for the engine.
 void RunEngine(SearchFactory* factory);
