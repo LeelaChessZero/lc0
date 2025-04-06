@@ -160,10 +160,6 @@ bool UciLoop::DispatchCommand(
     options_->SetUciOption(GetOrEmpty(params, "name"),
                            GetOrEmpty(params, "value"),
                            GetOrEmpty(params, "context"));
-    // Set the log filename for the case it was set in UCI option.
-    // DO NOT SUBMIT DECIDE WHAT TO DO WITH THIS.
-    // Logging::Get().SetFilename(
-    //     options_->GetOptionsDict().Get<std::string>(kLogFileId));
   } else if (command == "ucinewgame") {
     engine_->NewGame();
   } else if (command == "position") {

@@ -75,6 +75,8 @@ void RunEngineInternal(SearchFactory* factory) {
     LOGFILE << ">> " << line;
     try {
       if (!loop.ProcessLine(line)) break;
+      // Set the log filename for the case it was set in UCI option.
+      Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
     } catch (Exception& ex) {
       uci_responder.SendRawResponse(std::string("error ") + ex.what());
     }
