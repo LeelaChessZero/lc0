@@ -43,8 +43,12 @@
 #include "version.h"
 
 namespace lczero {
-
 namespace {
+
+const OptionId kUciChess960{
+    "chess960", "UCI_Chess960",
+    "Castling moves are encoded as \"king takes rook\"."};
+
 const std::unordered_map<std::string, std::unordered_set<std::string>>
     kKnownCommands = {
         {{"uci"}, {}},
@@ -140,7 +144,7 @@ void UciLoop::RunLoop() {
       if (command.first.empty()) continue;
       if (!DispatchCommand(command.first, command.second)) break;
     } catch (Exception& ex) {
-      SendResponse(std::string("error ") + ex.what());
+      uci_responder_->SendRawResponse(std::string("error ") + ex.what());
     }
   }
 }
@@ -206,7 +210,7 @@ bool UciLoop::DispatchCommand(
   } else if (command == "fen") {
     CmdFen();
   } else if (command == "xyzzy") {
-    SendResponse("Nothing happens.");
+    uci_responder_->SendRawResponse("Nothing happens.");
   } else if (command == "quit") {
     return false;
   } else {
@@ -215,39 +219,39 @@ bool UciLoop::DispatchCommand(
   return true;
 }
 
-void UciLoop::SendResponse(const std::string& response) {
-  SendResponses({response});
+void StringUciResponder::PopulateParams(OptionsParser* options) {
+  options->Add<BoolOption>(kUciChess960) = false;
+  options_ = &options->GetOptionsDict();
 }
 
-void UciLoop::SendResponses(const std::vector<std::string>& responses) {
-  static std::mutex output_mutex;
-  std::lock_guard<std::mutex> lock(output_mutex);
-  for (auto& response : responses) {
-    LOGFILE << "<< " << response;
-    std::cout << response << std::endl;
-  }
+bool StringUciResponder::IsChess960() const {
+  return options_ ? options_->Get<bool>(kUciChess960) : false;
 }
 
-void UciLoop::SendId() {
-  SendResponse("id name Lc0 v" + GetVersionStr());
-  SendResponse("id author The LCZero Authors.");
+void StringUciResponder::SendRawResponse(const std::string& response) {
+  SendRawResponses({response});
 }
 
-void UciLoop::SendBestMove(const BestMoveInfo& move) {
+void StringUciResponder::SendId() {
+  SendRawResponse("id name Lc0 v" + GetVersionStr());
+  SendRawResponse("id author The LCZero Authors.");
+}
+
+void StringUciResponder::OutputBestMove(BestMoveInfo* info) {
   const bool c960 = IsChess960();
-  std::string res = "bestmove " + move.bestmove.ToString(c960);
-  if (!move.ponder.is_null()) res += " ponder " + move.ponder.ToString(c960);
-  if (move.player != -1) res += " player " + std::to_string(move.player);
-  if (move.game_id != -1) res += " gameid " + std::to_string(move.game_id);
-  if (move.is_black)
-    res += " side " + std::string(*move.is_black ? "black" : "white");
-  SendResponse(res);
+  std::string res = "bestmove " + info->bestmove.ToString(c960);
+  if (!info->ponder.is_null()) res += " ponder " + info->ponder.ToString(c960);
+  if (info->player != -1) res += " player " + std::to_string(info->player);
+  if (info->game_id != -1) res += " gameid " + std::to_string(info->game_id);
+  if (info->is_black)
+    res += " side " + std::string(*info->is_black ? "black" : "white");
+  SendRawResponse(res);
 }
 
-void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
+void StringUciResponder::OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
   std::vector<std::string> reses;
   const bool c960 = IsChess960();
-  for (const auto& info : infos) {
+  for (const auto& info : *infos) {
     std::string res = "info";
     if (info.player != -1) res += " player " + std::to_string(info.player);
     if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
@@ -279,7 +283,17 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
     if (!info.comment.empty()) res += " string " + info.comment;
     reses.push_back(std::move(res));
   }
-  SendResponses(reses);
+  SendRawResponses(reses);
+}
+
+void StdoutUciResponder::SendRawResponses(
+    const std::vector<std::string>& responses) {
+  static std::mutex output_mutex;
+  std::lock_guard<std::mutex> lock(output_mutex);
+  for (auto& response : responses) {
+    LOGFILE << "<< " << response;
+    std::cout << response << std::endl;
+  }
 }
 
 }  // namespace lczero
