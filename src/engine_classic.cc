@@ -73,6 +73,31 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   return result;
 }
 
+std::uint64_t Perft(const ChessBoard& board, int max_depth, bool dump = false,
+                    int depth = 0) {
+  if (depth == max_depth) return 1;
+  std::uint64_t total_count = 0;
+
+  auto moves = board.GenerateLegalMoves();
+  if (depth == max_depth - 1) return moves.size();
+
+  for (const auto& move : moves) {
+    auto new_board = board;
+    new_board.ApplyMove(move);
+
+    new_board.Mirror();
+    auto count = Perft(new_board, max_depth, dump, depth + 1);
+    if (dump && depth == 0) {
+      Move m = move;
+      if (board.flipped()) m.Flip();
+      std::cerr << m.ToString(true) << ": " << count << '\n';
+    }
+    total_count += count;
+  }
+
+  return total_count;
+}
+
 }  // namespace
 
 EngineClassic::EngineClassic(const OptionsDict& options)
@@ -231,6 +256,19 @@ class PonderResponseTransformer : public TransformingUciResponder {
 }  // namespace
 
 void EngineClassic::Go(const GoParams& params) {
+  if (params.perft) {
+    const auto start = std::chrono::steady_clock::now();
+    const auto perft =
+        Perft(ChessBoard(current_position_.fen), *params.perft, true);
+    const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+    CERR;
+    CERR << "Positions searched: " << perft;
+    CERR << "Positions/second    : "
+         << std::lround(1000.0 * perft / (time.count() + 1));
+    return;
+  }
+
   // TODO: should consecutive calls to go be considered to be a continuation and
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
