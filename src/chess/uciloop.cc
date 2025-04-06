@@ -48,6 +48,10 @@ namespace {
 const OptionId kUciChess960{
     "chess960", "UCI_Chess960",
     "Castling moves are encoded as \"king takes rook\"."};
+const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
+                        "Show win, draw and lose probability."};
+const OptionId kShowMovesleft{"show-movesleft", "UCI_ShowMovesLeft",
+                              "Show estimated moves left."};
 
 const std::unordered_map<std::string, std::unordered_set<std::string>>
     kKnownCommands = {
@@ -221,6 +225,8 @@ bool UciLoop::DispatchCommand(
 
 void StringUciResponder::PopulateParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
+  options->Add<BoolOption>(kShowWDL) = true;
+  options->Add<BoolOption>(kShowMovesleft) = false;
   options_ = &options->GetOptionsDict();
 }
 
@@ -264,11 +270,11 @@ void StringUciResponder::OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
     if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
     if (info.mate) res += " score mate " + std::to_string(*info.mate);
     if (info.score) res += " score cp " + std::to_string(*info.score);
-    if (info.wdl) {
+    if (info.wdl && options_ && options_->Get<bool>(kShowWDL)) {
       res += " wdl " + std::to_string(info.wdl->w) + " " +
              std::to_string(info.wdl->d) + " " + std::to_string(info.wdl->l);
     }
-    if (info.moves_left) {
+    if (info.moves_left && options_ && options_->Get<bool>(kShowMovesleft)) {
       res += " movesleft " + std::to_string(*info.moves_left);
     }
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
