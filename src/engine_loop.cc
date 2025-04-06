@@ -41,18 +41,19 @@ const OptionId kPreload{"preload", "",
 
 }  // namespace
 
-EngineLoop::EngineLoop(
-    StringUciResponder* uci_responder, std::unique_ptr<OptionsParser> options,
-    std::function<std::unique_ptr<EngineControllerBase>(
-        UciResponder& uci_responder, const OptionsDict& options)>
-        engine_factory)
-    : UciLoop(uci_responder),
-      options_(std::move(options)),
-      engine_(engine_factory(*uci_responder_, options_->GetOptionsDict())) {
+EngineLoop::EngineLoop(StringUciResponder* uci_responder,
+                       OptionsParser* options,
+                       std::unique_ptr<EngineControllerBase> engine)
+    : UciLoop(uci_responder), options_(options), engine_(std::move(engine)) {
+  engine_->RegisterUciResponder(uci_responder_);
   options_->Add<StringOption>(kLogFileId);
   options_->Add<BoolOption>(kPreload) = false;
-  SharedBackendParams::Populate(options_.get());
-  uci_responder_->PopulateParams(options_.get());
+  SharedBackendParams::Populate(options_);
+  uci_responder_->PopulateParams(options_);
+}
+
+EngineLoop::~EngineLoop() {
+  engine_->UnregisterUciResponder(uci_responder_);
 }
 
 void EngineLoop::RunLoop() {
