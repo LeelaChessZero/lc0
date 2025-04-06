@@ -63,7 +63,6 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"go"},
          {"infinite", "wtime", "btime", "winc", "binc", "movestogo", "depth",
           "mate", "nodes", "movetime", "searchmoves", "ponder"}},
-        {{"start"}, {}},
         {{"stop"}, {}},
         {{"ponderhit"}, {}},
         {{"quit"}, {}},
@@ -137,41 +136,40 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
 }
 }  // namespace
 
-void UciLoop::RunLoop() {
-  std::cout.setf(std::ios::unitbuf);
-  std::string line;
-  while (std::getline(std::cin, line)) {
-    LOGFILE << ">> " << line;
-    try {
-      auto command = ParseCommand(line);
-      // Ignore empty line.
-      if (command.first.empty()) continue;
-      if (!DispatchCommand(command.first, command.second)) break;
-    } catch (Exception& ex) {
-      uci_responder_->SendRawResponse(std::string("error ") + ex.what());
-    }
-  }
+UciLoop::UciLoop(StringUciResponder* uci_responder, OptionsParser* options,
+                 EngineControllerBase* engine)
+    : uci_responder_(uci_responder), options_(options), engine_(engine) {
+  engine_->RegisterUciResponder(uci_responder_);
 }
+
+UciLoop::~UciLoop() { engine_->UnregisterUciResponder(uci_responder_); }
 
 bool UciLoop::DispatchCommand(
     const std::string& command,
     const std::unordered_map<std::string, std::string>& params) {
   if (command == "uci") {
-    CmdUci();
+    uci_responder_->SendId();
+    for (const auto& option : options_->ListOptionsUci()) {
+      uci_responder_->SendRawResponse(option);
+    }
+    uci_responder_->SendRawResponse("uciok");
   } else if (command == "isready") {
-    CmdIsReady();
+    engine_->EnsureReady();
+    uci_responder_->SendRawResponse("readyok");
   } else if (command == "setoption") {
-    CmdSetOption(GetOrEmpty(params, "name"), GetOrEmpty(params, "value"),
-                 GetOrEmpty(params, "context"));
+    options_->SetUciOption(GetOrEmpty(params, "name"),
+                           GetOrEmpty(params, "value"),
+                           GetOrEmpty(params, "context"));
   } else if (command == "ucinewgame") {
-    CmdUciNewGame();
+    engine_->NewGame();
   } else if (command == "position") {
     if (ContainsKey(params, "fen") == ContainsKey(params, "startpos")) {
       throw Exception("Position requires either fen or startpos");
     }
     const std::vector<std::string> moves =
         StrSplitAtWhitespace(GetOrEmpty(params, "moves"));
-    CmdPosition(GetOrEmpty(params, "fen"), moves);
+    const std::string fen = GetOrEmpty(params, "fen");
+    engine_->SetPosition(fen.empty() ? ChessBoard::kStartposFen : fen, moves);
   } else if (command == "go") {
     GoParams go_params;
     if (ContainsKey(params, "infinite")) {
@@ -204,15 +202,11 @@ bool UciLoop::DispatchCommand(
     UCIGOOPTION(nodes);
     UCIGOOPTION(movetime);
 #undef UCIGOOPTION
-    CmdGo(go_params);
+    engine_->Go(go_params);
   } else if (command == "stop") {
-    CmdStop();
+    engine_->Stop();
   } else if (command == "ponderhit") {
-    CmdPonderHit();
-  } else if (command == "start") {
-    CmdStart();
-  } else if (command == "fen") {
-    CmdFen();
+    engine_->PonderHit();
   } else if (command == "xyzzy") {
     uci_responder_->SendRawResponse("Nothing happens.");
   } else if (command == "quit") {
@@ -221,6 +215,13 @@ bool UciLoop::DispatchCommand(
     throw Exception("Unknown command: " + command);
   }
   return true;
+}
+
+bool UciLoop::ProcessLine(const std::string& line) {
+  auto command = ParseCommand(line);
+  // Ignore empty line.
+  if (command.first.empty()) return true;
+  return DispatchCommand(command.first, command.second);
 }
 
 void StringUciResponder::PopulateParams(OptionsParser* options) {

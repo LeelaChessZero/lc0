@@ -73,33 +73,39 @@ class StringUciResponder : public UciResponder {
   const OptionsDict* options_ = nullptr;  // absl_nullable
 };
 
+class EngineControllerBase {
+ public:
+  virtual ~EngineControllerBase() = default;
+
+  // Blocks.
+  virtual void EnsureReady() = 0;
+
+  // Must not block.
+  virtual void NewGame() = 0;
+
+  // Blocks.
+  virtual void SetPosition(const std::string& fen,
+                           const std::vector<std::string>& moves) = 0;
+
+  // Must not block.
+  virtual void Go(const GoParams& params) = 0;
+  virtual void PonderHit() = 0;
+  // Must not block.
+  virtual void Stop() = 0;
+
+  // Register and unregister the UCI responder using observer pattern.
+  virtual void RegisterUciResponder(UciResponder*) = 0;
+  virtual void UnregisterUciResponder(UciResponder*) = 0;
+};
+
 class UciLoop {
  public:
-  UciLoop(StringUciResponder* uci_responder) : uci_responder_(uci_responder) {}
+  UciLoop(StringUciResponder* uci_responder, OptionsParser* options,
+          EngineControllerBase* engine);
+  virtual ~UciLoop();
 
-  virtual ~UciLoop() = default;
-  virtual void RunLoop();
-
-  // Command handlers.
-  virtual void CmdUci() { throw Exception("Not supported"); }
-  virtual void CmdIsReady() { throw Exception("Not supported"); }
-  virtual void CmdSetOption(const std::string& /*name*/,
-                            const std::string& /*value*/,
-                            const std::string& /*context*/) {
-    throw Exception("Not supported");
-  }
-  virtual void CmdUciNewGame() { throw Exception("Not supported"); }
-  virtual void CmdPosition(const std::string& /*position*/,
-                           const std::vector<std::string>& /*moves*/) {
-    throw Exception("Not supported");
-  }
-  virtual void CmdFen() { throw Exception("Not supported"); }
-  virtual void CmdGo(const GoParams& /*params*/) {
-    throw Exception("Not supported");
-  }
-  virtual void CmdStop() { throw Exception("Not supported"); }
-  virtual void CmdPonderHit() { throw Exception("Not supported"); }
-  virtual void CmdStart() { throw Exception("Not supported"); }
+  // Returns false if the loop should stop.
+  bool ProcessLine(const std::string& line);
 
  protected:
   bool DispatchCommand(
@@ -107,6 +113,8 @@ class UciLoop {
       const std::unordered_map<std::string, std::string>& params);
 
   StringUciResponder* uci_responder_;  // absl_nonnull
+  OptionsParser* options_;             // absl_notnull
+  EngineControllerBase* engine_;       // absl_notnull
 };
 
 class StdoutUciResponder : public StringUciResponder {

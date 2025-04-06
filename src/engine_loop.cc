@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2024 The LCZero Authors
+  Copyright (C) 2018-2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,6 +27,10 @@
 
 #include "engine_loop.h"
 
+#include <iostream>
+
+#include "engine.h"
+#include "engine_classic.h"
 #include "neural/shared_params.h"
 #include "utils/configfile.h"
 
@@ -36,70 +40,51 @@ const OptionId kLogFileId{"logfile", "LogFile",
                           "Write log to that file. Special value <stderr> to "
                           "output the log to the console.",
                           'l'};
-const OptionId kPreload{"preload", "",
-                        "Initialize backend and load net on engine startup."};
 
+template <typename EngineType>
+void RunEngineInternal(SearchFactory* factory) {
+  StdoutUciResponder uci_responder;
+
+  // Populate options from various sources.
+  OptionsParser options_parser;
+  options_parser.Add<StringOption>(kLogFileId);
+  EngineType::PopulateOptions(&options_parser);
+  if (factory) factory->PopulateParams(&options_parser);  // Search params.
+  uci_responder.PopulateParams(&options_parser);          // UCI params.
+  SharedBackendParams::Populate(&options_parser);
+
+  // Parse flags, show help, initialize logging, read config etc.
+  if (!ConfigFile::Init() || !options_parser.ProcessAllFlags()) return;
+  const auto options = options_parser.GetOptionsDict();
+  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
+
+  // Create engine.
+  EngineType engine = [&]() {
+    if constexpr (std::is_same_v<EngineType, EngineClassic>) {
+      return EngineType(options);
+    } else {
+      return EngineType(*factory, options);
+    }
+  }();
+  UciLoop loop(&uci_responder, &options_parser, &engine);
+
+  // Run the stdin loop.
+  std::cout.setf(std::ios::unitbuf);
+  std::string line;
+  while (std::getline(std::cin, line)) {
+    LOGFILE << ">> " << line;
+    try {
+      if (!loop.ProcessLine(line)) break;
+      // Set the log filename for the case it was set in UCI option.
+      Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
+    } catch (Exception& ex) {
+      uci_responder.SendRawResponse(std::string("error ") + ex.what());
+    }
+  }
+}
 }  // namespace
 
-EngineLoop::EngineLoop(StringUciResponder* uci_responder,
-                       OptionsParser* options,
-                       std::unique_ptr<EngineControllerBase> engine)
-    : UciLoop(uci_responder), options_(options), engine_(std::move(engine)) {
-  engine_->RegisterUciResponder(uci_responder_);
-  options_->Add<StringOption>(kLogFileId);
-  options_->Add<BoolOption>(kPreload) = false;
-  SharedBackendParams::Populate(options_);
-  uci_responder_->PopulateParams(options_);
-}
-
-EngineLoop::~EngineLoop() {
-  engine_->UnregisterUciResponder(uci_responder_);
-}
-
-void EngineLoop::RunLoop() {
-  if (!ConfigFile::Init() || !options_->ProcessAllFlags()) return;
-  const auto options = options_->GetOptionsDict();
-  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-  if (options.Get<bool>(kPreload)) engine_->NewGame();
-  UciLoop::RunLoop();
-}
-
-void EngineLoop::CmdUci() {
-  uci_responder_->SendId();
-  for (const auto& option : options_->ListOptionsUci()) {
-    uci_responder_->SendRawResponse(option);
-  }
-  uci_responder_->SendRawResponse("uciok");
-}
-
-void EngineLoop::CmdIsReady() {
-  engine_->EnsureReady();
-  uci_responder_->SendRawResponse("readyok");
-}
-
-void EngineLoop::CmdSetOption(const std::string& name, const std::string& value,
-                              const std::string& context) {
-  options_->SetUciOption(name, value, context);
-  // Set the log filename for the case it was set in UCI option.
-  Logging::Get().SetFilename(
-      options_->GetOptionsDict().Get<std::string>(kLogFileId));
-}
-
-void EngineLoop::CmdUciNewGame() { engine_->NewGame(); }
-
-void EngineLoop::CmdPosition(const std::string& position,
-                             const std::vector<std::string>& moves) {
-  std::string fen = position;
-  if (fen.empty()) {
-    fen = ChessBoard::kStartposFen;
-  }
-  engine_->SetPosition(fen, moves);
-}
-
-void EngineLoop::CmdGo(const GoParams& params) { engine_->Go(params); }
-
-void EngineLoop::CmdPonderHit() { engine_->PonderHit(); }
-
-void EngineLoop::CmdStop() { engine_->Stop(); }
+void RunEngine(SearchFactory* factory) { RunEngineInternal<Engine>(factory); }
+void RunEngineClassic() { RunEngineInternal<EngineClassic>(nullptr); }
 
 }  // namespace lczero

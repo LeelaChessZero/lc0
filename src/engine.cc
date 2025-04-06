@@ -37,10 +37,23 @@
 #include "neural/shared_params.h"
 
 namespace lczero {
+namespace {
+const OptionId kPreload{"preload", "",
+                        "Initialize backend and load net on engine startup."};
+}  // namespace
+
+void Engine::PopulateOptions(OptionsParser* options) {
+  options->Add<BoolOption>(kPreload) = false;
+}
 
 Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
     : options_(opts),
-      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {}
+      search_(factory.CreateSearch(&uci_forwarder_, &options_)) {
+  if (options_.Get<bool>(kPreload)) {
+    UpdateBackendConfig();
+    // EnsureSyzygyTablebasesLoaded();
+  }
+}
 
 namespace {
 GameState MakeGameState(const std::string& fen,
