@@ -46,6 +46,9 @@ using testing::Return;
 class EngineTest : public ::testing::Test {
  protected:
   EngineTest() {
+    Engine::PopulateOptions(&options_parser_);
+    SharedBackendParams::Populate(&options_parser_);
+    options_ = options_parser_.GetMutableOptions();
     auto backend_factory = std::make_unique<MockBackendFactory>();
     backend_factory_ = backend_factory.get();
     ON_CALL(*backend_factory_, GetName()).WillByDefault(Return("mock"));
@@ -58,8 +61,8 @@ class EngineTest : public ::testing::Test {
 
     BackendManager::Get()->AddBackend(std::move(backend_factory));
 
-    options_.Set<std::string>(SharedBackendParams::kBackendId, "mock");
-    options_.Set<int>(SharedBackendParams::kNNCacheSizeId, 10);
+    options_->Set<std::string>(SharedBackendParams::kBackendId, "mock");
+    options_->Set<int>(SharedBackendParams::kNNCacheSizeId, 10);
 
     EXPECT_CALL(search_factory_, CreateSearch(_, _))
         .WillOnce([&](UciResponder* responder, const OptionsDict*) {
@@ -71,7 +74,8 @@ class EngineTest : public ::testing::Test {
 
   ~EngineTest() { BackendManager::Get()->RemoveBackend(backend_factory_); }
 
-  OptionsDict options_;
+  OptionsParser options_parser_;
+  OptionsDict* options_ = nullptr;  // absl_notnull
   MockBackend* backend_ = nullptr;
   MockBackendFactory* backend_factory_ = nullptr;
   MockSearchFactory search_factory_;
@@ -101,7 +105,7 @@ class WaitingUciResponder : public UciResponder {
 
 TEST_F(EngineTest, BackendReloadByUpdateBackendConfig) {
   WaitingUciResponder uci_responder;
-  Engine engine(search_factory_, options_);
+  Engine engine(search_factory_, *options_);
   engine.RegisterUciResponder(&uci_responder);
   EXPECT_EQ(backend_, nullptr);  // Backend not created before the search.
   EXPECT_CALL(*search_, StartSearch(_)).WillRepeatedly([&](const GoParams&) {
