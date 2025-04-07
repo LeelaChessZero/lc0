@@ -35,14 +35,21 @@
 #include "neural/memcache.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
+#include "syzygy/syzygy.h"
 
 namespace lczero {
 namespace {
+const OptionId kSyzygyTablebaseId{
+    "syzygy-paths", "SyzygyPath",
+    "List of Syzygy tablebase directories, list entries separated by system "
+    "separator (\";\" for Windows, \":\" for Linux).",
+    's'};
 const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
 }  // namespace
 
 void Engine::PopulateOptions(OptionsParser* options) {
+  options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<BoolOption>(kPreload) = false;
 }
 
@@ -93,10 +100,30 @@ void Engine::UpdateBackendConfig() {
   }
 }
 
+void Engine::EnsureSyzygyTablebasesLoaded() {
+  const std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId);
+  if (tb_paths == previous_tb_paths_) return;
+  previous_tb_paths_ = tb_paths;
+
+  if (tb_paths.empty()) {
+    syzygy_tb_.reset();
+  } else {
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
+    if (!syzygy_tb_->init(tb_paths)) {
+      CERR << "Failed to load Syzygy tablebases!";
+      syzygy_tb_.reset();
+    }
+  }
+
+  search_->SetSyzygyTablebase(syzygy_tb_.get());
+}
+
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
   UpdateBackendConfig();
   EnsureSearchStopped();
+  EnsureSyzygyTablebasesLoaded();
   search_->SetPosition(MakeGameState(fen, moves));
   search_initialized_ = true;
 }
@@ -108,9 +135,7 @@ void Engine::Go(const GoParams& params) {
   search_->StartSearch(params);
 }
 
-void Engine::Stop() {
-  if (search_) search_->StopSearch();
-}
+void Engine::Stop() { search_->StopSearch(); }
 
 void Engine::RegisterUciResponder(UciResponder* responder) {
   uci_forwarder_.Register(responder);
