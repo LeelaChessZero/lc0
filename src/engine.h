@@ -32,6 +32,7 @@
 #include "engine_loop.h"
 #include "neural/memcache.h"
 #include "search/search.h"
+#include "syzygy/syzygy.h"
 
 namespace lczero {
 
