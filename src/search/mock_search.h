@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2024 The LCZero Authors
+  Copyright (C) 2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,48 +27,34 @@
 
 #pragma once
 
-#include <vector>
+#include <gmock/gmock.h>
 
-#include "engine_loop.h"
-#include "neural/memcache.h"
 #include "search/search.h"
-#include "syzygy/syzygy.h"
 
 namespace lczero {
 
-class Engine : public EngineControllerBase {
+class MockSearch : public SearchBase {
  public:
-  Engine(const SearchFactory&, const OptionsDict&);
+  using SearchBase::SearchBase;
+  UciResponder* GetUciResponder() const { return uci_responder_; }
+  MOCK_METHOD(void, SetBackend, (Backend * backend), (override));
+  MOCK_METHOD(void, SetSyzygyTablebase, (SyzygyTablebase * tb), (override));
+  MOCK_METHOD(void, NewGame, (), (override));
+  MOCK_METHOD(void, SetPosition, (const GameState&), (override));
+  MOCK_METHOD(void, StartSearch, (const GoParams&), (override));
+  MOCK_METHOD(void, StartClock, (), (override));
+  MOCK_METHOD(void, WaitSearch, (), (override));
+  MOCK_METHOD(void, StopSearch, (), (override));
+  MOCK_METHOD(void, AbortSearch, (), (override));
+  MOCK_METHOD(SearchArtifacts, GetArtifacts, (), (const, override));
+};
 
-  static void PopulateOptions(OptionsParser*);
-
-  void EnsureReady() override {};
-  void NewGame() override;
-  void SetPosition(const std::string& fen,
-                   const std::vector<std::string>& moves) override;
-  void Go(const GoParams& params) override;
-  void PonderHit() override {}
-  void Stop() override;
-
-  void RegisterUciResponder(UciResponder*) override;
-  void UnregisterUciResponder(UciResponder*) override;
-
- private:
-  void UpdateBackendConfig();
-  void EnsureSearchStopped();
-  void EnsureSyzygyTablebasesLoaded();
-
-  UciResponderForwarder uci_forwarder_;
-  const OptionsDict& options_;
-  std::unique_ptr<SearchBase> search_;  // absl_notnull
-  std::string backend_name_;
-  std::unique_ptr<CachingBackend> backend_;  // absl_nullable
-
-  // Remember previous tablebase paths to detect when to reload them.
-  std::string previous_tb_paths_;
-  std::unique_ptr<SyzygyTablebase> syzygy_tb_;  // absl_nullable
-
-  bool search_initialized_ = false;
+class MockSearchFactory : public SearchFactory {
+ public:
+  MOCK_METHOD(std::string_view, GetName, (), (const, override));
+  MOCK_METHOD(void, PopulateParams, (OptionsParser*), (const, override));
+  MOCK_METHOD(std::unique_ptr<SearchBase>, CreateSearch,
+              (UciResponder*, const OptionsDict*), (const, override));
 };
 
 }  // namespace lczero
