@@ -128,7 +128,10 @@ void Engine::SetPosition(const std::string& fen,
   search_initialized_ = true;
 }
 
-void Engine::NewGame() { SetPosition(ChessBoard::kStartposFen, {}); }
+void Engine::NewGame() {
+  search_->NewGame();
+  SetPosition(ChessBoard::kStartposFen, {});
+}
 
 void Engine::Go(const GoParams& params) {
   if (!search_initialized_) NewGame();

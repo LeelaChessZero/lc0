@@ -89,7 +89,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   classic::SearchParams::Populate(options);
 
-  ConfigFile::PopulateOptions(options);
   if (is_simple) {
     options->HideAllOptions();
     options->UnhideOption(kThreadsOptionId);

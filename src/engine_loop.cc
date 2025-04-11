@@ -48,6 +48,7 @@ void RunEngineInternal(SearchFactory* factory) {
   // Populate options from various sources.
   OptionsParser options_parser;
   options_parser.Add<StringOption>(kLogFileId);
+  ConfigFile::PopulateOptions(&options_parser);
   EngineType::PopulateOptions(&options_parser);
   if (factory) factory->PopulateParams(&options_parser);  // Search params.
   uci_responder.PopulateParams(&options_parser);          // UCI params.

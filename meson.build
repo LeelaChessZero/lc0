@@ -218,6 +218,7 @@ files += [
   'src/search/classic/stoppers/smooth.cc',
   'src/search/classic/stoppers/stoppers.cc',
   'src/search/classic/stoppers/timemgr.cc',
+  'src/search/classic/wrapper.cc',
   'src/search/register.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
