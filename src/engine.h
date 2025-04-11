@@ -29,6 +29,7 @@
 
 #include <vector>
 
+#include "chess/gamestate.h"
 #include "engine_loop.h"
 #include "neural/memcache.h"
 #include "search/search.h"
@@ -39,6 +40,7 @@ namespace lczero {
 class Engine : public EngineControllerBase {
  public:
   Engine(const SearchFactory&, const OptionsDict&);
+  ~Engine() override;
 
   static void PopulateOptions(OptionsParser*);
 
@@ -47,7 +49,7 @@ class Engine : public EngineControllerBase {
   void SetPosition(const std::string& fen,
                    const std::vector<std::string>& moves) override;
   void Go(const GoParams& params) override;
-  void PonderHit() override {}
+  void PonderHit() override;
   void Stop() override;
 
   void RegisterUciResponder(UciResponder*) override;
@@ -57,18 +59,29 @@ class Engine : public EngineControllerBase {
   void UpdateBackendConfig();
   void EnsureSearchStopped();
   void EnsureSyzygyTablebasesLoaded();
+  void InitializeSearchPosition(bool for_ponder);
 
-  UciResponderForwarder uci_forwarder_;
+  class UciPonderForwarder;
+  std::unique_ptr<UciPonderForwarder> uci_forwarder_;
   const OptionsDict& options_;
   std::unique_ptr<SearchBase> search_;  // absl_notnull
-  std::string backend_name_;
+  std::string backend_name_;  // Remember the backend name to track changes.
   std::unique_ptr<CachingBackend> backend_;  // absl_nullable
 
   // Remember previous tablebase paths to detect when to reload them.
   std::string previous_tb_paths_;
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;  // absl_nullable
 
-  bool search_initialized_ = false;
+  // UCI parameters cache to be consistent between `position` and `go`.
+  bool ponder_enabled_ = false;
+  bool strict_uci_timing_ = false;
+  // Last position set for the search. Used to:
+  // 1. Detect whether the position was ever set (to initialize to startpos).
+  // 2. Remember the position for ponder go (removing the last ply).
+  // 3. Remember the position for ponderhit.
+  std::optional<GameState> last_position_ = std::nullopt;
+  // Go parameters for the last search. Used on ponder.
+  std::optional<GoParams> last_go_params_ = std::nullopt;
 };
 
 }  // namespace lczero
