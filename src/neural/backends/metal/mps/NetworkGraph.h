@@ -132,12 +132,27 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                     alpha:(float)alpha
                                                     label:(NSString * __nonnull)label;
 
+-(nonnull MPSGraphTensor *) relativePositionEncodingWithTensor:(MPSGraphTensor * __nonnull)tensor
+                                                     mapTensor:(MPSGraphTensor * __nonnull)rpeMapTensor
+                                                       weights:(float * __nonnull)rpeWeights
+                                                         depth:(NSUInteger)depth
+                                                         heads:(NSUInteger)heads
+                                                       queries:(NSUInteger)queries
+                                                          keys:(NSUInteger)keys
+                                                          type:(NSUInteger)type
+                                                         label:(NSString * __nonnull)label;
+
+-(nonnull MPSGraphTensor *) getRpeMapTensor;
+
 -(nonnull MPSGraphTensor *) scaledMHAMatmulWithQueries:(MPSGraphTensor * __nonnull)queries
                                               withKeys:(MPSGraphTensor * __nonnull)keys
                                             withValues:(MPSGraphTensor * __nonnull)values
                                                  heads:(NSUInteger)heads
                                                 parent:(MPSGraphTensor * __nonnull)parent
                                                smolgen:(lczero::MultiHeadWeights::Smolgen * __nullable)smolgen
+                                                  rpeQ:(float * __nullable)rpeQ
+                                                  rpeK:(float * __nullable)rpeK
+                                                  rpeV:(float * __nullable)rpeV
                                      smolgenActivation:(NSString * __nullable)smolgenActivation
                                                  label:(NSString * __nonnull)label;
 
