@@ -43,9 +43,7 @@ namespace lczero {
 // Runs many selfplay games, possibly in parallel.
 class SelfPlayTournament {
  public:
-  SelfPlayTournament(const OptionsDict& options,
-                     CallbackUciResponder::BestMoveCallback best_move_info,
-                     CallbackUciResponder::ThinkingCallback thinking_info,
+  SelfPlayTournament(const OptionsDict& options, UciResponder* uci_responder,
                      GameInfo::Callback game_info,
                      TournamentInfo::Callback tournament_info);
 
@@ -103,8 +101,7 @@ class SelfPlayTournament {
   const OptionsDict player_options_[2][2];
   SelfPlayLimits search_limits_[2][2];
 
-  CallbackUciResponder::BestMoveCallback best_move_callback_;
-  CallbackUciResponder::ThinkingCallback info_callback_;
+  UciResponder* uci_responder_;
   GameInfo::Callback game_callback_;
   TournamentInfo::Callback tournament_callback_;
   const int kTotalGames;

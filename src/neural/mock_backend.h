@@ -27,48 +27,39 @@
 
 #pragma once
 
-#include <vector>
+#include "gmock/gmock.h"
 
-#include "engine_loop.h"
-#include "neural/memcache.h"
-#include "search/search.h"
-#include "syzygy/syzygy.h"
+#include "neural/backend.h"
 
 namespace lczero {
 
-class Engine : public EngineControllerBase {
+class MockBackendComputation : public BackendComputation {
  public:
-  Engine(const SearchFactory&, const OptionsDict&);
+  MOCK_METHOD(size_t, UsedBatchSize, (), (const, override));
+  MOCK_METHOD(AddInputResult, AddInput,
+              (const EvalPosition& pos, EvalResultPtr result), (override));
+  MOCK_METHOD(void, ComputeBlocking, (), (override));
+};
 
-  static void PopulateOptions(OptionsParser*);
+class MockBackend : public Backend {
+ public:
+  MOCK_METHOD(BackendAttributes, GetAttributes, (), (const, override));
+  MOCK_METHOD(std::unique_ptr<BackendComputation>, CreateComputation, (),
+              (override));
+  MOCK_METHOD(std::vector<EvalResult>, EvaluateBatch,
+              (std::span<const EvalPosition> positions), (override));
+  MOCK_METHOD(std::optional<EvalResult>, GetCachedEvaluation,
+              (const EvalPosition&), (override));
+  MOCK_METHOD(UpdateConfigurationResult, UpdateConfiguration,
+              (const OptionsDict&), (override));
+};
 
-  void EnsureReady() override {};
-  void NewGame() override;
-  void SetPosition(const std::string& fen,
-                   const std::vector<std::string>& moves) override;
-  void Go(const GoParams& params) override;
-  void PonderHit() override {}
-  void Stop() override;
-
-  void RegisterUciResponder(UciResponder*) override;
-  void UnregisterUciResponder(UciResponder*) override;
-
- private:
-  void UpdateBackendConfig();
-  void EnsureSearchStopped();
-  void EnsureSyzygyTablebasesLoaded();
-
-  UciResponderForwarder uci_forwarder_;
-  const OptionsDict& options_;
-  std::unique_ptr<SearchBase> search_;  // absl_notnull
-  std::string backend_name_;
-  std::unique_ptr<CachingBackend> backend_;  // absl_nullable
-
-  // Remember previous tablebase paths to detect when to reload them.
-  std::string previous_tb_paths_;
-  std::unique_ptr<SyzygyTablebase> syzygy_tb_;  // absl_nullable
-
-  bool search_initialized_ = false;
+class MockBackendFactory : public BackendFactory {
+ public:
+  MOCK_METHOD(int, GetPriority, (), (const, override));
+  MOCK_METHOD(std::string_view, GetName, (), (const, override));
+  MOCK_METHOD(std::unique_ptr<Backend>, Create, (const OptionsDict&),
+              (override));
 };
 
 }  // namespace lczero

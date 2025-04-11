@@ -78,4 +78,15 @@ std::unique_ptr<Backend> BackendManager::CreateFromName(
   return factory->Create(options);
 }
 
+void BackendManager::RemoveBackend(const BackendFactory* factory) {
+  auto iter = std::find_if(algorithms_.begin(), algorithms_.end(),
+                           [factory](const std::unique_ptr<BackendFactory>& f) {
+                             return f.get() == factory;
+                           });
+  if (iter == algorithms_.end()) {
+    throw Exception("Attempt to remove unregistered backend");
+  }
+  algorithms_.erase(iter);
+}
+
 }  // namespace lczero

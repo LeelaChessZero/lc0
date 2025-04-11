@@ -70,6 +70,9 @@ class Position {
   // Gets board from the point of view of player to move.
   const ChessBoard& GetBoard() const { return us_board_; }
 
+  bool operator==(const Position&) const = default;
+  bool operator!=(const Position&) const = default;
+
   std::string DebugString() const;
 
  private:
@@ -127,6 +130,7 @@ class PositionHistory {
 
   // Resets the position to a given state.
   void Reset(const ChessBoard& board, int rule50_ply, int game_ply);
+  void Reset(const Position& pos);
 
   // Appends a position to history.
   void Append(Move m);

@@ -219,6 +219,7 @@ files += [
   'src/search/classic/stoppers/smooth.cc',
   'src/search/classic/stoppers/stoppers.cc',
   'src/search/classic/stoppers/timemgr.cc',
+  'src/search/classic/wrapper.cc',
   'src/search/register.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
@@ -752,7 +753,7 @@ if get_option('rescorer')
   'src/neural/loader.cc', 
   ]
   executable('rescorer', 'src/rescorer_main.cc',
-       [common_files, 'src/trainingdata/rescoreloop.cc'],
+       [common_files, 'src/trainingdata/rescorer.cc'],
        include_directories: includes, dependencies: deps, install: true)
 endif
 
@@ -762,6 +763,7 @@ endif
 
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
+  gmock = dependency('gmock', fallback: ['gtest', 'gmock_dep'])
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
@@ -794,6 +796,11 @@ if get_option('gtest')
     include_directories: includes, link_with: lc0_lib,
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
+
+  test('EngineTest',
+    executable('engine_test', 'src/engine_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
+    args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif
 
 

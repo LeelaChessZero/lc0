@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2024 The LCZero Authors
+  Copyright (C) 2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,23 +27,34 @@
 
 #pragma once
 
-#include <thread>
+#include <gmock/gmock.h>
 
-#include "chess/uciloop.h"
-#include "utils/optionsparser.h"
+#include "search/search.h"
 
 namespace lczero {
 
-class RescoreLoop : public UciLoop {
+class MockSearch : public SearchBase {
  public:
-  RescoreLoop();
-  ~RescoreLoop();
+  using SearchBase::SearchBase;
+  UciResponder* GetUciResponder() const { return uci_responder_; }
+  MOCK_METHOD(void, SetBackend, (Backend * backend), (override));
+  MOCK_METHOD(void, SetSyzygyTablebase, (SyzygyTablebase * tb), (override));
+  MOCK_METHOD(void, NewGame, (), (override));
+  MOCK_METHOD(void, SetPosition, (const GameState&), (override));
+  MOCK_METHOD(void, StartSearch, (const GoParams&), (override));
+  MOCK_METHOD(void, StartClock, (), (override));
+  MOCK_METHOD(void, WaitSearch, (), (override));
+  MOCK_METHOD(void, StopSearch, (), (override));
+  MOCK_METHOD(void, AbortSearch, (), (override));
+  MOCK_METHOD(SearchArtifacts, GetArtifacts, (), (const, override));
+};
 
-  void RunLoop() override;
-  bool IsChess960() const { return false; }
-
- private:
-  OptionsParser options_;
+class MockSearchFactory : public SearchFactory {
+ public:
+  MOCK_METHOD(std::string_view, GetName, (), (const, override));
+  MOCK_METHOD(void, PopulateParams, (OptionsParser*), (const, override));
+  MOCK_METHOD(std::unique_ptr<SearchBase>, CreateSearch,
+              (UciResponder*, const OptionsDict*), (const, override));
 };
 
 }  // namespace lczero

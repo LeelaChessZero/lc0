@@ -119,6 +119,11 @@ void PositionHistory::Reset(const ChessBoard& board, int rule50_ply,
   positions_.emplace_back(board, rule50_ply, game_ply);
 }
 
+void PositionHistory::Reset(const Position& pos) {
+  positions_.clear();
+  positions_.push_back(pos);
+}
+
 void PositionHistory::Append(Move m) {
   // TODO(mooskagh) That should be emplace_back(Last(), m), but MSVS STL
   //                has a bug in implementation of emplace_back, when

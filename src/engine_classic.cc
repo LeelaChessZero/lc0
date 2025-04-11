@@ -50,16 +50,14 @@ const OptionId kSyzygyTablebaseId{
     's'};
 const OptionId kPonderId{"", "Ponder",
                          "This option is ignored. Here to please chess GUIs."};
-const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
-                        "Show win, draw and lose probability."};
-const OptionId kShowMovesleft{"show-movesleft", "UCI_ShowMovesLeft",
-                              "Show estimated moves left."};
 const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
                                 "The UCI host compensates for lag, waits for "
                                 "the 'readyok' reply before sending 'go' and "
                                 "only then starts timing."};
 const OptionId kClearTree{"", "ClearTree",
                           "Clear the tree before the next search."};
+const OptionId kPreload{"preload", "",
+                        "Initialize backend and load net on engine startup."};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -79,11 +77,10 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 }  // namespace
 
-EngineClassic::EngineClassic(UciResponder& uci_responder,
-                             const OptionsDict& options)
-    : options_(options),
-      uci_responder_(&uci_responder),
-      current_position_{ChessBoard::kStartposFen, {}} {}
+EngineClassic::EngineClassic(const OptionsDict& options)
+    : options_(options), current_position_{ChessBoard::kStartposFen, {}} {
+  if (options_.Get<bool>(kPreload)) UpdateFromUciOptions();
+}
 
 void EngineClassic::PopulateOptions(OptionsParser* options) {
   using namespace std::placeholders;
@@ -92,7 +89,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   classic::SearchParams::Populate(options);
 
-  ConfigFile::PopulateOptions(options);
   if (is_simple) {
     options->HideAllOptions();
     options->UnhideOption(kThreadsOptionId);
@@ -104,8 +100,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
-  options->Add<BoolOption>(kShowWDL) = false;
-  options->Add<BoolOption>(kShowMovesleft) = false;
 
   PopulateTimeManagementOptions(
       is_simple ? classic::RunType::kSimpleUci : classic::RunType::kUci,
@@ -116,6 +110,8 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
 
   options->Add<ButtonOption>(kClearTree);
   options->HideOption(kClearTree);
+
+  options->Add<BoolOption>(kPreload) = false;
 }
 
 void EngineClassic::ResetMoveTimer() {
@@ -149,10 +145,6 @@ void EngineClassic::UpdateFromUciOptions() {
         CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
                        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
     network_configuration_ = network_configuration;
-  } else {
-    // If network is not changed, cache size still may have changed.
-    backend_->SetCacheCapacity(
-        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
   }
 
   // Check whether we can update the move timer in "Go".
@@ -252,7 +244,7 @@ void EngineClassic::Go(const GoParams& params) {
   go_params_ = params;
 
   std::unique_ptr<UciResponder> responder =
-      std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
+      std::make_unique<NonOwningUciRespondForwarder>(&uci_forwarder_);
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.
@@ -267,16 +259,6 @@ void EngineClassic::Go(const GoParams& params) {
         std::make_unique<PonderResponseTransformer>(std::move(responder), move);
   } else {
     SetupPosition(current_position_.fen, current_position_.moves);
-  }
-
-  if (!options_.Get<bool>(kShowWDL)) {
-    // Strip WDL information from the response.
-    responder = std::make_unique<WDLResponseFilter>(std::move(responder));
-  }
-
-  if (!options_.Get<bool>(kShowMovesleft)) {
-    // Strip movesleft information from the response.
-    responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
   }
 
   if (options_.Get<Button>(kClearTree).TestAndReset()) {
@@ -303,6 +285,14 @@ void EngineClassic::PonderHit() {
 
 void EngineClassic::Stop() {
   if (search_) search_->Stop();
+}
+
+void EngineClassic::RegisterUciResponder(UciResponder* responder) {
+  uci_forwarder_.Register(responder);
+}
+
+void EngineClassic::UnregisterUciResponder(UciResponder* responder) {
+  uci_forwarder_.Unregister(responder);
 }
 
 }  // namespace lczero

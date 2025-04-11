@@ -2162,7 +2162,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+  if (computation_->UsedBatchSize() > 0) computation_->ComputeBlocking();
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

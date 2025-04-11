@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2025 The LCZero Authors
+  Copyright (C) 2018-2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,19 +27,13 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
+#include <thread>
 
 #include "chess/uciloop.h"
-#include "search/search.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
 
-// Runs the stdin/stdout UCI loop for the engine.
-void RunEngine(SearchFactory* factory);
-
-// The same but through classic interface. To be gone soon.
-void RunEngineClassic();
+void RunRescorer();
 
 }  // namespace lczero

@@ -74,8 +74,9 @@ int main(int argc, const char** argv) {
 
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
-      SelfPlayLoop loop;
-      loop.RunLoop();
+      StdoutUciResponder uci_responder;
+      SelfPlayLoop loop(&uci_responder);
+      loop.Run();
     } else if (CommandLine::ConsumeCommand("benchmark")) {
       // Benchmark mode, longer version.
       Benchmark benchmark;
@@ -104,14 +105,7 @@ int main(int argc, const char** argv) {
           used_new_search = true;
           SearchFactory* factory =
               SearchManager::Get()->GetFactoryByName(search_name);
-          factory->PopulateParams(options_parser.get());
-          EngineLoop loop(
-              std::move(options_parser), [factory](UciResponder& uci_responder,
-                                                   const OptionsDict& options) {
-                return std::make_unique<Engine>(
-                    factory->CreateSearch(&uci_responder, &options), options);
-              });
-          loop.RunLoop();
+          RunEngine(factory);
         }
       }
 
@@ -119,13 +113,7 @@ int main(int argc, const char** argv) {
         // Consuming optional "uci" mode.
         CommandLine::ConsumeCommand("uci");
         // Ordinary UCI engine.
-        EngineClassic::PopulateOptions(options_parser.get());
-        EngineLoop loop(
-            std::move(options_parser),
-            [](UciResponder& uci_responder, const OptionsDict& options) {
-              return std::make_unique<EngineClassic>(uci_responder, options);
-            });
-        loop.RunLoop();
+        RunEngineClassic();
       }
     }
   } catch (std::exception& e) {

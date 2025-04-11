@@ -158,17 +158,15 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(classic::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
 }
 
-SelfPlayTournament::SelfPlayTournament(
-    const OptionsDict& options,
-    CallbackUciResponder::BestMoveCallback best_move_info,
-    CallbackUciResponder::ThinkingCallback thinking_info,
-    GameInfo::Callback game_info, TournamentInfo::Callback tournament_info)
+SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
+                                       UciResponder* uci_responder,
+                                       GameInfo::Callback game_info,
+                                       TournamentInfo::Callback tournament_info)
     : player_options_{{options.GetSubdict("player1").GetSubdict("white"),
                        options.GetSubdict("player1").GetSubdict("black")},
                       {options.GetSubdict("player2").GetSubdict("white"),
                        options.GetSubdict("player2").GetSubdict("black")}},
-      best_move_callback_(best_move_info),
-      info_callback_(thinking_info),
+      uci_responder_(uci_responder),
       game_callback_(game_info),
       tournament_callback_(tournament_info),
       kTotalGames(options.Get<int>(kTotalGamesId)),
@@ -322,14 +320,14 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
       }
       // In non-verbose mode, output the last "info" message.
       if (!verbose_thinking && !last_thinking_info.empty()) {
-        info_callback_(last_thinking_info);
+        uci_responder_->OutputThinkingInfo(&last_thinking_info);
         last_thinking_info.clear();
       }
       BestMoveInfo rich_info = info;
       rich_info.player = pl_idx + 1;
       rich_info.is_black = player1_black ? pl_idx == 0 : pl_idx != 0;
       rich_info.game_id = game_number;
-      best_move_callback_(rich_info);
+      uci_responder_->OutputBestMove(&rich_info);
     };
 
     opt.info_callback =
@@ -342,7 +340,7 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
             info.game_id = game_number;
           }
           if (verbose_thinking) {
-            info_callback_(rich_info);
+            uci_responder_->OutputThinkingInfo(&rich_info);
           } else {
             // In non-verbose mode, remember the last "info" messages.
             last_thinking_info = std::move(rich_info);
