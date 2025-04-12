@@ -42,7 +42,7 @@
 
 namespace lczero {
 void ChooseAndRunEngine() {
-  // Run the engine which is explicitly specified on the command line.
+  // First try the engine which is explicitly specified on the command line.
   for (const std::string_view search_name :
        SearchManager::Get()->GetSearchNames()) {
     if (CommandLine::ConsumeCommand(search_name)) {
@@ -51,14 +51,15 @@ void ChooseAndRunEngine() {
     }
   }
 
-  // Run old engine through the old API if `uci` is specified.
+  // Then if "lc0" is explicitly specified, run the classic engine through the
+  // old interface.
   if (CommandLine::ConsumeCommand("uci")) {
     // Old UCI engine.
     RunEngineClassic();
     return;
   }
 
-  // No search explicitly specified.
+  // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
 #ifdef DEFAULT_SEARCH
 #define STRINGIFY_INTERNAL(x) #x
 #define STRINGIFY(x) STRINGIFY_INTERNAL(x)
@@ -72,7 +73,7 @@ void ChooseAndRunEngine() {
   return;
 #endif
 
-  // Trying to guess the search algorithm from binary name.
+  // Then try to run the engine which is specified by the name of the binary.
   const std::string& binary_name = CommandLine::BinaryName();
   for (const std::string_view search_name :
        SearchManager::Get()->GetSearchNames()) {
@@ -82,7 +83,7 @@ void ChooseAndRunEngine() {
     }
   }
 
-  // Nothing triggered, so run the legacy search.
+  // Finally, fall back to the classic engine through the old interface.
   RunEngineClassic();
 }
 }  // namespace lczero
