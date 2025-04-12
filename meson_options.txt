@@ -207,3 +207,8 @@ option('default_search',
        type: 'string',
        value: '',
        description: 'Default search algorithm to use, e.g. -Ddefault_search=classic')
+
+option('dag_classic',
+       type: 'boolean',
+       value: true,
+       description: 'Enable dag-classic search algorithm')
