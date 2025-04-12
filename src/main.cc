@@ -41,7 +41,7 @@
 #include "version.h"
 
 namespace lczero {
-void RunEngine() {
+void ChooseAndRunEngine() {
   // Run the engine which is explicitly specified on the command line.
   for (const std::string_view search_name :
        SearchManager::Get()->GetSearchNames()) {
@@ -131,7 +131,7 @@ int main(int argc, const char** argv) {
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
     } else {
-      lczero::RunEngine();
+      lczero::ChooseAndRunEngine();
     }
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;
