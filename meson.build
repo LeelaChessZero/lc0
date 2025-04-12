@@ -703,6 +703,11 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+if get_option('default_search') != ''
+  add_project_arguments('-DDEFAULT_SEARCH=' +
+                        get_option('default_search'), language : 'cpp')
+endif
+
 if get_option('lc0')
   files += common_files
   executable('lc0', 'src/main.cc',
