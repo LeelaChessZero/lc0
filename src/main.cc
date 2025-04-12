@@ -69,9 +69,21 @@ void ChooseAndRunEngine() {
 #undef STRINGIFY
 #undef STRINGIFY_INTERNAL
   RunEngine(factory);
-#else
-  RunEngineClassic();
+  return;
 #endif
+
+  // Trying to guess the search algorithm from binary name.
+  const std::string& binary_name = CommandLine::BinaryName();
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (binary_name.find(search_name) != std::string::npos) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Nothing triggered, so run the legacy search.
+  RunEngineClassic();
 }
 }  // namespace lczero
 
