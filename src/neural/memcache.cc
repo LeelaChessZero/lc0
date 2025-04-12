@@ -27,9 +27,9 @@
 
 #include "neural/memcache.h"
 
-#include "neural/cache.h"
 #include "neural/shared_params.h"
 #include "utils/atomic_vector.h"
+#include "utils/cache.h"
 #include "utils/smallarray.h"
 
 namespace lczero {

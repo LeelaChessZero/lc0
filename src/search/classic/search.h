@@ -37,7 +37,6 @@
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "neural/backend.h"
-#include "neural/cache.h"
 #include "search/classic/node.h"
 #include "search/classic/params.h"
 #include "search/classic/stoppers/timemgr.h"
