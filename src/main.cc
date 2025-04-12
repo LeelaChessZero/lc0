@@ -51,7 +51,7 @@ void ChooseAndRunEngine() {
     }
   }
 
-  // Then if "lc0" is explicitly specified, run the classic engine through the
+  // Then if "uci" is explicitly specified, run the classic engine through the
   // old interface.
   if (CommandLine::ConsumeCommand("uci")) {
     // Old UCI engine.
