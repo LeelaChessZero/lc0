@@ -40,6 +40,41 @@
 #include "utils/logging.h"
 #include "version.h"
 
+namespace lczero {
+void RunEngine() {
+  // Run the engine which is explicitly specified on the command line.
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (CommandLine::ConsumeCommand(search_name)) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Run old engine through the old API if `uci` is specified.
+  if (CommandLine::ConsumeCommand("uci")) {
+    // Old UCI engine.
+    RunEngineClassic();
+    return;
+  }
+
+  // No search explicitly specified.
+#ifdef DEFAULT_SEARCH
+#define STRINGIFY_INTERNAL(x) #x
+#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
+  SearchFactory* factory =
+      SearchManager::Get()->GetFactoryByName(STRINGIFY(DEFAULT_SEARCH));
+  if (!factory)
+    throw Exception("Unknown search algorithm: " STRINGIFY(DEFAULT_SEARCH));
+#undef STRINGIFY
+#undef STRINGIFY_INTERNAL
+  RunEngine(factory);
+#else
+  RunEngineClassic();
+#endif
+}
+}  // namespace lczero
+
 int main(int argc, const char** argv) {
   using namespace lczero;
   EscCodes::Init();
@@ -96,25 +131,7 @@ int main(int argc, const char** argv) {
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
     } else {
-      auto options_parser = std::make_unique<OptionsParser>();
-
-      bool used_new_search = false;
-      for (const std::string_view search_name :
-           SearchManager::Get()->GetSearchNames()) {
-        if (CommandLine::ConsumeCommand(search_name)) {
-          used_new_search = true;
-          SearchFactory* factory =
-              SearchManager::Get()->GetFactoryByName(search_name);
-          RunEngine(factory);
-        }
-      }
-
-      if (!used_new_search) {
-        // Consuming optional "uci" mode.
-        CommandLine::ConsumeCommand("uci");
-        // Ordinary UCI engine.
-        RunEngineClassic();
-      }
+      lczero::RunEngine();
     }
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;
