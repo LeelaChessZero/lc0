@@ -30,7 +30,6 @@
 #include "chess/pgn.h"
 #include "chess/position.h"
 #include "chess/uciloop.h"
-#include "neural/cache.h"
 #include "neural/backend.h"
 #include "search/classic/search.h"
 #include "search/classic/stoppers/stoppers.h"

@@ -28,7 +28,6 @@
 #pragma once
 
 #include "search/classic/search.h"
-#include "neural/cache.h"
 #include "neural/factory.h"
 #include "utils/optionsparser.h"
 

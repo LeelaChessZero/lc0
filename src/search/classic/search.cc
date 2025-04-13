@@ -37,7 +37,6 @@
 #include <sstream>
 #include <thread>
 
-#include "neural/cache.h"
 #include "neural/encoder.h"
 #include "search/classic/node.h"
 #include "utils/fastmath.h"
