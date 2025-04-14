@@ -165,6 +165,8 @@ common_files += [
   'src/neural/batchsplit.cc',
   'src/neural/decoder.cc',
   'src/neural/encoder.cc',
+  'src/neural/factory.cc',
+  'src/neural/loader.cc',
   'src/neural/register.cc',
   'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
@@ -196,9 +198,6 @@ files += [
   'src/neural/backends/network_record.cc',
   'src/neural/backends/network_rr.cc',
   'src/neural/backends/network_trivial.cc',
-  'src/neural/cache.cc',
-  'src/neural/factory.cc',
-  'src/neural/loader.cc',
   'src/neural/memcache.cc',
   'src/neural/network_legacy.cc',
   'src/neural/onnx/adapters.cc',
@@ -744,10 +743,6 @@ endif
 
 if get_option('rescorer')
   deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
-  common_files += [
-  'src/neural/factory.cc',
-  'src/neural/loader.cc', 
-  ]
   executable('rescorer', 'src/rescorer_main.cc',
        [common_files, 'src/trainingdata/rescorer.cc'],
        include_directories: includes, dependencies: deps, install: true)

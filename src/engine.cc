@@ -147,7 +147,7 @@ Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
   }
 }
 
-Engine::~Engine() = default;
+Engine::~Engine() { EnsureSearchStopped(); }
 
 void Engine::EnsureSearchStopped() {
   search_->AbortSearch();

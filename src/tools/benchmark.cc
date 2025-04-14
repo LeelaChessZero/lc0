@@ -106,10 +106,6 @@ void Benchmark::Run(bool run_shorter_benchmark) {
             std::make_unique<classic::VisitsStopper>(visits, false));
       }
 
-      NNCache cache;
-      cache.SetCapacity(
-          option_dict.Get<int>(SharedBackendParams::kNNCacheSizeId));
-
       classic::NodeTree tree;
       tree.ResetToPosition(position, {});
 

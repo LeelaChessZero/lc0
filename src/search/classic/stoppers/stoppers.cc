@@ -28,7 +28,6 @@
 #include "search/classic/stoppers/stoppers.h"
 
 #include "search/classic/node.h"
-#include "neural/cache.h"
 
 namespace lczero {
 namespace classic {
@@ -96,9 +95,8 @@ namespace {
 const size_t kAvgNodeSize =
     sizeof(Node) + MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
 const size_t kAvgCacheItemSize =
-    NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
-    sizeof(CachedNNRequest::IdxAndProb) *
-        MemoryWatchingStopper::kAvgMovesPerPosition;
+    3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
+    sizeof(float[MemoryWatchingStopper::kAvgMovesPerPosition]);
 }  // namespace
 
 MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb,

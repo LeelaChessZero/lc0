@@ -30,7 +30,6 @@
 #include <optional>
 
 #include "engine_loop.h"
-#include "neural/cache.h"
 #include "neural/factory.h"
 #include "neural/memcache.h"
 #include "search/classic/search.h"
