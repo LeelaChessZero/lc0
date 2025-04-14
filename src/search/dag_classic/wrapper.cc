@@ -65,10 +65,10 @@ class DagClassicSearch : public SearchBase {
   }
 
   const OptionsDict* options_;
-  std::unique_ptr<dag_classic::TimeManager> time_manager_;
-  std::unique_ptr<dag_classic::Search> search_;
-  std::unique_ptr<dag_classic::NodeTree> tree_;
-  dag_classic::TranspositionTable tt_;
+  std::unique_ptr<TimeManager> time_manager_;
+  std::unique_ptr<Search> search_;
+  std::unique_ptr<NodeTree> tree_;
+  TranspositionTable tt_;
   std::optional<std::chrono::steady_clock::time_point> move_start_time_;
 };
 
@@ -94,13 +94,13 @@ void DagClassicSearch::NewGame() {
   tt_.clear();
   search_.reset();
   tree_.reset();
-  time_manager_ = dag_classic::MakeTimeManager(*options_);
+  time_manager_ = MakeTimeManager(*options_);
 }
 
 void DagClassicSearch::SetPosition(const GameState& pos) {
-  if (!tree_) tree_ = std::make_unique<dag_classic::NodeTree>();
+  if (!tree_) tree_ = std::make_unique<NodeTree>();
   const bool is_same_game = tree_->ResetToPosition(pos);
-  if (!is_same_game) time_manager_ = dag_classic::MakeTimeManager(*options_);
+  if (!is_same_game) time_manager_ = MakeTimeManager(*options_);
 }
 
 void DagClassicSearch::StartSearch(const GoParams& params) {
@@ -109,7 +109,7 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
   if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
 
   auto stopper = time_manager_->GetStopper(params, *tree_.get());
-  search_ = std::make_unique<dag_classic::Search>(
+  search_ = std::make_unique<Search>(
       *tree_, backend_, std::move(forwarder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
@@ -121,7 +121,7 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
 }
 
 class DagClassicSearchFactory : public SearchFactory {
-  std::string_view GetName() const override { return "dag-classic"; }
+  std::string_view GetName() const override { return "dag-preview"; }
   std::unique_ptr<SearchBase> CreateSearch(
       UciResponder* responder, const OptionsDict* options) const override {
     return std::make_unique<DagClassicSearch>(responder, options);
@@ -129,8 +129,8 @@ class DagClassicSearchFactory : public SearchFactory {
 
   void PopulateParams(OptionsParser* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
-    dag_classic::SearchParams::Populate(parser);
-    PopulateTimeManagementOptions(dag_classic::RunType::kUci, parser);
+    SearchParams::Populate(parser);
+    PopulateTimeManagementOptions(RunType::kUci, parser);
 
     parser->Add<ButtonOption>(kClearTree);
     parser->HideOption(kClearTree);

@@ -155,7 +155,7 @@ Search::Search(const NodeTree& tree, Backend* backend,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
                bool ponder, const OptionsDict& options, TranspositionTable* tt,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!infinite),
+    : ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       tt_(tt),
@@ -1098,9 +1098,7 @@ Search::~Search() {
     SharedMutex::Lock lock(nodes_mutex_);
     CancelSharedCollisions();
 
-#ifndef NDEBUG
     assert(root_node_->ZeroNInFlight());
-#endif
   }
   LOGFILE << "Search destroyed.";
 }
@@ -1521,6 +1519,9 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   }
 }
 
+// Check if the situation described by @depth under root and @position is a
+// safe two-fold or a draw by repetition and return the number of safe
+// repetitions and moves_left.
 // Depth starts with 0 at root, so number of plies in PV equals depth.
 std::pair<int, int> SearchWorker::GetRepetitions(int depth,
                                                  const Position& position) {

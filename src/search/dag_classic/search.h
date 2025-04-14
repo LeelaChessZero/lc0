@@ -49,6 +49,7 @@
 namespace lczero {
 namespace dag_classic {
 
+// The tuple elements are (node, repetitons, moves left).
 typedef std::vector<std::tuple<Node*, int, int>> BackupPath;
 
 class Search {
