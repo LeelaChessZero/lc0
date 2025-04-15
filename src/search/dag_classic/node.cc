@@ -604,7 +604,7 @@ static bool WLDMInvariantsHold(float wl, float d, float m) {
   return -(1.0f + wld_tolerance) < wl && wl < (1.0f + wld_tolerance) &&  //
          -(0.0f + wld_tolerance) < d && d < (1.0f + wld_tolerance) &&    //
          -(0.0f + m_tolerance) < m &&                                    //
-         std::abs(wl + d) < (1.0f + wld_tolerance);
+         std::abs(wl) + std::abs(d) < (1.0f + wld_tolerance);
 }
 
 bool Node::WLDMInvariantsHold() const {

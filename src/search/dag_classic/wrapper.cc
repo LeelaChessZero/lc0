@@ -46,6 +46,7 @@ class DagClassicSearch : public SearchBase {
  public:
   DagClassicSearch(UciResponder* responder, const OptionsDict* options)
       : SearchBase(responder), options_(options) {}
+  ~DagClassicSearch() { search_.reset(); }
 
  private:
   void NewGame() override;
