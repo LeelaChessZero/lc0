@@ -236,6 +236,7 @@ files += [
 files += [
   'src/search/instamove/instamove.cc',
 ]
+
 includes += include_directories('src')
 
 deps += dependency('threads')
@@ -247,6 +248,29 @@ if host_machine.system() == 'windows'
   common_files += 'src/utils/filesystem.win32.cc'
 else
   common_files += 'src/utils/filesystem.posix.cc'
+endif
+
+#############################################################################
+## DAG CLASSIC SEARCH
+#############################################################################
+if get_option('dag_classic')
+  files += [
+    'src/search/dag_classic/node.cc',
+    'src/search/dag_classic/params.cc',
+    'src/search/dag_classic/search.cc',
+    'src/search/dag_classic/stoppers/alphazero.cc',
+    'src/search/dag_classic/stoppers/common.cc',
+    'src/search/dag_classic/stoppers/factory.cc',
+    'src/search/dag_classic/stoppers/legacy.cc',
+    'src/search/dag_classic/stoppers/simple.cc',
+    'src/search/dag_classic/stoppers/smooth.cc',
+    'src/search/dag_classic/stoppers/stoppers.cc',
+    'src/search/dag_classic/stoppers/timemgr.cc',
+    'src/search/dag_classic/wrapper.cc',
+  ]
+
+  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
+  deps += absl.get_variable('absl_container_dep').as_system()
 endif
 
 #############################################################################
