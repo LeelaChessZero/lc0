@@ -44,8 +44,6 @@ std::vector<Position> GameState::GetPositions() const {
   positions.push_back(startpos);
   std::transform(moves.begin(), moves.end(), std::back_inserter(positions),
                  [&](Move m) {
-                   const Position& prev_pos = positions.back();
-                   if (prev_pos.IsBlackToMove()) m.Flip();
                    return Position(positions.back(), m);
                  });
   return positions;
