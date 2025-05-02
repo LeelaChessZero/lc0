@@ -609,28 +609,11 @@ PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
   return history;
 }
 
-namespace {
-std::vector<Move> GetNodeLegalMoves(const Node* node, const ChessBoard& board) {
-  if (!node) return {};
-  std::vector<Move> moves;
-  if (node && node->HasChildren()) {
-    moves.reserve(node->GetNumEdges());
-    std::transform(node->Edges().begin(), node->Edges().end(),
-                   std::back_inserter(moves),
-                   [](const auto& edge) { return edge.GetMove(); });
-    return moves;
-  }
-  return board.GenerateLegalMoves();
-}
-}  // namespace
-
 std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
   if (!node) return {};
   PositionHistory history = GetPositionHistoryAtNode(node);
-  std::vector<Move> legal_moves =
-      GetNodeLegalMoves(node, history.Last().GetBoard());
   return backend_->GetCachedEvaluation(
-      EvalPosition{history.GetPositions(), legal_moves});
+      EvalPosition{history.GetPositions(), {}});
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,
