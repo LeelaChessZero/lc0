@@ -46,7 +46,7 @@ struct CachedValue {
   float q;
   float d;
   float m;
-  uint32_t move_ct;
+  uint8_t num_moves;
   std::unique_ptr<float[]> p;
 };
 
@@ -110,7 +110,7 @@ class MemCacheComputation : public BackendComputation {
       // against hash collisions.
       if (lock.holds_value() &&
           (pos.legal_moves.empty() ||
-           (lock->p && lock->move_ct == pos.legal_moves.size()))) {
+           (lock->p && lock->num_moves == pos.legal_moves.size()))) {
         CachedValueToEvalResult(**lock, result);
         return AddInputResult::FETCHED_IMMEDIATELY;
       }
@@ -120,7 +120,7 @@ class MemCacheComputation : public BackendComputation {
     auto& value = entries_[entry_idx].value;
     value->p.reset(pos.legal_moves.empty() ? nullptr
                                            : new float[pos.legal_moves.size()]);
-    value->move_ct = pos.legal_moves.size();
+    value->num_moves = pos.legal_moves.size();
     return wrapped_computation_->AddInput(
         pos, EvalResultPtr{&value->q, &value->d, &value->m,
                            value->p ? std::span<float>{value->p.get(),
@@ -157,7 +157,7 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
   HashKeyedCacheLock<CachedValue> lock(&cache_, hash);
   if (!lock.holds_value() ||
       (!pos.legal_moves.empty() &&
-       !(lock->p && lock->move_ct == pos.legal_moves.size()))) {
+       !(lock->p && lock->num_moves == pos.legal_moves.size()))) {
     return std::nullopt;
   }
   EvalResult result;
