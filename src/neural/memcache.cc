@@ -106,7 +106,7 @@ class MemCacheComputation : public BackendComputation {
       HashKeyedCacheLock<CachedValue> lock(&memcache_->cache_, hash);
       // Sometimes search queries NN without passing the legal moves. It is
       // still cached in this case, but in subsequent queries we only return it
-      // if legal moves are not passed again. Othewise check the size to guard
+      // if legal moves are not passed again. Otherwise check the size to guard
       // against hash collisions.
       if (lock.holds_value() &&
           (pos.legal_moves.empty() ||
