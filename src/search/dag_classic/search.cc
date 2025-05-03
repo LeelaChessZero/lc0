@@ -461,7 +461,8 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }
 }  // namespace
 
-std::vector<std::string> Search::GetVerboseStats(Node* node) const {
+std::vector<std::string> Search::GetVerboseStats(
+    Node* node, std::optional<Move> move_to_node) const {
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
@@ -517,17 +518,21 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
       print(oss, "(Q: ", fpu, ") ", 8, 5);
     }
   };
-  auto print_tail = [&](auto* oss, const auto* n) {
+  auto print_tail = [&](auto* oss, const auto* n, bool is_edge) {
     const auto sign = n == node ? -1 : 1;
     std::optional<float> v;
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
     } else if (n) {
       auto history = played_history_;
-      if (!is_root) {
-        history.Append(node->GetMove());
+      if (move_to_node) {
+        history.Append(*move_to_node);
       }
-      std::optional<EvalResult> nneval = GetCachedNNEval(n, history);
+      if (is_edge) {
+        history.Append(n->GetMove());
+      }
+      std::optional<EvalResult> nneval = backend_->GetCachedEvaluation(
+          EvalPosition{history.GetPositions(), {}});
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -565,7 +570,7 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
-    print_tail(&oss, edge.node());
+    print_tail(&oss, edge.node(), true);
     infos.emplace_back(oss.str());
   }
 
@@ -574,13 +579,13 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   print_head(&oss, "node ", node->GetNumEdges(), node->GetN(),
              node->GetNInFlight(), node->GetVisitedPolicy());
   print_stats(&oss, node);
-  print_tail(&oss, node);
+  print_tail(&oss, node, false);
   infos.emplace_back(oss.str());
   return infos;
 }
 
 void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
-  auto move_stats = GetVerboseStats(root_node_);
+  auto move_stats = GetVerboseStats(root_node_, std::nullopt);
 
   if (params_.GetVerboseStats()) {
     std::vector<ThinkingInfo> infos;
@@ -601,35 +606,11 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
     }
     if (edge.HasNode()) {
       LOGFILE << "--- Opponent moves after: " << final_bestmove_.ToString(true);
-      for (const auto& line : GetVerboseStats(edge.node())) {
+      for (const auto& line : GetVerboseStats(edge.node(), edge.GetMove())) {
         LOGFILE << line;
       }
     }
   }
-}
-
-namespace {
-std::vector<Move> GetNodeLegalMoves(const Node* node, const ChessBoard& board) {
-  if (!node) return {};
-  std::vector<Move> moves;
-  if (node && node->HasChildren()) {
-    moves.reserve(node->GetNumEdges());
-    std::transform(node->Edges().begin(), node->Edges().end(),
-                   std::back_inserter(moves),
-                   [](const auto& edge) { return edge.GetMove(); });
-    return moves;
-  }
-  return board.GenerateLegalMoves();
-}
-}  // namespace
-
-std::optional<EvalResult> Search::GetCachedNNEval(
-    const Node* node, PositionHistory& history) const {
-  if (!node) return {};
-  std::vector<Move> legal_moves =
-      GetNodeLegalMoves(node, history.Last().GetBoard());
-  return backend_->GetCachedEvaluation(
-      EvalPosition{history.GetPositions(), legal_moves});
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,

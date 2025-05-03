@@ -94,9 +94,6 @@ class Search {
   // from temperature having been applied again.
   void ResetBestMove();
 
-  // Returns NN eval for a given node from cache, if that node is cached.
-  std::optional<EvalResult> GetCachedNNEval(const Node* node) const;
-
  private:
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
