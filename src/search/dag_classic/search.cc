@@ -462,7 +462,7 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }  // namespace
 
 std::vector<std::string> Search::GetVerboseStats(
-    Node* node, std::optional<Move> best_move) const {
+    Node* node, std::optional<Move> move_to_node) const {
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
@@ -525,8 +525,8 @@ std::vector<std::string> Search::GetVerboseStats(
       v = n->GetQ(sign * draw_score);
     } else if (n) {
       auto history = played_history_;
-      if (best_move) {
-        history.Append(*best_move);
+      if (move_to_node) {
+        history.Append(*move_to_node);
       }
       if (is_edge) {
         history.Append(n->GetMove());
