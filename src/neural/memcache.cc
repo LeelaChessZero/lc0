@@ -46,6 +46,7 @@ struct CachedValue {
   float q;
   float d;
   float m;
+  uint8_t num_moves;
   std::unique_ptr<float[]> p;
 };
 
@@ -105,8 +106,11 @@ class MemCacheComputation : public BackendComputation {
       HashKeyedCacheLock<CachedValue> lock(&memcache_->cache_, hash);
       // Sometimes search queries NN without passing the legal moves. It is
       // still cached in this case, but in subsequent queries we only return it
-      // legal moves are not passed again.
-      if (lock.holds_value() && (pos.legal_moves.empty() || lock->p)) {
+      // if legal moves are not passed again. Otherwise check the size to guard
+      // against hash collisions.
+      if (lock.holds_value() &&
+          (pos.legal_moves.empty() ||
+           (lock->p && lock->num_moves == pos.legal_moves.size()))) {
         CachedValueToEvalResult(**lock, result);
         return AddInputResult::FETCHED_IMMEDIATELY;
       }
@@ -116,6 +120,7 @@ class MemCacheComputation : public BackendComputation {
     auto& value = entries_[entry_idx].value;
     value->p.reset(pos.legal_moves.empty() ? nullptr
                                            : new float[pos.legal_moves.size()]);
+    value->num_moves = pos.legal_moves.size();
     return wrapped_computation_->AddInput(
         pos, EvalResultPtr{&value->q, &value->d, &value->m,
                            value->p ? std::span<float>{value->p.get(),
@@ -150,7 +155,9 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
     const EvalPosition& pos) {
   const uint64_t hash = ComputeEvalPositionHash(pos);
   HashKeyedCacheLock<CachedValue> lock(&cache_, hash);
-  if (!lock.holds_value() || (!pos.legal_moves.empty() && !lock->p)) {
+  if (!lock.holds_value() ||
+      (!pos.legal_moves.empty() &&
+       !(lock->p && lock->num_moves == pos.legal_moves.size()))) {
     return std::nullopt;
   }
   EvalResult result;
