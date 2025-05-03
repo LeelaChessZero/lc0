@@ -516,7 +516,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
     } else {
-      std::optional<EvalResult> nneval = GetCachedNNEval(n);
+      auto history = GetPositionHistoryAtNode(node);
+      std::optional<EvalResult> nneval = backend_->GetCachedEvaluation(
+          EvalPosition{history.GetPositions(), {}});
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -607,13 +609,6 @@ PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
     history.Append(*it);
   }
   return history;
-}
-
-std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
-  if (!node) return {};
-  PositionHistory history = GetPositionHistoryAtNode(node);
-  return backend_->GetCachedEvaluation(
-      EvalPosition{history.GetPositions(), {}});
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,

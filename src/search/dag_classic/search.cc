@@ -531,7 +531,8 @@ std::vector<std::string> Search::GetVerboseStats(
       if (is_edge) {
         history.Append(n->GetMove());
       }
-      std::optional<EvalResult> nneval = GetCachedNNEval(n, history);
+      std::optional<EvalResult> nneval = backend_->GetCachedEvaluation(
+          EvalPosition{history.GetPositions(), {}});
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -610,13 +611,6 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
       }
     }
   }
-}
-
-std::optional<EvalResult> Search::GetCachedNNEval(
-    const Node* node, PositionHistory& history) const {
-  if (!node) return {};
-  return backend_->GetCachedEvaluation(
-      EvalPosition{history.GetPositions(), {}});
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,
