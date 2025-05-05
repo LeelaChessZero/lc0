@@ -92,8 +92,8 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 }
 
 void DagClassicSearch::NewGame() {
-  tt_.clear();
   search_.reset();
+  tt_.clear();
   tree_.reset();
   time_manager_ = MakeTimeManager(*options_);
 }
@@ -138,7 +138,7 @@ class DagClassicSearchFactory : public SearchFactory {
   }
 };
 
-REGISTER_SEARCH(DagClassicSearchFactory);
+REGISTER_SEARCH(DagClassicSearchFactory)
 
 }  // namespace
 }  // namespace dag_classic
