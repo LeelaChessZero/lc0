@@ -1113,10 +1113,7 @@ bool ChessBoard::HasMatingMaterial() const {
 }
 
 std::string ChessBoard::DebugString() const {
-  std::string result = "https://lc0.org/fen/";
-  result += BoardToFen(*this);
-  result += " hash=" + std::to_string(Hash());
-  return result;
+  return "https://lc0.org/fen/" + BoardToFen(*this);
 }
 
 Move ChessBoard::ParseMove(std::string_view move_str) const {
@@ -1170,62 +1167,62 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
   return Move::White(from, to);
 }
 
-std::string BoardToFen(const ChessBoard& board) {
+namespace {
+char GetPieceAt(const lczero::ChessBoard& board, Square square) {
+  char c = '\0';
+  if (board.ours().get(square) || board.theirs().get(square)) {
+    if (board.pawns().get(square)) {
+      c = 'P';
+    } else if (board.kings().get(square)) {
+      c = 'K';
+    } else if (board.bishops().get(square)) {
+      c = 'B';
+    } else if (board.queens().get(square)) {
+      c = 'Q';
+    } else if (board.rooks().get(square)) {
+      c = 'R';
+    } else {
+      c = 'N';
+    }
+    if (board.theirs().get(square)) {
+      c = std::tolower(c);  // Capitals are for white.
+    }
+  }
+  return c;
+}
+
+}  // namespace
+
+std::string BoardToFen(const ChessBoard& in_board) {
+  ChessBoard board(in_board);
+  const bool black_to_move = board.flipped();
+  if (black_to_move) board.Mirror();
   std::string result;
-  for (size_t rank_idx = 0; rank_idx < 8; ++rank_idx) {
-    if (rank_idx) result += '/';
-    Rank rank(Rank::FromIdx(board.flipped() ? rank_idx : 7 - rank_idx));
+  for (Rank rank = kRank8; rank.IsValid(); --rank) {
     int empty = 0;
     for (File file = kFileA; file <= kFileH; ++file) {
       Square square(file, rank);
-      if (!((board.ours() | board.theirs()) - board.en_passant()).get(square)) {
-        ++empty;
-        continue;
-      }
-      if (empty) {
+      char piece = GetPieceAt(board, square);
+      if (piece && empty) {
         result += std::to_string(empty);
         empty = 0;
+      } else if (piece) {
+        result += piece;
+      } else {
+        ++empty;
       }
-      char c = '?';
-      if (board.kings().get(square)) c = 'K';
-      if (board.rooks().get(square)) c = 'R';
-      if (board.queens().get(square)) c = 'Q';
-      if (board.bishops().get(square)) c = 'B';
-      if (board.knights().get(square)) c = 'N';
-      if (board.pawns().get(square)) c = 'P';
-      result +=
-          (board.ours().get(square) != board.flipped()) ? c : std::tolower(c);
     }
     if (empty) result += std::to_string(empty);
+    if (rank != kRank1) result += '/';
   }
-  result += board.flipped() ? " b " : " w ";
-  // Castling rights.
-  {
-    std::string rights;
-    const auto& castlings = board.castlings();
-    if (castlings.we_can_00()) {
-      rights += castlings.our_kingside_rook.ToString(board.flipped());
-    }
-    if (castlings.we_can_000()) {
-      rights += castlings.our_queenside_rook.ToString(board.flipped());
-    }
-    if (castlings.they_can_00()) {
-      rights += castlings.their_kingside_rook.ToString(!board.flipped());
-    }
-    if (castlings.they_can_000()) {
-      rights += castlings.their_queenside_rook.ToString(!board.flipped());
-    }
-    result += rights.empty() ? "-" : rights;
-  }
-  result += ' ';
-  // En passant square.
+  result += black_to_move ? " b" : " w";
+  result += " " + board.castlings().as_string();
+  std::string ep = "-";
   if (!board.en_passant().empty()) {
-    File file = board.en_passant().get_first_square().file();
-    result += file.ToString();
-    result += board.flipped() ? "3" : "6";
-  } else {
-    result += '-';
+    const Square sq = *board.en_passant().begin();
+    ep = Square(sq.file(), black_to_move ? kRank3 : kRank6).ToString(false);
   }
+  result += " " + ep;
   return result;
 }
 

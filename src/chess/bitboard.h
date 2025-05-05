@@ -50,10 +50,6 @@ class BitBoard {
 
   std::uint64_t as_int() const { return board_; }
   void clear() { board_ = 0; }
-  Square get_first_square() const {
-    assert(!empty());
-    return Square::FromIdx(GetLowestBit(board_));
-  }
 
   // Counts the number of set bits in the BitBoard.
   int count() const {

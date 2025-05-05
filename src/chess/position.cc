@@ -35,33 +35,6 @@
 #include "chess/types.h"
 
 namespace lczero {
-namespace {
-// GetPieceAt returns the piece found at row, col on board or the null-char '\0'
-// in case no piece there.
-char GetPieceAt(const lczero::ChessBoard& board, int row, int col) {
-  char c = '\0';
-  const Square square(File::FromIdx(col), Rank::FromIdx(row));
-  if (board.ours().get(square) || board.theirs().get(square)) {
-    if (board.pawns().get(square)) {
-      c = 'P';
-    } else if (board.kings().get(square)) {
-      c = 'K';
-    } else if (board.bishops().get(square)) {
-      c = 'B';
-    } else if (board.queens().get(square)) {
-      c = 'Q';
-    } else if (board.rooks().get(square)) {
-      c = 'R';
-    } else {
-      c = 'N';
-    }
-    if (board.theirs().get(square)) {
-      c = std::tolower(c);  // Capitals are for white.
-    }
-  }
-  return c;
-}
-}  // namespace
 
 Position::Position(const Position& parent, Move m)
     : rule50_ply_(parent.rule50_ply_ + 1), ply_count_(parent.ply_count_ + 1) {
@@ -86,7 +59,9 @@ uint64_t Position::Hash() const {
   return HashCat({us_board_.Hash(), static_cast<unsigned long>(repetitions_)});
 }
 
-std::string Position::DebugString() const { return us_board_.DebugString(); }
+std::string Position::DebugString() const {
+  return "https://lc0.org/fen/" + PositionToFen(*this);
+}
 
 GameResult operator-(const GameResult& res) {
   return res == GameResult::BLACK_WON   ? GameResult::WHITE_WON
@@ -170,36 +145,8 @@ uint64_t PositionHistory::HashLast(int positions) const {
   return HashCat(hash, Last().GetRule50Ply());
 }
 
-std::string GetFen(const Position& pos) {
-  std::string result;
-  ChessBoard board = pos.GetBoard();
-  if (board.flipped()) board.Mirror();
-  for (int row = 7; row >= 0; --row) {
-    int emptycounter = 0;
-    for (int col = 0; col < 8; ++col) {
-      char piece = GetPieceAt(board, row, col);
-      if (emptycounter > 0 && piece) {
-        result += std::to_string(emptycounter);
-        emptycounter = 0;
-      }
-      if (piece) {
-        result += piece;
-      } else {
-        emptycounter++;
-      }
-    }
-    if (emptycounter > 0) result += std::to_string(emptycounter);
-    if (row > 0) result += "/";
-  }
-  std::string enpassant = "-";
-  if (!board.en_passant().empty()) {
-    auto sq = *board.en_passant().begin();
-    enpassant = Square(sq.file(), pos.IsBlackToMove() ? kRank3 : kRank6)
-                    .ToString(false);
-  }
-  result += pos.IsBlackToMove() ? " b" : " w";
-  result += " " + board.castlings().as_string();
-  result += " " + enpassant;
+std::string PositionToFen(const Position& pos) {
+  std::string result = BoardToFen(pos.GetBoard());
   result += " " + std::to_string(pos.GetRule50Ply());
   result += " " + std::to_string(
                       (pos.GetGamePly() + (pos.IsBlackToMove() ? 1 : 2)) / 2);
