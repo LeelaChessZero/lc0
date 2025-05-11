@@ -166,6 +166,8 @@ common_files += [
   'src/neural/batchsplit.cc',
   'src/neural/decoder.cc',
   'src/neural/encoder.cc',
+  'src/neural/factory.cc',
+  'src/neural/loader.cc',
   'src/neural/register.cc',
   'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
@@ -197,9 +199,6 @@ files += [
   'src/neural/backends/network_record.cc',
   'src/neural/backends/network_rr.cc',
   'src/neural/backends/network_trivial.cc',
-  'src/neural/cache.cc',
-  'src/neural/factory.cc',
-  'src/neural/loader.cc',
   'src/neural/memcache.cc',
   'src/neural/network_legacy.cc',
   'src/neural/onnx/adapters.cc',
@@ -238,6 +237,7 @@ files += [
 files += [
   'src/search/instamove/instamove.cc',
 ]
+
 includes += include_directories('src')
 
 deps += dependency('threads')
@@ -249,6 +249,29 @@ if host_machine.system() == 'windows'
   common_files += 'src/utils/filesystem.win32.cc'
 else
   common_files += 'src/utils/filesystem.posix.cc'
+endif
+
+#############################################################################
+## DAG CLASSIC SEARCH
+#############################################################################
+if get_option('dag_classic')
+  files += [
+    'src/search/dag_classic/node.cc',
+    'src/search/dag_classic/params.cc',
+    'src/search/dag_classic/search.cc',
+    'src/search/dag_classic/stoppers/alphazero.cc',
+    'src/search/dag_classic/stoppers/common.cc',
+    'src/search/dag_classic/stoppers/factory.cc',
+    'src/search/dag_classic/stoppers/legacy.cc',
+    'src/search/dag_classic/stoppers/simple.cc',
+    'src/search/dag_classic/stoppers/smooth.cc',
+    'src/search/dag_classic/stoppers/stoppers.cc',
+    'src/search/dag_classic/stoppers/timemgr.cc',
+    'src/search/dag_classic/wrapper.cc',
+  ]
+
+  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
+  deps += absl.get_variable('absl_container_dep').as_system()
 endif
 
 #############################################################################
@@ -736,6 +759,11 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+if get_option('default_search') != ''
+  add_project_arguments('-DDEFAULT_SEARCH=' +
+                        get_option('default_search'), language : 'cpp')
+endif
+
 if get_option('lc0')
   files += common_files
   executable('lc0', 'src/main.cc',
@@ -748,10 +776,6 @@ endif
 
 if get_option('rescorer')
   deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
-  common_files += [
-  'src/neural/factory.cc',
-  'src/neural/loader.cc', 
-  ]
   executable('rescorer', 'src/rescorer_main.cc',
        [common_files, 'src/trainingdata/rescorer.cc'],
        include_directories: includes, dependencies: deps, install: true)

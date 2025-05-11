@@ -26,13 +26,13 @@
 */
 
 #include "chess/gamestate.h"
-#include "search/classic/search.h"
-#include "search/classic/stoppers/factory.h"
+#include "search/dag_classic/search.h"
+#include "search/dag_classic/stoppers/factory.h"
 #include "search/register.h"
 #include "search/search.h"
 
 namespace lczero {
-namespace classic {
+namespace dag_classic {
 namespace {
 
 const OptionId kThreadsOptionId{
@@ -42,10 +42,11 @@ const OptionId kThreadsOptionId{
 const OptionId kClearTree{"", "ClearTree",
                           "Clear the tree before the next search."};
 
-class ClassicSearch : public SearchBase {
+class DagClassicSearch : public SearchBase {
  public:
-  ClassicSearch(UciResponder* responder, const OptionsDict* options)
+  DagClassicSearch(UciResponder* responder, const OptionsDict* options)
       : SearchBase(responder), options_(options) {}
+  ~DagClassicSearch() { search_.reset(); }
 
  private:
   void NewGame() override;
@@ -68,6 +69,7 @@ class ClassicSearch : public SearchBase {
   std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
+  TranspositionTable tt_;
   std::optional<std::chrono::steady_clock::time_point> move_start_time_;
 };
 
@@ -89,19 +91,20 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   return result;
 }
 
-void ClassicSearch::NewGame() {
+void DagClassicSearch::NewGame() {
   search_.reset();
+  tt_.clear();
   tree_.reset();
   time_manager_ = MakeTimeManager(*options_);
 }
 
-void ClassicSearch::SetPosition(const GameState& pos) {
+void DagClassicSearch::SetPosition(const GameState& pos) {
   if (!tree_) tree_ = std::make_unique<NodeTree>();
   const bool is_same_game = tree_->ResetToPosition(pos);
   if (!is_same_game) time_manager_ = MakeTimeManager(*options_);
 }
 
-void ClassicSearch::StartSearch(const GoParams& params) {
+void DagClassicSearch::StartSearch(const GoParams& params) {
   auto forwarder =
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
   if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
@@ -111,18 +114,18 @@ void ClassicSearch::StartSearch(const GoParams& params) {
       *tree_, backend_, std::move(forwarder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
-      *options_, syzygy_tb_);
+      *options_, &tt_, syzygy_tb_);
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
   search_->StartThreads(options_->Get<int>(kThreadsOptionId));
 }
 
-class ClassicSearchFactory : public SearchFactory {
-  std::string_view GetName() const override { return "classic"; }
+class DagClassicSearchFactory : public SearchFactory {
+  std::string_view GetName() const override { return "dag-preview"; }
   std::unique_ptr<SearchBase> CreateSearch(
       UciResponder* responder, const OptionsDict* options) const override {
-    return std::make_unique<ClassicSearch>(responder, options);
+    return std::make_unique<DagClassicSearch>(responder, options);
   }
 
   void PopulateParams(OptionsParser* parser) const override {
@@ -135,8 +138,8 @@ class ClassicSearchFactory : public SearchFactory {
   }
 };
 
-REGISTER_SEARCH(ClassicSearchFactory);
+REGISTER_SEARCH(DagClassicSearchFactory)
 
 }  // namespace
-}  // namespace classic
+}  // namespace dag_classic
 }  // namespace lczero

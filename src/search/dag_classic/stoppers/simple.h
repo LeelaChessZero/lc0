@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2024 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,28 +25,15 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "chess/gamestate.h"
+#pragma once
 
-#include <algorithm>
-#include <numeric>
+#include "utils/optionsdict.h"
 
 namespace lczero {
+namespace dag_classic {
 
-Position GameState::CurrentPosition() const {
-  return std::accumulate(
-      moves.begin(), moves.end(), startpos,
-      [](const Position& pos, Move m) { return Position(pos, m); });
-}
+std::unique_ptr<TimeManager> MakeSimpleTimeManager(
+    int64_t move_overhead, const OptionsDict& params);
 
-std::vector<Position> GameState::GetPositions() const {
-  std::vector<Position> positions;
-  positions.reserve(moves.size() + 1);
-  positions.push_back(startpos);
-  std::transform(moves.begin(), moves.end(), std::back_inserter(positions),
-                 [&](Move m) {
-                   return Position(positions.back(), m);
-                 });
-  return positions;
-}
-
+}  // namespace dag_classic
 }  // namespace lczero

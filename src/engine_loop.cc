@@ -85,7 +85,10 @@ void RunEngineInternal(SearchFactory* factory) {
 }
 }  // namespace
 
-void RunEngine(SearchFactory* factory) { RunEngineInternal<Engine>(factory); }
+void RunEngine(SearchFactory* factory) {
+  CERR << "Running engine with search algorithm=" << factory->GetName();
+  RunEngineInternal<Engine>(factory);
+}
 void RunEngineClassic() { RunEngineInternal<EngineClassic>(nullptr); }
 
 }  // namespace lczero

@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2024 The LCZero Authors
+  Copyright (C) 2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,28 +25,25 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "chess/gamestate.h"
+#pragma once
 
-#include <algorithm>
-#include <numeric>
+#include "search/dag_classic/stoppers/stoppers.h"
+#include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
+namespace dag_classic {
 
-Position GameState::CurrentPosition() const {
-  return std::accumulate(
-      moves.begin(), moves.end(), startpos,
-      [](const Position& pos, Move m) { return Position(pos, m); });
-}
+enum class RunType { kUci, kSimpleUci, kSelfplay };
+void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
 
-std::vector<Position> GameState::GetPositions() const {
-  std::vector<Position> positions;
-  positions.reserve(moves.size() + 1);
-  positions.push_back(startpos);
-  std::transform(moves.begin(), moves.end(), std::back_inserter(positions),
-                 [&](Move m) {
-                   return Position(positions.back(), m);
-                 });
-  return positions;
-}
+// Populates KLDGain and SmartPruning stoppers.
+void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
+                               const OptionsDict& options);
 
+std::unique_ptr<TimeManager> MakeCommonTimeManager(
+    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
+    int64_t move_overhead);
+
+}  // namespace dag_classic
 }  // namespace lczero

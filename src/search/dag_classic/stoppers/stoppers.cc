@@ -25,12 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "search/classic/stoppers/stoppers.h"
+#include "search/dag_classic/stoppers/stoppers.h"
 
-#include "search/classic/node.h"
+#include "search/dag_classic/node.h"
 
 namespace lczero {
-namespace classic {
+namespace dag_classic {
 
 ///////////////////////////
 // ChainedSearchStopper
@@ -92,8 +92,10 @@ bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
 ///////////////////////////
 
 namespace {
+// FIXME: This is too conservative.
 const size_t kAvgNodeSize =
-    sizeof(Node) + MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
+    sizeof(Node) + sizeof(LowNode) + sizeof(TranspositionTable::slot_type) +
+    MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
 const size_t kAvgCacheItemSize =
     3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
     sizeof(float[MemoryWatchingStopper::kAvgMovesPerPosition]);
@@ -266,5 +268,5 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   return false;
 }
 
-}  // namespace classic
+}  // namespace dag_classic
 }  // namespace lczero

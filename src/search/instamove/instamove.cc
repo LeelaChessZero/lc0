@@ -65,6 +65,12 @@ class InstamoveSearch : public SearchBase {
   void RespondBestMove() {
     if (responded_bestmove_.exchange(true)) return;
     BestMoveInfo info{bestmove_};
+    // TODO Remove this when move will be encoded from white perspective.
+    if (game_state_.CurrentPosition().IsBlackToMove()) {
+      info.bestmove.Flip();
+    } else if (!info.ponder.is_null()) {
+      info.ponder.Flip();
+    }
     uci_responder_->OutputBestMove(&info);
   }
 
