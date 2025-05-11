@@ -515,8 +515,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     std::optional<float> v;
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
-    } else {
-      auto history = GetPositionHistoryAtNode(node);
+    } else if (n) {
+      auto history = GetPositionHistoryAtNode(n);
       std::optional<EvalResult> nneval = backend_->GetCachedEvaluation(
           EvalPosition{history.GetPositions(), {}});
       if (nneval) v = -nneval->q;
