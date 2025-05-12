@@ -36,6 +36,7 @@
 
 namespace lczero {
 
+/*
 const OptionsDict& OptionsDict::GetSubdict(const std::string& name) const {
   const auto iter = subdicts_.find(name);
   if (iter == subdicts_.end())
@@ -76,6 +77,8 @@ std::vector<std::string> OptionsDict::ListSubdicts() const {
 bool OptionsDict::HasSubdict(const std::string& name) const {
   return subdicts_.find(name) != subdicts_.end();
 }
+
+*/
 
 namespace {
 
