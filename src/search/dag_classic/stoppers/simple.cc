@@ -34,7 +34,7 @@ namespace {
 
 class SimpleTimeManager : public TimeManager {
  public:
-  SimpleTimeManager(int64_t move_overhead, const OptionsDict& params)
+  SimpleTimeManager(int64_t move_overhead, const StrOptionsDict& params)
       : move_overhead_(move_overhead),
         base_pct_(params.GetOrDefault<float>("base-pct", 1.4f)),
         ply_pct_(params.GetOrDefault<float>("ply-pct", 0.049f)),
@@ -124,7 +124,7 @@ std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeSimpleTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params) {
+                                                   const StrOptionsDict& params) {
   return std::make_unique<SimpleTimeManager>(move_overhead, params);
 }
 }  // namespace dag_classic

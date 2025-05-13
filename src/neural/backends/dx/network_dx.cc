@@ -163,7 +163,7 @@ void DxContext::DumpTensor(const char* message, DXAlloc alloc, int size,
 void DxContext::DumpTensor(const char*, DXAlloc, int, bool, bool) {}
 #endif
 
-DxContext::DxContext(const OptionsDict& options) {
+DxContext::DxContext(const StrOptionsDict& options) {
   gpu_id_ = options.GetOrDefault<int>("gpu", 0);
 
   IDXGIFactory4* pFactory = nullptr;
@@ -371,7 +371,7 @@ void DxContext::ScheduleUpload(DXAlloc alloc, const void* data, size_t size) {
   upload_scratch_mem_.offset += (uint32_t)size;
 }
 
-DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
+DxNetwork::DxNetwork(const WeightsFile& file, const StrOptionsDict& options)
     : dx_context_(options),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
@@ -1069,7 +1069,7 @@ InputsOutputsDx::~InputsOutputsDx() {
 }
 
 std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
-                                       const OptionsDict& options) {
+                                       const StrOptionsDict& options) {
   if (!w) {
     throw Exception("The dx12 backend requires a network file.");
   }

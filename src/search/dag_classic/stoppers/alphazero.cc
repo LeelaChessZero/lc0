@@ -34,7 +34,7 @@ namespace {
 
 class AlphazeroTimeManager : public TimeManager {
  public:
-  AlphazeroTimeManager(int64_t move_overhead, const OptionsDict& params)
+  AlphazeroTimeManager(int64_t move_overhead, const StrOptionsDict& params)
       : move_overhead_(move_overhead),
         alphazerotimepct_(
             params.GetOrDefault<float>("alphazero-time-pct", 12.0f)) {
@@ -71,7 +71,7 @@ std::unique_ptr<SearchStopper> AlphazeroTimeManager::GetStopper(
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
-    int64_t move_overhead, const OptionsDict& params) {
+    int64_t move_overhead, const StrOptionsDict& params) {
   return std::make_unique<AlphazeroTimeManager>(move_overhead, params);
 }
 }  // namespace dag_classic

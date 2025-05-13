@@ -33,7 +33,7 @@ namespace lczero {
 namespace classic {
 
 std::unique_ptr<TimeManager> MakeSimpleTimeManager(
-    int64_t move_overhead, const OptionsDict& params);
+    int64_t move_overhead, const StrOptionsDict& params);
 
 }  // namespace classic
 }  // namespace lczero

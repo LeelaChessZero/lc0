@@ -42,7 +42,7 @@ namespace lczero {
 class NetworkFactory {
  public:
   using FactoryFunc = std::function<std::unique_ptr<Network>(
-      const std::optional<WeightsFile>&, const OptionsDict&)>;
+      const std::optional<WeightsFile>&, const StrOptionsDict&)>;
 
   static NetworkFactory* Get();
 
@@ -62,7 +62,7 @@ class NetworkFactory {
   // Creates a backend given name and config.
   std::unique_ptr<Network> Create(const std::string& network,
                                   const std::optional<WeightsFile>&,
-                                  const OptionsDict& options);
+                                  const StrOptionsDict& options);
 
   // Helper function to load the network from the options. Returns nullptr
   // if no network options changed since the previous call.
@@ -108,21 +108,21 @@ class NetworkFactory {
   friend class Register;
 };
 
-#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)     \
-  namespace {                                                             \
-  static NetworkFactory::Register regH38fhs##counter(                     \
-      name,                                                               \
-      [](const std::optional<WeightsFile>& w, const OptionsDict& o) {     \
-        return func(w, o);                                                \
-      },                                                                  \
-      priority);                                                          \
-  static BackendManager::Register regK03nv##counter(                      \
-      std::make_unique<NetworkAsBackendFactory>(                          \
-          name,                                                           \
-          [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
-            return func(w, o);                                            \
-          },                                                              \
-          priority));                                                     \
+#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)        \
+  namespace {                                                                \
+  static NetworkFactory::Register regH38fhs##counter(                        \
+      name,                                                                  \
+      [](const std::optional<WeightsFile>& w, const StrOptionsDict& o) {     \
+        return func(w, o);                                                   \
+      },                                                                     \
+      priority);                                                             \
+  static BackendManager::Register regK03nv##counter(                         \
+      std::make_unique<NetworkAsBackendFactory>(                             \
+          name,                                                              \
+          [](const std::optional<WeightsFile>& w, const StrOptionsDict& o) { \
+            return func(w, o);                                               \
+          },                                                                 \
+          priority));                                                        \
   }
 
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \
@@ -130,10 +130,10 @@ class NetworkFactory {
 
 // Registers a Network.
 // Constructor of a network class must have parameters:
-// (const Weights& w, const OptionsDict& o)
+// (const Weights& w, const StrOptionsDict& o)
 // @name -- name under which the backend will be known in configs.
 // @func -- Factory function for a backend.
-//          std::unique_ptr<Network>(const WeightsFile&, const OptionsDict&)
+//          std::unique_ptr<Network>(const WeightsFile&, const StrOptionsDict&)
 // @priority -- numeric priority of a backend. Higher is higher, highest number
 // is the default backend.
 #define REGISTER_NETWORK(name, func, priority) \

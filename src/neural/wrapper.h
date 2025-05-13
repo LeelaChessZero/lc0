@@ -38,7 +38,7 @@ namespace lczero {
 class NetworkAsBackendFactory : public BackendFactory {
  public:
   using FactoryFunc = std::function<std::unique_ptr<Network>(
-      const std::optional<WeightsFile>&, const OptionsDict&)>;
+      const std::optional<WeightsFile>&, const StrOptionsDict&)>;
 
   NetworkAsBackendFactory(const std::string& name, FactoryFunc factory,
                           int priority = 0);
