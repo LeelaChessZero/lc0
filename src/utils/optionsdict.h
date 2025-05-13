@@ -107,8 +107,20 @@ class Button {
   std::shared_ptr<bool> val;
 };
 
+template <typename T>
+struct Ref {
+  Ref(const T& x) : val(&x) {}
+  template <typename H>
+  friend H AbslHashValue(H h, const Ref& c) {
+    return H::combine(std::move(h), c.val);
+  }
+  bool operator==(const Ref& other) const = default;
+  bool operator!=(const Ref& other) const = default;
+  const T* val;
+};
+
 using OptionsDict =
-    KeyValueTree<const OptionId*, bool, Button, int, std::string, float>;
+    KeyValueTree<Ref<OptionId>, bool, Button, int, std::string, float>;
 using StrOptionsDict = KeyValueTree<std::string, bool, int, std::string, float>;
 
 void ParseStringIntoOptionsDict(const std::string& str,

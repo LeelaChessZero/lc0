@@ -33,7 +33,7 @@ namespace lczero {
 namespace dag_classic {
 
 std::unique_ptr<TimeManager> MakeAlphazeroTimeManager(
-    int64_t move_overhead, const OptionsDict& params);
+    int64_t move_overhead, const StrOptionsDict& params);
 
 }  // namespace dag_classic
 }  // namespace lczero

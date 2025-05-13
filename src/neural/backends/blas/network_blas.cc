@@ -156,7 +156,7 @@ class BlasComputation : public NetworkComputation {
 template <bool use_eigen>
 class BlasNetwork : public Network {
  public:
-  BlasNetwork(const WeightsFile& weights, const OptionsDict& options);
+  BlasNetwork(const WeightsFile& weights, const StrOptionsDict& options);
   virtual ~BlasNetwork(){};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -980,7 +980,7 @@ void BlasComputation<use_eigen>::EncodePlanes(const InputPlanes& sample,
 
 template <bool use_eigen>
 BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
-                                    const OptionsDict& options)
+                                    const StrOptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
@@ -1111,7 +1111,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
 template <bool use_eigen>
 std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const StrOptionsDict& options) {
   if (!w) {
     throw Exception("The " + std::string(use_eigen ? "eigen" : "blas") +
                     " backend requires a network file.");

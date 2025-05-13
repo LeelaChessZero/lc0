@@ -66,7 +66,7 @@ class LegacyStopper : public TimeLimitStopper {
 
 class LegacyTimeManager : public TimeManager {
  public:
-  LegacyTimeManager(int64_t move_overhead, const OptionsDict& params)
+  LegacyTimeManager(int64_t move_overhead, const StrOptionsDict& params)
       : move_overhead_(move_overhead),
         slowmover_(params.GetOrDefault<float>("slowmover", 1.0f)),
         time_curve_midpoint_(
@@ -167,7 +167,7 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params) {
+                                                   const StrOptionsDict& params) {
   return std::make_unique<LegacyTimeManager>(move_overhead, params);
 }
 }  // namespace classic

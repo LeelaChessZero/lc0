@@ -98,6 +98,10 @@ class KeyValueTree {
   // Adds alias dictionary.
   void AddAliasDict(const KeyValueTree* dict);
 
+  // Throws an exception for the first option in the dict that has not been read
+  // to find syntax errors in options added using AddSubdictFromString.
+  void CheckAllOptionsRead(const std::string& path_from_parent) const;
+
   // Returns true if the subdictionary with the given name exists.
   bool HasSubdict(const std::string& name) const;
 

@@ -70,8 +70,9 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
 std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
-  OptionsDict tm_options;
-  tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
+  StrOptionsDict tm_options;
+  ParseStringIntoOptionsDict(options.Get<std::string>(kTimeManagerId),
+                               &tm_options);
   if (!options.IsDefault<float>(kSlowMoverId)) {
     // Assume that default behavior of simple and normal mode is the same.
     float slowmover = options.Get<float>(kSlowMoverId);

@@ -85,7 +85,7 @@ std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
   }
 }
 
-MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
+MetalNetwork::MetalNetwork(const WeightsFile& file, const StrOptionsDict& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()} {
@@ -256,7 +256,7 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
-                                          const OptionsDict& options) {
+                                          const StrOptionsDict& options) {
   if (!w) {
     throw Exception("The Metal backend requires a network file.");
   }

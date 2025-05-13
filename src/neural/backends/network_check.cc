@@ -271,19 +271,19 @@ class CheckNetwork : public Network {
   static constexpr double kDefaultRelativeTolerance = 1e-4;
 
   CheckNetwork(const std::optional<WeightsFile>& weights,
-               const OptionsDict& options) {
+               const StrOptionsDict& options) {
     params_.mode = kDefaultMode;
     params_.absolute_tolerance = kDefaultAbsoluteTolerance;
     params_.relative_tolerance = kDefaultRelativeTolerance;
     check_frequency_ = kDefaultCheckFrequency;
 
-    OptionsDict dict1;
+    StrOptionsDict dict1;
     std::string backendName1 = "opencl";
-    OptionsDict& backend1_dict = dict1;
+    StrOptionsDict& backend1_dict = dict1;
 
-    OptionsDict dict2;
+    StrOptionsDict dict2;
     std::string backendName2 = "eigen";
-    OptionsDict& backend2_dict = dict2;
+    StrOptionsDict& backend2_dict = dict2;
 
     const std::string mode = options.GetOrDefault<std::string>("mode", "check");
     if (mode == "check") {
@@ -378,7 +378,7 @@ class CheckNetwork : public Network {
 };
 
 std::unique_ptr<Network> MakeCheckNetwork(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const StrOptionsDict& options) {
   return std::make_unique<CheckNetwork>(weights, options);
 }
 

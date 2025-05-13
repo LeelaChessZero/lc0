@@ -34,7 +34,7 @@ namespace lczero {
 namespace dag_classic {
 
 std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params);
+                                                   const StrOptionsDict& params);
 
 }  // namespace dag_classic
 }  // namespace lczero
