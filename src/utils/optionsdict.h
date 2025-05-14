@@ -77,19 +77,19 @@ class Button {
 };
 
 template <typename T>
-struct Ref {
-  Ref(const T& x) : val(&x) {}
+struct Ref : public std::reference_wrapper<T> {
+  using std::reference_wrapper<T>::reference_wrapper;
   template <typename H>
   friend H AbslHashValue(H h, const Ref& c) {
-    return H::combine(std::move(h), c.val);
+    return H::combine(std::move(h), &c.get());
   }
-  bool operator==(const Ref& other) const = default;
-  bool operator!=(const Ref& other) const = default;
-  const T* val;
+  bool operator==(const Ref& other) const {
+    return &this->get() == &other.get();
+  }
 };
 
 using OptionsDict =
-    KeyValueTree<Ref<OptionId>, bool, Button, int, std::string, float>;
+    KeyValueTree<Ref<const OptionId>, bool, Button, int, std::string, float>;
 using StrOptionsDict = KeyValueTree<std::string, bool, int, std::string, float>;
 
 void ParseStringIntoOptionsDict(const std::string& str,
