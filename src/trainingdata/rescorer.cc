@@ -1211,8 +1211,8 @@ void RunRescorer() {
 
   if (!options.ProcessAllFlags()) return;
 
-  if (options.GetOptionsDict().IsDefault<std::string>(kOutputDirId) &&
-      options.GetOptionsDict().IsDefault<std::string>(kNnuePlainFileId)) {
+  if (options.GetOptionsDict().IsDefault(kOutputDirId) &&
+      options.GetOptionsDict().IsDefault(kNnuePlainFileId)) {
     std::cerr << "Must provide an output dir or NNUE plain file." << std::endl;
     return;
   }

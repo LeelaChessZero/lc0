@@ -31,12 +31,14 @@
 
 #include <variant>
 
+#include "utils/exception.h"
+
 namespace lczero {
 
 template <typename K, typename... V>
-class KeyValueTree {
+class CascadingDict {
  public:
-  explicit KeyValueTree(const KeyValueTree* parent = nullptr)
+  explicit CascadingDict(const CascadingDict* parent = nullptr)
       : parent_(parent) {}
 
   // e.g. dict.Get<int>(&"threads")
@@ -61,6 +63,10 @@ class KeyValueTree {
   template <typename T>
   void EnsureExists(const K& key) const;
 
+  // Checks whether the given key exists for any type. Does not fall back to
+  // check parents.
+  bool OwnKeyExists(const K& key) const;
+
   // Checks whether the given key exists for given type. Does not fall back to
   // check parents.
   template <typename T>
@@ -76,27 +82,26 @@ class KeyValueTree {
 
   // Get reference to assign value to.
   template <typename T>
-  T& GetRef(const K& key);
+  T& GetOwnRef(const K& key);
 
   // Returns true when the value is not set anywhere maybe except the root
   // dictionary;
-  template <typename T>
   bool IsDefault(const K& key) const;
 
   // Returns subdictionary. Throws exception if doesn't exist.
-  const KeyValueTree& GetSubdict(const std::string& name) const;
+  const CascadingDict& GetSubdict(const std::string& name) const;
 
   // Returns subdictionary. Throws exception if doesn't exist.
-  KeyValueTree* GetMutableSubdict(const std::string& name);
+  CascadingDict* GetMutableSubdict(const std::string& name);
 
   // Creates subdictionary. Throws exception if already exists.
-  KeyValueTree* AddSubdict(const std::string& name);
+  CascadingDict* AddSubdict(const std::string& name);
 
   // Returns list of subdictionaries.
   std::vector<std::string> ListSubdicts() const;
 
   // Adds alias dictionary.
-  void AddAliasDict(const KeyValueTree* dict);
+  void AddAliasDict(const CascadingDict* dict);
 
   // Throws an exception for the first option in the dict that has not been read
   // to find syntax errors in options added using AddSubdictFromString.
@@ -110,11 +115,162 @@ class KeyValueTree {
     std::variant<V...> value;
   };
 
-  const KeyValueTree* parent_ = nullptr;
+  // Tries various ways to get printable string representation of the key.
+  static std::string KeyAsString(const K& key);
+
+  const CascadingDict* parent_ = nullptr;
   absl::flat_hash_map<K, ValueType> dict_;
-  absl::flat_hash_map<std::string, KeyValueTree> subdicts_;
-  std::vector<const KeyValueTree*> aliases_;
+  absl::flat_hash_map<std::string, CascadingDict> subdicts_;
+  std::vector<const CascadingDict*> aliases_;
 };
+
+template <typename K, typename... V>
+template <typename T>
+T CascadingDict<K, V...>::Get(const K& key) const {
+  for (const auto* alias : aliases_) {
+    const auto value = alias->template OwnGet<T>(key);
+    if (value) return *value;
+  }
+  if (parent_) return parent_->Get<T>(key);
+  throw Exception("Key [" + KeyAsString(key) + "] was not set in options.");
+};
+
+template <typename K, typename... V>
+template <typename T>
+std::optional<T> CascadingDict<K, V...>::OwnGet(const K& key) const {
+  const auto it = dict_.find(key);
+  if (it == dict_.end()) return std::nullopt;
+  if (!std::holds_alternative<T>(it->second.value)) {
+    throw Exception("Key [" + KeyAsString(key) + "] is not of expected type.");
+  }
+  return std::get<T>(it->second.value);
+}
+
+template <typename K, typename... V>
+bool CascadingDict<K, V...>::KeyExists(const K& key) const {
+  for (const auto* alias : aliases_) {
+    if (alias->OwnKeyExists(key)) return true;
+  }
+  return parent_ && parent_->KeyExists(key);
+}
+
+template <typename K, typename... V>
+template <typename T>
+bool CascadingDict<K, V...>::Exists(const K& key) const {
+  for (const auto* alias : aliases_) {
+    if (alias->template OwnExists<T>(key)) return true;
+  }
+  return parent_ && parent_->Exists<T>(key);
+}
+
+template <typename K, typename... V>
+template <typename T>
+void CascadingDict<K, V...>::EnsureExists(const K& key) const {
+  if (!Exists<T>(key)) {
+    throw Exception("Key [" + KeyAsString(key) + "] is not set.");
+  }
+}
+
+template <typename K, typename... V>
+bool CascadingDict<K, V...>::OwnKeyExists(const K& key) const {
+  return dict_.find(key) != dict_.end();
+}
+
+template <typename K, typename... V>
+template <typename T>
+bool CascadingDict<K, V...>::OwnExists(const K& key) const {
+  const auto it = dict_.find(key);
+  return it != dict_.end() && std::holds_alternative<T>(it->second.value);
+}
+
+template <typename K, typename... V>
+template <typename T>
+T CascadingDict<K, V...>::GetOrDefault(const K& key,
+                                       const T& default_val) const {
+  for (const auto* alias : aliases_) {
+    const auto value = alias->template OwnGet<T>(key);
+    if (value) return *value;
+  }
+  if (parent_) return parent_->GetOrDefault<T>(key, default_val);
+  return default_val;
+}
+
+template <typename K, typename... V>
+template <typename T>
+void CascadingDict<K, V...>::Set(const K& key, const T& value) {
+  GetOwnRef<T>(key) = value;
+}
+
+// Get reference to assign value to.
+template <typename K, typename... V>
+template <typename T>
+T& CascadingDict<K, V...>::GetOwnRef(const K& key) {
+  auto it = dict_.find(key);
+  if (it != dict_.end() && !std::holds_alternative<T>(it->second.value)) {
+    throw Exception("Key [" + KeyAsString(key) + "] is not of expected type.");
+  }
+  if (it == dict_.end()) {
+    it = dict_.emplace(key, ValueType{T{}}).first;
+  }
+  return std::get<T>(it->second.value);
+}
+
+template <typename K, typename... V>
+bool CascadingDict<K, V...>::IsDefault(const K& key) const {
+  if (!parent_) return true;
+  for (const auto* alias : aliases_) {
+    if (alias->OwnKeyExists(key)) return false;
+  }
+  return parent_->IsDefault(key);
+}
+
+// Type trait to check if T is convertible to std::string
+template <typename T>
+struct is_string_convertible {
+  template <typename U>
+  static auto test(U* u) -> decltype(std::string(*u), std::true_type{});
+  static std::false_type test(...);
+  static constexpr bool value = decltype(test(static_cast<T*>(nullptr)))::value;
+};
+
+// Type trait to check if T has an AsString() method
+template <typename T>
+struct has_as_string {
+ private:
+  template <typename U>
+  static auto test(U* u) -> decltype(u->AsString(), std::true_type{});
+  static std::false_type test(...);
+
+ public:
+  static constexpr bool value = decltype(test(static_cast<T*>(nullptr)))::value;
+};
+
+// Type trait to check if std::to_string works with T
+template <typename T>
+struct has_std_to_string {
+ private:
+  template <typename U>
+  static auto test(U* u) -> decltype(std::to_string(*u), std::true_type{});
+  static std::false_type test(...);
+
+ public:
+  static constexpr bool value = decltype(test(static_cast<T*>(nullptr)))::value;
+};
+
+template <typename K, typename... V>
+std::string CascadingDict<K, V...>::KeyAsString(const K& key) {
+  if constexpr (is_string_convertible<K>::value) {
+    return std::string(key);
+  } else if constexpr (has_as_string<K>::value) {
+    return key.AsString();
+  } else if constexpr (has_std_to_string<K>::value) {
+    return std::to_string(key);
+  } else {
+    std::ostringstream oss;
+    oss << &key;
+    return oss.str();
+  }
+}
 
 /*
 // Creates options dict from string. Example of a string:
@@ -240,11 +396,11 @@ bool OptionsDict::IsDefault(const std::string& key) const {
   for (const auto* alias : aliases_) {
     if (alias->OwnExists<T>(key)) return false;
   }
-  return parent_->IsDefault<T>(key);
+  return parent_->IsDefault(key);
 }
 template <typename T>
 bool OptionsDict::IsDefault(const OptionId& option_id) const {
-  return IsDefault<T>(GetOptionId(option_id));
+  return IsDefault(GetOptionId(option_id));
 }
 
 */

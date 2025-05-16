@@ -88,7 +88,7 @@ class OptionsParser {
   typename Option::ValueType& Add(Args&&... args) {
     options_.emplace_back(
         std::make_unique<Option>(std::forward<Args>(args)...));
-    return defaults_.GetRef<typename Option::ValueType>(
+    return defaults_.GetOwnRef<typename Option::ValueType>(
         options_.back()->GetId());
   }
 
