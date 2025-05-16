@@ -112,5 +112,5 @@ struct InputsOutputs {
   sycl::queue& q_ct1;
 };
 
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero

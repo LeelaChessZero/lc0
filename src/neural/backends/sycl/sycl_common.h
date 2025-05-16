@@ -53,5 +53,5 @@ void CublasError(int status, const char* file, const int& line);
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero

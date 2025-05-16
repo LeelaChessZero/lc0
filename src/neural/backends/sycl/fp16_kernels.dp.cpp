@@ -953,5 +953,5 @@ template void OutputInputTransform<sycl::half, false, ACTIVATION_MISH, true, fal
     const sycl::half* bias, const sycl::half* w1, const sycl::half* b1, const sycl::half* w2,
     const sycl::half* b2, sycl::queue &sycl_queue);
 
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero

@@ -146,5 +146,5 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, sycl::queue &sycl_queue);
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero

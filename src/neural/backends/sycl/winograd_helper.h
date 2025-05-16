@@ -983,5 +983,5 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
   }
 }
 
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero

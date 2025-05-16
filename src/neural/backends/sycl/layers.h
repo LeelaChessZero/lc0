@@ -515,5 +515,5 @@ class ValueHead : public BaseLayer<DataType> {
 };
 
 
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero

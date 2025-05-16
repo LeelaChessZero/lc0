@@ -2855,5 +2855,5 @@ void CublasError(int status, const char* file, const int& line) {
 }
 #endif
 
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero

@@ -1950,5 +1950,5 @@ template void applyInputGating<sycl::half>(sycl::half* output, const sycl::half*
 template void applyInputGating<float>(float* output, const float* input,
                                       const float* mult, const float* add,
                                       int N, int C, int output_size, sycl::queue &sycl_queue);
-}  // namespace cudnn_backend
+}  // namespace sycldnn_backend
 }  // namespace lczero
