@@ -121,10 +121,10 @@ struct Ref : public std::reference_wrapper<T> {
 
 using OptionsDict =
     CascadingDict<Ref<const OptionId>, bool, Button, int, std::string, float>;
-using StrOptionsDict =
+using InlineConfig =
     CascadingDict<std::string, bool, int, std::string, float>;
 
 void ParseStringIntoOptionsDict(const std::string& str,
-                                StrOptionsDict* options_dict);
+                                InlineConfig* options_dict);
 
 }  // namespace lczero

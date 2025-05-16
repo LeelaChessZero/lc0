@@ -274,7 +274,7 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(
 // Makes an XLA network. First converts the weights to ONNX, and then calls
 // FillXlaRunnerFromOnnx to convert them further to HLO and them compile them.
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
-                                        const StrOptionsDict& opts) {
+                                        const InlineConfig& opts) {
   if (!w) throw Exception("The XLA backend requires a network file.");
   int device = opts.GetOrDefault<int>("device", 0);
   // Note: if the plugin_path does NOT contain a slash, it's looked up in the

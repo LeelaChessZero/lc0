@@ -36,7 +36,7 @@ namespace dag_classic {
 float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness);
 
 std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
-                                                   const StrOptionsDict& params);
+                                                   const InlineConfig& params);
 
 }  // namespace dag_classic
 }  // namespace lczero

@@ -306,7 +306,7 @@ class TFNetworkComputation;
 template <bool CPU>
 class TFNetwork : public Network {
  public:
-  TFNetwork(const WeightsFile& file, const StrOptionsDict& options, bool wdl);
+  TFNetwork(const WeightsFile& file, const InlineConfig& options, bool wdl);
 
   std::unique_ptr<NetworkComputation> NewComputation() override;
 
@@ -434,7 +434,7 @@ void TFNetworkComputation<true>::PrepareInput() {
 }  // namespace
 
 template <bool CPU>
-TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const StrOptionsDict& options,
+TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const InlineConfig& options,
                           bool wdl)
     : scope_(Scope::NewRootScope()),
       capabilities_{file.format().network_format().input(),
@@ -502,7 +502,7 @@ std::unique_ptr<NetworkComputation> TFNetwork<CPU>::NewComputation() {
 
 template <bool CPU>
 std::unique_ptr<Network> MakeTFNetwork(const std::optional<WeightsFile>& w,
-                                       const StrOptionsDict& options) {
+                                       const InlineConfig& options) {
   if (!w) {
     throw Exception("The " +
                     std::string(CPU ? "tensorflow-cc-cpu" : "tensorflow-cc") +

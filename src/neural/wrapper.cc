@@ -179,7 +179,7 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
     const OptionsDict& options) {
   const std::string backend_options =
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
-  StrOptionsDict network_options;
+  InlineConfig network_options;
   ParseStringIntoOptionsDict(backend_options, &network_options);
 
   std::string net_path =

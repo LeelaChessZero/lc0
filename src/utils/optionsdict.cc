@@ -225,14 +225,14 @@ class Parser {
  public:
   Parser(const std::string& str) : lexer_(str) {}
 
-  void ParseMain(StrOptionsDict* dict) {
+  void ParseMain(InlineConfig* dict) {
     ParseList(dict);            // Parse list of options
     EnsureToken(Lexer::L_EOF);  // Check that everything is read.
   }
 
  private:
   // Returns first non-existing subdict with name like "[0]", "[24]", etc.
-  static std::string GetFreeSubdictName(StrOptionsDict* dict) {
+  static std::string GetFreeSubdictName(InlineConfig* dict) {
     for (int idx = 0;; ++idx) {
       std::string id = "[" + std::to_string(idx) + "]";
       if (!dict->HasSubdict(id)) return id;
@@ -248,7 +248,7 @@ class Parser {
   // * (comma separated list) -- name will be synthesized (e.g. "[1]")
   // * subdict() -- empty list
   // * subdict -- the same.
-  void ParseList(StrOptionsDict* dict) {
+  void ParseList(InlineConfig* dict) {
     while (true) {
       std::string identifier;
       if (lexer_.GetToken() == Lexer::L_LEFT_PARENTHESIS) {
@@ -283,7 +283,7 @@ class Parser {
       lexer_.RaiseError("Expected token #" + std::to_string(type));
   }
 
-  void ReadVal(StrOptionsDict* dict, const std::string& id) {
+  void ReadVal(InlineConfig* dict, const std::string& id) {
     if (lexer_.GetToken() == Lexer::L_FLOAT) {
       dict->Set<float>(id, lexer_.GetFloatVal());
     } else if (lexer_.GetToken() == Lexer::L_INTEGER) {
@@ -308,8 +308,8 @@ class Parser {
     lexer_.Next();
   }
 
-  void ReadSubDict(StrOptionsDict* dict, const std::string& identifier) {
-    StrOptionsDict* new_dict = dict->AddSubdict(identifier);
+  void ReadSubDict(InlineConfig* dict, const std::string& identifier) {
+    InlineConfig* new_dict = dict->AddSubdict(identifier);
     // If opening parentheses, read list of a subdict, otherwise list is empty,
     // so return immediately.
     if (lexer_.GetToken() == Lexer::L_LEFT_PARENTHESIS) {
@@ -327,7 +327,7 @@ class Parser {
 }  // namespace
 
 /*
-void StrOptionsDict::AddSubdictFromString(const std::string& str) {
+void InlineConfig::AddSubdictFromString(const std::string& str) {
   Parser parser(str);
   parser.ParseMain(this);
 }

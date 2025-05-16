@@ -151,7 +151,7 @@ class OnednnNetworkComputation : public NetworkComputation {
 
 class OnednnNetwork : public Network {
  public:
-  OnednnNetwork(const WeightsFile& file, const StrOptionsDict& options)
+  OnednnNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -879,7 +879,7 @@ void OnednnNetworkComputation::ComputeBlocking() {
 }
 
 std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
-                                           const StrOptionsDict& options) {
+                                           const InlineConfig& options) {
   if (!w) {
     throw Exception("The oneDNN backend requires a network file.");
   }

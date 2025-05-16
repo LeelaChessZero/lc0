@@ -41,7 +41,7 @@ namespace {
 
 class Params {
  public:
-  Params(const StrOptionsDict& /* params */, int64_t move_overhead);
+  Params(const InlineConfig& /* params */, int64_t move_overhead);
 
   using MovesLeftEstimator = std::function<float(const NodeTree&)>;
 
@@ -126,9 +126,9 @@ class Params {
   const MovesLeftEstimator moves_left_estimator_;
 };
 
-Params::MovesLeftEstimator CreateMovesLeftEstimator(const StrOptionsDict& params) {
+Params::MovesLeftEstimator CreateMovesLeftEstimator(const InlineConfig& params) {
   // The only estimator we have now is MLE-legacy (Moves left estimator).
-  const StrOptionsDict& mle_dict = params.HasSubdict("mle-legacy")
+  const InlineConfig& mle_dict = params.HasSubdict("mle-legacy")
                                     ? params.GetSubdict("mle-legacy")
                                     : params;
   return [midpoint = mle_dict.GetOrDefault<float>("midpoint", 45.2f),
@@ -139,7 +139,7 @@ Params::MovesLeftEstimator CreateMovesLeftEstimator(const StrOptionsDict& params
   };
 }
 
-Params::Params(const StrOptionsDict& params, int64_t move_overhead)
+Params::Params(const InlineConfig& params, int64_t move_overhead)
     : move_overhead_ms_(move_overhead),
       initial_tree_reuse_(params.GetOrDefault<float>("init-tree-reuse", 0.52f)),
       max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.73f)),
@@ -270,7 +270,7 @@ class SmoothStopper : public SearchStopper {
 
 class SmoothTimeManager : public TimeManager {
  public:
-  SmoothTimeManager(int64_t move_overhead, const StrOptionsDict& params)
+  SmoothTimeManager(int64_t move_overhead, const InlineConfig& params)
       : params_(params, move_overhead) {}
 
   float UpdateNps(int64_t time_since_movestart_ms,
@@ -633,7 +633,7 @@ void SmoothStopper::OnSearchDone(const IterationStats& stats) {
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
-                                                   const StrOptionsDict& params) {
+                                                   const InlineConfig& params) {
   return std::make_unique<SmoothTimeManager>(move_overhead, params);
 }
 

@@ -457,7 +457,7 @@ class TrivialNetworkComputation : public NetworkComputation {
 
 class TrivialNetwork : public Network {
  public:
-  TrivialNetwork(const StrOptionsDict& options)
+  TrivialNetwork(const InlineConfig& options)
       : capabilities_{
             static_cast<pblczero::NetworkFormat::InputFormat>(
                 options.GetOrDefault<int>(
@@ -481,7 +481,7 @@ class TrivialNetwork : public Network {
 }  // namespace
 
 std::unique_ptr<Network> MakeTrivialNetwork(
-    const std::optional<WeightsFile>& /*weights*/, const StrOptionsDict& options) {
+    const std::optional<WeightsFile>& /*weights*/, const InlineConfig& options) {
   return std::make_unique<TrivialNetwork>(options);
 }
 

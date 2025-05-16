@@ -73,7 +73,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
 std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
-  StrOptionsDict tm_options;
+  InlineConfig tm_options;
   if (options.Exists<std::string>(kTimeManagerId)) {
     ParseStringIntoOptionsDict(options.Get<std::string>(kTimeManagerId),
                                &tm_options);

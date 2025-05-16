@@ -103,7 +103,7 @@ class DemuxingComputation : public NetworkComputation {
 class DemuxingNetwork : public Network {
  public:
   DemuxingNetwork(const std::optional<WeightsFile>& weights,
-                  const StrOptionsDict& options) {
+                  const InlineConfig& options) {
     minimum_split_size_ = options.GetOrDefault<int>("minimum-split-size", 0);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
@@ -120,7 +120,7 @@ class DemuxingNetwork : public Network {
 
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
-                  const StrOptionsDict& opts) {
+                  const InlineConfig& opts) {
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
 
     networks_.emplace_back(
@@ -254,7 +254,7 @@ void DemuxingComputation::ComputeBlocking() {
 }
 
 std::unique_ptr<Network> MakeDemuxingNetwork(
-    const std::optional<WeightsFile>& weights, const StrOptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
   return std::make_unique<DemuxingNetwork>(weights, options);
 }
 

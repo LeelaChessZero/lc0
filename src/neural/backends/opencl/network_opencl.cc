@@ -233,7 +233,7 @@ class OpenCLNetwork : public Network {
  public:
   virtual ~OpenCLNetwork() {};
 
-  OpenCLNetwork(const WeightsFile& file, const StrOptionsDict& options)
+  OpenCLNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()},
@@ -430,7 +430,7 @@ class OpenCLNetwork : public Network {
 };
 
 std::unique_ptr<Network> MakeOpenCLNetwork(const std::optional<WeightsFile>& w,
-                                           const StrOptionsDict& options) {
+                                           const InlineConfig& options) {
   if (!w) {
     throw Exception("The opencl backend requires a network file.");
   }
