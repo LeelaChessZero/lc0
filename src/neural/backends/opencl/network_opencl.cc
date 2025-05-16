@@ -247,7 +247,7 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    if (options.IsDefault<std::string>("tuner_file")) {
+    if (options.IsDefault("tuner_file")) {
       std::string user_cache_path = GetUserCacheDirectory();
       if (!user_cache_path.empty()) {
         user_cache_path += "lc0/";

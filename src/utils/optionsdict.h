@@ -34,7 +34,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "utils/keyvaluetree.h"
+#include "utils/cascading_dict.h"
 
 namespace lczero {
 
@@ -89,8 +89,9 @@ struct Ref : public std::reference_wrapper<T> {
 };
 
 using OptionsDict =
-    KeyValueTree<Ref<const OptionId>, bool, Button, int, std::string, float>;
-using StrOptionsDict = KeyValueTree<std::string, bool, int, std::string, float>;
+    CascadingDict<Ref<const OptionId>, bool, Button, int, std::string, float>;
+using StrOptionsDict =
+    CascadingDict<std::string, bool, int, std::string, float>;
 
 void ParseStringIntoOptionsDict(const std::string& str,
                                 StrOptionsDict* options_dict);
