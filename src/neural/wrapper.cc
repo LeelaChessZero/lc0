@@ -180,7 +180,7 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
   const std::string backend_options =
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
   InlineConfig network_options;
-  ParseStringIntoOptionsDict(backend_options, &network_options);
+  ParseInlineConfig(backend_options, &network_options);
 
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);

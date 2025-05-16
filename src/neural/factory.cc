@@ -95,7 +95,7 @@ std::unique_ptr<Network> NetworkFactory::LoadNetwork(
   std::optional<WeightsFile> weights;
   if (!net_path.empty()) weights = LoadWeights(net_path);
   InlineConfig network_options;
-  ParseStringIntoOptionsDict(backend_options, &network_options);
+  ParseInlineConfig(backend_options, &network_options);
 
   auto ptr = NetworkFactory::Get()->Create(backend, std::move(weights),
                                            network_options);

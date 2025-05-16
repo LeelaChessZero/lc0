@@ -36,50 +36,6 @@
 
 namespace lczero {
 
-/*
-const OptionsDict& OptionsDict::GetSubdict(const std::string& name) const {
-  const auto iter = subdicts_.find(name);
-  if (iter == subdicts_.end())
-    throw Exception("Subdictionary not found: " + name);
-  return iter->second;
-}
-
-// Returns subdictionary. Throws exception if doesn't exist.
-OptionsDict* OptionsDict::GetMutableSubdict(const std::string& name) {
-  auto iter = subdicts_.find(name);
-  if (iter == subdicts_.end())
-    throw Exception("Subdictionary not found: " + name);
-  return &iter->second;
-}
-
-// Creates subdictionary. Throws exception if already exists.
-OptionsDict* OptionsDict::AddSubdict(const std::string& name) {
-  const auto iter = subdicts_.find(name);
-  if (iter != subdicts_.end())
-    throw Exception("Subdictionary already exists: " + name);
-  const auto x = &subdicts_.emplace(name, this).first->second;
-  return x;
-}
-
-void OptionsDict::AddAliasDict(const OptionsDict* dict) {
-  aliases_.push_back(dict);
-}
-
-// Returns list of subdictionaries.
-std::vector<std::string> OptionsDict::ListSubdicts() const {
-  std::vector<std::string> result;
-  for (const auto& subdict : subdicts_) {
-    result.emplace_back(subdict.first);
-  }
-  return result;
-}
-
-bool OptionsDict::HasSubdict(const std::string& name) const {
-  return subdicts_.find(name) != subdicts_.end();
-}
-
-*/
-
 namespace {
 
 class Lexer {
@@ -326,8 +282,7 @@ class Parser {
 
 }  // namespace
 
-void ParseStringIntoOptionsDict(const std::string& str,
-                                InlineConfig* options_dict) {
+void ParseInlineConfig(const std::string& str, InlineConfig* options_dict) {
   Parser parser(str);
   parser.ParseMain(options_dict);
 }
