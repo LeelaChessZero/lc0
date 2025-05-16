@@ -326,23 +326,10 @@ class Parser {
 
 }  // namespace
 
-/*
-void InlineConfig::AddSubdictFromString(const std::string& str) {
+void ParseStringIntoOptionsDict(const std::string& str,
+                                InlineConfig* options_dict) {
   Parser parser(str);
-  parser.ParseMain(this);
+  parser.ParseMain(options_dict);
 }
-
-void OptionsDict::CheckAllOptionsRead(
-    const std::string& path_from_parent) const {
-  std::string s = path_from_parent.empty() ? "" : path_from_parent + '.';
-  TypeDict<bool>::EnsureNoUnusedOptions("boolean", s);
-  TypeDict<int>::EnsureNoUnusedOptions("integer", s);
-  TypeDict<float>::EnsureNoUnusedOptions("floating point", s);
-  TypeDict<std::string>::EnsureNoUnusedOptions("string", s);
-  for (auto const& dict : subdicts_) {
-    dict.second.CheckAllOptionsRead(s + dict.first);
-  }
-}
-  */
 
 }  // namespace lczero

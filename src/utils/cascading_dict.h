@@ -80,7 +80,8 @@ class CascadingDict {
   template <typename T>
   void Set(const K& key, const T& value);
 
-  // Get reference to assign value to.
+  // Get reference to assign value to. It's considered a write operation (i.e.
+  // resets read-after-set flag).
   template <typename T>
   T& GetOwnRef(const K& key);
 
@@ -113,6 +114,7 @@ class CascadingDict {
  private:
   struct ValueType {
     std::variant<V...> value;
+    mutable bool was_read_after_set = false;
   };
 
   // Tries various ways to get printable string representation of the key.
@@ -143,6 +145,7 @@ std::optional<T> CascadingDict<K, V...>::OwnGet(const K& key) const {
   if (!std::holds_alternative<T>(it->second.value)) {
     throw Exception("Key [" + KeyAsString(key) + "] is not of expected type.");
   }
+  it->second.was_read_after_set = true;
   return std::get<T>(it->second.value);
 }
 
@@ -201,7 +204,6 @@ void CascadingDict<K, V...>::Set(const K& key, const T& value) {
   GetOwnRef<T>(key) = value;
 }
 
-// Get reference to assign value to.
 template <typename K, typename... V>
 template <typename T>
 T& CascadingDict<K, V...>::GetOwnRef(const K& key) {
@@ -212,6 +214,7 @@ T& CascadingDict<K, V...>::GetOwnRef(const K& key) {
   if (it == dict_.end()) {
     it = dict_.emplace(key, ValueType{T{}}).first;
   }
+  it->second.was_read_after_set = false;
   return std::get<T>(it->second.value);
 }
 
@@ -222,6 +225,69 @@ bool CascadingDict<K, V...>::IsDefault(const K& key) const {
     if (alias->OwnKeyExists(key)) return false;
   }
   return parent_->IsDefault(key);
+}
+
+template <typename K, typename... V>
+const CascadingDict<K, V...>& CascadingDict<K, V...>::GetSubdict(
+    const std::string& name) const {
+  const auto it = subdicts_.find(name);
+  if (it == subdicts_.end()) {
+    throw Exception("Subdictionary [" + name + "] doesn't exist.");
+  }
+  return it->second;
+}
+
+template <typename K, typename... V>
+CascadingDict<K, V...>* CascadingDict<K, V...>::GetMutableSubdict(
+    const std::string& name) {
+  auto it = subdicts_.find(name);
+  if (it == subdicts_.end()) {
+    throw Exception("Subdictionary [" + name + "] doesn't exist.");
+  }
+  return &it->second;
+}
+
+template <typename K, typename... V>
+CascadingDict<K, V...>* CascadingDict<K, V...>::AddSubdict(
+    const std::string& name) {
+  auto it = subdicts_.find(name);
+  if (it != subdicts_.end()) {
+    throw Exception("Subdictionary [" + name + "] already exists.");
+  }
+  return &subdicts_.emplace(name, this).first->second;
+}
+
+template <typename K, typename... V>
+std::vector<std::string> CascadingDict<K, V...>::ListSubdicts() const {
+  std::vector<std::string> result;
+  result.reserve(subdicts_.size());
+  for (const auto& [name, _] : subdicts_) result.push_back(name);
+  return result;
+}
+
+template <typename K, typename... V>
+void CascadingDict<K, V...>::AddAliasDict(const CascadingDict* dict) {
+  aliases_.push_back(dict);
+}
+
+template <typename K, typename... V>
+void CascadingDict<K, V...>::CheckAllOptionsRead(
+    const std::string& path_from_parent) const {
+  std::string prefix = path_from_parent.empty() ? "" : path_from_parent + '.';
+  for (const auto& [key, value] : dict_) {
+    if (!value.was_read_after_set) {
+      throw Exception("Option [" + prefix + KeyAsString(key) +
+                      "] was not accessed after being set.");
+    }
+  }
+  for (const auto& [name, subdict] : subdicts_) {
+    subdict.CheckAllOptionsRead(prefix + name);
+  }
+}
+
+template <typename K, typename... V>
+bool CascadingDict<K, V...>::HasSubdict(const std::string& name) const {
+  return subdicts_.find(name) != subdicts_.end();
 }
 
 // Type trait to check if T is convertible to std::string
