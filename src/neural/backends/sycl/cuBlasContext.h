@@ -19,7 +19,7 @@
 */
 
 #include <iostream>
-#include <sycl.hpp>
+#include <sycl/sycl.hpp>
 
 #ifdef USE_CUBLAS
 

@@ -487,6 +487,7 @@ class ValueHead : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetC;
   using BaseLayer<DataType>::GetH;
   using BaseLayer<DataType>::GetW;
+  using BaseLayer<DataType>::sycl_queue_;
 
  public:
   ValueHead(BaseLayer<DataType>* ip, const MultiHeadWeights::ValueHead& weights,

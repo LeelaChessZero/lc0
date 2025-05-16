@@ -676,6 +676,7 @@ if get_option('build_backends')
       has_backends = true
       message('Building SYCL')
       add_project_arguments('-fsycl', language : 'cpp')
+      add_project_link_arguments('-fsycl', language : 'cpp')
 
       files += 'src/neural/backends/sycl/layers.cc.dp.cpp'
       files += 'src/neural/backends/sycl/network_sycl.cc.dp.cpp'
