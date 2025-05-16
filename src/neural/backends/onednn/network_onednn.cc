@@ -151,7 +151,7 @@ class OnednnNetworkComputation : public NetworkComputation {
 
 class OnednnNetwork : public Network {
  public:
-  OnednnNetwork(const WeightsFile& file, const OptionsDict& options)
+  OnednnNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -174,13 +174,13 @@ class OnednnNetwork : public Network {
         options.GetOrDefault<int>("jit_cache", 1024));
 #endif
 
-    if (!options.IsDefault<int>("threads")) {
+    if (!options.IsDefault("threads")) {
       omp_set_num_threads(options.Get<int>("threads"));
     }
 
     cpu_eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
 
-    if (!options.IsDefault<int>("gpu")) {
+    if (!options.IsDefault("gpu")) {
       eng_ = dnnl::engine(dnnl::engine::kind::gpu, options.Get<int>("gpu"));
     } else {
       eng_ = cpu_eng_;
@@ -201,7 +201,7 @@ class OnednnNetwork : public Network {
     // on gpu and not on cpu (last tested with version 2.6.0). So for the time
     // being this will be overriden in every case.
     auto convolution_type = dnnl::algorithm::convolution_auto;
-    if (!options.IsDefault<bool>("winograd")) {
+    if (!options.IsDefault("winograd")) {
       if (options.Get<bool>("winograd")) {
         convolution_type = dnnl::algorithm::convolution_winograd;
       } else {
@@ -879,7 +879,7 @@ void OnednnNetworkComputation::ComputeBlocking() {
 }
 
 std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
-                                           const OptionsDict& options) {
+                                           const InlineConfig& options) {
   if (!w) {
     throw Exception("The oneDNN backend requires a network file.");
   }

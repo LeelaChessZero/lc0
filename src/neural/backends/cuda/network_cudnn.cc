@@ -156,7 +156,7 @@ class CudnnNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
+  CudnnNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -227,7 +227,7 @@ class CudnnNetwork : public Network {
       }
 
       // Override if forced from backend option
-      if (!options.IsDefault<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
+      if (!options.IsDefault("nhwc")) nhwc_ = options.Get<bool>("nhwc");
     }
 
     if (hasTensorCores)
@@ -288,7 +288,7 @@ class CudnnNetwork : public Network {
     }
 
     const bool custom_winograd_override =
-        !options.IsDefault<bool>("custom_winograd");
+        !options.IsDefault("custom_winograd");
 
     if (!custom_winograd_override && use_custom_winograd_ &&
         transformed_residual_weight_size > 0.5 * deviceProp.totalGlobalMem) {
@@ -320,7 +320,7 @@ class CudnnNetwork : public Network {
         use_res_block_winograd_fuse_opt_ = true;
       }
       // Override if set in backend-opts.
-      if (!options.IsDefault<bool>("res_block_fusing")) {
+      if (!options.IsDefault("res_block_fusing")) {
         use_res_block_winograd_fuse_opt_ =
             options.Get<bool>("res_block_fusing");
       }
@@ -1085,7 +1085,7 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
-                                          const OptionsDict& options) {
+                                          const InlineConfig& options) {
   if (!w) {
     throw Exception(
         "The cudnn" +
@@ -1154,7 +1154,7 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
 }
 
 std::unique_ptr<Network> MakeCudnnNetworkAuto(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
   // No error checking here, this will be repeated later.

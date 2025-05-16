@@ -32,13 +32,13 @@
 
 #include "search/artifacts.h"
 #include "utils/exception.h"
+#include "utils/optionsdict.h"
 
 namespace lczero {
 
 class Backend;
 struct GameState;
 struct GoParams;
-class OptionsDict;
 class OptionsParser;
 class UciResponder;
 class SyzygyTablebase;

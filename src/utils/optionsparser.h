@@ -44,7 +44,7 @@ class OptionsParser {
   class Option {
    public:
     Option(const OptionId& id);
-    virtual ~Option(){};
+    virtual ~Option() {};
     // Set value from string.
     virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
@@ -85,7 +85,7 @@ class OptionsParser {
   typename Option::ValueType& Add(Args&&... args) {
     options_.emplace_back(
         std::make_unique<Option>(std::forward<Args>(args)...));
-    return defaults_.GetRef<typename Option::ValueType>(
+    return defaults_.GetOwnRef<typename Option::ValueType>(
         options_.back()->GetId());
   }
 

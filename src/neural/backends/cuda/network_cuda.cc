@@ -120,8 +120,8 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
-  CudaNetworkComputation(CudaNetwork<DataType>* network,
-                         bool wdl, bool moves_left);
+  CudaNetworkComputation(CudaNetwork<DataType>* network, bool wdl,
+                         bool moves_left);
   ~CudaNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -184,7 +184,7 @@ class CudaNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudaNetwork : public Network {
  public:
-  CudaNetwork(const WeightsFile& file, const OptionsDict& options)
+  CudaNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -306,7 +306,7 @@ class CudaNetwork : public Network {
       use_res_block_winograd_fuse_opt_ = false;
     }
     // Override if set in backend-opts.
-    if (!options.IsDefault<bool>("res_block_fusing")) {
+    if (!options.IsDefault("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
     }
 
@@ -529,8 +529,8 @@ class CudaNetwork : public Network {
              pblczero::NetworkFormat::VALUE_WDL;
       BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
       auto value_main = std::make_unique<ValueHead<DataType>>(
-          lastlayer, head, scratch_mem_, attn_body_, wdl_, act,
-          max_batch_size_, use_gemm_ex);
+          lastlayer, head, scratch_mem_, attn_body_, wdl_, act, max_batch_size_,
+          use_gemm_ex);
       network_.emplace_back(std::move(value_main));
     }
 
@@ -1046,7 +1046,7 @@ void CudaNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const InlineConfig& options) {
   if (!w) {
     throw Exception(
         "The cuda" +
@@ -1116,7 +1116,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
 }
 
 std::unique_ptr<Network> MakeCudaNetworkAuto(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
   // No error checking here, this will be repeated later.

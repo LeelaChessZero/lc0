@@ -233,7 +233,7 @@ class OpenCLNetwork : public Network {
  public:
   virtual ~OpenCLNetwork(){};
 
-  OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
+  OpenCLNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()},
@@ -247,7 +247,7 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    if (options.IsDefault<std::string>("tuner_file")) {
+    if (options.IsDefault("tuner_file")) {
       std::string user_cache_path = GetUserCacheDirectory();
       if (!user_cache_path.empty()) {
         user_cache_path += "lc0/";
@@ -430,7 +430,7 @@ class OpenCLNetwork : public Network {
 };
 
 std::unique_ptr<Network> MakeOpenCLNetwork(const std::optional<WeightsFile>& w,
-                                           const OptionsDict& options) {
+                                           const InlineConfig& options) {
   if (!w) {
     throw Exception("The opencl backend requires a network file.");
   }

@@ -33,11 +33,11 @@
 #include <vector>
 
 #include "neural/network.h"
+#include "utils/optionsdict.h"
 #include "proto/net.pb.h"
 
 namespace lczero {
 
-class OptionsDict;
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
 
