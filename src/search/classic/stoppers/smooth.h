@@ -34,7 +34,7 @@ namespace lczero {
 namespace classic {
 
 std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
-                                                   const StrOptionsDict& params);
+                                                   const InlineConfig& params);
 
 }  // namespace classic
 }  // namespace lczero

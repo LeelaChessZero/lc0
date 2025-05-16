@@ -184,7 +184,7 @@ class CudaNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudaNetwork : public Network {
  public:
-  CudaNetwork(const WeightsFile& file, const StrOptionsDict& options)
+  CudaNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -1046,7 +1046,7 @@ void CudaNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
-                                         const StrOptionsDict& options) {
+                                         const InlineConfig& options) {
   if (!w) {
     throw Exception(
         "The cuda" +
@@ -1116,7 +1116,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
 }
 
 std::unique_ptr<Network> MakeCudaNetworkAuto(
-    const std::optional<WeightsFile>& weights, const StrOptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
   // No error checking here, this will be repeated later.

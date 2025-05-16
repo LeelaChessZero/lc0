@@ -83,7 +83,7 @@ class OnnxComputation : public NetworkComputation {
 
 class OnnxNetwork : public Network {
  public:
-  OnnxNetwork(const WeightsFile& file, const StrOptionsDict& options,
+  OnnxNetwork(const WeightsFile& file, const InlineConfig& options,
               OnnxProvider provider);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
@@ -399,7 +399,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
   return options;
 }
 
-OnnxNetwork::OnnxNetwork(const WeightsFile& file, const StrOptionsDict& opts,
+OnnxNetwork::OnnxNetwork(const WeightsFile& file, const InlineConfig& opts,
                          OnnxProvider provider)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       capabilities_{file.format().network_format().input(),
@@ -465,7 +465,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const StrOptionsDict& opts,
 
 template <OnnxProvider kProvider>
 std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
-                                         const StrOptionsDict& opts) {
+                                         const InlineConfig& opts) {
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
   if (w->has_onnx_model()) {
