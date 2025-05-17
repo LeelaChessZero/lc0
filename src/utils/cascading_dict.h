@@ -39,7 +39,7 @@ template <typename K, typename... V>
 class CascadingDict {
  public:
   explicit CascadingDict(const CascadingDict* parent = nullptr)
-      : parent_(parent) {}
+      : parent_(parent), aliases_{this} {}
 
   // e.g. dict.Get<int>(&"threads")
   // Returns value of given type. Throws exception if not found.
