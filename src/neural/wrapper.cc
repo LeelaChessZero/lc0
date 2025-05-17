@@ -179,7 +179,8 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
     const OptionsDict& options) {
   const std::string backend_options =
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
-  OptionsDict network_options;
+  OptionsDict empty_root;  // To make IsDefault work as expected.
+  OptionsDict network_options(&empty_root);
   network_options.AddSubdictFromString(backend_options);
 
   std::string net_path =
