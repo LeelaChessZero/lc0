@@ -187,8 +187,10 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
   std::optional<WeightsFile> weights;
   if (!net_path.empty()) weights = LoadWeights(net_path);
 
-  return std::make_unique<NetworkAsBackend>(
-      factory_(std::move(weights), network_options), options);
+  std::unique_ptr<Network> network =
+      factory_(std::move(weights), network_options);
+  network_options.CheckAllOptionsRead(name_);
+  return std::make_unique<NetworkAsBackend>(std::move(network), options);
 }
 
 }  // namespace lczero
