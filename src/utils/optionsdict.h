@@ -85,6 +85,15 @@ class OptionId {
   char short_flag() const { return short_flag_; }
   uint64_t visibility_mask() const { return visibility_mask_; }
 
+  friend std::ostream& operator<<(std::ostream& os, const OptionId& id) {
+    os << "OptionId [";
+    if (id.long_flag_ && *id.long_flag_) os << "--" << id.long_flag_;
+    if (id.short_flag_) os << " -" << id.short_flag_;
+    if (id.uci_option_ && *id.uci_option_) os << " uci:" << id.uci_option_;
+    os << "]";
+    return os;
+  }
+
  private:
   const char* const long_flag_;
   const char* const uci_option_;

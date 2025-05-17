@@ -239,11 +239,9 @@ files += [
 ]
 
 includes += include_directories('src')
-
 absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
-deps += absl.get_variable('absl_base_dep').as_system()
-deps += absl.get_variable('absl_container_dep').as_system()
-deps += absl.get_variable('absl_hash_dep').as_system()
+absl_dep = absl.get_variable('absl_container_dep').as_system()
+deps += absl_dep
 deps += dependency('threads')
 
 #############################################################################
@@ -809,7 +807,7 @@ if get_option('gtest')
 
   test('OptionsParserTest',
     executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
-    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, absl_dep]
   ), args: '--gtest_output=xml:optionsparser.xml', timeout: 90)
 
   test('SyzygyTest',
@@ -825,7 +823,7 @@ if get_option('gtest')
 
   test('EngineTest',
     executable('engine_test', 'src/engine_test.cc', pb_files,
-    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock, absl_dep]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif
 
