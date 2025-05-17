@@ -435,7 +435,7 @@ int ResultForData(const V6TrainingData& data) {
 
 std::string AsNnueString(const Position& p, Move m, float q, int result) {
   std::ostringstream out;
-  out << "fen " << GetFen(p) << std::endl;
+  out << "fen " << PositionToFen(p) << std::endl;
   if (p.IsBlackToMove()) m.Flip();
   out << "move " << m.ToString(false) << std::endl;
   // Formula from PR1477 adjusted for SF PawnValueEg.
