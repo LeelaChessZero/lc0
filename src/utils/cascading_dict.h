@@ -290,52 +290,11 @@ bool CascadingDict<K, V...>::HasSubdict(const std::string& name) const {
   return subdicts_.find(name) != subdicts_.end();
 }
 
-// Type trait to check if T is convertible to std::string
-template <typename T>
-struct is_string_convertible {
-  template <typename U>
-  static auto test(U* u) -> decltype(std::string(*u), std::true_type{});
-  static std::false_type test(...);
-  static constexpr bool value = decltype(test(static_cast<T*>(nullptr)))::value;
-};
-
-// Type trait to check if T has an AsString() method
-template <typename T>
-struct has_as_string {
- private:
-  template <typename U>
-  static auto test(U* u) -> decltype(u->AsString(), std::true_type{});
-  static std::false_type test(...);
-
- public:
-  static constexpr bool value = decltype(test(static_cast<T*>(nullptr)))::value;
-};
-
-// Type trait to check if std::to_string works with T
-template <typename T>
-struct has_std_to_string {
- private:
-  template <typename U>
-  static auto test(U* u) -> decltype(std::to_string(*u), std::true_type{});
-  static std::false_type test(...);
-
- public:
-  static constexpr bool value = decltype(test(static_cast<T*>(nullptr)))::value;
-};
-
 template <typename K, typename... V>
 std::string CascadingDict<K, V...>::KeyAsString(const K& key) {
-  if constexpr (is_string_convertible<K>::value) {
-    return std::string(key);
-  } else if constexpr (has_as_string<K>::value) {
-    return key.AsString();
-  } else if constexpr (has_std_to_string<K>::value) {
-    return std::to_string(key);
-  } else {
-    std::ostringstream oss;
-    oss << &key;
-    return oss.str();
-  }
+  std::ostringstream oss;
+  oss << key;
+  return oss.str();
 }
 
 }  // namespace lczero
