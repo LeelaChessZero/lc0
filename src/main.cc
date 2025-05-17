@@ -83,8 +83,8 @@ void ChooseAndRunEngine() {
     }
   }
 
-  // Finally, fall back to the classic engine through the old interface.
-  RunEngineClassic();
+  // Finally, run "classic" search through the new API.
+  RunEngine(SearchManager::Get()->GetFactoryByName("classic"));
 }
 }  // namespace lczero
 
