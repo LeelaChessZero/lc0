@@ -31,6 +31,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "syzygy/syzygy.h"
+
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -41,8 +43,6 @@
 #include <random>
 #include <sstream>
 #include <string>
-
-#include "syzygy/syzygy.h"
 
 #include "utils/exception.h"
 #include "utils/logging.h"
@@ -228,7 +228,7 @@ bool is_capture(const ChessBoard& pos, const Move& move) {
   // Simple capture.
   if (pos.theirs().get(move.to())) return true;
   // Enpassant capture. Pawn moves other than straight it must be a capture.
-  if (pos.pawns().get(move.from()) && move.from().col() != move.to().col()) {
+  if (pos.pawns().get(move.from()) && move.from().file() != move.to().file()) {
     return true;
   }
   return false;
@@ -272,8 +272,12 @@ int num_tables(BaseEntry* be, const int type) {
 }
 
 EncInfo* first_ei(BaseEntry* be, const int type) {
-  return be->hasPawns ? &PAWN(be)->ei[type == WDL ? 0 : type == DTM ? 8 : 20]
-                      : &PIECE(be)->ei[type == WDL ? 0 : type == DTM ? 2 : 4];
+  return be->hasPawns ? &PAWN(be)->ei[type == WDL   ? 0
+                                      : type == DTM ? 8
+                                                    : 20]
+                      : &PIECE(be)->ei[type == WDL   ? 0
+                                       : type == DTM ? 2
+                                                     : 4];
 }
 
 constexpr int8_t kOffDiag[] = {
@@ -639,10 +643,10 @@ size_t init_enc_info(EncInfo* ei, BaseEntry* be, uint8_t* tb, int shift, int t,
   for (int i = 0; k < be->num || i == order || i == order2; i++) {
     if (i == order) {
       ei->factor[0] = f;
-      f *= enc == FILE_ENC
-               ? PawnFactorFile[ei->norm[0] - 1][t]
-               : enc == RANK_ENC ? PawnFactorRank[ei->norm[0] - 1][t]
-                                 : be->kk_enc ? 462 : 31332;
+      f *= enc == FILE_ENC   ? PawnFactorFile[ei->norm[0] - 1][t]
+           : enc == RANK_ENC ? PawnFactorRank[ei->norm[0] - 1][t]
+           : be->kk_enc      ? 462
+                             : 31332;
     } else if (i == order2) {
       ei->factor[ei->norm[0]] = f;
       f *= subfactor(ei->norm[ei->norm[0]], 48 - ei->norm[0]);
@@ -851,7 +855,7 @@ int fill_squares(const ChessBoard& pos, uint8_t* pc, bool flip, int mirror,
   BitBoard bb = pieces(pos, pc[i] & 7,
                        static_cast<bool>((pc[i] >> 3)) ^ flip ^ pos.flipped());
   for (auto sq : bb) {
-    p[i++] = sq.as_int() ^ mirror;
+    p[i++] = sq.as_idx() ^ mirror;
   }
   return i;
 }
@@ -872,20 +876,20 @@ class SyzygyTablebaseImpl {
     char str[33];
 
     for (int i = 0; i < 5; i++) {
-      sprintf(str, "K%cvK", pchr(i));
+      snprintf(str, 5, "K%cvK", pchr(i));
       init_tb(str);
     }
 
     for (int i = 0; i < 5; i++) {
       for (int j = i; j < 5; j++) {
-        sprintf(str, "K%cvK%c", pchr(i), pchr(j));
+        snprintf(str, 6, "K%cvK%c", pchr(i), pchr(j));
         init_tb(str);
       }
     }
 
     for (int i = 0; i < 5; i++) {
       for (int j = i; j < 5; j++) {
-        sprintf(str, "K%c%cvK", pchr(i), pchr(j));
+        snprintf(str, 6, "K%c%cvK", pchr(i), pchr(j));
         init_tb(str);
       }
     }
@@ -893,7 +897,7 @@ class SyzygyTablebaseImpl {
     for (int i = 0; i < 5; i++) {
       for (int j = i; j < 5; j++) {
         for (int k = 0; k < 5; k++) {
-          sprintf(str, "K%c%cvK%c", pchr(i), pchr(j), pchr(k));
+          snprintf(str, 7, "K%c%cvK%c", pchr(i), pchr(j), pchr(k));
           init_tb(str);
         }
       }
@@ -902,7 +906,7 @@ class SyzygyTablebaseImpl {
     for (int i = 0; i < 5; i++) {
       for (int j = i; j < 5; j++) {
         for (int k = j; k < 5; k++) {
-          sprintf(str, "K%c%c%cvK", pchr(i), pchr(j), pchr(k));
+          snprintf(str, 7, "K%c%c%cvK", pchr(i), pchr(j), pchr(k));
           init_tb(str);
         }
       }
@@ -915,7 +919,7 @@ class SyzygyTablebaseImpl {
       for (int j = i; j < 5; j++) {
         for (int k = i; k < 5; k++) {
           for (int l = (i == k) ? j : k; l < 5; l++) {
-            sprintf(str, "K%c%cvK%c%c", pchr(i), pchr(j), pchr(k), pchr(l));
+            snprintf(str, 8, "K%c%cvK%c%c", pchr(i), pchr(j), pchr(k), pchr(l));
             init_tb(str);
           }
         }
@@ -926,7 +930,7 @@ class SyzygyTablebaseImpl {
       for (int j = i; j < 5; j++) {
         for (int k = j; k < 5; k++) {
           for (int l = 0; l < 5; l++) {
-            sprintf(str, "K%c%c%cvK%c", pchr(i), pchr(j), pchr(k), pchr(l));
+            snprintf(str, 8, "K%c%c%cvK%c", pchr(i), pchr(j), pchr(k), pchr(l));
             init_tb(str);
           }
         }
@@ -937,7 +941,7 @@ class SyzygyTablebaseImpl {
       for (int j = i; j < 5; j++) {
         for (int k = j; k < 5; k++) {
           for (int l = k; l < 5; l++) {
-            sprintf(str, "K%c%c%c%cvK", pchr(i), pchr(j), pchr(k), pchr(l));
+            snprintf(str, 8, "K%c%c%c%cvK", pchr(i), pchr(j), pchr(k), pchr(l));
             init_tb(str);
           }
         }
@@ -951,8 +955,8 @@ class SyzygyTablebaseImpl {
         for (int k = j; k < 5; k++) {
           for (int l = k; l < 5; l++) {
             for (int m = l; m < 5; m++) {
-              sprintf(str, "K%c%c%c%c%cvK", pchr(i), pchr(j), pchr(k), pchr(l),
-                      pchr(m));
+              snprintf(str, 9, "K%c%c%c%c%cvK", pchr(i), pchr(j), pchr(k),
+                       pchr(l), pchr(m));
               init_tb(str);
             }
           }
@@ -965,8 +969,8 @@ class SyzygyTablebaseImpl {
         for (int k = j; k < 5; k++) {
           for (int l = k; l < 5; l++) {
             for (int m = 0; m < 5; m++) {
-              sprintf(str, "K%c%c%c%cvK%c", pchr(i), pchr(j), pchr(k), pchr(l),
-                      pchr(m));
+              snprintf(str, 9, "K%c%c%c%cvK%c", pchr(i), pchr(j), pchr(k),
+                       pchr(l), pchr(m));
               init_tb(str);
             }
           }
@@ -979,8 +983,8 @@ class SyzygyTablebaseImpl {
         for (int k = j; k < 5; k++) {
           for (int l = 0; l < 5; l++) {
             for (int m = l; m < 5; m++) {
-              sprintf(str, "K%c%c%cvK%c%c", pchr(i), pchr(j), pchr(k), pchr(l),
-                      pchr(m));
+              snprintf(str, 9, "K%c%c%cvK%c%c", pchr(i), pchr(j), pchr(k),
+                       pchr(l), pchr(m));
               init_tb(str);
             }
           }
@@ -1075,7 +1079,8 @@ class SyzygyTablebaseImpl {
     *mapping = mmap;
     base_address = MapViewOfFile(mmap, FILE_MAP_READ, 0, 0, 0);
     if (!base_address) {
-      throw Exception("MapViewOfFile() failed, name = " + fname + ", error = " + std::to_string(GetLastError()));
+      throw Exception("MapViewOfFile() failed, name = " + fname +
+                      ", error = " + std::to_string(GetLastError()));
     }
 #endif
     return base_address;
@@ -1201,7 +1206,9 @@ class SyzygyTablebaseImpl {
     size_t tb_size[6][2];
     const int num = num_tables(be, type);
     EncInfo* ei = first_ei(be, type);
-    const int enc = !be->hasPawns ? PIECE_ENC : type != DTM ? FILE_ENC : RANK_ENC;
+    const int enc = !be->hasPawns ? PIECE_ENC
+                    : type != DTM ? FILE_ENC
+                                  : RANK_ENC;
 
     for (int t = 0; t < num; t++) {
       tb_size[t][0] = init_enc_info(&ei[t], be, data, 0, t, enc);
@@ -1399,8 +1406,9 @@ class SyzygyTablebaseImpl {
           return 0;
         }
       }
-      ei = type == WDL ? &ei[t + 4 * bside]
-                       : type == DTM ? &ei[t + 6 * bside] : &ei[t];
+      ei = type == WDL   ? &ei[t + 4 * bside]
+           : type == DTM ? &ei[t + 6 * bside]
+                         : &ei[t];
       while (i < be->num) {
         i = fill_squares(pos, ei->pieces, flip, flip ? 0x38 : 0, p, i);
       }
@@ -1658,11 +1666,10 @@ bool SyzygyTablebase::root_probe(const Position& pos, bool has_repeated,
     if (result == FAIL) return false;
     // Better moves are ranked higher. Certain wins are ranked equally.
     // Losing moves are ranked equally unless a 50-move draw is in sight.
-    int r = dtz > 0
-                ? (dtz + cnt50 <= 99 && !rep ? 1000 : 1000 - (dtz + cnt50))
-                : dtz < 0 ? (-dtz * 2 + cnt50 < 100 ? -1000
-                                                    : -1000 + (-dtz + cnt50))
-                          : 0;
+    int r = dtz > 0 ? (dtz + cnt50 <= 99 && !rep ? 1000 : 1000 - (dtz + cnt50))
+            : dtz < 0
+                ? (-dtz * 2 + cnt50 < 100 ? -1000 : -1000 + (-dtz + cnt50))
+                : 0;
     if (r > best_rank) best_rank = r;
     ranks.push_back(r);
   }

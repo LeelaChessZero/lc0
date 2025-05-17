@@ -242,7 +242,7 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
   if (weights.has_policy_heads()) {
     if (weights.policy_heads().has_optimistic_st()) {
       policy_heads.emplace(
-          std::piecewise_construct, std::forward_as_tuple("optimistic_st"),
+          std::piecewise_construct, std::forward_as_tuple("optimistic"),
           std::forward_as_tuple(weights.policy_heads().optimistic_st(),
                                 ip_pol_w, ip_pol_b));
     }

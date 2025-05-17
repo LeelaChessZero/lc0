@@ -125,7 +125,7 @@ class OnnxBuilder {
   std::string Cast(const std::string& name, const std::string& input,
                    pblczero::TensorProto::DataType type);
   std::string ReduceMean(const std::string& name, const std::string& input,
-                         std::initializer_list<int> axes);
+                         std::initializer_list<int> axes, bool keepdims = true);
   // Returns ONNX model as protobuf.
   const pblczero::ModelProto& as_proto() const { return model_; }
   // Returns serialized model.

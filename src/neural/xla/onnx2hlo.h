@@ -27,12 +27,13 @@
 
 #pragma once
 
+#include <optional>
 #include <string_view>
 #include <vector>
 
 #include "neural/onnx/onnx.pb.h"
 #include "neural/xla/hlo.pb.h"
-#include "neural/xla/xla_runner.h"
+#include "neural/xla/xla_tensor.h"
 
 namespace lczero {
 
@@ -40,12 +41,15 @@ struct Onnx2HloOptions {
   // Constants larger that this size in bytes will be passed as parameters
   // instead. This allows them to be shared between different modules.
   size_t max_inline_constant_size = 1024;
-  // The types of input/output tensors (does not affect constants passed as
-  // parameters).
-  pblczero::XlaShapeProto::Type io_type = pblczero::XlaShapeProto::F32;
+  // It set, ensures that the input/output tensors have given type (does not
+  // affect constants passed as parameters).
+  std::optional<pblczero::XlaShapeProto::Type> io_type = std::nullopt;
   // If error occurs during conversion, return a partial result instead of
   // failing. Only to be used for debugging.
   bool debugging_allow_partial_result = false;
+  // If not empty, uses these nodes as outputs instead of the ones from the ONNX
+  // model.
+  std::vector<std::string> outputs_override;
 };
 
 struct Onnx2HloResult {

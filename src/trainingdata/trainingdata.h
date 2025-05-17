@@ -27,7 +27,8 @@
 
 #pragma once
 
-#include "mcts/node.h"
+#include "neural/backend.h"
+#include "search/classic/node.h"
 #include "trainingdata/writer.h"
 
 namespace lczero {
@@ -72,11 +73,11 @@ struct V6TrainingData {
   float played_d;
   float played_m;
   // The folowing may be NaN if not found in cache.
-  float orig_q;      // For value repair.
+  float orig_q;  // For value repair.
   float orig_d;
   float orig_m;
   uint32_t visits;
-  // Indices in the probabilities array.
+  // Indices in the probabilities array.std::optional<EvalResult>
   uint16_t played_idx;
   uint16_t best_idx;
   // Kullback-Leibler divergence between visits and policy (denominator)
@@ -96,9 +97,11 @@ class V6TrainingDataArray {
         input_format_(input_format) {}
 
   // Add a chunk.
-  void Add(const Node* node, const PositionHistory& history, Eval best_eval,
-           Eval played_eval, bool best_is_proven, Move best_move,
-           Move played_move, const NNCacheLock& nneval);
+  void Add(const classic::Node* node, const PositionHistory& history,
+           classic::Eval best_eval, classic::Eval played_eval,
+           bool best_is_proven, Move best_move, Move played_move,
+           std::span<Move> legal_moves,
+           const std::optional<EvalResult>& nneval, float policy_softmax_temp);
 
   // Writes training data to a file.
   void Write(TrainingDataWriter* writer, GameResult result,
