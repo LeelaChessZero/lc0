@@ -93,7 +93,7 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
 
 // Parameters needed for selfplay and uci, but not benchmark nor infinite mode.
 void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options) {
+                               const ProgramOptions& options) {
   // KLD gain.
   const auto min_kld_gain = options.Get<float>(kMinimumKLDGainPerNodeId);
   if (min_kld_gain > 0.0f) {
@@ -112,7 +112,7 @@ void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
 namespace {
 // Stoppers for uci mode only.
 void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options,
+                               const ProgramOptions& options,
                                const GoParams& params, int64_t move_overhead) {
   const bool infinite = params.infinite || params.ponder || params.mate;
 
@@ -164,7 +164,7 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
 class CommonTimeManager : public TimeManager {
  public:
   CommonTimeManager(std::unique_ptr<TimeManager> child_mgr,
-                    const OptionsDict& options, int64_t move_overhead)
+                    const ProgramOptions& options, int64_t move_overhead)
       : child_mgr_(std::move(child_mgr)),
         options_(options),
         move_overhead_(move_overhead) {}
@@ -179,14 +179,14 @@ class CommonTimeManager : public TimeManager {
   }
 
   const std::unique_ptr<TimeManager> child_mgr_;
-  const OptionsDict& options_;
+  const ProgramOptions& options_;
   const int64_t move_overhead_;
 };
 
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeCommonTimeManager(
-    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
+    std::unique_ptr<TimeManager> child_manager, const ProgramOptions& options,
     int64_t move_overhead) {
   return std::make_unique<CommonTimeManager>(std::move(child_manager), options,
                                              move_overhead);

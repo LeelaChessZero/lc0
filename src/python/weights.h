@@ -203,7 +203,7 @@ class Backend {
     const auto& backends = GetAvailableBackends();
     const std::string be =
         backend.value_or(backends.empty() ? "<none>" : backends[0]);
-    OptionsDict network_options;
+    ProgramOptions network_options;
     if (options) network_options.AddSubdictFromString(*options);
     network_ = NetworkFactory::Get()->Create(be, w, network_options);
   }

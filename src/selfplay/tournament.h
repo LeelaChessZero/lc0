@@ -42,7 +42,7 @@ namespace lczero {
 // Runs many selfplay games, possibly in parallel.
 class SelfPlayTournament {
  public:
-  SelfPlayTournament(const OptionsDict& options, UciResponder* uci_responder,
+  SelfPlayTournament(const ProgramOptions& options, UciResponder* uci_responder,
                      GameInfo::Callback game_info,
                      TournamentInfo::Callback tournament_info);
 
@@ -97,7 +97,7 @@ class SelfPlayTournament {
   std::map<NetworkFactory::BackendConfiguration, std::unique_ptr<Backend>>
       backends_;
   // [player1 or player2][white or black].
-  const OptionsDict player_options_[2][2];
+  const ProgramOptions player_options_[2][2];
   SelfPlayLimits search_limits_[2][2];
 
   UciResponder* uci_responder_;

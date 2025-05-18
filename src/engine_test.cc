@@ -53,7 +53,7 @@ class EngineTest : public ::testing::Test {
     backend_factory_ = backend_factory.get();
     ON_CALL(*backend_factory_, GetName()).WillByDefault(Return("mock"));
     ON_CALL(*backend_factory_, Create(_))
-        .WillByDefault([this](const OptionsDict&) {
+        .WillByDefault([this](const ProgramOptions&) {
           auto backend = std::make_unique<MockBackend>();
           backend_ = backend.get();
           return backend;
@@ -65,7 +65,7 @@ class EngineTest : public ::testing::Test {
     options_->Set<int>(SharedBackendParams::kNNCacheSizeId, 10);
 
     EXPECT_CALL(search_factory_, CreateSearch(_, _))
-        .WillOnce([&](UciResponder* responder, const OptionsDict*) {
+        .WillOnce([&](UciResponder* responder, const ProgramOptions*) {
           auto search = std::make_unique<MockSearch>(responder);
           search_ = search.get();
           return search;
@@ -75,7 +75,7 @@ class EngineTest : public ::testing::Test {
   ~EngineTest() { BackendManager::Get()->RemoveBackend(backend_factory_); }
 
   OptionsParser options_parser_;
-  OptionsDict* options_ = nullptr;  // absl_notnull
+  ProgramOptions* options_ = nullptr;  // absl_notnull
   MockBackend* backend_ = nullptr;
   MockBackendFactory* backend_factory_ = nullptr;
   MockSearchFactory search_factory_;

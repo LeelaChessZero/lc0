@@ -92,7 +92,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 }  // namespace
 
-EngineClassic::EngineClassic(const OptionsDict& options)
+EngineClassic::EngineClassic(const ProgramOptions& options)
     : options_(options), current_position_{ChessBoard::kStartposFen, {}} {
   if (options_.Get<bool>(kPreload)) UpdateFromUciOptions();
 }

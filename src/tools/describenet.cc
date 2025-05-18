@@ -40,7 +40,7 @@ const OptionId kWeightsFilenameId{"weights", "WeightsFile",
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kWeightsFilenameId);
   if (!options->ProcessAllFlags()) return false;
-  const OptionsDict& dict = options->GetOptionsDict();
+  const ProgramOptions& dict = options->GetOptionsDict();
   dict.EnsureHasKey<std::string>(kWeightsFilenameId);
 
   return true;
@@ -303,7 +303,7 @@ void DescribeNetworkCmd() {
   OptionsParser options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
-  const OptionsDict& dict = options_parser.GetOptionsDict();
+  const ProgramOptions& dict = options_parser.GetOptionsDict();
   auto weights_file =
       LoadWeightsFromFile(dict.Get<std::string>(kWeightsFilenameId));
   ShowAllNetworkInfo(weights_file);

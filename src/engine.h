@@ -39,7 +39,7 @@ namespace lczero {
 
 class Engine : public EngineControllerBase {
  public:
-  Engine(const SearchFactory&, const OptionsDict&);
+  Engine(const SearchFactory&, const ProgramOptions&);
   ~Engine() override;
 
   static void PopulateOptions(OptionsParser*);
@@ -63,7 +63,7 @@ class Engine : public EngineControllerBase {
 
   class UciPonderForwarder;
   std::unique_ptr<UciPonderForwarder> uci_forwarder_;
-  const OptionsDict& options_;
+  const ProgramOptions& options_;
   std::unique_ptr<SearchBase> search_;  // absl_notnull
   std::string backend_name_;  // Remember the backend name to track changes.
   std::unique_ptr<CachingBackend> backend_;  // absl_nullable

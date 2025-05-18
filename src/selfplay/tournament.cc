@@ -158,7 +158,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(classic::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
 }
 
-SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
+SelfPlayTournament::SelfPlayTournament(const ProgramOptions& options,
                                        UciResponder* uci_responder,
                                        GameInfo::Callback game_info,
                                        TournamentInfo::Callback tournament_info)

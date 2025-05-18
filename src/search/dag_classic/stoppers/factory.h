@@ -39,7 +39,7 @@ namespace dag_classic {
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options);
 
 // Creates a new time manager for a new search.
-std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& dict);
+std::unique_ptr<TimeManager> MakeTimeManager(const ProgramOptions& dict);
 
 }  // namespace dag_classic
 }  // namespace lczero

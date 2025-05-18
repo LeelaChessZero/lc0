@@ -71,7 +71,7 @@ std::unique_ptr<Network> NetworkFactory::Create(
 }
 
 NetworkFactory::BackendConfiguration::BackendConfiguration(
-    const OptionsDict& options)
+    const ProgramOptions& options)
     : weights_path(options.Get<std::string>(SharedBackendParams::kWeightsId)),
       backend(options.Get<std::string>(SharedBackendParams::kBackendId)),
       backend_options(
@@ -84,7 +84,7 @@ bool NetworkFactory::BackendConfiguration::operator==(
 }
 
 std::unique_ptr<Network> NetworkFactory::LoadNetwork(
-    const OptionsDict& options) {
+    const ProgramOptions& options) {
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);
   const std::string backend =

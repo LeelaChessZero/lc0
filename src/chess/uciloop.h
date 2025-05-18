@@ -70,7 +70,7 @@ class StringUciResponder : public UciResponder {
  private:
   bool IsChess960() const;
 
-  const OptionsDict* options_ = nullptr;  // absl_nullable
+  const ProgramOptions* options_ = nullptr;  // absl_nullable
 };
 
 class EngineControllerBase {

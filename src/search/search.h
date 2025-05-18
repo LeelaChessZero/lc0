@@ -98,7 +98,7 @@ class SearchFactory {
   virtual void PopulateParams(OptionsParser*) const {}
   // Creates a new environment for the algorithm.
   virtual std::unique_ptr<SearchBase> CreateSearch(
-      UciResponder*, const OptionsDict*) const = 0;
+      UciResponder*, const ProgramOptions*) const = 0;
 };
 
 }  // namespace lczero

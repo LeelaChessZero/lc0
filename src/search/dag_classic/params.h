@@ -37,7 +37,7 @@ enum class ContemptMode { PLAY, WHITE, BLACK, NONE };
 
 class SearchParams {
  public:
-  SearchParams(const OptionsDict& options);
+  SearchParams(const ProgramOptions& options);
   SearchParams(const SearchParams&) = delete;
 
   // Use struct for WDLRescaleParams calculation to make them const.
@@ -227,7 +227,7 @@ class SearchParams {
   static const OptionId kSearchSpinBackoffId;
 
  private:
-  const OptionsDict& options_;
+  const ProgramOptions& options_;
   // Cached parameter values. Values have to be cached if either:
   // 1. Parameter is accessed often and has to be cached for performance
   // reasons.

@@ -50,7 +50,7 @@ const OptionId kClearTree{
 
 class DagClassicSearch : public SearchBase {
  public:
-  DagClassicSearch(UciResponder* responder, const OptionsDict* options)
+  DagClassicSearch(UciResponder* responder, const ProgramOptions* options)
       : SearchBase(responder), options_(options) {}
   ~DagClassicSearch() { search_.reset(); }
 
@@ -71,7 +71,7 @@ class DagClassicSearch : public SearchBase {
     if (search_) search_->Abort();
   }
 
-  const OptionsDict* options_;
+  const ProgramOptions* options_;
   std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
@@ -130,7 +130,7 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
 class DagClassicSearchFactory : public SearchFactory {
   std::string_view GetName() const override { return "dag-preview"; }
   std::unique_ptr<SearchBase> CreateSearch(
-      UciResponder* responder, const OptionsDict* options) const override {
+      UciResponder* responder, const ProgramOptions* options) const override {
     return std::make_unique<DagClassicSearch>(responder, options);
   }
 

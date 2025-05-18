@@ -54,7 +54,7 @@ class MockSearchFactory : public SearchFactory {
   MOCK_METHOD(std::string_view, GetName, (), (const, override));
   MOCK_METHOD(void, PopulateParams, (OptionsParser*), (const, override));
   MOCK_METHOD(std::unique_ptr<SearchBase>, CreateSearch,
-              (UciResponder*, const OptionsDict*), (const, override));
+              (UciResponder*, const ProgramOptions*), (const, override));
 };
 
 }  // namespace lczero

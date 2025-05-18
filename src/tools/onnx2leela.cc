@@ -139,7 +139,7 @@ bool ProcessParameters(OptionsParser* options) {
 
   if (!options->ProcessAllFlags()) return false;
 
-  const OptionsDict& dict = options->GetOptionsDict();
+  const ProgramOptions& dict = options->GetOptionsDict();
   dict.EnsureHasKey<std::string>(kInputFilenameId);
   dict.EnsureHasKey<std::string>(kOutputFilenameId);
   return true;
@@ -373,7 +373,7 @@ bool EnsureOutDataType(pblczero::ModelProto& model, const std::string& name,
   return true;
 }
 
-bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
+bool MaybeFixOnnx(pblczero::ModelProto& model, const ProgramOptions& dict,
                   pblczero::OnnxModel_DataType data_type) {
   bool updated = false;
 
@@ -423,7 +423,7 @@ void ConvertOnnxToLeela() {
   OptionsParser options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
-  const OptionsDict& dict = options_parser.GetOptionsDict();
+  const ProgramOptions& dict = options_parser.GetOptionsDict();
 
   auto onnx_model = ReadFileToString(dict.Get<std::string>(kInputFilenameId));
   pblczero::ModelProto model;

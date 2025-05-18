@@ -57,7 +57,7 @@ struct PlayerOptions {
   // Callback when player discards a selected move due to low visits.
   OpeningCallback discarded_callback;
   // User options dictionary.
-  const OptionsDict* uci_options;
+  const ProgramOptions* uci_options;
   // Limits to use for every move.
   SelfPlayLimits search_limits;
 };

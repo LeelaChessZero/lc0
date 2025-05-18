@@ -66,11 +66,11 @@ class NetworkFactory {
 
   // Helper function to load the network from the options. Returns nullptr
   // if no network options changed since the previous call.
-  static std::unique_ptr<Network> LoadNetwork(const OptionsDict& options);
+  static std::unique_ptr<Network> LoadNetwork(const ProgramOptions& options);
 
   struct BackendConfiguration {
     BackendConfiguration() = default;
-    BackendConfiguration(const OptionsDict& options);
+    BackendConfiguration(const ProgramOptions& options);
     std::string weights_path;
     std::string backend;
     std::string backend_options;

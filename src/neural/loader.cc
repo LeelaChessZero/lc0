@@ -222,7 +222,7 @@ WeightsFile LoadWeights(std::string_view location) {
   return LoadWeightsFromFile(net_path);
 }
 
-WeightsFile LoadWeightsFromOptions(const OptionsDict& options) {
+WeightsFile LoadWeightsFromOptions(const ProgramOptions& options) {
   return LoadWeights(options.Get<std::string>(SharedBackendParams::kWeightsId));
 }
 

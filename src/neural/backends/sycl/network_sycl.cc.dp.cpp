@@ -186,7 +186,7 @@ class SyclNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class SyclNetwork : public Network {
  public:
-  SyclNetwork(const WeightsFile& file, const OptionsDict& options)
+  SyclNetwork(const WeightsFile& file, const ProgramOptions& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -1028,7 +1028,7 @@ void SyclNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const ProgramOptions& options) {
   if (!w) {
     throw Exception(
         "The sycl" +
@@ -1098,7 +1098,7 @@ std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
 }
 
 std::unique_ptr<Network> MakeSyclNetworkAuto(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const ProgramOptions& options) {
   int gpu_id = options.GetOrValue<int>("gpu", 0);
 
   try {

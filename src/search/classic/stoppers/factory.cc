@@ -67,7 +67,7 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
 }
 
-std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
+std::unique_ptr<TimeManager> MakeTimeManager(const ProgramOptions& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
   InlineConfig tm_options;

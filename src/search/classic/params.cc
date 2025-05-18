@@ -632,7 +632,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 }
 
-SearchParams::SearchParams(const OptionsDict& options)
+SearchParams::SearchParams(const ProgramOptions& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(

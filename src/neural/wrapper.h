@@ -45,7 +45,7 @@ class NetworkAsBackendFactory : public BackendFactory {
 
   int GetPriority() const override { return priority_; }
   std::string_view GetName() const override { return name_; }
-  std::unique_ptr<Backend> Create(const OptionsDict&) override;
+  std::unique_ptr<Backend> Create(const ProgramOptions&) override;
 
  private:
   std::string name_;

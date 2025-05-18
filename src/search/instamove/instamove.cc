@@ -167,7 +167,7 @@ class ValueHeadSearch : public InstamoveSearch {
 class PolicyHeadFactory : public SearchFactory {
   std::string_view GetName() const override { return "policyhead"; }
   std::unique_ptr<SearchBase> CreateSearch(UciResponder* responder,
-                                           const OptionsDict*) const override {
+                                           const ProgramOptions*) const override {
     return std::make_unique<PolicyHeadSearch>(responder);
   }
 };
@@ -175,7 +175,7 @@ class PolicyHeadFactory : public SearchFactory {
 class ValueHeadFactory : public SearchFactory {
   std::string_view GetName() const override { return "valuehead"; }
   std::unique_ptr<SearchBase> CreateSearch(UciResponder* responder,
-                                           const OptionsDict*) const override {
+                                           const ProgramOptions*) const override {
     return std::make_unique<ValueHeadSearch>(responder);
   }
 };

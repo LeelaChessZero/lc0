@@ -109,7 +109,7 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kPolicyHead) = "vanilla";
   if (!options->ProcessAllFlags()) return false;
 
-  const OptionsDict& dict = options->GetOptionsDict();
+  const ProgramOptions& dict = options->GetOptionsDict();
   dict.EnsureHasKey<std::string>(kInputFilenameId);
   if (!dict.HasOwnKey<std::string>(kOutputFilenameId) &&
       !dict.HasOwnKey<std::string>(kHloTextOutputFilenameId) &&
@@ -127,7 +127,7 @@ void ConvertLeelaToOnnx() {
   OptionsParser options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
-  const OptionsDict& dict = options_parser.GetOptionsDict();
+  const ProgramOptions& dict = options_parser.GetOptionsDict();
   auto weights_file =
       LoadWeightsFromFile(dict.Get<std::string>(kInputFilenameId));
 
