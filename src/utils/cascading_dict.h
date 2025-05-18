@@ -80,7 +80,7 @@ class CascadingDict {
 
   // Returns true when the value is not set anywhere maybe except the root
   // dictionary;
-  bool IsDefault(const K& key) const;
+  bool IsUnmodified(const K& key) const;
 
   // Returns subdictionary. Throws exception if doesn't exist.
   const CascadingDict& GetSubdict(const std::string& name) const;
@@ -198,13 +198,13 @@ T& CascadingDict<K, V...>::GetOwnRef(const K& key) {
 }
 
 template <typename K, typename... V>
-bool CascadingDict<K, V...>::IsDefault(const K& key) const {
+bool CascadingDict<K, V...>::IsUnmodified(const K& key) const {
   if (!parent_) return true;
   for (const auto* alias : aliases_) {
     const auto& dict = alias->dict_;
     if (dict.find(key) != dict.end()) return false;
   }
-  return parent_->IsDefault(key);
+  return parent_->IsUnmodified(key);
 }
 
 template <typename K, typename... V>
