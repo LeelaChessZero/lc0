@@ -227,7 +227,7 @@ class CudnnNetwork : public Network {
       }
 
       // Override if forced from backend option
-      if (!options.IsDefault<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
+      if (options.Exists<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
     }
 
     if (hasTensorCores)
@@ -288,7 +288,7 @@ class CudnnNetwork : public Network {
     }
 
     const bool custom_winograd_override =
-        !options.IsDefault<bool>("custom_winograd");
+        options.Exists<bool>("custom_winograd");
 
     if (!custom_winograd_override && use_custom_winograd_ &&
         transformed_residual_weight_size > 0.5 * deviceProp.totalGlobalMem) {
@@ -320,7 +320,7 @@ class CudnnNetwork : public Network {
         use_res_block_winograd_fuse_opt_ = true;
       }
       // Override if set in backend-opts.
-      if (!options.IsDefault<bool>("res_block_fusing")) {
+      if (options.Exists<bool>("res_block_fusing")) {
         use_res_block_winograd_fuse_opt_ =
             options.Get<bool>("res_block_fusing");
       }

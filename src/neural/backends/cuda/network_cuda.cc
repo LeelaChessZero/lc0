@@ -306,7 +306,7 @@ class CudaNetwork : public Network {
       use_res_block_winograd_fuse_opt_ = false;
     }
     // Override if set in backend-opts.
-    if (!options.IsDefault<bool>("res_block_fusing")) {
+    if (options.Exists<bool>("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
     }
 
