@@ -28,7 +28,7 @@
 #pragma once
 
 #include "neural/encoder.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace classic {

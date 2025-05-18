@@ -32,7 +32,7 @@
 
 #include "chess/uciloop.h"
 #include "search/search.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 

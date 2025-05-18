@@ -35,7 +35,7 @@
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
 #include "utils/mutex.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 

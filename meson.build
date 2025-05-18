@@ -182,7 +182,7 @@ common_files += [
   'src/utils/files.cc',
   'src/utils/inline_config.cc',
   'src/utils/logging.cc',
-  'src/utils/optionsparser.cc',
+  'src/utils/program_options.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/version.cc',

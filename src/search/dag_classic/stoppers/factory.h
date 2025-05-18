@@ -30,7 +30,7 @@
 #include "search/dag_classic/stoppers/common.h"
 #include "search/dag_classic/stoppers/timemgr.h"
 #include "utils/inline_config.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace dag_classic {

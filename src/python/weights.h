@@ -33,7 +33,7 @@
 #include "neural/factory.h"
 #include "neural/loader.h"
 #include "utils/fastmath.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace python {

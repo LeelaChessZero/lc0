@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "optionsparser.h"
+#include "program_options.h"
 
 #include <iomanip>
 #include <iostream>

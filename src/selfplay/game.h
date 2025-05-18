@@ -34,7 +34,7 @@
 #include "search/classic/search.h"
 #include "search/classic/stoppers/stoppers.h"
 #include "trainingdata/trainingdata.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 

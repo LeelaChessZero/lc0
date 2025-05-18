@@ -36,7 +36,7 @@
 #include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/fp16_utils.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {

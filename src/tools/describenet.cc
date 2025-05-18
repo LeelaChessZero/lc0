@@ -29,7 +29,7 @@
 
 #include "neural/loader.h"
 #include "neural/onnx/onnx.pb.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {

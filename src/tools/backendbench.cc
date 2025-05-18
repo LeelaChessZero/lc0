@@ -31,7 +31,7 @@
 #include "neural/factory.h"
 #include "neural/shared_params.h"
 #include "search/classic/node.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {

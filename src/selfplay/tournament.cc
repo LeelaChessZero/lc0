@@ -37,7 +37,7 @@
 #include "search/classic/stoppers/factory.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 #include "utils/random.h"
 
 namespace lczero {

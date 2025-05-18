@@ -34,7 +34,7 @@
 #include "neural/xla/print_hlo.h"
 #include "tools/describenet.h"
 #include "utils/files.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {

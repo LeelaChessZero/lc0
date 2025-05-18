@@ -28,7 +28,7 @@
 #pragma once
 
 #include "utils/inline_config.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 

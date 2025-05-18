@@ -34,7 +34,7 @@
 
 #include "neural/network.h"
 #include "proto/net.pb.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 

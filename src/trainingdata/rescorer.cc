@@ -35,7 +35,7 @@
 #include "syzygy/syzygy.h"
 #include "trainingdata/reader.h"
 #include "utils/filesystem.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 

@@ -16,7 +16,7 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 #include <gtest/gtest.h>
 #include <iostream>
 

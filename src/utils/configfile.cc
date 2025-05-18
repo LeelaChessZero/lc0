@@ -33,7 +33,7 @@
 #include "utils/commandline.h"
 #include "utils/filesystem.h"
 #include "utils/logging.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 #include "utils/string.h"
 
 namespace lczero {
