@@ -51,9 +51,6 @@ class CascadingDict {
   template <typename T>
   std::optional<T> OwnGet(const K& key) const;
 
-  // Checks whether the given key exists for any type.
-  bool HasKeyOfAnyType(const K& key) const;
-
   // Checks whether the given key exists for given type.
   template <typename T>
   bool HasKey(const K& key) const;
@@ -62,10 +59,6 @@ class CascadingDict {
   // if not.
   template <typename T>
   void EnsureHasKey(const K& key) const;
-
-  // Checks whether the given key exists for any type. Does not fall back to
-  // check parents.
-  bool HasOwnKeyOfAnyType(const K& key) const;
 
   // Checks whether the given key exists for given type. Does not fall back to
   // check parents.
@@ -150,14 +143,6 @@ std::optional<T> CascadingDict<K, V...>::OwnGet(const K& key) const {
 }
 
 template <typename K, typename... V>
-bool CascadingDict<K, V...>::HasKeyOfAnyType(const K& key) const {
-  for (const auto* alias : aliases_) {
-    if (alias->HasOwnKeyOfAnyType(key)) return true;
-  }
-  return parent_ && parent_->HasKeyOfAnyType(key);
-}
-
-template <typename K, typename... V>
 template <typename T>
 bool CascadingDict<K, V...>::HasKey(const K& key) const {
   for (const auto* alias : aliases_) {
@@ -172,11 +157,6 @@ void CascadingDict<K, V...>::EnsureHasKey(const K& key) const {
   if (!HasKey<T>(key)) {
     throw Exception("Key [" + KeyAsString(key) + "] is not set.");
   }
-}
-
-template <typename K, typename... V>
-bool CascadingDict<K, V...>::HasOwnKeyOfAnyType(const K& key) const {
-  return dict_.find(key) != dict_.end();
 }
 
 template <typename K, typename... V>
@@ -221,7 +201,8 @@ template <typename K, typename... V>
 bool CascadingDict<K, V...>::IsDefault(const K& key) const {
   if (!parent_) return true;
   for (const auto* alias : aliases_) {
-    if (alias->HasOwnKeyOfAnyType(key)) return false;
+    const auto& dict = alias->dict_;
+    if (dict.find(key) != dict.end()) return false;
   }
   return parent_->IsDefault(key);
 }
