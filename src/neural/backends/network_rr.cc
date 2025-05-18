@@ -55,7 +55,7 @@ class RoundRobinNetwork : public Network {
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
                   const InlineConfig& opts) {
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+    const std::string backend = opts.GetOrValue<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));

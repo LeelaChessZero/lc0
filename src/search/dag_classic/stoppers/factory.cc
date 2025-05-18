@@ -74,7 +74,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
   InlineConfig tm_options;
-  if (options.Exists<std::string>(kTimeManagerId)) {
+  if (options.HasKey<std::string>(kTimeManagerId)) {
     ParseInlineConfig(options.Get<std::string>(kTimeManagerId), &tm_options);
   } else {
     float slowmover = options.Get<float>(kSlowMoverId);

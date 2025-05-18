@@ -104,7 +104,7 @@ class DemuxingNetwork : public Network {
  public:
   DemuxingNetwork(const std::optional<WeightsFile>& weights,
                   const InlineConfig& options) {
-    minimum_split_size_ = options.GetOrDefault<int>("minimum-split-size", 0);
+    minimum_split_size_ = options.GetOrValue<int>("minimum-split-size", 0);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
       // If options are empty, or multiplexer configured in root object,
@@ -121,12 +121,12 @@ class DemuxingNetwork : public Network {
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
                   const InlineConfig& opts) {
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+    const std::string backend = opts.GetOrValue<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
 
-    int nn_threads = opts.GetOrDefault<int>("threads", 0);
+    int nn_threads = opts.GetOrValue<int>("threads", 0);
     if (nn_threads == 0) {
       nn_threads = networks_.back()->GetThreads();
     }

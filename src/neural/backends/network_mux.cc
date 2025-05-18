@@ -109,14 +109,14 @@ class MuxingNetwork : public Network {
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
                   const InlineConfig& opts) {
-    const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+    const int max_batch = opts.GetOrValue<int>("max_batch", 256);
+    const std::string backend = opts.GetOrValue<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
     Network* net = networks_.back().get();
 
-    int nn_threads = opts.GetOrDefault<int>("threads", 0);
+    int nn_threads = opts.GetOrValue<int>("threads", 0);
     if (nn_threads == 0) {
       nn_threads = net->GetThreads();
     }

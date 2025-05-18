@@ -131,8 +131,8 @@ Params::MovesLeftEstimator CreateMovesLeftEstimator(const InlineConfig& params) 
   const InlineConfig& mle_dict = params.HasSubdict("mle-legacy")
                                     ? params.GetSubdict("mle-legacy")
                                     : params;
-  return [midpoint = mle_dict.GetOrDefault<float>("midpoint", 45.2f),
-          steepness = mle_dict.GetOrDefault<float>("steepness", 5.93f)](
+  return [midpoint = mle_dict.GetOrValue<float>("midpoint", 45.2f),
+          steepness = mle_dict.GetOrValue<float>("steepness", 5.93f)](
              const NodeTree& tree) {
     const auto ply = tree.HeadPosition().GetGamePly();
     return ComputeEstimatedMovesToGo(ply, midpoint, steepness);
@@ -141,34 +141,34 @@ Params::MovesLeftEstimator CreateMovesLeftEstimator(const InlineConfig& params) 
 
 Params::Params(const InlineConfig& params, int64_t move_overhead)
     : move_overhead_ms_(move_overhead),
-      initial_tree_reuse_(params.GetOrDefault<float>("init-tree-reuse", 0.52f)),
-      max_tree_reuse_(params.GetOrDefault<float>("max-tree-reuse", 0.73f)),
+      initial_tree_reuse_(params.GetOrValue<float>("init-tree-reuse", 0.52f)),
+      max_tree_reuse_(params.GetOrValue<float>("max-tree-reuse", 0.73f)),
       tree_reuse_halfupdate_moves_(
-          params.GetOrDefault<float>("tree-reuse-update-rate", 3.39f)),
+          params.GetOrValue<float>("tree-reuse-update-rate", 3.39f)),
       nps_update_seconds_(
-          params.GetOrDefault<float>("nps-update-period", 20.0f)),
+          params.GetOrValue<float>("nps-update-period", 20.0f)),
       initial_smartpruning_timeuse_(
-          params.GetOrDefault<float>("init-timeuse", 0.7f)),
+          params.GetOrValue<float>("init-timeuse", 0.7f)),
       min_smartpruning_timeuse_(
-          params.GetOrDefault<float>("min-timeuse", 0.34f)),
+          params.GetOrValue<float>("min-timeuse", 0.34f)),
       smartpruning_timeuse_halfupdate_moves_(
-          params.GetOrDefault<float>("timeuse-update-rate", 5.51f)),
+          params.GetOrValue<float>("timeuse-update-rate", 5.51f)),
       max_single_move_time_fraction_(
-          params.GetOrDefault<float>("max-move-budget", 0.42f)),
+          params.GetOrValue<float>("max-move-budget", 0.42f)),
       initial_piggybank_fraction_(
-          params.GetOrDefault<float>("init-piggybank", 0.09f)),
+          params.GetOrValue<float>("init-piggybank", 0.09f)),
       per_move_piggybank_fraction_(
-          params.GetOrDefault<float>("per-move-piggybank", 0.12f)),
+          params.GetOrValue<float>("per-move-piggybank", 0.12f)),
       max_piggybank_use_(
-          params.GetOrDefault<float>("max-piggybank-use", 0.94f)),
+          params.GetOrValue<float>("max-piggybank-use", 0.94f)),
       max_piggybank_moves_(
-          params.GetOrDefault<float>("max-piggybank-moves", 36.5f)),
+          params.GetOrValue<float>("max-piggybank-moves", 36.5f)),
       trend_nps_update_period_ms_(
-          params.GetOrDefault<int>("trend-nps-update-period-ms", 3000)),
-      bestmove_optimism_(params.GetOrDefault<float>("bestmove-optimism", 0.2f)),
+          params.GetOrValue<int>("trend-nps-update-period-ms", 3000)),
+      bestmove_optimism_(params.GetOrValue<float>("bestmove-optimism", 0.2f)),
       overtaker_optimism_(
-          params.GetOrDefault<float>("overtaker-optimism", 4.0f)),
-      force_piggybank_ms_(params.GetOrDefault<int>("force-piggybank-ms", 1000)),
+          params.GetOrValue<float>("overtaker-optimism", 4.0f)),
+      force_piggybank_ms_(params.GetOrValue<int>("force-piggybank-ms", 1000)),
       moves_left_estimator_(CreateMovesLeftEstimator(params)) {}
 
 // Returns the updated value of @from, towards @to by the number of halves

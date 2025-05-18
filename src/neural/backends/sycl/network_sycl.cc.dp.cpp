@@ -191,7 +191,7 @@ class SyclNetwork : public Network {
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
-    gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+    gpu_id_ = options.GetOrValue<int>("gpu", 0);
 
     const auto nf = file.format().network_format();
     using NF = pblczero::NetworkFormat;
@@ -200,7 +200,7 @@ class SyclNetwork : public Network {
     attn_body_ = nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
                  nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
 
-    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    max_batch_size_ = options.GetOrValue<int>("max_batch", 1024);
 
     
 
@@ -229,10 +229,10 @@ class SyclNetwork : public Network {
 
     l2_cache_size_ =  sycl_queue_->get_device().get_info<sycl::info::device::local_mem_size>();
 
-    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
+    allow_cache_opt_ = options.GetOrValue<bool>("cache_opt", false);
 
     // Select GPU to run on (for *the current* thread).
-    multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
+    multi_stream_ = options.GetOrValue<bool>("multi_stream", false);
 
     // layout used by cuda backend is nchw.
     has_tensor_cores_ = false;
@@ -290,7 +290,7 @@ class SyclNetwork : public Network {
     }
     // Override if set in backend-opts.
 #if  0
-    if (options.Exists<bool>("res_block_fusing")) {
+    if (options.HasKey<bool>("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
     }
 #endif
@@ -326,14 +326,14 @@ class SyclNetwork : public Network {
     }
 
     std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
+        options.GetOrValue<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
     if (weights.policy_heads.count(policy_head) == 0) {
       throw Exception("The policy head you specified '" + policy_head +
                       "' does not exist in this net.");
     }
     std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
+        options.GetOrValue<std::string>("value_head", "winner");
     // Check that selected value head exists.
     if (weights.value_heads.count(value_head) == 0) {
       throw Exception("The value head you specified '" + value_head +
@@ -528,7 +528,7 @@ class SyclNetwork : public Network {
     // Moves left head
     moves_left_ = (file.format().network_format().moves_left() ==
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                  options.GetOrDefault<bool>("mlh", true);
+                  options.GetOrValue<bool>("mlh", true);
     if (moves_left_) {
       if (attn_body_) {
         auto embedded_mov = std::make_unique<EmbeddingLayer<DataType>>(
@@ -1099,7 +1099,7 @@ std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
 
 std::unique_ptr<Network> MakeSyclNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+  int gpu_id = options.GetOrValue<int>("gpu", 0);
 
   try {
     CERR << "Trying to switch to [sycl-fp16]...";

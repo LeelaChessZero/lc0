@@ -460,7 +460,7 @@ class TrivialNetwork : public Network {
   TrivialNetwork(const InlineConfig& options)
       : capabilities_{
             static_cast<pblczero::NetworkFormat::InputFormat>(
-                options.GetOrDefault<int>(
+                options.GetOrValue<int>(
                     "input_mode",
                     pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)),
             pblczero::NetworkFormat::OUTPUT_CLASSICAL,
@@ -481,7 +481,8 @@ class TrivialNetwork : public Network {
 }  // namespace
 
 std::unique_ptr<Network> MakeTrivialNetwork(
-    const std::optional<WeightsFile>& /*weights*/, const InlineConfig& options) {
+    const std::optional<WeightsFile>& /*weights*/,
+    const InlineConfig& options) {
   return std::make_unique<TrivialNetwork>(options);
 }
 

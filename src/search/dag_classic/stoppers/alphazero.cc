@@ -37,7 +37,7 @@ class AlphazeroTimeManager : public TimeManager {
   AlphazeroTimeManager(int64_t move_overhead, const InlineConfig& params)
       : move_overhead_(move_overhead),
         alphazerotimepct_(
-            params.GetOrDefault<float>("alphazero-time-pct", 12.0f)) {
+            params.GetOrValue<float>("alphazero-time-pct", 12.0f)) {
     if (alphazerotimepct_ < 0.0f || alphazerotimepct_ > 100.0f)
       throw Exception("alphazero-time-pct value to be in range [0.0, 100.0]");
   }

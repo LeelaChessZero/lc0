@@ -92,9 +92,9 @@ Output SqueezeAndExcite(const Scope& scope, Input input, int channels,
   auto b2 = MakeConst(scope, {2 * channels}, weights.b2);
   auto dense2_mul = MatMul(scope, relu, w2);
   auto dense2_add = Add(scope, dense2_mul, b2);
-  auto reshape =
-      Reshape(scope, dense2_add, CPU ? Input({-1, 1, 1, 2 * channels})
-                                     : Input({-1, 2 * channels, 1, 1}));
+  auto reshape = Reshape(
+      scope, dense2_add,
+      CPU ? Input({-1, 1, 1, 2 * channels}) : Input({-1, 2 * channels, 1, 1}));
   auto outputs = Split(scope, CPU ? 3 : 1, reshape, 2);
   auto sigmoid = Sigmoid(scope, outputs[0]);
   auto out_mul = Mul(scope, sigmoid, input);
@@ -464,16 +464,16 @@ TFNetwork<CPU>::TFNetwork(const WeightsFile& file, const InlineConfig& options,
   value_head_ = std::make_unique<Output>(std::get<1>(output));
   moves_left_head_ = std::make_unique<Output>(std::get<2>(output));
 
-  if (options.Exists<std::string>("dump-graphdef") ||
-      options.Exists<std::string>("dump-graphdef-txt")) {
+  if (options.HasKey<std::string>("dump-graphdef") ||
+      options.HasKey<std::string>("dump-graphdef-txt")) {
     GraphDef gdef;
     CHECK(scope_.ToGraphDef(&gdef).ok());
-    if (options.Exists<std::string>("dump-graphdef")) {
+    if (options.HasKey<std::string>("dump-graphdef")) {
       std::ofstream f(options.Get<std::string>("dump-graphdef").c_str());
       f.exceptions(std::ifstream::failbit);
       f << gdef.SerializeAsString();
     }
-    if (options.Exists<std::string>("dump-graphdef-txt")) {
+    if (options.HasKey<std::string>("dump-graphdef-txt")) {
       std::ofstream f(options.Get<std::string>("dump-graphdef-txt").c_str());
       f.exceptions(std::ifstream::failbit);
       f << gdef.DebugString();
@@ -545,8 +545,9 @@ std::unique_ptr<Network> MakeTFNetwork(const std::optional<WeightsFile>& w,
         " is not supported by Tensorflow C++ backend.");
   }
   return std::make_unique<TFNetwork<CPU>>(
-      weights, options, weights.format().network_format().value() ==
-                            pblczero::NetworkFormat::VALUE_WDL);
+      weights, options,
+      weights.format().network_format().value() ==
+          pblczero::NetworkFormat::VALUE_WDL);
 }
 
 REGISTER_NETWORK("tensorflow-cc-cpu", MakeTFNetwork<true>, 90)

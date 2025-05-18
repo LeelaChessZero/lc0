@@ -285,7 +285,7 @@ class CheckNetwork : public Network {
     std::string backendName2 = "eigen";
     InlineConfig& backend2_dict = dict2;
 
-    const std::string mode = options.GetOrDefault<std::string>("mode", "check");
+    const std::string mode = options.GetOrValue<std::string>("mode", "check");
     if (mode == "check") {
       params_.mode = kCheckOnly;
     } else if (mode == "histo") {
@@ -295,22 +295,22 @@ class CheckNetwork : public Network {
     }
 
     params_.absolute_tolerance =
-        options.GetOrDefault<float>("atol", kDefaultAbsoluteTolerance);
+        options.GetOrValue<float>("atol", kDefaultAbsoluteTolerance);
     params_.relative_tolerance =
-        options.GetOrDefault<float>("rtol", kDefaultRelativeTolerance);
+        options.GetOrValue<float>("rtol", kDefaultRelativeTolerance);
 
     const auto parents = options.ListSubdicts();
     if (parents.size() > 0) {
       backendName1 = parents[0];
       backend1_dict = options.GetSubdict(backendName1);
       backendName1 =
-          backend1_dict.GetOrDefault<std::string>("backend", backendName1);
+          backend1_dict.GetOrValue<std::string>("backend", backendName1);
     }
     if (parents.size() > 1) {
       backendName2 = parents[1];
       backend2_dict = options.GetSubdict(backendName2);
       backendName2 =
-          backend2_dict.GetOrDefault<std::string>("backend", backendName2);
+          backend2_dict.GetOrValue<std::string>("backend", backendName2);
     }
     if (parents.size() > 2) {
       CERR << "Warning, cannot check more than two backends";
@@ -330,7 +330,7 @@ class CheckNetwork : public Network {
     params_.input_format = capabilities_.input_format;
 
     check_frequency_ =
-        options.GetOrDefault<float>("freq", kDefaultCheckFrequency);
+        options.GetOrValue<float>("freq", kDefaultCheckFrequency);
     switch (params_.mode) {
       case kCheckOnly:
         CERR << std::scientific << std::setprecision(1)

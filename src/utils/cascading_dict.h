@@ -52,29 +52,29 @@ class CascadingDict {
   std::optional<T> OwnGet(const K& key) const;
 
   // Checks whether the given key exists for any type.
-  bool KeyExists(const K& key) const;
+  bool HasKeyOfAnyType(const K& key) const;
 
   // Checks whether the given key exists for given type.
   template <typename T>
-  bool Exists(const K& key) const;
+  bool HasKey(const K& key) const;
 
   // Checks whether the given key exists for given type, and throws an exception
   // if not.
   template <typename T>
-  void EnsureExists(const K& key) const;
+  void EnsureHasKey(const K& key) const;
 
   // Checks whether the given key exists for any type. Does not fall back to
   // check parents.
-  bool OwnKeyExists(const K& key) const;
+  bool HasOwnKeyOfAnyType(const K& key) const;
 
   // Checks whether the given key exists for given type. Does not fall back to
   // check parents.
   template <typename T>
-  bool OwnExists(const K& key) const;
+  bool HasOwnKey(const K& key) const;
 
   // Returns value of given type. Returns default if not found.
   template <typename T>
-  T GetOrDefault(const K& key, const T& default_val) const;
+  T GetOrValue(const K& key, const T& default_val) const;
 
   // Sets value for a given type.
   template <typename T>
@@ -150,51 +150,50 @@ std::optional<T> CascadingDict<K, V...>::OwnGet(const K& key) const {
 }
 
 template <typename K, typename... V>
-bool CascadingDict<K, V...>::KeyExists(const K& key) const {
+bool CascadingDict<K, V...>::HasKeyOfAnyType(const K& key) const {
   for (const auto* alias : aliases_) {
-    if (alias->OwnKeyExists(key)) return true;
+    if (alias->HasOwnKeyOfAnyType(key)) return true;
   }
-  return parent_ && parent_->KeyExists(key);
+  return parent_ && parent_->HasKeyOfAnyType(key);
 }
 
 template <typename K, typename... V>
 template <typename T>
-bool CascadingDict<K, V...>::Exists(const K& key) const {
+bool CascadingDict<K, V...>::HasKey(const K& key) const {
   for (const auto* alias : aliases_) {
-    if (alias->template OwnExists<T>(key)) return true;
+    if (alias->template HasOwnKey<T>(key)) return true;
   }
-  return parent_ && parent_->Exists<T>(key);
+  return parent_ && parent_->HasKey<T>(key);
 }
 
 template <typename K, typename... V>
 template <typename T>
-void CascadingDict<K, V...>::EnsureExists(const K& key) const {
-  if (!Exists<T>(key)) {
+void CascadingDict<K, V...>::EnsureHasKey(const K& key) const {
+  if (!HasKey<T>(key)) {
     throw Exception("Key [" + KeyAsString(key) + "] is not set.");
   }
 }
 
 template <typename K, typename... V>
-bool CascadingDict<K, V...>::OwnKeyExists(const K& key) const {
+bool CascadingDict<K, V...>::HasOwnKeyOfAnyType(const K& key) const {
   return dict_.find(key) != dict_.end();
 }
 
 template <typename K, typename... V>
 template <typename T>
-bool CascadingDict<K, V...>::OwnExists(const K& key) const {
+bool CascadingDict<K, V...>::HasOwnKey(const K& key) const {
   const auto it = dict_.find(key);
   return it != dict_.end() && std::holds_alternative<T>(it->second.value);
 }
 
 template <typename K, typename... V>
 template <typename T>
-T CascadingDict<K, V...>::GetOrDefault(const K& key,
-                                       const T& default_val) const {
+T CascadingDict<K, V...>::GetOrValue(const K& key, const T& default_val) const {
   for (const auto* alias : aliases_) {
     const auto value = alias->template OwnGet<T>(key);
     if (value) return *value;
   }
-  if (parent_) return parent_->GetOrDefault<T>(key, default_val);
+  if (parent_) return parent_->GetOrValue<T>(key, default_val);
   return default_val;
 }
 
@@ -222,7 +221,7 @@ template <typename K, typename... V>
 bool CascadingDict<K, V...>::IsDefault(const K& key) const {
   if (!parent_) return true;
   for (const auto* alias : aliases_) {
-    if (alias->OwnKeyExists(key)) return false;
+    if (alias->HasOwnKeyOfAnyType(key)) return false;
   }
   return parent_->IsDefault(key);
 }

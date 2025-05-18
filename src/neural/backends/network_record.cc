@@ -170,8 +170,8 @@ class RecordReplayNetwork : public Network {
     for (const auto& name : parents) {
       AddBackend(name, weights, options.GetSubdict(name));
     }
-    replay_file_ = options.GetOrDefault<std::string>("replay_file", "");
-    record_file_ = options.GetOrDefault<std::string>("record_file", "");
+    replay_file_ = options.GetOrValue<std::string>("replay_file", "");
+    record_file_ = options.GetOrValue<std::string>("record_file", "");
     if (replay_file_.size() > 0) {
       lookup_ =
           std::make_unique<std::unordered_map<uint64_t, std::vector<float>>>();
@@ -201,7 +201,7 @@ class RecordReplayNetwork : public Network {
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
                   const InlineConfig& opts) {
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+    const std::string backend = opts.GetOrValue<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
