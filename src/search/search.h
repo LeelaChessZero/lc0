@@ -32,7 +32,7 @@
 
 #include "search/artifacts.h"
 #include "utils/exception.h"
-#include "utils/optionsdict.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 

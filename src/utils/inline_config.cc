@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 #include <cassert>
 #include <cctype>
@@ -35,7 +35,6 @@
 #include "utils/exception.h"
 
 namespace lczero {
-
 namespace {
 
 class Lexer {

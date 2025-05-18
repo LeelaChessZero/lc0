@@ -28,7 +28,6 @@
 #pragma once
 
 #include "neural/encoder.h"
-#include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {

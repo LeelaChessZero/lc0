@@ -35,7 +35,7 @@
 
 #include "chess/position.h"
 #include "neural/loader.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 

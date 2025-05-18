@@ -40,7 +40,7 @@
 #include "neural/network_legacy.h"
 #include "neural/tables/policy_map.h"
 #include "utils/bititer.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 #include "utils/transpose.h"
 
 namespace lczero {

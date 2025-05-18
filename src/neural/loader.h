@@ -33,8 +33,8 @@
 #include <vector>
 
 #include "neural/network.h"
-#include "utils/optionsdict.h"
 #include "proto/net.pb.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 

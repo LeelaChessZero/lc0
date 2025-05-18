@@ -29,7 +29,7 @@
 
 #include "search/dag_classic/stoppers/common.h"
 #include "search/dag_classic/stoppers/timemgr.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {

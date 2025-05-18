@@ -34,7 +34,7 @@
 
 #include "chess/uciloop.h"
 #include "search/dag_classic/node.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 namespace dag_classic {

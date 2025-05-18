@@ -28,7 +28,7 @@
 #pragma once
 
 #include "search/dag_classic/stoppers/timemgr.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 namespace dag_classic {

@@ -34,7 +34,7 @@
 #include "neural/loader.h"
 #include "neural/network.h"
 #include "neural/wrapper.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {

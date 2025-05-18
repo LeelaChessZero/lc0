@@ -42,7 +42,7 @@
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 #include "version.h"
 
 #ifdef _WIN32
