@@ -74,7 +74,7 @@ class EngineTest : public ::testing::Test {
 
   ~EngineTest() { BackendManager::Get()->RemoveBackend(backend_factory_); }
 
-  OptionsParser options_parser_;
+  ProgramOptionsManager options_parser_;
   ProgramOptions* options_ = nullptr;  // absl_notnull
   MockBackend* backend_ = nullptr;
   MockBackendFactory* backend_factory_ = nullptr;

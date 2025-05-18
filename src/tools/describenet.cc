@@ -37,7 +37,7 @@ namespace {
 const OptionId kWeightsFilenameId{"weights", "WeightsFile",
                                   "Path of the input Lc0 weights file.", 'w'};
 
-bool ProcessParameters(OptionsParser* options) {
+bool ProcessParameters(ProgramOptionsManager* options) {
   options->Add<StringOption>(kWeightsFilenameId);
   if (!options->ProcessAllFlags()) return false;
   const ProgramOptions& dict = options->GetOptionsDict();
@@ -300,7 +300,7 @@ void ShowAllNetworkInfo(const pblczero::Net& weights) {
 }
 
 void DescribeNetworkCmd() {
-  OptionsParser options_parser;
+  ProgramOptionsManager options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
   const ProgramOptions& dict = options_parser.GetOptionsDict();

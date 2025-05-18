@@ -56,7 +56,7 @@ struct GoParams {
 
 class StringUciResponder : public UciResponder {
  public:
-  void PopulateParams(OptionsParser* options);
+  void PopulateParams(ProgramOptionsManager* options);
 
   void SendId();
   void OutputBestMove(BestMoveInfo* info) override;
@@ -100,7 +100,7 @@ class EngineControllerBase {
 
 class UciLoop {
  public:
-  UciLoop(StringUciResponder* uci_responder, OptionsParser* options,
+  UciLoop(StringUciResponder* uci_responder, ProgramOptionsManager* options,
           EngineControllerBase* engine);
   virtual ~UciLoop();
 
@@ -113,7 +113,7 @@ class UciLoop {
       const std::unordered_map<std::string, std::string>& params);
 
   StringUciResponder* uci_responder_;  // absl_nonnull
-  OptionsParser* options_;             // absl_notnull
+  ProgramOptionsManager* options_;             // absl_notnull
   EngineControllerBase* engine_;       // absl_notnull
 };
 

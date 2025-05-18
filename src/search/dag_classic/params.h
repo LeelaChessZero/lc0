@@ -51,7 +51,7 @@ class SearchParams {
   };
 
   // Populates UciOptions with search parameters.
-  static void Populate(OptionsParser* options);
+  static void Populate(ProgramOptionsManager* options);
 
   // Parameter getters.
   uint32_t GetMiniBatchSize() const { return kMiniBatchSize; }

@@ -60,7 +60,7 @@ const OptionId kSlowMoverId{
      .visibility_mask = OptionId::kSimpleOnly}};
 }  // namespace
 
-void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
+void PopulateTimeManagementOptions(RunType for_what, ProgramOptionsManager* options) {
   PopulateCommonStopperOptions(for_what, options);
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<StringOption>(kTimeManagerId) = "legacy";

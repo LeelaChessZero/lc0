@@ -58,7 +58,7 @@ const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
 }  // namespace
 
-void Engine::PopulateOptions(OptionsParser* options) {
+void Engine::PopulateOptions(ProgramOptionsManager* options) {
   options->Add<BoolOption>(kPonderId) = false;
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<BoolOption>(kStrictUciTiming) = false;

@@ -49,11 +49,11 @@ const int kUciLineIndent = 15;
 const int kHelpWidth = 80;
 }  // namespace
 
-OptionsParser::Option::Option(const OptionId& id) : id_(id) {}
+ProgramOptionsManager::Option::Option(const OptionId& id) : id_(id) {}
 
-OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
+ProgramOptionsManager::ProgramOptionsManager() : values_(*defaults_.AddSubdict("values")) {}
 
-std::vector<std::string> OptionsParser::ListOptionsUci() const {
+std::vector<std::string> ProgramOptionsManager::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
     if (!iter->GetUciOption().empty() &&
@@ -65,7 +65,7 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
   return result;
 }
 
-void OptionsParser::SetUciOption(const std::string& name,
+void ProgramOptionsManager::SetUciOption(const std::string& name,
                                  const std::string& value,
                                  const std::string& context) {
   auto option = FindOptionByUciName(name);
@@ -76,7 +76,7 @@ void OptionsParser::SetUciOption(const std::string& name,
   throw Exception("Unknown option: " + name);
 }
 
-OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
+ProgramOptionsManager::Option* ProgramOptionsManager::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
     auto longflg = val->GetLongFlag();
@@ -85,7 +85,7 @@ OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
   return nullptr;
 }
 
-OptionsParser::Option* OptionsParser::FindOptionByUciName(
+ProgramOptionsManager::Option* ProgramOptionsManager::FindOptionByUciName(
     const std::string& name) const {
   for (const auto& val : options_) {
     if (StringsEqualIgnoreCase(val->GetUciOption(), name)) return val.get();
@@ -93,14 +93,14 @@ OptionsParser::Option* OptionsParser::FindOptionByUciName(
   return nullptr;
 }
 
-OptionsParser::Option* OptionsParser::FindOptionById(const OptionId& id) const {
+ProgramOptionsManager::Option* ProgramOptionsManager::FindOptionById(const OptionId& id) const {
   for (const auto& val : options_) {
     if (id == val->GetId()) return val.get();
   }
   return nullptr;
 }
 
-ProgramOptions* OptionsParser::GetMutableOptions(const std::string& context) {
+ProgramOptions* ProgramOptionsManager::GetMutableOptions(const std::string& context) {
   if (context == "") return &values_;
   auto* result = &values_;
   for (const auto& x : StrSplit(context, ".")) {
@@ -109,7 +109,7 @@ ProgramOptions* OptionsParser::GetMutableOptions(const std::string& context) {
   return result;
 }
 
-const ProgramOptions& OptionsParser::GetOptionsDict(const std::string& context) {
+const ProgramOptions& ProgramOptionsManager::GetOptionsDict(const std::string& context) {
   if (context == "") return values_;
   const auto* result = &values_;
   for (const auto& x : StrSplit(context, ".")) {
@@ -118,12 +118,12 @@ const ProgramOptions& OptionsParser::GetOptionsDict(const std::string& context) 
   return *result;
 }
 
-bool OptionsParser::ProcessAllFlags() {
+bool ProgramOptionsManager::ProcessAllFlags() {
   return ProcessFlags(ConfigFile::Arguments()) &&
          ProcessFlags(CommandLine::Arguments());
 }
 
-bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
+bool ProgramOptionsManager::ProcessFlags(const std::vector<std::string>& args) {
   auto show_help = false;
   if (CommandLine::BinaryName().find("simple") != std::string::npos) {
     visibility_mode_ = OptionId::kSimpleMode;
@@ -205,7 +205,7 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
   return true;
 }
 
-void OptionsParser::AddContext(const std::string& context) {
+void ProgramOptionsManager::AddContext(const std::string& context) {
   values_.AddSubdict(context);
 }
 
@@ -259,7 +259,7 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }
 }  // namespace
 
-void OptionsParser::ShowHelp() const {
+void ProgramOptionsManager::ShowHelp() const {
   std::cout << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
             << std::endl;
 

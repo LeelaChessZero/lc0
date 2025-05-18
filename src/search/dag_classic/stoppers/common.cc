@@ -82,7 +82,7 @@ const OptionId kNodesAsPlayoutsId{
 
 }  // namespace
 
-void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
+void PopulateCommonStopperOptions(RunType for_what, ProgramOptionsManager* options) {
   options->Add<IntOption>(kKLDGainAverageIntervalId, 1, 10000000) = 100;
   options->Add<FloatOption>(kMinimumKLDGainPerNodeId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kSmartPruningFactorId, 0.0f, 10.0f) =

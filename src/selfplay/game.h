@@ -73,7 +73,7 @@ class SelfPlayGame {
                const Opening& opening);
 
   // Populate command line options that it uses.
-  static void PopulateUciParams(OptionsParser* options);
+  static void PopulateUciParams(ProgramOptionsManager* options);
 
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,

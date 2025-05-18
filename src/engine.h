@@ -42,7 +42,7 @@ class Engine : public EngineControllerBase {
   Engine(const SearchFactory&, const ProgramOptions&);
   ~Engine() override;
 
-  static void PopulateOptions(OptionsParser*);
+  static void PopulateOptions(ProgramOptionsManager*);
 
   void EnsureReady() override {};
   void NewGame() override;

@@ -47,7 +47,7 @@ class SelfPlayTournament {
                      TournamentInfo::Callback tournament_info);
 
   // Populate command line options that it uses.
-  static void PopulateOptions(OptionsParser* options);
+  static void PopulateOptions(ProgramOptionsManager* options);
 
   // Starts worker threads and exists immediately.
   void StartAsync();

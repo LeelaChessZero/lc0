@@ -101,7 +101,7 @@ const OptionId kSyzygyTablebaseId{
 
 }  // namespace
 
-void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
+void SelfPlayTournament::PopulateOptions(ProgramOptionsManager* options) {
   options->AddContext("player1");
   options->AddContext("player2");
   options->AddContext("white");

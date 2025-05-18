@@ -35,7 +35,7 @@ namespace lczero {
 namespace dag_classic {
 
 enum class RunType { kUci, kSimpleUci, kSelfplay };
-void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
+void PopulateCommonStopperOptions(RunType for_what, ProgramOptionsManager* options);
 
 // Populates KLDGain and SmartPruning stoppers.
 void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,

@@ -45,7 +45,7 @@ struct SharedBackendParams {
   static const OptionId kBackendOptionsId;
   static const OptionId kNNCacheSizeId;
 
-  static void Populate(OptionsParser*);
+  static void Populate(ProgramOptionsManager*);
 
  private:
   SharedBackendParams() = delete;

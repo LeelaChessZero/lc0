@@ -58,7 +58,7 @@ const OptionId kSlowMoverId{
     "value is less than 1)."};
 }  // namespace
 
-void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
+void PopulateTimeManagementOptions(RunType for_what, ProgramOptionsManager* options) {
   PopulateCommonStopperOptions(for_what, options);
   if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;

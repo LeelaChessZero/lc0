@@ -134,7 +134,7 @@ class DagClassicSearchFactory : public SearchFactory {
     return std::make_unique<DagClassicSearch>(responder, options);
   }
 
-  void PopulateParams(OptionsParser* parser) const override {
+  void PopulateParams(ProgramOptionsManager* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
     SearchParams::Populate(parser);
     PopulateTimeManagementOptions(RunType::kUci, parser);

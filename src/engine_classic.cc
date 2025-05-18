@@ -97,7 +97,7 @@ EngineClassic::EngineClassic(const ProgramOptions& options)
   if (options_.Get<bool>(kPreload)) UpdateFromUciOptions();
 }
 
-void EngineClassic::PopulateOptions(OptionsParser* options) {
+void EngineClassic::PopulateOptions(ProgramOptionsManager* options) {
   using namespace std::placeholders;
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   classic::SearchParams::Populate(options);

@@ -103,7 +103,7 @@ const OptionId kFixWdlSoftmaxId{
     "fix-wdl-softmax", "",
     "Fix tensorflow exported onnx that is missing wdl output softmax."};
 
-bool ProcessParameters(OptionsParser* options) {
+bool ProcessParameters(ProgramOptionsManager* options) {
   using pblczero::NetworkFormat;
   using pblczero::OnnxModel;
   options->Add<StringOption>(kInputFilenameId);
@@ -420,7 +420,7 @@ bool MaybeFixOnnx(pblczero::ModelProto& model, const ProgramOptions& dict,
 void ConvertOnnxToLeela() {
   using pblczero::NetworkFormat;
   using pblczero::OnnxModel;
-  OptionsParser options_parser;
+  ProgramOptionsManager options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
   const ProgramOptions& dict = options_parser.GetOptionsDict();

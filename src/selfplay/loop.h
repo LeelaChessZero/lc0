@@ -52,7 +52,7 @@ class SelfPlayLoop {
   void EnsureOptionsSent();
 
   StringUciResponder* uci_responder_ = nullptr;  // absl_notnull
-  OptionsParser options_;
+  ProgramOptionsManager options_;
   std::unique_ptr<SelfPlayTournament> tournament_;
   std::unique_ptr<std::thread> thread_;
 };

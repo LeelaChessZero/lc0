@@ -1180,7 +1180,7 @@ void BuildSubs(const std::vector<std::string>& files) {
 #endif
 
 void RunRescorer() {
-  OptionsParser options;
+  ProgramOptionsManager options;
   orig_counts[0] = 0;
   orig_counts[1] = 0;
   orig_counts[2] = 0;

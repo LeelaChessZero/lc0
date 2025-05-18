@@ -39,7 +39,7 @@ namespace lczero {
 class Backend;
 struct GameState;
 struct GoParams;
-class OptionsParser;
+class ProgramOptionsManager;
 class UciResponder;
 class SyzygyTablebase;
 
@@ -95,7 +95,7 @@ class SearchFactory {
   // Name of the algorithm (used in UCI options or command line).
   virtual std::string_view GetName() const = 0;
   // Populates the parameters of the algorithm.
-  virtual void PopulateParams(OptionsParser*) const {}
+  virtual void PopulateParams(ProgramOptionsManager*) const {}
   // Creates a new environment for the algorithm.
   virtual std::unique_ptr<SearchBase> CreateSearch(
       UciResponder*, const ProgramOptions*) const = 0;

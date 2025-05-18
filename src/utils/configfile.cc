@@ -49,7 +49,7 @@ const char* kDefaultConfigFileParam = "<default>";
 
 std::vector<std::string> ConfigFile::arguments_;
 
-void ConfigFile::PopulateOptions(OptionsParser* options) {
+void ConfigFile::PopulateOptions(ProgramOptionsManager* options) {
   options->Add<StringOption>(kConfigFileId) = kDefaultConfigFile;
 }
 
