@@ -34,7 +34,7 @@
 #include "search/classic/search.h"
 #include "search/classic/stoppers/stoppers.h"
 #include "trainingdata/trainingdata.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 
@@ -57,7 +57,7 @@ struct PlayerOptions {
   // Callback when player discards a selected move due to low visits.
   OpeningCallback discarded_callback;
   // User options dictionary.
-  const OptionsDict* uci_options;
+  const ProgramOptions* uci_options;
   // Limits to use for every move.
   SelfPlayLimits search_limits;
 };
@@ -73,7 +73,7 @@ class SelfPlayGame {
                const Opening& opening);
 
   // Populate command line options that it uses.
-  static void PopulateUciParams(OptionsParser* options);
+  static void PopulateUciParams(ProgramOptionsManager* options);
 
   // Starts the game and blocks until the game is finished.
   void Play(int white_threads, int black_threads, bool training,

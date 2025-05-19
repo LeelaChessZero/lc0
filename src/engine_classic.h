@@ -45,7 +45,7 @@ struct CurrentPosition {
 
 class EngineClassic : public EngineControllerBase {
  public:
-  EngineClassic(const OptionsDict& options);
+  EngineClassic(const ProgramOptions& options);
 
   ~EngineClassic() {
     // Make sure search is destructed first, and it still may be running in
@@ -53,7 +53,7 @@ class EngineClassic : public EngineControllerBase {
     search_.reset();
   }
 
-  static void PopulateOptions(OptionsParser* options);
+  static void PopulateOptions(ProgramOptionsManager* options);
 
   // Blocks.
   void EnsureReady() override;
@@ -82,7 +82,7 @@ class EngineClassic : public EngineControllerBase {
   void ResetMoveTimer();
   void CreateFreshTimeManager();
 
-  const OptionsDict& options_;
+  const ProgramOptions& options_;
 
   UciResponderForwarder uci_forwarder_;
 

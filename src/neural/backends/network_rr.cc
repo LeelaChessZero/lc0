@@ -38,7 +38,7 @@ namespace {
 class RoundRobinNetwork : public Network {
  public:
   RoundRobinNetwork(const std::optional<WeightsFile>& weights,
-                    const OptionsDict& options) {
+                    const InlineConfig& options) {
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
       // If options are empty, or multiplexer configured in root object,
@@ -54,8 +54,8 @@ class RoundRobinNetwork : public Network {
 
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
-                  const OptionsDict& opts) {
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+                  const InlineConfig& opts) {
+    const std::string backend = opts.GetOrValue<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
@@ -97,7 +97,7 @@ class RoundRobinNetwork : public Network {
 };
 
 std::unique_ptr<Network> MakeRoundRobinNetwork(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
   return std::make_unique<RoundRobinNetwork>(weights, options);
 }
 

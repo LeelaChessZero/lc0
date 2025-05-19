@@ -58,7 +58,7 @@ const OptionId SharedBackendParams::kNNCacheSizeId{
     "Number of positions to store in a memory cache. A large cache can speed "
     "up searching, but takes memory."};
 
-void SharedBackendParams::Populate(OptionsParser* options) {
+void SharedBackendParams::Populate(ProgramOptionsManager* options) {
   options->Add<FloatOption>(kPolicySoftmaxTemp, 0.1f, 10.0f) = 1.359f;
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFill, history_fill_opt) = "fen_only";

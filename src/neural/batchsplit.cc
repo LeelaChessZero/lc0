@@ -44,7 +44,7 @@ class BatchSplittingBackend : public Backend {
   std::unique_ptr<BackendComputation> CreateComputation() override;
 
   UpdateConfigurationResult UpdateConfiguration(
-      const OptionsDict& options) override {
+      const ProgramOptions& options) override {
     return wrapped_backend_->UpdateConfiguration(options);
   }
 

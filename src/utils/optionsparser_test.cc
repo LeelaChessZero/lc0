@@ -16,14 +16,14 @@
   along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 #include <gtest/gtest.h>
 #include <iostream>
 
 namespace lczero {
 
-TEST(OptionsParser, CheckInvalidOption) {
-  OptionsParser options;
+TEST(ProgramOptionsManager, CheckInvalidOption) {
+  ProgramOptionsManager options;
   const OptionId id{"this-is-a-valid-option", "this-is-a-valid-option", "help",
                     'a'};
   options.Add<StringOption>(id) = "";
@@ -33,8 +33,8 @@ TEST(OptionsParser, CheckInvalidOption) {
                Exception);
 }
 
-TEST(OptionsParser, IntOptionCheckValueConstraints) {
-  OptionsParser options;
+TEST(ProgramOptionsManager, IntOptionCheckValueConstraints) {
+  ProgramOptionsManager options;
   const OptionId id{"int-test-a", "int-test-a", "help", 'a'};
   options.Add<IntOption>(id, 25, 75) = 50;
 
@@ -45,8 +45,8 @@ TEST(OptionsParser, IntOptionCheckValueConstraints) {
   EXPECT_THROW(options.SetUciOption("int-test-a", "100"), Exception);
 }
 
-TEST(OptionsParser, FloatOptionCheckValueConstraints) {
-  OptionsParser options;
+TEST(ProgramOptionsManager, FloatOptionCheckValueConstraints) {
+  ProgramOptionsManager options;
   const OptionId id{"float-test-a", "float-test-a", "help", 'a'};
   options.Add<FloatOption>(id, 25.0f, 75.0f) = 50.0f;
 
@@ -57,8 +57,8 @@ TEST(OptionsParser, FloatOptionCheckValueConstraints) {
   EXPECT_THROW(options.SetUciOption("float-test-a", "100.0"), Exception);
 }
 
-TEST(OptionsParser, BoolOptionsCheckValueConstraints) {
-  OptionsParser options;
+TEST(ProgramOptionsManager, BoolOptionsCheckValueConstraints) {
+  ProgramOptionsManager options;
   const OptionId id{"bool-test-a", "bool-test-a", "help", 'a'};
   options.Add<BoolOption>(id) = false;
 
@@ -67,8 +67,8 @@ TEST(OptionsParser, BoolOptionsCheckValueConstraints) {
   EXPECT_THROW(options.SetUciOption("bool-test-a", "leela"), Exception);
 }
 
-TEST(OptionsParser, ChoiceOptionCheckValueConstraints) {
-  OptionsParser options;
+TEST(ProgramOptionsManager, ChoiceOptionCheckValueConstraints) {
+  ProgramOptionsManager options;
   const OptionId id{"choice-test-a", "choice-test-a", "help", 'a'};
   std::vector<std::string> choices;
   choices.push_back("choice-a");

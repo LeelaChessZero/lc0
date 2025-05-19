@@ -32,7 +32,7 @@
 
 namespace lczero {
 
-class OptionsParser;
+class ProgramOptionsManager;
 
 class ConfigFile {
  public:
@@ -45,7 +45,7 @@ class ConfigFile {
   static const std::vector<std::string>& Arguments() { return arguments_; }
 
   // Add the config file parameter to the options dictionary.
-  static void PopulateOptions(OptionsParser* options);
+  static void PopulateOptions(ProgramOptionsManager* options);
 
  private:
   // Parses the config file into the arguments_ vector.

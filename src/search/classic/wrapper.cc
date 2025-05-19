@@ -44,7 +44,7 @@ const OptionId kClearTree{"", "ClearTree",
 
 class ClassicSearch : public SearchBase {
  public:
-  ClassicSearch(UciResponder* responder, const OptionsDict* options)
+  ClassicSearch(UciResponder* responder, const ProgramOptions* options)
       : SearchBase(responder), options_(options) {}
 
  private:
@@ -64,7 +64,7 @@ class ClassicSearch : public SearchBase {
     if (search_) search_->Abort();
   }
 
-  const OptionsDict* options_;
+  const ProgramOptions* options_;
   std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
@@ -121,11 +121,11 @@ void ClassicSearch::StartSearch(const GoParams& params) {
 class ClassicSearchFactory : public SearchFactory {
   std::string_view GetName() const override { return "classic"; }
   std::unique_ptr<SearchBase> CreateSearch(
-      UciResponder* responder, const OptionsDict* options) const override {
+      UciResponder* responder, const ProgramOptions* options) const override {
     return std::make_unique<ClassicSearch>(responder, options);
   }
 
-  void PopulateParams(OptionsParser* parser) const override {
+  void PopulateParams(ProgramOptionsManager* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
     SearchParams::Populate(parser);
     PopulateTimeManagementOptions(RunType::kUci, parser);

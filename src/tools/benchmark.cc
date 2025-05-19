@@ -51,7 +51,7 @@ const OptionId kNumPositionsId{"num-positions", "",
 }  // namespace
 
 void Benchmark::Run(bool run_shorter_benchmark) {
-  OptionsParser options;
+  ProgramOptionsManager options;
   SharedBackendParams::Populate(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
   options.GetMutableDefaultsOptions()->Set(SharedBackendParams::kNNCacheSizeId,

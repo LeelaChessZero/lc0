@@ -32,14 +32,14 @@
 
 #include "search/artifacts.h"
 #include "utils/exception.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 
 class Backend;
 struct GameState;
 struct GoParams;
-class OptionsDict;
-class OptionsParser;
+class ProgramOptionsManager;
 class UciResponder;
 class SyzygyTablebase;
 
@@ -95,10 +95,10 @@ class SearchFactory {
   // Name of the algorithm (used in UCI options or command line).
   virtual std::string_view GetName() const = 0;
   // Populates the parameters of the algorithm.
-  virtual void PopulateParams(OptionsParser*) const {}
+  virtual void PopulateParams(ProgramOptionsManager*) const {}
   // Creates a new environment for the algorithm.
   virtual std::unique_ptr<SearchBase> CreateSearch(
-      UciResponder*, const OptionsDict*) const = 0;
+      UciResponder*, const ProgramOptions*) const = 0;
 };
 
 }  // namespace lczero

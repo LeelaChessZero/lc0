@@ -136,7 +136,7 @@ bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
 }
 }  // namespace
 
-UciLoop::UciLoop(StringUciResponder* uci_responder, OptionsParser* options,
+UciLoop::UciLoop(StringUciResponder* uci_responder, ProgramOptionsManager* options,
                  EngineControllerBase* engine)
     : uci_responder_(uci_responder), options_(options), engine_(engine) {
   engine_->RegisterUciResponder(uci_responder_);
@@ -224,7 +224,7 @@ bool UciLoop::ProcessLine(const std::string& line) {
   return DispatchCommand(command.first, command.second);
 }
 
-void StringUciResponder::PopulateParams(OptionsParser* options) {
+void StringUciResponder::PopulateParams(ProgramOptionsManager* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   options->Add<BoolOption>(kShowWDL) = true;
   options->Add<BoolOption>(kShowMovesleft) = false;

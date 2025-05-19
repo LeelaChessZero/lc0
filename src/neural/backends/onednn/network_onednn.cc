@@ -151,7 +151,7 @@ class OnednnNetworkComputation : public NetworkComputation {
 
 class OnednnNetwork : public Network {
  public:
-  OnednnNetwork(const WeightsFile& file, const OptionsDict& options)
+  OnednnNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
@@ -171,16 +171,16 @@ class OnednnNetwork : public Network {
 
 #if DNNL_VERSION_MAJOR * 100 + DNNL_VERSION_MINOR >= 105
     dnnl::set_primitive_cache_capacity(
-        options.GetOrDefault<int>("jit_cache", 1024));
+        options.GetOrValue<int>("jit_cache", 1024));
 #endif
 
-    if (options.Exists<int>("threads")) {
+    if (options.HasKey<int>("threads")) {
       omp_set_num_threads(options.Get<int>("threads"));
     }
 
     cpu_eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
 
-    if (options.Exists<int>("gpu")) {
+    if (options.HasKey<int>("gpu")) {
       eng_ = dnnl::engine(dnnl::engine::kind::gpu, options.Get<int>("gpu"));
     } else {
       eng_ = cpu_eng_;
@@ -188,7 +188,7 @@ class OnednnNetwork : public Network {
     eng_stream_ = dnnl::stream(eng_);
 
     auto data_type = dnnl::memory::data_type::f32;
-    if (options.GetOrDefault<bool>(
+    if (options.GetOrValue<bool>(
             "fp16", eng_.get_kind() == dnnl::engine::kind::gpu)) {
       if (eng_.get_kind() == dnnl::engine::kind::cpu) {
         data_type = dnnl::memory::data_type::bf16;
@@ -201,7 +201,7 @@ class OnednnNetwork : public Network {
     // on gpu and not on cpu (last tested with version 2.6.0). So for the time
     // being this will be overriden in every case.
     auto convolution_type = dnnl::algorithm::convolution_auto;
-    if (options.Exists<bool>("winograd")) {
+    if (options.HasKey<bool>("winograd")) {
       if (options.Get<bool>("winograd")) {
         convolution_type = dnnl::algorithm::convolution_winograd;
       } else {
@@ -217,12 +217,12 @@ class OnednnNetwork : public Network {
       }
     }
 
-    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    max_batch_size_ = options.GetOrValue<int>("max_batch", 1024);
 
-    batch_size_ = options.GetOrDefault<int>(
+    batch_size_ = options.GetOrValue<int>(
         "batch", data_type == dnnl::memory::data_type::f32 ? 32 : 64);
 
-    steps_ = options.GetOrDefault<int>("steps", 2);
+    steps_ = options.GetOrValue<int>("steps", 2);
     if (batch_size_ <= 0) {
       steps_ = 1;
     } else if (steps_ > max_batch_size_ / batch_size_) {
@@ -480,7 +480,7 @@ class OnednnNetwork : public Network {
       // Moves left head
       moves_left_ = (file.format().network_format().moves_left() ==
                      pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                    options.GetOrDefault<bool>("mlh", true);
+                    options.GetOrValue<bool>("mlh", true);
       if (moves_left_) {
         moves_channels_ = weights.ip1_mov_b.size();
         moves_input_planes_ = weights.moves_left.biases.size();
@@ -529,7 +529,7 @@ class OnednnNetwork : public Network {
       }
 
       // Initialize layers if batch size fixed.
-      if (options.GetOrDefault<bool>("init", true) && batch_size_ > 0) {
+      if (options.GetOrValue<bool>("init", true) && batch_size_ > 0) {
         int batchSize = (idx + 1) * batch_size_;
         InputsOutputs io(batchSize, wdl_, moves_left_);
         memset(io.input_masks_mem_, 0,
@@ -879,7 +879,7 @@ void OnednnNetworkComputation::ComputeBlocking() {
 }
 
 std::unique_ptr<Network> MakeOnednnNetwork(const std::optional<WeightsFile>& w,
-                                           const OptionsDict& options) {
+                                           const InlineConfig& options) {
   if (!w) {
     throw Exception("The oneDNN backend requires a network file.");
   }

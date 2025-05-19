@@ -47,7 +47,7 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
 
 class NetworkAsBackend : public Backend {
  public:
-  NetworkAsBackend(std::unique_ptr<Network> network, const OptionsDict& options)
+  NetworkAsBackend(std::unique_ptr<Network> network, const ProgramOptions& options)
       : network_(std::move(network)),
         backend_opts_(
             options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
@@ -67,7 +67,7 @@ class NetworkAsBackend : public Backend {
   BackendAttributes GetAttributes() const override { return attrs_; }
   std::unique_ptr<BackendComputation> CreateComputation() override;
   UpdateConfigurationResult UpdateConfiguration(
-      const OptionsDict& options) override {
+      const ProgramOptions& options) override {
     if (backend_opts_ !=
         options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {
       return NEED_RESTART;
@@ -176,11 +176,11 @@ NetworkAsBackendFactory::NetworkAsBackendFactory(const std::string& name,
     : name_(name), factory_(factory), priority_(priority) {}
 
 std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
-    const OptionsDict& options) {
+    const ProgramOptions& options) {
   const std::string backend_options =
       options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
-  OptionsDict network_options;
-  network_options.AddSubdictFromString(backend_options);
+  InlineConfig network_options;
+  ParseInlineConfig(backend_options, &network_options);
 
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);

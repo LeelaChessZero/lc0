@@ -170,7 +170,7 @@ class DxContext {
   int gpu_id_;
 
  public:
-  DxContext(const OptionsDict& options);
+  DxContext(const InlineConfig& options);
   ~DxContext();
 
   ID3D12Device5* getDevice() { return device_; }
@@ -200,7 +200,7 @@ class DxNetwork : public Network {
   friend struct InputsOutputsDx;
 
  public:
-  DxNetwork(const WeightsFile& file, const OptionsDict& options);
+  DxNetwork(const WeightsFile& file, const InlineConfig& options);
   ~DxNetwork();
 
   void Eval(InputsOutputsDx* io, int batchSize);

@@ -56,7 +56,7 @@ const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
 }  // namespace
 
-void Engine::PopulateOptions(OptionsParser* options) {
+void Engine::PopulateOptions(ProgramOptionsManager* options) {
   options->Add<BoolOption>(kPonderId) = false;
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<BoolOption>(kStrictUciTiming) = false;
@@ -137,7 +137,7 @@ class Engine::UciPonderForwarder : public UciResponder {
   Engine* const engine_;
 };
 
-Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
+Engine::Engine(const SearchFactory& factory, const ProgramOptions& opts)
     : uci_forwarder_(std::make_unique<UciPonderForwarder>(this)),
       options_(opts),
       search_(factory.CreateSearch(uci_forwarder_.get(), &options_)) {

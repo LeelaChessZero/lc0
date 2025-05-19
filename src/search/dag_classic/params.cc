@@ -471,7 +471,7 @@ const OptionId SearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
 
-void SearchParams::Populate(OptionsParser* options) {
+void SearchParams::Populate(ProgramOptionsManager* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 0, 1024) = 0;
@@ -585,7 +585,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kWDLBookExitBiasId);
 }
 
-SearchParams::SearchParams(const OptionsDict& options)
+SearchParams::SearchParams(const ProgramOptions& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(

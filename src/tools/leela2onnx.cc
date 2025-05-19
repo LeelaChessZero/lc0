@@ -34,7 +34,7 @@
 #include "neural/xla/print_hlo.h"
 #include "tools/describenet.h"
 #include "utils/files.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {
@@ -83,7 +83,7 @@ const OptionId kPolicyHead{
     "'vanilla', 'optimistic' or 'soft', but only 'vanilla' is always "
     "available."};
 
-bool ProcessParameters(OptionsParser* options) {
+bool ProcessParameters(ProgramOptionsManager* options) {
   options->Add<StringOption>(kInputFilenameId);
   options->Add<StringOption>(kOutputFilenameId);
   options->Add<StringOption>(kHloTextOutputFilenameId);
@@ -107,11 +107,11 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kPolicyHead) = "vanilla";
   if (!options->ProcessAllFlags()) return false;
 
-  const OptionsDict& dict = options->GetOptionsDict();
-  dict.EnsureExists<std::string>(kInputFilenameId);
-  if (!dict.OwnExists<std::string>(kOutputFilenameId) &&
-      !dict.OwnExists<std::string>(kHloTextOutputFilenameId) &&
-      !dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+  const ProgramOptions& dict = options->GetOptionsDict();
+  dict.EnsureHasKey<std::string>(kInputFilenameId);
+  if (!dict.HasOwnKey<std::string>(kOutputFilenameId) &&
+      !dict.HasOwnKey<std::string>(kHloTextOutputFilenameId) &&
+      !dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
     throw Exception(
         "At least one of --output, --hlo-text-output or --hlo-proto-output "
         "must be specified.");
@@ -122,10 +122,10 @@ bool ProcessParameters(OptionsParser* options) {
 }  // namespace
 
 void ConvertLeelaToOnnx() {
-  OptionsParser options_parser;
+  ProgramOptionsManager options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
-  const OptionsDict& dict = options_parser.GetOptionsDict();
+  const ProgramOptions& dict = options_parser.GetOptionsDict();
   auto weights_file =
       LoadWeightsFromFile(dict.Get<std::string>(kInputFilenameId));
 
@@ -153,11 +153,11 @@ void ConvertLeelaToOnnx() {
   }
 
   const auto& onnx = weights_file.onnx_model();
-  if (dict.OwnExists<std::string>(kOutputFilenameId)) {
+  if (dict.HasOwnKey<std::string>(kOutputFilenameId)) {
     WriteStringToFile(dict.Get<std::string>(kOutputFilenameId), onnx.model());
   }
-  if (dict.OwnExists<std::string>(kHloTextOutputFilenameId) ||
-      dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+  if (dict.HasOwnKey<std::string>(kHloTextOutputFilenameId) ||
+      dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
     Onnx2HloOptions hlo_options;
     hlo_options.debugging_allow_partial_result =
         dict.Get<bool>(kHloAllowPartialResultId);
@@ -165,7 +165,7 @@ void ConvertLeelaToOnnx() {
     onnx_model.ParseFromString(onnx.model());
     auto hlo_result = ConvertOnnxToHlo(
         onnx_model, dict.Get<int>(kHloBatchSizeId), hlo_options);
-    if (dict.OwnExists<std::string>(kHloTextOutputFilenameId)) {
+    if (dict.HasOwnKey<std::string>(kHloTextOutputFilenameId)) {
       std::string filename = dict.Get<std::string>(kHloTextOutputFilenameId);
       if (filename == "-") {
         PrettyPrintHlo(hlo_result.hlo_module, {}, std::cout);
@@ -174,7 +174,7 @@ void ConvertLeelaToOnnx() {
         PrettyPrintHlo(hlo_result.hlo_module, {}, file);
       }
     }
-    if (dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+    if (dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
       WriteStringToFile(dict.Get<std::string>(kHloProtoOutputFilenameId),
                         hlo_result.hlo_module.OutputAsString());
     }

@@ -67,7 +67,7 @@ const OptionId kOpeningStopProbId{
     "1/n), where p is the value given and n the opening moves remaining."};
 }  // namespace
 
-void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
+void SelfPlayGame::PopulateUciParams(ProgramOptionsManager* options) {
   options->Add<BoolOption>(kReuseTreeId) = false;
   options->Add<BoolOption>(kResignWDLStyleId) = false;
   options->Add<FloatOption>(kResignPercentageId, 0.0f, 100.0f) = 0.0f;

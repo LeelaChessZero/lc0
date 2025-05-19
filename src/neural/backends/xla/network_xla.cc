@@ -274,23 +274,23 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(
 // Makes an XLA network. First converts the weights to ONNX, and then calls
 // FillXlaRunnerFromOnnx to convert them further to HLO and them compile them.
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
-                                        const OptionsDict& opts) {
+                                        const InlineConfig& opts) {
   if (!w) throw Exception("The XLA backend requires a network file.");
-  int device = opts.GetOrDefault<int>("device", 0);
+  int device = opts.GetOrValue<int>("device", 0);
   // Note: if the plugin_path does NOT contain a slash, it's looked up in the
   // LD_LIBRARY_PATH (and a few other system defined places). If it does
   // contain a slash, it's looked up at the exact relative or absolute path.
   auto runner = std::make_unique<XlaRunner>(
-      opts.GetOrDefault<std::string>("plugin_path",
+      opts.GetOrValue<std::string>("plugin_path",
                                      "./pjrt_c_api_gpu_plugin.so")
           .c_str(),
       device);
-  int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
-  int steps = opts.GetOrDefault<int>("steps", 16);
+  int max_batch_size = opts.GetOrValue<int>("max_batch", 512);
+  int steps = opts.GetOrValue<int>("steps", 16);
 
   XlaNetworkOptions options;
   std::optional<pblczero::XlaShapeProto::Type> io_type;
-  if (opts.Exists<std::string>("io_datatype")) {
+  if (opts.HasKey<std::string>("io_datatype")) {
     io_type = StringToXlaType(opts.Get<std::string>("io_datatype"));
   }
   if (w->has_onnx_model()) {
@@ -301,10 +301,10 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
     WeightsToOnnxConverterOptions onnx_converter_options;
     onnx_converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(
-            opts.GetOrDefault<std::string>("datatype", "f32"));
+            opts.GetOrValue<std::string>("datatype", "f32"));
     onnx_converter_options.opset = 22;  // For full onnx bfloat16 support.
     onnx_converter_options.alt_mish =
-        opts.GetOrDefault<bool>("alt_mish", false);
+        opts.GetOrValue<bool>("alt_mish", false);
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
                                     max_batch_size, steps, io_type);

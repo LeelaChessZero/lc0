@@ -28,13 +28,13 @@
 #pragma once
 
 #include "search/dag_classic/stoppers/timemgr.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 namespace dag_classic {
 
 std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params);
+                                                   const InlineConfig& params);
 
 }  // namespace dag_classic
 }  // namespace lczero

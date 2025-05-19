@@ -89,7 +89,7 @@ class MuxingComputation : public NetworkComputation {
 class MuxingNetwork : public Network {
  public:
   MuxingNetwork(const std::optional<WeightsFile>& weights,
-                const OptionsDict& options) {
+                const InlineConfig& options) {
     // int threads, int max_batch)
     //: network_(std::move(network)), max_batch_(max_batch) {
 
@@ -108,15 +108,15 @@ class MuxingNetwork : public Network {
 
   void AddBackend(const std::string& name,
                   const std::optional<WeightsFile>& weights,
-                  const OptionsDict& opts) {
-    const int max_batch = opts.GetOrDefault<int>("max_batch", 256);
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+                  const InlineConfig& opts) {
+    const int max_batch = opts.GetOrValue<int>("max_batch", 256);
+    const std::string backend = opts.GetOrValue<std::string>("backend", name);
 
     networks_.emplace_back(
         NetworkFactory::Get()->Create(backend, weights, opts));
     Network* net = networks_.back().get();
 
-    int nn_threads = opts.GetOrDefault<int>("threads", 0);
+    int nn_threads = opts.GetOrValue<int>("threads", 0);
     if (nn_threads == 0) {
       nn_threads = net->GetThreads();
     }
@@ -240,7 +240,7 @@ void MuxingComputation::ComputeBlocking() {
 }
 
 std::unique_ptr<Network> MakeMuxingNetwork(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
   return std::make_unique<MuxingNetwork>(weights, options);
 }
 

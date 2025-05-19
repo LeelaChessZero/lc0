@@ -163,8 +163,8 @@ void DxContext::DumpTensor(const char* message, DXAlloc alloc, int size,
 void DxContext::DumpTensor(const char*, DXAlloc, int, bool, bool) {}
 #endif
 
-DxContext::DxContext(const OptionsDict& options) {
-  gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+DxContext::DxContext(const InlineConfig& options) {
+  gpu_id_ = options.GetOrValue<int>("gpu", 0);
 
   IDXGIFactory4* pFactory = nullptr;
   IDXGIAdapter* pAdapter = nullptr;
@@ -371,7 +371,7 @@ void DxContext::ScheduleUpload(DXAlloc alloc, const void* data, size_t size) {
   upload_scratch_mem_.offset += (uint32_t)size;
 }
 
-DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
+DxNetwork::DxNetwork(const WeightsFile& file, const InlineConfig& options)
     : dx_context_(options),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
@@ -381,10 +381,10 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   has_conv_policy_ = file.format().network_format().policy() ==
                      pblczero::NetworkFormat::POLICY_CONVOLUTION;
   max_batch_size_ =
-      options.GetOrDefault<int>("max_batch", kMaxSupportedBatchSize);
+      options.GetOrValue<int>("max_batch", kMaxSupportedBatchSize);
 
   // Default is fp16, to use fp32: --backend-opts=fp16=false.
-  fp16_ = options.GetOrDefault<bool>("fp16", DEFAULT_FP16);
+  fp16_ = options.GetOrValue<bool>("fp16", DEFAULT_FP16);
 
   // Default is to attempt using Winograd algorithm for Convolutions using GEMM
   // Metacommand first, if not available - attempt using Convolution Metacommand
@@ -392,9 +392,9 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // available use winograd algorithm with our own GEMM compute shader.
   // The below backend options can be used to override this for testing.
   bool enable_gemm_metacommand =
-      options.GetOrDefault<bool>("enable-gemm-metacommand", true);
+      options.GetOrValue<bool>("enable-gemm-metacommand", true);
   bool enable_conv_metacommand =
-      options.GetOrDefault<bool>("enable-conv-metacommand", true);
+      options.GetOrValue<bool>("enable-conv-metacommand", true);
 
   const int kNumFilters = (int)weights.input.biases.size();
 
@@ -592,7 +592,7 @@ DxNetwork::DxNetwork(const WeightsFile& file, const OptionsDict& options)
   // Moves left head
   moves_left_ = (file.format().network_format().moves_left() ==
                  pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                options.GetOrDefault<bool>("mlh", true);
+                options.GetOrValue<bool>("mlh", true);
   if (moves_left_) {
     // 1x1 convolution, moves_left biases output filters
     auto convMov = std::make_unique<ConvLayer>(
@@ -1069,7 +1069,7 @@ InputsOutputsDx::~InputsOutputsDx() {
 }
 
 std::unique_ptr<Network> MakeDxNetwork(const std::optional<WeightsFile>& w,
-                                       const OptionsDict& options) {
+                                       const InlineConfig& options) {
   if (!w) {
     throw Exception("The dx12 backend requires a network file.");
   }

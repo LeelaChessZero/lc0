@@ -58,7 +58,7 @@ const OptionId kSlowMoverId{
     "value is less than 1)."};
 }  // namespace
 
-void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
+void PopulateTimeManagementOptions(RunType for_what, ProgramOptionsManager* options) {
   PopulateCommonStopperOptions(for_what, options);
   if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
     options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
@@ -70,12 +70,12 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   }
 }
 
-std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
+std::unique_ptr<TimeManager> MakeTimeManager(const ProgramOptions& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
-  OptionsDict tm_options;
-  if (options.Exists<std::string>(kTimeManagerId)) {
-    tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
+  InlineConfig tm_options;
+  if (options.HasKey<std::string>(kTimeManagerId)) {
+    ParseInlineConfig(options.Get<std::string>(kTimeManagerId), &tm_options);
   } else {
     float slowmover = options.Get<float>(kSlowMoverId);
     tm_options.AddSubdict("legacy")->Set("slowmover", slowmover);

@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 #include <cassert>
 #include <cctype>
@@ -35,48 +35,6 @@
 #include "utils/exception.h"
 
 namespace lczero {
-
-const OptionsDict& OptionsDict::GetSubdict(const std::string& name) const {
-  const auto iter = subdicts_.find(name);
-  if (iter == subdicts_.end())
-    throw Exception("Subdictionary not found: " + name);
-  return iter->second;
-}
-
-// Returns subdictionary. Throws exception if doesn't exist.
-OptionsDict* OptionsDict::GetMutableSubdict(const std::string& name) {
-  auto iter = subdicts_.find(name);
-  if (iter == subdicts_.end())
-    throw Exception("Subdictionary not found: " + name);
-  return &iter->second;
-}
-
-// Creates subdictionary. Throws exception if already exists.
-OptionsDict* OptionsDict::AddSubdict(const std::string& name) {
-  const auto iter = subdicts_.find(name);
-  if (iter != subdicts_.end())
-    throw Exception("Subdictionary already exists: " + name);
-  const auto x = &subdicts_.emplace(name, this).first->second;
-  return x;
-}
-
-void OptionsDict::AddAliasDict(const OptionsDict* dict) {
-  aliases_.push_back(dict);
-}
-
-// Returns list of subdictionaries.
-std::vector<std::string> OptionsDict::ListSubdicts() const {
-  std::vector<std::string> result;
-  for (const auto& subdict : subdicts_) {
-    result.emplace_back(subdict.first);
-  }
-  return result;
-}
-
-bool OptionsDict::HasSubdict(const std::string& name) const {
-  return subdicts_.find(name) != subdicts_.end();
-}
-
 namespace {
 
 class Lexer {
@@ -222,14 +180,14 @@ class Parser {
  public:
   Parser(const std::string& str) : lexer_(str) {}
 
-  void ParseMain(OptionsDict* dict) {
+  void ParseMain(InlineConfig* dict) {
     ParseList(dict);            // Parse list of options
     EnsureToken(Lexer::L_EOF);  // Check that everything is read.
   }
 
  private:
   // Returns first non-existing subdict with name like "[0]", "[24]", etc.
-  static std::string GetFreeSubdictName(OptionsDict* dict) {
+  static std::string GetFreeSubdictName(InlineConfig* dict) {
     for (int idx = 0;; ++idx) {
       std::string id = "[" + std::to_string(idx) + "]";
       if (!dict->HasSubdict(id)) return id;
@@ -245,7 +203,7 @@ class Parser {
   // * (comma separated list) -- name will be synthesized (e.g. "[1]")
   // * subdict() -- empty list
   // * subdict -- the same.
-  void ParseList(OptionsDict* dict) {
+  void ParseList(InlineConfig* dict) {
     while (true) {
       std::string identifier;
       if (lexer_.GetToken() == Lexer::L_LEFT_PARENTHESIS) {
@@ -280,7 +238,7 @@ class Parser {
       lexer_.RaiseError("Expected token #" + std::to_string(type));
   }
 
-  void ReadVal(OptionsDict* dict, const std::string& id) {
+  void ReadVal(InlineConfig* dict, const std::string& id) {
     if (lexer_.GetToken() == Lexer::L_FLOAT) {
       dict->Set<float>(id, lexer_.GetFloatVal());
     } else if (lexer_.GetToken() == Lexer::L_INTEGER) {
@@ -305,8 +263,8 @@ class Parser {
     lexer_.Next();
   }
 
-  void ReadSubDict(OptionsDict* dict, const std::string& identifier) {
-    OptionsDict* new_dict = dict->AddSubdict(identifier);
+  void ReadSubDict(InlineConfig* dict, const std::string& identifier) {
+    InlineConfig* new_dict = dict->AddSubdict(identifier);
     // If opening parentheses, read list of a subdict, otherwise list is empty,
     // so return immediately.
     if (lexer_.GetToken() == Lexer::L_LEFT_PARENTHESIS) {
@@ -323,21 +281,9 @@ class Parser {
 
 }  // namespace
 
-void OptionsDict::AddSubdictFromString(const std::string& str) {
+void ParseInlineConfig(const std::string& str, InlineConfig* options_dict) {
   Parser parser(str);
-  parser.ParseMain(this);
-}
-
-void OptionsDict::CheckAllOptionsRead(
-    const std::string& path_from_parent) const {
-  std::string s = path_from_parent.empty() ? "" : path_from_parent + '.';
-  TypeDict<bool>::EnsureNoUnusedOptions("boolean", s);
-  TypeDict<int>::EnsureNoUnusedOptions("integer", s);
-  TypeDict<float>::EnsureNoUnusedOptions("floating point", s);
-  TypeDict<std::string>::EnsureNoUnusedOptions("string", s);
-  for (auto const& dict : subdicts_) {
-    dict.second.CheckAllOptionsRead(s + dict.first);
-  }
+  parser.ParseMain(options_dict);
 }
 
 }  // namespace lczero

@@ -156,8 +156,8 @@ class BlasComputation : public NetworkComputation {
 template <bool use_eigen>
 class BlasNetwork : public Network {
  public:
-  BlasNetwork(const WeightsFile& weights, const OptionsDict& options);
-  virtual ~BlasNetwork(){};
+  BlasNetwork(const WeightsFile& weights, const InlineConfig& options);
+  virtual ~BlasNetwork() {};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
@@ -980,7 +980,7 @@ void BlasComputation<use_eigen>::EncodePlanes(const InputPlanes& sample,
 
 template <bool use_eigen>
 BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
-                                    const OptionsDict& options)
+                                    const InlineConfig& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
@@ -988,14 +988,14 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   Numa::Init();
 
   max_batch_size_ =
-      static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+      static_cast<size_t>(options.GetOrValue<int>("batch_size", 256));
 
   auto nf = file.format().network_format();
   using NF = pblczero::NetworkFormat;
   wdl_ = nf.value() == NF::VALUE_WDL;
 
   moves_left_ = (nf.moves_left() == NF::MOVES_LEFT_V1) &&
-                options.GetOrDefault<bool>("mlh", true);
+                options.GetOrValue<bool>("mlh", true);
 
   conv_policy_ = nf.policy() == NF::POLICY_CONVOLUTION;
 
@@ -1045,14 +1045,14 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
     conv2.weights = WinogradFilterTransformF(conv2.weights, channels, channels);
   }
 
-  policy_head_ = options.GetOrDefault<std::string>("policy_head", "vanilla");
+  policy_head_ = options.GetOrValue<std::string>("policy_head", "vanilla");
   // Check that selected policy head exists.
   if (weights_.policy_heads.count(policy_head_) == 0) {
     throw Exception("The policy head you specified '" + policy_head_ +
                     "' does not exist in this net.");
   }
 
-  value_head_ = options.GetOrDefault<std::string>("value_head", "winner");
+  value_head_ = options.GetOrValue<std::string>("value_head", "winner");
   // Check that selected value head exists.
   if (weights_.value_heads.count(value_head_) == 0) {
     throw Exception("The value head you specified '" + value_head_ +
@@ -1111,7 +1111,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
 template <bool use_eigen>
 std::unique_ptr<Network> MakeBlasNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const InlineConfig& options) {
   if (!w) {
     throw Exception("The " + std::string(use_eigen ? "eigen" : "blas") +
                     " backend requires a network file.");

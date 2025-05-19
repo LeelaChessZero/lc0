@@ -29,7 +29,7 @@
 
 #include "neural/loader.h"
 #include "neural/onnx/onnx.pb.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {
@@ -37,11 +37,11 @@ namespace {
 const OptionId kWeightsFilenameId{"weights", "WeightsFile",
                                   "Path of the input Lc0 weights file.", 'w'};
 
-bool ProcessParameters(OptionsParser* options) {
+bool ProcessParameters(ProgramOptionsManager* options) {
   options->Add<StringOption>(kWeightsFilenameId);
   if (!options->ProcessAllFlags()) return false;
-  const OptionsDict& dict = options->GetOptionsDict();
-  dict.EnsureExists<std::string>(kWeightsFilenameId);
+  const ProgramOptions& dict = options->GetOptionsDict();
+  dict.EnsureHasKey<std::string>(kWeightsFilenameId);
 
   return true;
 }
@@ -300,10 +300,10 @@ void ShowAllNetworkInfo(const pblczero::Net& weights) {
 }
 
 void DescribeNetworkCmd() {
-  OptionsParser options_parser;
+  ProgramOptionsManager options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
-  const OptionsDict& dict = options_parser.GetOptionsDict();
+  const ProgramOptions& dict = options_parser.GetOptionsDict();
   auto weights_file =
       LoadWeightsFromFile(dict.Get<std::string>(kWeightsFilenameId));
   ShowAllNetworkInfo(weights_file);

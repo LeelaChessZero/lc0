@@ -38,14 +38,14 @@ namespace lczero {
 class NetworkAsBackendFactory : public BackendFactory {
  public:
   using FactoryFunc = std::function<std::unique_ptr<Network>(
-      const std::optional<WeightsFile>&, const OptionsDict&)>;
+      const std::optional<WeightsFile>&, const InlineConfig&)>;
 
   NetworkAsBackendFactory(const std::string& name, FactoryFunc factory,
                           int priority = 0);
 
   int GetPriority() const override { return priority_; }
   std::string_view GetName() const override { return name_; }
-  std::unique_ptr<Backend> Create(const OptionsDict&) override;
+  std::unique_ptr<Backend> Create(const ProgramOptions&) override;
 
  private:
   std::string name_;

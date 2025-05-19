@@ -31,7 +31,7 @@
 
 #include "chess/uciloop.h"
 #include "selfplay/tournament.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 
@@ -52,7 +52,7 @@ class SelfPlayLoop {
   void EnsureOptionsSent();
 
   StringUciResponder* uci_responder_ = nullptr;  // absl_notnull
-  OptionsParser options_;
+  ProgramOptionsManager options_;
   std::unique_ptr<SelfPlayTournament> tournament_;
   std::unique_ptr<std::thread> thread_;
 };

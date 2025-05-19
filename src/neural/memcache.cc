@@ -73,7 +73,7 @@ class MemCache : public CachingBackend {
   void ClearCache() override { cache_.Clear(); }
 
   UpdateConfigurationResult UpdateConfiguration(
-      const OptionsDict& options) override {
+      const ProgramOptions& options) override {
     return wrapped_backend_->UpdateConfiguration(options);
   }
 

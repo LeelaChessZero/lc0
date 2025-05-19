@@ -233,7 +233,7 @@ class OpenCLNetwork : public Network {
  public:
   virtual ~OpenCLNetwork() {};
 
-  OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
+  OpenCLNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()},
@@ -242,12 +242,12 @@ class OpenCLNetwork : public Network {
         opencl_(),
         opencl_net_(opencl_) {
     LegacyWeights weights(file.weights());
-    params_.gpuId = options.GetOrDefault<int>("gpu", -1);
-    params_.force_tune = options.GetOrDefault<bool>("force_tune", false);
-    params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
+    params_.gpuId = options.GetOrValue<int>("gpu", -1);
+    params_.force_tune = options.GetOrValue<bool>("force_tune", false);
+    params_.tune_only = options.GetOrValue<bool>("tune_only", false);
     params_.tune_exhaustive =
-        options.GetOrDefault<bool>("tune_exhaustive", false);
-    if (options.Exists<std::string>("tuner_file")) {
+        options.GetOrValue<bool>("tune_exhaustive", false);
+    if (options.HasKey<std::string>("tuner_file")) {
       params_.tuner_file = options.Get<std::string>("tuner_file");
     } else {
       std::string user_cache_path = GetUserCacheDirectory();
@@ -263,10 +263,10 @@ class OpenCLNetwork : public Network {
 
     moves_left_ = (file.format().network_format().moves_left() ==
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                  options.GetOrDefault<bool>("mlh", true);
+                  options.GetOrValue<bool>("mlh", true);
 
     auto max_batch_size_ =
-        static_cast<size_t>(options.GetOrDefault<int>("batch_size", 16));
+        static_cast<size_t>(options.GetOrValue<int>("batch_size", 16));
     if (max_batch_size_ > kHardMaxBatchSize) {
       max_batch_size_ = kHardMaxBatchSize;
     }
@@ -277,7 +277,7 @@ class OpenCLNetwork : public Network {
     // It may not be the optimal value, then use tune_batch_size for fine
     // tune.
     params_.tune_batch_size =
-        options.GetOrDefault<int>("tune_batch_size", max_batch_size_);
+        options.GetOrValue<int>("tune_batch_size", max_batch_size_);
 
     const auto inputChannels = static_cast<size_t>(kInputPlanes);
     const auto channels = weights.input.biases.size();
@@ -430,7 +430,7 @@ class OpenCLNetwork : public Network {
 };
 
 std::unique_ptr<Network> MakeOpenCLNetwork(const std::optional<WeightsFile>& w,
-                                           const OptionsDict& options) {
+                                           const InlineConfig& options) {
   if (!w) {
     throw Exception("The opencl backend requires a network file.");
   }

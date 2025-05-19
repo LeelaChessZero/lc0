@@ -27,8 +27,8 @@
 
 #pragma once
 
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include "utils/inline_config.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 
@@ -45,7 +45,7 @@ struct SharedBackendParams {
   static const OptionId kBackendOptionsId;
   static const OptionId kNNCacheSizeId;
 
-  static void Populate(OptionsParser*);
+  static void Populate(ProgramOptionsManager*);
 
  private:
   SharedBackendParams() = delete;
