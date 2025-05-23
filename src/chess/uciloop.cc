@@ -95,9 +95,15 @@ ParseCommand(const std::string& line) {
       *value += whitespace + token;
       whitespace = " ";
     } else {
-      value = &params[token];
-      iss >> std::ws;
-      whitespace = "";
+      if (value != nullptr && (&params[token] == value)) {
+        *value += whitespace + token;
+        whitespace = " ";
+      } else {
+        value = &params[token];
+        *value = "";
+        iss >> std::ws;
+        whitespace = "";
+      }
     }
   }
   return {command->first, params};
@@ -157,9 +163,13 @@ bool UciLoop::DispatchCommand(
     engine_->EnsureReady();
     uci_responder_->SendRawResponse("readyok");
   } else if (command == "setoption") {
-    options_->SetUciOption(GetOrEmpty(params, "name"),
-                           GetOrEmpty(params, "value"),
-                           GetOrEmpty(params, "context"));
+    if (GetOrEmpty(params, "name").empty()) {
+      throw Exception("setoption requires a name parameter");
+    } else {
+      options_->SetUciOption(GetOrEmpty(params, "name"),
+                             GetOrEmpty(params, "value"),
+                             GetOrEmpty(params, "context"));
+    }
   } else if (command == "ucinewgame") {
     engine_->NewGame();
   } else if (command == "position") {
