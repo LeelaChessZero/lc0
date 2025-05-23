@@ -95,9 +95,15 @@ ParseCommand(const std::string& line) {
       *value += whitespace + token;
       whitespace = " ";
     } else {
-      value = &params[token];
-      iss >> std::ws;
-      whitespace = "";
+      if (value != nullptr && (&params[token] == value)) {
+        *value += whitespace + token;
+        whitespace = " ";
+      } else {
+        value = &params[token];
+        *value = "";
+        iss >> std::ws;
+        whitespace = "";
+      }
     }
   }
   return {command->first, params};
