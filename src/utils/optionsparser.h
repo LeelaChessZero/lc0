@@ -44,15 +44,19 @@ class OptionsParser {
   class Option {
    public:
     Option(const OptionId& id);
-    virtual ~Option(){};
+    virtual ~Option() {};
     // Set value from string.
     virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
    protected:
     const OptionId& GetId() const { return id_; }
-    std::string GetUciOption() const { return id_.uci_option(); }
+    std::string GetUciOption() const {
+      return id_.uci_option() ? id_.uci_option() : "";
+    }
     std::string GetHelpText() const { return id_.help_text(); }
-    std::string GetLongFlag() const { return id_.long_flag(); }
+    std::string GetLongFlag() const {
+      return id_.long_flag() ? id_.long_flag() : "";
+    }
     char GetShortFlag() const { return id_.short_flag(); }
 
    private:
@@ -73,7 +77,6 @@ class OptionsParser {
     virtual std::string GetHelp(const OptionsDict& dict) const = 0;
 
     const OptionId& id_;
-    bool hidden_ = false;
     friend class OptionsParser;
   };
 
@@ -131,6 +134,7 @@ class OptionsParser {
   std::vector<std::unique_ptr<Option>> options_;
   OptionsDict defaults_;
   OptionsDict& values_;
+  OptionId::VisibilityMode visibility_mode_ = OptionId::kNormalMode;
 };
 
 class StringOption : public OptionsParser::Option {
