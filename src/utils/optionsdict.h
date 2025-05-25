@@ -87,8 +87,10 @@ class OptionId {
   };
 
   enum VisibilityMask {
+    kSimpleOnly = kSimpleMode,
     kDefaultVisibility = kNormalMode | kProMode | kSelfplayMode,
-    kDefaultExceptSelfplay = kNormalMode | kProMode,
+    kProModeMask = kProMode | kSelfplayMode,
+    kAlwaysVisible = kSimpleMode | kNormalMode | kProMode | kSelfplayMode,
   };
 
   struct OptionsParams {
