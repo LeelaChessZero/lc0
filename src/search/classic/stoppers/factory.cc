@@ -60,7 +60,8 @@ const OptionId kSlowMoverId{
      .visibility_mask = OptionId::kSimpleOnly}};
 }  // namespace
 
-void PopulateTimeManagementOptions(RunType for_what, ProgramOptionsManager* options) {
+void PopulateTimeManagementOptions(RunType for_what,
+                                   ProgramOptionsManager* options) {
   PopulateCommonStopperOptions(for_what, options);
   options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
   options->Add<StringOption>(kTimeManagerId) = "legacy";
@@ -72,7 +73,7 @@ std::unique_ptr<TimeManager> MakeTimeManager(const ProgramOptions& options) {
 
   InlineConfig tm_options;
   ParseInlineConfig(options.Get<std::string>(kTimeManagerId), &tm_options);
-  if (!options.IsDefault<float>(kSlowMoverId)) {
+  if (!options.IsUnmodified(kSlowMoverId)) {
     // Assume that default behavior of simple and normal mode is the same.
     float slowmover = options.Get<float>(kSlowMoverId);
     tm_options.GetMutableSubdict("legacy")->Set("slowmover", slowmover);
