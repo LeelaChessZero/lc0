@@ -256,14 +256,14 @@ const OptionId SearchParams::kNoiseEpsilonId{
          "Amount of Dirichlet noise to combine with root priors. This allows "
          "the engine to discover new ideas during training by exploring moves "
          "which are known to be bad. Not normally used during play.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kNoiseAlphaId{
     {.long_flag = "noise-alpha",
      .uci_option = "DirichletNoiseAlpha",
      .help_text = "Alpha of Dirichlet noise to control the sharpness of move "
                   "probabilities. Larger values result in flatter / more "
                   "evenly distributed values.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move.",
@@ -272,7 +272,7 @@ const OptionId SearchParams::kLogLiveStatsId{
     {.long_flag = "log-live-stats",
      .uci_option = "LogLiveStats",
      .help_text = "Do VerboseMoveStats on every info update.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
     "How is an eval of unvisited node determined. \"First Play Urgency\" "
@@ -293,14 +293,14 @@ const OptionId SearchParams::kFpuStrategyAtRootId{
          "root children eval with --fpu-value-at-root. In addition to matching "
          "the strategies from --fpu-strategy, this can be \"same\" to disable "
          "the special root behavior.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kFpuValueAtRootId{
     {.long_flag = "fpu-value-at-root",
      .uci_option = "FpuValueAtRoot",
      .help_text = "\"First Play Urgency\" value used to adjust unvisited root "
                   "children eval based on --fpu-strategy-at-root. Has no "
                   "effect if --fpu-strategy-at-root is \"same\".",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
@@ -396,7 +396,7 @@ const OptionId SearchParams::kContemptMaxValueId{
      .uci_option = "ContemptMaxValue",
      .help_text =
          "The maximum value of contempt used. Higher values will be capped.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLCalibrationEloId{
     "wdl-calibration-elo", "WDLCalibrationElo",
     "Elo of the active side, adjusted for time control relative to rapid.To "
@@ -407,7 +407,7 @@ const OptionId SearchParams::kWDLContemptAttenuationId{
      .help_text =
          "Scales how Elo advantage is applied for contempt. Use 1.0 for "
          "realistic analysis, and 0.5-0.6 for optimal match performance.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLMaxSId{
     {.long_flag = "wdl-max-s",
      .uci_option = "WDLMaxS",
@@ -415,7 +415,7 @@ const OptionId SearchParams::kWDLMaxSId{
                   "avoid erratic behavior at high contempt values. Default "
                   "recommended for regular chess, increase value for more "
                   "volatile positions like DFRC or piece odds.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLEvalObjectivityId{
     "wdl-eval-objectivity", "WDLEvalObjectivity",
     "When calculating the centipawn eval output, decides how "
@@ -428,7 +428,7 @@ const OptionId SearchParams::kWDLDrawRateTargetId{
          "To define the accuracy of play, the target draw rate in equal "
          "positions is used as a proxy. Ignored if WDLCalibrationElo is set. "
          "To retain raw WDL without sharpening/softening, use default value 0.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLDrawRateReferenceId{
     "wdl-draw-rate-reference", "WDLDrawRateReference",
     "Set this to the draw rate predicted by the used neural network at default "
@@ -441,7 +441,7 @@ const OptionId SearchParams::kWDLBookExitBiasId{
          "The book exit bias used when measuring engine Elo. Value of startpos "
          "is around 0.2, value of 50% white win is 1. Only relevant if target "
          "draw rate is above 80%; ignored if WDLCalibrationElo is set.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "

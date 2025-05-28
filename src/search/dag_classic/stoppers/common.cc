@@ -46,14 +46,14 @@ const OptionId kMinimumKLDGainPerNodeId{
      .help_text = "If greater than 0 search will abort unless the last "
                   "KLDGainAverageInterval nodes have an average gain per node "
                   "of at least this much.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId kKLDGainAverageIntervalId{
     {.long_flag = "kldgain-average-interval",
      .uci_option = "KLDGainAverageInterval",
      .help_text =
          "Used to decide how frequently to evaluate the average KLDGainPerNode "
          "to check the MinimumKLDGainPerNode, if specified.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId kSmartPruningFactorId{
     {.long_flag = "smart-pruning-factor",
      .uci_option = "SmartPruningFactor",
@@ -78,7 +78,7 @@ const OptionId kNodesAsPlayoutsId{
      .uci_option = "NodesAsPlayouts",
      .help_text = "Treat UCI `go nodes` command as referring to playouts "
                   "instead of visits.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 
 }  // namespace
 

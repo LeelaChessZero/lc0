@@ -46,7 +46,7 @@ const OptionId kClearTree{
     {.long_flag = "",
      .uci_option = "ClearTree",
      .help_text = "Clear the tree before the next search.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 
 class ClassicSearch : public SearchBase {
  public:

@@ -50,7 +50,7 @@ const OptionId kOnnxBatchSizeId{
     {.long_flag = "onnx-batch-size",
      .uci_option = "",
      .help_text = "Batch size to use for ONNX conversion.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
 const OptionId kOnnxDataTypeId{"onnx-data-type", "",
@@ -62,7 +62,7 @@ const OptionId kHloAllowPartialResultId{
      .uci_option = "",
      .help_text = "Allow partial result in case of HLO conversion failure "
                   "(DEBUG ONLY!).",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId kInputPlanesName{"input-planes-name", "",
                                 "ONNX name to use for the input planes node."};
 const OptionId kOutputPolicyHead{

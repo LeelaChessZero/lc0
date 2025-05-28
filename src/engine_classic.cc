@@ -63,12 +63,12 @@ const OptionId kStrictUciTiming{
      .uci_option = "StrictTiming",
      .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
                   "reply before sending 'go' and only then starts timing.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId kClearTree{
     {.long_flag = "",
      .uci_option = "ClearTree",
      .help_text = "Clear the tree before the next search.",
-     .visibility_mask = OptionId::kProModeMask}};
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId kPreload{
     {.long_flag = "preload",
      .uci_option = "",

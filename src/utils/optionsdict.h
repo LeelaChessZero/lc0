@@ -80,17 +80,16 @@ class TypeDict {
 class OptionId {
  public:
   enum VisibilityMode {
-    kSimpleMode = 1 << 0,    // Simple mode.
-    kNormalMode = 1 << 1,    // Normal mode.
-    kProMode = 1 << 2,       // Pro mode.
-    kSelfplayMode = 1 << 3,  // Self-play mode.
+    kSimpleMode = 1 << 0,  // Simple mode.
+    kNormalMode = 1 << 1,  // Normal mode.
+    kProMode = 1 << 2,     // Pro mode.
   };
 
   enum VisibilityMask {
     kSimpleOnly = kSimpleMode,
-    kDefaultVisibility = kNormalMode | kProMode | kSelfplayMode,
-    kProModeMask = kProMode | kSelfplayMode,
-    kAlwaysVisible = kSimpleMode | kNormalMode | kProMode | kSelfplayMode,
+    kDefaultVisibility = kNormalMode | kProMode,
+    kProOnly = kProMode,
+    kAlwaysVisible = kSimpleMode | kNormalMode | kProMode,
   };
 
   struct OptionsParams {
