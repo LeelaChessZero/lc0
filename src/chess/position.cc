@@ -27,6 +27,7 @@
 
 #include "chess/position.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cctype>
 #include <cstdlib>
@@ -60,7 +61,9 @@ uint64_t Position::Hash() const {
 }
 
 std::string Position::DebugString() const {
-  return "https://lc0.org/fen/" + PositionToFen(*this);
+  std::string fen = PositionToFen(*this);
+  std::replace(fen.begin(), fen.end(), ' ', '_');
+  return "https://lc0.org/fen/" + fen;
 }
 
 GameResult operator-(const GameResult& res) {

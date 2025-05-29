@@ -1203,10 +1203,9 @@ std::string BoardToFen(const ChessBoard& in_board) {
     for (File file = kFileA; file <= kFileH; ++file) {
       Square square(file, rank);
       char piece = GetPieceAt(board, square);
-      if (piece && empty) {
-        result += std::to_string(empty);
+      if (piece) {
+        if (empty) result += std::to_string(empty);
         empty = 0;
-      } else if (piece) {
         result += piece;
       } else {
         ++empty;
