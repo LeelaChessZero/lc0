@@ -50,6 +50,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename);
 // * "<autodiscover>" -- tries to find a file which looks like a weights file.
 // * "<embed>" -- weights are embedded in the binary.
 // * filename -- reads weights from the file.
+// Returns std::nullopt if no weights file was found in <autodiscover> mode.
 std::optional<WeightsFile> LoadWeights(std::string_view location);
 
 // Tries to find a file which looks like a weights file, and located in

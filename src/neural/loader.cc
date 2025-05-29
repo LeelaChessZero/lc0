@@ -218,7 +218,11 @@ std::optional<WeightsFile> LoadWeights(std::string_view location) {
     net_path = CommandLine::BinaryName();
   }
   if (net_path.empty()) return std::nullopt;
-  CERR << "Loading weights file from: " << net_path;
+  if (location == SharedBackendParams::kEmbed) {
+    CERR << "Using embedded weights from binary: " << net_path;
+  } else {
+    CERR << "Loading weights file from: " << net_path;
+  }
   return LoadWeightsFromFile(net_path);
 }
 
