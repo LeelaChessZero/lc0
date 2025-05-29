@@ -252,4 +252,7 @@ class ChessBoard {
   bool flipped_ = false;  // aka "Black to move".
 };
 
+// Converts the board to FEN string.
+std::string BoardToFen(const ChessBoard& board);
+
 }  // namespace lczero

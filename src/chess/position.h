@@ -90,7 +90,7 @@ class Position {
 };
 
 // GetFen returns a FEN notation for the position.
-std::string GetFen(const Position& pos);
+std::string PositionToFen(const Position& pos);
 
 // These are ordered so max() prefers the best result.
 enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
