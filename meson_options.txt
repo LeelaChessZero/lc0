@@ -193,6 +193,12 @@ option('xla',
        value: false,
        description: 'Enable XLA backend')
 
+option('sycl',
+       type: 'combo',
+	   choices : ['off', 'l0', 'amd', 'nvidia'],
+       value: 'off',
+       description: 'Enable SYCL backend')
+
 option('lc0',
        type: 'boolean',
        value: true,

@@ -484,12 +484,12 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         opts.GetOrDefault<std::string>("value_head", "winner");
 
     std::string datatype;
-    if (opts.IsDefault<std::string>("datatype")) {
+    if (opts.Exists<std::string>("datatype")) {
+      datatype = opts.Get<std::string>("datatype");
+    } else {
       bool fp16 = opts.GetOrDefault<bool>(
           "fp16", kProvider == OnnxProvider::CPU ? false : true);
       datatype = fp16 ? "f16" : "f32";
-    } else {
-      datatype = opts.Get<std::string>("datatype");
     }
     converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
