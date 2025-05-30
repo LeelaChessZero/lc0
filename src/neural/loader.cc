@@ -210,20 +210,20 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
   return ParseWeightsProto(buffer);
 }
 
-WeightsFile LoadWeights(std::string_view location) {
+std::optional<WeightsFile> LoadWeights(std::string_view location) {
   std::string net_path = std::string(location);
   if (net_path == SharedBackendParams::kAutoDiscover) {
     net_path = DiscoverWeightsFile();
   } else if (net_path == SharedBackendParams::kEmbed) {
     net_path = CommandLine::BinaryName();
+  }
+  if (net_path.empty()) return std::nullopt;
+  if (location == SharedBackendParams::kEmbed) {
+    CERR << "Using embedded weights from binary: " << net_path;
   } else {
-    CERR << "Loading weights file from: " << location;
+    CERR << "Loading weights file from: " << net_path;
   }
   return LoadWeightsFromFile(net_path);
-}
-
-WeightsFile LoadWeightsFromOptions(const OptionsDict& options) {
-  return LoadWeights(options.Get<std::string>(SharedBackendParams::kWeightsId));
 }
 
 std::string DiscoverWeightsFile() {
@@ -264,24 +264,12 @@ std::string DiscoverWeightsFile() {
       gzclose(file);
       if (sz < 0) continue;
 
-      std::string str(buf, buf + sz);
-      std::istringstream data(str);
-      int val = 0;
-      data >> val;
-      if (!data.fail() && val == 2) {
-        CERR << "Found txt network file: " << candidate.second;
-        return candidate.second;
-      }
-
       // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it
       // as our own magic should suffice.
       const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
                          (static_cast<uint32_t>(buf[3]) << 16) |
                          (static_cast<uint32_t>(buf[4]) << 24);
-      if (magic == kWeightMagic) {
-        CERR << "Found pb network file: " << candidate.second;
-        return candidate.second;
-      }
+      if (magic == kWeightMagic) return candidate.second;
     }
   }
   LOGFILE << "Network weights file not found.";
