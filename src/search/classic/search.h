@@ -54,7 +54,7 @@ class Search {
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
          std::unique_ptr<SearchStopper> stopper, bool infinite, bool ponder,
-         const OptionsDict& options, SyzygyTablebase* syzygy_tb);
+         const ProgramOptions& options, SyzygyTablebase* syzygy_tb);
 
   ~Search();
 

@@ -43,10 +43,12 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
-const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
-                                "The UCI host compensates for lag, waits for "
-                                "the 'readyok' reply before sending 'go' and "
-                                "only then starts timing."};
+const OptionId kStrictUciTiming{
+    {.long_flag = "strict-uci-timing",
+     .uci_option = "StrictTiming",
+     .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
+                  "reply before sending 'go' and only then starts timing.",
+     .visibility_mask = OptionId::kProModeMask}};
 const OptionId kPonderId{
     "", "Ponder",
     "Indicates to the engine that it will be requested to ponder. This "
@@ -56,11 +58,10 @@ const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
 }  // namespace
 
-void Engine::PopulateOptions(OptionsParser* options) {
+void Engine::PopulateOptions(ProgramOptionsManager* options) {
   options->Add<BoolOption>(kPonderId) = false;
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<BoolOption>(kStrictUciTiming) = false;
-  options->HideOption(kStrictUciTiming);
   options->Add<BoolOption>(kPreload) = false;
 }
 
@@ -137,7 +138,7 @@ class Engine::UciPonderForwarder : public UciResponder {
   Engine* const engine_;
 };
 
-Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
+Engine::Engine(const SearchFactory& factory, const ProgramOptions& opts)
     : uci_forwarder_(std::make_unique<UciPonderForwarder>(this)),
       options_(opts),
       search_(factory.CreateSearch(uci_forwarder_.get(), &options_)) {

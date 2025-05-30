@@ -34,7 +34,7 @@
 #include "neural/xla/print_hlo.h"
 #include "tools/describenet.h"
 #include "utils/files.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {
@@ -46,18 +46,23 @@ const OptionId kHloTextOutputFilenameId = {"hlo-text-output", "",
                                            "Path of the output HLO file."};
 const OptionId kHloProtoOutputFilenameId = {
     "hlo-proto-output", "", "Path of the output HLO proto file."};
-const OptionId kOnnxBatchSizeId{"onnx-batch-size", "",
-                                "Batch size to use for ONNX conversion."};
+const OptionId kOnnxBatchSizeId{
+    {.long_flag = "onnx-batch-size",
+     .uci_option = "",
+     .help_text = "Batch size to use for ONNX conversion.",
+     .visibility_mask = OptionId::kProModeMask}};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
 const OptionId kOnnxDataTypeId{"onnx-data-type", "",
                                "Data type to use in the ONNX model."};
 const OptionId kOnnxOpsetId{"onnx-opset", "",
                             "Opset to use in the ONNX model."};
-const OptionId kHloAllowPartialResultId = {
-    "hlo-allow-partial-result", "",
-    "Allow partial result in case of HLO conversion failure (DEBUG ONLY!)."};
-
+const OptionId kHloAllowPartialResultId{
+    {.long_flag = "hlo-allow-partial-result",
+     .uci_option = "",
+     .help_text = "Allow partial result in case of HLO conversion failure "
+                  "(DEBUG ONLY!).",
+     .visibility_mask = OptionId::kProModeMask}};
 const OptionId kInputPlanesName{"input-planes-name", "",
                                 "ONNX name to use for the input planes node."};
 const OptionId kOutputPolicyHead{
@@ -77,13 +82,12 @@ const OptionId kValueHead{
     "value-head", "",
     "Value head to be used in the generated model. Typical values are "
     "'winner', 'q' or 'st', but only 'winner' is always available."};
-const OptionId kPolicyHead{
-    "policy-head", "",
-    "Policy head to be used in the generated model. Typical values are "
-    "'vanilla', 'optimistic' or 'soft', but only 'vanilla' is always "
-    "available."};
+const OptionId kPolicyHead{"policy-head", "",
+                           "Policy head to be used in the generated model. "
+                           "Typical values are 'vanilla', 'optimistic' or "
+                           "'soft', but only 'vanilla' is always available."};
 
-bool ProcessParameters(OptionsParser* options) {
+bool ProcessParameters(ProgramOptionsManager* options) {
   options->Add<StringOption>(kInputFilenameId);
   options->Add<StringOption>(kOutputFilenameId);
   options->Add<StringOption>(kHloTextOutputFilenameId);
@@ -94,8 +98,6 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<ChoiceOption>(
       kOnnxDataTypeId, std::vector<std::string>{"f32", "f16", "bf16"}) = "f32";
   options->Add<BoolOption>(kHloAllowPartialResultId);
-  options->HideOption(kOnnxBatchSizeId);
-  options->HideOption(kHloAllowPartialResultId);
 
   options->Add<StringOption>(kInputPlanesName) = "/input/planes";
   options->Add<StringOption>(kOutputPolicyHead) = "/output/policy";
@@ -107,11 +109,11 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kPolicyHead) = "vanilla";
   if (!options->ProcessAllFlags()) return false;
 
-  const OptionsDict& dict = options->GetOptionsDict();
-  dict.EnsureExists<std::string>(kInputFilenameId);
-  if (!dict.OwnExists<std::string>(kOutputFilenameId) &&
-      !dict.OwnExists<std::string>(kHloTextOutputFilenameId) &&
-      !dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+  const ProgramOptions& dict = options->GetOptionsDict();
+  dict.EnsureHasKey<std::string>(kInputFilenameId);
+  if (!dict.HasOwnKey<std::string>(kOutputFilenameId) &&
+      !dict.HasOwnKey<std::string>(kHloTextOutputFilenameId) &&
+      !dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
     throw Exception(
         "At least one of --output, --hlo-text-output or --hlo-proto-output "
         "must be specified.");
@@ -122,10 +124,10 @@ bool ProcessParameters(OptionsParser* options) {
 }  // namespace
 
 void ConvertLeelaToOnnx() {
-  OptionsParser options_parser;
+  ProgramOptionsManager options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
-  const OptionsDict& dict = options_parser.GetOptionsDict();
+  const ProgramOptions& dict = options_parser.GetOptionsDict();
   auto weights_file =
       LoadWeightsFromFile(dict.Get<std::string>(kInputFilenameId));
 
@@ -153,11 +155,11 @@ void ConvertLeelaToOnnx() {
   }
 
   const auto& onnx = weights_file.onnx_model();
-  if (dict.OwnExists<std::string>(kOutputFilenameId)) {
+  if (dict.HasOwnKey<std::string>(kOutputFilenameId)) {
     WriteStringToFile(dict.Get<std::string>(kOutputFilenameId), onnx.model());
   }
-  if (dict.OwnExists<std::string>(kHloTextOutputFilenameId) ||
-      dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+  if (dict.HasOwnKey<std::string>(kHloTextOutputFilenameId) ||
+      dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
     Onnx2HloOptions hlo_options;
     hlo_options.debugging_allow_partial_result =
         dict.Get<bool>(kHloAllowPartialResultId);
@@ -165,7 +167,7 @@ void ConvertLeelaToOnnx() {
     onnx_model.ParseFromString(onnx.model());
     auto hlo_result = ConvertOnnxToHlo(
         onnx_model, dict.Get<int>(kHloBatchSizeId), hlo_options);
-    if (dict.OwnExists<std::string>(kHloTextOutputFilenameId)) {
+    if (dict.HasOwnKey<std::string>(kHloTextOutputFilenameId)) {
       std::string filename = dict.Get<std::string>(kHloTextOutputFilenameId);
       if (filename == "-") {
         PrettyPrintHlo(hlo_result.hlo_module, {}, std::cout);
@@ -174,7 +176,7 @@ void ConvertLeelaToOnnx() {
         PrettyPrintHlo(hlo_result.hlo_module, {}, file);
       }
     }
-    if (dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+    if (dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
       WriteStringToFile(dict.Get<std::string>(kHloProtoOutputFilenameId),
                         hlo_result.hlo_module.OutputAsString());
     }

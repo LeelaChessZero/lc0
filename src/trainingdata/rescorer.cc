@@ -35,7 +35,7 @@
 #include "syzygy/syzygy.h"
 #include "trainingdata/reader.h"
 #include "utils/filesystem.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 
@@ -1180,7 +1180,7 @@ void BuildSubs(const std::vector<std::string>& files) {
 #endif
 
 void RunRescorer() {
-  OptionsParser options;
+  ProgramOptionsManager options;
   orig_counts[0] = 0;
   orig_counts[1] = 0;
   orig_counts[2] = 0;
@@ -1211,8 +1211,8 @@ void RunRescorer() {
 
   if (!options.ProcessAllFlags()) return;
 
-  if (options.GetOptionsDict().IsDefault<std::string>(kOutputDirId) &&
-      options.GetOptionsDict().IsDefault<std::string>(kNnuePlainFileId)) {
+  if (options.GetOptionsDict().IsUnmodified(kOutputDirId) &&
+      options.GetOptionsDict().IsUnmodified(kNnuePlainFileId)) {
     std::cerr << "Must provide an output dir or NNUE plain file." << std::endl;
     return;
   }

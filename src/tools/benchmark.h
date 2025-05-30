@@ -29,7 +29,7 @@
 
 #include "search/classic/search.h"
 #include "neural/factory.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 

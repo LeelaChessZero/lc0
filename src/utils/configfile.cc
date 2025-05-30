@@ -33,7 +33,7 @@
 #include "utils/commandline.h"
 #include "utils/filesystem.h"
 #include "utils/logging.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 #include "utils/string.h"
 
 namespace lczero {
@@ -49,7 +49,7 @@ const char* kDefaultConfigFileParam = "<default>";
 
 std::vector<std::string> ConfigFile::arguments_;
 
-void ConfigFile::PopulateOptions(OptionsParser* options) {
+void ConfigFile::PopulateOptions(ProgramOptionsManager* options) {
   options->Add<StringOption>(kConfigFileId) = kDefaultConfigFile;
 }
 

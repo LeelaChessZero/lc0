@@ -35,7 +35,7 @@
 
 #include "chess/position.h"
 #include "neural/loader.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 
@@ -107,7 +107,7 @@ class Backend {
     UPDATE_OK = 0,     // Backend handled the update by itself (if needed).
     NEED_RESTART = 1,  // Recreate the backend.
   };
-  virtual UpdateConfigurationResult UpdateConfiguration(const OptionsDict&) = 0;
+  virtual UpdateConfigurationResult UpdateConfiguration(const ProgramOptions&) = 0;
 };
 
 class BackendFactory {
@@ -116,7 +116,7 @@ class BackendFactory {
   // Higher priority is higher.
   virtual int GetPriority() const = 0;
   virtual std::string_view GetName() const = 0;
-  virtual std::unique_ptr<Backend> Create(const OptionsDict&) = 0;
+  virtual std::unique_ptr<Backend> Create(const ProgramOptions&) = 0;
 };
 
 }  // namespace lczero

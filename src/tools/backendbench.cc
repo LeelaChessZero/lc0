@@ -31,7 +31,7 @@
 #include "neural/factory.h"
 #include "neural/shared_params.h"
 #include "search/classic/node.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {
@@ -76,7 +76,7 @@ void Clippy(std::string title, std::string msg3, std::string best3,
 }  // namespace
 
 void BackendBenchmark::Run() {
-  OptionsParser options;
+  ProgramOptionsManager options;
   SharedBackendParams::Populate(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 

@@ -37,7 +37,7 @@
 #include "search/classic/stoppers/factory.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 #include "utils/random.h"
 
 namespace lczero {
@@ -101,7 +101,7 @@ const OptionId kSyzygyTablebaseId{
 
 }  // namespace
 
-void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
+void SelfPlayTournament::PopulateOptions(ProgramOptionsManager* options) {
   options->AddContext("player1");
   options->AddContext("player2");
   options->AddContext("white");
@@ -158,7 +158,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   defaults->Set<int>(classic::SearchParams::kTaskWorkersPerSearchWorkerId, 0);
 }
 
-SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
+SelfPlayTournament::SelfPlayTournament(const ProgramOptions& options,
                                        UciResponder* uci_responder,
                                        GameInfo::Callback game_info,
                                        TournamentInfo::Callback tournament_info)

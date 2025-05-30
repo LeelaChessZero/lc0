@@ -28,8 +28,7 @@
 #pragma once
 
 #include "neural/encoder.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace classic {
@@ -38,7 +37,7 @@ enum class ContemptMode { PLAY, WHITE, BLACK, NONE };
 
 class SearchParams {
  public:
-  SearchParams(const OptionsDict& options);
+  SearchParams(const ProgramOptions& options);
   SearchParams(const SearchParams&) = delete;
 
   // Use struct for WDLRescaleParams calculation to make them const.
@@ -52,7 +51,7 @@ class SearchParams {
   };
 
   // Populates UciOptions with search parameters.
-  static void Populate(OptionsParser* options);
+  static void Populate(ProgramOptionsManager* options);
 
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
@@ -234,7 +233,7 @@ class SearchParams {
   static const OptionId kSearchSpinBackoffId;
 
  private:
-  const OptionsDict& options_;
+  const ProgramOptions& options_;
   // Cached parameter values. Values have to be cached if either:
   // 1. Parameter is accessed often and has to be cached for performance
   // reasons.

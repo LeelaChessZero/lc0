@@ -28,21 +28,22 @@
 #pragma once
 
 #include "search/classic/stoppers/stoppers.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include "utils/inline_config.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace classic {
 
-enum class RunType { kUci, kSimpleUci, kSelfplay };
-void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
+enum class RunType { kUci, kSelfplay };
+void PopulateCommonStopperOptions(RunType for_what,
+                                  ProgramOptionsManager* options);
 
 // Populates KLDGain and SmartPruning stoppers.
 void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options);
+                               const ProgramOptions& options);
 
 std::unique_ptr<TimeManager> MakeCommonTimeManager(
-    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
+    std::unique_ptr<TimeManager> child_manager, const ProgramOptions& options,
     int64_t move_overhead);
 
 }  // namespace classic

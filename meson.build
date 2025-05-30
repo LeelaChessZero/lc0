@@ -180,9 +180,9 @@ common_files += [
   'src/utils/configfile.cc',
   'src/utils/esc_codes.cc',
   'src/utils/files.cc',
+  'src/utils/inline_config.cc',
   'src/utils/logging.cc',
-  'src/utils/optionsdict.cc',
-  'src/utils/optionsparser.cc',
+  'src/utils/program_options.cc',
   'src/utils/random.cc',
   'src/utils/string.cc',
   'src/version.cc',
@@ -239,7 +239,9 @@ files += [
 ]
 
 includes += include_directories('src')
-
+absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
+absl_dep = absl.get_variable('absl_container_dep').as_system()
+deps += absl_dep
 deps += dependency('threads')
 
 #############################################################################
@@ -269,9 +271,6 @@ if get_option('dag_classic')
     'src/search/dag_classic/stoppers/timemgr.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
-
-  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
-  deps += absl.get_variable('absl_container_dep').as_system()
 endif
 
 #############################################################################
@@ -808,7 +807,7 @@ if get_option('gtest')
 
   test('OptionsParserTest',
     executable('optionsparser_test', 'src/utils/optionsparser_test.cc',
-    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, absl_dep]
   ), args: '--gtest_output=xml:optionsparser.xml', timeout: 90)
 
   test('SyzygyTest',
@@ -824,7 +823,7 @@ if get_option('gtest')
 
   test('EngineTest',
     executable('engine_test', 'src/engine_test.cc', pb_files,
-    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock, absl_dep]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif
 

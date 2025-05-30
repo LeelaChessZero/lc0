@@ -41,23 +41,38 @@
 namespace lczero {
 namespace {
 const OptionId kThreadsOptionId{
-    "threads", "Threads",
-    "Number of (CPU) worker threads to use, 0 for the backend default.", 't'};
+    {.long_flag = "threads",
+     .uci_option = "Threads",
+     .help_text =
+         "Number of (CPU) worker threads to use, 0 for the backend default.",
+     .short_flag = 't',
+     .visibility_mask = OptionId::kAlwaysVisible}};
 const OptionId kSyzygyTablebaseId{
-    "syzygy-paths", "SyzygyPath",
-    "List of Syzygy tablebase directories, list entries separated by system "
-    "separator (\";\" for Windows, \":\" for Linux).",
-    's'};
-const OptionId kPonderId{"", "Ponder",
-                         "This option is ignored. Here to please chess GUIs."};
-const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
-                                "The UCI host compensates for lag, waits for "
-                                "the 'readyok' reply before sending 'go' and "
-                                "only then starts timing."};
-const OptionId kClearTree{"", "ClearTree",
-                          "Clear the tree before the next search."};
-const OptionId kPreload{"preload", "",
-                        "Initialize backend and load net on engine startup."};
+    {.long_flag = "syzygy-paths",
+     .uci_option = "SyzygyPath",
+     .help_text =
+         "List of Syzygy tablebase directories, list entries separated by "
+         "system separator (\";\" for Windows, \":\" for Linux).",
+     .short_flag = 's'}};
+const OptionId kPonderId{
+    {.long_flag = "",
+     .uci_option = "Ponder",
+     .help_text = "This option is ignored. Here to please chess GUIs."}};
+const OptionId kStrictUciTiming{
+    {.long_flag = "strict-uci-timing",
+     .uci_option = "StrictTiming",
+     .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
+                  "reply before sending 'go' and only then starts timing.",
+     .visibility_mask = OptionId::kProModeMask}};
+const OptionId kClearTree{
+    {.long_flag = "",
+     .uci_option = "ClearTree",
+     .help_text = "Clear the tree before the next search.",
+     .visibility_mask = OptionId::kProModeMask}};
+const OptionId kPreload{
+    {.long_flag = "preload",
+     .uci_option = "",
+     .help_text = "Initialize backend and load net on engine startup."}};
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
                            const ChessBoard& board) {
@@ -77,40 +92,23 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 }  // namespace
 
-EngineClassic::EngineClassic(const OptionsDict& options)
+EngineClassic::EngineClassic(const ProgramOptions& options)
     : options_(options), current_position_{ChessBoard::kStartposFen, {}} {
   if (options_.Get<bool>(kPreload)) UpdateFromUciOptions();
 }
 
-void EngineClassic::PopulateOptions(OptionsParser* options) {
+void EngineClassic::PopulateOptions(ProgramOptionsManager* options) {
   using namespace std::placeholders;
-  const bool is_simple =
-      CommandLine::BinaryName().find("simple") != std::string::npos;
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
   classic::SearchParams::Populate(options);
 
-  if (is_simple) {
-    options->HideAllOptions();
-    options->UnhideOption(kThreadsOptionId);
-    options->UnhideOption(SharedBackendParams::kWeightsId);
-    options->UnhideOption(classic::SearchParams::kContemptId);
-    options->UnhideOption(classic::SearchParams::kMultiPvId);
-  }
   options->Add<StringOption>(kSyzygyTablebaseId);
   // Add "Ponder" option to signal to GUIs that we support pondering.
   // This option is currently not used by lc0 in any way.
   options->Add<BoolOption>(kPonderId) = true;
-
-  PopulateTimeManagementOptions(
-      is_simple ? classic::RunType::kSimpleUci : classic::RunType::kUci,
-      options);
-
+  PopulateTimeManagementOptions(classic::RunType::kUci, options);
   options->Add<BoolOption>(kStrictUciTiming) = false;
-  options->HideOption(kStrictUciTiming);
-
   options->Add<ButtonOption>(kClearTree);
-  options->HideOption(kClearTree);
-
   options->Add<BoolOption>(kPreload) = false;
 }
 

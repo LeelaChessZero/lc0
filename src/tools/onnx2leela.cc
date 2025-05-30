@@ -36,7 +36,7 @@
 #include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/fp16_utils.h"
-#include "utils/optionsparser.h"
+#include "utils/program_options.h"
 
 namespace lczero {
 namespace {
@@ -103,7 +103,7 @@ const OptionId kFixWdlSoftmaxId{
     "fix-wdl-softmax", "",
     "Fix tensorflow exported onnx that is missing wdl output softmax."};
 
-bool ProcessParameters(OptionsParser* options) {
+bool ProcessParameters(ProgramOptionsManager* options) {
   using pblczero::NetworkFormat;
   using pblczero::OnnxModel;
   options->Add<StringOption>(kInputFilenameId);
@@ -139,9 +139,9 @@ bool ProcessParameters(OptionsParser* options) {
 
   if (!options->ProcessAllFlags()) return false;
 
-  const OptionsDict& dict = options->GetOptionsDict();
-  dict.EnsureExists<std::string>(kInputFilenameId);
-  dict.EnsureExists<std::string>(kOutputFilenameId);
+  const ProgramOptions& dict = options->GetOptionsDict();
+  dict.EnsureHasKey<std::string>(kInputFilenameId);
+  dict.EnsureHasKey<std::string>(kOutputFilenameId);
   return true;
 }
 
@@ -373,12 +373,12 @@ bool EnsureOutDataType(pblczero::ModelProto& model, const std::string& name,
   return true;
 }
 
-bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
+bool MaybeFixOnnx(pblczero::ModelProto& model, const ProgramOptions& dict,
                   pblczero::OnnxModel_DataType data_type) {
   bool updated = false;
 
   // Input.
-  if (dict.OwnExists<std::string>(kOnnxInputId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxInputId)) {
     if (dict.Get<bool>(kFixRule50Id)) {
       FixRule50(model, dict.Get<std::string>(kOnnxInputId),
                 data_type == pblczero::OnnxModel::FLOAT16);
@@ -387,17 +387,17 @@ bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
   }
 
   // Policy.
-  if (dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputPolicyId)) {
     updated |= EnsureOutDataType(
         model, dict.Get<std::string>(kOnnxOutputPolicyId), data_type);
   }
 
   // Value.
-  if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputValueId)) {
     updated |= EnsureOutDataType(
         model, dict.Get<std::string>(kOnnxOutputValueId), data_type);
   }
-  if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputWdlId)) {
     auto out = dict.Get<std::string>(kOnnxOutputWdlId);
     if (dict.Get<bool>(kFixWdlSoftmaxId)) {
       FixWdlSoftmax(model, out);
@@ -407,7 +407,7 @@ bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
   }
 
   // Mlh.
-  if (dict.OwnExists<std::string>(kOnnxOutputMlhId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputMlhId)) {
     updated |= EnsureOutDataType(model, dict.Get<std::string>(kOnnxOutputMlhId),
                                  data_type);
   }
@@ -420,10 +420,10 @@ bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
 void ConvertOnnxToLeela() {
   using pblczero::NetworkFormat;
   using pblczero::OnnxModel;
-  OptionsParser options_parser;
+  ProgramOptionsManager options_parser;
   if (!ProcessParameters(&options_parser)) return;
 
-  const OptionsDict& dict = options_parser.GetOptionsDict();
+  const ProgramOptions& dict = options_parser.GetOptionsDict();
 
   auto onnx_model = ReadFileToString(dict.Get<std::string>(kInputFilenameId));
   pblczero::ModelProto model;
@@ -444,7 +444,7 @@ void ConvertOnnxToLeela() {
   format->set_input(GetEnumValueFromString(
       dict.Get<std::string>(kInputFormatId),
       NetworkFormat::InputFormat_AllValues, NetworkFormat::InputFormat_Name));
-  if (dict.OwnExists<std::string>(kOnnxInputId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxInputId)) {
     auto in = dict.Get<std::string>(kOnnxInputId);
     onnx->set_input_planes(in);
     data_type = GetDataType(model, in);
@@ -455,7 +455,7 @@ void ConvertOnnxToLeela() {
   format->set_policy(GetEnumValueFromString(
       dict.Get<std::string>(kPolicyFormatId),
       NetworkFormat::PolicyFormat_AllValues, NetworkFormat::PolicyFormat_Name));
-  if (dict.OwnExists<std::string>(kOnnxOutputPolicyId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputPolicyId)) {
     onnx->set_output_policy(dict.Get<std::string>(kOnnxOutputPolicyId));
   }
 
@@ -463,15 +463,15 @@ void ConvertOnnxToLeela() {
   format->set_value(GetEnumValueFromString(
       dict.Get<std::string>(kValueFormatId),
       NetworkFormat::ValueFormat_AllValues, NetworkFormat::ValueFormat_Name));
-  if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputValueId)) {
     onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
   }
-  if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputWdlId)) {
     onnx->set_output_wdl(dict.Get<std::string>(kOnnxOutputWdlId));
   }
 
   // Mlh.
-  if (dict.OwnExists<std::string>(kOnnxOutputMlhId)) {
+  if (dict.HasOwnKey<std::string>(kOnnxOutputMlhId)) {
     format->set_moves_left(
         GetEnumValueFromString(dict.Get<std::string>(kMovesLeftFormatId),
                                NetworkFormat::MovesLeftFormat_AllValues,

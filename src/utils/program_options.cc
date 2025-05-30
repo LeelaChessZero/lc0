@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "optionsparser.h"
+#include "program_options.h"
 
 #include <iomanip>
 #include <iostream>
@@ -49,14 +49,15 @@ const int kUciLineIndent = 15;
 const int kHelpWidth = 80;
 }  // namespace
 
-OptionsParser::Option::Option(const OptionId& id) : id_(id) {}
+ProgramOptionsManager::Option::Option(const OptionId& id) : id_(id) {}
 
-OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
+ProgramOptionsManager::ProgramOptionsManager() : values_(*defaults_.AddSubdict("values")) {}
 
-std::vector<std::string> OptionsParser::ListOptionsUci() const {
+std::vector<std::string> ProgramOptionsManager::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
-    if (!iter->GetUciOption().empty() && !iter->hidden_) {
+    if (!iter->GetUciOption().empty() &&
+        (iter->GetId().visibility_mask() & visibility_mode_)) {
       result.emplace_back("option name " + iter->GetUciOption() + " " +
                           iter->GetOptionString(values_));
     }
@@ -64,7 +65,7 @@ std::vector<std::string> OptionsParser::ListOptionsUci() const {
   return result;
 }
 
-void OptionsParser::SetUciOption(const std::string& name,
+void ProgramOptionsManager::SetUciOption(const std::string& name,
                                  const std::string& value,
                                  const std::string& context) {
   auto option = FindOptionByUciName(name);
@@ -75,23 +76,7 @@ void OptionsParser::SetUciOption(const std::string& name,
   throw Exception("Unknown option: " + name);
 }
 
-void OptionsParser::HideOption(const OptionId& id) {
-  const auto option = FindOptionById(id);
-  if (option) option->hidden_ = true;
-}
-
-void OptionsParser::HideAllOptions() {
-  for (const auto& option : options_) {
-    option->hidden_ = true;
-  }
-}
-
-void OptionsParser::UnhideOption(const OptionId& id) {
-  const auto option = FindOptionById(id);
-  if (option) option->hidden_ = false;
-}
-
-OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
+ProgramOptionsManager::Option* ProgramOptionsManager::FindOptionByLongFlag(
     const std::string& flag) const {
   for (const auto& val : options_) {
     auto longflg = val->GetLongFlag();
@@ -100,7 +85,7 @@ OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
   return nullptr;
 }
 
-OptionsParser::Option* OptionsParser::FindOptionByUciName(
+ProgramOptionsManager::Option* ProgramOptionsManager::FindOptionByUciName(
     const std::string& name) const {
   for (const auto& val : options_) {
     if (StringsEqualIgnoreCase(val->GetUciOption(), name)) return val.get();
@@ -108,14 +93,14 @@ OptionsParser::Option* OptionsParser::FindOptionByUciName(
   return nullptr;
 }
 
-OptionsParser::Option* OptionsParser::FindOptionById(const OptionId& id) const {
+ProgramOptionsManager::Option* ProgramOptionsManager::FindOptionById(const OptionId& id) const {
   for (const auto& val : options_) {
     if (id == val->GetId()) return val.get();
   }
   return nullptr;
 }
 
-OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
+ProgramOptions* ProgramOptionsManager::GetMutableOptions(const std::string& context) {
   if (context == "") return &values_;
   auto* result = &values_;
   for (const auto& x : StrSplit(context, ".")) {
@@ -124,7 +109,7 @@ OptionsDict* OptionsParser::GetMutableOptions(const std::string& context) {
   return result;
 }
 
-const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
+const ProgramOptions& ProgramOptionsManager::GetOptionsDict(const std::string& context) {
   if (context == "") return values_;
   const auto* result = &values_;
   for (const auto& x : StrSplit(context, ".")) {
@@ -133,20 +118,22 @@ const OptionsDict& OptionsParser::GetOptionsDict(const std::string& context) {
   return *result;
 }
 
-bool OptionsParser::ProcessAllFlags() {
+bool ProgramOptionsManager::ProcessAllFlags() {
   return ProcessFlags(ConfigFile::Arguments()) &&
          ProcessFlags(CommandLine::Arguments());
 }
 
-bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
+bool ProgramOptionsManager::ProcessFlags(const std::vector<std::string>& args) {
   auto show_help = false;
-  if (CommandLine::BinaryName().find("pro") != std::string::npos) {
-    ShowHidden();
+  if (CommandLine::BinaryName().find("simple") != std::string::npos) {
+    visibility_mode_ = OptionId::kSimpleMode;
+  } else if (CommandLine::BinaryName().find("pro") != std::string::npos) {
+    visibility_mode_ = OptionId::kProMode;
   }
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
     if (param == "--show-hidden") {
-      ShowHidden();
+      visibility_mode_ = OptionId::kProMode;
       continue;
     }
     if (param == "-h" || param == "--help") {
@@ -218,7 +205,7 @@ bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
   return true;
 }
 
-void OptionsParser::AddContext(const std::string& context) {
+void ProgramOptionsManager::AddContext(const std::string& context) {
   values_.AddSubdict(context);
 }
 
@@ -272,7 +259,7 @@ std ::string FormatFlag(char short_flag, const std::string& long_flag,
 }
 }  // namespace
 
-void OptionsParser::ShowHelp() const {
+void ProgramOptionsManager::ShowHelp() const {
   std::cout << "Usage: " << CommandLine::BinaryName() << " [<mode>] [flags...]"
             << std::endl;
 
@@ -288,7 +275,9 @@ void OptionsParser::ShowHelp() const {
   std::cout << FormatFlag('\0', "show-hidden",
                           "Show hidden options. Use with --help.");
   for (const auto& option : options_) {
-    if (!option->hidden_) std::cout << option->GetHelp(defaults_);
+    if ((option->GetId().visibility_mask() & visibility_mode_)) {
+      std::cout << option->GetHelp(values_);
+    }
   }
 
   auto contexts = values_.ListSubdicts();
@@ -300,23 +289,19 @@ void OptionsParser::ShowHelp() const {
   }
 }
 
-void OptionsParser::ShowHidden() const {
-  for (const auto& option : options_) option->hidden_ = false;
-}
-
 /////////////////////////////////////////////////////////////////
 // StringOption
 /////////////////////////////////////////////////////////////////
 
 StringOption::StringOption(const OptionId& id) : Option(id) {}
 
-void StringOption::SetValue(const std::string& value, OptionsDict* dict) {
+void StringOption::SetValue(const std::string& value, ProgramOptions* dict) {
   SetVal(dict, value);
 }
 
 bool StringOption::ProcessLongFlag(const std::string& flag,
                                    const std::string& value,
-                                   OptionsDict* dict) {
+                                   ProgramOptions* dict) {
   if (flag == GetLongFlag()) {
     SetVal(dict, value);
     return true;
@@ -326,7 +311,7 @@ bool StringOption::ProcessLongFlag(const std::string& flag,
 
 bool StringOption::ProcessShortFlagWithValue(char flag,
                                              const std::string& value,
-                                             OptionsDict* dict) {
+                                             ProgramOptions* dict) {
   if (flag == GetShortFlag()) {
     SetVal(dict, value);
     return true;
@@ -334,7 +319,7 @@ bool StringOption::ProcessShortFlagWithValue(char flag,
   return false;
 }
 
-std::string StringOption::GetHelp(const OptionsDict& dict) const {
+std::string StringOption::GetHelp(const ProgramOptions& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     long_flag += "=STRING";
@@ -343,15 +328,15 @@ std::string StringOption::GetHelp(const OptionsDict& dict) const {
                     GetVal(dict));
 }
 
-std::string StringOption::GetOptionString(const OptionsDict& dict) const {
+std::string StringOption::GetOptionString(const ProgramOptions& dict) const {
   return "type string default " + GetVal(dict);
 }
 
-std::string StringOption::GetVal(const OptionsDict& dict) const {
+std::string StringOption::GetVal(const ProgramOptions& dict) const {
   return dict.Get<ValueType>(GetId());
 }
 
-void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+void StringOption::SetVal(ProgramOptions* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
@@ -362,12 +347,12 @@ void StringOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 IntOption::IntOption(const OptionId& id, int min, int max)
     : Option(id), min_(min), max_(max) {}
 
-void IntOption::SetValue(const std::string& value, OptionsDict* dict) {
+void IntOption::SetValue(const std::string& value, ProgramOptions* dict) {
   SetVal(dict, ValidateIntString(value));
 }
 
 bool IntOption::ProcessLongFlag(const std::string& flag,
-                                const std::string& value, OptionsDict* dict) {
+                                const std::string& value, ProgramOptions* dict) {
   if (flag == GetLongFlag()) {
     SetVal(dict, ValidateIntString(value));
     return true;
@@ -376,7 +361,7 @@ bool IntOption::ProcessLongFlag(const std::string& flag,
 }
 
 bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
-                                          OptionsDict* dict) {
+                                          ProgramOptions* dict) {
   if (flag == GetShortFlag()) {
     SetVal(dict, ValidateIntString(value));
     return true;
@@ -384,7 +369,7 @@ bool IntOption::ProcessShortFlagWithValue(char flag, const std::string& value,
   return false;
 }
 
-std::string IntOption::GetHelp(const OptionsDict& dict) const {
+std::string IntOption::GetHelp(const ProgramOptions& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     long_flag += "=" + std::to_string(min_) + ".." + std::to_string(max_);
@@ -395,16 +380,16 @@ std::string IntOption::GetHelp(const OptionsDict& dict) const {
                         "  MAX: " + std::to_string(max_));
 }
 
-std::string IntOption::GetOptionString(const OptionsDict& dict) const {
+std::string IntOption::GetOptionString(const ProgramOptions& dict) const {
   return "type spin default " + std::to_string(GetVal(dict)) + " min " +
          std::to_string(min_) + " max " + std::to_string(max_);
 }
 
-IntOption::ValueType IntOption::GetVal(const OptionsDict& dict) const {
+IntOption::ValueType IntOption::GetVal(const ProgramOptions& dict) const {
   return dict.Get<ValueType>(GetId());
 }
 
-void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+void IntOption::SetVal(ProgramOptions* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
     std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be between " << min_
@@ -451,7 +436,7 @@ int IntOption::ValidateIntString(const std::string& val) const {
 FloatOption::FloatOption(const OptionId& id, float min, float max)
     : Option(id), min_(min), max_(max) {}
 
-void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
+void FloatOption::SetValue(const std::string& value, ProgramOptions* dict) {
   try {
     SetVal(dict, std::stof(value));
   } catch (std::invalid_argument&) {
@@ -462,7 +447,7 @@ void FloatOption::SetValue(const std::string& value, OptionsDict* dict) {
 }
 
 bool FloatOption::ProcessLongFlag(const std::string& flag,
-                                  const std::string& value, OptionsDict* dict) {
+                                  const std::string& value, ProgramOptions* dict) {
   if (flag == GetLongFlag()) {
     try {
       SetVal(dict, std::stof(value));
@@ -477,7 +462,7 @@ bool FloatOption::ProcessLongFlag(const std::string& flag,
 }
 
 bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
-                                            OptionsDict* dict) {
+                                            ProgramOptions* dict) {
   if (flag == GetShortFlag()) {
     try {
       SetVal(dict, std::stof(value));
@@ -491,7 +476,7 @@ bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
   return false;
 }
 
-std::string FloatOption::GetHelp(const OptionsDict& dict) const {
+std::string FloatOption::GetHelp(const ProgramOptions& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     std::ostringstream oss;
@@ -505,15 +490,15 @@ std::string FloatOption::GetHelp(const OptionsDict& dict) const {
                     oss.str());
 }
 
-std::string FloatOption::GetOptionString(const OptionsDict& dict) const {
+std::string FloatOption::GetOptionString(const ProgramOptions& dict) const {
   return "type string default " + std::to_string(GetVal(dict));
 }
 
-FloatOption::ValueType FloatOption::GetVal(const OptionsDict& dict) const {
+FloatOption::ValueType FloatOption::GetVal(const ProgramOptions& dict) const {
   return dict.Get<ValueType>(GetId());
 }
 
-void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+void FloatOption::SetVal(ProgramOptions* dict, const ValueType& val) const {
   if (val < min_ || val > max_) {
     std::ostringstream buf;
     buf << "Flag '--" << GetLongFlag() << "' must be between " << min_
@@ -529,13 +514,13 @@ void FloatOption::SetVal(OptionsDict* dict, const ValueType& val) const {
 
 BoolOption::BoolOption(const OptionId& id) : Option(id) {}
 
-void BoolOption::SetValue(const std::string& value, OptionsDict* dict) {
+void BoolOption::SetValue(const std::string& value, ProgramOptions* dict) {
   ValidateBoolString(value);
   SetVal(dict, value == "true");
 }
 
 bool BoolOption::ProcessLongFlag(const std::string& flag,
-                                 const std::string& value, OptionsDict* dict) {
+                                 const std::string& value, ProgramOptions* dict) {
   if (flag == "no-" + GetLongFlag()) {
     SetVal(dict, false);
     return true;
@@ -554,7 +539,7 @@ bool BoolOption::ProcessLongFlag(const std::string& flag,
   return false;
 }
 
-bool BoolOption::ProcessShortFlag(char flag, OptionsDict* dict) {
+bool BoolOption::ProcessShortFlag(char flag, ProgramOptions* dict) {
   if (flag == GetShortFlag()) {
     SetVal(dict, !GetVal(*dict));
     return true;
@@ -562,7 +547,7 @@ bool BoolOption::ProcessShortFlag(char flag, OptionsDict* dict) {
   return false;
 }
 
-std::string BoolOption::GetHelp(const OptionsDict& dict) const {
+std::string BoolOption::GetHelp(const ProgramOptions& dict) const {
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     long_flag = "[no-]" + long_flag;
@@ -571,15 +556,15 @@ std::string BoolOption::GetHelp(const OptionsDict& dict) const {
                     GetVal(dict) ? "true" : "false");
 }
 
-std::string BoolOption::GetOptionString(const OptionsDict& dict) const {
+std::string BoolOption::GetOptionString(const ProgramOptions& dict) const {
   return "type check default " + std::string(GetVal(dict) ? "true" : "false");
 }
 
-BoolOption::ValueType BoolOption::GetVal(const OptionsDict& dict) const {
+BoolOption::ValueType BoolOption::GetVal(const ProgramOptions& dict) const {
   return dict.Get<ValueType>(GetId());
 }
 
-void BoolOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+void BoolOption::SetVal(ProgramOptions* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
@@ -598,25 +583,25 @@ void BoolOption::ValidateBoolString(const std::string& val) {
 
 ButtonOption::ButtonOption(const OptionId& id) : Option(id) {}
 
-void ButtonOption::SetValue(const std::string& /*value*/, OptionsDict* dict) {
+void ButtonOption::SetValue(const std::string& /*value*/, ProgramOptions* dict) {
   dict->Set<ValueType>(GetId(), true);
 }
 
 bool ButtonOption::ProcessLongFlag(const std::string& /*flag*/,
                                    const std::string& /*value*/,
-                                   OptionsDict* /*dict*/) {
+                                   ProgramOptions* /*dict*/) {
   return false;
 }
 
-bool ButtonOption::ProcessShortFlag(char /*flag*/, OptionsDict* /*dict*/) {
+bool ButtonOption::ProcessShortFlag(char /*flag*/, ProgramOptions* /*dict*/) {
   return false;
 }
 
-std::string ButtonOption::GetHelp(const OptionsDict& /*dict*/) const {
+std::string ButtonOption::GetHelp(const ProgramOptions& /*dict*/) const {
   return "";
 }
 
-std::string ButtonOption::GetOptionString(const OptionsDict& /*dict*/) const {
+std::string ButtonOption::GetOptionString(const ProgramOptions& /*dict*/) const {
   return "type button";
 }
 
@@ -628,13 +613,13 @@ ChoiceOption::ChoiceOption(const OptionId& id,
                            const std::vector<std::string>& choices)
     : Option(id), choices_(choices) {}
 
-void ChoiceOption::SetValue(const std::string& value, OptionsDict* dict) {
+void ChoiceOption::SetValue(const std::string& value, ProgramOptions* dict) {
   SetVal(dict, value);
 }
 
 bool ChoiceOption::ProcessLongFlag(const std::string& flag,
                                    const std::string& value,
-                                   OptionsDict* dict) {
+                                   ProgramOptions* dict) {
   if (flag == GetLongFlag()) {
     SetVal(dict, value);
     return true;
@@ -644,7 +629,7 @@ bool ChoiceOption::ProcessLongFlag(const std::string& flag,
 
 bool ChoiceOption::ProcessShortFlagWithValue(char flag,
                                              const std::string& value,
-                                             OptionsDict* dict) {
+                                             ProgramOptions* dict) {
   if (flag == GetShortFlag()) {
     SetVal(dict, value);
     return true;
@@ -652,7 +637,7 @@ bool ChoiceOption::ProcessShortFlagWithValue(char flag,
   return false;
 }
 
-std::string ChoiceOption::GetHelp(const OptionsDict& dict) const {
+std::string ChoiceOption::GetHelp(const ProgramOptions& dict) const {
   std::string values;
   for (const auto& choice : choices_) {
     if (!values.empty()) values += ',';
@@ -662,7 +647,7 @@ std::string ChoiceOption::GetHelp(const OptionsDict& dict) const {
                     GetUciOption(), GetVal(dict) + "  VALUES: " + values);
 }
 
-std::string ChoiceOption::GetOptionString(const OptionsDict& dict) const {
+std::string ChoiceOption::GetOptionString(const ProgramOptions& dict) const {
   std::string res = "type combo default " + GetVal(dict);
   for (const auto& choice : choices_) {
     res += " var " + choice;
@@ -670,11 +655,11 @@ std::string ChoiceOption::GetOptionString(const OptionsDict& dict) const {
   return res;
 }
 
-std::string ChoiceOption::GetVal(const OptionsDict& dict) const {
+std::string ChoiceOption::GetVal(const ProgramOptions& dict) const {
   return dict.Get<ValueType>(GetId());
 }
 
-void ChoiceOption::SetVal(OptionsDict* dict, const ValueType& val) const {
+void ChoiceOption::SetVal(ProgramOptions* dict, const ValueType& val) const {
   bool valid = false;
   std::string choice_string;
   for (const auto& choice : choices_) {

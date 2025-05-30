@@ -28,7 +28,7 @@
 #pragma once
 
 #include "search/dag_classic/stoppers/timemgr.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 namespace dag_classic {
@@ -36,7 +36,7 @@ namespace dag_classic {
 float ComputeEstimatedMovesToGo(int ply, float midpoint, float steepness);
 
 std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params);
+                                                   const InlineConfig& params);
 
 }  // namespace dag_classic
 }  // namespace lczero

@@ -36,15 +36,21 @@ namespace dag_classic {
 namespace {
 
 const OptionId kThreadsOptionId{
-    "threads", "Threads",
-    "Number of (CPU) worker threads to use, 0 for the backend default.", 't'};
-
-const OptionId kClearTree{"", "ClearTree",
-                          "Clear the tree before the next search."};
+    {.long_flag = "threads",
+     .uci_option = "Threads",
+     .help_text =
+         "Number of (CPU) worker threads to use, 0 for the backend default.",
+     .short_flag = 't',
+     .visibility_mask = OptionId::kAlwaysVisible}};
+const OptionId kClearTree{
+    {.long_flag = "",
+     .uci_option = "ClearTree",
+     .help_text = "Clear the tree before the next search.",
+     .visibility_mask = OptionId::kProModeMask}};
 
 class DagClassicSearch : public SearchBase {
  public:
-  DagClassicSearch(UciResponder* responder, const OptionsDict* options)
+  DagClassicSearch(UciResponder* responder, const ProgramOptions* options)
       : SearchBase(responder), options_(options) {}
   ~DagClassicSearch() { search_.reset(); }
 
@@ -65,7 +71,7 @@ class DagClassicSearch : public SearchBase {
     if (search_) search_->Abort();
   }
 
-  const OptionsDict* options_;
+  const ProgramOptions* options_;
   std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
@@ -124,17 +130,16 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
 class DagClassicSearchFactory : public SearchFactory {
   std::string_view GetName() const override { return "dag-preview"; }
   std::unique_ptr<SearchBase> CreateSearch(
-      UciResponder* responder, const OptionsDict* options) const override {
+      UciResponder* responder, const ProgramOptions* options) const override {
     return std::make_unique<DagClassicSearch>(responder, options);
   }
 
-  void PopulateParams(OptionsParser* parser) const override {
+  void PopulateParams(ProgramOptionsManager* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
     SearchParams::Populate(parser);
     PopulateTimeManagementOptions(RunType::kUci, parser);
 
     parser->Add<ButtonOption>(kClearTree);
-    parser->HideOption(kClearTree);
   }
 };
 
