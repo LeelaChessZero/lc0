@@ -34,6 +34,7 @@
 #include "search/classic/search.h"
 #include "search/classic/stoppers/factory.h"
 #include "search/classic/stoppers/stoppers.h"
+#include "utils/string.h"
 
 namespace lczero {
 namespace {
@@ -106,12 +107,13 @@ void Benchmark::Run(bool run_shorter_benchmark) {
             std::make_unique<classic::VisitsStopper>(visits, false));
       }
 
-      NNCache cache;
-      cache.SetCapacity(
-          option_dict.Get<int>(SharedBackendParams::kNNCacheSizeId));
-
       classic::NodeTree tree;
-      tree.ResetToPosition(position, {});
+      std::vector<std::string> moves;
+      if (auto iter = position.find("moves "); iter != std::string::npos) {
+        moves = StrSplitAtWhitespace(position.substr(iter + 6));
+        position = position.substr(0, iter);
+      }
+      tree.ResetToPosition(position, moves);
 
       const auto start = std::chrono::steady_clock::now();
       auto search = std::make_unique<classic::Search>(
@@ -146,14 +148,14 @@ void Benchmark::Run(bool run_shorter_benchmark) {
 }
 
 void Benchmark::OnBestMove(const BestMoveInfo& move) {
-  std::cout << "bestmove " << move.bestmove.as_string() << std::endl;
+  std::cout << "bestmove " << move.bestmove.ToString(true) << std::endl;
 }
 
 void Benchmark::OnInfo(const std::vector<ThinkingInfo>& infos) {
   std::string line = "Benchmark time " + std::to_string(infos[0].time);
   line += " ms, " + std::to_string(infos[0].nodes) + " nodes, ";
   line += std::to_string(infos[0].nps) + " nps";
-  if (!infos[0].pv.empty()) line += ", move " + infos[0].pv[0].as_string();
+  if (!infos[0].pv.empty()) line += ", move " + infos[0].pv[0].ToString(true);
   std::cout << line << std::endl;
 }
 

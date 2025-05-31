@@ -37,7 +37,6 @@
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "neural/backend.h"
-#include "neural/cache.h"
 #include "search/classic/node.h"
 #include "search/classic/params.h"
 #include "search/classic/stoppers/timemgr.h"
@@ -94,9 +93,6 @@ class Search {
   // If called after GetBestMove, another call to GetBestMove will have results
   // from temperature having been applied again.
   void ResetBestMove();
-
-  // Returns NN eval for a given node from cache, if that node is cached.
-  std::optional<EvalResult> GetCachedNNEval(const Node* node) const;
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).

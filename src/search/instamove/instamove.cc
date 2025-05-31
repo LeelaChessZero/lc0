@@ -65,6 +65,12 @@ class InstamoveSearch : public SearchBase {
   void RespondBestMove() {
     if (responded_bestmove_.exchange(true)) return;
     BestMoveInfo info{bestmove_};
+    // TODO Remove this when move will be encoded from white perspective.
+    if (game_state_.CurrentPosition().IsBlackToMove()) {
+      info.bestmove.Flip();
+    } else if (!info.ponder.is_null()) {
+      info.ponder.Flip();
+    }
     uci_responder_->OutputBestMove(&info);
   }
 
@@ -92,7 +98,6 @@ class PolicyHeadSearch : public InstamoveSearch {
     const size_t best_move_idx =
         std::max_element(res[0].p.begin(), res[0].p.end()) - res[0].p.begin();
     Move best_move = legal_moves[best_move_idx];
-    if (positions.back().IsBlackToMove()) best_move.Mirror();
     return best_move;
   }
 };
@@ -155,7 +160,6 @@ class ValueHeadSearch : public InstamoveSearch {
     }};
     uci_responder_->OutputThinkingInfo(&infos);
     Move best_move = legal_moves[best_idx];
-    if (history.IsBlackToMove()) best_move.Mirror();
     return best_move;
   }
 };
@@ -176,8 +180,8 @@ class ValueHeadFactory : public SearchFactory {
   }
 };
 
-REGISTER_SEARCH(PolicyHeadFactory);
-REGISTER_SEARCH(ValueHeadFactory);
+REGISTER_SEARCH(PolicyHeadFactory)
+REGISTER_SEARCH(ValueHeadFactory)
 
 }  // namespace
 }  // namespace lczero

@@ -35,14 +35,13 @@ class CachingBackend : public Backend {
  public:
   // Clears the cache.
   virtual void ClearCache() = 0;
-  // Sets the maximum number of items in the cache.
-  virtual void SetCacheCapacity(size_t capacity) = 0;
+  virtual void SetCacheSize(size_t size) = 0;
 };
 
 // Creates a caching backend wrapper, which returns values immediately if they
 // are found, and forwards the request to the wrapped backend otherwise (and
 // caches the result).
 std::unique_ptr<CachingBackend> CreateMemCache(std::unique_ptr<Backend> parent,
-                                               size_t capacity);
+                                               size_t cache_size);
 
 }  // namespace lczero

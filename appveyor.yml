@@ -97,9 +97,12 @@ install:
 - cmd: touch -t 201801010000.00 c:\cache\%NET%.pb.gz
 - cmd: IF %GTEST%==true IF NOT EXIST C:\cache\syzygy mkdir C:\cache\syzygy
 - cmd: IF %GTEST%==true cd C:\cache\syzygy
-- cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK.rtb{w,z}
-- cmd: IF %GTEST%==true IF NOT EXIST KQQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}{P,N,R,B,Q}vK.rtb{w,z}
-- cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtb{w,z}
+- cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5-dtz/K{P,N,R,B,Q}vK.rtbz
+- cmd: IF %GTEST%==true IF NOT EXIST KQQvK.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5-dtz/K{P,N,R,B,Q}{P,N,R,B,Q}vK.rtbz
+- cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbz curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5-dtz/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtbz
+- cmd: IF %GTEST%==true IF NOT EXIST KQvK.rtbw curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/K{P,N,R,B,Q}vK.rtbw
+- cmd: IF %GTEST%==true IF NOT EXIST KQQvK.rtbw curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/K{P,N,R,B,Q}{P,N,R,B,Q}vK.rtbw
+- cmd: IF %GTEST%==true IF NOT EXIST KQvKQ.rtbw curl --remote-name-all https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/K{P,N,R,B,Q}vK{P,N,R,B,Q}.rtbw
 - cmd: cd C:\projects\lc0
 cache:
   - C:\cache

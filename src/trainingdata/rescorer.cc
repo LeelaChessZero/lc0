@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "trainingdata/rescoreloop.h"
+#include "trainingdata/rescorer.h"
 
 #include <optional>
 #include <sstream>
@@ -225,21 +225,21 @@ void Validate(const std::vector<V6TrainingData>& fileContents,
     int transform = TransformForPosition(input_format, history);
     // If real v6 data, can confirm that played_idx matches the inferred move.
     if (fileContents[i].visits > 0) {
-      if (fileContents[i].played_idx != moves[i].as_nn_index(transform)) {
+      if (fileContents[i].played_idx != MoveToNNIndex(moves[i], transform)) {
         throw Exception("Move performed is not listed as played.");
       }
     }
     // Move shouldn't be marked illegal unless there is 0 visits, which should
     // only happen if invariance_info is marked with the placeholder bit.
-    if (!(fileContents[i].probabilities[moves[i].as_nn_index(transform)] >=
+    if (!(fileContents[i].probabilities[MoveToNNIndex(moves[i], transform)] >=
           0.0f) &&
         (fileContents[i].invariance_info & 64) == 0) {
-      std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
+      std::cerr << "Illegal move: " << moves[i].ToString(true) << std::endl;
       throw Exception("Move performed is marked illegal in probabilities.");
     }
     auto legal = history.Last().GetBoard().GenerateLegalMoves();
     if (std::find(legal.begin(), legal.end(), moves[i]) == legal.end()) {
-      std::cerr << "Illegal move: " << moves[i].as_string() << std::endl;
+      std::cerr << "Illegal move: " << moves[i].ToString(true) << std::endl;
       throw Exception("Move performed is an illegal move.");
     }
     history.Append(moves[i]);
@@ -254,46 +254,46 @@ void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
   unsigned char bpc[17];
 
   auto stm = pos.IsBlackToMove() ? tb_BLACK_TO_MOVE : tb_WHITE_TO_MOVE;
-  ChessBoard board = pos.GetBoard(); 
+  ChessBoard board = pos.GetBoard();
   if (pos.IsBlackToMove()) board.Mirror();
   auto epsq = tb_NOSQUARE;
   for (auto sq : board.en_passant()) {
     // Our internal representation stores en_passant 2 rows away
     // from the actual sq.
-    if (sq.row() == 0) {
-      epsq = (TB_squares)(sq.as_int() + 16);
+    if (sq.rank().idx == 0) {
+      epsq = (TB_squares)(sq.as_idx() + 16);
     } else {
-      epsq = (TB_squares)(sq.as_int() - 16);
+      epsq = (TB_squares)(sq.as_idx() - 16);
     }
   }
   int idx = 0;
   for (auto sq : (board.ours() & board.kings())) {
-    wsq[idx] = (TB_squares)sq.as_int();
+    wsq[idx] = (TB_squares)sq.as_idx();
     wpc[idx] = tb_KING;
     idx++;
   }
   for (auto sq : (board.ours() & board.knights())) {
-    wsq[idx] = (TB_squares)sq.as_int();
+    wsq[idx] = (TB_squares)sq.as_idx();
     wpc[idx] = tb_KNIGHT;
     idx++;
   }
   for (auto sq : (board.ours() & board.queens())) {
-    wsq[idx] = (TB_squares)sq.as_int();
+    wsq[idx] = (TB_squares)sq.as_idx();
     wpc[idx] = tb_QUEEN;
     idx++;
   }
   for (auto sq : (board.ours() & board.rooks())) {
-    wsq[idx] = (TB_squares)sq.as_int();
+    wsq[idx] = (TB_squares)sq.as_idx();
     wpc[idx] = tb_ROOK;
     idx++;
   }
   for (auto sq : (board.ours() & board.bishops())) {
-    wsq[idx] = (TB_squares)sq.as_int();
+    wsq[idx] = (TB_squares)sq.as_idx();
     wpc[idx] = tb_BISHOP;
     idx++;
   }
   for (auto sq : (board.ours() & board.pawns())) {
-    wsq[idx] = (TB_squares)sq.as_int();
+    wsq[idx] = (TB_squares)sq.as_idx();
     wpc[idx] = tb_PAWN;
     idx++;
   }
@@ -302,32 +302,32 @@ void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
 
   idx = 0;
   for (auto sq : (board.theirs() & board.kings())) {
-    bsq[idx] = (TB_squares)sq.as_int();
+    bsq[idx] = (TB_squares)sq.as_idx();
     bpc[idx] = tb_KING;
     idx++;
   }
   for (auto sq : (board.theirs() & board.knights())) {
-    bsq[idx] = (TB_squares)sq.as_int();
+    bsq[idx] = (TB_squares)sq.as_idx();
     bpc[idx] = tb_KNIGHT;
     idx++;
   }
   for (auto sq : (board.theirs() & board.queens())) {
-    bsq[idx] = (TB_squares)sq.as_int();
+    bsq[idx] = (TB_squares)sq.as_idx();
     bpc[idx] = tb_QUEEN;
     idx++;
   }
   for (auto sq : (board.theirs() & board.rooks())) {
-    bsq[idx] = (TB_squares)sq.as_int();
+    bsq[idx] = (TB_squares)sq.as_idx();
     bpc[idx] = tb_ROOK;
     idx++;
   }
   for (auto sq : (board.theirs() & board.bishops())) {
-    bsq[idx] = (TB_squares)sq.as_int();
+    bsq[idx] = (TB_squares)sq.as_idx();
     bpc[idx] = tb_BISHOP;
     idx++;
   }
   for (auto sq : (board.theirs() & board.pawns())) {
-    bsq[idx] = (TB_squares)sq.as_int();
+    bsq[idx] = (TB_squares)sq.as_idx();
     bpc[idx] = tb_PAWN;
     idx++;
   }
@@ -359,8 +359,8 @@ void ChangeInputFormat(int newInputFormat, V6TrainingData* data,
     bool played_fixed = false;
     bool best_fixed = false;
     for (auto move : history.Last().GetBoard().GenerateLegalMoves()) {
-      int i = move.as_nn_index(transform);
-      int j = move.as_nn_index(data->invariance_info & 7);
+      int i = MoveToNNIndex(move, transform);
+      int j = MoveToNNIndex(move, data->invariance_info & 7);
       newProbs[i] = data->probabilities[j];
       // For V6 data only, the played/best idx need updating.
       if (data->visits > 0) {
@@ -389,10 +389,10 @@ void ChangeInputFormat(int newInputFormat, V6TrainingData* data,
   uint8_t their_king_side = 1;
   // If frc trained, send the bit mask representing rook position.
   if (Is960CastlingFormat(input_format)) {
-    our_queen_side <<= castlings.our_queenside_rook();
-    our_king_side <<= castlings.our_kingside_rook();
-    their_queen_side <<= castlings.their_queenside_rook();
-    their_king_side <<= castlings.their_kingside_rook();
+    our_queen_side <<= castlings.our_queenside_rook.idx;
+    our_king_side <<= castlings.our_kingside_rook.idx;
+    their_queen_side <<= castlings.their_queenside_rook.idx;
+    their_king_side <<= castlings.their_kingside_rook.idx;
   }
 
   data->castling_us_ooo = castlings.we_can_000() ? our_queen_side : 0;
@@ -435,16 +435,10 @@ int ResultForData(const V6TrainingData& data) {
 
 std::string AsNnueString(const Position& p, Move m, float q, int result) {
   std::ostringstream out;
-  out << "fen " << GetFen(p) << std::endl;
-  m = p.GetBoard().GetLegacyMove(m);
-  if (m.from().row() == ChessBoard::Rank::RANK_7 &&
-      p.GetBoard().pawns().get(m.from()) &&
-      m.promotion() == Move::Promotion::None) {
-    m.SetPromotion(Move::Promotion::Knight);
-  }
-  if (p.IsBlackToMove()) m.Mirror();
-  out << "move " << m.as_string() << std::endl;
-  // Formula from PR1477 adjuster for SF PawnValueEg.
+  out << "fen " << PositionToFen(p) << std::endl;
+  if (p.IsBlackToMove()) m.Flip();
+  out << "move " << m.ToString(false) << std::endl;
+  // Formula from PR1477 adjusted for SF PawnValueEg.
   out << "score " << round(660.6 * q / (1 - 0.9751875 * std::pow(q, 10)))
       << std::endl;
   out << "ply " << p.GetGamePly() << std::endl;
@@ -481,7 +475,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
         // All moves decoded are from the point of view of the side after the
         // move so need to mirror them all to be applicable to apply to the
         // position before.
-        moves.back().Mirror();
+        moves.back().Flip();
       }
       Validate(fileContents, moves);
       games += 1;
@@ -544,7 +538,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
           }
           if (i + 1 < fileContents.size()) {
             int transform = TransformForPosition(input_format, history);
-            int idx = moves[i].as_nn_index(transform);
+            int idx = MoveToNNIndex(moves[i], transform);
             if (rootNode->children[idx] == nullptr) {
               break;
             }
@@ -771,7 +765,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
             }
             int transform = TransformForPosition(input_format, history);
             for (auto& move : to_boost) {
-              boost_probs[move.as_nn_index(transform)] = true;
+              boost_probs[MoveToNNIndex(move, transform)] = true;
             }
             boost_count = to_boost.size();
           }
@@ -1141,7 +1135,7 @@ void BuildSubs(const std::vector<std::string>& files) {
       // All moves decoded are from the point of view of the side after the
       // move so need to mirror them all to be applicable to apply to the
       // position before.
-      moves.back().Mirror();
+      moves.back().Flip();
     }
     Validate(fileContents, moves);
 
@@ -1166,7 +1160,7 @@ void BuildSubs(const std::vector<std::string>& files) {
       }
       if (i < fileContents.size() - 1) {
         int transform = TransformForPosition(input_format, history);
-        int idx = moves[i].as_nn_index(transform);
+        int idx = MoveToNNIndex(moves[i], transform);
         if (rootNode->children[idx] == nullptr) {
           rootNode->children[idx] = new PolicySubNode();
         }
@@ -1179,17 +1173,14 @@ void BuildSubs(const std::vector<std::string>& files) {
 
 }  // namespace
 
-RescoreLoop::RescoreLoop() {}
-
-RescoreLoop::~RescoreLoop() {}
-
 #ifdef _WIN32
 #define SEP_CHAR ';'
 #else
 #define SEP_CHAR ':'
 #endif
 
-void RescoreLoop::RunLoop() {
+void RunRescorer() {
+  OptionsParser options;
   orig_counts[0] = 0;
   orig_counts[1] = 0;
   orig_counts[2] = 0;
@@ -1198,49 +1189,49 @@ void RescoreLoop::RunLoop() {
   fixed_counts[2] = 0;
   for (int i = 0; i < 11; i++) policy_bump_total_hist[i] = 0;
   for (int i = 0; i < 11; i++) policy_nobump_total_hist[i] = 0;
-  options_.Add<StringOption>(kSyzygyTablebaseId);
-  options_.Add<StringOption>(kGaviotaTablebaseId);
-  options_.Add<StringOption>(kInputDirId);
-  options_.Add<StringOption>(kOutputDirId);
-  options_.Add<StringOption>(kPolicySubsDirId);
-  options_.Add<IntOption>(kThreadsId, 1, 20) = 1;
-  options_.Add<FloatOption>(kTempId, 0.001, 100) = 1;
+  options.Add<StringOption>(kSyzygyTablebaseId);
+  options.Add<StringOption>(kGaviotaTablebaseId);
+  options.Add<StringOption>(kInputDirId);
+  options.Add<StringOption>(kOutputDirId);
+  options.Add<StringOption>(kPolicySubsDirId);
+  options.Add<IntOption>(kThreadsId, 1, 20) = 1;
+  options.Add<FloatOption>(kTempId, 0.001, 100) = 1;
   // Positive dist offset requires knowing the legal move set, so not supported
   // for now.
-  options_.Add<FloatOption>(kDistributionOffsetId, -0.999, 0) = 0;
-  options_.Add<FloatOption>(kMinDTZBoostId, 0, 1) = 0;
-  options_.Add<IntOption>(kNewInputFormatId, -1, 256) = -1;
-  options_.Add<BoolOption>(kDeblunder) = false;
-  options_.Add<FloatOption>(kDeblunderQBlunderThreshold, 0.0f, 2.0f) = 2.0f;
-  options_.Add<FloatOption>(kDeblunderQBlunderWidth, 0.0f, 2.0f) = 0.0f;
-  options_.Add<StringOption>(kNnuePlainFileId);
-  options_.Add<BoolOption>(kNnueBestScoreId) = true;
-  options_.Add<BoolOption>(kNnueBestMoveId) = false;
-  options_.Add<BoolOption>(kDeleteFilesId) = true;
+  options.Add<FloatOption>(kDistributionOffsetId, -0.999, 0) = 0;
+  options.Add<FloatOption>(kMinDTZBoostId, 0, 1) = 0;
+  options.Add<IntOption>(kNewInputFormatId, -1, 256) = -1;
+  options.Add<BoolOption>(kDeblunder) = false;
+  options.Add<FloatOption>(kDeblunderQBlunderThreshold, 0.0f, 2.0f) = 2.0f;
+  options.Add<FloatOption>(kDeblunderQBlunderWidth, 0.0f, 2.0f) = 0.0f;
+  options.Add<StringOption>(kNnuePlainFileId);
+  options.Add<BoolOption>(kNnueBestScoreId) = true;
+  options.Add<BoolOption>(kNnueBestMoveId) = false;
+  options.Add<BoolOption>(kDeleteFilesId) = true;
 
-  if (!options_.ProcessAllFlags()) return;
+  if (!options.ProcessAllFlags()) return;
 
-  if (options_.GetOptionsDict().IsDefault<std::string>(kOutputDirId) &&
-      options_.GetOptionsDict().IsDefault<std::string>(kNnuePlainFileId)) {
+  if (options.GetOptionsDict().IsDefault<std::string>(kOutputDirId) &&
+      options.GetOptionsDict().IsDefault<std::string>(kNnuePlainFileId)) {
     std::cerr << "Must provide an output dir or NNUE plain file." << std::endl;
     return;
   }
 
-  deblunderEnabled = options_.GetOptionsDict().Get<bool>(kDeblunder);
+  deblunderEnabled = options.GetOptionsDict().Get<bool>(kDeblunder);
   deblunderQBlunderThreshold =
-      options_.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold);
+      options.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold);
   deblunderQBlunderWidth =
-      options_.GetOptionsDict().Get<float>(kDeblunderQBlunderWidth);
+      options.GetOptionsDict().Get<float>(kDeblunderQBlunderWidth);
 
   SyzygyTablebase tablebase;
   if (!tablebase.init(
-          options_.GetOptionsDict().Get<std::string>(kSyzygyTablebaseId)) ||
+          options.GetOptionsDict().Get<std::string>(kSyzygyTablebaseId)) ||
       tablebase.max_cardinality() < 3) {
     std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
     return;
   }
   auto dtmPaths =
-      options_.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId);
+      options.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId);
   if (dtmPaths.size() != 0) {
     std::stringstream path_string_stream(dtmPaths);
     std::string path;
@@ -1259,7 +1250,7 @@ void RescoreLoop::RunLoop() {
     gaviotaEnabled = true;
   }
   auto policySubsDir =
-      options_.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
+      options.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
   if (policySubsDir.size() != 0) {
     auto policySubFiles = GetFileList(policySubsDir);
     for (size_t i = 0; i < policySubFiles.size(); i++) {
@@ -1268,7 +1259,7 @@ void RescoreLoop::RunLoop() {
     BuildSubs(policySubFiles);
   }
 
-  auto inputDir = options_.GetOptionsDict().Get<std::string>(kInputDirId);
+  auto inputDir = options.GetOptionsDict().Get<std::string>(kInputDirId);
   if (inputDir.size() == 0) {
     std::cerr << "Must provide an input dir." << std::endl;
     return;
@@ -1281,29 +1272,28 @@ void RescoreLoop::RunLoop() {
   for (size_t i = 0; i < files.size(); i++) {
     files[i] = inputDir + "/" + files[i];
   }
-  float dtz_boost = options_.GetOptionsDict().Get<float>(kMinDTZBoostId);
-  unsigned int threads = options_.GetOptionsDict().Get<int>(kThreadsId);
+  float dtz_boost = options.GetOptionsDict().Get<float>(kMinDTZBoostId);
+  unsigned int threads = options.GetOptionsDict().Get<int>(kThreadsId);
   ProcessFileFlags flags;
-  flags.delete_files = options_.GetOptionsDict().Get<bool>(kDeleteFilesId);
-  flags.nnue_best_score = options_.GetOptionsDict().Get<bool>(kNnueBestScoreId);
-  flags.nnue_best_move = options_.GetOptionsDict().Get<bool>(kNnueBestMoveId);
+  flags.delete_files = options.GetOptionsDict().Get<bool>(kDeleteFilesId);
+  flags.nnue_best_score = options.GetOptionsDict().Get<bool>(kNnueBestScoreId);
+  flags.nnue_best_move = options.GetOptionsDict().Get<bool>(kNnueBestMoveId);
   if (threads > 1) {
     std::vector<std::thread> threads_;
     int offset = 0;
     while (threads_.size() < threads) {
       int offset_val = offset;
       offset++;
-      threads_.emplace_back([this, offset_val, files, &tablebase, threads,
+      threads_.emplace_back([&options, offset_val, files, &tablebase, threads,
                              dtz_boost, flags]() {
         ProcessFiles(
             files, &tablebase,
-            options_.GetOptionsDict().Get<std::string>(kOutputDirId),
-            options_.GetOptionsDict().Get<float>(kTempId),
-            options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
-            dtz_boost, options_.GetOptionsDict().Get<int>(kNewInputFormatId),
+            options.GetOptionsDict().Get<std::string>(kOutputDirId),
+            options.GetOptionsDict().Get<float>(kTempId),
+            options.GetOptionsDict().Get<float>(kDistributionOffsetId),
+            dtz_boost, options.GetOptionsDict().Get<int>(kNewInputFormatId),
             offset_val, threads,
-            options_.GetOptionsDict().Get<std::string>(kNnuePlainFileId),
-            flags);
+            options.GetOptionsDict().Get<std::string>(kNnuePlainFileId), flags);
       });
     }
     for (size_t i = 0; i < threads_.size(); i++) {
@@ -1311,14 +1301,13 @@ void RescoreLoop::RunLoop() {
     }
 
   } else {
-    ProcessFiles(files, &tablebase,
-                 options_.GetOptionsDict().Get<std::string>(kOutputDirId),
-                 options_.GetOptionsDict().Get<float>(kTempId),
-                 options_.GetOptionsDict().Get<float>(kDistributionOffsetId),
-                 dtz_boost,
-                 options_.GetOptionsDict().Get<int>(kNewInputFormatId), 0, 1,
-                 options_.GetOptionsDict().Get<std::string>(kNnuePlainFileId),
-                 flags);
+    ProcessFiles(
+        files, &tablebase,
+        options.GetOptionsDict().Get<std::string>(kOutputDirId),
+        options.GetOptionsDict().Get<float>(kTempId),
+        options.GetOptionsDict().Get<float>(kDistributionOffsetId), dtz_boost,
+        options.GetOptionsDict().Get<int>(kNewInputFormatId), 0, 1,
+        options.GetOptionsDict().Get<std::string>(kNnuePlainFileId), flags);
   }
   std::cout << "Games processed: " << games << std::endl;
   std::cout << "Positions processed: " << positions << std::endl;

@@ -40,6 +40,54 @@
 #include "utils/logging.h"
 #include "version.h"
 
+namespace lczero {
+void ChooseAndRunEngine() {
+  // First try the engine which is explicitly specified on the command line.
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (CommandLine::ConsumeCommand(search_name)) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Then if "uci" is explicitly specified, run the classic engine through the
+  // old interface.
+  if (CommandLine::ConsumeCommand("uci")) {
+    // Old UCI engine.
+    RunEngineClassic();
+    return;
+  }
+
+  // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
+#ifdef DEFAULT_SEARCH
+#define STRINGIFY_INTERNAL(x) #x
+#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
+  SearchFactory* factory =
+      SearchManager::Get()->GetFactoryByName(STRINGIFY(DEFAULT_SEARCH));
+  if (!factory)
+    throw Exception("Unknown search algorithm: " STRINGIFY(DEFAULT_SEARCH));
+#undef STRINGIFY
+#undef STRINGIFY_INTERNAL
+  RunEngine(factory);
+  return;
+#endif
+
+  // Then try to run the engine which is specified by the name of the binary.
+  const std::string& binary_name = CommandLine::BinaryName();
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (binary_name.find(search_name) != std::string::npos) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Finally, run "classic" search through the new API.
+  RunEngine(SearchManager::Get()->GetFactoryByName("classic"));
+}
+}  // namespace lczero
+
 int main(int argc, const char** argv) {
   using namespace lczero;
   EscCodes::Init();
@@ -74,8 +122,9 @@ int main(int argc, const char** argv) {
 
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
-      SelfPlayLoop loop;
-      loop.RunLoop();
+      StdoutUciResponder uci_responder;
+      SelfPlayLoop loop(&uci_responder);
+      loop.Run();
     } else if (CommandLine::ConsumeCommand("benchmark")) {
       // Benchmark mode, longer version.
       Benchmark benchmark;
@@ -95,38 +144,7 @@ int main(int argc, const char** argv) {
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
     } else {
-      auto options_parser = std::make_unique<OptionsParser>();
-
-      bool used_new_search = false;
-      for (const std::string_view search_name :
-           SearchManager::Get()->GetSearchNames()) {
-        if (CommandLine::ConsumeCommand(search_name)) {
-          used_new_search = true;
-          SearchFactory* factory =
-              SearchManager::Get()->GetFactoryByName(search_name);
-          factory->PopulateParams(options_parser.get());
-          EngineLoop loop(
-              std::move(options_parser), [factory](UciResponder& uci_responder,
-                                                   const OptionsDict& options) {
-                return std::make_unique<Engine>(
-                    factory->CreateSearch(&uci_responder, &options), options);
-              });
-          loop.RunLoop();
-        }
-      }
-
-      if (!used_new_search) {
-        // Consuming optional "uci" mode.
-        CommandLine::ConsumeCommand("uci");
-        // Ordinary UCI engine.
-        EngineClassic::PopulateOptions(options_parser.get());
-        EngineLoop loop(
-            std::move(options_parser),
-            [](UciResponder& uci_responder, const OptionsDict& options) {
-              return std::make_unique<EngineClassic>(uci_responder, options);
-            });
-        loop.RunLoop();
-      }
+      lczero::ChooseAndRunEngine();
     }
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;

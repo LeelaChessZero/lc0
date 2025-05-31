@@ -110,6 +110,7 @@ class NetworkFactory {
 
 #define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)     \
   namespace {                                                             \
+  namespace ns##counter {                                                 \
   static NetworkFactory::Register regH38fhs##counter(                     \
       name,                                                               \
       [](const std::optional<WeightsFile>& w, const OptionsDict& o) {     \
@@ -123,6 +124,7 @@ class NetworkFactory {
             return func(w, o);                                            \
           },                                                              \
           priority));                                                     \
+  }                                                                       \
   }
 
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \

@@ -36,7 +36,7 @@ if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
 endif
-if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
+if cc.get_id() != 'msvc'
   if get_option('buildtype') == 'release'
     add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
   endif
@@ -47,6 +47,7 @@ if cc.get_id() == 'msvc'
 endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
+  add_project_arguments(cc.get_supported_arguments(['/source-charset:utf-8']), language : 'cpp')
 endif
 if ['arm', 'aarch64'].contains(host_machine.cpu_family())
   if get_option('neon')
@@ -157,7 +158,6 @@ files += gen_proto_src.process('src/neural/xla/hlo.proto',
 ## Main files
 #############################################################################
 common_files += [
-  'src/chess/bitboard.cc',
   'src/chess/board.cc',
   'src/chess/gamestate.cc',
   'src/chess/position.cc',
@@ -166,6 +166,8 @@ common_files += [
   'src/neural/batchsplit.cc',
   'src/neural/decoder.cc',
   'src/neural/encoder.cc',
+  'src/neural/factory.cc',
+  'src/neural/loader.cc',
   'src/neural/register.cc',
   'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
@@ -197,9 +199,6 @@ files += [
   'src/neural/backends/network_record.cc',
   'src/neural/backends/network_rr.cc',
   'src/neural/backends/network_trivial.cc',
-  'src/neural/cache.cc',
-  'src/neural/factory.cc',
-  'src/neural/loader.cc',
   'src/neural/memcache.cc',
   'src/neural/network_legacy.cc',
   'src/neural/onnx/adapters.cc',
@@ -219,6 +218,7 @@ files += [
   'src/search/classic/stoppers/smooth.cc',
   'src/search/classic/stoppers/stoppers.cc',
   'src/search/classic/stoppers/timemgr.cc',
+  'src/search/classic/wrapper.cc',
   'src/search/register.cc',
   'src/selfplay/game.cc',
   'src/selfplay/loop.cc',
@@ -237,6 +237,7 @@ files += [
 files += [
   'src/search/instamove/instamove.cc',
 ]
+
 includes += include_directories('src')
 
 deps += dependency('threads')
@@ -248,6 +249,29 @@ if host_machine.system() == 'windows'
   common_files += 'src/utils/filesystem.win32.cc'
 else
   common_files += 'src/utils/filesystem.posix.cc'
+endif
+
+#############################################################################
+## DAG CLASSIC SEARCH
+#############################################################################
+if get_option('dag_classic')
+  files += [
+    'src/search/dag_classic/node.cc',
+    'src/search/dag_classic/params.cc',
+    'src/search/dag_classic/search.cc',
+    'src/search/dag_classic/stoppers/alphazero.cc',
+    'src/search/dag_classic/stoppers/common.cc',
+    'src/search/dag_classic/stoppers/factory.cc',
+    'src/search/dag_classic/stoppers/legacy.cc',
+    'src/search/dag_classic/stoppers/simple.cc',
+    'src/search/dag_classic/stoppers/smooth.cc',
+    'src/search/dag_classic/stoppers/stoppers.cc',
+    'src/search/dag_classic/stoppers/timemgr.cc',
+    'src/search/dag_classic/wrapper.cc',
+  ]
+
+  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
+  deps += absl.get_variable('absl_container_dep').as_system()
 endif
 
 #############################################################################
@@ -632,7 +656,6 @@ if get_option('build_backends')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
   endif
 
-
   ## ~~~~~~~~
   ## XLA
   ## ~~~~~~~~
@@ -644,6 +667,40 @@ if get_option('build_backends')
       ]
       deps += cc.find_library('dl', required: false)
       has_backends = true
+  endif
+
+  ## ~~~~
+  ## Sycl
+  ## ~~~~
+  if get_option('sycl') != 'off'
+      has_backends = true
+      message('Building SYCL')
+      add_project_arguments('-fsycl', language : 'cpp')
+      add_project_link_arguments('-fsycl', language : 'cpp')
+
+      files += 'src/neural/backends/sycl/layers.cc.dp.cpp'
+      files += 'src/neural/backends/sycl/network_sycl.cc.dp.cpp'
+      files += 'src/neural/backends/sycl/common_kernels.dp.cpp'
+      files += 'src/neural/backends/sycl/fp16_kernels.dp.cpp'
+
+      if get_option('sycl') == 'l0'
+        message('Building SYCL for the L0 backend')
+        add_project_arguments('-DMKL_ILP64', language : 'cpp')
+        deps += cc.find_library('mkl_sycl', required: true)
+        deps += cc.find_library('mkl_intel_ilp64', required: true)
+        deps += cc.find_library('mkl_sequential', required: true)
+        deps += cc.find_library('mkl_core', required: true)
+        deps += cc.find_library('OpenCL', required: true)
+      elif get_option('sycl') == 'amd'
+        error('Building SYCL for AMD backend not yet supported')
+      else
+        error('Building SYCL for the NVIDIA backend not yet supported')
+      endif
+      if host_machine.system() == 'windows'
+        # For sycl under windows we need to link using icx to generate the device code.
+        # This script edits build.ninja for this and for an icx dependency issue.
+        meson.add_postconf_script('scripts/sycl_build_hack.py')
+      endif
   endif
 
 endif # if get_option('build_backends')
@@ -703,6 +760,11 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+if get_option('default_search') != ''
+  add_project_arguments('-DDEFAULT_SEARCH=' +
+                        get_option('default_search'), language : 'cpp')
+endif
+
 if get_option('lc0')
   files += common_files
   executable('lc0', 'src/main.cc',
@@ -715,12 +777,8 @@ endif
 
 if get_option('rescorer')
   deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
-  common_files += [
-  'src/neural/factory.cc',
-  'src/neural/loader.cc', 
-  ]
   executable('rescorer', 'src/rescorer_main.cc',
-       [common_files, 'src/trainingdata/rescoreloop.cc'],
+       [common_files, 'src/trainingdata/rescorer.cc'],
        include_directories: includes, dependencies: deps, install: true)
 endif
 
@@ -730,6 +788,7 @@ endif
 
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
+  gmock = dependency('gmock', fallback: ['gtest', 'gmock_dep'])
   lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
@@ -762,6 +821,11 @@ if get_option('gtest')
     include_directories: includes, link_with: lc0_lib,
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
+
+  test('EngineTest',
+    executable('engine_test', 'src/engine_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
+    args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif
 
 

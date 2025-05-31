@@ -35,8 +35,8 @@
 
 #include "chess/board.h"
 #include "chess/callbacks.h"
+#include "chess/gamestate.h"
 #include "chess/position.h"
-#include "neural/cache.h"
 #include "neural/encoder.h"
 #include "proto/net.pb.h"
 #include "utils/mutex.h"
@@ -648,7 +648,8 @@ class NodeTree {
   // moves added). Returns false, if the position is completely different,
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
-                       const std::vector<Move>& moves);
+                       const std::vector<std::string>& moves);
+  bool ResetToPosition(const GameState& pos);
   const Position& HeadPosition() const { return history_.Last(); }
   int GetPlyCount() const { return HeadPosition().GetGamePly(); }
   bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }

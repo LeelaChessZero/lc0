@@ -124,7 +124,7 @@ NodeGarbageCollector gNodeGc;
 Move Edge::GetMove(bool as_opponent) const {
   if (!as_opponent) return move_;
   Move m = move_;
-  m.Mirror();
+  m.Flip();
   return m;
 }
 
@@ -177,7 +177,8 @@ float Edge::GetP() const {
 
 std::string Edge::DebugString() const {
   std::ostringstream oss;
-  oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
+  oss << "Move: " << move_.ToString(true) << " p_: " << p_
+      << " GetP: " << GetP();
   return oss.str();
 }
 
@@ -237,8 +238,7 @@ std::string Node::DebugString() const {
       << " WL:" << wl_ << " N:" << n_ << " N_:" << n_in_flight_
       << " Edges:" << static_cast<int>(num_edges_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2
-      << " Solid:" << solid_children_;
+      << static_cast<int>(upper_bound_) - 2 << " Solid:" << solid_children_;
   return oss.str();
 }
 
@@ -275,7 +275,8 @@ bool Node::MakeSolid() {
   while (old_child) {
     int index = old_child->index_;
     new_children[index] = std::move(*old_child.get());
-    // This isn't needed, but it helps crash things faster if something has gone wrong.
+    // This isn't needed, but it helps crash things faster if something has gone
+    // wrong.
     old_child->parent_ = nullptr;
     gNodeGc.AddToGcQueue(std::move(old_child));
     new_children[index].UpdateChildrenParents();
@@ -350,9 +351,7 @@ bool Node::TryStartScoreUpdate() {
   return true;
 }
 
-void Node::CancelScoreUpdate(int multivisit) {
-  n_in_flight_ -= multivisit;
-}
+void Node::CancelScoreUpdate(int multivisit) { n_in_flight_ -= multivisit; }
 
 void Node::FinalizeScoreUpdate(float v, float d, float m, int multivisit) {
   // Recompute Q.
@@ -464,12 +463,9 @@ std::string EdgeAndNode::DebugString() const {
 /////////////////////////////////////////////////////////////////////////
 
 void NodeTree::MakeMove(Move move) {
-  if (HeadPosition().IsBlackToMove()) move.Mirror();
-  const auto& board = HeadPosition().GetBoard();
-
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
-    if (board.IsSameMove(n.GetMove(), move)) {
+    if (n.GetMove() == move) {
       new_head = n.GetOrSpawnNode(current_head_);
       // Ensure head is not terminal, so search can extend or visit children of
       // "terminal" positions, e.g., WDL hits, converted terminals, 3-fold draw.
@@ -477,7 +473,6 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
-  move = board.GetModernMove(move);
   current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->child_.get();
   current_head_ =
@@ -495,15 +490,8 @@ void NodeTree::TrimTreeAtHead() {
   current_head_->sibling_ = std::move(tmp);
 }
 
-bool NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<Move>& moves) {
-  ChessBoard starting_board;
-  int no_capture_ply;
-  int full_moves;
-  starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ &&
-      (history_.Starting().GetBoard() != starting_board ||
-       history_.Starting().GetRule50Ply() != no_capture_ply)) {
+bool NodeTree::ResetToPosition(const GameState& pos) {
+  if (gamebegin_node_ && (history_.Starting() != pos.startpos)) {
     // Completely different position.
     DeallocateTree();
   }
@@ -512,14 +500,13 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
     gamebegin_node_ = std::make_unique<Node>(nullptr, 0);
   }
 
-  history_.Reset(starting_board, no_capture_ply,
-                 full_moves * 2 - (starting_board.flipped() ? 1 : 2));
+  history_.Reset(pos.startpos);
 
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
-  for (const auto& move : moves) {
-    MakeMove(move);
+  for (const Move m : pos.moves) {
+    MakeMove(m);
     if (old_head == current_head_) seen_old_head = true;
   }
 
@@ -530,6 +517,21 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
   return seen_old_head;
+}
+
+bool NodeTree::ResetToPosition(const std::string& starting_fen,
+                               const std::vector<std::string>& moves) {
+  GameState state;
+  state.startpos = Position::FromFen(starting_fen);
+  ChessBoard cur_board = state.startpos.GetBoard();
+  state.moves.reserve(moves.size());
+  for (const auto& move : moves) {
+    Move m = cur_board.ParseMove(move);
+    state.moves.push_back(m);
+    cur_board.ApplyMove(m);
+    cur_board.Mirror();
+  }
+  return ResetToPosition(state);
 }
 
 void NodeTree::DeallocateTree() {

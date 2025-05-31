@@ -30,7 +30,6 @@
 #include <optional>
 
 #include "engine_loop.h"
-#include "neural/cache.h"
 #include "neural/factory.h"
 #include "neural/memcache.h"
 #include "search/classic/search.h"
@@ -46,7 +45,7 @@ struct CurrentPosition {
 
 class EngineClassic : public EngineControllerBase {
  public:
-  EngineClassic(UciResponder& uci_responder, const OptionsDict& options);
+  EngineClassic(const OptionsDict& options);
 
   ~EngineClassic() {
     // Make sure search is destructed first, and it still may be running in
@@ -72,7 +71,8 @@ class EngineClassic : public EngineControllerBase {
   // Must not block.
   void Stop() override;
 
-  Position ApplyPositionMoves();
+  void RegisterUciResponder(UciResponder*) override;
+  void UnregisterUciResponder(UciResponder*) override;
 
  private:
   void UpdateFromUciOptions();
@@ -84,7 +84,7 @@ class EngineClassic : public EngineControllerBase {
 
   const OptionsDict& options_;
 
-  UciResponder* uci_responder_;
+  UciResponderForwarder uci_forwarder_;
 
   // Locked means that there is some work to wait before responding readyok.
   RpSharedMutex busy_mutex_;

@@ -37,7 +37,6 @@
 #include <sstream>
 #include <thread>
 
-#include "neural/cache.h"
 #include "neural/encoder.h"
 #include "search/classic/node.h"
 #include "utils/fastmath.h"
@@ -516,8 +515,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     std::optional<float> v;
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
-    } else {
-      std::optional<EvalResult> nneval = GetCachedNNEval(n);
+    } else if (n) {
+      auto history = GetPositionHistoryAtNode(n);
+      std::optional<EvalResult> nneval = backend_->GetCachedEvaluation(
+          EvalPosition{history.GetPositions(), {}});
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -549,9 +550,9 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
-    print_head(&oss, edge.GetMove(is_black_to_move).as_string(),
-               edge.GetMove().as_nn_index(0), edge.GetN(), edge.GetNInFlight(),
-               edge.GetP());
+    print_head(&oss, edge.GetMove(is_black_to_move).ToString(true),
+               MoveToNNIndex(edge.GetMove(), 0), edge.GetN(),
+               edge.GetNInFlight(), edge.GetP());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
     print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
@@ -590,7 +591,7 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
       continue;
     }
     if (edge.HasNode()) {
-      LOGFILE << "--- Opponent moves after: " << final_bestmove_.as_string();
+      LOGFILE << "--- Opponent moves after: " << final_bestmove_.ToString(true);
       for (const auto& line : GetVerboseStats(edge.node())) {
         LOGFILE << line;
       }
@@ -600,34 +601,14 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
 
 PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
   PositionHistory history(played_history_);
+  std::vector<Move> rmoves;
   for (const Node* n = node; n != root_node_; n = n->GetParent()) {
-    history.Append(n->GetOwnEdge()->GetMove());
+    rmoves.push_back(n->GetOwnEdge()->GetMove());
+  }
+  for (auto it = rmoves.rbegin(); it != rmoves.rend(); it++) {
+    history.Append(*it);
   }
   return history;
-}
-
-namespace {
-std::vector<Move> GetNodeLegalMoves(const Node* node, const ChessBoard& board) {
-  if (!node) return {};
-  std::vector<Move> moves;
-  if (node && node->HasChildren()) {
-    moves.reserve(node->GetNumEdges());
-    std::transform(node->Edges().begin(), node->Edges().end(),
-                   std::back_inserter(moves),
-                   [](const auto& edge) { return edge.GetMove(); });
-    return moves;
-  }
-  return board.GenerateLegalMoves();
-}
-}  // namespace
-
-std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
-  if (!node) return {};
-  PositionHistory history = GetPositionHistoryAtNode(node);
-  std::vector<Move> legal_moves =
-      GetNodeLegalMoves(node, history.Last().GetBoard());
-  return backend_->GetCachedEvaluation(
-      EvalPosition{history.GetPositions(), legal_moves});
 }
 
 void Search::MaybeTriggerStop(const IterationStats& stats,
@@ -2158,7 +2139,9 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+  if (computation_->UsedBatchSize() > 0) computation_->ComputeBlocking();
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
