@@ -240,11 +240,27 @@ static const NSInteger kMinSubBatchSize = 20;
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
                                                        height:(NSUInteger)height
                                                         width:(NSUInteger)width
+                                                     dataType:(NSString *)dataType
                                                         label:(NSString * __nullable)label
 {
+    MPSDataType inputDataType = MPSDataTypeFloat32;
+    if ([dataType isEqualToString:@"f16"]) {
+        inputDataType = MPSDataTypeFloat16;
+    }
+    else if ([dataType isEqualToString:@"f32"]) {
+        inputDataType = MPSDataTypeFloat32;
+    }
+    else if ([dataType isEqualToString:@"bf16"]) {
+        inputDataType = MPSDataTypeBFloat16;
+    }
+    else {
+        [NSException raise:@"Invalid data type."
+                    format:@"Invalid data type specified: %@", dataType];
+    }
+
     // Create a placeholder tensor that can hold the specified number of sub-batches.
     _inputTensor = [self placeholderWithShape:@[@(-1), @(channels), @(height), @(width)]
-                                     dataType:MPSDataTypeFloat16
+                                     dataType:inputDataType
                                          name:label];
 
     return _inputTensor;

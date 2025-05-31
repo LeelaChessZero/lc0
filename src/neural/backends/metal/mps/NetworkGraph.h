@@ -74,6 +74,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
                                                        height:(NSUInteger)height
                                                         width:(NSUInteger)width
+                                                     dataType:(NSString *)dataType
                                                         label:(NSString * __nullable)label;
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent

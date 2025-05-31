@@ -49,7 +49,7 @@ class MetalNetworkBuilder {
              InputEmbedding embedding, bool attn_body, bool attn_policy,
              bool conv_policy, bool wdl, bool moves_left,
              Activations& activations, std::string& policy_head,
-             std::string& value_head);
+             std::string& value_head, std::string& data_type);
 
   void forwardEval(float* inputs, int batchSize,
                    std::vector<float*> output_mems);
