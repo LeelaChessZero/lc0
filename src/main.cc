@@ -27,7 +27,6 @@
 
 #include "chess/board.h"
 #include "engine.h"
-#include "engine_classic.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
@@ -49,14 +48,6 @@ void ChooseAndRunEngine() {
       RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
       return;
     }
-  }
-
-  // Then if "uci" is explicitly specified, run the classic engine through the
-  // old interface.
-  if (CommandLine::ConsumeCommand("uci")) {
-    // Old UCI engine.
-    RunEngineClassic();
-    return;
   }
 
   // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
@@ -101,7 +92,6 @@ int main(int argc, const char** argv) {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
-    CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
     CommandLine::RegisterMode("selfplay", "Play games with itself");
     CommandLine::RegisterMode("benchmark", "Quick benchmark");
     CommandLine::RegisterMode("bench", "Very quick benchmark");
