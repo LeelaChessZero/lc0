@@ -89,6 +89,7 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
       (for_what == RunType::kUci ? 1.33f : 0.00f);
   options->Add<IntOption>(kMinimumSmartPruningBatchesId, 0, 10000) = 0;
   options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
+  options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 }
 
 // Parameters needed for selfplay and uci, but not benchmark nor infinite mode.

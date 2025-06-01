@@ -74,6 +74,9 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
   if (!options.IsDefault<float>(kSlowMoverId)) {
     // Assume that default behavior of simple and normal mode is the same.
+    if (!options.IsDefault<std::string>(kTimeManagerId)) {
+      throw Exception("You can't set both time manager and slowmover value");
+    }
     float slowmover = options.Get<float>(kSlowMoverId);
     tm_options.GetMutableSubdict("legacy")->Set("slowmover", slowmover);
   }

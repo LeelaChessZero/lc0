@@ -213,7 +213,7 @@ const OptionId SearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
 const OptionId SearchParams::kCpuctFactorAtRootId{
     {.long_flag = "cpuct-factor-at-root",
-     .uci_option = "CpuctFactorAtRoot",
+     .uci_option = "CPuctFactorAtRoot",
      .help_text = "Multiplier for the cpuct growth formula at root.",
      .visibility_mask = OptionId::kProOnly}};
 // Remove this option after 0.25 has been made mandatory in training and the
@@ -324,7 +324,7 @@ const OptionId SearchParams::kFpuStrategyAtRootId{
          "root children eval with --fpu-value-at-root. In addition to matching "
          "the strategies from --fpu-strategy, this can be \"same\" to disable "
          "the special root behavior.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility_mask = OptionId::kDefaultVisibility}};
 const OptionId SearchParams::kFpuValueAtRootId{
     {.long_flag = "fpu-value-at-root",
      .uci_option = "FpuValueAtRoot",

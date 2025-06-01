@@ -191,64 +191,92 @@ const OptionId SearchParams::kCpuctId{
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
 const OptionId SearchParams::kCpuctAtRootId{
-    "cpuct-at-root", "CPuctAtRoot",
-    "cpuct_init constant from \"UCT search\" algorithm, for root node."};
+    {.long_flag = "cpuct-at-root",
+     .uci_option = "CPuctAtRoot",
+     .help_text =
+         "cpuct_init constant from \"UCT search\" algorithm, for root node.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
     "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kCpuctBaseAtRootId{
-    "cpuct-base-at-root", "CPuctBaseAtRoot",
-    "cpuct_base constant from \"UCT search\" algorithm, for root node."};
+    {.long_flag = "cpuct-base-at-root",
+     .uci_option = "CPuctBaseAtRoot",
+     .help_text =
+         "cpuct_base constant from \"UCT search\" algorithm, for root node.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
 const OptionId SearchParams::kCpuctFactorAtRootId{
-    "cpuct-factor-at-root", "CPuctFactorAtRoot",
-    "Multiplier for the cpuct growth formula at root."};
+    {.long_flag = "cpuct-factor-at-root",
+     .uci_option = "CPuctFactorAtRoot",
+     .help_text = "Multiplier for the cpuct growth formula at root.",
+     .visibility_mask = OptionId::kProOnly}};
 // Remove this option after 0.25 has been made mandatory in training and the
 // training server stops sending it.
 const OptionId SearchParams::kRootHasOwnCpuctParamsId{
-    "root-has-own-cpuct-params", "RootHasOwnCpuctParams",
-    "If enabled, cpuct parameters for root node are taken from *AtRoot "
-    "parameters. Otherwise, they are the same as for the rest of nodes. "
-    "Temporary flag for transition to a new version."};
+    {.long_flag = "root-has-own-cpuct-params",
+     .uci_option = "RootHasOwnCpuctParams",
+     .help_text =
+         "If enabled, cpuct parameters for root node are taken from *AtRoot "
+         "parameters. Otherwise, they are the same as for the rest of nodes. "
+         "Temporary flag for transition to a new version.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kTwoFoldDrawsId{
     "two-fold-draws", "TwoFoldDraws",
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
     "these positions are reverted when the first occurrence is played and not "
     "in the search tree anymore."};
 const OptionId SearchParams::kTemperatureId{
-    "temperature", "Temperature",
-    "Tau value from softmax formula for the first move. If equal to 0, the "
-    "engine picks the best move to make. Larger values increase randomness "
-    "while making the move."};
+    {.long_flag = "temperature",
+     .uci_option = "Temperature",
+     .help_text = "Tau value from softmax formula for the first move. If equal "
+                  "to 0, the engine picks the best move to make. Larger values "
+                  "increase randomness while making the move.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kTempDecayMovesId{
-    "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move after the first move, decreasing "
-    "linearly over this number of moves from initial temperature to 0. A value "
-    "of 0 disables tempdecay."};
+    {.long_flag = "tempdecay-moves",
+     .uci_option = "TempDecayMoves",
+     .help_text = "Reduce temperature for every move after the first move, "
+                  "decreasing linearly over this number of moves from initial "
+                  "temperature to 0. A value of 0 disables tempdecay.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kTempDecayDelayMovesId{
-    "tempdecay-delay-moves", "TempDecayDelayMoves",
-    "Delay the linear decrease of temperature by this number of moves, "
-    "decreasing linearly from initial temperature to 0. A value of 0 starts "
-    "tempdecay after the first move."};
+    {.long_flag = "tempdecay-delay-moves",
+     .uci_option = "TempDecayDelayMoves",
+     .help_text = "Delay the linear decrease of temperature by this number of "
+                  "moves, decreasing linearly from initial temperature to 0. A "
+                  "value of 0 starts tempdecay after the first move.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureCutoffMoveId{
-    "temp-cutoff-move", "TempCutoffMove",
-    "Move number, starting from which endgame temperature is used rather than "
-    "initial temperature. Setting it to 0 disables cutoff."};
+    {.long_flag = "temp-cutoff-move",
+     .uci_option = "TempCutoffMove",
+     .help_text =
+         "Move number, starting from which endgame temperature is used rather "
+         "than initial temperature. Setting it to 0 disables cutoff.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureEndgameId{
-    "temp-endgame", "TempEndgame",
-    "Temperature used during endgame (starting from cutoff move). Endgame "
-    "temperature doesn't decay."};
+    {.long_flag = "temp-endgame",
+     .uci_option = "TempEndgame",
+     .help_text = "Temperature used during endgame (starting from cutoff "
+                  "move). Endgame temperature doesn't decay.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureWinpctCutoffId{
-    "temp-value-cutoff", "TempValueCutoff",
-    "When move is selected using temperature, bad moves (with win probability "
-    "less than X than the best move) are not considered at all."};
+    {.long_flag = "temp-value-cutoff",
+     .uci_option = "TempValueCutoff",
+     .help_text = "When move is selected using temperature, bad moves (with "
+                  "win probability less than X than the best move) are not "
+                  "considered at all.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
-    "temp-visit-offset", "TempVisitOffset",
-    "Adjusts visits by this value when picking a move with a temperature. If a "
-    "negative offset reduces visits for a particular move below zero, that "
-    "move is not picked. If no moves can be picked, no temperature is used."};
+    {.long_flag = "temp-visit-offset",
+     .uci_option = "TempVisitOffset",
+     .help_text = "Adjusts visits by this value when picking a move with a "
+                  "temperature. If a negative offset reduces visits for a "
+                  "particular move below zero, that move is not picked. If no "
+                  "moves can be picked, no temperature is used.",
+     .visibility_mask = OptionId::kProOnly}};
 const OptionId SearchParams::kNoiseEpsilonId{
     {.long_flag = "noise-epsilon",
      .uci_option = "DirichletNoiseEpsilon",
@@ -293,7 +321,7 @@ const OptionId SearchParams::kFpuStrategyAtRootId{
          "root children eval with --fpu-value-at-root. In addition to matching "
          "the strategies from --fpu-strategy, this can be \"same\" to disable "
          "the special root behavior.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility_mask = OptionId::kDefaultVisibility}};
 const OptionId SearchParams::kFpuValueAtRootId{
     {.long_flag = "fpu-value-at-root",
      .uci_option = "FpuValueAtRoot",
@@ -335,9 +363,11 @@ const OptionId SearchParams::kSyzygyFastPlayId{
     "With DTZ tablebase files, only allow the network pick from winning moves "
     "that have shortest DTZ to play faster (but not necessarily optimally)."};
 const OptionId SearchParams::kMultiPvId{
-    "multipv", "MultiPV",
-    "Number of game play lines (principal variations) to show in UCI info "
-    "output."};
+    {.long_flag = "multipv",
+     .uci_option = "MultiPV",
+     .help_text = "Number of game play lines (principal variations) to show in "
+                  "UCI info output.",
+     .visibility_mask = OptionId::kAlwaysVisible}};
 const OptionId SearchParams::kPerPvCountersId{
     "per-pv-counters", "PerPVCounters",
     "Show node counts per principal variation instead of total nodes in UCI."};
@@ -385,12 +415,15 @@ const OptionId SearchParams::kContemptModeId{
     "for matches, use 'white_side_analysis' and 'black_side_analysis' for "
     "analysis. Use 'disable' to deactivate contempt."};
 const OptionId SearchParams::kContemptId{
-    "contempt", "Contempt",
-    "The simulated Elo advantage for the WDL conversion. Comma separated list "
-    "in the form [name=]value, where the name is compared with the "
-    "`UCI_Opponent` value to find the appropriate contempt value. The default "
-    "value is taken from `UCI_RatingAdv` and will be overridden if either a "
-    "value without name is given, or if a name match is found."};
+    {.long_flag = "contempt",
+     .uci_option = "Contempt",
+     .help_text = "The simulated Elo advantage for the WDL conversion. Comma "
+                  "separated list in the form [name=]value, where the name is "
+                  "compared with the `UCI_Opponent` value to find the "
+                  "appropriate contempt value. The default value is taken from "
+                  "`UCI_RatingAdv` and will be overridden if either a value "
+                  "without name is given, or if a name match is found.",
+     .visibility_mask = OptionId::kAlwaysVisible}};
 const OptionId SearchParams::kContemptMaxValueId{
     {.long_flag = "contempt-max-value",
      .uci_option = "ContemptMaxValue",
