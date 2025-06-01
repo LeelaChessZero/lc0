@@ -184,9 +184,7 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
 
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);
-  std::optional<WeightsFile> weights;
-  if (!net_path.empty()) weights = LoadWeights(net_path);
-
+  std::optional<WeightsFile> weights = LoadWeights(net_path);
   std::unique_ptr<Network> network =
       factory_(std::move(weights), network_options);
   network_options.CheckAllOptionsRead(name_);
