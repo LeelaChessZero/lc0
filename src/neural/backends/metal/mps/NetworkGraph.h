@@ -48,6 +48,9 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     MPSGraphDevice * _device;
     id<MTLCommandQueue> _queue;
 
+    // Graph queue execution.
+    MPSGraphExecutable * _executable;
+
     // Input tensor and tensor data placeholders.
     MPSGraphTensor * _inputTensor;
 
@@ -200,11 +203,13 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
-                                                         outputs:(float * __nonnull * __nonnull)outputBuffers;
+                                                         outputs:(float * __nonnull * __nonnull)outputBuffers
+                                                executionBackend:(MPSGraphTargetExecutionBackend * __nonnull)backend;
 
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
                                                   subBatch:(NSUInteger)subBatch
-                                              subBatchSize:(NSUInteger)subBatchSize;
+                                              subBatchSize:(NSUInteger)subBatchSize
+                                          executionBackend:(MPSGraphTargetExecutionBackend * __nonnull)backend;
 
 -(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers
                 subBatchSize:(NSUInteger)subBatchSize;

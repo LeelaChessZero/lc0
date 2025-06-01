@@ -135,9 +135,25 @@ static const NSInteger kMinSubBatchSize = 20;
     return self;
 }
 
+-(void) compileGraph
+{
+    NSError *error = nil;
+    _executable = [_graph compileWithDevice:_device
+                                     feeds:@{_inputTensor: _inputTensor.shape}
+                             targetTensors:_targetTensors
+                          targetOperations:nil
+                     compilationDescriptor:nil
+                                     error:&error];
+
+    if (!_executable || error) {
+        NSLog(@"Graph compilation failed: %@", error.localizedDescription);
+    }
+}
+
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
                                                          outputs:(float * __nonnull * __nonnull)outputBuffers
+                                                executionBackend:(MPSGraphTargetExecutionBackend * __nonnull)backend
 {
     // Calculate number of sub-batches to split across GPU command buffers for parallel execution.
     // Shouldn't be more than kMaxInflightBuffers and each sub-batch shouldn't be smaller than kMinSubBatchSize.
@@ -152,14 +168,17 @@ static const NSInteger kMinSubBatchSize = 20;
     for (subBatch = 0; subBatch < splits - 1; subBatch++) {
         commandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
                                                   subBatch:subBatch
-                                              subBatchSize:subBatchSize];
+                                              subBatchSize:subBatchSize
+                                          executionBackend:backend];
     }
     // Last sub-batch may be smaller or larger than others.
     MPSCommandBuffer * latestCommandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
                                                                        subBatch:subBatch
-                                                                   subBatchSize:batchSize - subBatch * subBatchSize];
+                                                                   subBatchSize:batchSize - subBatch * subBatchSize
+                                                               executionBackend:backend];
 
     // Wait for the last batch to be processed.
+    // Last sub-batch may be smaller or larger than others.
     [latestCommandBuffer waitUntilCompleted];
     [commandBuffer waitUntilCompleted];
 
@@ -171,6 +190,7 @@ static const NSInteger kMinSubBatchSize = 20;
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
                                                   subBatch:(NSUInteger)subBatch
                                               subBatchSize:(NSUInteger)subBatchSize
+                                          executionBackend:(MPSGraphTargetExecutionBackend * __nonnull)backend
 {
     // Double buffering semaphore to correctly double buffer iterations.
     dispatch_semaphore_wait(_doubleBufferingSemaphore, DISPATCH_TIME_FOREVER);
@@ -190,7 +210,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                                              dataType:_inputTensor.dataType];
 
     // Create execution descriptor with block to update results for each iteration.
-    MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
+    MPSGraphExecutableExecutionDescriptor * executionDescriptor = [[MPSGraphExecutableExecutionDescriptor alloc] init];
+    executionDescriptor.targetExecutionBackend = backend;
+
     executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * error) {
         _resultDataDicts[@(subBatch)] = resultDictionary;
 
@@ -198,11 +220,10 @@ static const NSInteger kMinSubBatchSize = 20;
         dispatch_semaphore_signal(_doubleBufferingSemaphore);
     };
 
-    [self encodeToCommandBuffer:commandBuffer
-                          feeds:@{_inputTensor : inputTensorData}
-                  targetTensors:_targetTensors
-               targetOperations:nil
-            executionDescriptor:executionDescriptor];
+    [_executable encodeToCommandBuffer:commandBuffer
+                           inputsArray:@[inputTensorData]
+                          resultsArray:_targetTensors
+                executionDescriptor:executionDescriptor];
 
     // Commit the command buffer
     [commandBuffer commit];
