@@ -324,7 +324,7 @@ const OptionId SearchParams::kFpuStrategyAtRootId{
          "root children eval with --fpu-value-at-root. In addition to matching "
          "the strategies from --fpu-strategy, this can be \"same\" to disable "
          "the special root behavior.",
-     .visibility = OptionId::kDefaultVisibility}};
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kFpuValueAtRootId{
     {.long_flag = "fpu-value-at-root",
      .uci_option = "FpuValueAtRoot",
