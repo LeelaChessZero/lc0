@@ -41,12 +41,12 @@ const OptionId kThreadsOptionId{
      .help_text =
          "Number of (CPU) worker threads to use, 0 for the backend default.",
      .short_flag = 't',
-     .visibility_mask = OptionId::kAlwaysVisible}};
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kClearTree{
     {.long_flag = "",
      .uci_option = "ClearTree",
      .help_text = "Clear the tree before the next search.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility = OptionId::kProOnly}};
 
 class ClassicSearch : public SearchBase {
  public:

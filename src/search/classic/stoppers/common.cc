@@ -46,14 +46,14 @@ const OptionId kMinimumKLDGainPerNodeId{
      .help_text = "If greater than 0 search will abort unless the last "
                   "KLDGainAverageInterval nodes have an average gain per node "
                   "of at least this much.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility = OptionId::kProOnly}};
 const OptionId kKLDGainAverageIntervalId{
     {.long_flag = "kldgain-average-interval",
      .uci_option = "KLDGainAverageInterval",
      .help_text =
          "Used to decide how frequently to evaluate the average KLDGainPerNode "
          "to check the MinimumKLDGainPerNode, if specified.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility = OptionId::kProOnly}};
 const OptionId kSmartPruningFactorId{
     {.long_flag = "smart-pruning-factor",
      .uci_option = "SmartPruningFactor",
@@ -64,7 +64,7 @@ const OptionId kSmartPruningFactorId{
          "1 stop less promising moves from being considered even earlier. "
          "Values less than 1 causes hopeless moves to still have some "
          "attention. When set to 0, smart pruning is deactivated.",
-     .visibility_mask = OptionId::kDefaultVisibility}};
+     .visibility = OptionId::kDefaultVisibility}};
 const OptionId kMinimumSmartPruningBatchesId{
     {.long_flag = "smart-pruning-minimum-batches",
      .uci_option = "SmartPruningMinimumBatches",
@@ -72,13 +72,13 @@ const OptionId kMinimumSmartPruningBatchesId{
          "Only allow smart pruning to stop search after at least this many "
          "batches have been evaluated. It may be useful to have this value "
          "greater than the number of search threads in use.",
-     .visibility_mask = OptionId::kDefaultVisibility}};
+     .visibility = OptionId::kDefaultVisibility}};
 const OptionId kNodesAsPlayoutsId{
     {.long_flag = "nodes-as-playouts",
      .uci_option = "NodesAsPlayouts",
      .help_text = "Treat UCI `go nodes` command as referring to playouts "
                   "instead of visits.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility = OptionId::kProOnly}};
 
 }  // namespace
 

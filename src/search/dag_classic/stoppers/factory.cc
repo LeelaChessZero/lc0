@@ -57,7 +57,7 @@ const OptionId kSlowMoverId{
      .help_text = "Budgeted time for a move is multiplied by this value, "
                   "causing the engine to spend more time (if value is greater "
                   "than 1) or less time (if the value is less than 1).",
-     .visibility_mask = OptionId::kSimpleOnly}};
+     .visibility = OptionId::kSimpleOnly}};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {

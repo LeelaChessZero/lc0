@@ -48,7 +48,7 @@ const OptionId kStrictUciTiming{
      .uci_option = "StrictTiming",
      .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
                   "reply before sending 'go' and only then starts timing.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility = OptionId::kProOnly}};
 const OptionId kPonderId{
     "", "Ponder",
     "Indicates to the engine that it will be requested to ponder. This "

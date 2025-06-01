@@ -48,7 +48,7 @@ const OptionId SharedBackendParams::kWeightsId{
          "<autodiscover> makes it search in ./ and ./weights/ subdirectories "
          "for the latest (by file date) file which looks like weights.",
      .short_flag = 'w',
-     .visibility_mask = OptionId::kAlwaysVisible}};
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId SharedBackendParams::kBackendId{{
     .long_flag = "backend",
     .uci_option = "Backend",

@@ -46,7 +46,7 @@ const OptionId kThreadsOptionId{
      .help_text =
          "Number of (CPU) worker threads to use, 0 for the backend default.",
      .short_flag = 't',
-     .visibility_mask = OptionId::kAlwaysVisible}};
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kSyzygyTablebaseId{
     {.long_flag = "syzygy-paths",
      .uci_option = "SyzygyPath",
@@ -63,12 +63,12 @@ const OptionId kStrictUciTiming{
      .uci_option = "StrictTiming",
      .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
                   "reply before sending 'go' and only then starts timing.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility = OptionId::kProOnly}};
 const OptionId kClearTree{
     {.long_flag = "",
      .uci_option = "ClearTree",
      .help_text = "Clear the tree before the next search.",
-     .visibility_mask = OptionId::kProOnly}};
+     .visibility = OptionId::kProOnly}};
 const OptionId kPreload{
     {.long_flag = "preload",
      .uci_option = "",

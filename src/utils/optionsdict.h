@@ -97,7 +97,7 @@ class OptionId {
     const char* uci_option = nullptr;
     const char* help_text = nullptr;
     char short_flag = '\0';
-    VisibilityMask visibility_mask = kDefaultVisibility;
+    VisibilityMask visibility = kDefaultVisibility;
   };
 
   OptionId(const OptionsParams& params)
@@ -105,7 +105,7 @@ class OptionId {
         uci_option_(params.uci_option),
         help_text_(params.help_text),
         short_flag_(params.short_flag),
-        visibility_mask_(params.visibility_mask) {}
+        visibility_mask_(params.visibility) {}
 
   OptionId(const char* long_flag, const char* uci_option, const char* help_text,
            const char short_flag = '\0')
