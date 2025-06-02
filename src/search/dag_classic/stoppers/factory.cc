@@ -45,7 +45,7 @@ const OptionId kMoveOverheadId{
     {.long_flag = "move-overhead",
      .uci_option = "MoveOverheadMs",
      .help_text =
-         "Amount of time, in milliseconds, that the engine subtracts from it's "
+         "Amount of time, in milliseconds, that the engine subtracts from its "
          "total available time (to compensate for slow connection, "
          "interprocess communication, etc).",
      .visibility = OptionId::kAlwaysVisible}};
