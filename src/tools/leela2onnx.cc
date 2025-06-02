@@ -46,18 +46,23 @@ const OptionId kHloTextOutputFilenameId = {"hlo-text-output", "",
                                            "Path of the output HLO file."};
 const OptionId kHloProtoOutputFilenameId = {
     "hlo-proto-output", "", "Path of the output HLO proto file."};
-const OptionId kOnnxBatchSizeId{"onnx-batch-size", "",
-                                "Batch size to use for ONNX conversion."};
+const OptionId kOnnxBatchSizeId{
+    {.long_flag = "onnx-batch-size",
+     .uci_option = "",
+     .help_text = "Batch size to use for ONNX conversion.",
+     .visibility = OptionId::kProOnly}};
 const OptionId kHloBatchSizeId{"hlo-batch-size", "",
                                "Batch size to use for HLO conversion."};
 const OptionId kOnnxDataTypeId{"onnx-data-type", "",
                                "Data type to use in the ONNX model."};
 const OptionId kOnnxOpsetId{"onnx-opset", "",
                             "Opset to use in the ONNX model."};
-const OptionId kHloAllowPartialResultId = {
-    "hlo-allow-partial-result", "",
-    "Allow partial result in case of HLO conversion failure (DEBUG ONLY!)."};
-
+const OptionId kHloAllowPartialResultId{
+    {.long_flag = "hlo-allow-partial-result",
+     .uci_option = "",
+     .help_text = "Allow partial result in case of HLO conversion failure "
+                  "(DEBUG ONLY!).",
+     .visibility = OptionId::kProOnly}};
 const OptionId kInputPlanesName{"input-planes-name", "",
                                 "ONNX name to use for the input planes node."};
 const OptionId kOutputPolicyHead{
@@ -77,11 +82,10 @@ const OptionId kValueHead{
     "value-head", "",
     "Value head to be used in the generated model. Typical values are "
     "'winner', 'q' or 'st', but only 'winner' is always available."};
-const OptionId kPolicyHead{
-    "policy-head", "",
-    "Policy head to be used in the generated model. Typical values are "
-    "'vanilla', 'optimistic' or 'soft', but only 'vanilla' is always "
-    "available."};
+const OptionId kPolicyHead{"policy-head", "",
+                           "Policy head to be used in the generated model. "
+                           "Typical values are 'vanilla', 'optimistic' or "
+                           "'soft', but only 'vanilla' is always available."};
 
 bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kInputFilenameId);
@@ -94,8 +98,6 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<ChoiceOption>(
       kOnnxDataTypeId, std::vector<std::string>{"f32", "f16", "bf16"}) = "f32";
   options->Add<BoolOption>(kHloAllowPartialResultId);
-  options->HideOption(kOnnxBatchSizeId);
-  options->HideOption(kHloAllowPartialResultId);
 
   options->Add<StringOption>(kInputPlanesName) = "/input/planes";
   options->Add<StringOption>(kOutputPolicyHead) = "/output/policy";

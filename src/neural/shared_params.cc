@@ -41,17 +41,24 @@ const OptionId SharedBackendParams::kHistoryFill{
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SharedBackendParams::kWeightsId{
-    "weights", "WeightsFile",
-    "Path from which to load network weights.\nSetting it to <autodiscover> "
-    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
-    "file date) file which looks like weights.",
-    'w'};
-const OptionId SharedBackendParams::kBackendId{
-    "backend", "Backend", "Neural network computational backend to use.", 'b'};
+    {.long_flag = "weights",
+     .uci_option = "WeightsFile",
+     .help_text =
+         "Path from which to load network weights.\nSetting it to "
+         "<autodiscover> makes it search in ./ and ./weights/ subdirectories "
+         "for the latest (by file date) file which looks like weights.",
+     .short_flag = 'w',
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId SharedBackendParams::kBackendId{{
+    .long_flag = "backend",
+    .uci_option = "Backend",
+    .help_text = "Neural network computational backend to use.",
+    .short_flag = 'b',
+}};
 const OptionId SharedBackendParams::kBackendOptionsId{
     "backend-opts", "BackendOptions",
-    "Parameters of neural network backend. "
-    "Exact parameters differ per backend.",
+    "Parameters of neural network backend. Exact parameters differ per "
+    "backend.",
     'o'};
 const OptionId SharedBackendParams::kNNCacheSizeId{
     "nncache", "NNCacheSize",

@@ -36,11 +36,17 @@ namespace dag_classic {
 namespace {
 
 const OptionId kThreadsOptionId{
-    "threads", "Threads",
-    "Number of (CPU) worker threads to use, 0 for the backend default.", 't'};
-
-const OptionId kClearTree{"", "ClearTree",
-                          "Clear the tree before the next search."};
+    {.long_flag = "threads",
+     .uci_option = "Threads",
+     .help_text =
+         "Number of (CPU) worker threads to use, 0 for the backend default.",
+     .short_flag = 't',
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId kClearTree{
+    {.long_flag = "",
+     .uci_option = "ClearTree",
+     .help_text = "Clear the tree before the next search.",
+     .visibility = OptionId::kProOnly}};
 
 class DagClassicSearch : public SearchBase {
  public:
@@ -134,7 +140,6 @@ class DagClassicSearchFactory : public SearchFactory {
     PopulateTimeManagementOptions(RunType::kUci, parser);
 
     parser->Add<ButtonOption>(kClearTree);
-    parser->HideOption(kClearTree);
   }
 };
 
