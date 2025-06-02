@@ -43,10 +43,12 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
-const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
-                                "The UCI host compensates for lag, waits for "
-                                "the 'readyok' reply before sending 'go' and "
-                                "only then starts timing."};
+const OptionId kStrictUciTiming{
+    {.long_flag = "strict-uci-timing",
+     .uci_option = "StrictTiming",
+     .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
+                  "reply before sending 'go' and only then starts timing.",
+     .visibility = OptionId::kProOnly}};
 const OptionId kPonderId{
     "", "Ponder",
     "Indicates to the engine that it will be requested to ponder. This "
@@ -60,7 +62,6 @@ void Engine::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = false;
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<BoolOption>(kStrictUciTiming) = false;
-  options->HideOption(kStrictUciTiming);
   options->Add<BoolOption>(kPreload) = false;
 }
 

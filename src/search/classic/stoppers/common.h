@@ -34,7 +34,7 @@
 namespace lczero {
 namespace classic {
 
-enum class RunType { kUci, kSimpleUci, kSelfplay };
+enum class RunType { kUci, kSelfplay };
 void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
 
 // Populates KLDGain and SmartPruning stoppers.

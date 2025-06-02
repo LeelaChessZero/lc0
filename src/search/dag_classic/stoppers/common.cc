@@ -41,30 +41,44 @@ const OptionId kRamLimitMbId{
     "positions have 30 possible moves. When set to 0, no RAM limit is "
     "enforced."};
 const OptionId kMinimumKLDGainPerNodeId{
-    "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
-    "If greater than 0 search will abort unless the last "
-    "KLDGainAverageInterval nodes have an average gain per node of at least "
-    "this much."};
+    {.long_flag = "minimum-kldgain-per-node",
+     .uci_option = "MinimumKLDGainPerNode",
+     .help_text = "If greater than 0 search will abort unless the last "
+                  "KLDGainAverageInterval nodes have an average gain per node "
+                  "of at least this much.",
+     .visibility = OptionId::kProOnly}};
 const OptionId kKLDGainAverageIntervalId{
-    "kldgain-average-interval", "KLDGainAverageInterval",
-    "Used to decide how frequently to evaluate the average KLDGainPerNode to "
-    "check the MinimumKLDGainPerNode, if specified."};
+    {.long_flag = "kldgain-average-interval",
+     .uci_option = "KLDGainAverageInterval",
+     .help_text =
+         "Used to decide how frequently to evaluate the average KLDGainPerNode "
+         "to check the MinimumKLDGainPerNode, if specified.",
+     .visibility = OptionId::kProOnly}};
 const OptionId kSmartPruningFactorId{
-    "smart-pruning-factor", "SmartPruningFactor",
-    "Do not spend time on the moves which cannot become bestmove given the "
-    "remaining time to search. When no other move can overtake the current "
-    "best, the search stops, saving the time. Values greater than 1 stop less "
-    "promising moves from being considered even earlier. Values less than 1 "
-    "causes hopeless moves to still have some attention. When set to 0, smart "
-    "pruning is deactivated."};
+    {.long_flag = "smart-pruning-factor",
+     .uci_option = "SmartPruningFactor",
+     .help_text =
+         "Do not spend time on the moves which cannot become bestmove given "
+         "the remaining time to search. When no other move can overtake the "
+         "current best, the search stops, saving the time. Values greater than "
+         "1 stop less promising moves from being considered even earlier. "
+         "Values less than 1 causes hopeless moves to still have some "
+         "attention. When set to 0, smart pruning is deactivated.",
+     .visibility = OptionId::kDefaultVisibility}};
 const OptionId kMinimumSmartPruningBatchesId{
-    "smart-pruning-minimum-batches", "SmartPruningMinimumBatches",
-    "Only allow smart pruning to stop search after at least this many batches "
-    "have been evaluated. It may be useful to have this value greater than the "
-    "number of search threads in use."};
+    {.long_flag = "smart-pruning-minimum-batches",
+     .uci_option = "SmartPruningMinimumBatches",
+     .help_text =
+         "Only allow smart pruning to stop search after at least this many "
+         "batches have been evaluated. It may be useful to have this value "
+         "greater than the number of search threads in use.",
+     .visibility = OptionId::kDefaultVisibility}};
 const OptionId kNodesAsPlayoutsId{
-    "nodes-as-playouts", "NodesAsPlayouts",
-    "Treat UCI `go nodes` command as referring to playouts instead of visits."};
+    {.long_flag = "nodes-as-playouts",
+     .uci_option = "NodesAsPlayouts",
+     .help_text = "Treat UCI `go nodes` command as referring to playouts "
+                  "instead of visits.",
+     .visibility = OptionId::kProOnly}};
 
 }  // namespace
 
@@ -75,17 +89,7 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
       (for_what == RunType::kUci ? 1.33f : 0.00f);
   options->Add<IntOption>(kMinimumSmartPruningBatchesId, 0, 10000) = 0;
   options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
-
-  if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
-    options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
-    options->HideOption(kMinimumKLDGainPerNodeId);
-    options->HideOption(kKLDGainAverageIntervalId);
-    options->HideOption(kNodesAsPlayoutsId);
-  }
-  if (for_what == RunType::kSimpleUci) {
-    options->HideOption(kSmartPruningFactorId);
-    options->HideOption(kMinimumSmartPruningBatchesId);
-  }
+  options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 }
 
 // Parameters needed for selfplay and uci, but not benchmark nor infinite mode.

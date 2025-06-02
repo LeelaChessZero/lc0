@@ -194,80 +194,116 @@ const OptionId SearchParams::kCpuctId{
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
 const OptionId SearchParams::kCpuctAtRootId{
-    "cpuct-at-root", "CPuctAtRoot",
-    "cpuct_init constant from \"UCT search\" algorithm, for root node."};
+    {.long_flag = "cpuct-at-root",
+     .uci_option = "CPuctAtRoot",
+     .help_text =
+         "cpuct_init constant from \"UCT search\" algorithm, for root node.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
     "higher growth of Cpuct as number of node visits grows."};
 const OptionId SearchParams::kCpuctBaseAtRootId{
-    "cpuct-base-at-root", "CPuctBaseAtRoot",
-    "cpuct_base constant from \"UCT search\" algorithm, for root node."};
+    {.long_flag = "cpuct-base-at-root",
+     .uci_option = "CPuctBaseAtRoot",
+     .help_text =
+         "cpuct_base constant from \"UCT search\" algorithm, for root node.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
 const OptionId SearchParams::kCpuctFactorAtRootId{
-    "cpuct-factor-at-root", "CPuctFactorAtRoot",
-    "Multiplier for the cpuct growth formula at root."};
+    {.long_flag = "cpuct-factor-at-root",
+     .uci_option = "CPuctFactorAtRoot",
+     .help_text = "Multiplier for the cpuct growth formula at root.",
+     .visibility = OptionId::kProOnly}};
 // Remove this option after 0.25 has been made mandatory in training and the
 // training server stops sending it.
 const OptionId SearchParams::kRootHasOwnCpuctParamsId{
-    "root-has-own-cpuct-params", "RootHasOwnCpuctParams",
-    "If enabled, cpuct parameters for root node are taken from *AtRoot "
-    "parameters. Otherwise, they are the same as for the rest of nodes. "
-    "Temporary flag for transition to a new version."};
+    {.long_flag = "root-has-own-cpuct-params",
+     .uci_option = "RootHasOwnCpuctParams",
+     .help_text =
+         "If enabled, cpuct parameters for root node are taken from *AtRoot "
+         "parameters. Otherwise, they are the same as for the rest of nodes. "
+         "Temporary flag for transition to a new version.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kTwoFoldDrawsId{
     "two-fold-draws", "TwoFoldDraws",
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
-    "these positions are reverted when the first occurrence is played "
-    "and not in the search tree anymore."};
+    "these positions are reverted when the first occurrence is played and not "
+    "in the search tree anymore."};
 const OptionId SearchParams::kTemperatureId{
-    "temperature", "Temperature",
-    "Tau value from softmax formula for the first move. If equal to 0, the "
-    "engine picks the best move to make. Larger values increase randomness "
-    "while making the move."};
+    {.long_flag = "temperature",
+     .uci_option = "Temperature",
+     .help_text = "Tau value from softmax formula for the first move. If equal "
+                  "to 0, the engine picks the best move to make. Larger values "
+                  "increase randomness while making the move.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kTempDecayMovesId{
-    "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move after the first move, decreasing "
-    "linearly over this number of moves from initial temperature to 0. "
-    "A value of 0 disables tempdecay."};
+    {.long_flag = "tempdecay-moves",
+     .uci_option = "TempDecayMoves",
+     .help_text = "Reduce temperature for every move after the first move, "
+                  "decreasing linearly over this number of moves from initial "
+                  "temperature to 0. A value of 0 disables tempdecay.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kTempDecayDelayMovesId{
-    "tempdecay-delay-moves", "TempDecayDelayMoves",
-    "Delay the linear decrease of temperature by this number of moves, "
-    "decreasing linearly from initial temperature to 0. A value of 0 starts "
-    "tempdecay after the first move."};
+    {.long_flag = "tempdecay-delay-moves",
+     .uci_option = "TempDecayDelayMoves",
+     .help_text = "Delay the linear decrease of temperature by this number of "
+                  "moves, decreasing linearly from initial temperature to 0. A "
+                  "value of 0 starts tempdecay after the first move.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureCutoffMoveId{
-    "temp-cutoff-move", "TempCutoffMove",
-    "Move number, starting from which endgame temperature is used rather "
-    "than initial temperature. Setting it to 0 disables cutoff."};
+    {.long_flag = "temp-cutoff-move",
+     .uci_option = "TempCutoffMove",
+     .help_text =
+         "Move number, starting from which endgame temperature is used rather "
+         "than initial temperature. Setting it to 0 disables cutoff.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureEndgameId{
-    "temp-endgame", "TempEndgame",
-    "Temperature used during endgame (starting from cutoff move). Endgame "
-    "temperature doesn't decay."};
+    {.long_flag = "temp-endgame",
+     .uci_option = "TempEndgame",
+     .help_text = "Temperature used during endgame (starting from cutoff "
+                  "move). Endgame temperature doesn't decay.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureWinpctCutoffId{
-    "temp-value-cutoff", "TempValueCutoff",
-    "When move is selected using temperature, bad moves (with win "
-    "probability less than X than the best move) are not considered at all."};
+    {.long_flag = "temp-value-cutoff",
+     .uci_option = "TempValueCutoff",
+     .help_text = "When move is selected using temperature, bad moves (with "
+                  "win probability less than X than the best move) are not "
+                  "considered at all.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kTemperatureVisitOffsetId{
-    "temp-visit-offset", "TempVisitOffset",
-    "Adjusts visits by this value when picking a move with a temperature. If a "
-    "negative offset reduces visits for a particular move below zero, that "
-    "move is not picked. If no moves can be picked, no temperature is used."};
+    {.long_flag = "temp-visit-offset",
+     .uci_option = "TempVisitOffset",
+     .help_text = "Adjusts visits by this value when picking a move with a "
+                  "temperature. If a negative offset reduces visits for a "
+                  "particular move below zero, that move is not picked. If no "
+                  "moves can be picked, no temperature is used.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kNoiseEpsilonId{
-    "noise-epsilon", "DirichletNoiseEpsilon",
-    "Amount of Dirichlet noise to combine with root priors. This allows the "
-    "engine to discover new ideas during training by exploring moves which are "
-    "known to be bad. Not normally used during play."};
+    {.long_flag = "noise-epsilon",
+     .uci_option = "DirichletNoiseEpsilon",
+     .help_text =
+         "Amount of Dirichlet noise to combine with root priors. This allows "
+         "the engine to discover new ideas during training by exploring moves "
+         "which are known to be bad. Not normally used during play.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kNoiseAlphaId{
-    "noise-alpha", "DirichletNoiseAlpha",
-    "Alpha of Dirichlet noise to control the sharpness of move probabilities. "
-    "Larger values result in flatter / more evenly distributed values."};
+    {.long_flag = "noise-alpha",
+     .uci_option = "DirichletNoiseAlpha",
+     .help_text = "Alpha of Dirichlet noise to control the sharpness of move "
+                  "probabilities. Larger values result in flatter / more "
+                  "evenly distributed values.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move.",
     'v'};
 const OptionId SearchParams::kLogLiveStatsId{
-    "log-live-stats", "LogLiveStats",
-    "Do VerboseMoveStats on every info update."};
+    {.long_flag = "log-live-stats",
+     .uci_option = "LogLiveStats",
+     .help_text = "Do VerboseMoveStats on every info update.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
     "How is an eval of unvisited node determined. \"First Play Urgency\" "
@@ -280,17 +316,22 @@ const OptionId SearchParams::kFpuValueId{
     "\"First Play Urgency\" value used to adjust unvisited node eval based on "
     "--fpu-strategy."};
 const OptionId SearchParams::kFpuStrategyAtRootId{
-    "fpu-strategy-at-root", "FpuStrategyAtRoot",
-    "How is an eval of unvisited root children determined. Just like "
-    "--fpu-strategy except only at the root level and adjusts unvisited root "
-    "children eval with --fpu-value-at-root. In addition to matching the "
-    "strategies from --fpu-strategy, this can be \"same\" to disable the "
-    "special root behavior."};
+    {.long_flag = "fpu-strategy-at-root",
+     .uci_option = "FpuStrategyAtRoot",
+     .help_text =
+         "How is an eval of unvisited root children determined. Just like "
+         "--fpu-strategy except only at the root level and adjusts unvisited "
+         "root children eval with --fpu-value-at-root. In addition to matching "
+         "the strategies from --fpu-strategy, this can be \"same\" to disable "
+         "the special root behavior.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kFpuValueAtRootId{
-    "fpu-value-at-root", "FpuValueAtRoot",
-    "\"First Play Urgency\" value used to adjust unvisited root children eval "
-    "based on --fpu-strategy-at-root. Has no effect if --fpu-strategy-at-root "
-    "is \"same\"."};
+    {.long_flag = "fpu-value-at-root",
+     .uci_option = "FpuValueAtRoot",
+     .help_text = "\"First Play Urgency\" value used to adjust unvisited root "
+                  "children eval based on --fpu-strategy-at-root. Has no "
+                  "effect if --fpu-strategy-at-root is \"same\".",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
@@ -325,9 +366,11 @@ const OptionId SearchParams::kSyzygyFastPlayId{
     "With DTZ tablebase files, only allow the network pick from winning moves "
     "that have shortest DTZ to play faster (but not necessarily optimally)."};
 const OptionId SearchParams::kMultiPvId{
-    "multipv", "MultiPV",
-    "Number of game play lines (principal variations) to show in UCI info "
-    "output."};
+    {.long_flag = "multipv",
+     .uci_option = "MultiPV",
+     .help_text = "Number of game play lines (principal variations) to show in "
+                  "UCI info output.",
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId SearchParams::kPerPvCountersId{
     "per-pv-counters", "PerPVCounters",
     "Show node counts per principal variation instead of total nodes in UCI."};
@@ -375,49 +418,66 @@ const OptionId SearchParams::kContemptModeId{
     "for matches, use 'white_side_analysis' and 'black_side_analysis' for "
     "analysis. Use 'disable' to deactivate contempt."};
 const OptionId SearchParams::kContemptId{
-    "contempt", "Contempt",
-    "The simulated Elo advantage for the WDL conversion. Comma separated "
-    "list in the form [name=]value, where the name is compared with the "
-    "`UCI_Opponent` value to find the appropriate contempt value. The default "
-    "value is taken from `UCI_RatingAdv` and will be overridden if either a "
-    "value without name is given, or if a name match is found."};
+    {.long_flag = "contempt",
+     .uci_option = "Contempt",
+     .help_text = "The simulated Elo advantage for the WDL conversion. Comma "
+                  "separated list in the form [name=]value, where the name is "
+                  "compared with the `UCI_Opponent` value to find the "
+                  "appropriate contempt value. The default value is taken from "
+                  "`UCI_RatingAdv` and will be overridden if either a value "
+                  "without name is given, or if a name match is found.",
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId SearchParams::kContemptMaxValueId{
-    "contempt-max-value", "ContemptMaxValue",
-    "The maximum value of contempt used. Higher values will be capped."};
+    {.long_flag = "contempt-max-value",
+     .uci_option = "ContemptMaxValue",
+     .help_text =
+         "The maximum value of contempt used. Higher values will be capped.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLCalibrationEloId{
     "wdl-calibration-elo", "WDLCalibrationElo",
-    "Elo of the active side, adjusted for time control relative to rapid."
-    "To retain raw WDL without sharpening/softening, use default value 0."};
+    "Elo of the active side, adjusted for time control relative to rapid.To "
+    "retain raw WDL without sharpening/softening, use default value 0."};
 const OptionId SearchParams::kWDLContemptAttenuationId{
-    "wdl-contempt-attenuation", "WDLContemptAttenuation",
-    "Scales how Elo advantage is applied for contempt. Use 1.0 for realistic "
-    "analysis, and 0.5-0.6 for optimal match performance."};
+    {.long_flag = "wdl-contempt-attenuation",
+     .uci_option = "WDLContemptAttenuation",
+     .help_text =
+         "Scales how Elo advantage is applied for contempt. Use 1.0 for "
+         "realistic analysis, and 0.5-0.6 for optimal match performance.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLMaxSId{
-    "wdl-max-s", "WDLMaxS",
-    "Limits the WDL derived sharpness s to a reasonable value to avoid "
-    "erratic behavior at high contempt values. Default recommended for "
-    "regular chess, increase value for more volatile positions like DFRC "
-    "or piece odds."};
+    {.long_flag = "wdl-max-s",
+     .uci_option = "WDLMaxS",
+     .help_text = "Limits the WDL derived sharpness s to a reasonable value to "
+                  "avoid erratic behavior at high contempt values. Default "
+                  "recommended for regular chess, increase value for more "
+                  "volatile positions like DFRC or piece odds.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLEvalObjectivityId{
     "wdl-eval-objectivity", "WDLEvalObjectivity",
-    "When calculating the centipawn eval output, decides how objective/"
-    "contempt influenced the reported eval should be. Value 0.0 reports the "
-    "internally used WDL values, 1.0 attempts an objective eval."};
+    "When calculating the centipawn eval output, decides how "
+    "objective/contempt influenced the reported eval should be. Value 0.0 "
+    "reports the internally used WDL values, 1.0 attempts an objective eval."};
 const OptionId SearchParams::kWDLDrawRateTargetId{
-    "wdl-draw-rate-target", "WDLDrawRateTarget",
-    "To define the accuracy of play, the target draw rate in equal "
-    "positions is used as a proxy. Ignored if WDLCalibrationElo is set. "
-    "To retain raw WDL without sharpening/softening, use default value 0."};
+    {.long_flag = "wdl-draw-rate-target",
+     .uci_option = "WDLDrawRateTarget",
+     .help_text =
+         "To define the accuracy of play, the target draw rate in equal "
+         "positions is used as a proxy. Ignored if WDLCalibrationElo is set. "
+         "To retain raw WDL without sharpening/softening, use default value 0.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kWDLDrawRateReferenceId{
     "wdl-draw-rate-reference", "WDLDrawRateReference",
-    "Set this to the draw rate predicted by the used neural network at "
-    "default settings. The accuracy rescaling is done relative to the "
-    "reference draw rate."};
+    "Set this to the draw rate predicted by the used neural network at default "
+    "settings. The accuracy rescaling is done relative to the reference draw "
+    "rate."};
 const OptionId SearchParams::kWDLBookExitBiasId{
-    "wdl-book-exit-bias", "WDLBookExitBias",
-    "The book exit bias used when measuring engine Elo. Value of startpos is "
-    "around 0.2, value of 50% white win is 1. Only relevant if target draw "
-    "rate is above 80%; ignored if WDLCalibrationElo is set."};
+    {.long_flag = "wdl-book-exit-bias",
+     .uci_option = "WDLBookExitBias",
+     .help_text =
+         "The book exit bias used when measuring engine Elo. Value of startpos "
+         "is around 0.2, value of 50% white win is 1. Only relevant if target "
+         "draw rate is above 80%; ignored if WDLCalibrationElo is set.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
@@ -570,28 +630,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
-
-  options->HideOption(kNoiseEpsilonId);
-  options->HideOption(kNoiseAlphaId);
-  options->HideOption(kLogLiveStatsId);
-  options->HideOption(kRootHasOwnCpuctParamsId);
-  options->HideOption(kCpuctAtRootId);
-  options->HideOption(kCpuctBaseAtRootId);
-  options->HideOption(kCpuctFactorAtRootId);
-  options->HideOption(kFpuStrategyAtRootId);
-  options->HideOption(kFpuValueAtRootId);
-  options->HideOption(kTemperatureId);
-  options->HideOption(kTempDecayMovesId);
-  options->HideOption(kTempDecayDelayMovesId);
-  options->HideOption(kTemperatureCutoffMoveId);
-  options->HideOption(kTemperatureEndgameId);
-  options->HideOption(kTemperatureWinpctCutoffId);
-  options->HideOption(kTemperatureVisitOffsetId);
-  options->HideOption(kContemptMaxValueId);
-  options->HideOption(kWDLContemptAttenuationId);
-  options->HideOption(kWDLMaxSId);
-  options->HideOption(kWDLDrawRateTargetId);
-  options->HideOption(kWDLBookExitBiasId);
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
