@@ -35,10 +35,13 @@
 
 namespace lczero {
 namespace {
-const OptionId kLogFileId{"logfile", "LogFile",
-                          "Write log to that file. Special value <stderr> to "
-                          "output the log to the console.",
-                          'l'};
+const OptionId kLogFileId{
+    {.long_flag = "logfile",
+     .uci_option = "LogFile",
+     .help_text = "Write log to that file. Special value <stderr> to "
+                  "output the log to the console.",
+     .short_flag = 'l',
+     .visibility = OptionId::kAlwaysVisible}};
 }  // namespace
 
 void RunEngine(SearchFactory* factory) {

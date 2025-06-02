@@ -34,12 +34,15 @@ namespace classic {
 
 namespace {
 const OptionId kRamLimitMbId{
-    "ramlimit-mb", "RamLimitMb",
-    "Maximum memory usage for the engine, in megabytes. The estimation is very "
-    "rough, and can be off by a lot. For example, multiple visits to a "
-    "terminal node counted several times, and the estimation assumes that all "
-    "positions have 30 possible moves. When set to 0, no RAM limit is "
-    "enforced."};
+    {.long_flag = "ramlimit-mb",
+     .uci_option = "RamLimitMb",
+     .help_text =
+         "Maximum memory usage for the engine, in megabytes. The estimation is "
+         "very rough, and can be off by a lot. For example, multiple visits to "
+         "a terminal node counted several times, and the estimation assumes "
+         "that all positions have 30 possible moves. When set to 0, no RAM "
+         "limit is enforced.",
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kMinimumKLDGainPerNodeId{
     {.long_flag = "minimum-kldgain-per-node",
      .uci_option = "MinimumKLDGainPerNode",
