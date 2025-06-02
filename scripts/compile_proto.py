@@ -60,24 +60,26 @@ FLOAT_TYPES = set(['float', 'double'])
 TYPES = {**VARINT_TYPES, **FIXED32_TYPES, **FIXED64_TYPES, **BYTES_TYPES}
 
 RESERVED_WORDS = [
-    'syntax',
-    'package',
+    'enum',
     'message',
     'optional',
-    'required',
+    'package',
     'repeated',
-    'enum',
+    'required',
+    'reserved',
+    'syntax',
+    'to',
 ] + list(TYPES.keys())
 
 GRAMMAR = ([(r'%s\b' % x, x)
-            for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.'] + [
+            for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.,'] + [
                 (r'/\*.*?\*/', None),  # /* Comment */
                 (r'//.*?$', None),  # // Comment
                 (r'\s+', None),  # Whitespace
                 (r'$', 'EOF'),
                 (r'"((?:[^"\\]|\\.)*)"', 'string'),
                 (r'\d+', 'number'),
-                (r'\w+', 'identifier'),
+                (r'(\w+)', 'identifier'),
             ])
 
 
@@ -103,7 +105,7 @@ class Lexer:
         '''
         token, match = self.Pick()
         if expected_token != token:
-            self.Error('Expected token type [%s]' % expected_token)
+            self.Error(f'Expected token type [{expected_token}], got [{token}]')
         if value is not None and value != match.group(group):
             self.Error('Expected value [%s]' % value)
         self.cur_offset = match.span()[1]
@@ -128,7 +130,8 @@ class Lexer:
             m = r.match(self.text, self.cur_offset)
             if m:
                 return (token, m)
-        self.Error('Unexpected token')
+        token_snippet = self.text[self.cur_offset:self.cur_offset + 10]
+        self.Error(f'Unparseable token [{token_snippet}...]')
 
     def Error(self, text):
         '''Throws an error with context in the file read.'''
@@ -318,7 +321,7 @@ class ProtoFieldParser:
         w.Write('case %d: %s; break;' % (self.number, self.GetParser()))
 
     def GenerateClear(self, w):
-        name = self.name.group(0)
+        name   = self.name.group(0)
         if self.category == 'repeated':
             w.Write('%s_.clear();' % name)
         else:
@@ -392,8 +395,9 @@ class ProtoFieldParser:
             w.Write("bool has_%s() const;" % (name))
             if self.type.IsMessage():
                 w.Write("const %s& %s() const;" % (cpp_type, name))
-                w.Write("%s* mutable_%s();" % (cpp_type, name))
-            else:
+            if self.type.IsMessage() or self.type.IsBytesType():
+                w.Write("%s* mutable_%s();" % (var_cpp_type, name))
+            if not self.type.IsMessage():
                 w.Write("%s %s() const;" % (cpp_type, name))
                 w.Write("void set_%s(%s val);" % (name, cpp_type))
 
@@ -436,14 +440,15 @@ class ProtoFieldParser:
             if self.type.IsMessage():
                 w.Write("inline const %s& %s::%s() const { return %s_; }" %
                         (cpp_type, class_name, name, name))
+            if self.type.IsMessage() or self.type.IsBytesType():
                 w.Write("inline %s* %s::mutable_%s() {" %
-                        (cpp_type, class_name, name))
+                        (var_cpp_type, class_name, name))
                 w.Indent()
                 w.Write('has_%s_ = true;' % (name))
                 w.Write('return &%s_;' % name)
                 w.Unindent()
                 w.Write("}")
-            else:
+            if not self.type.IsMessage():
                 w.Write("inline %s %s::%s() const { return %s_; }" %
                         (cpp_type, class_name, name, name))
                 w.Write("inline void %s::set_%s(%s val) {" %
@@ -551,10 +556,36 @@ class ProtoEnumParser:
         w.Write('}')
 
 
+def ParseReservedFields(lexer):
+    res = set()
+    lexer.Consume('reserved')
+    while True:
+        token, match = lexer.Pick()
+        if token == 'number':
+            num = int(lexer.Consume('number').group(0))
+            if lexer.Pick()[0] == 'to':
+                lexer.Consume('to')
+                end = int(lexer.Consume('number').group(0))
+                res.add(range(num, end + 1))
+            else:
+                res.add(num)
+        elif token in ['identifier', 'string']:
+            res.add(lexer.Consume(token).group(1))
+        else:
+            lexer.Error('Expected number or identifier')
+        token, _ = lexer.Pick()
+        if token == ';':
+            lexer.Consume(';')
+            break
+        lexer.Consume(',')
+    return res
+
+
 class ProtoMessageParser:
 
     def __init__(self, lexer, type_stack, scope):
         type_stack[0].append(self)
+        self.reserved = set()
         self.types = []
         self.fields = []
         self.scope = scope[:]
@@ -573,9 +604,12 @@ class ProtoMessageParser:
             elif token in ['repeated', 'optional', 'required']:
                 self.fields.append(
                     ProtoFieldParser(lexer, [self.types, *type_stack]))
+            elif token == 'reserved':
+                self.reserved.update(ParseReservedFields(lexer))
             else:
                 lexer.Error('Expected field or type')
         lexer.Consume('}')
+        self.CheckReserved()
 
     def GetName(self):
         return self.name
@@ -597,6 +631,19 @@ class ProtoMessageParser:
         for x in self.fields:
             type_to_fields.setdefault(x.type.GetWireType(), []).append(x)
         return type_to_fields
+    
+    def CheckReserved(self):
+        for r in self.reserved:
+            if isinstance(r, int):
+                if any(x.number == r for x in self.fields):
+                    raise ValueError(f'Field number [{r}] is reserved.')
+            elif isinstance(r, range):
+                if any(x.number in r for x in self.fields):
+                    raise ValueError(f'Field range [{r.start} to {r.stop-1}] '
+                                     'is reserved.')
+            else:
+                if any(x.name.group(0) == r for x in self.fields):
+                    raise ValueError(f'Field name [{r}] is reserved.')
 
     def ResolveForwardDeclarations(self, type_stack):
         type_stack.append(self.types)
