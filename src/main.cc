@@ -92,17 +92,18 @@ int main(int argc, const char** argv) {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
-    CommandLine::RegisterMode("selfplay", "Play games with itself");
-    CommandLine::RegisterMode("benchmark", "Quick benchmark");
-    CommandLine::RegisterMode("bench", "Very quick benchmark");
-    CommandLine::RegisterMode("backendbench",
-                              "Quick benchmark of backend only");
-    CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
-    CommandLine::RegisterMode("onnx2leela",
-                              "Convert ONNX network to Leela net.");
-    CommandLine::RegisterMode("describenet",
-                              "Shows details about the Leela network.");
-
+    if (CommandLine::BinaryName().find("simple") == std::string::npos) {
+      CommandLine::RegisterMode("selfplay", "Play games with itself");
+      CommandLine::RegisterMode("benchmark", "Quick benchmark");
+      CommandLine::RegisterMode("bench", "Very quick benchmark");
+      CommandLine::RegisterMode("backendbench",
+                                "Quick benchmark of backend only");
+      CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
+      CommandLine::RegisterMode("onnx2leela",
+                                "Convert ONNX network to Leela net.");
+      CommandLine::RegisterMode("describenet",
+                                "Shows details about the Leela network.");
+    }
     for (const std::string_view search_name :
          SearchManager::Get()->GetSearchNames()) {
       CommandLine::RegisterMode(
