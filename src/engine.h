@@ -50,6 +50,7 @@ class Engine : public EngineControllerBase {
                    const std::vector<std::string>& moves) override;
   void Go(const GoParams& params) override;
   void PonderHit() override;
+  void Wait() override;
   void Stop() override;
 
   void RegisterUciResponder(UciResponder*) override;
