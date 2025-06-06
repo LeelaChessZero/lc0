@@ -189,7 +189,6 @@ common_files += [
 ]
 
 files += [
-  'src/engine_classic.cc',
   'src/engine_loop.cc',
   'src/engine.cc',
   'src/neural/backends/network_check.cc',
@@ -257,7 +256,6 @@ endif
 if get_option('dag_classic')
   files += [
     'src/search/dag_classic/node.cc',
-    'src/search/dag_classic/params.cc',
     'src/search/dag_classic/search.cc',
     'src/search/dag_classic/stoppers/alphazero.cc',
     'src/search/dag_classic/stoppers/common.cc',

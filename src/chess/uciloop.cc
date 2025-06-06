@@ -46,12 +46,18 @@ namespace lczero {
 namespace {
 
 const OptionId kUciChess960{
-    "chess960", "UCI_Chess960",
-    "Castling moves are encoded as \"king takes rook\"."};
-const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
-                        "Show win, draw and lose probability."};
-const OptionId kShowMovesleft{"show-movesleft", "UCI_ShowMovesLeft",
-                              "Show estimated moves left."};
+    {.long_flag = "chess960",
+     .uci_option = "UCI_Chess960",
+     .help_text = "Castling moves are encoded as \"king takes rook\".",
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId kShowWDL{{.long_flag = "show-wdl",
+                         .uci_option = "UCI_ShowWDL",
+                         .help_text = "Show win, draw and lose probability.",
+                         .visibility = OptionId::kAlwaysVisible}};
+const OptionId kShowMovesleft{{.long_flag = "show-movesleft",
+                               .uci_option = "UCI_ShowMovesLeft",
+                               .help_text = "Show estimated moves left.",
+                               .visibility = OptionId::kAlwaysVisible}};
 
 const std::unordered_map<std::string, std::unordered_set<std::string>>
     kKnownCommands = {

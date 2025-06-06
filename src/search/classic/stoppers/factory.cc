@@ -42,15 +42,20 @@ namespace classic {
 namespace {
 
 const OptionId kMoveOverheadId{
-    "move-overhead", "MoveOverheadMs",
-    "Amount of time, in milliseconds, that the engine subtracts from it's "
-    "total available time (to compensate for slow connection, interprocess "
-    "communication, etc)."};
+    {.long_flag = "move-overhead",
+     .uci_option = "MoveOverheadMs",
+     .help_text =
+         "Amount of time, in milliseconds, that the engine subtracts from its "
+         "total available time (to compensate for slow connection, "
+         "interprocess communication, etc).",
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kTimeManagerId{
-    "time-manager", "TimeManager",
-    "Name and config of a time manager. Possible names are 'legacy' (default), "
-    "'smooth', 'alphazero', and simple.See https://lc0.org/timemgr for "
-    "configuration details."};
+    {.long_flag = "time-manager",
+     .uci_option = "TimeManager",
+     .help_text =
+         "Name and config of a time manager. Possible names are 'legacy' "
+         "(default), 'smooth', 'alphazero', and simple. See "
+         "https://lc0.org/timemgr for configuration details."}};
 const OptionId kSlowMoverId{
     {.long_flag = "slowmover",
      .uci_option = "Slowmover",
