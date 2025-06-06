@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2019 The LCZero Authors
+  Copyright (C) 2018-2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -36,10 +36,10 @@ namespace classic {
 
 enum class ContemptMode { PLAY, WHITE, BLACK, NONE };
 
-class SearchParams {
+class BaseSearchParams {
  public:
-  SearchParams(const OptionsDict& options);
-  SearchParams(const SearchParams&) = delete;
+  BaseSearchParams(const OptionsDict& options);
+  BaseSearchParams(const BaseSearchParams&) = delete;
 
   // Use struct for WDLRescaleParams calculation to make them const.
   struct WDLRescaleParams {
@@ -56,9 +56,6 @@ class SearchParams {
 
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
-  int GetMaxPrefetchBatch() const {
-    return options_.Get<int>(kMaxPrefetchBatchId);
-  }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
   float GetCpuctBase(bool at_root) const {
     return at_root ? kCpuctBaseAtRoot : kCpuctBase;
@@ -133,7 +130,6 @@ class SearchParams {
     return kMaxOutOfOrderEvalsFactor;
   }
   float GetNpsLimit() const { return kNpsLimit; }
-  int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
 
   int GetTaskWorkersPerSearchWorker() const {
     return kTaskWorkersPerSearchWorker;
@@ -165,7 +161,6 @@ class SearchParams {
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
-  static const OptionId kMaxPrefetchBatchId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
   static const OptionId kCpuctBaseId;
@@ -218,7 +213,6 @@ class SearchParams {
   static const OptionId kWDLBookExitBiasId;
   static const OptionId kMaxOutOfOrderEvalsFactorId;
   static const OptionId kNpsLimitId;
-  static const OptionId kSolidTreeThresholdId;
   static const OptionId kTaskWorkersPerSearchWorkerId;
   static const OptionId kMinimumWorkSizeForProcessingId;
   static const OptionId kMinimumWorkSizeForPickingId;
@@ -233,8 +227,10 @@ class SearchParams {
   static const OptionId kUCIRatingAdvId;
   static const OptionId kSearchSpinBackoffId;
 
- private:
+ protected:
   const OptionsDict& options_;
+
+ private:
   // Cached parameter values. Values have to be cached if either:
   // 1. Parameter is accessed often and has to be cached for performance
   // reasons.
@@ -277,7 +273,6 @@ class SearchParams {
   const float kWDLEvalObjectivity;
   const float kMaxOutOfOrderEvalsFactor;
   const float kNpsLimit;
-  const int kSolidTreeThreshold;
   const int kTaskWorkersPerSearchWorker;
   const int kMinimumWorkSizeForProcessing;
   const int kMinimumWorkSizeForPicking;
@@ -291,5 +286,26 @@ class SearchParams {
   const bool kSearchSpinBackoff;
 };
 
+class SearchParams : public BaseSearchParams {
+ public:
+  SearchParams(const OptionsDict& options);
+  SearchParams(const SearchParams&) = delete;
+
+  // Populates UciOptions with search parameters.
+  static void Populate(OptionsParser* options);
+
+  // Parameter getters.
+  int GetMaxPrefetchBatch() const {
+    return options_.Get<int>(kMaxPrefetchBatchId);
+  }
+  int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
+
+  // Search parameter IDs.
+  static const OptionId kMaxPrefetchBatchId;
+  static const OptionId kSolidTreeThresholdId;
+
+ private:
+  const int kSolidTreeThreshold;
+};
 }  // namespace classic
 }  // namespace lczero
