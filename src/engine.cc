@@ -242,6 +242,8 @@ void Engine::Go(const GoParams& params) {
   search_->StartSearch(params);
 }
 
+void Engine::Wait() { search_->WaitSearch(); }
+
 void Engine::Stop() { search_->StopSearch(); }
 
 void Engine::PonderHit() {

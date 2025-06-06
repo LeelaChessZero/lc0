@@ -74,6 +74,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"quit"}, {}},
         {{"xyzzy"}, {}},
         {{"fen"}, {}},
+        {{"wait"}, {}}
 };
 
 std::pair<std::string, std::unordered_map<std::string, std::string>>
@@ -209,6 +210,8 @@ bool UciLoop::DispatchCommand(
     UCIGOOPTION(movetime);
 #undef UCIGOOPTION
     engine_->Go(go_params);
+  } else if (command == "wait") {
+    engine_->Wait();
   } else if (command == "stop") {
     engine_->Stop();
   } else if (command == "ponderhit") {
