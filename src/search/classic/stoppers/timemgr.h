@@ -33,7 +33,6 @@
 #include <vector>
 
 #include "chess/uciloop.h"
-#include "search/classic/node.h"
 #include "utils/optionsdict.h"
 
 namespace lczero {
@@ -106,7 +105,10 @@ class TimeManager {
  public:
   virtual ~TimeManager() = default;
   virtual std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                                    const NodeTree& tree) = 0;
+                                                    const Position& position,
+                                                    size_t total_memory,
+                                                    size_t avg_node_size,
+                                                    uint32_t nodes) = 0;
 };
 
 }  // namespace classic

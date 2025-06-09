@@ -30,6 +30,7 @@
 #include "search/classic/stoppers/factory.h"
 #include "search/register.h"
 #include "search/search.h"
+#include "src/neural/shared_params.h"
 
 namespace lczero {
 namespace classic {
@@ -112,7 +113,18 @@ void ClassicSearch::StartSearch(const GoParams& params) {
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
   if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
 
-  auto stopper = time_manager_->GetStopper(params, *tree_.get());
+  const auto cache_size =
+      options_->Get<int>(SharedBackendParams::kNNCacheSizeId);
+  const size_t kAvgNodeSize =
+      sizeof(Node) + MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
+  const size_t kAvgCacheItemSize =
+      3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
+      sizeof(float[MemoryWatchingStopper::kAvgMovesPerPosition]);
+  size_t total_memory = tree_.get()->GetCurrentHead()->GetN() * kAvgNodeSize +
+                        cache_size * kAvgCacheItemSize;
+  auto stopper = time_manager_->GetStopper(
+      params, tree_.get()->HeadPosition(), total_memory, kAvgNodeSize,
+      tree_.get()->GetCurrentHead()->GetN());
   search_ = std::make_unique<Search>(
       *tree_, backend_, std::move(forwarder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
