@@ -26,10 +26,11 @@
 */
 
 #include "chess/gamestate.h"
+#include "search/classic/stoppers/factory.h"
 #include "search/dag_classic/search.h"
-#include "search/dag_classic/stoppers/factory.h"
 #include "search/register.h"
 #include "search/search.h"
+#include "src/neural/shared_params.h"
 
 namespace lczero {
 namespace dag_classic {
@@ -72,7 +73,7 @@ class DagClassicSearch : public SearchBase {
   }
 
   const OptionsDict* options_;
-  std::unique_ptr<TimeManager> time_manager_;
+  std::unique_ptr<classic::TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
   std::unique_ptr<NodeTree> tree_;
   TranspositionTable tt_;
@@ -101,13 +102,13 @@ void DagClassicSearch::NewGame() {
   search_.reset();
   tt_.clear();
   tree_.reset();
-  time_manager_ = MakeTimeManager(*options_);
+  time_manager_ = classic::MakeTimeManager(*options_);
 }
 
 void DagClassicSearch::SetPosition(const GameState& pos) {
   if (!tree_) tree_ = std::make_unique<NodeTree>();
   const bool is_same_game = tree_->ResetToPosition(pos);
-  if (!is_same_game) time_manager_ = MakeTimeManager(*options_);
+  if (!is_same_game) time_manager_ = classic::MakeTimeManager(*options_);
 }
 
 void DagClassicSearch::StartSearch(const GoParams& params) {
@@ -115,7 +116,20 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
   if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
 
-  auto stopper = time_manager_->GetStopper(params, *tree_.get());
+  const auto cache_size =
+      options_->Get<int>(SharedBackendParams::kNNCacheSizeId);
+  // FIXME: This is too conservative.
+  const size_t kAvgNodeSize =
+      sizeof(Node) + sizeof(LowNode) + sizeof(TranspositionTable::slot_type) +
+      classic::MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
+  const size_t kAvgCacheItemSize =
+      3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
+      sizeof(float[classic::MemoryWatchingStopper::kAvgMovesPerPosition]);
+  size_t total_memory = tree_.get()->GetCurrentHead()->GetN() * kAvgNodeSize +
+                        cache_size * kAvgCacheItemSize;
+  auto stopper = time_manager_->GetStopper(
+      params, tree_.get()->HeadPosition(), total_memory, kAvgNodeSize,
+      tree_.get()->GetCurrentHead()->GetN());
   search_ = std::make_unique<Search>(
       *tree_, backend_, std::move(forwarder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
@@ -137,7 +151,7 @@ class DagClassicSearchFactory : public SearchFactory {
   void PopulateParams(OptionsParser* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
     SearchParams::Populate(parser);
-    PopulateTimeManagementOptions(RunType::kUci, parser);
+    classic::PopulateTimeManagementOptions(classic::RunType::kUci, parser);
 
     parser->Add<ButtonOption>(kClearTree);
   }
