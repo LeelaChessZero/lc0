@@ -117,16 +117,16 @@ namespace {
 // Stoppers for uci mode only.
 void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options,
-                               const GoParams& params, int64_t move_overhead) {
+                               const GoParams& params, size_t total_memory,
+                               size_t avg_node_size, uint32_t nodes,
+                               int64_t move_overhead) {
   const bool infinite = params.infinite || params.ponder || params.mate;
 
   // RAM limit watching stopper.
-  const auto cache_size_mb =
-      options.Get<int>(SharedBackendParams::kNNCacheSizeId);
-  const int ram_limit = options.Get<int>(kRamLimitMbId);
-  if (ram_limit) {
+  const int ram_limit_mb = options.Get<int>(kRamLimitMbId);
+  if (ram_limit_mb) {
     stopper->AddStopper(std::make_unique<MemoryWatchingStopper>(
-        cache_size_mb, ram_limit,
+        ram_limit_mb, total_memory, avg_node_size, nodes,
         options.Get<float>(kSmartPruningFactorId) > 0.0f));
   }
 
@@ -175,10 +175,16 @@ class CommonTimeManager : public TimeManager {
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const NodeTree& tree) override {
+                                            const Position& position,
+                                            size_t avg_node_size,
+                                            size_t total_memory,
+                                            uint32_t nodes) override {
     auto result = std::make_unique<ChainedSearchStopper>();
-    if (child_mgr_) result->AddStopper(child_mgr_->GetStopper(params, tree));
-    PopulateCommonUciStoppers(result.get(), options_, params, move_overhead_);
+    if (child_mgr_)
+      result->AddStopper(child_mgr_->GetStopper(params, position, avg_node_size,
+                                                total_memory, nodes));
+    PopulateCommonUciStoppers(result.get(), options_, params, avg_node_size,
+                              total_memory, nodes, move_overhead_);
     return result;
   }
 

@@ -152,7 +152,7 @@ Search::Search(const NodeTree& tree, Backend* backend,
                std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
-               std::unique_ptr<SearchStopper> stopper, bool infinite,
+               std::unique_ptr<classic::SearchStopper> stopper, bool infinite,
                bool ponder, const OptionsDict& options, TranspositionTable* tt,
                SyzygyTablebase* syzygy_tb)
     : ok_to_respond_bestmove_(!infinite && !ponder),
@@ -613,8 +613,8 @@ void Search::SendMovesStats() const REQUIRES(counters_mutex_) {
   }
 }
 
-void Search::MaybeTriggerStop(const IterationStats& stats,
-                              StoppersHints* hints) {
+void Search::MaybeTriggerStop(const classic::IterationStats& stats,
+                              classic::StoppersHints* hints) {
   hints->Reset();
   if (params_.GetNpsLimit() > 0) {
     hints->UpdateEstimatedNps(params_.GetNpsLimit());
@@ -926,7 +926,7 @@ bool Search::IsSearchActive() const {
   return !stop_.load(std::memory_order_acquire);
 }
 
-void Search::PopulateCommonIterationStats(IterationStats* stats) {
+void Search::PopulateCommonIterationStats(classic::IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
@@ -945,7 +945,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->win_found = false;
   stats->may_resign = true;
   stats->num_losing_edges = 0;
-  stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
+  stats->time_usage_hint_ = classic::IterationStats::TimeUsageHint::kNormal;
   stats->mate_depth = std::numeric_limits<int>::max();
 
   // If root node hasn't finished first visit, none of this code is safe.
@@ -994,15 +994,16 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       }
     }
     if (!max_n_has_max_q_plus_m) {
-      stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNeedMoreTime;
+      stats->time_usage_hint_ =
+          classic::IterationStats::TimeUsageHint::kNeedMoreTime;
     }
   }
 }
 
 void Search::WatchdogThread() {
   LOGFILE << "Start a watchdog thread.";
-  StoppersHints hints;
-  IterationStats stats;
+  classic::StoppersHints hints;
+  classic::IterationStats stats;
   while (true) {
     PopulateCommonIterationStats(&stats);
     MaybeTriggerStop(stats, &hints);

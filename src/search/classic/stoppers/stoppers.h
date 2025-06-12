@@ -30,7 +30,6 @@
 #include <optional>
 #include <vector>
 
-#include "search/classic/node.h"
 #include "search/classic/stoppers/timemgr.h"
 
 namespace lczero {
@@ -55,7 +54,7 @@ class ChainedSearchStopper : public SearchStopper {
 class VisitsStopper : public SearchStopper {
  public:
   VisitsStopper(int64_t limit, bool populate_remaining_playouts)
-    : nodes_limit_(limit ? limit : 4000000000ll),
+      : nodes_limit_(limit ? limit : 4000000000ll),
         populate_remaining_playouts_(populate_remaining_playouts) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
@@ -85,7 +84,8 @@ class MemoryWatchingStopper : public VisitsStopper {
  public:
   // Must be in sync with description at kRamLimitMbId.
   static constexpr size_t kAvgMovesPerPosition = 30;
-  MemoryWatchingStopper(int cache_size, int ram_limit_mb,
+  MemoryWatchingStopper(int ram_limit_mb, size_t total_memory,
+                        size_t avg_node_size, uint32_t nodes,
                         bool populate_remaining_playouts);
 };
 

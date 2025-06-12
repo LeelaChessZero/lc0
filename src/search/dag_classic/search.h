@@ -39,9 +39,9 @@
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "neural/backend.h"
+#include "search/classic/stoppers/timemgr.h"
 #include "search/dag_classic/node.h"
 #include "search/dag_classic/params.h"
-#include "search/dag_classic/stoppers/timemgr.h"
 #include "syzygy/syzygy.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
@@ -58,8 +58,8 @@ class Search {
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
-         std::unique_ptr<SearchStopper> stopper, bool infinite, bool ponder,
-         const OptionsDict& options, TranspositionTable* tt,
+         std::unique_ptr<classic::SearchStopper> stopper, bool infinite,
+         bool ponder, const OptionsDict& options, TranspositionTable* tt,
          SyzygyTablebase* syzygy_tb);
 
   ~Search();
@@ -114,7 +114,8 @@ class Search {
 
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeSinceFirstBatch() const;
-  void MaybeTriggerStop(const IterationStats& stats, StoppersHints* hints);
+  void MaybeTriggerStop(const classic::IterationStats& stats,
+                        classic::StoppersHints* hints);
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
   // Sets stop to true and notifies watchdog thread.
@@ -128,7 +129,7 @@ class Search {
   // Fills IterationStats with global (rather than per-thread) portion of search
   // statistics. Currently all stats there (in IterationStats) are global
   // though.
-  void PopulateCommonIterationStats(IterationStats* stats);
+  void PopulateCommonIterationStats(classic::IterationStats* stats);
 
   // Returns verbose information about given node, as vector of strings.
   // Node can only be root or ponder (depth 1) and move_to_node is only given
@@ -160,7 +161,7 @@ class Search {
   // consistent results.
   Move final_bestmove_ GUARDED_BY(counters_mutex_);
   Move final_pondermove_ GUARDED_BY(counters_mutex_);
-  std::unique_ptr<SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
+  std::unique_ptr<classic::SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
@@ -487,8 +488,8 @@ class SearchWorker {
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;
-  IterationStats iteration_stats_;
-  StoppersHints latest_time_manager_hints_;
+  classic::IterationStats iteration_stats_;
+  classic::StoppersHints latest_time_manager_hints_;
 
   // Multigather task related fields.
 

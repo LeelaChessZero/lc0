@@ -257,14 +257,6 @@ if get_option('dag_classic')
   files += [
     'src/search/dag_classic/node.cc',
     'src/search/dag_classic/search.cc',
-    'src/search/dag_classic/stoppers/alphazero.cc',
-    'src/search/dag_classic/stoppers/common.cc',
-    'src/search/dag_classic/stoppers/factory.cc',
-    'src/search/dag_classic/stoppers/legacy.cc',
-    'src/search/dag_classic/stoppers/simple.cc',
-    'src/search/dag_classic/stoppers/smooth.cc',
-    'src/search/dag_classic/stoppers/stoppers.cc',
-    'src/search/dag_classic/stoppers/timemgr.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
 

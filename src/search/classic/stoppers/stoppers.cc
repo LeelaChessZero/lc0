@@ -27,7 +27,7 @@
 
 #include "search/classic/stoppers/stoppers.h"
 
-#include "search/classic/node.h"
+#include <cmath>
 
 namespace lczero {
 namespace classic {
@@ -91,22 +91,17 @@ bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
 // MemoryWatchingStopper
 ///////////////////////////
 
-namespace {
-const size_t kAvgNodeSize =
-    sizeof(Node) + MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
-const size_t kAvgCacheItemSize =
-    3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
-    sizeof(float[MemoryWatchingStopper::kAvgMovesPerPosition]);
-}  // namespace
-
-MemoryWatchingStopper::MemoryWatchingStopper(int cache_size, int ram_limit_mb,
+MemoryWatchingStopper::MemoryWatchingStopper(int ram_limit_mb,
+                                             size_t total_memory,
+                                             size_t avg_node_size,
+                                             uint32_t nodes,
                                              bool populate_remaining_playouts)
     : VisitsStopper(
-          (ram_limit_mb * 1000000LL - cache_size * kAvgCacheItemSize) /
-              kAvgNodeSize,
+          (ram_limit_mb * 1000000LL - total_memory + avg_node_size * nodes) /
+              avg_node_size,
           populate_remaining_playouts) {
-  LOGFILE << "RAM limit " << ram_limit_mb << "MB. Cache takes "
-          << cache_size * kAvgCacheItemSize / 1000000
+  LOGFILE << "RAM limit " << ram_limit_mb << "MB. Memory allocated is "
+          << (total_memory - avg_node_size * nodes) / 1000000
           << "MB. Remaining memory is enough for " << GetVisitsLimit()
           << " nodes.";
 }
