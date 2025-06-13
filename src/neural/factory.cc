@@ -54,7 +54,19 @@ void NetworkFactory::RegisterNetwork(const std::string& name,
 
 std::vector<std::string> NetworkFactory::GetBackendsList() const {
   std::vector<std::string> result;
-  for (const auto& x : factories_) result.emplace_back(x.name);
+#ifdef DEFAULT_BACKEND
+#define STRINGIFY_INTERNAL(x) #x
+#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
+  result.emplace_back(STRINGIFY(DEFAULT_BACKEND));
+#undef STRINGIFY
+#undef STRINGIFY_INTERNAL
+#endif
+  for (const auto& x : factories_) {
+#ifdef DEFAULT_BACKEND
+    if (x.name == result[0]) continue;
+#endif
+    result.emplace_back(x.name);
+  }
   return result;
 }
 
