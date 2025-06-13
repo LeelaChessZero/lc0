@@ -408,6 +408,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
       bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
       provider_(provider) {
+  onnx_env_.DisableTelemetryEvents();
   batch_size_ =
       opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
   steps_ =
