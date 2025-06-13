@@ -755,6 +755,11 @@ if get_option('default_search') != ''
                         get_option('default_search'), language : 'cpp')
 endif
 
+if get_option('default_backend') != ''
+  add_project_arguments('-DDEFAULT_BACKEND=' +
+                        get_option('default_backend'), language : 'cpp')
+endif
+
 if get_option('lc0')
   files += common_files
   executable('lc0', 'src/main.cc',
