@@ -4,16 +4,13 @@ Lc0 is a UCI-compliant chess engine designed to play chess via
 neural network, specifically those of the LeelaChessZero project
 (https://lczero.org).
 
-This binary uses CUDA dynamic link libraries copyrighted by Nvidia
-corporation (http://www.nvidia.com), that can be redistributed as
-permitted by the respective license file (see CUDA.txt section 2.2).
-For size reasons you will have to get the required files by running
-the included `install.cmd` script. If this fails you can get them by
-downloading
-<https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-11.8.89-archive.zip> and
-<https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-11.11.3.6-archive.zip>, the required dynamic link libraries are in the respective `bin`
-directories. You are authorized to redistribute these libraries
-together with this package as a whole but not individually.
+This binary uses CUDA and cuDNN dynamic link libraries copyrighted
+by Nvidia corporation (http://www.nvidia.com), and redistributed as
+permitted by the respective license file (see CUDA.txt section 2.2
+and CUDNN.txt section "CUDNN DISTRIBUTION" for details). You are
+authorized to redistribute these libraries together with this
+package as a whole but not individually.
+
 
 License
 
