@@ -2507,7 +2507,6 @@ template <typename DataType>
 AttentionBody<DataType>::~AttentionBody() {
   sycl::free(ip_emb_w_, sycl_queue_);
   sycl::free(ip_emb_b_, sycl_queue_);
-  sycl::free(pos_encoding_, sycl_queue_);
   if (is_pe_dense_embedding_) {
     sycl::free(ip_emb_pre_w_, sycl_queue_);
     sycl::free(ip_emb_pre_b_, sycl_queue_);
