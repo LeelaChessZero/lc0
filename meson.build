@@ -682,7 +682,15 @@ if get_option('build_backends')
         deps += cc.find_library('mkl_core', required: true)
         deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
-        error('Building SYCL for AMD backend not yet supported')
+        deps += cc.find_library('hipblas', required: true)
+        deps += cc.find_library('amdhip64', required: true)
+        add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
+        add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
+        if get_option('amd_gfx') == ''
+          error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. 90a, 1100 or similar)')
+        endif
+        add_project_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
+        add_project_link_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
       else
         deps += cc.find_library('cublas', required: true)
         deps += cc.find_library('cudart', required: true)
