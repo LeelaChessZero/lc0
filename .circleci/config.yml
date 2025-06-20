@@ -79,7 +79,8 @@ jobs:
             ls -lah /tmp
       - persist_to_workspace:
           root: /tmp
-          paths:
+          paths: 
+            - lc0-macos_12.6.1
 
   "upload-github-release":
     macos:
