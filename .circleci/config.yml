@@ -72,10 +72,14 @@ jobs:
       - store_artifacts:
           path: /tmp/lc0
           destination: lc0-macos_12.6.1
+      - run:
+          name: Verify Workspace
+          command: |
+            mv lc0 lc0-macos_12.6.1
+            ls -lah /tmp
       - persist_to_workspace:
           root: /tmp
           paths:
-            - lc0
 
   "upload-github-release":
     macos:
@@ -87,11 +91,15 @@ jobs:
           name: Install GitHub CLI
           command: brew install gh
       - run:
+          name: Verify Workspace
+          command: |
+            ls -lah /tmp
+      - run:
           name: Upload to GitHub Release
           command: |
             gh release upload \
               "$CIRCLE_TAG" \
-              /tmp/lc0 \
+              /tmp/lc0-macos_12.6.1 \
               --clobber
 workflows:
   version: 2
