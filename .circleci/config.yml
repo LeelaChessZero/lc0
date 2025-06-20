@@ -75,7 +75,7 @@ jobs:
       - run:
           name: Verify Workspace
           command: |
-            mv lc0 lc0-macos_12.6.1
+            mv /tmp/lc0 /tmp/lc0-macos_12.6.1
             ls -lah /tmp
       - persist_to_workspace:
           root: /tmp
