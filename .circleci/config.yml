@@ -73,7 +73,7 @@ jobs:
           path: /tmp/lc0
           destination: lc0-macos_12.6.1
       - persist_to_workspace:
-          root: /tmp
+          root: /tmp/workspace
           paths:
             - lc0
 
