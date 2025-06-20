@@ -30,12 +30,6 @@
 #include "winograd_helper.h"
 #include <cmath>
 
-#if defined(__HIP_PLATFORM_AMD__) && (defined(__GFX9__) || defined(__GFX8__))
-#define SYCL_SUB_GROUP_SIZE 64
-#else
-#define SYCL_SUB_GROUP_SIZE 32
-#endif
-
 namespace lczero {
 namespace sycldnn_backend {
 namespace {
