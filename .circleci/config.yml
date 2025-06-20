@@ -73,7 +73,7 @@ jobs:
           path: /tmp/lc0
           destination: lc0-macos_12.6.1
       - persist_to_workspace:
-          root: /tmp/workspace
+          root: /tmp
           paths:
             - lc0
 
@@ -82,7 +82,7 @@ jobs:
       xcode: 14.1.0
     steps:
       - attach_workspace:
-          at: /tmp/workspace
+          at: /tmp
       - run:
           name: Install GitHub CLI
           command: brew install gh
@@ -91,7 +91,7 @@ jobs:
           command: |
             gh release upload \
               "$CIRCLE_TAG" \
-              /tmp/workspace/lc0 \
+              /tmp/lc0 \
               --clobber
 workflows:
   version: 2
