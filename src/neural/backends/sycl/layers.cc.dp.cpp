@@ -358,6 +358,10 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
     half alpha = one_h;
     half beta = zero_h;
 
+    #elif defined(USE_HIPBLAS)
+    hipblasHalf alpha{1};
+    hipblasHalf beta{0};
+
     #else
     sycl::half alpha = 1;
     sycl::half beta = 0;
@@ -393,10 +397,10 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
             sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);
 
-        hipblasSgemm(handle, transpose_type_transpose,
+        hipblasHgemm(handle, transpose_type_transpose,
                      transpose_type_notranspose,numFc1Out_, N, C, &alpha,
-                     ((const sycl::half *)w1_), C, ((const sycl::half *)op2), C,
-                     &beta, ((sycl::half *)op1), numFc1Out_);
+                     ((const hipblasHalf *)w1_), C, ((const hipblasHalf *)op2), C,
+                     &beta, ((hipblasHalf *)op1), numFc1Out_);
 
         hipStreamSynchronize(hipStreamHandle);
       });
@@ -436,10 +440,10 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
             sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);
 
-        hipblasSgemm(
+        hipblasHgemm(
             handle, transpose_type_transpose, transpose_type_notranspose, 2 * C,
-            N, numFc1Out_, &alpha,((const sycl::half *)w2_), numFc1Out_,
-            ((const sycl::half *)op1), numFc1Out_, &beta, ((sycl::half *)op2),
+            N, numFc1Out_, &alpha,((const hipblasHalf *)w2_), numFc1Out_,
+            ((const hipblasHalf *)op1), numFc1Out_, &beta, ((hipblasHalf *)op2),
             2 * C);
 
         hipStreamSynchronize(hipStreamHandle);
@@ -544,6 +548,10 @@ template <>
     half alpha = one_h;
     half beta = zero_h;
 
+    #elif defined(USE_HIPBLAS)
+    hipblasHalf alpha{1};
+    hipblasHalf beta{0};
+
     #else
     sycl::half alpha = 1;
     sycl::half beta = 0;
@@ -576,11 +584,11 @@ template <>
           sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
       hipblasSetStream(handle, hipStreamHandle);
 
-      hipblasSgemm(
+      hipblasHgemm(
           handle, transpose_type_transpose, transpose_type_notranspose,
-          num_outputs, N, num_inputs, &alpha, ((const sycl::half *)weights_),
-          num_inputs, ((const sycl::half *)input_tensor), num_inputs, &beta,
-          ((sycl::half *)output_tensor), num_outputs);
+          num_outputs, N, num_inputs, &alpha, ((const hipblasHalf *)weights_),
+          num_inputs, ((const hipblasHalf *)input_tensor), num_inputs, &beta,
+          ((hipblasHalf *)output_tensor), num_outputs);
 
         hipStreamSynchronize(hipStreamHandle);
       });
@@ -964,7 +972,7 @@ template <>
 
       hipStreamSynchronize(hipStreamHandle);
     });
-  );
+  });
 #else
   int64_t M_ = M;
   int64_t N_ = N;
@@ -1807,7 +1815,20 @@ static void cublasXgemm(transpose_type transa,
       });
   }
   #elif defined(USE_HIPBLAS)
-    hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
+  hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
+    sycl_queue.submit([&](sycl::handler &cgh) {
+      cgh.host_task([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+        hipblasSetStream(handle, hipStreamHandle);
+        hipblasHgemm(handle, transa, transb, m, n, k, &alpha_h, (const hipblasHalf*)A,
+          lda, (const hipblasHalf*)B, ldb, &beta_h, (hipblasHalf*)C, ldc);
+        hipStreamSynchronize(hipStreamHandle);
+        });
+      });
+  } else {
     sycl_queue.submit([&](sycl::handler &cgh) {
       cgh.host_task([=](sycl::interop_handle ih) {  
         auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
@@ -1816,6 +1837,7 @@ static void cublasXgemm(transpose_type transa,
         hipStreamSynchronize(hipStreamHandle);
         });
       });
+  }
   #else
     oneapi::mkl::blas::column_major::gemm(sycl_queue, transa, transb, m, n, k, alpha, (const DataType *)A, lda,
         (const DataType *)B, ldb, beta, (DataType *)C, ldc);
@@ -1873,9 +1895,29 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
     });
   }
   #elif defined(USE_HIPBLAS)
-    hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
+  hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
+  if (fp16) {
+    unsigned short alpha_h = FP32toFP16(alpha);
+    unsigned short beta_h = FP32toFP16(beta);
 
-     sycl_queue.submit([&](sycl::handler &cgh) {
+    sycl_queue.submit([&](sycl::handler &cgh) {
+
+        cgh.host_task([=](sycl::interop_handle ih) {
+
+        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+        hipblasSetStream(handle, hipStreamHandle);
+
+        hipblasGemmStridedBatchedEx(
+        handle, transa, transb, m, n, k, &alpha_h, A, HIPBLAS_R_16F, lda, strideA, B,
+        HIPBLAS_R_16F, ldb, strideB, &beta_h, C, HIPBLAS_R_16F, ldc, strideC,
+        batchCount, HIPBLAS_R_16F, HIPBLAS_GEMM_DEFAULT);
+
+        hipStreamSynchronize(hipStreamHandle);
+
+      });
+    });
+  } else {
+    sycl_queue.submit([&](sycl::handler &cgh) {
 
         cgh.host_task([=](sycl::interop_handle ih) {
     
@@ -1891,9 +1933,10 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
   
       });
     });
-    #else
-      oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const DataType *)A, lda, strideA, (const DataType *)B, ldb, strideB, beta, (DataType *)C, ldc, strideC, batchCount);
-    #endif
+  }
+  #else
+  oneapi::mkl::blas::column_major::gemm_batch(sycl_queue, transa, transb, m, n, k,  alpha, (const DataType *)A, lda, strideA, (const DataType *)B, ldb, strideB, beta, (DataType *)C, ldc, strideC, batchCount);
+  #endif
 }
 
 template <typename DataType>
@@ -1962,8 +2005,8 @@ static void cublasXGemmBatched(transpose_type transa,
         hipblasSetStream(handle, hipStreamHandle);       
 
         hipblasHgemmBatched(
-        handle, transa, transb, m, n, k, (const half*)&alpha_h, (half**)A, lda,
-        (half**)B, ldb, (const half*)&beta_h, (half**)C, ldc, batchCount);
+        handle, transa, transb, m, n, k, (const hipblasHalf*)&alpha_h, (hipblasHalf**)A, lda,
+        (hipblasHalf**)B, ldb, (const hipblasHalf*)&beta_h, (hipblasHalf**)C, ldc, batchCount);
         
         hipStreamSynchronize(hipStreamHandle);
 
@@ -2507,7 +2550,6 @@ template <typename DataType>
 AttentionBody<DataType>::~AttentionBody() {
   sycl::free(ip_emb_w_, sycl_queue_);
   sycl::free(ip_emb_b_, sycl_queue_);
-  sycl::free(pos_encoding_, sycl_queue_);
   if (is_pe_dense_embedding_) {
     sycl::free(ip_emb_pre_w_, sycl_queue_);
     sycl::free(ip_emb_pre_b_, sycl_queue_);
