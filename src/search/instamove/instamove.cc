@@ -112,26 +112,28 @@ class ValueHeadSearch : public InstamoveSearch {
     PositionHistory history(game_state.GetPositions());
     const ChessBoard& board = history.Last().GetBoard();
     const std::vector<Move> legal_moves = board.GenerateLegalMoves();
-    std::vector<EvalResult> results(legal_moves.size());
+    std::vector<std::pair<std::optional<int>, EvalResult>> results(
+        legal_moves.size());
 
     for (size_t i = 0; i < legal_moves.size(); i++) {
       Move move = legal_moves[i];
       history.Append(move);
       switch (history.ComputeGameResult()) {
         case GameResult::UNDECIDED:
-          computation->AddInput(
-              EvalPosition{history.GetPositions(), {}},
-              EvalResultPtr{.q = &results[i].q, .d = &results[i].d});
+          computation->AddInput(EvalPosition{history.GetPositions(), {}},
+                                EvalResultPtr{.q = &results[i].second.q,
+                                              .d = &results[i].second.d});
           break;
         case GameResult::DRAW:
-          results[i].q = 0;
-          results[i].d = 1;
+          results[i].second.q = 0;
+          results[i].second.d = 1;
           break;
         default:
           // A legal move to a non-drawn terminal without tablebases must be a
           // win.
-          results[i].q = -1;
-          results[i].d = 0;
+          results[i].second.q = -1;
+          results[i].second.d = 0;
+          results[i].first = 1;  // 1 ply until checkmate.
       }
       history.Pop();
     }
@@ -140,8 +142,14 @@ class ValueHeadSearch : public InstamoveSearch {
 
     const size_t best_idx =
         std::min_element(results.begin(), results.end(),
-                         [](const EvalResult& a, const EvalResult& b) {
-                           return a.q < b.q;
+                         [](const auto& a, const auto& b) {
+                           if (a.first.has_value() != b.first.has_value()) {
+                             return a.first.has_value();
+                           }
+                           if (a.first != b.first) {
+                             return a.first.value() < b.first.value();
+                           }
+                           return a.second.q < b.second.q;
                          }) -
         results.begin();
 
@@ -149,14 +157,17 @@ class ValueHeadSearch : public InstamoveSearch {
         .depth = 1,
         .seldepth = 1,
         .nodes = static_cast<int64_t>(legal_moves.size()),
-        .score = 90 * std::tan(1.5637541897 * results[best_idx].q),
+        .mate = results[best_idx].first,
+        .score = 90 * std::tan(1.5637541897 * results[best_idx].second.q),
         .wdl =
             ThinkingInfo::WDL{
-                static_cast<int>(std::round(
-                    500 * (1 + results[best_idx].q - results[best_idx].d))),
-                static_cast<int>(std::round(1000 * results[best_idx].d)),
-                static_cast<int>(std::round(
-                    500 * (1 - results[best_idx].q - results[best_idx].d)))},
+                static_cast<int>(
+                    std::round(500 * (1 + results[best_idx].second.q -
+                                      results[best_idx].second.d))),
+                static_cast<int>(std::round(1000 * results[best_idx].second.d)),
+                static_cast<int>(
+                    std::round(500 * (1 - results[best_idx].second.q -
+                                      results[best_idx].second.d)))},
     }};
     uci_responder_->OutputThinkingInfo(&infos);
     Move best_move = legal_moves[best_idx];
