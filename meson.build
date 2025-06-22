@@ -682,9 +682,26 @@ if get_option('build_backends')
         deps += cc.find_library('mkl_core', required: true)
         deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
-        error('Building SYCL for AMD backend not yet supported')
+        deps += cc.find_library('hipblas', required: true)
+        deps += cc.find_library('amdhip64', required: true)
+        add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
+        add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
+        if get_option('amd_gfx') == ''
+          error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. 90a, 1100 or similar)')
+        endif
+        add_project_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
+        add_project_link_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
       else
-        error('Building SYCL for the NVIDIA backend not yet supported')
+        deps += cc.find_library('cublas', required: true)
+        deps += cc.find_library('cudart', required: true)
+        add_project_arguments('-DUSE_CUBLAS=ON', language : 'cpp')
+        if get_option('cc_cuda') != ''
+          sycl_nvidia_target = 'nvidia_gpu_sm_' + get_option('cc_cuda')
+        else
+          sycl_nvidia_target = 'nvptx64-nvidia-cuda'
+        endif
+        add_project_arguments('-fsycl-targets='+sycl_nvidia_target, language : 'cpp')
+        add_project_link_arguments('-fsycl-targets='+sycl_nvidia_target, language : 'cpp')
       endif
       if host_machine.system() == 'windows'
         # For sycl under windows we need to link using icx to generate the device code.
