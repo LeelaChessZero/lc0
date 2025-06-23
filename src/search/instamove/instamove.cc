@@ -175,8 +175,8 @@ class ValueHeadSearch : public InstamoveSearch {
     uci_responder_->OutputThinkingInfo(&infos);
     Move best_move = legal_moves[best_idx];
     return best_move;
-  }  // namespace
-};  // namespace lczero
+  }
+};
 
 class PolicyHeadFactory : public SearchFactory {
   std::string_view GetName() const override { return "policyhead"; }
