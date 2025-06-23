@@ -749,7 +749,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                   sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                   sycl::range<3>(1, 1, C)),
               [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(
-                  32)]] {
+                  SYCL_SUB_GROUP_SIZE)]] {
                 OutputInputTransformKernel_fp16_shmem_board<activation,
                                                             use_bias, use_skip>(
                     N, C, se_K, (sycl::half*)output, (const sycl::half*)input,
@@ -798,7 +798,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
       cgh.parallel_for(
           sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                             sycl::range<3>(1, 1, C)),
-          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(SYCL_SUB_GROUP_SIZE)]] {
             OutputTransform_SE_relu_InputTransform_kernel<
                 sycl::half, activation, use_bias, use_skip>(
                 N, C, se_K, output, input, (sycl::half*)skip, bias, w1, b1, w2,

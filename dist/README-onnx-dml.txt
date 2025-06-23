@@ -7,7 +7,7 @@ neural network, specifically those of the LeelaChessZero project
 To run this version you will most likely need a very recent DirectML dll,
 which you can get by running the included `install.cmd` script. Alternatively,
 you can download the currently latest nuget installer package from
-<https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.10.0>.
+<https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4>.
 If you don't know how to use nuget installer packages, you can change the
 extension to .zip and open it as a normal zip file, the dll you need is
 `/bin/x64-win/DirectML.dll`.

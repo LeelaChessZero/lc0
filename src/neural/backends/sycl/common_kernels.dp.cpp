@@ -936,7 +936,7 @@ void globalAvgPool(int N, int C, T* output, const T* input,
         sycl::nd_range<3>(
             sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
             sycl::range<3>(1, 1, kBlockSize)),
-        [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+        [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(SYCL_SUB_GROUP_SIZE)]] {
           globalAvgPool_kernel(output, input, prevLayerBias, N * C * kPlaneSize,
                                N * C, C, item_ct1);
         });
@@ -1070,7 +1070,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
       cgh.parallel_for(
           sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                             sycl::range<3>(1, 1, C)),
-          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(SYCL_SUB_GROUP_SIZE)]] {
             OutputTransform_SE_relu_InputTransform_kernel<float, activation,
                                                           use_bias, use_skip>(
                 N, C, se_K, output, input, (float*)skip, bias, w1, b1, w2, b2,
@@ -1218,7 +1218,7 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2, sycl::que
           sycl::nd_range<3>(
               sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, kBlockSize),
               sycl::range<3>(1, 1, kBlockSize)),
-          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(SYCL_SUB_GROUP_SIZE)]] {
             softmax_opt_64_kernel<T>(output, input, input2, size, item_ct1);
           });
     }
@@ -1235,7 +1235,7 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2, sycl::que
       cgh.parallel_for(
           sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                             sycl::range<3>(1, 1, C)),
-          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(SYCL_SUB_GROUP_SIZE)]] {
             softmax_kernel<T>(output, input, input2, item_ct1, sum_acc_ct1,
                               maxval_acc_ct1);
           });
@@ -1461,7 +1461,7 @@ void LayerNorm(int N, int C, T* output, const T* input, const T* bias,
 
       cgh.parallel_for(
           sycl::nd_range<3>(gridDim * blockDim, blockDim),
-          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(32)]] {
+          [=](sycl::nd_item<3> item_ct1) [[intel::reqd_sub_group_size(SYCL_SUB_GROUP_SIZE)]] {
             layer_norm_kernel<T>(N, C, output, input, bias, skip, gammas, betas,
                                  ep, alpha, act, item_ct1, sum_acc_ct1);
           });
