@@ -96,7 +96,7 @@ void BackendBenchmark::Run() {
 
     classic::NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
-    EvalPosition pos(tree.GetPositionHistory().GetPositions(), {});
+    EvalPosition pos{tree.GetPositionHistory().GetPositions(), {}};
 
     // Do any backend initialization outside the loop.
     auto warmup = backend->CreateComputation();
