@@ -73,8 +73,8 @@ class MemCache : public CachingBackend {
   void ClearCache() override { cache_.Clear(); }
 
   UpdateConfigurationResult UpdateConfiguration(
-      const OptionsDict& options) override {
-    return wrapped_backend_->UpdateConfiguration(options);
+      const OptionsDict& options, bool /*allow_updates*/) override {
+    return wrapped_backend_->UpdateConfiguration(options, false);
   }
 
   void SetCacheSize(size_t size) override { cache_.SetCapacity(size); }

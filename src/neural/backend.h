@@ -107,7 +107,8 @@ class Backend {
     UPDATE_OK = 0,     // Backend handled the update by itself (if needed).
     NEED_RESTART = 1,  // Recreate the backend.
   };
-  virtual UpdateConfigurationResult UpdateConfiguration(const OptionsDict&) = 0;
+  virtual UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict&, bool allow_updates = true) = 0;
 };
 
 class BackendFactory {
