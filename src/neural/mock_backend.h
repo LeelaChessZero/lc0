@@ -51,7 +51,7 @@ class MockBackend : public Backend {
   MOCK_METHOD(std::optional<EvalResult>, GetCachedEvaluation,
               (const EvalPosition&), (override));
   MOCK_METHOD(UpdateConfigurationResult, UpdateConfiguration,
-              (const OptionsDict&), (override));
+              (const OptionsDict&, bool allow_updates), (override));
 };
 
 class MockBackendFactory : public BackendFactory {
