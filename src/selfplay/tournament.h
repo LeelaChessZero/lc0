@@ -31,7 +31,7 @@
 
 #include "chess/pgn.h"
 #include "neural/backend.h"
-#include "neural/factory.h"
+#include "neural/register.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
 #include "utils/mutex.h"

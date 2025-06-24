@@ -27,7 +27,7 @@
 
 #include "neural/shared_params.h"
 
-#include "neural/factory.h"
+#include "neural/register.h"
 
 namespace lczero {
 const OptionId SharedBackendParams::kPolicySoftmaxTemp{

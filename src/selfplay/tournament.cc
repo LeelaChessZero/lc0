@@ -30,7 +30,6 @@
 #include <fstream>
 
 #include "chess/pgn.h"
-#include "neural/factory.h"
 #include "neural/memcache.h"
 #include "neural/shared_params.h"
 #include "search/classic/search.h"
