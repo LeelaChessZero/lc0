@@ -112,7 +112,25 @@ class ValueHeadSearch : public InstamoveSearch {
     PositionHistory history(game_state.GetPositions());
     const ChessBoard& board = history.Last().GetBoard();
     const std::vector<Move> legal_moves = board.GenerateLegalMoves();
-    std::vector<EvalResult> results(legal_moves.size());
+
+    struct Score {
+      float negative_q;  // Negative because NN evaluates from opponent's
+                         // perspective.
+      float d;
+      std::optional<int> mate;
+
+      bool operator<(const Score& other) const {
+        // Mate always beats non-mate
+        if (mate && !other.mate) return true;
+        if (!mate && other.mate) return false;
+        // Both mates: shorter is better
+        if (mate && other.mate) return *mate < *other.mate;
+        // Neither mate: lower negative_q is better
+        return negative_q < other.negative_q;
+      }
+    };
+
+    std::vector<Score> results(legal_moves.size());
 
     for (size_t i = 0; i < legal_moves.size(); i++) {
       Move move = legal_moves[i];
@@ -121,17 +139,15 @@ class ValueHeadSearch : public InstamoveSearch {
         case GameResult::UNDECIDED:
           computation->AddInput(
               EvalPosition{history.GetPositions(), {}},
-              EvalResultPtr{.q = &results[i].q, .d = &results[i].d});
+              EvalResultPtr{.q = &results[i].negative_q, .d = &results[i].d});
           break;
         case GameResult::DRAW:
-          results[i].q = 0;
-          results[i].d = 1;
+          results[i] = {.negative_q = 0, .d = 1, .mate = std::nullopt};
           break;
         default:
           // A legal move to a non-drawn terminal without tablebases must be a
           // win.
-          results[i].q = -1;
-          results[i].d = 0;
+          results[i] = {.negative_q = -1, .d = 0, .mate = 1};
       }
       history.Pop();
     }
@@ -139,25 +155,25 @@ class ValueHeadSearch : public InstamoveSearch {
     computation->ComputeBlocking();
 
     const size_t best_idx =
-        std::min_element(results.begin(), results.end(),
-                         [](const EvalResult& a, const EvalResult& b) {
-                           return a.q < b.q;
-                         }) -
-        results.begin();
+        std::min_element(results.begin(), results.end()) - results.begin();
 
-    std::vector<ThinkingInfo> infos = {{
-        .depth = 1,
-        .seldepth = 1,
-        .nodes = static_cast<int64_t>(legal_moves.size()),
-        .score = 90 * std::tan(1.5637541897 * results[best_idx].q),
-        .wdl =
-            ThinkingInfo::WDL{
-                static_cast<int>(std::round(
-                    500 * (1 + results[best_idx].q - results[best_idx].d))),
-                static_cast<int>(std::round(1000 * results[best_idx].d)),
-                static_cast<int>(std::round(
-                    500 * (1 - results[best_idx].q - results[best_idx].d)))},
-    }};
+    const Score& r = results[best_idx];
+    auto to_int = [](double x) { return static_cast<int>(std::round(x)); };
+    std::vector<ThinkingInfo> infos{
+        {.depth = 1,
+         .seldepth = 1,
+         .nodes = static_cast<int64_t>(legal_moves.size()),
+         .mate = r.mate,
+         .score = r.mate ? std::nullopt
+                         : std::make_optional<int>(
+                               -90 * std::tan(1.5637541897 * r.negative_q)),
+         .wdl = r.mate
+                    ? std::nullopt
+                    : std::make_optional<ThinkingInfo::WDL>(ThinkingInfo::WDL{
+                          .w = to_int(500 * (1 - r.negative_q - r.d)),
+                          .d = to_int(1000 * r.d),
+                          .l = to_int(500 * (1 + r.negative_q - r.d)),
+                      })}};
     uci_responder_->OutputThinkingInfo(&infos);
     Move best_move = legal_moves[best_idx];
     return best_move;
