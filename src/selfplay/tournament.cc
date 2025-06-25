@@ -220,7 +220,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       const auto& name = kPlayerNames[name_idx];
       const auto& color = kPlayerColors[color_idx];
       const auto& opts = options.GetSubdict(name).GetSubdict(color);
-      for (auto backend : backend_list) {
+      for (const auto& backend : backend_list) {
         if (backend->UpdateConfiguration(opts, false) == Backend::UPDATE_OK) {
           backends_[name_idx][color_idx] = backend;
           break;
