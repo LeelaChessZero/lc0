@@ -169,7 +169,7 @@ class ValueHeadSearch : public InstamoveSearch {
                                -90 * std::tan(1.5637541897 * r.negative_q)),
          .wdl = r.mate
                     ? std::nullopt
-                    : std::make_optional<ThinkingInfo::WDL>({
+                    : std::make_optional<ThinkingInfo::WDL>(ThinkingInfo::WDL{
                           .w = to_int(500 * (1 - r.negative_q - r.d)),
                           .d = to_int(1000 * r.d),
                           .l = to_int(500 * (1 + r.negative_q - r.d)),
