@@ -59,9 +59,10 @@ void CachedValueToEvalResult(const CachedValue& cv, const EvalResultPtr& ptr) {
 
 class MemCache : public CachingBackend {
  public:
-  MemCache(std::unique_ptr<Backend> wrapped, size_t cache_size)
+  MemCache(std::unique_ptr<Backend> wrapped, const OptionsDict& options)
       : wrapped_backend_(std::move(wrapped)),
-        cache_(cache_size),
+        cache_(options.Get<int>(SharedBackendParams::kNNCacheSizeId)),
+        hash_(wrapped_backend_->ConfigurationHash(options)),
         max_batch_size_(wrapped_backend_->GetAttributes().maximum_batch_size) {}
 
   BackendAttributes GetAttributes() const override {
@@ -74,7 +75,16 @@ class MemCache : public CachingBackend {
 
   UpdateConfigurationResult UpdateConfiguration(
       const OptionsDict& options) override {
-    return wrapped_backend_->UpdateConfiguration(options);
+    auto ret = wrapped_backend_->UpdateConfiguration(options);
+    if (ret == Backend::UPDATE_OK) {
+      // Check if we need to clear the cache.
+      auto hash = wrapped_backend_->ConfigurationHash(options);
+      if (hash != hash_) {
+        cache_.Clear();
+        hash_ = hash;
+      }
+    }
+    return ret;
   }
 
   void SetCacheSize(size_t size) override { cache_.SetCapacity(size); }
@@ -82,6 +92,7 @@ class MemCache : public CachingBackend {
  private:
   std::unique_ptr<Backend> wrapped_backend_;
   HashKeyedCache<CachedValue> cache_;
+  uint64_t hash_;
   const size_t max_batch_size_;
   friend class MemCacheComputation;
 };
@@ -175,8 +186,8 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
 }  // namespace
 
 std::unique_ptr<CachingBackend> CreateMemCache(std::unique_ptr<Backend> wrapped,
-                                               size_t cache_size) {
-  return std::make_unique<MemCache>(std::move(wrapped), cache_size);
+                                               const OptionsDict& options) {
+  return std::make_unique<MemCache>(std::move(wrapped), options);
 }
 
 }  // namespace lczero

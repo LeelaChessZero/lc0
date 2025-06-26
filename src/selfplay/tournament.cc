@@ -229,8 +229,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
       if (!backends_[name_idx][color_idx]) {
         backends_[name_idx][color_idx] =
             CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
-                           options.GetSubdict(name).Get<int>(
-                               SharedBackendParams::kNNCacheSizeId));
+                           options.GetSubdict(name));
         backend_list.emplace_back(std::make_pair(
             backends_[name_idx][color_idx],
             backends_[name_idx][color_idx]->ConfigurationHash(opts)));
