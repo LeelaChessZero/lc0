@@ -108,6 +108,9 @@ class Backend {
     NEED_RESTART = 1,  // Recreate the backend.
   };
   virtual UpdateConfigurationResult UpdateConfiguration(const OptionsDict&) = 0;
+
+  // Gets a hash of the backend configuration, to help detect changes.
+  uint64_t ConfigurationHash(const OptionsDict&);
 };
 
 class BackendFactory {
