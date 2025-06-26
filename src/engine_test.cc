@@ -117,13 +117,13 @@ TEST_F(EngineTest, BackendReloadByUpdateBackendConfig) {
   uci_responder.Wait();
   EXPECT_NE(backend_, nullptr);  // Backend created after the search.
   Backend* prev_backend = backend_;
-  EXPECT_CALL(*backend_, UpdateConfiguration(_, _))
+  EXPECT_CALL(*backend_, UpdateConfiguration(_))
       .WillOnce(Return(Backend::UPDATE_OK));
   engine.NewGame();
   engine.Go(GoParams{.nodes = 10});
   uci_responder.Wait();
   EXPECT_EQ(backend_, prev_backend);  // Backend not recreated.
-  EXPECT_CALL(*backend_, UpdateConfiguration(_, _))
+  EXPECT_CALL(*backend_, UpdateConfiguration(_))
       .WillOnce(Return(Backend::NEED_RESTART));
   engine.Go(GoParams{.nodes = 10});  // Go alone should not restart the backend.
   uci_responder.Wait();

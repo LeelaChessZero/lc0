@@ -53,7 +53,7 @@ class NetworkAsBackend : public Backend {
             options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
         weights_path_(
             options.Get<std::string>(SharedBackendParams::kWeightsId)) {
-    UpdateConfiguration(options, true);
+    UpdateConfiguration(options);
     const NetworkCapabilities& caps = network_->GetCapabilities();
     attrs_.has_mlh = caps.has_mlh();
     attrs_.has_wdl = caps.has_wdl();
@@ -66,8 +66,8 @@ class NetworkAsBackend : public Backend {
 
   BackendAttributes GetAttributes() const override { return attrs_; }
   std::unique_ptr<BackendComputation> CreateComputation() override;
-  UpdateConfigurationResult UpdateConfiguration(const OptionsDict& options,
-                                                bool allow_updates) override {
+  UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& options) override {
     if (backend_opts_ !=
         options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {
       return NEED_RESTART;
@@ -76,18 +76,10 @@ class NetworkAsBackend : public Backend {
         options.Get<std::string>(SharedBackendParams::kWeightsId)) {
       return NEED_RESTART;
     }
-    if (softmax_policy_temperature_ !=
-        1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp)) {
-      if (!allow_updates) return NEED_RESTART;
-      softmax_policy_temperature_ =
-          1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp);
-    }
-    if (fill_empty_history_ != EncodeHistoryFill(options.Get<std::string>(
-                                   SharedBackendParams::kHistoryFill))) {
-      if (!allow_updates) return NEED_RESTART;
-      fill_empty_history_ = EncodeHistoryFill(
-          options.Get<std::string>(SharedBackendParams::kHistoryFill));
-    }
+    softmax_policy_temperature_ =
+        1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp);
+    fill_empty_history_ = EncodeHistoryFill(
+        options.Get<std::string>(SharedBackendParams::kHistoryFill));
     return UPDATE_OK;
   }
 

@@ -103,13 +103,11 @@ class Backend {
 
   // Updates the configuration of the backend. This is between searches.
   // It's up to the backend to detect if the configuration has changed.
-  // Set allow_updates to false to get NEED_RESTART even for trivial changes.
   enum UpdateConfigurationResult {
     UPDATE_OK = 0,     // Backend handled the update by itself (if needed).
     NEED_RESTART = 1,  // Recreate the backend.
   };
-  virtual UpdateConfigurationResult UpdateConfiguration(
-      const OptionsDict&, bool allow_updates = true) = 0;
+  virtual UpdateConfigurationResult UpdateConfiguration(const OptionsDict&) = 0;
 };
 
 class BackendFactory {

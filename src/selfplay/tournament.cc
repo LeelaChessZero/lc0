@@ -210,33 +210,24 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
     first_game_black_ = Random::Get().GetBool();
   }
 
-  static constexpr const char* kPlayerNames[2] = {"player1", "player2"};
-  static constexpr const char* kPlayerColors[2] = {"white", "black"};
-
   // Initializing networks.
-  std::vector<std::shared_ptr<Backend>> backend_list;
-  for (int name_idx : {0, 1}) {
-    for (int color_idx : {0, 1}) {
-      const auto& name = kPlayerNames[name_idx];
-      const auto& color = kPlayerColors[color_idx];
+  for (const auto& name : {"player1", "player2"}) {
+    for (const auto& color : {"white", "black"}) {
       const auto& opts = options.GetSubdict(name).GetSubdict(color);
-      for (const auto& backend : backend_list) {
-        if (backend->UpdateConfiguration(opts, false) == Backend::UPDATE_OK) {
-          backends_[name_idx][color_idx] = backend;
-          break;
-        }
-      }
-      if (!backends_[name_idx][color_idx]) {
-        backends_[name_idx][color_idx] =
+      const auto config = NetworkFactory::BackendConfiguration(opts);
+      if (!backends_.contains(config)) {
+        backends_.emplace(
+            config,
             CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
                            options.GetSubdict(name).Get<int>(
-                               SharedBackendParams::kNNCacheSizeId));
-        backend_list.emplace_back(backends_[name_idx][color_idx]);
+                               SharedBackendParams::kNNCacheSizeId)));
       }
     }
   }
 
   // SearchLimits.
+  static constexpr const char* kPlayerNames[2] = {"player1", "player2"};
+  static constexpr const char* kPlayerColors[2] = {"white", "black"};
   for (int name_idx : {0, 1}) {
     for (int color_idx : {0, 1}) {
       auto& limits = search_limits_[name_idx][color_idx];
@@ -312,7 +303,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
         player_options_[pl_idx][color].Get<bool>(kMoveThinkingId);
     // Populate per-player options.
     PlayerOptions& opt = options[color_idx[pl_idx]];
-    opt.backend = backends_[pl_idx][color].get();
+    opt.backend = backends_[NetworkFactory::BackendConfiguration(
+                                player_options_[pl_idx][color])]
+                      .get();
     opt.uci_options = &player_options_[pl_idx][color];
     opt.search_limits = search_limits_[pl_idx][color];
 
@@ -450,8 +443,12 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   }
 
   PlayerOptions options[2];
-  options[0].backend = backends_[0][0].get();
-  options[1].backend = backends_[1][1].get();
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][0])]
+          .get();
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][1])]
+          .get();
 
   std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game1_iter;
   auto aborted = false;
@@ -467,8 +464,12 @@ void SelfPlayTournament::PlayMultiGames(int game_id, size_t game_count) {
   // PLAY GAMEs!
   if (!aborted) game1.Play();
 
-  options[0].backend = backends_[0][1].get();
-  options[1].backend = backends_[1][0].get();
+  options[0].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[0][1])]
+          .get();
+  options[1].backend =
+      backends_[NetworkFactory::BackendConfiguration(player_options_[1][0])]
+          .get();
 
   std::list<std::unique_ptr<MultiSelfPlayGames>>::iterator game2_iter;
   {
