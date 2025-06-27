@@ -87,6 +87,10 @@ class MemCache : public CachingBackend {
     return ret;
   }
 
+  uint64_t ConfigurationHash(const OptionsDict& options) const override {
+    return wrapped_backend_->ConfigurationHash(options);
+  }
+
   void SetCacheSize(size_t size) override { cache_.SetCapacity(size); }
 
  private:

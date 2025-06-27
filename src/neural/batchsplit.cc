@@ -48,6 +48,10 @@ class BatchSplittingBackend : public Backend {
     return wrapped_backend_->UpdateConfiguration(options);
   }
 
+  uint64_t ConfigurationHash(const OptionsDict& options) const override {
+    return wrapped_backend_->ConfigurationHash(options);
+  }
+
  private:
   Backend* wrapped_backend_;
 };

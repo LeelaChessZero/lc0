@@ -110,7 +110,7 @@ class Backend {
   virtual UpdateConfigurationResult UpdateConfiguration(const OptionsDict&) = 0;
 
   // Gets a hash of the backend configuration, to help detect changes.
-  uint64_t ConfigurationHash(const OptionsDict&);
+  virtual uint64_t ConfigurationHash(const OptionsDict&) const;
 };
 
 class BackendFactory {

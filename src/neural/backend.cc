@@ -51,7 +51,7 @@ std::vector<EvalResult> Backend::EvaluateBatch(
   return results;
 }
 
-uint64_t Backend::ConfigurationHash(const OptionsDict& options) {
+uint64_t Backend::ConfigurationHash(const OptionsDict& options) const {
   uint64_t hash = std::hash<std::string>{}(
       options.Get<std::string>(SharedBackendParams::kBackendId));
   hash = HashCat(hash, std::hash<std::string>{}(options.Get<std::string>(
