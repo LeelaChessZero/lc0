@@ -31,7 +31,7 @@
 
 #include "chess/pgn.h"
 #include "neural/backend.h"
-#include "neural/factory.h"
+#include "neural/register.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
 #include "utils/mutex.h"
@@ -94,10 +94,8 @@ class SelfPlayTournament {
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
-  // Map from the backend configuration to a network.
-  std::map<NetworkFactory::BackendConfiguration, std::unique_ptr<Backend>>
-      backends_;
   // [player1 or player2][white or black].
+  std::shared_ptr<Backend> backends_[2][2];
   const OptionsDict player_options_[2][2];
   SelfPlayLimits search_limits_[2][2];
 

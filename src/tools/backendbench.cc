@@ -28,7 +28,7 @@
 #include "tools/backendbench.h"
 
 #include "chess/board.h"
-#include "neural/factory.h"
+#include "neural/register.h"
 #include "neural/shared_params.h"
 #include "search/classic/node.h"
 #include "utils/optionsparser.h"
@@ -92,16 +92,15 @@ void BackendBenchmark::Run() {
   try {
     auto option_dict = options.GetOptionsDict();
 
-    auto network = NetworkFactory::LoadNetwork(option_dict);
+    auto backend = BackendManager::Get()->CreateFromParams(option_dict);
 
     classic::NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
+    EvalPosition pos{tree.GetPositionHistory().GetPositions(), {}};
 
     // Do any backend initialization outside the loop.
-    auto warmup = network->NewComputation();
-    warmup->AddInput(EncodePositionForNN(
-        network->GetCapabilities().input_format, tree.GetPositionHistory(), 8,
-        FillEmptyHistory::ALWAYS, nullptr));
+    auto warmup = backend->CreateComputation();
+    warmup->AddInput(pos, {});
     warmup->ComputeBlocking();
 
     const int batches = option_dict.Get<int>(kBatchesId);
@@ -122,11 +121,9 @@ void BackendBenchmark::Run() {
       // multiplexing backend.
       for (int j = 0; j < batches; j++) {
         // Put i copies of tree root node into computation and compute.
-        auto computation = network->NewComputation();
+        auto computation = backend->CreateComputation();
         for (int k = 0; k < i; k++) {
-          computation->AddInput(EncodePositionForNN(
-              network->GetCapabilities().input_format,
-              tree.GetPositionHistory(), 8, FillEmptyHistory::ALWAYS, nullptr));
+          computation->AddInput(pos, {});
         }
         computation->ComputeBlocking();
       }

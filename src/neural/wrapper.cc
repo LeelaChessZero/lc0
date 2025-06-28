@@ -68,6 +68,7 @@ class NetworkAsBackend : public Backend {
   std::unique_ptr<BackendComputation> CreateComputation() override;
   UpdateConfigurationResult UpdateConfiguration(
       const OptionsDict& options) override {
+    Backend::UpdateConfiguration(options);
     if (backend_opts_ !=
         options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {
       return NEED_RESTART;

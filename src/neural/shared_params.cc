@@ -27,7 +27,7 @@
 
 #include "neural/shared_params.h"
 
-#include "neural/factory.h"
+#include "neural/register.h"
 
 namespace lczero {
 const OptionId SharedBackendParams::kPolicySoftmaxTemp{
@@ -75,7 +75,7 @@ void SharedBackendParams::Populate(OptionsParser* options) {
 #else
   options->Add<StringOption>(SharedBackendParams::kWeightsId) = kAutoDiscover;
 #endif
-  const auto backends = NetworkFactory::Get()->GetBackendsList();
+  const auto backends = BackendManager::Get()->GetBackendNames();
   options->Add<ChoiceOption>(SharedBackendParams::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(SharedBackendParams::kBackendOptionsId);
