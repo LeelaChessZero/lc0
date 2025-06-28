@@ -77,7 +77,7 @@ class MemCache : public CachingBackend {
     auto ret = wrapped_backend_->UpdateConfiguration(options);
     if (ret == Backend::UPDATE_OK) {
       // Check if we need to clear the cache.
-      if (wrapped_backend_->IsSameConfiguration(options)) {
+      if (!wrapped_backend_->IsSameConfiguration(options)) {
         cache_.Clear();
       }
     }
