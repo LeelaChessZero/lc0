@@ -62,7 +62,6 @@ class MemCache : public CachingBackend {
   MemCache(std::unique_ptr<Backend> wrapped, const OptionsDict& options)
       : wrapped_backend_(std::move(wrapped)),
         cache_(options.Get<int>(SharedBackendParams::kNNCacheSizeId)),
-        hash_(wrapped_backend_->ConfigurationHash(options)),
         max_batch_size_(wrapped_backend_->GetAttributes().maximum_batch_size) {}
 
   BackendAttributes GetAttributes() const override {
@@ -78,17 +77,15 @@ class MemCache : public CachingBackend {
     auto ret = wrapped_backend_->UpdateConfiguration(options);
     if (ret == Backend::UPDATE_OK) {
       // Check if we need to clear the cache.
-      auto hash = wrapped_backend_->ConfigurationHash(options);
-      if (hash != hash_) {
+      if (wrapped_backend_->IsSameConfiguration(options)) {
         cache_.Clear();
-        hash_ = hash;
       }
     }
     return ret;
   }
 
-  uint64_t ConfigurationHash(const OptionsDict& options) const override {
-    return wrapped_backend_->ConfigurationHash(options);
+  bool IsSameConfiguration(const OptionsDict& options) const override {
+    return wrapped_backend_->IsSameConfiguration(options);
   }
 
   void SetCacheSize(size_t size) override { cache_.SetCapacity(size); }
@@ -96,7 +93,6 @@ class MemCache : public CachingBackend {
  private:
   std::unique_ptr<Backend> wrapped_backend_;
   HashKeyedCache<CachedValue> cache_;
-  uint64_t hash_;
   const size_t max_batch_size_;
   friend class MemCacheComputation;
 };

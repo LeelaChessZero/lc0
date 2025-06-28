@@ -214,14 +214,14 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
   static constexpr const char* kPlayerColors[2] = {"white", "black"};
 
   // Initializing networks.
-  std::vector<std::pair<std::shared_ptr<Backend>, uint64_t>> backend_list;
+  std::vector<std::shared_ptr<Backend>> backend_list;
   for (int name_idx : {0, 1}) {
     for (int color_idx : {0, 1}) {
       const auto& name = kPlayerNames[name_idx];
       const auto& color = kPlayerColors[color_idx];
       const auto& opts = options.GetSubdict(name).GetSubdict(color);
-      for (const auto& [backend, hash] : backend_list) {
-        if (backend->ConfigurationHash(opts) == hash) {
+      for (const auto& backend : backend_list) {
+        if (backend->IsSameConfiguration(opts)) {
           backends_[name_idx][color_idx] = backend;
           break;
         }
@@ -230,9 +230,7 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
         backends_[name_idx][color_idx] =
             CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
                            options.GetSubdict(name));
-        backend_list.emplace_back(std::make_pair(
-            backends_[name_idx][color_idx],
-            backends_[name_idx][color_idx]->ConfigurationHash(opts)));
+        backend_list.emplace_back(backends_[name_idx][color_idx]);
       }
     }
   }
