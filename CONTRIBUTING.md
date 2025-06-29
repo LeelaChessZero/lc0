@@ -10,18 +10,23 @@ guidelines for contributing to the codebase.
 * All contributors are encouraged to join our Discord server at
   <https://lc0.org/chat>.
 * Refer to [README.md](README.md) for building and running instructions.
+  * The protobufs that are shared with the training code are located in a
+    separate repository. Don't forget to run `git submodule update --init` to
+    fetch them.
 * Familiarize yourself with the developer documentation at
   <https://lczero.org/dev/>.
-* We use the [Meson](https://mesonbuild.com/) build system.
-  * In Linux, using `builddir/` is recommended for development
-    (`meson setup builddir/`), as VSCode recognizes it and all the development
-    and debugging tools work there (ask in Discord if you have issues).
-    * In the `builddir/`, run `ninja lc0` (which is faster than just `ninja`).
-      Run `ninja test` to run the tests.
-  * In Windows, `meson setup build/debug` generates a Visual Studio solution
-    that can be used for development.
-  * Check `meson_options.txt` for the available build options (to use them,
-    pass `-D<name>=<value>` to `meson setup`).
+
+We use the [Meson](https://mesonbuild.com/) build system.
+
+* In Linux, using `builddir/` is recommended for development
+  (`meson setup builddir/`), as VSCode recognizes it and all the development and
+  debugging tools work there (ask in Discord if you have issues).
+  * In the `builddir/`, run `ninja lc0` (which is faster than just `ninja`). Run
+    `ninja test` to run the tests.
+* In Windows, `meson setup build/debug` generates a Visual Studio solution that
+  can be used for development.
+* Check `meson_options.txt` for the available build options (to use them, pass
+  `-D<name>=<value>` to `meson setup`).
 
 ## Sending Pull Requests
 
@@ -77,8 +82,6 @@ and the merged branch if you have any.
   but rather generate the code from `.proto` files using the script in
   `scripts/`.
 * Since v0.32, we use Abseil (`absl::`).
-* The protobufs that are shared with the training code are located in a separate
-  repository. Don't forget to run `git submodule update --init` to fetch them.
 * Use `CERR` for logging (goes to stderr and log), or `LOGFILE` (goes to log
   file only).
 * Writing tests is encouraged. We use `gtest`/`gmock` for unit tests. Tests are
@@ -87,7 +90,9 @@ and the merged branch if you have any.
 
 ## Style Guidelines
 
-We follow the Google C++ Style Guide with these modifications:
+We follow the
+[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) with
+these modifications:
 
 * **Header guards**: Use `#pragma once` instead of traditional header guards.
 * **Exceptions**: are allowed, but only one: `lczero::Exception`.
