@@ -87,7 +87,9 @@ and the merged branch if you have any.
   repository. Don't forget to run `git submodule update --init` to fetch them.
 * Use `CERR` for logging (goes to stderr and log), or `LOGFILE` (goes to log
   file only).
-* Writing tests is encouraged.
+* Writing tests is encouraged. We use `gtest`/`gmock` for unit tests. Tests are
+  located in the same directory as the code they test, in a file with the same
+  name but ending with `_test.cc`.
 
 ## Style Guidelines
 
