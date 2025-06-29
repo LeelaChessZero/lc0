@@ -60,20 +60,14 @@ have another branch `extend-feature` that was based on `add-feature`. After
 `add-feature` is merged, you need to rebase `extend-feature` onto the new
 master. Here's what to do after your PR is merged:
 
-* Update your local master: `git fetch upstream`
-* Switch to your dependent branch: `git checkout extend-feature`
-* Rebase onto the updated master:
-  `git rebase --update-refs --onto upstream/master add-feature`
+```shell
+git fetch upstream  # Update your local master
+git checkout extend-feature  # Switch to your dependent branch
+git rebase --update-refs --onto upstream/master add-feature # Rebase onto the updated master
+```
 
 The `--update-refs` flag will also update any branches between your leaf branch
 and the merged branch if you have any.
-
-* `git fetch upstream` to update your local copy of the upstream/master.
-* `git checkout <your-dependent-branch>` to switch to your leaf branch that
-  depended on the merged branch.
-* `git rebase --update-refs --onto upstream/master <the-pr-branch-just-merged>`
-  (`--update-refs` will also update the branches between your leaf branch and
-  the merged branch if you have any).
 
 ## C++ Standard and Libraries
 
