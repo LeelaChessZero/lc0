@@ -49,18 +49,31 @@ Changes that may affect playing strength **must** be tested.
 
 Pull Requests are squashed when merged. This means all commits in the branch
 will be squashed into one commit applied onto master. This makes it tricky to
-reuse the branch and continue to work on it after the PR is merged. Here is what
-to do:
+reuse the branch and continue to work on it after the PR is merged.
 
-* Remember the commit hash of the last commit in the merged branch before
-  merging the PR. Suppose it's `abc1234`.
+**Note:** This section only applies if you have dependent branches that were
+built on top of your merged PR branch. If you only had one branch, you can
+simply delete it after merging.
+
+**Example scenario:** You had a branch `add-feature` that got merged, and you
+have another branch `extend-feature` that was based on `add-feature`. After
+`add-feature` is merged, you need to rebase `extend-feature` onto the new
+master. Here's what to do after your PR is merged:
+
+* Update your local master: `git fetch upstream`
+* Switch to your dependent branch: `git checkout extend-feature`
+* Rebase onto the updated master:
+  `git rebase --update-refs --onto upstream/master add-feature`
+
+The `--update-refs` flag will also update any branches between your leaf branch
+and the merged branch if you have any.
 
 * `git fetch upstream` to update your local copy of the upstream/master.
-* `git checkout <your-branch>` to switch to your leaf branch that depended on
-  the merged branch.
-* `git rebase --update-refs --onto upstream/master abc1234` (`--update-refs`
-  will also update the branches between your leaf branch and the merged branch
-  if you have any).
+* `git checkout <your-dependent-branch>` to switch to your leaf branch that
+  depended on the merged branch.
+* `git rebase --update-refs --onto upstream/master <the-pr-branch-just-merged>`
+  (`--update-refs` will also update the branches between your leaf branch and
+  the merged branch if you have any).
 
 ## C++ Standard and Libraries
 
