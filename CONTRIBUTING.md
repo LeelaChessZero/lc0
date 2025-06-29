@@ -31,19 +31,19 @@ guidelines for contributing to the codebase.
   starting work.
   * Small bug fixes are fine to submit without prior discussion.
   * Large changes that add code rather than modifying existing code (e.g. new
-    backends, new search algorithms) are in general fine too. Use your best
+    backends, new search algorithms) are generally fine as well. Use your best
     judgement on whether your change may be controversial.
   * Changes that modify existing code (e.g. search algorithm tweaks, API
     changes) should be discussed first.
 
-Changes that may affect playing strength must be tested.
+Changes that may affect playing strength **must** be tested.
 
 * Unfortunately, we don't have a robust strength testing framework yet (working
   on it), so ask in the #testing-discuss channel on Discord for help with
   testing.
 * Even for Elo-positive changes, we need to balance the strength and
   maintainability of the code. If your change is Elo-positive but makes the code
-  more complex, please discuss it first. Since recently, we have an option to
+  more complex, please discuss it first. Recently, we added an option to
   clone the search algorithm in extreme cases.
 * Elo-neutral simplifications are always welcome.
 
@@ -62,7 +62,7 @@ to do:
   will also update the branches between your leaf branch and the merged branch
   if you have any).
 
-## C++ Standard and libaries
+## C++ Standard and Libraries
 
 * We use most C++20 features. However, supported compilers are GCC 10 and clang
   10, so some features may not be available.
@@ -76,7 +76,7 @@ to do:
   file only).
 * Writing tests is encouraged.
 
-### Style Guidelines
+## Style Guidelines
 
 We follow the Google C++ Style Guide with these modifications:
 
