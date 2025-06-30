@@ -103,9 +103,12 @@ these modifications:
 * **RValue references**: Rvalue reference function parameters are allowed, not
   only for constructors and assignment operators. However, use them only if they
   benefit readability or have significant performance gain.
-* Every new file should contain a GPLv3 banner with:
-  * Additional exception under GNU GPL version 3 section 7 regarding NVIDIA
-    libraries (see examples in other files).
+* Every new file should contain a GPLv3 banner with an additional exception
+  under GNU GPL version 3 section 7 regarding NVIDIA libraries (see examples in
+  existing files).
+  * It's allowed to write new backends without the NVIDIA exception, but that
+    means that we won't be able to include NVIDIA libraries if we link with that
+    code.
 
 ## AI-Assisted Development
 
@@ -129,4 +132,4 @@ provided you follow these guidelines:
 Remember: You are responsible for the quality and correctness of all code you
 submit, regardless of how it was generated.
 
-Thank you for helping make LCZero better!
+Thank you for helping make Leela Chess Zero better!
