@@ -13,34 +13,33 @@ set EIGEN=false
 set TEST=false
 
 rem 2. Edit the paths for the build dependencies.
-if "%CUDA%"=="false" (
-    echo CUDA build option is OFF. Skipping CUDA/cuDNN path setup.
-    rem Clear CUDA-related paths when CUDA backend is off
-    set "CUDA_PATH="
+
+if not defined CUDA_PATH (
+    echo WARNING: CUDA_PATH environment variable not found.
+
+    rem Clear all paths that are derived from CUDA_PATH in this script.
     set "CUDNN_PATH="
     set "OPENCL_LIB_PATH="
     set "OPENCL_INCLUDE_PATH="
-) else (
-    echo CUDA build option is ON. Validating CUDA_PATH...
-    if defined CUDA_PATH (
-        echo CUDA_PATH found in system environment: "%CUDA_PATH%"
-        rem Proceed with derived paths as CUDA_PATH is defined
-    ) else (
+
+    rem If the user still intended to build with CUDA, exit.
+    if "%CUDA%"=="true" (
         echo.
         echo ERROR: CUDA build option is ON, but CUDA_PATH environment variable is NOT set.
-        echo Please ensure CUDA is installed and CUDA_PATH is correctly defined
-        echo as a system or user environment variable, then restart your console/reboot.
-        echo For example: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0
+        echo Please ensure CUDA is installed and its PATH variable is configured.
         echo.
         pause
         exit /b 1
     )
+) else (
+    echo CUDA_PATH found in system environment: "%CUDA_PATH%"
 
-    rem Set other derived paths if CUDA_PATH was successfully found
+    rem Set all derived paths based on the found CUDA_PATH.
     set CUDNN_PATH=%CUDA_PATH%
     set OPENCL_LIB_PATH=%CUDA_PATH%\lib\x64
     set OPENCL_INCLUDE_PATH=%CUDA_PATH%\include
 )
+
 set OPENBLAS_PATH=C:\OpenBLAS
 set MKL_PATH=C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl
 set DNNL_PATH=C:\dnnl_win_1.1.1_cpu_vcomp
