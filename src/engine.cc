@@ -164,16 +164,15 @@ void Engine::EnsureSearchStopped() {
 void Engine::UpdateBackendConfig() {
   const std::string backend_name =
       options_.Get<std::string>(SharedBackendParams::kBackendId);
-  const size_t cache_size =
-      options_.Get<int>(SharedBackendParams::kNNCacheSizeId);
   if (!backend_ || backend_name != backend_name_ ||
       backend_->UpdateConfiguration(options_) == Backend::NEED_RESTART) {
     backend_name_ = backend_name;
     backend_ = CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
-                              cache_size);
+                              options_);
     search_->SetBackend(backend_.get());
   } else {
-    backend_->SetCacheSize(cache_size);
+    backend_->SetCacheSize(
+        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
   }
 }
 

@@ -27,6 +27,11 @@
 
 #include "neural/backend.h"
 
+#include <string>
+
+#include "neural/shared_params.h"
+#include "utils/hashcat.h"
+
 namespace lczero {
 
 std::vector<EvalResult> Backend::EvaluateBatch(
@@ -44,6 +49,20 @@ std::vector<EvalResult> Backend::EvaluateBatch(
   }
   computation->ComputeBlocking();
   return results;
+}
+
+uint64_t Backend::ConfigurationHash(const OptionsDict& options) const {
+  uint64_t hash = std::hash<std::string>{}(
+      options.Get<std::string>(SharedBackendParams::kBackendId));
+  hash = HashCat(hash, std::hash<std::string>{}(options.Get<std::string>(
+                           SharedBackendParams::kBackendOptionsId)));
+  hash = HashCat(hash, std::hash<std::string>{}(options.Get<std::string>(
+                           SharedBackendParams::kWeightsId)));
+  hash = HashCat(hash, std::hash<float>{}(options.Get<float>(
+                           SharedBackendParams::kPolicySoftmaxTemp)));
+  hash = HashCat(hash, std::hash<std::string>{}(options.Get<std::string>(
+                           SharedBackendParams::kHistoryFill)));
+  return hash;
 }
 
 }  // namespace lczero

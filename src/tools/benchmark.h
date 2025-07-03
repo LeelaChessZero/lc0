@@ -28,7 +28,7 @@
 #pragma once
 
 #include "search/classic/search.h"
-#include "neural/factory.h"
+#include "neural/register.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
