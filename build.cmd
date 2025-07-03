@@ -16,24 +16,12 @@ rem 2. Edit the paths for the build dependencies.
 
 if not defined CUDA_PATH (
     echo WARNING: CUDA_PATH environment variable not found.
-
     rem Clear all paths that are derived from CUDA_PATH in this script.
     set "CUDNN_PATH="
     set "OPENCL_LIB_PATH="
     set "OPENCL_INCLUDE_PATH="
-
-    rem If the user still intended to build with CUDA, exit.
-    if "%CUDA%"=="true" (
-        echo.
-        echo ERROR: CUDA build option is ON, but CUDA_PATH environment variable is NOT set.
-        echo Please ensure CUDA is installed and its PATH variable is configured.
-        echo.
-        pause
-        exit /b 1
-    )
 ) else (
     echo CUDA_PATH found in system environment: "%CUDA_PATH%"
-
     rem Set all derived paths based on the found CUDA_PATH.
     set CUDNN_PATH=%CUDA_PATH%
     set OPENCL_LIB_PATH=%CUDA_PATH%\lib\x64
