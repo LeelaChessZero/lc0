@@ -12,22 +12,19 @@ set OPENBLAS=false
 set EIGEN=false
 set TEST=false
 
-rem 2. Edit the paths for the build dependencies.
-
-if not defined CUDA_PATH (
-    echo WARNING: CUDA_PATH environment variable not found.
-    rem Clear all paths that are derived from CUDA_PATH in this script.
-    set "CUDNN_PATH="
-    set "OPENCL_LIB_PATH="
-    set "OPENCL_INCLUDE_PATH="
-) else (
+if "%CUDA%"=="true" (
+  if not defined CUDA_PATH (
+    echo WARNING: CUDA_PATH environment variable not found. Using default value.
+  ) else (
     echo CUDA_PATH found in system environment: "%CUDA_PATH%"
-    rem Set all derived paths based on the found CUDA_PATH.
-    set CUDNN_PATH=%CUDA_PATH%
-    set OPENCL_LIB_PATH=%CUDA_PATH%\lib\x64
-    set OPENCL_INCLUDE_PATH=%CUDA_PATH%\include
+  )
 )
 
+rem 2. Edit the paths for the build dependencies.
+if not defined CUDA_PATH set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9
+set CUDNN_PATH=%CUDA_PATH%
+set OPENCL_LIB_PATH=%CUDA_PATH%\lib\x64
+set OPENCL_INCLUDE_PATH=%CUDA_PATH%\include
 set OPENBLAS_PATH=C:\OpenBLAS
 set MKL_PATH=C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl
 set DNNL_PATH=C:\dnnl_win_1.1.1_cpu_vcomp
