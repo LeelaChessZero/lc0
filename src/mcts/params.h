@@ -162,6 +162,21 @@ class SearchParams {
     return kMaxCollisionVisitsScalingPower;
   }
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
+  float GetPolicyheadTemperature() const {
+    return options_.Get<float>(kPolicyheadTemperatureId);
+  }
+  float GetPolicyheadTempDecay() const {
+    return options_.Get<float>(kPolicyheadTempDecayId);
+  }
+  int GetPolicyheadMultiPv() const {
+    return options_.Get<int>(kPolicyheadMultiPvId);
+  }
+  int GetPolicyheadThinkTime() const {
+    return options_.Get<int>(kPolicyheadThinkTimeId);
+  }
+  bool GetPolicyheadVerbose() const {
+    return options_.Get<bool>(kPolicyheadVerboseId);
+  }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -235,6 +250,11 @@ class SearchParams {
   static const OptionId kUCIOpponentId;
   static const OptionId kUCIRatingAdvId;
   static const OptionId kSearchSpinBackoffId;
+  static const OptionId kPolicyheadTemperatureId;
+  static const OptionId kPolicyheadTempDecayId;
+  static const OptionId kPolicyheadMultiPvId;
+  static const OptionId kPolicyheadThinkTimeId;
+  static const OptionId kPolicyheadVerboseId;
 
  private:
   const OptionsDict& options_;

@@ -36,6 +36,10 @@
 #include "utils/commandline.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
+#include <chrono>
+#include <thread>
+#include "utils/random.h"
+#include "syzygy/syzygy.h"
 
 namespace lczero {
 namespace {
@@ -89,6 +93,37 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
   }
   return result;
 }
+
+class PonderResponseTransformer : public TransformingUciResponder {
+ public:
+  PonderResponseTransformer(std::unique_ptr<UciResponder> parent,
+                            std::string ponder_move)
+      : TransformingUciResponder(std::move(parent)),
+        ponder_move_(std::move(ponder_move)) {}
+
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    ThinkingInfo ponder_info;
+    for (const auto& info : *infos) {
+      if (info.multipv <= 1) {
+        ponder_info = info;
+        if (ponder_info.mate) ponder_info.mate = -*ponder_info.mate;
+        if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+        if (ponder_info.depth > 1) ponder_info.depth--;
+        if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+        if (ponder_info.wdl) std::swap(ponder_info.wdl->w, ponder_info.wdl->l);
+        ponder_info.pv.clear();
+      }
+      if (!info.pv.empty() && info.pv[0].as_string() == ponder_move_) {
+        ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
+      }
+    }
+    infos->clear();
+    infos->push_back(ponder_info);
+  }
+
+ private:
+  std::string ponder_move_;
+};
 
 }  // namespace
 
@@ -239,104 +274,284 @@ void EngineController::CreateFreshTimeManager() {
 
 namespace {
 
-class PonderResponseTransformer : public TransformingUciResponder {
- public:
-  PonderResponseTransformer(std::unique_ptr<UciResponder> parent,
-                            std::string ponder_move)
-      : TransformingUciResponder(std::move(parent)),
-        ponder_move_(std::move(ponder_move)) {}
-
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    // Output all stats from main variation (not necessary the ponder move)
-    // but PV only from ponder move.
-    ThinkingInfo ponder_info;
-    for (const auto& info : *infos) {
-      if (info.multipv <= 1) {
-        ponder_info = info;
-        if (ponder_info.mate) ponder_info.mate = -*ponder_info.mate;
-        if (ponder_info.score) ponder_info.score = -*ponder_info.score;
-        if (ponder_info.depth > 1) ponder_info.depth--;
-        if (ponder_info.seldepth > 1) ponder_info.seldepth--;
-        if (ponder_info.wdl) std::swap(ponder_info.wdl->w, ponder_info.wdl->l);
-        ponder_info.pv.clear();
-      }
-      if (!info.pv.empty() && info.pv[0].as_string() == ponder_move_) {
-        ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
-      }
-    }
-    infos->clear();
-    infos->push_back(ponder_info);
-  }
-
- private:
-  std::string ponder_move_;
+struct MoveEvaluation {
+  Move move;
+  float value;
+  float policy;
+  float wdl[3];
+  bool is_tablebase;
+  WDLScore tb_result;
 };
 
-void ValueOnlyGo(NodeTree* tree, Network* network, const OptionsDict& options,
-                 std::unique_ptr<UciResponder> responder) {
-  auto input_format = network->GetCapabilities().input_format;
+class PolicyheadSearch {
+public:
+  PolicyheadSearch(NodeTree* tree, Network* network, const OptionsDict& options,
+                   std::unique_ptr<UciResponder> responder, 
+                   SyzygyTablebase* syzygy_tb)
+      : tree_(tree),
+        network_(network),
+        options_(options),
+        responder_(std::move(responder)),
+        syzygy_tb_(syzygy_tb),
+        params_(options),
+        input_format_(network->GetCapabilities().input_format),
+        move_number_(tree->GetPositionHistory().GetLength() / 2 + 1) {}
 
-  const auto& board = tree->GetPositionHistory().Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-  tree->GetCurrentHead()->CreateEdges(legal_moves);
-  PositionHistory history = tree->GetPositionHistory();
-  std::vector<InputPlanes> planes;
-  for (auto edge : tree->GetCurrentHead()->Edges()) {
-    history.Append(edge.GetMove());
-    if (history.ComputeGameResult() == GameResult::UNDECIDED) {
-      planes.emplace_back(EncodePositionForNN(
-          input_format, history, 8, FillEmptyHistory::FEN_ONLY, nullptr));
+  void Go() {
+    evaluations_.clear();
+    EvaluatePosition();
+    
+    if (params_.GetPolicyheadThinkTime() > 0) {
+      SimulateThinking();
     }
-    history.Pop();
+    
+    OutputFinalInfo();
+    
+    Move best_move = SelectBestMove();
+    BestMoveInfo info(best_move);
+    responder_->OutputBestMove(&info);
   }
 
-  std::vector<float> comp_q;
-  int batch_size = options.Get<int>(SearchParams::kMiniBatchSizeId);
-  if (batch_size == 0) batch_size = network->GetMiniBatchSize();
-
-  for (size_t i = 0; i < planes.size(); i += batch_size) {
-    auto comp = network->NewComputation();
-    for (int j = 0; j < batch_size; j++) {
-      comp->AddInput(std::move(planes[i + j]));
-      if (i + j + 1 == planes.size()) break;
+private:
+  void EvaluatePosition() {
+    const auto& board = tree_->GetPositionHistory().Last().GetBoard();
+    auto legal_moves = board.GenerateLegalMoves();
+    tree_->GetCurrentHead()->CreateEdges(legal_moves);
+    
+    PositionHistory history = tree_->GetPositionHistory();
+    std::vector<InputPlanes> planes;
+    std::vector<Move> moves_for_eval;
+    std::vector<bool> is_terminal;
+    
+    for (auto edge : tree_->GetCurrentHead()->Edges()) {
+      MoveEvaluation eval;
+      eval.move = edge.GetMove(tree_->GetPositionHistory().IsBlackToMove());
+      eval.is_tablebase = false;
+      eval.tb_result = WDL_DRAW;
+      
+      history.Append(edge.GetMove());
+      auto result = history.ComputeGameResult();
+      
+      if (result != GameResult::UNDECIDED) {
+        if (result == GameResult::DRAW) {
+          eval.value = 0.0f;
+          eval.wdl[0] = 0.0f; eval.wdl[1] = 1.0f; eval.wdl[2] = 0.0f;
+        } else {
+          eval.value = 1.0f;
+          eval.wdl[0] = 1.0f; eval.wdl[1] = 0.0f; eval.wdl[2] = 0.0f;
+        }
+        eval.policy = 0.0f;
+        is_terminal.push_back(true);
+      } else {
+        bool found_in_tb = false;
+        if (syzygy_tb_) {
+          const auto& pos = history.Last();
+          if (pos.GetBoard().castlings().no_legal_castle() &&
+              (pos.GetBoard().ours() | pos.GetBoard().theirs()).count() <= 
+               syzygy_tb_->max_cardinality()) {
+            ProbeState state;
+            WDLScore wdl = syzygy_tb_->probe_wdl(pos, &state);
+            if (state != FAIL) {
+              eval.is_tablebase = true;
+              eval.tb_result = wdl;
+              found_in_tb = true;
+              
+              if (wdl == WDL_WIN) {
+                eval.value = 1.0f;
+                eval.wdl[0] = 1.0f; eval.wdl[1] = 0.0f; eval.wdl[2] = 0.0f;
+              } else if (wdl == WDL_LOSS) {
+                eval.value = -1.0f;
+                eval.wdl[0] = 0.0f; eval.wdl[1] = 0.0f; eval.wdl[2] = 1.0f;
+              } else {
+                eval.value = 0.0f;
+                eval.wdl[0] = 0.0f; eval.wdl[1] = 1.0f; eval.wdl[2] = 0.0f;
+              }
+              eval.policy = 0.0f;
+            }
+          }
+        }
+        
+        if (!found_in_tb) {
+          planes.emplace_back(EncodePositionForNN(
+              input_format_, history, 8, FillEmptyHistory::FEN_ONLY, nullptr));
+          moves_for_eval.push_back(eval.move);
+        }
+        is_terminal.push_back(found_in_tb);
+      }
+      
+      evaluations_.push_back(eval);
+      history.Pop();
     }
-    comp->ComputeBlocking();
-
-    for (int j = 0; j < batch_size; j++) comp_q.push_back(comp->GetQVal(j));
+    
+    if (!planes.empty()) {
+      EvaluateWithNetwork(planes, moves_for_eval, is_terminal);
+    }
+    
+    SortEvaluations();
+  }
+  
+  void EvaluateWithNetwork(const std::vector<InputPlanes>& planes,
+                          const std::vector<Move>&,
+                          const std::vector<bool>& is_terminal) {
+    std::vector<float> comp_q;
+    std::vector<float> comp_d;
+    std::vector<float> comp_policy;
+    
+    int batch_size = options_.Get<int>(SearchParams::kMiniBatchSizeId);
+    if (batch_size == 0) batch_size = network_->GetMiniBatchSize();
+    
+    auto root_computation = network_->NewComputation();
+    root_computation->AddInput(EncodePositionForNN(
+        input_format_, tree_->GetPositionHistory(), 8, 
+        FillEmptyHistory::FEN_ONLY, nullptr));
+    root_computation->ComputeBlocking();
+    
+    for (size_t i = 0; i < planes.size(); i += batch_size) {
+      auto comp = network_->NewComputation();
+      size_t batch_end = std::min(i + batch_size, planes.size());
+      
+      for (size_t j = i; j < batch_end; j++) {
+        comp->AddInput(std::move(const_cast<InputPlanes&>(planes[j])));
+      }
+      comp->ComputeBlocking();
+      
+      for (size_t j = 0; j < batch_end - i; j++) {
+        float q_val = comp->GetQVal(j);
+        float d_val = comp->GetDVal(j);
+        comp_q.push_back(-q_val);
+        comp_d.push_back(d_val);
+      }
+    }
+    
+    int eval_idx = 0;
+    auto edges = tree_->GetCurrentHead()->Edges();
+    for (size_t i = 0; i < evaluations_.size(); i++) {
+      if (!is_terminal[i]) {
+        evaluations_[i].value = comp_q[eval_idx];
+        evaluations_[i].wdl[0] = (1.0f + evaluations_[i].value - comp_d[eval_idx]) / 2.0f;
+        evaluations_[i].wdl[1] = comp_d[eval_idx];
+        evaluations_[i].wdl[2] = (1.0f - evaluations_[i].value - comp_d[eval_idx]) / 2.0f;
+        
+        auto edge_iter = edges.begin();
+        for (size_t j = 0; j < i; j++) ++edge_iter;
+        evaluations_[i].policy = root_computation->GetPVal(
+            0, edge_iter.GetMove().as_nn_index(0));
+        eval_idx++;
+      }
+    }
+  }
+  
+  void SortEvaluations() {
+    std::sort(evaluations_.begin(), evaluations_.end(),
+              [](const MoveEvaluation& a, const MoveEvaluation& b) {
+                return a.value > b.value;
+              });
+  }
+  
+  Move SelectBestMove() {
+    if (evaluations_.empty()) return Move();
+    
+    float temperature = params_.GetPolicyheadTemperature();
+    if (temperature > 0.0f) {
+      float decay = params_.GetPolicyheadTempDecay();
+      temperature = std::max(0.0f, temperature - decay * (move_number_ - 1));
+    }
+    
+    if (temperature <= 0.0f) {
+      return evaluations_[0].move;
+    }
+    
+    std::vector<float> weights;
+    float max_val = evaluations_[0].value;
+    for (const auto& eval : evaluations_) {
+      weights.push_back(std::exp((eval.value - max_val) / temperature));
+    }
+    
+    float total_weight = 0.0f;
+    for (float w : weights) total_weight += w;
+    
+    float random_val = Random::Get().GetFloat(total_weight);
+    float cumulative = 0.0f;
+    
+    for (size_t i = 0; i < weights.size(); i++) {
+      cumulative += weights[i];
+      if (random_val <= cumulative) {
+        return evaluations_[i].move;
+      }
+    }
+    
+    return evaluations_[0].move;
+  }
+  
+  void SimulateThinking() {
+    int think_time = params_.GetPolicyheadThinkTime();
+    if (think_time <= 0) return;
+    
+    int updates = std::max(1, think_time / 1000);
+    int interval = think_time / updates;
+    
+    for (int i = 0; i < updates; i++) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(interval));
+      OutputThinkingInfo(i + 1, updates);
+    }
+  }
+  
+  void OutputThinkingInfo(int current_update = 0, int total_updates = 1) {
+    std::vector<ThinkingInfo> infos;
+    
+    int multipv = params_.GetPolicyheadMultiPv();
+    bool verbose = params_.GetPolicyheadVerbose();
+    
+    for (int pv = 0; pv < std::min(multipv, static_cast<int>(evaluations_.size())); pv++) {
+      ThinkingInfo info;
+      info.depth = 1;
+      info.seldepth = 1;
+      info.time = current_update * (params_.GetPolicyheadThinkTime() / total_updates);
+      info.nodes = evaluations_.size();
+      info.multipv = pv + 1;
+      
+      const auto& eval = evaluations_[pv];
+      info.score = static_cast<int>(eval.value * 100);
+      info.pv.push_back(eval.move);
+      
+      if (verbose || current_update == total_updates) {
+        info.wdl = std::make_optional<ThinkingInfo::WDL>();
+        info.wdl->w = static_cast<int>(eval.wdl[0] * 1000);
+        info.wdl->d = static_cast<int>(eval.wdl[1] * 1000);
+        info.wdl->l = static_cast<int>(eval.wdl[2] * 1000);
+        
+        if (eval.is_tablebase) {
+          info.comment = "TB";
+        }
+      }
+      
+      infos.push_back(info);
+    }
+    
+    responder_->OutputThinkingInfo(&infos);
+  }
+  
+  void OutputFinalInfo() {
+    OutputThinkingInfo(1, 1);
   }
 
-  Move best;
-  int comp_idx = 0;
-  float max_q = std::numeric_limits<float>::lowest();
-  for (auto edge : tree->GetCurrentHead()->Edges()) {
-    history.Append(edge.GetMove());
-    auto result = history.ComputeGameResult();
-    float q = -1;
-    if (result == GameResult::UNDECIDED) {
-      // NN eval is for side to move perspective - so if its good, its bad for
-      // us.
-      q = -comp_q[comp_idx];
-      comp_idx++;
-    } else if (result == GameResult::DRAW) {
-      q = 0;
-    } else {
-      // A legal move to a non-drawn terminal without tablebases must be a
-      // win.
-      q = 1;
-    }
-    if (q >= max_q) {
-      max_q = q;
-      best = edge.GetMove(tree->GetPositionHistory().IsBlackToMove());
-    }
-    history.Pop();
-  }
-  std::vector<ThinkingInfo> infos;
-  ThinkingInfo thinking;
-  thinking.depth = 1;
-  infos.push_back(thinking);
-  responder->OutputThinkingInfo(&infos);
-  BestMoveInfo info(best);
-  responder->OutputBestMove(&info);
+  NodeTree* tree_;
+  Network* network_;
+  const OptionsDict& options_;
+  std::unique_ptr<UciResponder> responder_;
+  SyzygyTablebase* syzygy_tb_;
+  SearchParams params_;
+  pblczero::NetworkFormat::InputFormat input_format_;
+  int move_number_;
+  std::vector<MoveEvaluation> evaluations_;
+};
+
+void PolicyheadGo(NodeTree* tree, Network* network, const OptionsDict& options,
+                  std::unique_ptr<UciResponder> responder, 
+                  SyzygyTablebase* syzygy_tb) {
+  PolicyheadSearch search(tree, network, options, std::move(responder), 
+                         syzygy_tb);
+  search.Go();
 }
 
 }  // namespace
@@ -381,7 +596,7 @@ void EngineController::Go(const GoParams& params) {
     responder = std::make_unique<MovesLeftResponseFilter>(std::move(responder));
   }
   if (options_.Get<bool>(kValueOnly)) {
-    ValueOnlyGo(tree_.get(), network_.get(), options_, std::move(responder));
+    PolicyheadGo(tree_.get(), network_.get(), options_, std::move(responder), syzygy_tb_.get());
     return;
   }
 

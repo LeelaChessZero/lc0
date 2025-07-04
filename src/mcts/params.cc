@@ -487,7 +487,25 @@ const OptionId SearchParams::kUCIRatingAdvId{
     "the current opponent, used as the default contempt value."};
 const OptionId SearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
-    "Enable backoff for the spin lock that acquires available searcher."};
+    "If enabled, search workers will use exponential backoff for their spin "
+    "lock waits. This reduces CPU usage but may hurt performance."};
+const OptionId SearchParams::kPolicyheadTemperatureId{
+    "policyhead-temperature", "PolicyheadTemperature",
+    "Temperature for move selection in policyhead mode. Higher values "
+    "increase randomness."};
+const OptionId SearchParams::kPolicyheadTempDecayId{
+    "policyhead-temp-decay", "PolicyheadTempDecay",
+    "Temperature decay per move in policyhead mode. Temperature reduces "
+    "linearly by this amount each move."};
+const OptionId SearchParams::kPolicyheadMultiPvId{
+    "policyhead-multipv", "PolicyheadMultiPv",
+    "Number of best moves to show in policyhead mode."};
+const OptionId SearchParams::kPolicyheadThinkTimeId{
+    "policyhead-think-time", "PolicyheadThinkTime",
+    "Artificial thinking time in milliseconds for policyhead mode."};
+const OptionId SearchParams::kPolicyheadVerboseId{
+    "policyhead-verbose", "PolicyheadVerbose",
+    "Show detailed move statistics in policyhead mode."};
 
 void SearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -584,6 +602,11 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
+  options->Add<FloatOption>(kPolicyheadTemperatureId, 0.0f, 10.0f) = 0.0f;
+  options->Add<FloatOption>(kPolicyheadTempDecayId, 0.0f, 1.0f) = 0.0f;
+  options->Add<IntOption>(kPolicyheadMultiPvId, 1, 500) = 1;
+  options->Add<IntOption>(kPolicyheadThinkTimeId, 0, 60000) = 0;
+  options->Add<BoolOption>(kPolicyheadVerboseId) = false;
 
   options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
