@@ -38,7 +38,9 @@ if cc.get_id() == 'clang'
 endif
 if cc.get_id() != 'msvc'
   if get_option('buildtype') == 'release'
-    add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
+     if get_option('native_arch')
+       add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
+     endif
   endif
 endif
 if cc.get_id() == 'msvc'
