@@ -68,6 +68,11 @@ option('native_cuda',
        value: true,
        description: 'build cuda code for native arch only (if supported)')
 
+option('native_arch',
+       type: 'boolean',
+       value: true, 
+       description: 'build code for native arch only')
+
 option('cudnn',
        type: 'boolean',
        value: false,
