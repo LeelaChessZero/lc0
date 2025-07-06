@@ -769,10 +769,12 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+default_search_h = configuration_data()
 if get_option('default_search') != ''
-  add_project_arguments('-DDEFAULT_SEARCH=' +
-                        get_option('default_search'), language : 'cpp')
+  default_search_h.set_quoted('DEFAULT_SEARCH', get_option('default_search'))
 endif
+configure_file(output : 'default_search.h',
+               configuration : default_search_h)
 
 if get_option('lc0')
   files += common_files
