@@ -26,6 +26,7 @@
 */
 
 #include "chess/board.h"
+#include "default_search.h"
 #include "engine.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
@@ -52,14 +53,9 @@ void ChooseAndRunEngine() {
 
   // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
 #ifdef DEFAULT_SEARCH
-#define STRINGIFY_INTERNAL(x) #x
-#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
   SearchFactory* factory =
-      SearchManager::Get()->GetFactoryByName(STRINGIFY(DEFAULT_SEARCH));
-  if (!factory)
-    throw Exception("Unknown search algorithm: " STRINGIFY(DEFAULT_SEARCH));
-#undef STRINGIFY
-#undef STRINGIFY_INTERNAL
+      SearchManager::Get()->GetFactoryByName(DEFAULT_SEARCH);
+  if (!factory) throw Exception("Unknown search algorithm: " DEFAULT_SEARCH);
   RunEngine(factory);
   return;
 #endif
