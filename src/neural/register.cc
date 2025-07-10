@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "default_backend.h"
 #include "neural/shared_params.h"
 
 namespace lczero {
@@ -53,11 +54,7 @@ std::vector<std::string> BackendManager::GetBackendNames() const {
                  std::back_inserter(result),
                  [](const std::pair<int, std::string>& p) { return p.second; });
 #ifdef DEFAULT_BACKEND
-#define STRINGIFY_INTERNAL(x) #x
-#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
-  std::string name = STRINGIFY(DEFAULT_BACKEND);
-#undef STRINGIFY
-#undef STRINGIFY_INTERNAL
+  std::string name = DEFAULT_BACKEND;
   auto pos = std::find(result.begin(), result.end(), name);
   if (pos == result.end()) throw Exception("Unknown backend: " + name);
   std::rotate(result.begin(), pos, pos + 1);

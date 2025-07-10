@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "default_backend.h"
 #include "neural/loader.h"
 #include "neural/shared_params.h"
 #include "utils/commandline.h"
@@ -55,11 +56,7 @@ void NetworkFactory::RegisterNetwork(const std::string& name,
 std::vector<std::string> NetworkFactory::GetBackendsList() const {
   std::vector<std::string> result;
 #ifdef DEFAULT_BACKEND
-#define STRINGIFY_INTERNAL(x) #x
-#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
-  result.emplace_back(STRINGIFY(DEFAULT_BACKEND));
-#undef STRINGIFY
-#undef STRINGIFY_INTERNAL
+  result.emplace_back(DEFAULT_BACKEND);
 #endif
   for (const auto& x : factories_) {
 #ifdef DEFAULT_BACKEND

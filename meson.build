@@ -776,10 +776,12 @@ endif
 configure_file(output : 'default_search.h',
                configuration : default_search_h)
 
+default_backend_h = configuration_data()
 if get_option('default_backend') != ''
-  add_project_arguments('-DDEFAULT_BACKEND=' +
-                        get_option('default_backend'), language : 'cpp')
+  default_backend_h.set_quoted('DEFAULT_BACKEND', get_option('default_backend'))
 endif
+configure_file(output : 'default_backend.h',
+               configuration : default_backend_h)
 
 if get_option('lc0')
   files += common_files
