@@ -38,7 +38,9 @@ if cc.get_id() == 'clang'
 endif
 if cc.get_id() != 'msvc'
   if get_option('buildtype') == 'release'
-    add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
+     if get_option('native_arch')
+       add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
+     endif
   endif
 endif
 if cc.get_id() == 'msvc'
@@ -767,10 +769,12 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+default_search_h = configuration_data()
 if get_option('default_search') != ''
-  add_project_arguments('-DDEFAULT_SEARCH=' +
-                        get_option('default_search'), language : 'cpp')
+  default_search_h.set_quoted('DEFAULT_SEARCH', get_option('default_search'))
 endif
+configure_file(output : 'default_search.h',
+               configuration : default_search_h)
 
 if get_option('default_backend') != ''
   add_project_arguments('-DDEFAULT_BACKEND=' +
