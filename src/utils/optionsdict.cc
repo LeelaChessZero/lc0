@@ -340,4 +340,25 @@ void OptionsDict::CheckAllOptionsRead(
   }
 }
 
+std::vector<std::string> OptionsDict::AsStringVec() const {
+  std::vector<std::string> r = TypeDict<bool>::AsStringVec();
+  std::vector<std::string> s = TypeDict<int>::AsStringVec();
+  r.insert(std::end(r), std::begin(s), std::end(s));
+  s = TypeDict<float>::AsStringVec();
+  r.insert(std::end(r), std::begin(s), std::end(s));
+  s = TypeDict<std::string>::AsStringVec();
+  r.insert(std::end(r), std::begin(s), std::end(s));
+  for (auto const& dict : subdicts_) {
+    s = dict.second.AsStringVec();
+    std::string t = dict.first + '(';
+    for (auto const& e : s) {
+      t += e + ',';
+    }
+    if (t.back() == ',') t.pop_back();
+    t += ')';
+    r.emplace_back(t);
+  }
+  return r;
+}
+
 }  // namespace lczero

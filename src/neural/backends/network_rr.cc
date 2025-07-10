@@ -25,83 +25,80 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <condition_variable>
-#include <queue>
-#include <thread>
-
-#include "neural/factory.h"
+#include "neural/register.h"
+#include "neural/shared_params.h"
 #include "utils/exception.h"
 
 namespace lczero {
 namespace {
 
-class RoundRobinNetwork : public Network {
+class RoundRobinBackend : public Backend {
  public:
-  RoundRobinNetwork(const std::optional<WeightsFile>& weights,
-                    const OptionsDict& options) {
+  RoundRobinBackend(const OptionsDict& in_opts) {
+    const std::string backend_options =
+        in_opts.Get<std::string>(SharedBackendParams::kBackendOptionsId);
+    OptionsDict options = in_opts;
+    options.AddSubdictFromString(backend_options);
     const auto parents = options.ListSubdicts();
     if (parents.empty()) {
       // If options are empty, or multiplexer configured in root object,
       // initialize on root object and default backend.
-      auto backends = NetworkFactory::Get()->GetBackendsList();
-      AddBackend(backends[0], weights, options);
+      auto backends = BackendManager::Get()->GetBackendNames();
+      AddBackend(backends[0], options);
     }
 
     for (const auto& name : parents) {
-      AddBackend(name, weights, options.GetSubdict(name));
+      std::string s;
+      // Make the subdict into a string for backend-opts, excluding the options
+      // used here.
+      for (const auto& e : options.GetSubdict(name).AsStringVec()) {
+        if (e.find("backend") == 0) continue;
+        if (!s.empty()) s += ',';
+        s += e;
+      }
+      options.GetMutableSubdict(name)->Set<std::string>(
+          SharedBackendParams::kBackendOptionsId, s);
+      AddBackend(name, options.GetSubdict(name));
     }
   }
 
-  void AddBackend(const std::string& name,
-                  const std::optional<WeightsFile>& weights,
-                  const OptionsDict& opts) {
+  void AddBackend(const std::string& name, const OptionsDict& opts) {
     const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+    backends_.emplace_back(
+        BackendManager::Get()->CreateFromName(backend, opts));
 
-    networks_.emplace_back(
-        NetworkFactory::Get()->Create(backend, weights, opts));
-
-    min_batch_size_ =
-        std::min(min_batch_size_, networks_.back()->GetMiniBatchSize());
-    is_cpu_ &= networks_.back()->IsCpu();
-
-    if (networks_.size() == 1) {
-      capabilities_ = networks_.back()->GetCapabilities();
+    auto attributes = backends_.back()->GetAttributes();
+    if (backends_.size() == 1) {
+      attributes_ = attributes;
     } else {
-      capabilities_.Merge(networks_.back()->GetCapabilities());
+      attributes_.Merge(attributes);
     }
   }
 
-  std::unique_ptr<NetworkComputation> NewComputation() override {
+  std::unique_ptr<BackendComputation> CreateComputation() override {
     const long long val = ++counter_;
-    return networks_[val % networks_.size()]->NewComputation();
+    return backends_[val % backends_.size()]->CreateComputation();
   }
 
-  const NetworkCapabilities& GetCapabilities() const override {
-    return capabilities_;
-  }
+  BackendAttributes GetAttributes() const override { return attributes_; }
 
-  int GetMiniBatchSize() const override { return min_batch_size_; }
-
-  int GetThreads() const override { return networks_.size(); }
-
-  bool IsCpu() const override { return is_cpu_; }
-
-  ~RoundRobinNetwork() {}
+  ~RoundRobinBackend() {}
 
  private:
-  std::vector<std::unique_ptr<Network>> networks_;
+  std::vector<std::unique_ptr<Backend>> backends_;
   std::atomic<long long> counter_;
-  NetworkCapabilities capabilities_;
-  int min_batch_size_ = std::numeric_limits<int>::max();
-  bool is_cpu_ = true;
+  BackendAttributes attributes_;
 };
 
-std::unique_ptr<Network> MakeRoundRobinNetwork(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  return std::make_unique<RoundRobinNetwork>(weights, options);
-}
+class RoundRobinFactory : public BackendFactory {
+  int GetPriority() const override { return -999; }
+  std::string_view GetName() const override { return "roundrobin"; }
+  std::unique_ptr<Backend> Create(const OptionsDict& options) override {
+    return std::make_unique<RoundRobinBackend>(options);
+  }
+};
 
-REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -999)
+REGISTER_BACKEND(RoundRobinFactory)
 
 }  // namespace
 }  // namespace lczero

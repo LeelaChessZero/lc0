@@ -69,7 +69,21 @@ class TypeDict {
       }
     }
   }
-
+  std::vector<std::string> AsStringVec() const {
+    std::vector<std::string> r;
+    for (auto const& option : dict_) {
+      std::string t = option.first + '=';
+      if constexpr (std::is_same<std::string, T>::value) {
+        t += option.second.Get();
+      } else if constexpr (std::is_same<bool, T>::value) {
+        t += option.second.Get() ? "true" : "false";
+      } else {
+        t += std::to_string(option.second.Get());
+      }
+      r.emplace_back(t);
+    }
+    return r;
+  }
   const std::unordered_map<std::string, V>& dict() const { return dict_; }
   std::unordered_map<std::string, V>* mutable_dict() { return &dict_; }
 
@@ -239,6 +253,8 @@ class OptionsDict : TypeDict<bool>,
   void CheckAllOptionsRead(const std::string& path_from_parent) const;
 
   bool HasSubdict(const std::string& name) const;
+
+  std::vector<std::string> AsStringVec() const;
 
  private:
   static std::string GetOptionId(const OptionId& option_id) {

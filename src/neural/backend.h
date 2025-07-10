@@ -47,6 +47,16 @@ struct BackendAttributes {
   int suggested_num_search_threads;
   int recommended_batch_size;
   int maximum_batch_size;
+
+  void Merge(BackendAttributes& other) {
+    has_mlh &= other.has_mlh;
+    has_wdl &= other.has_wdl;
+    runs_on_cpu |= other.runs_on_cpu;
+    suggested_num_search_threads += other.suggested_num_search_threads;
+    recommended_batch_size =
+        std::min(recommended_batch_size, other.recommended_batch_size);
+    maximum_batch_size = std::min(maximum_batch_size, other.maximum_batch_size);
+  }
 };
 
 struct EvalResultPtr {
