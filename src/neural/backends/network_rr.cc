@@ -48,16 +48,8 @@ class RoundRobinBackend : public Backend {
     }
 
     for (const auto& name : parents) {
-      std::string s;
-      // Make the subdict into a string for backend-opts, excluding the options
-      // used here.
-      for (const auto& e : options.GetSubdict(name).AsStringVec()) {
-        if (e.find("backend") == 0) continue;
-        if (!s.empty()) s += ',';
-        s += e;
-      }
       options.GetMutableSubdict(name)->Set<std::string>(
-          SharedBackendParams::kBackendOptionsId, s);
+          SharedBackendParams::kBackendOptionsId, options.GetSubdict(name).ToString());
       AddBackend(name, options.GetSubdict(name));
     }
   }

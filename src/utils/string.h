@@ -61,4 +61,7 @@ bool StringsEqualIgnoreCase(const std::string& a, const std::string& b);
 // Flow text into lines of width up to @width.
 std::vector<std::string> FlowText(const std::string& src, size_t width);
 
+//Returnes the input string in doublew quotes, escaping any already there.
+std::string GetStringLiteral(std::string in);
+
 }  // namespace lczero

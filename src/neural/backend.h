@@ -48,7 +48,7 @@ struct BackendAttributes {
   int recommended_batch_size;
   int maximum_batch_size;
 
-  void Merge(BackendAttributes& other) {
+  void Merge(const BackendAttributes& other) {
     has_mlh &= other.has_mlh;
     has_wdl &= other.has_wdl;
     runs_on_cpu |= other.runs_on_cpu;

@@ -118,4 +118,14 @@ std::vector<std::string> FlowText(const std::string& src, size_t width) {
   return result;
 }
 
+std::string GetStringLiteral(std::string in) {
+    size_t pos = 0;
+    while ((pos = in.find("\"", pos)) != std::string::npos) {
+         in.replace(pos, 1, "\\\"");
+         pos += 2;
+    }
+    return "\"" + in + "\"";
+}
+
+
 }  // namespace lczero

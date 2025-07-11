@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "utils/exception.h"
+#include "utils/string.h"
 
 namespace lczero {
 
@@ -69,18 +70,18 @@ class TypeDict {
       }
     }
   }
-  std::vector<std::string> AsStringVec() const {
-    std::vector<std::string> r;
+  std::string ToString() const {
+    std::string r;
     for (auto const& option : dict_) {
-      std::string t = option.first + '=';
+      r += GetStringLiteral(option.first) + '=';
       if constexpr (std::is_same<std::string, T>::value) {
-        t += option.second.Get();
+        r += GetStringLiteral(option.second.Get());
       } else if constexpr (std::is_same<bool, T>::value) {
-        t += option.second.Get() ? "true" : "false";
+        r += option.second.Get() ? "true" : "false";
       } else {
-        t += std::to_string(option.second.Get());
+        r += std::to_string(option.second.Get());
       }
-      r.emplace_back(t);
+      r += ',';
     }
     return r;
   }
@@ -254,7 +255,7 @@ class OptionsDict : TypeDict<bool>,
 
   bool HasSubdict(const std::string& name) const;
 
-  std::vector<std::string> AsStringVec() const;
+  std::string ToString() const;
 
  private:
   static std::string GetOptionId(const OptionId& option_id) {
