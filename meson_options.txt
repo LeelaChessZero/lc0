@@ -224,6 +224,11 @@ option('default_search',
        value: '',
        description: 'Default search algorithm to use, e.g. -Ddefault_search=classic')
 
+option('default_backend',
+       type: 'string',
+       value: '',
+       description: 'Default backend to use, e.g. -Ddefault_backend=onnx-trt')
+
 option('dag_classic',
        type: 'boolean',
        value: true,
