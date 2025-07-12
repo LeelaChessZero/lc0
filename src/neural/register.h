@@ -53,8 +53,9 @@ class BackendManager {
   // Creates a backend from the name. Backend name from the options is ignored.
   // Note that unlike the WeightsFactory, the "options" parameter contains
   // top-level parameters rather than `backend-opts`.
-  std::unique_ptr<Backend> CreateFromName(std::string_view name,
-                                          const OptionsDict& options) const;
+  std::unique_ptr<Backend> CreateFromName(
+      std::string_view name, const OptionsDict& options,
+      const OptionsDict& backend_options) const;
 
   // Returns a backend factory by name. Returns nullptr if not found.
   BackendFactory* GetFactoryByName(std::string_view name) const;

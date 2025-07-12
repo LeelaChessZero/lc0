@@ -177,25 +177,7 @@ NetworkAsBackendFactory::NetworkAsBackendFactory(const std::string& name,
     : name_(name), factory_(factory), priority_(priority) {}
 
 std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
-    const OptionsDict& options) {
-  const std::string backend_options =
-      options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
-  OptionsDict network_options;
-  network_options.AddSubdictFromString(backend_options);
-
-  // Hack: we access all the technical backend options so that
-  // CheckAllOptionsRead() won't complain.
-  network_options.GetOrDefault<std::string>("backend", "");
-  network_options.GetOrDefault<int>("threads", 0);
-  network_options.GetOrDefault<int>("max_batch", 0);
-  network_options.GetOrDefault<std::string>("mode", "");
-  network_options.GetOrDefault<float>("atol", 0);
-  network_options.GetOrDefault<float>("rtol", 0);
-  network_options.GetOrDefault<float>("freq", 0);
-  network_options.GetOrDefault<int>("minimum-split-size", 0);
-  network_options.GetOrDefault<std::string>("replay_file", "");
-  network_options.GetOrDefault<std::string>("record_file", "");
-
+    const OptionsDict& options, const OptionsDict& network_options) {
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);
   std::optional<WeightsFile> weights = LoadWeights(net_path);

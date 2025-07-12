@@ -340,17 +340,4 @@ void OptionsDict::CheckAllOptionsRead(
   }
 }
 
-std::string OptionsDict::ToString() const {
-  std::string s;
-  s += TypeDict<bool>::ToString();
-  s += TypeDict<int>::ToString();
-  s += TypeDict<float>::ToString();
-  s += TypeDict<std::string>::ToString();
-  for (auto const& dict : subdicts_) {
-    s += dict.first + '(' + dict.second.ToString() + "),";
-  }
-  if (!s.empty() && s.back() == ',') s.pop_back();
-  return s;
-}
-
 }  // namespace lczero

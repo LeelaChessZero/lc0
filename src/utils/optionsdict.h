@@ -35,7 +35,6 @@
 #include <vector>
 
 #include "utils/exception.h"
-#include "utils/string.h"
 
 namespace lczero {
 
@@ -70,21 +69,7 @@ class TypeDict {
       }
     }
   }
-  std::string ToString() const {
-    std::string r;
-    for (auto const& option : dict_) {
-      r += GetStringLiteral(option.first) + '=';
-      if constexpr (std::is_same<std::string, T>::value) {
-        r += GetStringLiteral(option.second.Get());
-      } else if constexpr (std::is_same<bool, T>::value) {
-        r += option.second.Get() ? "true" : "false";
-      } else {
-        r += std::to_string(option.second.Get());
-      }
-      r += ',';
-    }
-    return r;
-  }
+
   const std::unordered_map<std::string, V>& dict() const { return dict_; }
   std::unordered_map<std::string, V>* mutable_dict() { return &dict_; }
 
@@ -254,8 +239,6 @@ class OptionsDict : TypeDict<bool>,
   void CheckAllOptionsRead(const std::string& path_from_parent) const;
 
   bool HasSubdict(const std::string& name) const;
-
-  std::string ToString() const;
 
  private:
   static std::string GetOptionId(const OptionId& option_id) {

@@ -68,14 +68,20 @@ std::unique_ptr<Backend> BackendManager::CreateFromParams(
     const OptionsDict& options) const {
   const std::string backend =
       options.Get<std::string>(SharedBackendParams::kBackendId);
-  return CreateFromName(backend, options);
+  OptionsDict backend_options;
+  backend_options.AddSubdictFromString(
+      options.Get<std::string>(SharedBackendParams::kBackendOptionsId));
+  auto r = CreateFromName(backend, options, backend_options);
+  backend_options.CheckAllOptionsRead(backend);
+  return r;
 }
 
 std::unique_ptr<Backend> BackendManager::CreateFromName(
-    std::string_view name, const OptionsDict& options) const {
+    std::string_view name, const OptionsDict& options,
+    const OptionsDict& backend_options) const {
   BackendFactory* factory = GetFactoryByName(name);
   if (!factory) throw Exception("Unknown backend: " + std::string(name));
-  return factory->Create(options);
+  return factory->Create(options, backend_options);
 }
 
 void BackendManager::RemoveBackend(const BackendFactory* factory) {
