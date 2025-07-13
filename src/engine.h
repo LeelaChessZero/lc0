@@ -74,8 +74,9 @@ class Engine : public EngineControllerBase {
   std::unique_ptr<SyzygyTablebase> syzygy_tb_;  // absl_nullable
 
   // UCI parameters cache to be consistent between `position` and `go`.
+  // Defaults ensure corect operation even if `go` comes first.
   bool ponder_enabled_ = false;
-  bool strict_uci_timing_ = false;
+  bool strict_uci_timing_ = true;
   // Last position set for the search. Used to:
   // 1. Detect whether the position was ever set (to initialize to startpos).
   // 2. Remember the position for ponder go (removing the last ply).
