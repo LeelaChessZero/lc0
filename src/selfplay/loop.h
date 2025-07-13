@@ -28,31 +28,31 @@
 #pragma once
 
 #include <thread>
+
 #include "chess/uciloop.h"
 #include "selfplay/tournament.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
 
-class SelfPlayLoop : public UciLoop {
+class SelfPlayLoop {
  public:
-  SelfPlayLoop();
+  SelfPlayLoop(StringUciResponder* uci_responder)
+      : uci_responder_(uci_responder) {
+    uci_responder_->PopulateParams(&options_);
+  }
   ~SelfPlayLoop();
 
-  void RunLoop() override;
-  void CmdStart() override;
-  void CmdStop() override;
-  void CmdUci() override;
-  void CmdSetOption(const std::string& name, const std::string& value,
-                    const std::string& context) override;
+  void Run();
 
  private:
   void SendGameInfo(const GameInfo& move);
   void SendTournament(const TournamentInfo& info);
 
   void EnsureOptionsSent();
-  OptionsParser options_;
 
+  StringUciResponder* uci_responder_ = nullptr;  // absl_notnull
+  OptionsParser options_;
   std::unique_ptr<SelfPlayTournament> tournament_;
   std::unique_ptr<std::thread> thread_;
 };

@@ -28,8 +28,9 @@
 #include "tools/backendbench.h"
 
 #include "chess/board.h"
-#include "mcts/node.h"
-#include "neural/factory.h"
+#include "neural/register.h"
+#include "neural/shared_params.h"
+#include "search/classic/node.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -50,27 +51,25 @@ const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
 
-void Clippy(std::string title,
-            std::string msg3,  std::string best3, std::string msg2,
-            std::string best2, std::string msg,   std::string best) {
+void Clippy(std::string title, std::string msg3, std::string best3,
+            std::string msg2, std::string best2, std::string msg,
+            std::string best) {
   std::cout << "  __" << std::endl;
   std::cout << " /  \\" << std::endl;
-  std::cout << " |  |    " << std::string(title.length()+2, '_') << std::endl;
-  std::cout << " +  +   | " << std::string(title.length()+1, ' ')
-            << "|" << std::endl;
-  std::cout << "(@)(@) _| "
-            << title << " |"
+  std::cout << " |  |    " << std::string(title.length() + 2, '_') << std::endl;
+  std::cout << " +  +   | " << std::string(title.length() + 1, ' ') << "|"
             << std::endl;
+  std::cout << "(@)(@) _| " << title << " |" << std::endl;
   std::cout << " |  |  \\  " << std::string(6, ' ') << msg3
             << std::string(4 - best3.length(), ' ') << best3
-            << std::string(title.length()-33, ' ') << "|" << std::endl;
+            << std::string(title.length() - 33, ' ') << "|" << std::endl;
   std::cout << " || |/  | " << std::string(6, ' ') << msg2
             << std::string(4 - best2.length(), ' ') << best2
-            << std::string(title.length()-33, ' ') << "|" << std::endl;
+            << std::string(title.length() - 33, ' ') << "|" << std::endl;
   std::cout << " || ||  | " << std::string(6, ' ') << msg
             << std::string(4 - best.length(), ' ') << best
-            << std::string(title.length()-33, ' ') << "|" << std::endl;
-  std::cout << " |\\_/|  |" << std::string(title.length()+2, '_') << "|"
+            << std::string(title.length() - 33, ' ') << "|" << std::endl;
+  std::cout << " |\\_/|  |" << std::string(title.length() + 2, '_') << "|"
             << std::endl;
   std::cout << " \\___/" << std::endl;
 }
@@ -78,7 +77,7 @@ void Clippy(std::string title,
 
 void BackendBenchmark::Run() {
   OptionsParser options;
-  NetworkFactory::PopulateOptions(&options);
+  SharedBackendParams::Populate(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   options.Add<IntOption>(kBatchesId, 1, 999999999) = 100;
@@ -93,22 +92,25 @@ void BackendBenchmark::Run() {
   try {
     auto option_dict = options.GetOptionsDict();
 
-    auto network = NetworkFactory::LoadNetwork(option_dict);
+    auto backend = BackendManager::Get()->CreateFromParams(option_dict);
 
-    NodeTree tree;
+    classic::NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
+    EvalPosition pos{tree.GetPositionHistory().GetPositions(), {}};
 
     // Do any backend initialization outside the loop.
-    auto warmup = network->NewComputation();
-    warmup->AddInput(EncodePositionForNN(
-        network->GetCapabilities().input_format, tree.GetPositionHistory(), 8,
-        FillEmptyHistory::ALWAYS, nullptr));
+    auto warmup = backend->CreateComputation();
+    warmup->AddInput(pos, {});
     warmup->ComputeBlocking();
 
     const int batches = option_dict.Get<int>(kBatchesId);
 
-    int best = 1; int best2 = 1; int best3 = 1;
-    float best_nps = 0.0f; float best_nps2 = 0.0f; float best_nps3 = 0.0f;
+    int best = 1;
+    int best2 = 1;
+    int best3 = 1;
+    float best_nps = 0.0f;
+    float best_nps2 = 0.0f;
+    float best_nps3 = 0.0f;
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
 
     for (int i = option_dict.Get<int>(kStartBatchSizeId);
@@ -119,11 +121,9 @@ void BackendBenchmark::Run() {
       // multiplexing backend.
       for (int j = 0; j < batches; j++) {
         // Put i copies of tree root node into computation and compute.
-        auto computation = network->NewComputation();
+        auto computation = backend->CreateComputation();
         for (int k = 0; k < i; k++) {
-          computation->AddInput(EncodePositionForNN(
-              network->GetCapabilities().input_format,
-              tree.GetPositionHistory(), 8, FillEmptyHistory::ALWAYS, nullptr));
+          computation->AddInput(pos, {});
         }
         computation->ComputeBlocking();
       }
@@ -137,12 +137,12 @@ void BackendBenchmark::Run() {
                 << " nps." << std::endl;
 
       if (option_dict.Get<bool>(kClippyId)) {
-        float nps_ingame  = std::pow((nps + best_nps)  / 2, 1.085);
+        float nps_ingame = std::pow((nps + best_nps) / 2, 1.085);
         float nps_ingame2 = std::pow((nps + best_nps2) / 2, 1.085);
         float nps_ingame3 = std::pow((nps + best_nps3) / 2, 1.085);
-        float threshold  = 0.16947 * exp(-4.1695e-6 * nps_ingame  * 180) + 0.02;
-        float threshold2 = 0.16947 * exp(-4.1695e-6 * nps_ingame2 *  15) + 0.02;
-        float threshold3 = 0.16947 * exp(-4.1695e-6 * nps_ingame3 *   1) + 0.02;
+        float threshold = 0.16947 * exp(-4.1695e-6 * nps_ingame * 180) + 0.02;
+        float threshold2 = 0.16947 * exp(-4.1695e-6 * nps_ingame2 * 15) + 0.02;
+        float threshold3 = 0.16947 * exp(-4.1695e-6 * nps_ingame3 * 1) + 0.02;
 
         if (nps > best_nps &&
             threshold * (i - best) * best_nps < (nps - best_nps) * best) {
@@ -165,22 +165,20 @@ void BackendBenchmark::Run() {
         if (pending) {
           time = std::chrono::steady_clock::now() - *pending;
           if (time.count() > 10) {
-            Clippy(
-                "Recommended minibatch-size for this net (so far):",
-                "1s/move   (Bullet):     ", std::to_string(best3),
-                "15s/move  (Rapid):      ", std::to_string(best2),
-                "3min/move (Tournament): ", std::to_string(best));
+            Clippy("Recommended minibatch-size for this net (so far):",
+                   "1s/move   (Bullet):     ", std::to_string(best3),
+                   "15s/move  (Rapid):      ", std::to_string(best2),
+                   "3min/move (Tournament): ", std::to_string(best));
             pending.reset();
           }
         }
       }
     }
     if (option_dict.Get<bool>(kClippyId)) {
-        Clippy(
-            "Recommended minibatch-size for this net:",
-            "1s/move   (Bullet):     ", std::to_string(best3),
-            "15s/move  (Rapid):      ", std::to_string(best2),
-            "3min/move (Tournament): ", std::to_string(best));
+      Clippy("Recommended minibatch-size for this net:",
+             "1s/move   (Bullet):     ", std::to_string(best3),
+             "15s/move  (Rapid):      ", std::to_string(best2),
+             "3min/move (Tournament): ", std::to_string(best));
     }
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;

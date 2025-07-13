@@ -174,13 +174,13 @@ class OnednnNetwork : public Network {
         options.GetOrDefault<int>("jit_cache", 1024));
 #endif
 
-    if (!options.IsDefault<int>("threads")) {
+    if (options.Exists<int>("threads")) {
       omp_set_num_threads(options.Get<int>("threads"));
     }
 
     cpu_eng_ = dnnl::engine(dnnl::engine::kind::cpu, 0);
 
-    if (!options.IsDefault<int>("gpu")) {
+    if (options.Exists<int>("gpu")) {
       eng_ = dnnl::engine(dnnl::engine::kind::gpu, options.Get<int>("gpu"));
     } else {
       eng_ = cpu_eng_;
@@ -201,7 +201,7 @@ class OnednnNetwork : public Network {
     // on gpu and not on cpu (last tested with version 2.6.0). So for the time
     // being this will be overriden in every case.
     auto convolution_type = dnnl::algorithm::convolution_auto;
-    if (!options.IsDefault<bool>("winograd")) {
+    if (options.Exists<bool>("winograd")) {
       if (options.Get<bool>("winograd")) {
         convolution_type = dnnl::algorithm::convolution_winograd;
       } else {

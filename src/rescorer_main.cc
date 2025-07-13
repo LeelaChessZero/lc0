@@ -28,7 +28,7 @@
 #include <iostream>
 
 #include "chess/board.h"
-#include "trainingdata/rescoreloop.h"
+#include "trainingdata/rescorer.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/exception.h"
@@ -53,8 +53,7 @@ int main(int argc, const char** argv) {
 
     // Consuming optional "rescore" mode.
     CommandLine::ConsumeCommand("rescore");
-    RescoreLoop loop;
-    loop.RunLoop();
+    RunRescorer();
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;
     abort();

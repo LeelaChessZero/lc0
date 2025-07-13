@@ -29,6 +29,7 @@
 
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "chess/board.h"
 
@@ -36,10 +37,13 @@ namespace lczero {
 
 class Position {
  public:
+  Position() = default;
   // From parent position and move.
   Position(const Position& parent, Move m);
   // From particular position.
   Position(const ChessBoard& board, int rule50_ply, int game_ply);
+  // From fen.
+  static Position FromFen(std::string_view fen);
 
   uint64_t Hash() const;
   bool IsBlackToMove() const { return us_board_.flipped(); }
@@ -66,6 +70,9 @@ class Position {
   // Gets board from the point of view of player to move.
   const ChessBoard& GetBoard() const { return us_board_; }
 
+  bool operator==(const Position&) const = default;
+  bool operator!=(const Position&) const = default;
+
   std::string DebugString() const;
 
  private:
@@ -75,15 +82,15 @@ class Position {
   // How many half-moves without capture or pawn move was there.
   int rule50_ply_ = 0;
   // How many repetitions this position had before. For new positions it's 0.
-  int repetitions_;
+  int repetitions_ = 0;
   // How many half-moves since the position was repeated or 0.
-  int cycle_length_;
+  int cycle_length_ = 0;
   // number of half-moves since beginning of the game.
   int ply_count_ = 0;
 };
 
 // GetFen returns a FEN notation for the position.
-std::string GetFen(const Position& pos);
+std::string PositionToFen(const Position& pos);
 
 // These are ordered so max() prefers the best result.
 enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
@@ -94,6 +101,8 @@ class PositionHistory {
   PositionHistory() = default;
   PositionHistory(const PositionHistory& other) = default;
   PositionHistory(PositionHistory&& other) = default;
+  PositionHistory(std::span<const Position> positions)
+      : positions_(positions.begin(), positions.end()) {}
 
   PositionHistory& operator=(const PositionHistory& other) = default;
   PositionHistory& operator=(PositionHistory&& other) = default;
@@ -121,6 +130,7 @@ class PositionHistory {
 
   // Resets the position to a given state.
   void Reset(const ChessBoard& board, int rule50_ply, int game_ply);
+  void Reset(const Position& pos);
 
   // Appends a position to history.
   void Append(Move m);
