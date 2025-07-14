@@ -1,6 +1,6 @@
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0.exe
-IF %NAME%==gpu-nvidia-cuda appveyor DownloadFile "https://github.com/LeelaChessZero/lczero-client/releases/latest/download/lc0-training-client.exe"
-IF %NAME%==gpu-nvidia-cuda 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-training-client.exe
+IF %NAME%==gpu-nvidia-cuda12 appveyor DownloadFile "https://github.com/LeelaChessZero/lczero-client/releases/latest/download/lc0-training-client.exe"
+IF %NAME%==gpu-nvidia-cuda12 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-training-client.exe
 type COPYING |more /P > dist\COPYING
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\COPYING
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip c:\cache\%NET%.pb.gz
@@ -17,7 +17,12 @@ IF %NAME%==onednn 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\
 IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\opencl-nug.0.777.77\build\native\bin\OpenCL.dll
 IF %CUDNN%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_101.dll" "%CUDA_PATH%\bin\cublas64_10.dll" "%CUDA_PATH%\bin\cublasLt64_10.dll"
 IF %CUDNN%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\cuda\bin\cudnn64_7.dll"
-IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_110.dll" "%CUDA_PATH%\bin\cublas64_11.dll" "%CUDA_PATH%\bin\cublasLt64_11.dll"
+IF %NAME%==gpu-nvidia-cuda11 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_110.dll" "%CUDA_PATH%\bin\cublas64_11.dll" "%CUDA_PATH%\bin\cublasLt64_11.dll"
+IF %NAME%==gpu-nvidia-cuda12 (
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_12.dll" "%CUDA_PATH%\bin\cublas64_12.dll" "%CUDA_PATH%\bin\cublasLt64_12.dll"
+  type dist\install-cuda_12_9.cmd |more /P > dist\install.cmd
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-nodll.zip .\dist\install.cmd
+)
 IF %NAME%==cpu-dnnl (
   copy "%PKG_FOLDER%\%DNNL_NAME%\LICENSE" dist\DNNL-LICENSE
   copy "%PKG_FOLDER%\%DNNL_NAME%\THIRD-PARTY-PROGRAMS" dist\DNNL-THIRD-PARTY-PROGRAMS

@@ -6,7 +6,7 @@ image:
 environment:
   matrix:
   - NAME: gpu-nvidia-cudnn
-  - NAME: gpu-nvidia-cuda
+  - NAME: gpu-nvidia-cuda12
 #  - NAME: gpu-dx12
 #  - NAME: gpu-opencl
   - NAME: cpu-dnnl
@@ -14,10 +14,12 @@ environment:
 #  - NAME: onednn
   - NAME: onnx-dml
   - NAME: android
+  - NAME: gpu-nvidia-cuda11
 for:
 -
   matrix:
     only:
+    - NAME: gpu-nvidia-cuda11
 #    - NAME: gpu-opencl
     - NAME: cpu-dnnl
   skip_non_tags: true
@@ -35,7 +37,8 @@ install:
 - cmd: IF %NAME%==android set ANDROID=true
 - cmd: IF %NAME%==gpu-nvidia-cudnn set CUDNN=true
 - cmd: IF %NAME%==gpu-nvidia-cudnn set CUDA=true
-- cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
+- cmd: IF %NAME%==gpu-nvidia-cuda11 set CUDA=true
+- cmd: IF %NAME%==gpu-nvidia-cuda12 set CUDA=true
 - cmd: IF %NAME%==gpu-dx12 set DX=true
 - cmd: IF %NAME%==gpu-opencl set OPENCL=true
 - cmd: IF %NAME%==cpu-dnnl set BLAS=true
@@ -73,10 +76,14 @@ install:
 - cmd: IF DEFINED CUDNN_INSTALL cuda_10.1.243_win10_network -s nvcc_10.1 cublas_dev_10.1 cublas_10.1 cudart_10.1
 - cmd: IF DEFINED CUDNN_INSTALL appveyor DownloadFile https://developer.download.nvidia.com/compute/redist/cudnn/v7.5.1/cudnn-10.1-windows10-x64-v7.5.1.10.zip
 - cmd: IF DEFINED CUDNN_INSTALL 7z x cudnn-10.1-windows10-x64-v7.5.1.10.zip -o"%CUDA_PATH%"
-- cmd: IF %CUDNN%==false set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1"
+- cmd: IF %NAME%==gpu-nvidia-cuda11 set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1"
+- cmd: IF %NAME%==gpu-nvidia-cuda12 set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
 - cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" set CUDA_INSTALL=1
-- cmd: IF DEFINED CUDA_INSTALL appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/11.1.0/network_installers/cuda_11.1.0_win10_network.exe
-- cmd: IF DEFINED CUDA_INSTALL cuda_11.1.0_win10_network.exe -s nvcc_11.1 cublas_dev_11.1 cublas_11.1 cudart_11.1 documentation_11.1
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda11 appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/11.1.0/network_installers/cuda_11.1.0_win10_network.exe
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda11 cuda_11.1.0_win10_network.exe -s nvcc_11.1 cublas_dev_11.1 cublas_11.1 cudart_11.1 documentation_11.1
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda12 appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/12.9.0/network_installers/cuda_12.9.0_windows_network.exe
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda12 cuda_12.9.0_windows_network.exe -s nvcc_12.9 cublas_dev_12.9 cublas_12.9 cudart_12.9 documentation_12.9
+- cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: set PATH=C:\Python310;C:\Python310\scripts;%PATH%
 #- cmd: pip3 install --upgrade meson==0.55.3
@@ -110,6 +117,7 @@ cache:
   - C:\cache
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.1'
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1'
+  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9'
   - C:\projects\lc0\subprojects\packagecache
   - C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
