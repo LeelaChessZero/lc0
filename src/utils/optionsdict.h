@@ -28,6 +28,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -42,27 +43,27 @@ class TypeDict {
  protected:
   struct V {
     const T& Get() const {
-      is_used_ = true;
+      was_read_since_last_set_ = true;
       return value_;
     }
     T& Get() {
-      is_used_ = true;
+      was_read_since_last_set_ = true;
       return value_;
     }
     void Set(const T& v) {
-      is_used_ = false;
+      was_read_since_last_set_ = false;
       value_ = v;
     }
-    bool IsSet() const { return is_used_; }
+    bool WasReadSinceLastSet() const { return was_read_since_last_set_; }
 
    private:
-    mutable bool is_used_ = false;
+    mutable bool was_read_since_last_set_ = false;
     T value_;
   };
   void EnsureNoUnusedOptions(const std::string& type_name,
                              const std::string& prefix) const {
     for (auto const& option : dict_) {
-      if (!option.second.IsSet()) {
+      if (!option.second.WasReadSinceLastSet()) {
         throw Exception("Unknown " + type_name + " option: " + prefix +
                         option.first);
       }
@@ -78,6 +79,34 @@ class TypeDict {
 
 class OptionId {
  public:
+  enum VisibilityMode {
+    kSimpleMode = 1 << 0,  // Simple mode.
+    kNormalMode = 1 << 1,  // Normal mode.
+    kProMode = 1 << 2,     // Pro mode.
+  };
+
+  enum VisibilityMask {
+    kSimpleOnly = kSimpleMode,
+    kDefaultVisibility = kNormalMode | kProMode,
+    kProOnly = kProMode,
+    kAlwaysVisible = kSimpleMode | kNormalMode | kProMode,
+  };
+
+  struct OptionsParams {
+    const char* long_flag = nullptr;
+    const char* uci_option = nullptr;
+    const char* help_text = nullptr;
+    char short_flag = '\0';
+    VisibilityMask visibility = kDefaultVisibility;
+  };
+
+  OptionId(const OptionsParams& params)
+      : long_flag_(params.long_flag),
+        uci_option_(params.uci_option),
+        help_text_(params.help_text),
+        short_flag_(params.short_flag),
+        visibility_mask_(params.visibility) {}
+
   OptionId(const char* long_flag, const char* uci_option, const char* help_text,
            const char short_flag = '\0')
       : long_flag_(long_flag),
@@ -92,15 +121,32 @@ class OptionId {
   const char* uci_option() const { return uci_option_; }
   const char* help_text() const { return help_text_; }
   char short_flag() const { return short_flag_; }
+  uint64_t visibility_mask() const { return visibility_mask_; }
 
  private:
   const char* const long_flag_;
   const char* const uci_option_;
   const char* const help_text_;
   const char short_flag_;
+  uint64_t visibility_mask_ = kDefaultVisibility;
+};
+
+class Button {
+ public:
+  Button() { val = std::make_shared<bool>(false); }
+  Button(bool x) { val = std::make_shared<bool>(x); }
+  bool TestAndReset() {
+    bool r = *val;
+    *val = false;
+    return r;
+  }
+
+ private:
+  std::shared_ptr<bool> val;
 };
 
 class OptionsDict : TypeDict<bool>,
+                    TypeDict<Button>,
                     TypeDict<int>,
                     TypeDict<std::string>,
                     TypeDict<float> {

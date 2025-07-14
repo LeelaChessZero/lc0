@@ -25,18 +25,55 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "benchmark/backendbench.h"
-#include "benchmark/benchmark.h"
 #include "chess/board.h"
+#include "default_search.h"
 #include "engine.h"
-#include "lc0ctl/describenet.h"
-#include "lc0ctl/leela2onnx.h"
-#include "lc0ctl/onnx2leela.h"
+#include "search/register.h"
 #include "selfplay/loop.h"
+#include "tools/backendbench.h"
+#include "tools/benchmark.h"
+#include "tools/describenet.h"
+#include "tools/leela2onnx.h"
+#include "tools/onnx2leela.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/logging.h"
 #include "version.h"
+
+namespace lczero {
+void ChooseAndRunEngine() {
+  // First try the engine which is explicitly specified on the command line.
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (CommandLine::ConsumeCommand(search_name)) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
+#ifdef DEFAULT_SEARCH
+  SearchFactory* factory =
+      SearchManager::Get()->GetFactoryByName(DEFAULT_SEARCH);
+  if (!factory) throw Exception("Unknown search algorithm: " DEFAULT_SEARCH);
+  RunEngine(factory);
+  return;
+#endif
+
+  // Then try to run the engine which is specified by the name of the binary.
+  const std::string& binary_name = CommandLine::BinaryName();
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (binary_name.find(search_name) != std::string::npos) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Finally, run "classic" search through the new API.
+  RunEngine(SearchManager::Get()->GetFactoryByName("classic"));
+}
+}  // namespace lczero
 
 int main(int argc, const char** argv) {
   using namespace lczero;
@@ -51,25 +88,38 @@ int main(int argc, const char** argv) {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
-    CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-    CommandLine::RegisterMode("selfplay", "Play games with itself");
-    CommandLine::RegisterMode("benchmark", "Quick benchmark");
-    CommandLine::RegisterMode("backendbench",
-                              "Quick benchmark of backend only");
-    CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
-    CommandLine::RegisterMode("onnx2leela",
-                              "Convert ONNX network to Leela net.");
-    CommandLine::RegisterMode("describenet",
-                              "Shows details about the Leela network.");
+    if (CommandLine::BinaryName().find("simple") == std::string::npos) {
+      CommandLine::RegisterMode("selfplay", "Play games with itself");
+      CommandLine::RegisterMode("benchmark", "Quick benchmark");
+      CommandLine::RegisterMode("bench", "Very quick benchmark");
+      CommandLine::RegisterMode("backendbench",
+                                "Quick benchmark of backend only");
+      CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
+      CommandLine::RegisterMode("onnx2leela",
+                                "Convert ONNX network to Leela net.");
+      CommandLine::RegisterMode("describenet",
+                                "Shows details about the Leela network.");
+    }
+    for (const std::string_view search_name :
+         SearchManager::Get()->GetSearchNames()) {
+      CommandLine::RegisterMode(
+          std::string(search_name),
+          "Use \"" + std::string(search_name) + "\" search");
+    }
 
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
-      SelfPlayLoop loop;
-      loop.RunLoop();
+      StdoutUciResponder uci_responder;
+      SelfPlayLoop loop(&uci_responder);
+      loop.Run();
     } else if (CommandLine::ConsumeCommand("benchmark")) {
-      // Benchmark mode.
+      // Benchmark mode, longer version.
       Benchmark benchmark;
       benchmark.Run();
+    } else if (CommandLine::ConsumeCommand("bench")) {
+      // Benchmark mode, shorter version.
+      Benchmark benchmark;
+      benchmark.Run(/*run_shorter_benchmark=*/true);
     } else if (CommandLine::ConsumeCommand("backendbench")) {
       // Backend Benchmark mode.
       BackendBenchmark benchmark;
@@ -81,11 +131,7 @@ int main(int argc, const char** argv) {
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
     } else {
-      // Consuming optional "uci" mode.
-      CommandLine::ConsumeCommand("uci");
-      // Ordinary UCI engine.
-      EngineLoop loop;
-      loop.RunLoop();
+      lczero::ChooseAndRunEngine();
     }
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;

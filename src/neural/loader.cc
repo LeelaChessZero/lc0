@@ -37,11 +37,12 @@
 #include <sstream>
 #include <string>
 
+#include "neural/shared_params.h"
 #include "proto/net.pb.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "utils/logging.h"
+#include "utils/optionsdict.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -127,13 +128,11 @@ void FixOlderWeightsFile(WeightsFile* file) {
     net->set_network(nf::NETWORK_SE_WITH_HEADFORMAT);
     net->set_value(nf::VALUE_CLASSICAL);
     net->set_policy(nf::POLICY_CLASSICAL);
-  } else if (network_format ==
-                 nf::NETWORK_SE_WITH_HEADFORMAT &&
+  } else if (network_format == nf::NETWORK_SE_WITH_HEADFORMAT &&
              file->weights().encoder().size() > 0) {
     // Attention body network made with old protobuf.
     auto* net = file->mutable_format()->mutable_network_format();
-    net->set_network(
-        nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
+    net->set_network(nf::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT);
     if (file->weights().has_smolgen_w()) {
       // Need to override activation defaults for smolgen.
       net->set_ffn_activation(nf::ACTIVATION_RELU_2);
@@ -211,6 +210,22 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
   return ParseWeightsProto(buffer);
 }
 
+std::optional<WeightsFile> LoadWeights(std::string_view location) {
+  std::string net_path = std::string(location);
+  if (net_path == SharedBackendParams::kAutoDiscover) {
+    net_path = DiscoverWeightsFile();
+  } else if (net_path == SharedBackendParams::kEmbed) {
+    net_path = CommandLine::BinaryName();
+  }
+  if (net_path.empty()) return std::nullopt;
+  if (location == SharedBackendParams::kEmbed) {
+    CERR << "Using embedded weights from binary: " << net_path;
+  } else {
+    CERR << "Loading weights file from: " << net_path;
+  }
+  return LoadWeightsFromFile(net_path);
+}
+
 std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
@@ -249,24 +264,12 @@ std::string DiscoverWeightsFile() {
       gzclose(file);
       if (sz < 0) continue;
 
-      std::string str(buf, buf + sz);
-      std::istringstream data(str);
-      int val = 0;
-      data >> val;
-      if (!data.fail() && val == 2) {
-        CERR << "Found txt network file: " << candidate.second;
-        return candidate.second;
-      }
-
       // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it
       // as our own magic should suffice.
       const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
                          (static_cast<uint32_t>(buf[3]) << 16) |
                          (static_cast<uint32_t>(buf[4]) << 24);
-      if (magic == kWeightMagic) {
-        CERR << "Found pb network file: " << candidate.second;
-        return candidate.second;
-      }
+      if (magic == kWeightMagic) return candidate.second;
     }
   }
   LOGFILE << "Network weights file not found.";

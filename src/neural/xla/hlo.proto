@@ -354,6 +354,15 @@ message CompileEnvOptionProto {
   required OptionOverrideProto value = 2;
 }
 
+message XlaDeviceAssignmentProto {
+  optional int32 replica_count = 1;
+  optional int32 computation_count = 2;
+  message ComputationDevice {
+    repeated int64 replica_device_ids = 1;
+  }
+  repeated ComputationDevice computation_devices = 3;
+}
+
 message ExecutableBuildOptionsProto {
   // If set, this is the device to build the computation for. Valid
   // device_ordinal values are: 0 to # of devices - 1. These values are
@@ -385,6 +394,12 @@ message ExecutableBuildOptionsProto {
 
   // Whether HLOs should be deduplicated.
   optional bool deduplicate_hlo = 8;
+
+  // If set, this specifies a static device assignment for the computation.
+  // Otherwise, the computation will be compiled generically and can be run with
+  // any device assignment compatible with the computation's replica and
+  // partition counts.
+  optional XlaDeviceAssignmentProto device_assignment = 9;
 
   // Whether input and output buffers are aliased if the associated parameter is
   // passed-through XLA modules without being changed.
