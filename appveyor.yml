@@ -54,9 +54,11 @@ install:
 - cmd: IF %NAME%==onednn set DNNL_NAME=dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp
 - cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/borg323/oneDNN/releases/download/v2.7.2/dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip
 - cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip -oC:\cache
-- cmd: IF %NAME%==onnx-dml set ONNX_NAME=onnxruntime-win-x64-dml-1.22
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\%ONNX_NAME% appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/Microsoft.ML.OnnxRuntime.DirectML.1.22.0.nupkg
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\%ONNX_NAME% 7z x Microsoft.ML.OnnxRuntime.DirectML.1.22.0.nupkg -oC:\cache\%ONNX_NAME%
+- cmd: IF %NAME%==onnx-dml set ONNX_NAME=onnxruntime-win-x64-dml-1.22.1
+- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\%ONNX_NAME% appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg
+- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\%ONNX_NAME% 7z x Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg -oC:\cache\%ONNX_NAME%
+- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-gpu-1.22.1 appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/onnxruntime-win-x64-gpu-1.22.1.zip
+- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-gpu-1.22.1 7z x onnxruntime-win-x64-gpu-1.22.1.zip -oC:\cache
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
@@ -139,7 +141,7 @@ after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==true call scripts\appveyor_android_package.cmd
 - cmd: cd C:\projects\lc0
 artifacts:
-  - path: build/lc0.exe
+  - path: /build/lc0*.exe/
     name: lc0-$(NAME)
   - path: arm64-v8a/lc0
     name: lc0-android-arm64-v8a

@@ -18,23 +18,39 @@ IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\
 IF %CUDNN%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_101.dll" "%CUDA_PATH%\bin\cublas64_10.dll" "%CUDA_PATH%\bin\cublasLt64_10.dll"
 IF %CUDNN%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\cuda\bin\cudnn64_7.dll"
 IF %CUDA%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%CUDA_PATH%\bin\cudart64_110.dll" "%CUDA_PATH%\bin\cublas64_11.dll" "%CUDA_PATH%\bin\cublasLt64_11.dll"
-IF %NAME%==cpu-dnnl copy "%PKG_FOLDER%\%DNNL_NAME%\LICENSE" dist\DNNL-LICENSE
-IF %NAME%==cpu-dnnl copy "%PKG_FOLDER%\%DNNL_NAME%\THIRD-PARTY-PROGRAMS" dist\DNNL-THIRD-PARTY-PROGRAMS
-IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
-IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-THIRD-PARTY-PROGRAMS
-IF %NAME%==onednn copy "%PKG_FOLDER%\%DNNL_NAME%\LICENSE" dist\DNNL-LICENSE
-IF %NAME%==onednn copy "%PKG_FOLDER%\%DNNL_NAME%\THIRD-PARTY-PROGRAMS" dist\DNNL-THIRD-PARTY-PROGRAMS
-IF %NAME%==onednn 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
-IF %NAME%==onednn 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-THIRD-PARTY-PROGRAMS
-IF %ONNX_DML%==true type dist\README-onnx-dml.txt |more /P > dist\README.txt
-IF %ONNX_DML%==true type dist\install-dml.cmd |more /P > dist\install.cmd
-IF %ONNX_DML%==true copy "%PKG_FOLDER%\%ONNX_NAME%\LICENSE" dist\ONNX-DML-LICENSE
-IF %ONNX_DML%==true copy "%PKG_FOLDER%\%ONNX_NAME%\ThirdPartyNotices.txt" dist\ONNX-DML-ThirdPartyNotices.txt
-IF %ONNX_DML%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%PKG_FOLDER%\%ONNX_NAME%\runtimes\win-x64\native\onnxruntime.dll"
-IF %ONNX_DML%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt
-IF %ONNX_DML%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\install.cmd
-IF %ONNX_DML%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\ONNX-DML-LICENSE
-IF %ONNX_DML%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\ONNX-DML-ThirdPartyNotices.txt
+IF %NAME%==cpu-dnnl (
+  copy "%PKG_FOLDER%\%DNNL_NAME%\LICENSE" dist\DNNL-LICENSE
+  copy "%PKG_FOLDER%\%DNNL_NAME%\THIRD-PARTY-PROGRAMS" dist\DNNL-THIRD-PARTY-PROGRAMS
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-THIRD-PARTY-PROGRAMS
+)
+IF %NAME%==onednn (
+  copy "%PKG_FOLDER%\%DNNL_NAME%\LICENSE" dist\DNNL-LICENSE
+  copy "%PKG_FOLDER%\%DNNL_NAME%\THIRD-PARTY-PROGRAMS" dist\DNNL-THIRD-PARTY-PROGRAMS
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-LICENSE
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\DNNL-THIRD-PARTY-PROGRAMS
+)
+IF %ONNX_DML%==true (
+  copy "%PKG_FOLDER%\%ONNX_NAME%\LICENSE" dist\ONNX-LICENSE
+  copy "%PKG_FOLDER%\%ONNX_NAME%\ThirdPartyNotices.txt" dist\ONNX-ThirdPartyNotices.txt
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%PKG_FOLDER%\%ONNX_NAME%\runtimes\win-x64\native\onnxruntime.dll"
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\ONNX-LICENSE
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\ONNX-ThirdPartyNotices.txt
+  copy lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows-onnx-trt.zip
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip %APPVEYOR_BUILD_FOLDER%\build\lc0-dml.exe
+  7z rn lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-dml.exe lc0.exe
+  type dist\README-onnx-dml.txt |more /P > dist\README.txt
+  type dist\install-dml.cmd |more /P > dist\install.cmd
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\README.txt
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\install.cmd
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-onnx-trt.zip %APPVEYOR_BUILD_FOLDER%\build\lc0-trt.exe
+  7z rn lc0-%APPVEYOR_REPO_TAG_NAME%-windows-onnx-trt.zip lc0-trt.exe lc0.exe
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-onnx-trt.zip "%PKG_FOLDER%\%ONNX_NAME%\runtimes\win-x64\native\onnxruntime_providers_shared.dll"
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-onnx-trt.zip "%PKG_FOLDER%\onnxruntime-win-x64-gpu-1.22.1\lib\onnxruntime_providers_cuda.dll"
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-onnx-trt.zip "%PKG_FOLDER%\onnxruntime-win-x64-gpu-1.22.1\lib\onnxruntime_providers_tensorrt.dll"
+  type dist\README-onnx-trt.txt |more /P > dist\README.txt
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-onnx-trt.zip .\dist\README.txt
+)
 IF %OPENCL%==true type scripts\check_opencl.bat |more /P > dist\check_opencl.bat
 IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\check_opencl.bat
 IF %DX%==true type scripts\check_dx.bat |more /P > dist\check_dx.bat
