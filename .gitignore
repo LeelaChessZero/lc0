@@ -5,6 +5,7 @@
 .cache/
 .clangd/
 build/
+builddir/
 __pycache__/
 compile_commands.json
 CUDA_NN/
@@ -17,3 +18,4 @@ xcuserdata
 .clang-tidy
 compile_flags.txt
 .vscode
+.mesonpy*

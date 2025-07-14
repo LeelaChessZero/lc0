@@ -56,7 +56,8 @@ OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
 std::vector<std::string> OptionsParser::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
-    if (!iter->GetUciOption().empty() && !iter->hidden_) {
+    if (!iter->GetUciOption().empty() &&
+        (iter->GetId().visibility_mask() & visibility_mode_)) {
       result.emplace_back("option name " + iter->GetUciOption() + " " +
                           iter->GetOptionString(values_));
     }
@@ -73,11 +74,6 @@ void OptionsParser::SetUciOption(const std::string& name,
     return;
   }
   throw Exception("Unknown option: " + name);
-}
-
-void OptionsParser::HideOption(const OptionId& id) {
-  const auto option = FindOptionById(id);
-  if (option) option->hidden_ = true;
 }
 
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
@@ -129,13 +125,15 @@ bool OptionsParser::ProcessAllFlags() {
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
   auto show_help = false;
-  if (CommandLine::BinaryName().find("pro") != std::string::npos) {
-    ShowHidden();
+  if (CommandLine::BinaryName().find("simple") != std::string::npos) {
+    visibility_mode_ = OptionId::kSimpleMode;
+  } else if (CommandLine::BinaryName().find("pro") != std::string::npos) {
+    visibility_mode_ = OptionId::kProMode;
   }
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
     if (param == "--show-hidden") {
-      ShowHidden();
+      visibility_mode_ = OptionId::kProMode;
       continue;
     }
     if (param == "-h" || param == "--help") {
@@ -277,7 +275,9 @@ void OptionsParser::ShowHelp() const {
   std::cout << FormatFlag('\0', "show-hidden",
                           "Show hidden options. Use with --help.");
   for (const auto& option : options_) {
-    if (!option->hidden_) std::cout << option->GetHelp(defaults_);
+    if ((option->GetId().visibility_mask() & visibility_mode_)) {
+      std::cout << option->GetHelp(values_);
+    }
   }
 
   auto contexts = values_.ListSubdicts();
@@ -287,10 +287,6 @@ void OptionsParser::ShowHelp() const {
     std::cout << "       --" << contexts[0] << '.'
               << options_.back()->GetLongFlag() << "=(value)\n";
   }
-}
-
-void OptionsParser::ShowHidden() const {
-  for (const auto& option : options_) option->hidden_ = false;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -324,8 +320,12 @@ bool StringOption::ProcessShortFlagWithValue(char flag,
 }
 
 std::string StringOption::GetHelp(const OptionsDict& dict) const {
-  return FormatFlag(GetShortFlag(), GetLongFlag() + "=STRING", GetHelpText(),
-                    GetUciOption(), GetVal(dict));
+  std::string long_flag = GetLongFlag();
+  if (!long_flag.empty()) {
+    long_flag += "=STRING";
+  }
+  return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
+                    GetVal(dict));
 }
 
 std::string StringOption::GetOptionString(const OptionsDict& dict) const {
@@ -575,6 +575,34 @@ void BoolOption::ValidateBoolString(const std::string& val) {
         << "'true' or 'false'.";
     throw Exception(buf.str());
   }
+}
+
+/////////////////////////////////////////////////////////////////
+// ButtonOption
+/////////////////////////////////////////////////////////////////
+
+ButtonOption::ButtonOption(const OptionId& id) : Option(id) {}
+
+void ButtonOption::SetValue(const std::string& /*value*/, OptionsDict* dict) {
+  dict->Set<ValueType>(GetId(), true);
+}
+
+bool ButtonOption::ProcessLongFlag(const std::string& /*flag*/,
+                                   const std::string& /*value*/,
+                                   OptionsDict* /*dict*/) {
+  return false;
+}
+
+bool ButtonOption::ProcessShortFlag(char /*flag*/, OptionsDict* /*dict*/) {
+  return false;
+}
+
+std::string ButtonOption::GetHelp(const OptionsDict& /*dict*/) const {
+  return "";
+}
+
+std::string ButtonOption::GetOptionString(const OptionsDict& /*dict*/) const {
+  return "type button";
 }
 
 /////////////////////////////////////////////////////////////////

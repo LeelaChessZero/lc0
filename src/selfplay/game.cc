@@ -29,8 +29,9 @@
 
 #include <algorithm>
 
-#include "mcts/stoppers/common.h"
-#include "mcts/stoppers/factory.h"
+#include "search/classic/stoppers/common.h"
+#include "search/classic/stoppers/factory.h"
+#include "utils/random.h"
 
 namespace lczero {
 
@@ -60,6 +61,10 @@ const OptionId kSyzygyTablebaseId{
     "List of Syzygy tablebase directories, list entries separated by system "
     "separator (\";\" for Windows, \":\" for Linux).",
     's'};
+const OptionId kOpeningStopProbId{
+    "opening-stop-prob", "OpeningStopProb",
+    "From each opening move, start a self-play game with probability max(p, "
+    "1/n), where p is the value given and n the opening moves remaining."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -69,8 +74,9 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   options->Add<IntOption>(kResignEarliestMoveId, 0, 1000) = 0;
   options->Add<IntOption>(kMinimumAllowedVistsId, 0, 1000000) = 0;
   options->Add<BoolOption>(kUciChess960) = false;
-  PopulateTimeManagementOptions(RunType::kSelfplay, options);
+  PopulateTimeManagementOptions(classic::RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -78,34 +84,54 @@ SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
     : options_{white, black},
       chess960_{white.uci_options->Get<bool>(kUciChess960) ||
                 black.uci_options->Get<bool>(kUciChess960)},
-      training_data_(SearchParams(*white.uci_options).GetHistoryFill(),
-                     SearchParams(*black.uci_options).GetHistoryFill(),
-                     white.network->GetCapabilities().input_format) {
+      training_data_(classic::SearchParams(*white.uci_options).GetHistoryFill(),
+                     classic::SearchParams(*black.uci_options).GetHistoryFill(),
+                     pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE) {
   orig_fen_ = opening.start_fen;
-  tree_[0] = std::make_shared<NodeTree>();
+  tree_[0] = std::make_shared<classic::NodeTree>();
   tree_[0]->ResetToPosition(orig_fen_, {});
 
   if (shared_tree) {
     tree_[1] = tree_[0];
   } else {
-    tree_[1] = std::make_shared<NodeTree>();
+    tree_[1] = std::make_shared<classic::NodeTree>();
     tree_[1]->ResetToPosition(orig_fen_, {});
   }
+  int ply = 0;
+  auto white_prob = white.uci_options->Get<float>(kOpeningStopProbId);
+  auto black_prob = black.uci_options->Get<float>(kOpeningStopProbId);
+  if (white_prob != black_prob && white_prob != 0 && black_prob != 0) {
+    throw Exception("Stop probabilities must be both equal or zero!");
+  }
+
   for (Move m : opening.moves) {
+    // For early exit from the opening, we support two cases: a) where both
+    // sides have the same exit probability and b) where one side's exit
+    // probability is zero. In the following formula, `positions` is the number
+    // of possible exit points remaining, used for adjusting the exit
+    // probability (to avoid favoring the last position).
+    auto exit_prob_now = tree_[0]->IsBlackToMove() ? black_prob : white_prob;
+    auto exit_prob_next = tree_[0]->IsBlackToMove() ? white_prob : black_prob;
+    int positions = opening.moves.size() - ply + 1;
+    if (exit_prob_now > 0.0f &&
+        Random::Get().GetFloat(1.0f) <
+            std::max(exit_prob_now,
+                     exit_prob_now / (exit_prob_now * ((positions + 1) / 2) +
+                                      exit_prob_next * (positions / 2)))) {
+      break;
+    }
+    if (tree_[0]->IsBlackToMove()) m.Flip();
     tree_[0]->MakeMove(m);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(m);
+    ply++;
   }
+  start_ply_ = ply;
 }
 
 void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                         SyzygyTablebase* syzygy_tb, bool enable_resign) {
   bool blacks_move = tree_[0]->IsBlackToMove();
 
-  // If we are training, verify that input formats are consistent.
-  if (training && options_[0].network->GetCapabilities().input_format !=
-      options_[1].network->GetCapabilities().input_format) {
-    throw Exception("Can't mix networks with different input format!");
-  }
   // Take syzygy tablebases from player1 options.
   std::string tb_paths =
       options_[0].uci_options->Get<std::string>(kSyzygyTablebaseId);
@@ -136,24 +162,18 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       std::lock_guard<std::mutex> lock(mutex_);
       if (abort_) break;
       auto stoppers = options_[idx].search_limits.MakeSearchStopper();
-      PopulateIntrinsicStoppers(stoppers.get(), *options_[idx].uci_options);
+      classic::PopulateIntrinsicStoppers(stoppers.get(),
+                                         *options_[idx].uci_options);
 
       std::unique_ptr<UciResponder> responder =
           std::make_unique<CallbackUciResponder>(
               options_[idx].best_move_callback, options_[idx].info_callback);
 
-      if (!chess960_) {
-        // Remap FRC castling to legacy castling.
-        responder = std::make_unique<Chess960Transformer>(
-            std::move(responder), tree_[idx]->HeadPosition().GetBoard());
-      }
-
-      search_ = std::make_unique<Search>(
-          *tree_[idx], options_[idx].network, std::move(responder),
+      search_ = std::make_unique<classic::Search>(
+          *tree_[idx], options_[idx].backend, std::move(responder),
           /* searchmoves */ MoveList(), std::chrono::steady_clock::now(),
-          std::move(stoppers),
-          /* infinite */ false, *options_[idx].uci_options, options_[idx].cache,
-          syzygy_tb);
+          std::move(stoppers), /* infinite */ false, /* ponder */ false,
+          *options_[idx].uci_options, syzygy_tb);
     }
 
     // Do search.
@@ -175,9 +195,8 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign &&
-        move_number >=
-            options_[idx].uci_options->Get<int>(kResignEarliestMoveId)) {
+    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
+                                            kResignEarliestMoveId)) {
       const float resignpct =
           options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
       if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
@@ -210,7 +229,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     }
 
     auto node = tree_[idx]->GetCurrentHead();
-    Eval played_eval = best_eval;
+    classic::Eval played_eval = best_eval;
     Move move;
     while (true) {
       move = search_->GetBestMove().first;
@@ -237,9 +256,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       }
       PositionHistory history_copy = tree_[idx]->GetPositionHistory();
       Move move_for_history = move;
-      if (tree_[idx]->IsBlackToMove()) {
-        move_for_history.Mirror();
-      }
+      if (tree_[idx]->IsBlackToMove()) move_for_history.Flip();
       history_copy.Append(move_for_history);
       // Ensure not to discard games that are already decided.
       if (history_copy.ComputeGameResult() == GameResult::UNDECIDED) {
@@ -264,16 +281,25 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
         }
       }
       // Append training data. The GameResult is later overwritten.
-      NNCacheLock nneval =
-          search_->GetCachedNNEval(tree_[idx]->GetCurrentHead());
+      std::vector<Move> legal_moves = tree_[idx]
+                                          ->GetPositionHistory()
+                                          .Last()
+                                          .GetBoard()
+                                          .GenerateLegalMoves();
+      std::optional<EvalResult> nneval =
+          options_[idx].backend->GetCachedEvaluation(EvalPosition{
+              tree_[idx]->GetPositionHistory().GetPositions(), legal_moves});
       training_data_.Add(tree_[idx]->GetCurrentHead(),
                          tree_[idx]->GetPositionHistory(), best_eval,
-                         played_eval, best_is_proof, best_move, move, nneval);
+                         played_eval, best_is_proof, best_move, move,
+                         legal_moves, nneval,
+                         search_->GetParams().GetPolicySoftmaxTemp());
     }
     // Must reset the search before mutating the tree.
     search_.reset();
 
     // Add best move to the tree.
+    if (tree_[0]->IsBlackToMove()) move.Flip();
     tree_[0]->MakeMove(move);
     if (tree_[0] != tree_[1]) tree_[1]->MakeMove(move);
     blacks_move = !blacks_move;
@@ -282,7 +308,7 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
 
 std::vector<Move> SelfPlayGame::GetMoves() const {
   std::vector<Move> moves;
-  for (Node* node = tree_[0]->GetCurrentHead();
+  for (classic::Node* node = tree_[0]->GetCurrentHead();
        node != tree_[0]->GetGameBeginNode(); node = node->GetParent()) {
     moves.push_back(node->GetParent()->GetEdgeToNode(node)->GetMove());
   }
@@ -291,10 +317,9 @@ std::vector<Move> SelfPlayGame::GetMoves() const {
   while (!moves.empty()) {
     Move move = moves.back();
     moves.pop_back();
-    if (!chess960_) move = pos.GetBoard().GetLegacyMove(move);
     pos = Position(pos, move);
     // Position already flipped, therefore flip the move if white to move.
-    if (!pos.IsBlackToMove()) move.Mirror();
+    if (!pos.IsBlackToMove()) move.Flip();
     result.push_back(move);
   }
   return result;
@@ -327,18 +352,19 @@ void SelfPlayGame::WriteTrainingData(TrainingDataWriter* writer) const {
   training_data_.Write(writer, game_result_, adjudicated_);
 }
 
-std::unique_ptr<ChainedSearchStopper> SelfPlayLimits::MakeSearchStopper()
-    const {
-  auto result = std::make_unique<ChainedSearchStopper>();
+std::unique_ptr<classic::ChainedSearchStopper>
+SelfPlayLimits::MakeSearchStopper() const {
+  auto result = std::make_unique<classic::ChainedSearchStopper>();
 
   // always set VisitsStopper to avoid exceeding the limit 4000000000, the
   // default value when visits = 0
-  result->AddStopper(std::make_unique<VisitsStopper>(visits, false));
+  result->AddStopper(std::make_unique<classic::VisitsStopper>(visits, false));
   if (playouts >= 0) {
-    result->AddStopper(std::make_unique<PlayoutsStopper>(playouts, false));
+    result->AddStopper(
+        std::make_unique<classic::PlayoutsStopper>(playouts, false));
   }
   if (movetime >= 0) {
-    result->AddStopper(std::make_unique<TimeLimitStopper>(movetime));
+    result->AddStopper(std::make_unique<classic::TimeLimitStopper>(movetime));
   }
   return result;
 }

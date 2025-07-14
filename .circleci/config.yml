@@ -2,49 +2,117 @@ version: 2
 jobs:
   build:
     docker:
-      - image: danieluranga/leela_chess_zero-lc0_ubuntu_builder:0.0.8
+      - image: nvidia/cuda:11.6.1-cudnn8-devel-ubuntu20.04
     steps:
       - checkout
       - run:
-          name: "Pull Submodules"
+          name: Install build tools
           command: |
-            git submodule init
-            git submodule update --remote
+            apt-get update
+            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev
+            pip3 install meson==0.63
+            pip3 install ninja
       - run:
-          name: Update Meson
-          command: pip3 install --upgrade meson==0.58.1
-      - run:
-          name: Create Meson build dirs
-          command: mkdir build-gcc && mkdir build-clang
-      - run:
-          name: Meson Clang
-          environment:
-            CC: clang
-            CXX: clang++
-          command: meson build-clang
+          name: "Pull Submodules"
+          command: git submodule update --init
       - run:
           name: Meson GCC
           environment:
-            CC: gcc-8
-            CXX: g++-8
-          command: meson build-gcc
+            CC: gcc-10
+            CXX: g++-10
+          command: meson build-gcc -Dgtest=false
       - run:
-          name: Build Clang
-          command: |
-            cd build-clang
-            ninja
+          name: Meson Clang
+          environment:
+            CC: clang-12
+            CXX: clang++-12
+          command: meson build-clang -Dgtest=false -Db_lto=false
       - run:
           name: Build GCC
           command: |
             cd build-gcc
             ninja -j 4
       - run:
-          command: cp build-clang/lc0 /tmp/lc0-clang
+          name: Build Clang
+          command: |
+            cd build-clang
+            ninja -j 4
+  "mac":
+    macos:
+      xcode: 14.1.0
+    resource_class: macos.m1.medium.gen1
+    steps:
+      - checkout
       - run:
-          command: cp build-gcc/lc0 /tmp/lc0-g++
+          name: "Pull Submodules"
+          command: git submodule update --init
+      - run:
+          name: Install build tools
+          command: |
+            pip3 install meson==1.3.0
+            pip3 install ninja
+            curl -LJOs https://github.com/ispc/ispc/releases/download/v1.21.0/ispc-v1.21.0-macOS.universal.tar.gz
+            tar xf ispc-v1.21.0-macOS.universal.tar.gz
+            cp ispc-v1.21.0-macOS.universal/bin/ispc /usr/local/bin
+      - run:
+          name: Build lc0
+          command: |
+            meson build --buildtype=release -Dgtest=false -Dopencl=false  --cross-file cross-files/x86_64-darwin
+            cd build
+            ninja
+      - run:
+          name: Build lc0 arm
+          command: |
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false
+            cd build-arm
+            ninja
+      - run:
+          name: Make universal binary
+          command: lipo -create -o /tmp/lc0 build/lc0 build-arm/lc0
       - store_artifacts:
-          path: /tmp/lc0-clang
-          destination: lc0-ubuntu-18-04-clang
-      - store_artifacts:
-          path: /tmp/lc0-g++
-          destination: lc0-ubuntu-18-04-g++
+          path: /tmp/lc0
+          destination: lc0-macos_12.6.1
+      - run:
+          name: Verify Workspace
+          command: |
+            mv /tmp/lc0 /tmp/lc0-macos_12.6.1
+            ls -lah /tmp
+      - persist_to_workspace:
+          root: /tmp
+          paths: 
+            - lc0-macos_12.6.1
+
+  "upload-github-release":
+    macos:
+      xcode: 14.1.0
+    steps:
+      - attach_workspace:
+          at: /tmp
+      - run:
+          name: Install GitHub CLI
+          command: brew install gh
+      - run:
+          name: Verify Workspace
+          command: |
+            ls -lah /tmp
+      - run:
+          name: Upload to GitHub Release
+          command: |
+            gh release upload \
+              "$CIRCLE_TAG" \
+              /tmp/lc0-macos_12.6.1 \
+              --clobber
+workflows:
+  version: 2
+  builds:
+    jobs:
+      - build
+      - "mac"
+      - "upload-github-release":
+          requires:
+            - "mac"
+          filters:
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*(\-.+)?/
+            branches:
+              ignore: /.*/

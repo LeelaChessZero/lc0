@@ -23,42 +23,15 @@
 #include <iostream>
 
 #include "chess/bitboard.h"
-
 #include "utils/exception.h"
 
 namespace lczero {
 
-TEST(BoardSquare, BoardSquare) {
-  {
-    auto x = BoardSquare(ChessBoard::C2);
-    EXPECT_EQ(x.row(), 1);
-    EXPECT_EQ(x.col(), 2);
-  }
-
-  {
-    auto x = BoardSquare("c2");
-    EXPECT_EQ(x.row(), 1);
-    EXPECT_EQ(x.col(), 2);
-  }
-
-  {
-    auto x = BoardSquare(1, 2);
-    EXPECT_EQ(x.row(), 1);
-    EXPECT_EQ(x.col(), 2);
-  }
-
-  {
-    auto x = BoardSquare(1, 2);
-    x.Mirror();
-    EXPECT_EQ(x.row(), 6);
-    EXPECT_EQ(x.col(), 2);
-  }
-}
-
 TEST(ChessBoard, IllegalFirstRankPawns) {
   ChessBoard board;
-  EXPECT_THROW(board.SetFromFen("nqrbkrnr/bnnbnbnn/8/8/8/8/NNNBPNBN/QNRPKPQQ w - - 0 1");,
-               Exception);
+  EXPECT_THROW(
+      board.SetFromFen("nqrbkrnr/bnnbnbnn/8/8/8/8/NNNBPNBN/QNRPKPQQ w - - 0 1");
+      , Exception);
 }
 
 TEST(ChessBoard, PseudolegalMovesStartingPos) {
@@ -109,26 +82,26 @@ int Perft(const ChessBoard& board, int max_depth, bool dump = false,
     new_board.ApplyMove(move);
     if (new_board.IsUnderCheck()) {
       if (iter != legal_moves.end()) {
-        EXPECT_NE(iter->as_packed_int(), move.as_packed_int())
-            << board.DebugString() << "legal:[" << iter->as_string()
-            << "]==pseudo:(" << move.as_string() << ") Under check:\n"
+        EXPECT_NE(*iter, move)
+            << board.DebugString() << "legal:[" << iter->ToString(true)
+            << "]==pseudo:(" << move.ToString(true) << ") Under check:\n"
             << new_board.DebugString();
       }
       continue;
     }
 
-    EXPECT_EQ(iter->as_packed_int(), move.as_packed_int())
-        << board.DebugString() << "legal:[" << iter->as_string() << "]pseudo:("
-        << move.as_string() << ") after:\n"
-        << new_board.DebugString();
+    EXPECT_EQ(*iter, move) << board.DebugString() << "legal:["
+                           << iter->ToString(true) << "]pseudo:("
+                           << move.ToString(true) << ") after:\n"
+                           << new_board.DebugString();
 
     new_board.Mirror();
     ++iter;
     int count = Perft(new_board, max_depth, dump, depth + 1);
     if (dump && depth == 0) {
       Move m = move;
-      if (board.flipped()) m.Mirror();
-      std::cerr << m.as_string() << ": " << count << '\n';
+      if (board.flipped()) m.Flip();
+      std::cerr << m.ToString(true) << ": " << count << '\n';
     }
     total_count += count;
   }
@@ -2235,26 +2208,6 @@ TEST(ChessBoard, HasMatingMaterialMultipleBishopsNotSameColor) {
   EXPECT_TRUE(board.HasMatingMaterial());
 }
 
-TEST(ChessBoard, CastlingIsSameMove) {
-  ChessBoard board;
-  board.SetFromFen(
-      "r3k2r/ppp1bppp/2np1n2/4p1B1/4P1b1/2NP1N2/PPP1BPPP/R3K2R w KQkq - 0 1");
-  EXPECT_TRUE(board.IsSameMove("e1c1", "e1c1"));
-  EXPECT_TRUE(board.IsSameMove("e1a1", "e1a1"));
-  EXPECT_TRUE(board.IsSameMove("e1c1", "e1a1"));
-  EXPECT_FALSE(board.IsSameMove("e1c1", "e1b1"));
-  EXPECT_FALSE(board.IsSameMove("e1b1", "e1a1"));
-  EXPECT_FALSE(board.IsSameMove("e1c1", "e1g1"));
-  EXPECT_FALSE(board.IsSameMove("e1a1", "e1h1"));
-  EXPECT_FALSE(board.IsSameMove("e1c1", "e1h1"));
-  EXPECT_FALSE(board.IsSameMove("e1a1", "e1g1"));
-  EXPECT_FALSE(board.IsSameMove("e1f1", "e1g1"));
-  EXPECT_FALSE(board.IsSameMove("e1f1", "e1h1"));
-  EXPECT_TRUE(board.IsSameMove("e2c2", "e2c2"));
-  EXPECT_TRUE(board.IsSameMove("e2a2", "e2a2"));
-  EXPECT_FALSE(board.IsSameMove("e2c2", "e2a2"));
-}
-
 namespace {
 void TestInvalid(std::string fen) {
   ChessBoard board;
@@ -2266,7 +2219,6 @@ void TestInvalid(std::string fen) {
   }
 }
 }  // namespace
-
 
 TEST(ChessBoard, InvalidFEN) {
   TestInvalid("rnbqkbnr/ppppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -2280,7 +2232,7 @@ TEST(ChessBoard, InvalidFEN) {
 TEST(ChessBoard, InvalidEnPassantFromKnightPromotion) {
   ChessBoard board;
   board.SetFromFen("Q3b3/2P2pnk/3R3p/p7/1pp1p3/PnP1P2P/2B2PP1/5RK1 w - - 1 31");
-  board.ApplyMove(Move("c7c8"));
+  board.ApplyMove(board.ParseMove("c7c8"));
   EXPECT_TRUE(board.en_passant().empty());
 }
 

@@ -1,4 +1,122 @@
-﻿v0.29.0-rc0 (2022-04-03)
+﻿v0.31.0-rc1 (2024-03-25)
+~~~~~~~
+* The blas, cuda, eigen, metal and onnx backends now have support for multihead
+  network architecture and can run BT3/BT4 nets.
+* Updated the internal Elo model to better align with regular Elo for human
+  players.
+* There is a new XLA backend that uses OpenXLA compiler to produce code to
+  execute the neural network. See
+  <https://github.com/LeelaChessZero/lc0/wiki/XLA-backend> for details. Related
+  are new leela2onnx options to output the HLO format that XLA understands.
+* There is a vastly simplified lc0 interface available by renaming the
+  executable to `lc0simple`.
+* The backends can now suggest a minibatch size to the search, this is enabled
+  by `--minibatch-size=0` (the new default).
+* If the cudnn backend detected an unsupported network architecture it will
+  switch to the cuda backend.
+* Two new selfplay options enable value and policy tournaments. A policy
+  tournament is using a single node policy to select the move to play, while a
+  value tournament searches all possible moves at depth 1 to select the one with
+  the best q.
+* While it is easy to get a single node policy evaluation (`go nodes 1` using
+  uci), there was no simple way to get the effect of a value only evalaution, so
+  the `--value-only` option was added.
+* Button uci options were implemented and a button to clear the tree was added
+  (as hidden option).
+* Support for the uci `go mate` option was added.
+* The rescorer can now be built from the lc0 code base instead of a separate
+  branch.
+* A dicrete onnx layernorm implementation was added to get around a onnxruntime
+  bug with directml - this has some overhead so it is only enabled for onnx-dml
+  and can be switched off with the `alt_layernorm=false` backend option.
+* The `--onnx2pytoch` option was added to leela2onnx to generate pytorch
+  compatible models.
+* There is a cuda `min_batch` backend option to reduce non-determinism with
+  small batches.
+* New options were added to onnx2leela to fix tf exported onnx models.
+* The onnx backend can now be built for amd's rocm.
+* Fixed a bug where the Contempt effect on eval was too low for nets with
+  natively higher draw rates.
+* Made the WDL Rescale sharpness limit configurable via the `--wdl-max-s` hidden
+  option.
+* Several assorted fixes and code cleanups.
+
+v0.30.0 (2023-07-21)
+~~~~~~~
+* WDL_mu score type is now the default and the mlh-threshold default was
+  changed from 0 to 0.8.
+* Fixes for contempt with infinite search and pondering and for the wdl display
+  when pondering.
+
+v0.30.0-rc2 (2023-06-15)
+~~~~~~~
+* WDL conversion for more realistic WDL score and contempt. Adds an Elo based
+  WDL transformation of the NN value head output. Helps with more accurate play
+  at high level (WDL sharpening), more aggressive play against weaker opponents
+  and draw avoiding openings (contempt), piece odds play. There will be a blog
+  post soon explaining in detail how it works.
+* A new score type `WDL_mu` which follows the new eval convention, where +1.00
+  means 50% white win chance.
+* Simplified to a single `--draw-score` parameter, adjusting the draw score from
+  white's perspective: 0 gives standard scoring, -1 gives Armageddon scoring.
+* Updated describenet for new net architectures.
+* Added a `first-move-bonus` option to the legacy time manager, to accompany
+  `book-ply-bonus` for shallow openings.
+* Changed mlh threshold effect to create a smooth transition.
+* Revised 'simple' time manager.
+* A new spinlock implementation (selected with `--search-spin-backoff`) to help
+  with many cpu threads (e.g. 128 threads), obviously for cpu backends only.
+* Some assorted fixes and code cleanups.
+
+v0.30.0-rc1 (2023-04-24)
+~~~~~~~
+* Support for networks with attention body and smolgen added to blas, cuda,
+  metal and onnx backends.
+* Persistent L2 cache optimization for the cuda backend. Use the
+  `cache_opt=true` backend option to turn it on.
+* Some performance improvements for the cuda, onnx and blas backends.
+* Added the `threads` backend option to onnx, defaults to 0 (let the
+  onnxruntime decide) except for onnx-cpu that defaults to 1.
+* The onnx-dml package now includes a `directml.dll` installation script.
+* Some users experienced memory issues with onnx-dml, so the defaults were
+  changed. This may affect performance, in which case you can use the `steps=8`
+  backend option to get the old behavior.
+* The Python bindings are available as a package, see the README for
+  instructions.
+* Some assorted fixes and code cleanups.
+
+v0.29.0 (2022-12-13)
+~~~~~~~
+* Updated onednn version to the latest one.
+
+v0.29.0-rc1 (2022-12-09)
+~~~~~~~
+* New metal backend for apple systems. This is now the default backend for
+  macos builds.
+* New onnx-dml backend to use DirectML under windows, has better net
+  compatibility than dx12 and is faster than opencl. See the README for use
+  instructions, a separate download of the DirectML dll is required.
+* Full attention policy support in cuda, cudnn, metal, onnx, blas, dnnl, and
+  eigen backends.
+* Partial attention policy support in onednn backend (good enough for T79).
+* Now the onnx backends can use fp16 when running with a network file (not with
+  .onnx model files). This is the default for onnx-cuda and onnx-dml, can be
+  switched on or off with by setting the `fp16` backend option to `true` or
+  `false` respectively.
+* The onednn package comes with a dnnl compiled to allow running on an intel gpu
+  by adding `gpu=0` to the backend options.
+* The default net is now 791556 for most backends except opencl and dx12 that
+  get 753723 (as they lack attention policy support).
+* Support for using pgn book with long lines in training: selfplay can start at
+  a random point in the book.
+* New "simple" time manager.
+* Support for double Fischer random chess (dfrc).
+* Added TC-dependent output to the backendbench assistant.
+* Starting with this version, the check backend compares policy for valid moves
+  after softmax.
+* Some assorted fixes and code cleanups.
+
+v0.29.0-rc0 (2022-04-03)
 ~~~~~~~
 * Initial support for attention policy, only cuda backend and partially in
   blas/dnnl/eigen (good enough for T79).

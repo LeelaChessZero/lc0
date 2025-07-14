@@ -100,26 +100,84 @@ void ProtoMessage::MergeFromString(std::string_view str) {
 }
 
 void ProtoMessage::AppendVarInt(int field_id, std::uint64_t value,
-                                std::string* out) const {
+                                std::string* out) {
   *out += EncodeVarInt(field_id << 3);
   *out += EncodeVarInt(value);
 }
 void ProtoMessage::AppendInt64(int field_id, std::uint64_t value,
-                               std::string* out) const {
+                               std::string* out) {
   *out += EncodeVarInt(1 + (field_id << 3));
   WriteFixed(value, 8, out);
 }
 void ProtoMessage::AppendInt32(int field_id, std::uint32_t value,
-                               std::string* out) const {
+                               std::string* out) {
   *out += EncodeVarInt(5 + (field_id << 3));
   WriteFixed(value, 4, out);
 }
 
 void ProtoMessage::AppendString(int field_id, std::string_view value,
-                                std::string* out) const {
+                                std::string* out) {
   *out += EncodeVarInt(2 + (field_id << 3));
   *out += EncodeVarInt(value.size());
   *out += value;
+}
+
+void ProtoMessage::AppendJsonFieldPrefix(const std::string& name,
+                                         bool* is_first, std::string* out) {
+  if (*is_first) {
+    *is_first = false;
+  } else {
+    out->append(",");
+  }
+  AppendJsonValue(name, out);
+  out->append(":");
+}
+
+namespace {
+std::string EscapeJsonString(const std::string& str) {
+  static const char kHex[] = "0123456789abcdef";
+  std::string out;
+  for (const auto c : str) {
+    if (c >= 0 && c <= ' ') {
+      out += std::string("\\u00") + kHex[c / 16] + kHex[c % 16];
+    } else if (c == '\\') {
+      out += "\\\\";
+    } else if (c == '"') {
+      out += "\\\"";
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+void ProtoMessage::AppendJsonValue(const std::string& val, std::string* out) {
+  out->append("\"");
+  out->append(EscapeJsonString(val));
+  out->append("\"");
+}
+void ProtoMessage::AppendJsonValue(bool val, std::string* out) {
+  out->append(val ? "true" : "false");
+}
+void ProtoMessage::AppendJsonValue(double val, std::string* out) {
+  out->append(std::to_string(val));
+}
+void ProtoMessage::AppendJsonValue(uint64_t val, std::string* out) {
+  out->append(std::to_string(val));
+}
+void ProtoMessage::AppendJsonValue(int64_t val, std::string* out) {
+  out->append(std::to_string(val));
+}
+void ProtoMessage::AppendJsonValue(uint32_t val, std::string* out) {
+  out->append(std::to_string(val));
+}
+void ProtoMessage::AppendJsonValue(int32_t val, std::string* out) {
+  out->append(std::to_string(val));
+}
+void ProtoMessage::AppendJsonValue(const ProtoMessage& val, std::string* out) {
+  out->append(val.OutputAsJson());
 }
 
 }  // namespace lczero

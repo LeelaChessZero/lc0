@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+title: LeelaChessZero
+type: software
+authors:
+  - name: The LCZero Authors
+repository-code: 'https://github.com/LeelaChessZero/lc0'
+url: 'https://lczero.org/'
+repository-artifact: 'https://github.com/LeelaChessZero/lc0/releases/'
+abstract: >-
+  Lc0 is a UCI-compliant chess engine designed to play chess
+  via neural network, specifically those of the
+  LeelaChessZero project.
+keywords:
+  - chess
+  - neural networks (NN)
+  - artificial intelligence (AI)
+license: GPL-3.0
