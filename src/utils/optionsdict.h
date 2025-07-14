@@ -79,6 +79,34 @@ class TypeDict {
 
 class OptionId {
  public:
+  enum VisibilityMode {
+    kSimpleMode = 1 << 0,  // Simple mode.
+    kNormalMode = 1 << 1,  // Normal mode.
+    kProMode = 1 << 2,     // Pro mode.
+  };
+
+  enum VisibilityMask {
+    kSimpleOnly = kSimpleMode,
+    kDefaultVisibility = kNormalMode | kProMode,
+    kProOnly = kProMode,
+    kAlwaysVisible = kSimpleMode | kNormalMode | kProMode,
+  };
+
+  struct OptionsParams {
+    const char* long_flag = nullptr;
+    const char* uci_option = nullptr;
+    const char* help_text = nullptr;
+    char short_flag = '\0';
+    VisibilityMask visibility = kDefaultVisibility;
+  };
+
+  OptionId(const OptionsParams& params)
+      : long_flag_(params.long_flag),
+        uci_option_(params.uci_option),
+        help_text_(params.help_text),
+        short_flag_(params.short_flag),
+        visibility_mask_(params.visibility) {}
+
   OptionId(const char* long_flag, const char* uci_option, const char* help_text,
            const char short_flag = '\0')
       : long_flag_(long_flag),
@@ -93,12 +121,14 @@ class OptionId {
   const char* uci_option() const { return uci_option_; }
   const char* help_text() const { return help_text_; }
   char short_flag() const { return short_flag_; }
+  uint64_t visibility_mask() const { return visibility_mask_; }
 
  private:
   const char* const long_flag_;
   const char* const uci_option_;
   const char* const help_text_;
   const char short_flag_;
+  uint64_t visibility_mask_ = kDefaultVisibility;
 };
 
 class Button {

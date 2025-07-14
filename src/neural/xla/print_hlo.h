@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #include <iostream>
 
 #include "neural/xla/hlo.pb.h"
