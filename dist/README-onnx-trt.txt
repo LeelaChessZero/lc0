@@ -5,9 +5,10 @@ neural network, specifically those of the LeelaChessZero project
 (https://lczero.org).
 
 To run this version you will also need several dll files from NVIDA's
-CUDA, cuDNN and TensorRT. Those dlls can either be on the path from
-an existing (or new) installation, or can be in the Lc0 folder.
-Either way, you will get an error message for any that isn't found.
+CUDA, cuDNN and TensorRT. Those dlls can either be on the system path
+from a separate installation of these libraries, or can be placed
+directly in the Lc0 folder. Either way, you will get an error message
+for any that isn't found.
 
 The dlls needed are the following:
 
