@@ -97,9 +97,7 @@ MemoryWatchingStopper::MemoryWatchingStopper(int ram_limit_mb,
                                              uint32_t nodes,
                                              bool populate_remaining_playouts)
     : VisitsStopper(
-          (ram_limit_mb * 1000000LL - total_memory + avg_node_size * nodes) /
-                      avg_node_size >
-                  0
+          (ram_limit_mb * 1000000LL + avg_node_size * nodes > total_memory)
               ? (ram_limit_mb * 1000000LL - total_memory +
                  avg_node_size * nodes) /
                     avg_node_size
