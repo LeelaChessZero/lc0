@@ -35,6 +35,7 @@
 
 #include "chess/bitboard.h"
 #include "chess/position.h"
+#include "utils/exception.h"
 
 namespace lczero {
 
@@ -68,24 +69,24 @@ struct ThinkingInfo {
   // Hash fullness * 1000
   int hashfull = -1;
   // Moves to mate.
-  std::optional<int> mate;
+  std::optional<int> mate = std::nullopt;
   // Win in centipawns.
-  std::optional<int> score;
+  std::optional<int> score = std::nullopt;
   // Win/Draw/Lose probability * 1000.
   struct WDL {
     int w;
     int d;
     int l;
   };
-  std::optional<WDL> wdl;
+  std::optional<WDL> wdl = std::nullopt;
   // Number of successful TB probes (not the same as playouts ending in TB hit).
   int tb_hits = -1;
   // Best line found. Moves are from perspective of white player.
-  std::vector<Move> pv;
+  std::vector<Move> pv = {};
   // Multipv index.
   int multipv = -1;
   // Freeform comment.
-  std::string comment;
+  std::string comment = "";
 
   // Those are extensions and not really UCI protocol.
   // 1 if it's "player1", 2 if it's "player2"
@@ -93,9 +94,9 @@ struct ThinkingInfo {
   // Index of the game in the tournament (0-based).
   int game_id = -1;
   // The color of the player, if known.
-  std::optional<bool> is_black;
+  std::optional<bool> is_black = std::nullopt;
   // Moves left
-  std::optional<int> moves_left;
+  std::optional<int> moves_left = std::nullopt;
 };
 
 // Is sent when a single game is finished.
@@ -142,6 +143,34 @@ class UciResponder {
   virtual ~UciResponder() = default;
   virtual void OutputBestMove(BestMoveInfo* info) = 0;
   virtual void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) = 0;
+};
+
+// The responder which forwards the output to another responder, with
+// observer-like subscription model.
+class UciResponderForwarder : public UciResponder {
+ public:
+  void OutputBestMove(BestMoveInfo* info) override {
+    if (wrapped_) wrapped_->OutputBestMove(info);
+  }
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    if (wrapped_) wrapped_->OutputThinkingInfo(infos);
+  }
+  void Register(UciResponder* wrapped) {
+    if (wrapped_) {
+      throw Exception("UciResponderForwarder already has a wrapped responder");
+    }
+    wrapped_ = wrapped;
+  }
+  void Unregister(UciResponder* wrapped) {
+    if (wrapped_ != wrapped) {
+      throw Exception(
+          "UciResponderForwarder doesn't have this wrapped responder");
+    }
+    wrapped_ = nullptr;
+  }
+
+ private:
+  UciResponder* wrapped_ = nullptr;
 };
 
 // The responder which calls callbacks. Used for easier transition from old
@@ -200,51 +229,6 @@ class TransformingUciResponder : public UciResponder {
     parent_->OutputThinkingInfo(infos);
   }
   std::unique_ptr<UciResponder> parent_;
-};
-
-class WDLResponseFilter : public TransformingUciResponder {
-  using TransformingUciResponder::TransformingUciResponder;
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    for (auto& info : *infos) info.wdl.reset();
-  }
-};
-
-class MovesLeftResponseFilter : public TransformingUciResponder {
-  using TransformingUciResponder::TransformingUciResponder;
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    for (auto& info : *infos) info.moves_left.reset();
-  }
-};
-
-// Remaps FRC castling to legacy castling.
-class Chess960Transformer : public TransformingUciResponder {
- public:
-  Chess960Transformer(std::unique_ptr<UciResponder> parent,
-                      ChessBoard head_board)
-      : TransformingUciResponder(std::move(parent)), head_board_(head_board) {}
-
- private:
-  void TransformBestMove(BestMoveInfo* best_move) override {
-    std::vector<Move> moves({best_move->bestmove, best_move->ponder});
-    ConvertToLegacyCastling(head_board_, &moves);
-    best_move->bestmove = moves[0];
-    best_move->ponder = moves[1];
-  }
-  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
-    for (auto& x : *infos) ConvertToLegacyCastling(head_board_, &x.pv);
-  }
-  static void ConvertToLegacyCastling(ChessBoard pos,
-                                      std::vector<Move>* moves) {
-    for (auto& move : *moves) {
-      if (pos.flipped()) move.Mirror();
-      move = pos.GetLegacyMove(move);
-      pos.ApplyMove(move);
-      if (pos.flipped()) move.Mirror();
-      pos.Mirror();
-    }
-  }
-
-  const ChessBoard head_board_;
 };
 
 }  // namespace lczero
