@@ -97,8 +97,12 @@ MemoryWatchingStopper::MemoryWatchingStopper(int ram_limit_mb,
                                              uint32_t nodes,
                                              bool populate_remaining_playouts)
     : VisitsStopper(
-          (ram_limit_mb * 1000000LL - total_memory + avg_node_size * nodes) /
-              avg_node_size,
+          [&]() -> size_t {
+            const auto ram_limit = ram_limit_mb * 1000000LL;
+            const auto nodes_memory = avg_node_size * nodes;
+            if (ram_limit + nodes_memory < total_memory) return 0;
+            return (ram_limit + nodes_memory - total_memory) / avg_node_size;
+          }(),
           populate_remaining_playouts) {
   LOGFILE << "RAM limit " << ram_limit_mb << "MB. Memory allocated is "
           << (total_memory - avg_node_size * nodes) / 1000000
