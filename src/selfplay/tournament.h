@@ -30,7 +30,8 @@
 #include <list>
 
 #include "chess/pgn.h"
-#include "neural/factory.h"
+#include "neural/backend.h"
+#include "neural/register.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
 #include "utils/mutex.h"
@@ -42,9 +43,7 @@ namespace lczero {
 // Runs many selfplay games, possibly in parallel.
 class SelfPlayTournament {
  public:
-  SelfPlayTournament(const OptionsDict& options,
-                     CallbackUciResponder::BestMoveCallback best_move_info,
-                     CallbackUciResponder::ThinkingCallback thinking_info,
+  SelfPlayTournament(const OptionsDict& options, UciResponder* uci_responder,
                      GameInfo::Callback game_info,
                      TournamentInfo::Callback tournament_info);
 
@@ -95,16 +94,12 @@ class SelfPlayTournament {
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
-  // Map from the backend configuration to a network.
-  std::map<NetworkFactory::BackendConfiguration, std::unique_ptr<Network>>
-      networks_;
-  std::shared_ptr<NNCache> cache_[2];
   // [player1 or player2][white or black].
+  std::shared_ptr<Backend> backends_[2][2];
   const OptionsDict player_options_[2][2];
   SelfPlayLimits search_limits_[2][2];
 
-  CallbackUciResponder::BestMoveCallback best_move_callback_;
-  CallbackUciResponder::ThinkingCallback info_callback_;
+  UciResponder* uci_responder_;
   GameInfo::Callback game_callback_;
   TournamentInfo::Callback tournament_callback_;
   const int kTotalGames;

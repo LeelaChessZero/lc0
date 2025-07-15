@@ -1,81 +1,135 @@
-# Contributing to lc0
+# Contributing to Leela Chess Zero (Lc0)
 
-These are the guidelines and standards followed by this codebase.
+Last updated: June 2025
 
-The language is C++, specifically C++17. As such, manual `new` and `delete` memory mangement is strongly discouraged; use the standard library tools for managing memory (such as `unique_ptr`, `shared_ptr` etc.).
+Thank you for your interest in contributing to LCZero! This document provides
+guidelines for contributing to the codebase.
 
-This codebase uses semantic versioning. A release is the final commit for that version number, and all subsequent commits are development for the next version. `master` is the default branch, and the active development branch (as such, all Pull Requests go here); it always targets a minor (or major) version which succeeds the current relase. `release` is always equivalent to the latest tag.
+## Before you start
 
+* All contributors are encouraged to join our Discord server at
+  <https://lc0.org/chat>.
+* Refer to [README.md](README.md) for building and running instructions.
+  * The protobufs that are shared with the training code are located in a
+    separate repository. Don't forget to run `git submodule update --init` to
+    fetch them.
+* Familiarize yourself with the developer documentation at
+  <https://lczero.org/dev/>.
 
-### Style
+We use the [Meson](https://mesonbuild.com/) build system.
 
-Style is of course the first guideline on every new contributor's mind :)
+* In Linux, using `builddir/` is recommended for development
+  (`meson setup builddir/`), as VSCode recognizes it and all the development and
+  debugging tools work there (ask in Discord if you have issues).
+  * In the `builddir/`, run `ninja lc0` (which is faster than just `ninja`). Run
+    `ninja test` to run the tests.
+* In Windows, `meson setup build/debug` generates a Visual Studio solution that
+  can be used for development.
+* Check `meson_options.txt` for the available build options (to use them, pass
+  `-D<name>=<value>` to `meson setup`).
 
-This codebase largely complies with the [Google C++ style guide](https://google.github.io/styleguide/cppguide.html). The maintainers recommend the use of [Clang's auto formatter](https://clang.llvm.org/docs/ClangFormatStyleOptions.html).
+## Sending Pull Requests
 
-Notable exceptions:
- 1. C++ exceptions are allowed (in fact, only `lczero::Exception`, defined in `utils/exception.h`, is allowed)
- 2. We use `#pragma once` instead of header guards.
- 3. Default function parameters are sometimes allowed.
- 4. Rvalue reference function params are sometimes allowed, not only for constructors and assignment operators.
+* We use GitHub for managing contributions. Please fork the repository and
+  create a new branch for your changes.
+* It's encouraged to discuss your changes in the Discord server before
+  starting work.
+  * Small bug fixes are fine to submit without prior discussion.
+  * Large changes that add code rather than modifying existing code (e.g. new
+    backends, new search algorithms) are generally fine as well. Use your best
+    judgement on whether your change may be controversial.
+  * Changes that modify existing code (e.g. search algorithm tweaks, API
+    changes) should be discussed first.
 
-For items (3) and (4), usage of those are discouraged, only use them if they benefit readability or have significant performance gain. It's possible that those exceptions (3) and (4) will be disallowed in future.
+Changes that may affect playing strength **must** be tested.
 
-The most important rule to follow is consistency: look at the surrounding code when doing changes and follow similar style.
+* Unfortunately, we don't have a robust strength testing framework yet (working
+  on it), so ask in the #testing-discuss channel on Discord for help with
+  testing.
+* Even for Elo-positive changes, we need to balance the strength and
+  maintainability of the code. If your change is Elo-positive but makes the code
+  more complex, please discuss it first. Recently, we added an option to
+  clone the search algorithm in extreme cases.
+* Elo-neutral simplifications are always welcome.
 
-These are the most important parts of the codebase style (as a sort of tl;dr):
+Pull Requests are squashed when merged. This means all commits in the branch
+will be squashed into one commit applied onto master. This makes it tricky to
+reuse the branch and continue to work on it after the PR is merged.
 
- * Comments must be full sentences, i.e. capitalized and ending in a period. (Sentences with elided subjects are fine.) Only `//` style comments are allowed, `/* */` style comments aren't.
+**Note:** This section only applies if you have dependent branches that were
+built on top of your merged PR branch. If you only had one branch, you can
+simply delete it after merging.
 
- * Braces are a variant of K&R style, as can be gleaned from existing code. All `if` statements must use braces, with the possible exception of single statement `if`s, which *may* omit if the braces *if* the conditional and following statement are on the same line. Again, see surrounding code for examples.
+**Example scenario:** You had a branch `add-feature` that got merged, and you
+have another branch `extend-feature` that was based on `add-feature`. After
+`add-feature` is merged, you need to rebase `extend-feature` onto the new
+master. Here's what to do after your PR is merged:
 
- * Indentation is two spaces; \t characters are disallowed.
+```shell
+git fetch upstream  # Update your local master
+git checkout extend-feature  # Switch to your dependent branch
+git rebase --update-refs --onto upstream/master add-feature # Rebase onto the updated master
+```
 
- * Code line length is strictly capped at 80 characters.
+The `--update-refs` flag will also update any branches between your leaf branch
+and the merged branch if you have any.
 
- * Using non-`const` references as function parameters is disallowed; use pointers instead. (Using `const` references as parameters is fine.)
+## C++ Standard and Libraries
 
- * Identifier style:
-   - `kLikeThis` for constants and enum values
-   - `like_this` for variables
-   - `like_this_` for member variables
-   - `LikeThis` for function and class names
+* We use most C++20 features. However, supported compilers are GCC 10 and clang
+  10, so some features may not be available.
+* We use protocol buffers. However, we don't use any external library for it,
+  but rather generate the code from `.proto` files using the script in
+  `scripts/`.
+* Since v0.32, we use Abseil (`absl::`).
+* Use `CERR` for logging (goes to stderr and log), or `LOGFILE` (goes to log
+  file only).
+* Writing tests is encouraged. We use `gtest`/`gmock` for unit tests. Tests are
+  located in the same directory as the code they test, in a file with the same
+  name but ending with `_test.cc`.
 
- * All code should be inside `namespace lczero`
+## Style Guidelines
 
-The internal code dependency structure looks like this:
+We follow the
+[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) with
+these modifications:
 
- * Code in `src/utils` is not allowed to depend on any other code.
+* **Header guards**: Use `#pragma once` instead of traditional header guards.
+* **Exceptions**: are allowed, but only one: `lczero::Exception`.
+* **References vs Pointers**: Non-const reference parameters are neither
+  encouraged nor discouraged over pointers (in the Google style guide, they used
+  to be discouraged, and now they are encouraged).
+* **Formatting**: Run `clang-format` on all code before committing.
+* **RValue references**: Rvalue reference function parameters are allowed, not
+  only for constructors and assignment operators. However, use them only if they
+  benefit readability or have significant performance gain.
+* Every new file should contain a GPLv3 banner with an additional exception
+  under GNU GPL version 3 section 7 regarding NVIDIA libraries (see examples in
+  existing files).
+  * It's allowed to write new backends without the NVIDIA exception, but that
+    means that we won't be able to include NVIDIA libraries if we link with that
+    code.
 
- * Code in `src/chess` only depends on `src/utils`
+## AI-Assisted Development
 
- * Code in `src/neural` only depends on `src/utils` and `src/chess`
+AI tools and coding assistants are allowed for contributing to Leela Chess Zero,
+provided you follow these guidelines:
 
- * Code in `src/mcts` only depends on `src/utils`, `src/chess` and `src/neural`
+* **Disclose AI usage**: Clearly mention in your PR description if you used AI
+  tools, LLMs, or agentic coding approaches (beyond simple code completion).
+* **Maintain code ownership**: You must thoroughly read, understand, and review
+  all AI-generated code in detail before submitting.
+* **Ensure quality**: Take all appropriate steps to verify the code quality,
+  correctness, and adherence to project standards.
+* **Submit only what you could write yourself**: Use AI as a productivity
+  booster, not as a replacement for proper programming skills and domain
+  knowledge.
+* **Core vs. auxiliary code**: While AI assistance works well for auxiliary code
+  (website, documentation, simple tools), it has failed so far on core lc0
+  engine code. We discourage using agentic coding for core engine components but
+  welcome it for simpler projects within the Leela Chess Zero organization.
 
+Remember: You are responsible for the quality and correctness of all code you
+submit, regardless of how it was generated.
 
-### Git history
-
-Pull Requests are squashed when merged. This means all commits in the branch will be squashed into one commit applied onto master, so branches and their PRs should stick to *one* topic only. If you think changes deserve separate commits, make separate PRs for each commit.
-
-This also means it's not possible to reuse one branch for multiple PRs; new PRs must either use entirely new branches, or else you could use `git reset --hard` on the current branch.
-
-
-### Allowed features
-
-Lc0 is still in early stages of development, and has not yet reached the point where we are ready to add small tweaks to add few points of a rating. Large code changes still happen, and having lots of small optimizations adds overhead to larger changes, slowing development.
-
-Therefore, as a rule, search algorithm tweaks that give a gain of less than ~20 Elo points are discouraged at this point. (This limit will gradually be lowered as Lc0 code matures, eventually to 0.0 Elo).
-
-
-#### Adding new command line flags/UCI parameters
-
-Only add new parameters if users can significantly (>20 Elo) benefit by tweaking it. We don't want to make every single constant configurable (or rather, users don't want to see hundreds of parameters which don't do anything).
-
-Try to minimize number of parameters that your feature introduces. If your feature introduces several parameters, every individual parameter should be significant (i.e. tweaking it with other fixes will give >20 Elo).
-
-
-#### Adding features for testing
-
-It is fine to temporarily commit a feature of unknown Elo gain so that people may test it. It's also fine to expose many parameters for the feature initially so that people can tune them. However, if the tweak doesn't prove to be significant, it should be removed after a few weeks.
-
+Thank you for helping make Leela Chess Zero better!
