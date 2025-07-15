@@ -54,7 +54,7 @@ class ChainedSearchStopper : public SearchStopper {
 class VisitsStopper : public SearchStopper {
  public:
   VisitsStopper(int64_t limit, bool populate_remaining_playouts)
-      : nodes_limit_(limit ? limit : 4000000000ll),
+      : nodes_limit_(limit),
         populate_remaining_playouts_(populate_remaining_playouts) {}
   int64_t GetVisitsLimit() const { return nodes_limit_; }
   bool ShouldStop(const IterationStats&, StoppersHints*) override;
