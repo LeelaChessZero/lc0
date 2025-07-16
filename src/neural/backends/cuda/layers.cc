@@ -1422,7 +1422,7 @@ template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(
     BaseLayer<DataType>* ip, const MultiHeadWeights::PolicyHead& weights,
     void* scratch, bool attention_body, ActivationFunction act,
-    int max_batch_size)
+    int max_batch_size, bool use_gemm_ex)
     : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
       attention_body_(attention_body),
       // Old networks without attention body (e.g. T79) use hardcoded SELU
@@ -1474,8 +1474,8 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
         nullptr, 0,  // smolgen weights not implemented in
                      // policy encoder heads yet.
         max_batch_size, ACTIVATION_SWISH, act_,
-        1e-6);  // attentionbody nets don't have policy encoders, so using old
-                // epsilon for backward compatibility with T78.
+        1e-6,          // attentionbody nets don't have policy encoders, so
+        use_gemm_ex);  // using old epsilon for backward compatibility with T78.
     encoder_weights_.emplace_back(pW);
   }
 }
@@ -1485,7 +1485,7 @@ EncoderBlock<DataType>::EncoderBlock(
     const MultiHeadWeights::EncoderLayer& cpu_weights, void* scratch, int heads,
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
-    ActivationFunction ffn_act, float default_eps)
+    ActivationFunction ffn_act, float default_eps, bool use_gemm_ex)
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
@@ -1493,7 +1493,8 @@ EncoderBlock<DataType>::EncoderBlock(
       has_smolgen_(cpu_weights.mha.has_smolgen),
       smolgen_activation_(smolgen_act),
       ffn_activation_(ffn_act),
-      max_batch_size_(max_batch_size) {
+      max_batch_size_(max_batch_size),
+      use_gemm_ex_(use_gemm_ex) {
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1605,7 +1606,8 @@ static void cublasXGemmStridedBatched(
     cublasHandle_t handle, cublasOperation_t transa, cublasOperation_t transb,
     int m, int n, int k, float alpha, const void* A, int lda,
     long long int strideA, const void* B, int ldb, long long int strideB,
-    float beta, void* C, int ldc, long long int strideC, int batchCount) {
+    float beta, void* C, int ldc, long long int strideC, int batchCount,
+    bool use_gemm_ex) {
   const bool fp16 = std::is_same<half, DataType>::value;
   if (fp16) {
     unsigned short alpha_h = FP32toFP16(alpha);
@@ -1615,10 +1617,17 @@ static void cublasXGemmStridedBatched(
         B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
         batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
   } else {
-    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
-        handle, transa, transb, m, n, k, &alpha, A, CUDA_R_32F, lda, strideA, B,
-        CUDA_R_32F, ldb, strideB, &beta, C, CUDA_R_32F, ldc, strideC,
-        batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+    if (use_gemm_ex) {
+      ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+          handle, transa, transb, m, n, k, &alpha, A, CUDA_R_32F, lda, strideA,
+          B, CUDA_R_32F, ldb, strideB, &beta, C, CUDA_R_32F, ldc, strideC,
+          batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+    } else {
+      ReportCUBLASErrors(cublasSgemmStridedBatched(
+          handle, transa, transb, m, n, k, &alpha, (const float*)A, lda,
+          strideA, (const float*)B, ldb, strideB, &beta, (float*)C, ldc,
+          strideC, batchCount));
+    }
   }
 }
 
@@ -1736,7 +1745,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     cublasXGemmStridedBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
         mha_qkv_w, num_inputs, num_inputs * num_outputs, in_out_tensor,
-        num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch, 3);
+        num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch, 3,
+        use_gemm_ex_);
     addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs,
                              max_batch, ACTIVATION_NONE, stream);
   }
@@ -1929,7 +1939,7 @@ void AttentionPolicyHead<DataType>::Eval(
     cublasXGemmStridedBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
         wqk_w_, num_inputs, num_inputs * num_outputs, input2_tensor, num_inputs,
-        0, 0.0f, wq, num_outputs, num_outputs * batch, 2);
+        0, 0.0f, wq, num_outputs, num_outputs * batch, 2, use_gemm_ex_);
 
     addBiasBatched<DataType>(wq, wq, wqk_b_, 2, batch, num_outputs,
                              ACTIVATION_NONE, stream);
@@ -1952,7 +1962,7 @@ void AttentionPolicyHead<DataType>::Eval(
         wk /*A*/, policy_d_model_ /*LDA*/, 64 * policy_d_model_, /*strideA*/
         wq /*B*/, policy_d_model_ /*LDB*/, 64 * policy_d_model_, /*strideB*/
         0.0f, output /*C*/,  // output (policy_attn_logits)
-        64 /*LDC*/, 64 * 64 + 8 * 24 /*strideC*/, N);
+        64 /*LDC*/, 64 * 64 + 8 * 24 /*strideC*/, N, use_gemm_ex_);
   }
 
   // Compute promotion_logits in a single kernel (and put the result just after
@@ -2045,8 +2055,10 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                                        void* scratch, Activations activations,
                                        int num_res_blocks, int input_c,
                                        int max_batch_size,
-                                       bool is_pe_dense_embedding)
-    : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr),
+                                       bool is_pe_dense_embedding,
+                                       bool use_gemm_ex)
+    : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr, false,
+                          use_gemm_ex),
       embedding_op_size_(weights.ip_emb_b.size()),
       encoder_head_count_(weights.encoder_head_count),
       activations_(activations),
@@ -2110,7 +2122,7 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        is_pe_dense_embedding_ ? 1e-3 : 1e-6);
+        is_pe_dense_embedding_ ? 1e-3 : 1e-6, use_gemm_ex);
     encoder_weights_.emplace_back(pW);
   }
 }

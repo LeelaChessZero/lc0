@@ -527,7 +527,7 @@ class CudnnNetwork : public Network {
       if (attn_policy_) {
         auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
             getLastLayer(), head, scratch_mem_, false, ACTIVATION_SELU,
-            max_batch_size_);
+            max_batch_size_, use_gemm_ex);
         network_.emplace_back(std::move(AttentionPolicy));
 
         auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
