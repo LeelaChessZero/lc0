@@ -50,7 +50,7 @@ IF %ONNX%==true (
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-dml.zip .\dist\README.txt
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-dml.zip .\dist\install.cmd
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip %APPVEYOR_BUILD_FOLDER%\build\lc0-trt.exe
-  7z rn lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt lc0-trt.exe lc0.exe
+  7z rn lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip lc0-trt.exe lc0.exe
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip "%PKG_FOLDER%\%ONNX_NAME%\runtimes\win-x64\native\onnxruntime_providers_shared.dll"
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip "%PKG_FOLDER%\%ONNX_NAME_TWO%\lib\onnxruntime_providers_cuda.dll"
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip "%PKG_FOLDER%\%ONNX_NAME_TWO%\lib\onnxruntime_providers_tensorrt.dll"
