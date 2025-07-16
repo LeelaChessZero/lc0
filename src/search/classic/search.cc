@@ -2003,20 +2003,6 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   node->CreateEdges(legal_moves);
 }
 
-// Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node) {
-  std::vector<Move> moves;
-  if (node && node->HasChildren()) {
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) moves.emplace_back(edge.GetMove());
-  } else {
-    moves = history_.Last().GetBoard().GenerateLegalMoves();
-  }
-  return computation_->AddInput(EvalPosition{history_.GetPositions(), moves},
-                                EvalResultPtr{}) ==
-         BackendComputation::FETCHED_IMMEDIATELY;
-}
-
 // 2b. Copy collisions into shared collisions.
 void SearchWorker::CollectCollisions() {
   SharedMutex::Lock lock(search_->nodes_mutex_);
@@ -2055,13 +2041,17 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node)) {
+    if (search_->backend_->GetCachedEvaluation(
+            EvalPosition{history_.GetPositions(), {}})) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
       // easy to find what to cache.
       return 1;
     }
+    auto moves = history_.Last().GetBoard().GenerateLegalMoves();
+    computation_->AddInput(EvalPosition{history_.GetPositions(), moves},
+                           EvalResultPtr{});
     return 1;
   }
 
