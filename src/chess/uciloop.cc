@@ -101,15 +101,16 @@ ParseCommand(const std::string& line) {
       throw Exception("setoption must be followed by name");
     }
     int name_pos = iss.eof() ? line.length() : static_cast<int>(iss.tellg());
-    int value_pos = -1;
+    std::optional<int> value_pos;
     while (iss >> token) {
       if (token == "value") {
         value_pos = iss.eof() ? line.length() : static_cast<int>(iss.tellg());
-        params["value"] = Trim(line.substr(value_pos));
+        params["value"] = Trim(line.substr(*value_pos));
         break;
       }
     }
-    params["name"] = Trim(line.substr(name_pos, value_pos - name_pos - 5));
+    params["name"] = Trim(line.substr(
+        name_pos, value_pos ? *value_pos - name_pos - 5 : std::string::npos));
     return {"setoption", params};
   }
 
