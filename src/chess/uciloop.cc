@@ -63,7 +63,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
     kKnownCommands = {
         {{"uci"}, {}},
         {{"isready"}, {}},
-        {{"setoption"}, {"context", "name", "value"}},
+        {{"setoption"}, {"name", "value"}},
         {{"ucinewgame"}, {}},
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
@@ -92,6 +92,25 @@ ParseCommand(const std::string& line) {
   const auto command = kKnownCommands.find(token);
   if (command == kKnownCommands.end()) {
     throw Exception("Unknown command: " + line);
+  }
+
+  // Special parsing for setoption to keep strings unmodified.
+  if (command->first == "setoption") {
+    iss >> token;
+    if (token != "name") {
+      throw Exception("setoption must be followed by name");
+    }
+    int name_pos = iss.eof() ? line.length() : static_cast<int>(iss.tellg());
+    int value_pos = -1;
+    while (iss >> token) {
+      if (token == "value") {
+        value_pos = iss.eof() ? line.length() : static_cast<int>(iss.tellg());
+        params["value"] = Trim(line.substr(value_pos));
+        break;
+      }
+    }
+    params["name"] = Trim(line.substr(name_pos, value_pos - name_pos - 5));
+    return {"setoption", params};
   }
 
   std::string whitespace;
@@ -168,8 +187,7 @@ bool UciLoop::DispatchCommand(
       throw Exception("setoption requires name");
     } else {
       options_->SetUciOption(GetOrEmpty(params, "name"),
-                             GetOrEmpty(params, "value"),
-                             GetOrEmpty(params, "context"));
+                             GetOrEmpty(params, "value"));
     }
   } else if (command == "ucinewgame") {
     engine_->NewGame();
