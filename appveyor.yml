@@ -12,7 +12,7 @@ environment:
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
 #  - NAME: onednn
-  - NAME: onnx-dml
+  - NAME: onnx
   - NAME: android
   - NAME: gpu-nvidia-cuda11
 for:
@@ -31,7 +31,7 @@ install:
 - cmd: set OPENCL=false
 - cmd: set BLAS=false
 - cmd: set ONEDNN=false
-- cmd: set ONNX_DML=false
+- cmd: set ONNX=false
 - cmd: set GTEST=false
 - cmd: set ANDROID=false
 - cmd: IF %NAME%==android set ANDROID=true
@@ -45,7 +45,7 @@ install:
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set GTEST=true
 - cmd: IF %NAME%==onednn set ONEDNN=true
-- cmd: IF %NAME%==onnx-dml set ONNX_DML=true
+- cmd: IF %NAME%==onnx set ONNX=true
 - cmd: set NET=753723
 - cmd: set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
 - cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET=791556
@@ -57,11 +57,12 @@ install:
 - cmd: IF %NAME%==onednn set DNNL_NAME=dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp
 - cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/borg323/oneDNN/releases/download/v2.7.2/dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip
 - cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip -oC:\cache
-- cmd: IF %NAME%==onnx-dml set ONNX_NAME=onnxruntime-win-x64-dml-1.22.1
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\%ONNX_NAME% appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\%ONNX_NAME% 7z x Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg -oC:\cache\%ONNX_NAME%
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-gpu-1.22.1 appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/onnxruntime-win-x64-gpu-1.22.1.zip
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-gpu-1.22.1 7z x onnxruntime-win-x64-gpu-1.22.1.zip -oC:\cache
+- cmd: IF %NAME%==onnx set ONNX_NAME=onnxruntime-win-x64-dml-1.22.1
+- cmd: IF %NAME%==onnx set ONNX_NAME_TWO=onnxruntime-win-x64-gpu-1.22.1
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME% appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME% 7z x Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg -oC:\cache\%ONNX_NAME%
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME_TWO% appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/onnxruntime-win-x64-gpu-1.22.1.zip
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME_TWO% 7z x onnxruntime-win-x64-gpu-1.22.1.zip -oC:\cache
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
@@ -136,7 +137,7 @@ before_build:
 - cmd: IF %CUDA%==true SET F16C=false
 - cmd: SET EXTRA=
 - cmd: IF %ANDROID%==false SET EXTRA=-Db_vscrt=md
-- cmd: IF %ONNX_DML%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\runtimes\win-x64\native\ -Donnx_include=C:\cache\%ONNX_NAME%\build\native\include
+- cmd: IF %ONNX%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\runtimes\win-x64\native\ -Donnx_include=C:\cache\%ONNX_NAME%\build\native\include
 - cmd: IF %ANDROID%==false meson build --backend vs2019 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
 - cmd: IF %ANDROID%==true meson arm64-v8a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-aarch64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-aarch64\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-aarch64
 - cmd: IF %ANDROID%==true meson armeabi-v7a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-armv7a\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-armv7a\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-armv7a -Dispc=false -Dneon=false
