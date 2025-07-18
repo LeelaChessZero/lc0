@@ -61,7 +61,7 @@ v0.31.0-rc3 (2024-05-29)
 ~~~~~~~
 * The `WDLDrawRateTarget` option now accepts the value 0 (new default) to retain
   raw WDL values if `WDLCalibrationElo` is set to 0 (default).
-* Improvements to the verbose move stats if `WDLEvalObjectivity is used.
+* Improvements to the verbose move stats if `WDLEvalObjectivity` is used.
 * The centipawn score is displayed by default for old nets without WDL output.
 * Some build system improvements.
 
