@@ -474,6 +474,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
+    converter_options.ir = opts.GetOrDefault<int>("ir", -1);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
     converter_options.alt_layernorm = opts.GetOrDefault<bool>(
