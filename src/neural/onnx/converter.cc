@@ -1100,7 +1100,7 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
 
 void Converter::GenerateOnnx(pblczero::OnnxModel* onnx) {
   MultiHeadWeights weights(src_.weights());
-  OnnxBuilder builder(options_.opset);
+  OnnxBuilder builder(options_.opset, options_.ir);
 
   if (GetDataType() == pblczero::TensorProto::FLOAT16) {
     onnx->set_data_type(pblczero::OnnxModel::FLOAT16);
