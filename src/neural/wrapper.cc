@@ -177,12 +177,7 @@ NetworkAsBackendFactory::NetworkAsBackendFactory(const std::string& name,
     : name_(name), factory_(factory), priority_(priority) {}
 
 std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
-    const OptionsDict& options) {
-  const std::string backend_options =
-      options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
-  OptionsDict network_options;
-  network_options.AddSubdictFromString(backend_options);
-
+    const OptionsDict& options, const OptionsDict& network_options) {
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);
   std::optional<WeightsFile> weights = LoadWeights(net_path);

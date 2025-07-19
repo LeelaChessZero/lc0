@@ -58,8 +58,8 @@ class MockBackendFactory : public BackendFactory {
  public:
   MOCK_METHOD(int, GetPriority, (), (const, override));
   MOCK_METHOD(std::string_view, GetName, (), (const, override));
-  MOCK_METHOD(std::unique_ptr<Backend>, Create, (const OptionsDict&),
-              (override));
+  MOCK_METHOD(std::unique_ptr<Backend>, Create,
+              (const OptionsDict&, const OptionsDict&), (override));
 };
 
 }  // namespace lczero
