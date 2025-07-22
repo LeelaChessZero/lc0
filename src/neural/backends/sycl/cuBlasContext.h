@@ -61,7 +61,7 @@ class cuBlasContextManager{
 
 
 #include "hip/hip_runtime.h" 
-#include "hipblas.h"
+#include "hipblas/hipblas.h"
 
 class hipBlasContextManager;
 static hipBlasContextManager *_hipBlasContextManager;
