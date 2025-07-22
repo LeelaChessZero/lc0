@@ -142,7 +142,11 @@ BaseWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
       dense_w(LayerAdapter(mha.dense_w()).as_vector()),
       dense_b(LayerAdapter(mha.dense_b()).as_vector()),
       smolgen(Smolgen(mha.smolgen())),
-      has_smolgen(mha.has_smolgen()) {}
+      has_smolgen(mha.has_smolgen()) {
+  if (mha.has_rpe_q() || mha.has_rpe_k() || mha.has_rpe_v()) {
+    throw Exception("RPE weights file not supported.");
+  }
+}
 
 BaseWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
     : dense1_w(LayerAdapter(ffn.dense1_w()).as_vector()),
