@@ -462,7 +462,17 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
                  [](const auto& x) { return x.c_str(); });
   uint64_t hash = 0;
   if (provider == OnnxProvider::TRT) {
-    hash = std::hash<std::string_view>()(md.model());
+    auto sv = md.model();
+    // Filter out 16 random chars in the name of our conversions.
+    constexpr std::string_view kName = "org.lczero/converted/";
+    auto idx = md.model().find(kName);
+    if (idx != std::string::npos) {
+      sv.remove_prefix(idx + kName.length() + 16);
+      hash ^= std::hash<std::string_view>()(sv);
+      sv = md.model();
+      sv.remove_suffix(sv.length() - idx - kName.length());
+    }
+    hash ^= std::hash<std::string_view>()(sv);
   }
 
   for (int step = 1; step <= steps_; step++)
