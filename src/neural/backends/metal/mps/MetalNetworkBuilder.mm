@@ -36,7 +36,6 @@ namespace metal_backend {
 MetalNetworkBuilder::MetalNetworkBuilder(void){}
 MetalNetworkBuilder::~MetalNetworkBuilder(void){}
 
-//void MetalNetworkBuilder::init(void* weights, void* options)
 std::string MetalNetworkBuilder::init(int gpu_id)
 {
     // All metal devices.
@@ -57,6 +56,12 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     return std::string([devices[gpu_id].name UTF8String]);
 }
 
+bool MetalNetworkBuilder::isMacOsVersionOrNewer(int major, int minor) const
+{
+    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
+    return [graph isMacOsVersionOrNewer:major minor:minor];
+}
+
 void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, InputEmbedding embedding,
                                 bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left,
                                 Activations& activations, std::string& policy_head, std::string& value_head)
@@ -70,10 +75,28 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
 
     // 0. Input placeholder.
     // @todo - placeholder can be made directly as NHWC to avoid transposes.
-    MPSGraphTensor * layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
-                                                               height:8
-                                                                width:8
-                                                                label:@"inputs"];
+    MPSGraphTensor * layer;
+    if ([graph isMacOsVersionOrNewer:13 minor:0]) {
+        // New input placeholder of bitboard values.
+        layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
+                                                  height:1
+                                                   width:1
+                                                   label:@"inputs"];
+        // Create a mask placeholder for the new input.
+        MPSGraphTensor * maskTensor = [graph maskPlaceholderWithInputChannels:kInputPlanes
+                                                                        label:@"inputs/mask"];
+        
+        layer = [graph expandInputTensorWithMask:maskTensor
+                                           input:layer
+                                           label:@"inputs/expand"];
+    }
+    else {
+        // Old input placeholder without mask, used for MacOS versions before 13.0.
+        layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
+                                                  height:8
+                                                   width:8
+                                                   label:@"inputs"];
+    }
 
     const NSUInteger kernelSize = 3;
     const bool isPeDenseEmbedding = embedding == InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
@@ -302,11 +325,19 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
     }
 }
 
-void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems)
+void MetalNetworkBuilder::forwardEvalLegacy(float * inputs, int batchSize, std::vector<float *> output_mems)
 {
     @autoreleasepool {
         Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-        [graph runInferenceWithBatchSize:batchSize inputs:inputs outputs:&output_mems[0]];
+        [graph runInferenceWithBatchSize:batchSize inputs:inputs masks:nil outputs:&output_mems[0]];
+    }
+}
+
+void MetalNetworkBuilder::forwardEval(float * inputs, uint64_t * masks, int batchSize, std::vector<float *> output_mems)
+{
+    @autoreleasepool {
+        Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
+        [graph runInferenceWithBatchSize:batchSize inputs:inputs masks:masks outputs:&output_mems[0]];
     }
 }
 

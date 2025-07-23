@@ -31,12 +31,19 @@
 #include "metal_common.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
+// #include <Foundation/Foundation.h>
 
 namespace lczero {
 namespace metal_backend {
 
 class MetalNetwork;
 class MetalNetworkBuilder;
+
+// bool isMacOSVersionNewer(int major, int minor) {
+//     NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
+//     return (version.majorVersion > major) ||
+//            (version.majorVersion == major && version.minorVersion >= minor);
+// }
 
 class MetalNetworkComputation : public NetworkComputation {
  public:
@@ -112,6 +119,8 @@ class MetalNetwork : public Network {
   }
 
   void forwardEval(InputsOutputs* io, int inputBatchSize);
+
+  void forwardEvalLegacy(InputsOutputs* io, int inputBatchSize);
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<MetalNetworkComputation>(this, wdl_, moves_left_);
