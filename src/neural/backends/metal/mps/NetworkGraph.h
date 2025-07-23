@@ -55,7 +55,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     NSArray<MPSGraphTensor *> * _resultTensors;
     NSArray<MPSGraphTensor *> * _targetTensors;
     NSMutableDictionary<NSNumber *, MPSGraphTensorDataDictionary *> * _resultDataDicts;
-    NSMutableDictionary<NSString *, NSObject *> * _readVariables;
+    NSMutableDictionary<NSString *, MPSGraphTensor *> * _readVariables;
 
     // Variables for triple buffering
     dispatch_semaphore_t _doubleBufferingSemaphore;
