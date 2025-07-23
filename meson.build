@@ -646,6 +646,10 @@ if get_option('build_backends')
     has_backends = true
     add_project_arguments('-fobjc-arc', language : 'objc')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
+
+    # Add new Acccelerate headers in MacOs >= 13.3. This may fail in older versions.
+    add_project_arguments('-DACCELERATE_NEW_LAPACK', language : 'cpp')
+    add_project_arguments('-DACCELERATE_LAPACK_ILP64', language : 'cpp')
   endif
 
   ## ~~~~~~~~
