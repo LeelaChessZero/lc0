@@ -73,41 +73,65 @@ jobs:
           path: /tmp/lc0
           destination: lc0-macos_12.6.1
       - run:
-          name: Verify Workspace
+          name: Prepare Workspace
           command: |
-            mv /tmp/lc0 /tmp/lc0-macos_12.6.1
-            ls -lah /tmp
+            mkdir -p workspace
+            mv /tmp/lc0 workspace
       - persist_to_workspace:
-          root: /tmp
+          root: workspace
           paths: 
-            - lc0-macos_12.6.1
-
+            - lc0
+  "mac latest":
+    macos:
+      xcode: 16.4.0
+    resource_class: macos.m1.medium.gen1
+    steps:
+      - checkout
+      - run:
+          name: "Pull Submodules"
+          command: git submodule update --init
+      - run:
+          name: Install build tools
+          command: |
+            pip3 install meson
+            pip3 install ninja
+      - run:
+          name: Build lc0 arm
+          command: |
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false
+            cd build-arm
+            ninja
   "upload-github-release":
     macos:
       xcode: 14.1.0
     steps:
       - attach_workspace:
-          at: /tmp
+          at: /tmp/workspace
       - run:
           name: Install GitHub CLI
           command: brew install gh
       - run:
           name: Verify Workspace
           command: |
-            ls -lah /tmp
+            ls -lah /tmp/workspace
       - run:
           name: Upload to GitHub Release
           command: |
+            mv /tmp/workspace/lc0 /tmp/lc0-$CIRCLE_TAG-macos_12.6.1
             gh release upload \
               "$CIRCLE_TAG" \
-              /tmp/lc0-macos_12.6.1 \
+              /tmp/lc0-$CIRCLE_TAG-macos_12.6.1 \
               --clobber
 workflows:
   version: 2
   builds:
     jobs:
       - build
-      - "mac"
+      - "mac":
+          filters:
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*(\-.+)?/
+      - "mac latest"
       - "upload-github-release":
           requires:
             - "mac"
