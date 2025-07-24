@@ -647,9 +647,12 @@ if get_option('build_backends')
     add_project_arguments('-fobjc-arc', language : 'objc')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
 
-    # Add new Acccelerate headers in MacOs >= 13.3. This may fail in older versions.
-    add_project_arguments('-DACCELERATE_NEW_LAPACK', language : 'cpp')
-    add_project_arguments('-DACCELERATE_LAPACK_ILP64', language : 'cpp')
+    # Minimum MacOS version = 12.6.1
+    macos_min_version = '12.6'
+    add_project_arguments(
+      '-mmacosx-version-min=' + macos_min_version,
+      language: ['c', 'cpp', 'objc', 'objcpp']
+    )
   endif
 
   ## ~~~~~~~~

@@ -191,8 +191,12 @@ static const NSInteger kMinSubBatchSize = 20;
 
     // Create execution descriptor with block to update results for each iteration.
     MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
-    executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * _) {
-        _resultDataDicts[@(subBatch)] = resultDictionary;
+    executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"Error occurred during execution: %@", error);
+        } else {
+            _resultDataDicts[@(subBatch)] = resultDictionary;
+        }
 
         // Release double buffering semaphore for the next training iteration to be encoded.
         dispatch_semaphore_signal(_doubleBufferingSemaphore);
