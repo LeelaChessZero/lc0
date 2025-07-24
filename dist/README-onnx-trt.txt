@@ -4,13 +4,29 @@ Lc0 is a UCI-compliant chess engine designed to play chess via
 neural network, specifically those of the LeelaChessZero project
 (https://lczero.org).
 
-To run this version you will most likely need a very recent DirectML dll,
-which you can get by running the included `install.cmd` script. Alternatively,
-you can download the currently latest nuget installer package from
-<https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4>.
-If you don't know how to use nuget installer packages, you can change the
-extension to .zip and open it as a normal zip file, the dll you need is
-`/bin/x64-win/DirectML.dll`.
+To run this version you will also need several dll files from NVIDA's
+CUDA, cuDNN and TensorRT. Those dlls can either be on the system path
+from a separate installation of these libraries, or can be placed
+directly in the Lc0 folder. Either way, you will get an error message
+for any that isn't found.
+
+The dlls needed are the following:
+
+1. CUDA
+* cublas64_12.dll
+* cublasLt64_12.dll
+* cudart64_12.dll
+* cufft64_11.dll
+
+2. cuDNN
+* cudnn64_9.dll
+* cudnn_graph64_9.dll
+
+3. TensorRT:
+* nvinfer_10.dll
+* nvinfer_builder_resource_10.dll
+* nvinfer_plugin_10.dll
+* nvonnxparser_10.dll
 
 License
 

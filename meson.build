@@ -38,7 +38,9 @@ if cc.get_id() == 'clang'
 endif
 if cc.get_id() != 'msvc'
   if get_option('buildtype') == 'release'
-    add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
+     if get_option('native_arch')
+       add_project_arguments(cc.get_supported_arguments(['-march=native']), language : 'cpp')
+     endif
   endif
 endif
 if cc.get_id() == 'msvc'
@@ -189,7 +191,6 @@ common_files += [
 ]
 
 files += [
-  'src/engine_classic.cc',
   'src/engine_loop.cc',
   'src/engine.cc',
   'src/neural/backends/network_check.cc',
@@ -257,16 +258,7 @@ endif
 if get_option('dag_classic')
   files += [
     'src/search/dag_classic/node.cc',
-    'src/search/dag_classic/params.cc',
     'src/search/dag_classic/search.cc',
-    'src/search/dag_classic/stoppers/alphazero.cc',
-    'src/search/dag_classic/stoppers/common.cc',
-    'src/search/dag_classic/stoppers/factory.cc',
-    'src/search/dag_classic/stoppers/legacy.cc',
-    'src/search/dag_classic/stoppers/simple.cc',
-    'src/search/dag_classic/stoppers/smooth.cc',
-    'src/search/dag_classic/stoppers/stoppers.cc',
-    'src/search/dag_classic/stoppers/timemgr.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
 
@@ -692,9 +684,26 @@ if get_option('build_backends')
         deps += cc.find_library('mkl_core', required: true)
         deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
-        error('Building SYCL for AMD backend not yet supported')
+        deps += cc.find_library('hipblas', required: true)
+        deps += cc.find_library('amdhip64', required: true)
+        add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
+        add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
+        if get_option('amd_gfx') == ''
+          error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. 90a, 1100 or similar)')
+        endif
+        add_project_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
+        add_project_link_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
       else
-        error('Building SYCL for the NVIDIA backend not yet supported')
+        deps += cc.find_library('cublas', required: true)
+        deps += cc.find_library('cudart', required: true)
+        add_project_arguments('-DUSE_CUBLAS=ON', language : 'cpp')
+        if get_option('cc_cuda') != ''
+          sycl_nvidia_target = 'nvidia_gpu_sm_' + get_option('cc_cuda')
+        else
+          sycl_nvidia_target = 'nvptx64-nvidia-cuda'
+        endif
+        add_project_arguments('-fsycl-targets='+sycl_nvidia_target, language : 'cpp')
+        add_project_link_arguments('-fsycl-targets='+sycl_nvidia_target, language : 'cpp')
       endif
       if host_machine.system() == 'windows'
         # For sycl under windows we need to link using icx to generate the device code.
@@ -760,10 +769,19 @@ if get_option('embed')
   add_project_arguments('-DEMBED', language : 'cpp')
 endif
 
+default_search_h = configuration_data()
 if get_option('default_search') != ''
-  add_project_arguments('-DDEFAULT_SEARCH=' +
-                        get_option('default_search'), language : 'cpp')
+  default_search_h.set_quoted('DEFAULT_SEARCH', get_option('default_search'))
 endif
+configure_file(output : 'default_search.h',
+               configuration : default_search_h)
+
+default_backend_h = configuration_data()
+if get_option('default_backend') != ''
+  default_backend_h.set_quoted('DEFAULT_BACKEND', get_option('default_backend'))
+endif
+configure_file(output : 'default_backend.h',
+               configuration : default_backend_h)
 
 if get_option('lc0')
   files += common_files

@@ -30,26 +30,29 @@
 #include <iostream>
 
 #include "engine.h"
-#include "engine_classic.h"
 #include "neural/shared_params.h"
 #include "utils/configfile.h"
 
 namespace lczero {
 namespace {
-const OptionId kLogFileId{"logfile", "LogFile",
-                          "Write log to that file. Special value <stderr> to "
-                          "output the log to the console.",
-                          'l'};
+const OptionId kLogFileId{
+    {.long_flag = "logfile",
+     .uci_option = "LogFile",
+     .help_text = "Write log to that file. Special value <stderr> to "
+                  "output the log to the console.",
+     .short_flag = 'l',
+     .visibility = OptionId::kAlwaysVisible}};
+}  // namespace
 
-template <typename EngineType>
-void RunEngineInternal(SearchFactory* factory) {
+void RunEngine(SearchFactory* factory) {
+  CERR << "Search algorithm: " << factory->GetName();
   StdoutUciResponder uci_responder;
 
   // Populate options from various sources.
   OptionsParser options_parser;
   options_parser.Add<StringOption>(kLogFileId);
   ConfigFile::PopulateOptions(&options_parser);
-  EngineType::PopulateOptions(&options_parser);
+  Engine::PopulateOptions(&options_parser);
   if (factory) factory->PopulateParams(&options_parser);  // Search params.
   uci_responder.PopulateParams(&options_parser);          // UCI params.
   SharedBackendParams::Populate(&options_parser);
@@ -60,13 +63,7 @@ void RunEngineInternal(SearchFactory* factory) {
   Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
 
   // Create engine.
-  EngineType engine = [&]() {
-    if constexpr (std::is_same_v<EngineType, EngineClassic>) {
-      return EngineType(options);
-    } else {
-      return EngineType(*factory, options);
-    }
-  }();
+  Engine engine(*factory, options);
   UciLoop loop(&uci_responder, &options_parser, &engine);
 
   // Run the stdin loop.
@@ -83,12 +80,5 @@ void RunEngineInternal(SearchFactory* factory) {
     }
   }
 }
-}  // namespace
-
-void RunEngine(SearchFactory* factory) {
-  CERR << "Search algorithm: " << factory->GetName();
-  RunEngineInternal<Engine>(factory);
-}
-void RunEngineClassic() { RunEngineInternal<EngineClassic>(nullptr); }
 
 }  // namespace lczero

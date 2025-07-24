@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2023 The LCZero Authors
+  Copyright (C) 2018-2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -41,9 +41,6 @@
 
 #ifndef DEFAULT_MAX_PREFETCH
 #define DEFAULT_MAX_PREFETCH 32
-#endif
-#ifndef DEFAULT_TASK_WORKERS
-#define DEFAULT_TASK_WORKERS 4
 #endif
 
 namespace lczero {
@@ -92,7 +89,7 @@ float GetContempt(std::string name, std::string contempt_str,
 // Calculate ratio and diff for WDL conversion from the contempt settings.
 // More accurate model, allowing book bias dependent Elo calculation.
 // Doesn't take lower accuracy of opponent into account and needs clamping.
-SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
+BaseSearchParams::WDLRescaleParams AccurateWDLRescaleParams(
     float contempt, float draw_rate_target, float draw_rate_reference,
     float book_exit_bias, float contempt_max, float contempt_attenuation) {
   // Catch accidental low positive values of draw_rate_target to guarantee
@@ -115,7 +112,7 @@ SearchParams::WDLRescaleParams AccurateWDLRescaleParams(
            std::pow(std::cosh(0.5f * (1 + book_exit_bias) / scale_target), 2)) *
       std::log(10) / 200 * std::clamp(contempt, -contempt_max, contempt_max) *
       contempt_attenuation;
-  return SearchParams::WDLRescaleParams(ratio, diff);
+  return BaseSearchParams::WDLRescaleParams(ratio, diff);
 }
 
 // Converts regular Elo into ideal UHO game pair Elo based on the same Elo
@@ -137,7 +134,7 @@ float ConvertRegularToGamePairElo(float elo_regular) {
 // Less accurate Elo model, but automatically chooses draw rate and accuracy
 // based on the absolute Elo of both sides. Doesn't require clamping, but still
 // uses the parameter.
-SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
+BaseSearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
     float contempt, float draw_rate_reference, float elo_active,
     float contempt_max, float contempt_attenuation) {
   // Scale parameter of the logistic WDL distribution is fitted as a sigmoid,
@@ -174,315 +171,375 @@ SearchParams::WDLRescaleParams SimplifiedWDLRescaleParams(
       std::log(1.0f + std::exp(-elo_opp / elo_slope + offset) / scale_zero);
   float diff = 1.0f / (scale_reference * scale_reference) *
                (mu_active - mu_opp) * contempt_attenuation;
-  return SearchParams::WDLRescaleParams(ratio, diff);
+  return BaseSearchParams::WDLRescaleParams(ratio, diff);
 }
 }  // namespace
 
-const OptionId SearchParams::kMiniBatchSizeId{
+const OptionId BaseSearchParams::kMiniBatchSizeId{
     "minibatch-size", "MinibatchSize",
     "How many positions the engine tries to batch together for parallel NN "
     "computation. Larger batches may reduce strength a bit, especially with a "
     "small number of playouts. Set to 0 to use a backend suggested value."};
-const OptionId SearchParams::kMaxPrefetchBatchId{
-    "max-prefetch", "MaxPrefetch",
-    "When the engine cannot gather a large enough batch for immediate use, try "
-    "to prefetch up to X positions which are likely to be useful soon, and put "
-    "them into cache."};
-const OptionId SearchParams::kCpuctId{
+const OptionId BaseSearchParams::kCpuctId{
     "cpuct", "CPuct",
     "cpuct_init constant from \"UCT search\" algorithm. Higher values promote "
     "more exploration/wider search, lower values promote more "
     "confidence/deeper search."};
-const OptionId SearchParams::kCpuctAtRootId{
-    "cpuct-at-root", "CPuctAtRoot",
-    "cpuct_init constant from \"UCT search\" algorithm, for root node."};
-const OptionId SearchParams::kCpuctBaseId{
+const OptionId BaseSearchParams::kCpuctAtRootId{
+    {.long_flag = "cpuct-at-root",
+     .uci_option = "CPuctAtRoot",
+     .help_text =
+         "cpuct_init constant from \"UCT search\" algorithm, for root node.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kCpuctBaseId{
     "cpuct-base", "CPuctBase",
     "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
     "higher growth of Cpuct as number of node visits grows."};
-const OptionId SearchParams::kCpuctBaseAtRootId{
-    "cpuct-base-at-root", "CPuctBaseAtRoot",
-    "cpuct_base constant from \"UCT search\" algorithm, for root node."};
-const OptionId SearchParams::kCpuctFactorId{
+const OptionId BaseSearchParams::kCpuctBaseAtRootId{
+    {.long_flag = "cpuct-base-at-root",
+     .uci_option = "CPuctBaseAtRoot",
+     .help_text =
+         "cpuct_base constant from \"UCT search\" algorithm, for root node.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kCpuctFactorId{
     "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
-const OptionId SearchParams::kCpuctFactorAtRootId{
-    "cpuct-factor-at-root", "CPuctFactorAtRoot",
-    "Multiplier for the cpuct growth formula at root."};
+const OptionId BaseSearchParams::kCpuctFactorAtRootId{
+    {.long_flag = "cpuct-factor-at-root",
+     .uci_option = "CPuctFactorAtRoot",
+     .help_text = "Multiplier for the cpuct growth formula at root.",
+     .visibility = OptionId::kProOnly}};
 // Remove this option after 0.25 has been made mandatory in training and the
 // training server stops sending it.
-const OptionId SearchParams::kRootHasOwnCpuctParamsId{
-    "root-has-own-cpuct-params", "RootHasOwnCpuctParams",
-    "If enabled, cpuct parameters for root node are taken from *AtRoot "
-    "parameters. Otherwise, they are the same as for the rest of nodes. "
-    "Temporary flag for transition to a new version."};
-const OptionId SearchParams::kTwoFoldDrawsId{
+const OptionId BaseSearchParams::kRootHasOwnCpuctParamsId{
+    {.long_flag = "root-has-own-cpuct-params",
+     .uci_option = "RootHasOwnCpuctParams",
+     .help_text =
+         "If enabled, cpuct parameters for root node are taken from *AtRoot "
+         "parameters. Otherwise, they are the same as for the rest of nodes. "
+         "Temporary flag for transition to a new version.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kTwoFoldDrawsId{
     "two-fold-draws", "TwoFoldDraws",
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
-    "these positions are reverted when the first occurrence is played "
-    "and not in the search tree anymore."};
-const OptionId SearchParams::kTemperatureId{
-    "temperature", "Temperature",
-    "Tau value from softmax formula for the first move. If equal to 0, the "
-    "engine picks the best move to make. Larger values increase randomness "
-    "while making the move."};
-const OptionId SearchParams::kTempDecayMovesId{
-    "tempdecay-moves", "TempDecayMoves",
-    "Reduce temperature for every move after the first move, decreasing "
-    "linearly over this number of moves from initial temperature to 0. "
-    "A value of 0 disables tempdecay."};
-const OptionId SearchParams::kTempDecayDelayMovesId{
-    "tempdecay-delay-moves", "TempDecayDelayMoves",
-    "Delay the linear decrease of temperature by this number of moves, "
-    "decreasing linearly from initial temperature to 0. A value of 0 starts "
-    "tempdecay after the first move."};
-const OptionId SearchParams::kTemperatureCutoffMoveId{
-    "temp-cutoff-move", "TempCutoffMove",
-    "Move number, starting from which endgame temperature is used rather "
-    "than initial temperature. Setting it to 0 disables cutoff."};
-const OptionId SearchParams::kTemperatureEndgameId{
-    "temp-endgame", "TempEndgame",
-    "Temperature used during endgame (starting from cutoff move). Endgame "
-    "temperature doesn't decay."};
-const OptionId SearchParams::kTemperatureWinpctCutoffId{
-    "temp-value-cutoff", "TempValueCutoff",
-    "When move is selected using temperature, bad moves (with win "
-    "probability less than X than the best move) are not considered at all."};
-const OptionId SearchParams::kTemperatureVisitOffsetId{
-    "temp-visit-offset", "TempVisitOffset",
-    "Adjusts visits by this value when picking a move with a temperature. If a "
-    "negative offset reduces visits for a particular move below zero, that "
-    "move is not picked. If no moves can be picked, no temperature is used."};
-const OptionId SearchParams::kNoiseEpsilonId{
-    "noise-epsilon", "DirichletNoiseEpsilon",
-    "Amount of Dirichlet noise to combine with root priors. This allows the "
-    "engine to discover new ideas during training by exploring moves which are "
-    "known to be bad. Not normally used during play."};
-const OptionId SearchParams::kNoiseAlphaId{
-    "noise-alpha", "DirichletNoiseAlpha",
-    "Alpha of Dirichlet noise to control the sharpness of move probabilities. "
-    "Larger values result in flatter / more evenly distributed values."};
-const OptionId SearchParams::kVerboseStatsId{
+    "these positions are reverted when the first occurrence is played and not "
+    "in the search tree anymore."};
+const OptionId BaseSearchParams::kTemperatureId{
+    {.long_flag = "temperature",
+     .uci_option = "Temperature",
+     .help_text = "Tau value from softmax formula for the first move. If equal "
+                  "to 0, the engine picks the best move to make. Larger values "
+                  "increase randomness while making the move.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kTempDecayMovesId{
+    {.long_flag = "tempdecay-moves",
+     .uci_option = "TempDecayMoves",
+     .help_text = "Reduce temperature for every move after the first move, "
+                  "decreasing linearly over this number of moves from initial "
+                  "temperature to 0. A value of 0 disables tempdecay.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kTempDecayDelayMovesId{
+    {.long_flag = "tempdecay-delay-moves",
+     .uci_option = "TempDecayDelayMoves",
+     .help_text = "Delay the linear decrease of temperature by this number of "
+                  "moves, decreasing linearly from initial temperature to 0. A "
+                  "value of 0 starts tempdecay after the first move.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kTemperatureCutoffMoveId{
+    {.long_flag = "temp-cutoff-move",
+     .uci_option = "TempCutoffMove",
+     .help_text =
+         "Move number, starting from which endgame temperature is used rather "
+         "than initial temperature. Setting it to 0 disables cutoff.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kTemperatureEndgameId{
+    {.long_flag = "temp-endgame",
+     .uci_option = "TempEndgame",
+     .help_text = "Temperature used during endgame (starting from cutoff "
+                  "move). Endgame temperature doesn't decay.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kTemperatureWinpctCutoffId{
+    {.long_flag = "temp-value-cutoff",
+     .uci_option = "TempValueCutoff",
+     .help_text = "When move is selected using temperature, bad moves (with "
+                  "win probability less than X than the best move) are not "
+                  "considered at all.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kTemperatureVisitOffsetId{
+    {.long_flag = "temp-visit-offset",
+     .uci_option = "TempVisitOffset",
+     .help_text = "Adjusts visits by this value when picking a move with a "
+                  "temperature. If a negative offset reduces visits for a "
+                  "particular move below zero, that move is not picked. If no "
+                  "moves can be picked, no temperature is used.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kNoiseEpsilonId{
+    {.long_flag = "noise-epsilon",
+     .uci_option = "DirichletNoiseEpsilon",
+     .help_text =
+         "Amount of Dirichlet noise to combine with root priors. This allows "
+         "the engine to discover new ideas during training by exploring moves "
+         "which are known to be bad. Not normally used during play.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kNoiseAlphaId{
+    {.long_flag = "noise-alpha",
+     .uci_option = "DirichletNoiseAlpha",
+     .help_text = "Alpha of Dirichlet noise to control the sharpness of move "
+                  "probabilities. Larger values result in flatter / more "
+                  "evenly distributed values.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move.",
     'v'};
-const OptionId SearchParams::kLogLiveStatsId{
-    "log-live-stats", "LogLiveStats",
-    "Do VerboseMoveStats on every info update."};
-const OptionId SearchParams::kFpuStrategyId{
+const OptionId BaseSearchParams::kLogLiveStatsId{
+    {.long_flag = "log-live-stats",
+     .uci_option = "LogLiveStats",
+     .help_text = "Do VerboseMoveStats on every info update.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kFpuStrategyId{
     "fpu-strategy", "FpuStrategy",
     "How is an eval of unvisited node determined. \"First Play Urgency\" "
     "changes search behavior to visit unvisited nodes earlier or later by "
     "using a placeholder eval before checking the network. The value specified "
     "with --fpu-value results in \"reduction\" subtracting that value from the "
     "parent eval while \"absolute\" directly uses that value."};
-const OptionId SearchParams::kFpuValueId{
+const OptionId BaseSearchParams::kFpuValueId{
     "fpu-value", "FpuValue",
     "\"First Play Urgency\" value used to adjust unvisited node eval based on "
     "--fpu-strategy."};
-const OptionId SearchParams::kFpuStrategyAtRootId{
-    "fpu-strategy-at-root", "FpuStrategyAtRoot",
-    "How is an eval of unvisited root children determined. Just like "
-    "--fpu-strategy except only at the root level and adjusts unvisited root "
-    "children eval with --fpu-value-at-root. In addition to matching the "
-    "strategies from --fpu-strategy, this can be \"same\" to disable the "
-    "special root behavior."};
-const OptionId SearchParams::kFpuValueAtRootId{
-    "fpu-value-at-root", "FpuValueAtRoot",
-    "\"First Play Urgency\" value used to adjust unvisited root children eval "
-    "based on --fpu-strategy-at-root. Has no effect if --fpu-strategy-at-root "
-    "is \"same\"."};
-const OptionId SearchParams::kCacheHistoryLengthId{
+const OptionId BaseSearchParams::kFpuStrategyAtRootId{
+    {.long_flag = "fpu-strategy-at-root",
+     .uci_option = "FpuStrategyAtRoot",
+     .help_text =
+         "How is an eval of unvisited root children determined. Just like "
+         "--fpu-strategy except only at the root level and adjusts unvisited "
+         "root children eval with --fpu-value-at-root. In addition to matching "
+         "the strategies from --fpu-strategy, this can be \"same\" to disable "
+         "the special root behavior.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kFpuValueAtRootId{
+    {.long_flag = "fpu-value-at-root",
+     .uci_option = "FpuValueAtRoot",
+     .help_text = "\"First Play Urgency\" value used to adjust unvisited root "
+                  "children eval based on --fpu-strategy-at-root. Has no "
+                  "effect if --fpu-strategy-at-root is \"same\".",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kCacheHistoryLengthId{
     "cache-history-length", "CacheHistoryLength",
     "Length of history, in half-moves, to include into the cache key. When "
     "this value is less than history that NN uses to eval a position, it's "
     "possble that the search will use eval of the same position with different "
     "history taken from cache."};
-const OptionId SearchParams::kMaxCollisionVisitsId{
+const OptionId BaseSearchParams::kMaxCollisionVisitsId{
     "max-collision-visits", "MaxCollisionVisits",
     "Total allowed node collision visits, per batch."};
-const OptionId SearchParams::kMaxCollisionEventsId{
+const OptionId BaseSearchParams::kMaxCollisionEventsId{
     "max-collision-events", "MaxCollisionEvents",
     "Allowed node collision events, per batch."};
-const OptionId SearchParams::kOutOfOrderEvalId{
+const OptionId BaseSearchParams::kOutOfOrderEvalId{
     "out-of-order-eval", "OutOfOrderEval",
     "During the gathering of a batch for NN to eval, if position happens to be "
     "in the cache or is terminal, evaluate it right away without sending the "
     "batch to the NN. When off, this may only happen with the very first node "
     "of a batch; when on, this can happen with any node."};
-const OptionId SearchParams::kMaxOutOfOrderEvalsFactorId{
+const OptionId BaseSearchParams::kMaxOutOfOrderEvalsFactorId{
     "max-out-of-order-evals-factor", "MaxOutOfOrderEvalsFactor",
     "Maximum number of out of order evals during gathering of a batch is "
     "calculated by multiplying the maximum batch size by this number."};
-const OptionId SearchParams::kStickyEndgamesId{
+const OptionId BaseSearchParams::kStickyEndgamesId{
     "sticky-endgames", "StickyEndgames",
     "When an end of game position is found during search, allow the eval of "
     "the previous move's position to stick to something more accurate. For "
     "example, if at least one move results in checkmate, then the position "
     "should stick as checkmated. Similarly, if all moves are drawn or "
     "checkmated, the position should stick as drawn or checkmate."};
-const OptionId SearchParams::kSyzygyFastPlayId{
+const OptionId BaseSearchParams::kSyzygyFastPlayId{
     "syzygy-fast-play", "SyzygyFastPlay",
     "With DTZ tablebase files, only allow the network pick from winning moves "
     "that have shortest DTZ to play faster (but not necessarily optimally)."};
-const OptionId SearchParams::kMultiPvId{
-    "multipv", "MultiPV",
-    "Number of game play lines (principal variations) to show in UCI info "
-    "output."};
-const OptionId SearchParams::kPerPvCountersId{
+const OptionId BaseSearchParams::kMultiPvId{
+    {.long_flag = "multipv",
+     .uci_option = "MultiPV",
+     .help_text = "Number of game play lines (principal variations) to show in "
+                  "UCI info output.",
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId BaseSearchParams::kPerPvCountersId{
     "per-pv-counters", "PerPVCounters",
     "Show node counts per principal variation instead of total nodes in UCI."};
-const OptionId SearchParams::kScoreTypeId{
+const OptionId BaseSearchParams::kScoreTypeId{
     "score-type", "ScoreType",
     "What to display as score. Either centipawns (the UCI default), win "
     "percentage or Q (the actual internal score) multiplied by 100."};
-const OptionId SearchParams::kMovesLeftMaxEffectId{
+const OptionId BaseSearchParams::kMovesLeftMaxEffectId{
     "moves-left-max-effect", "MovesLeftMaxEffect",
     "Maximum bonus to add to the score of a node based on how much "
     "shorter/longer it makes the game when winning/losing."};
-const OptionId SearchParams::kMovesLeftThresholdId{
+const OptionId BaseSearchParams::kMovesLeftThresholdId{
     "moves-left-threshold", "MovesLeftThreshold",
     "Absolute value of node Q needs to exceed this value before shorter wins "
     "or longer losses are considered."};
-const OptionId SearchParams::kMovesLeftSlopeId{
+const OptionId BaseSearchParams::kMovesLeftSlopeId{
     "moves-left-slope", "MovesLeftSlope",
     "Controls how the bonus for shorter wins or longer losses is adjusted "
     "based on how many moves the move is estimated to shorten/lengthen the "
     "game. The move difference is multiplied with the slope and capped at "
     "MovesLeftMaxEffect."};
-const OptionId SearchParams::kMovesLeftConstantFactorId{
+const OptionId BaseSearchParams::kMovesLeftConstantFactorId{
     "moves-left-constant-factor", "MovesLeftConstantFactor",
     "A simple multiplier to the moves left effect, can be set to 0 to only use "
     "an effect scaled by Q."};
-const OptionId SearchParams::kMovesLeftScaledFactorId{
+const OptionId BaseSearchParams::kMovesLeftScaledFactorId{
     "moves-left-scaled-factor", "MovesLeftScaledFactor",
     "A factor which is multiplied by the absolute Q of parent node and the "
     "base moves left effect."};
-const OptionId SearchParams::kMovesLeftQuadraticFactorId{
+const OptionId BaseSearchParams::kMovesLeftQuadraticFactorId{
     "moves-left-quadratic-factor", "MovesLeftQuadraticFactor",
     "A factor which is multiplied by the square of Q of parent node and the "
     "base moves left effect."};
-const OptionId SearchParams::kMaxConcurrentSearchersId{
+const OptionId BaseSearchParams::kMaxConcurrentSearchersId{
     "max-concurrent-searchers", "MaxConcurrentSearchers",
     "If not 0, at most this many search workers can be gathering minibatches "
     "at once."};
-const OptionId SearchParams::kDrawScoreId{
+const OptionId BaseSearchParams::kDrawScoreId{
     "draw-score", "DrawScore",
     "Adjustment of the draw score from white's perspective. Value 0 gives "
     "standard scoring, value -1 gives Armageddon scoring."};
-const OptionId SearchParams::kContemptModeId{
+const OptionId BaseSearchParams::kContemptModeId{
     "contempt-mode", "ContemptMode",
     "Affects the way asymmetric WDL parameters are applied. Default is 'play' "
     "for matches, use 'white_side_analysis' and 'black_side_analysis' for "
     "analysis. Use 'disable' to deactivate contempt."};
-const OptionId SearchParams::kContemptId{
-    "contempt", "Contempt",
-    "The simulated Elo advantage for the WDL conversion. Comma separated "
-    "list in the form [name=]value, where the name is compared with the "
-    "`UCI_Opponent` value to find the appropriate contempt value. The default "
-    "value is taken from `UCI_RatingAdv` and will be overridden if either a "
-    "value without name is given, or if a name match is found."};
-const OptionId SearchParams::kContemptMaxValueId{
-    "contempt-max-value", "ContemptMaxValue",
-    "The maximum value of contempt used. Higher values will be capped."};
-const OptionId SearchParams::kWDLCalibrationEloId{
+const OptionId BaseSearchParams::kContemptId{
+    {.long_flag = "contempt",
+     .uci_option = "Contempt",
+     .help_text = "The simulated Elo advantage for the WDL conversion. Comma "
+                  "separated list in the form [name=]value, where the name is "
+                  "compared with the `UCI_Opponent` value to find the "
+                  "appropriate contempt value. The default value is taken from "
+                  "`UCI_RatingAdv` and will be overridden if either a value "
+                  "without name is given, or if a name match is found.",
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId BaseSearchParams::kContemptMaxValueId{
+    {.long_flag = "contempt-max-value",
+     .uci_option = "ContemptMaxValue",
+     .help_text =
+         "The maximum value of contempt used. Higher values will be capped.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kWDLCalibrationEloId{
     "wdl-calibration-elo", "WDLCalibrationElo",
-    "Elo of the active side, adjusted for time control relative to rapid."
-    "To retain raw WDL without sharpening/softening, use default value 0."};
-const OptionId SearchParams::kWDLContemptAttenuationId{
-    "wdl-contempt-attenuation", "WDLContemptAttenuation",
-    "Scales how Elo advantage is applied for contempt. Use 1.0 for realistic "
-    "analysis, and 0.5-0.6 for optimal match performance."};
-const OptionId SearchParams::kWDLMaxSId{
-    "wdl-max-s", "WDLMaxS",
-    "Limits the WDL derived sharpness s to a reasonable value to avoid "
-    "erratic behavior at high contempt values. Default recommended for "
-    "regular chess, increase value for more volatile positions like DFRC "
-    "or piece odds."};
-const OptionId SearchParams::kWDLEvalObjectivityId{
+    "Elo of the active side, adjusted for time control relative to rapid.To "
+    "retain raw WDL without sharpening/softening, use default value 0."};
+const OptionId BaseSearchParams::kWDLContemptAttenuationId{
+    {.long_flag = "wdl-contempt-attenuation",
+     .uci_option = "WDLContemptAttenuation",
+     .help_text =
+         "Scales how Elo advantage is applied for contempt. Use 1.0 for "
+         "realistic analysis, and 0.5-0.6 for optimal match performance.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kWDLMaxSId{
+    {.long_flag = "wdl-max-s",
+     .uci_option = "WDLMaxS",
+     .help_text = "Limits the WDL derived sharpness s to a reasonable value to "
+                  "avoid erratic behavior at high contempt values. Default "
+                  "recommended for regular chess, increase value for more "
+                  "volatile positions like DFRC or piece odds.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kWDLEvalObjectivityId{
     "wdl-eval-objectivity", "WDLEvalObjectivity",
-    "When calculating the centipawn eval output, decides how objective/"
-    "contempt influenced the reported eval should be. Value 0.0 reports the "
-    "internally used WDL values, 1.0 attempts an objective eval."};
-const OptionId SearchParams::kWDLDrawRateTargetId{
-    "wdl-draw-rate-target", "WDLDrawRateTarget",
-    "To define the accuracy of play, the target draw rate in equal "
-    "positions is used as a proxy. Ignored if WDLCalibrationElo is set. "
-    "To retain raw WDL without sharpening/softening, use default value 0."};
-const OptionId SearchParams::kWDLDrawRateReferenceId{
+    "When calculating the centipawn eval output, decides how "
+    "objective/contempt influenced the reported eval should be. Value 0.0 "
+    "reports the internally used WDL values, 1.0 attempts an objective eval."};
+const OptionId BaseSearchParams::kWDLDrawRateTargetId{
+    {.long_flag = "wdl-draw-rate-target",
+     .uci_option = "WDLDrawRateTarget",
+     .help_text =
+         "To define the accuracy of play, the target draw rate in equal "
+         "positions is used as a proxy. Ignored if WDLCalibrationElo is set. "
+         "To retain raw WDL without sharpening/softening, use default value 0.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kWDLDrawRateReferenceId{
     "wdl-draw-rate-reference", "WDLDrawRateReference",
-    "Set this to the draw rate predicted by the used neural network at "
-    "default settings. The accuracy rescaling is done relative to the "
-    "reference draw rate."};
-const OptionId SearchParams::kWDLBookExitBiasId{
-    "wdl-book-exit-bias", "WDLBookExitBias",
-    "The book exit bias used when measuring engine Elo. Value of startpos is "
-    "around 0.2, value of 50% white win is 1. Only relevant if target draw "
-    "rate is above 80%; ignored if WDLCalibrationElo is set."};
-const OptionId SearchParams::kNpsLimitId{
+    "Set this to the draw rate predicted by the used neural network at default "
+    "settings. The accuracy rescaling is done relative to the reference draw "
+    "rate."};
+const OptionId BaseSearchParams::kWDLBookExitBiasId{
+    {.long_flag = "wdl-book-exit-bias",
+     .uci_option = "WDLBookExitBias",
+     .help_text =
+         "The book exit bias used when measuring engine Elo. Value of startpos "
+         "is around 0.2, value of 50% white win is 1. Only relevant if target "
+         "draw rate is above 80%; ignored if WDLCalibrationElo is set.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kNpsLimitId{
     "nps-limit", "NodesPerSecondLimit",
     "An option to specify an upper limit to the nodes per second searched. The "
     "accuracy depends on the minibatch size used, increasing for lower sizes, "
     "and on the length of the search. Zero to disable."};
-const OptionId SearchParams::kSolidTreeThresholdId{
-    "solid-tree-threshold", "SolidTreeThreshold",
-    "Only nodes with at least this number of visits will be considered for "
-    "solidification for improved cache locality."};
-const OptionId SearchParams::kTaskWorkersPerSearchWorkerId{
+const OptionId BaseSearchParams::kTaskWorkersPerSearchWorkerId{
     "task-workers", "TaskWorkers",
     "The number of task workers to use to help the search worker. Setting to "
     "-1 will use a heuristic value."};
-const OptionId SearchParams::kMinimumWorkSizeForProcessingId{
+const OptionId BaseSearchParams::kMinimumWorkSizeForProcessingId{
     "minimum-processing-work", "MinimumProcessingWork",
     "This many visits need to be gathered before tasks will be used to "
     "accelerate processing."};
-const OptionId SearchParams::kMinimumWorkSizeForPickingId{
+const OptionId BaseSearchParams::kMinimumWorkSizeForPickingId{
     "minimum-picking-work", "MinimumPickingWork",
     "Search branches with more than this many collisions/visits may be split "
     "off to task workers."};
-const OptionId SearchParams::kMinimumRemainingWorkSizeForPickingId{
+const OptionId BaseSearchParams::kMinimumRemainingWorkSizeForPickingId{
     "minimum-remaining-picking-work", "MinimumRemainingPickingWork",
     "Search branches won't be split off to task workers unless there is at "
     "least this much work left to do afterwards."};
-const OptionId SearchParams::kMinimumWorkPerTaskForProcessingId{
+const OptionId BaseSearchParams::kMinimumWorkPerTaskForProcessingId{
     "minimum-per-task-processing", "MinimumPerTaskProcessing",
     "Processing work won't be split into chunks smaller than this (unless its "
     "more than half of MinimumProcessingWork)."};
-const OptionId SearchParams::kIdlingMinimumWorkId{
+const OptionId BaseSearchParams::kIdlingMinimumWorkId{
     "idling-minimum-work", "IdlingMinimumWork",
     "Only early exit gathering due to 'idle' backend if more than this many "
     "nodes will be sent to the backend."};
-const OptionId SearchParams::kThreadIdlingThresholdId{
+const OptionId BaseSearchParams::kThreadIdlingThresholdId{
     "thread-idling-threshold", "ThreadIdlingThreshold",
     "If there are more than this number of search threads that are not "
     "actively in the process of either sending data to the backend or waiting "
     "for data from the backend, assume that the backend is idle."};
-const OptionId SearchParams::kMaxCollisionVisitsScalingStartId{
+const OptionId BaseSearchParams::kMaxCollisionVisitsScalingStartId{
     "max-collision-visits-scaling-start", "MaxCollisionVisitsScalingStart",
     "Tree size where max collision visits starts scaling up from 1."};
-const OptionId SearchParams::kMaxCollisionVisitsScalingEndId{
+const OptionId BaseSearchParams::kMaxCollisionVisitsScalingEndId{
     "max-collision-visits-scaling-end", "MaxCollisionVisitsScalingEnd",
     "Tree size where max collision visits reaches max. Set to 0 to disable "
     "scaling entirely."};
-const OptionId SearchParams::kMaxCollisionVisitsScalingPowerId{
+const OptionId BaseSearchParams::kMaxCollisionVisitsScalingPowerId{
     "max-collision-visits-scaling-power", "MaxCollisionVisitsScalingPower",
     "Power to apply to the interpolation between 1 and max to make it curved."};
-const OptionId SearchParams::kUCIOpponentId{
+const OptionId BaseSearchParams::kUCIOpponentId{
     "", "UCI_Opponent",
     "UCI option used by the GUI to pass the name and other information about "
     "the current opponent."};
-const OptionId SearchParams::kUCIRatingAdvId{
+const OptionId BaseSearchParams::kUCIRatingAdvId{
     "", "UCI_RatingAdv",
     "UCI extension used by some GUIs to pass the estimated Elo advantage over "
     "the current opponent, used as the default contempt value."};
-const OptionId SearchParams::kSearchSpinBackoffId{
+const OptionId BaseSearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
 
-void SearchParams::Populate(OptionsParser* options) {
+const OptionId SearchParams::kMaxPrefetchBatchId{
+    "max-prefetch", "MaxPrefetch",
+    "When the engine cannot gather a large enough batch for immediate use, try "
+    "to prefetch up to X positions which are likely to be useful soon, and put "
+    "them into cache."};
+const OptionId SearchParams::kSolidTreeThresholdId{
+    "solid-tree-threshold", "SolidTreeThreshold",
+    "Only nodes with at least this number of visits will be considered for "
+    "solidification for improved cache locality."};
+
+void BaseSearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 0, 1024) = 0;
-  options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.745f;
   options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 1.745f;
   options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 38739.0f;
@@ -558,7 +615,6 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kWDLDrawRateReferenceId, 0.001f, 0.999f) = 0.5f;
   options->Add<FloatOption>(kWDLBookExitBiasId, -2.0f, 2.0f) = 0.65f;
   options->Add<FloatOption>(kNpsLimitId, 0.0f, 1e6f) = 0.0f;
-  options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
   options->Add<IntOption>(kTaskWorkersPerSearchWorkerId, -1, 128) = -1;
   options->Add<IntOption>(kMinimumWorkSizeForProcessingId, 2, 100000) = 20;
   options->Add<IntOption>(kMinimumWorkSizeForPickingId, 1, 100000) = 1;
@@ -570,31 +626,15 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
-
-  options->HideOption(kNoiseEpsilonId);
-  options->HideOption(kNoiseAlphaId);
-  options->HideOption(kLogLiveStatsId);
-  options->HideOption(kRootHasOwnCpuctParamsId);
-  options->HideOption(kCpuctAtRootId);
-  options->HideOption(kCpuctBaseAtRootId);
-  options->HideOption(kCpuctFactorAtRootId);
-  options->HideOption(kFpuStrategyAtRootId);
-  options->HideOption(kFpuValueAtRootId);
-  options->HideOption(kTemperatureId);
-  options->HideOption(kTempDecayMovesId);
-  options->HideOption(kTempDecayDelayMovesId);
-  options->HideOption(kTemperatureCutoffMoveId);
-  options->HideOption(kTemperatureEndgameId);
-  options->HideOption(kTemperatureWinpctCutoffId);
-  options->HideOption(kTemperatureVisitOffsetId);
-  options->HideOption(kContemptMaxValueId);
-  options->HideOption(kWDLContemptAttenuationId);
-  options->HideOption(kWDLMaxSId);
-  options->HideOption(kWDLDrawRateTargetId);
-  options->HideOption(kWDLBookExitBiasId);
 }
 
-SearchParams::SearchParams(const OptionsDict& options)
+void SearchParams::Populate(OptionsParser* options) {
+  BaseSearchParams::Populate(options);
+  options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
+  options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
+}
+
+BaseSearchParams::BaseSearchParams(const OptionsDict& options)
     : options_(options),
       kCpuct(options.Get<float>(kCpuctId)),
       kCpuctAtRoot(options.Get<float>(
@@ -661,7 +701,6 @@ SearchParams::SearchParams(const OptionsDict& options)
       kMaxOutOfOrderEvalsFactor(
           options.Get<float>(kMaxOutOfOrderEvalsFactorId)),
       kNpsLimit(options.Get<float>(kNpsLimitId)),
-      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
       kTaskWorkersPerSearchWorker(
           options.Get<int>(kTaskWorkersPerSearchWorkerId)),
       kMinimumWorkSizeForProcessing(
@@ -682,5 +721,8 @@ SearchParams::SearchParams(const OptionsDict& options)
           options.Get<float>(kMaxCollisionVisitsScalingPowerId)),
       kSearchSpinBackoff(options_.Get<bool>(kSearchSpinBackoffId)) {}
 
+SearchParams::SearchParams(const OptionsDict& options)
+    : BaseSearchParams(options),
+      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)) {}
 }  // namespace classic
 }  // namespace lczero

@@ -26,8 +26,8 @@
 */
 
 #include "chess/board.h"
+#include "default_search.h"
 #include "engine.h"
-#include "engine_classic.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
@@ -51,24 +51,11 @@ void ChooseAndRunEngine() {
     }
   }
 
-  // Then if "uci" is explicitly specified, run the classic engine through the
-  // old interface.
-  if (CommandLine::ConsumeCommand("uci")) {
-    // Old UCI engine.
-    RunEngineClassic();
-    return;
-  }
-
   // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
 #ifdef DEFAULT_SEARCH
-#define STRINGIFY_INTERNAL(x) #x
-#define STRINGIFY(x) STRINGIFY_INTERNAL(x)
   SearchFactory* factory =
-      SearchManager::Get()->GetFactoryByName(STRINGIFY(DEFAULT_SEARCH));
-  if (!factory)
-    throw Exception("Unknown search algorithm: " STRINGIFY(DEFAULT_SEARCH));
-#undef STRINGIFY
-#undef STRINGIFY_INTERNAL
+      SearchManager::Get()->GetFactoryByName(DEFAULT_SEARCH);
+  if (!factory) throw Exception("Unknown search algorithm: " DEFAULT_SEARCH);
   RunEngine(factory);
   return;
 #endif
@@ -101,18 +88,18 @@ int main(int argc, const char** argv) {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
-    CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-    CommandLine::RegisterMode("selfplay", "Play games with itself");
-    CommandLine::RegisterMode("benchmark", "Quick benchmark");
-    CommandLine::RegisterMode("bench", "Very quick benchmark");
-    CommandLine::RegisterMode("backendbench",
-                              "Quick benchmark of backend only");
-    CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
-    CommandLine::RegisterMode("onnx2leela",
-                              "Convert ONNX network to Leela net.");
-    CommandLine::RegisterMode("describenet",
-                              "Shows details about the Leela network.");
-
+    if (CommandLine::BinaryName().find("simple") == std::string::npos) {
+      CommandLine::RegisterMode("selfplay", "Play games with itself");
+      CommandLine::RegisterMode("benchmark", "Quick benchmark");
+      CommandLine::RegisterMode("bench", "Very quick benchmark");
+      CommandLine::RegisterMode("backendbench",
+                                "Quick benchmark of backend only");
+      CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
+      CommandLine::RegisterMode("onnx2leela",
+                                "Convert ONNX network to Leela net.");
+      CommandLine::RegisterMode("describenet",
+                                "Shows details about the Leela network.");
+    }
     for (const std::string_view search_name :
          SearchManager::Get()->GetSearchNames()) {
       CommandLine::RegisterMode(

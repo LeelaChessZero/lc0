@@ -46,18 +46,24 @@ namespace lczero {
 namespace {
 
 const OptionId kUciChess960{
-    "chess960", "UCI_Chess960",
-    "Castling moves are encoded as \"king takes rook\"."};
-const OptionId kShowWDL{"show-wdl", "UCI_ShowWDL",
-                        "Show win, draw and lose probability."};
-const OptionId kShowMovesleft{"show-movesleft", "UCI_ShowMovesLeft",
-                              "Show estimated moves left."};
+    {.long_flag = "chess960",
+     .uci_option = "UCI_Chess960",
+     .help_text = "Castling moves are encoded as \"king takes rook\".",
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId kShowWDL{{.long_flag = "show-wdl",
+                         .uci_option = "UCI_ShowWDL",
+                         .help_text = "Show win, draw and lose probability.",
+                         .visibility = OptionId::kAlwaysVisible}};
+const OptionId kShowMovesleft{{.long_flag = "show-movesleft",
+                               .uci_option = "UCI_ShowMovesLeft",
+                               .help_text = "Show estimated moves left.",
+                               .visibility = OptionId::kAlwaysVisible}};
 
 const std::unordered_map<std::string, std::unordered_set<std::string>>
     kKnownCommands = {
         {{"uci"}, {}},
         {{"isready"}, {}},
-        {{"setoption"}, {"context", "name", "value"}},
+        {{"setoption"}, {"name", "value"}},
         {{"ucinewgame"}, {}},
         {{"position"}, {"fen", "startpos", "moves"}},
         {{"go"},
@@ -68,6 +74,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>>
         {{"quit"}, {}},
         {{"xyzzy"}, {}},
         {{"fen"}, {}},
+        {{"wait"}, {}}
 };
 
 std::pair<std::string, std::unordered_map<std::string, std::string>>
@@ -85,6 +92,26 @@ ParseCommand(const std::string& line) {
   const auto command = kKnownCommands.find(token);
   if (command == kKnownCommands.end()) {
     throw Exception("Unknown command: " + line);
+  }
+
+  // Special parsing for setoption to keep strings unmodified.
+  if (command->first == "setoption") {
+    iss >> token;
+    if (token != "name") {
+      throw Exception("setoption must be followed by name");
+    }
+    int name_pos = iss.eof() ? line.length() : static_cast<int>(iss.tellg());
+    std::optional<int> value_pos;
+    while (iss >> token) {
+      if (token == "value") {
+        value_pos = iss.eof() ? line.length() : static_cast<int>(iss.tellg());
+        params["value"] = Trim(line.substr(*value_pos));
+        break;
+      }
+    }
+    params["name"] = Trim(line.substr(
+        name_pos, value_pos ? *value_pos - name_pos - 5 : std::string::npos));
+    return {"setoption", params};
   }
 
   std::string whitespace;
@@ -157,9 +184,12 @@ bool UciLoop::DispatchCommand(
     engine_->EnsureReady();
     uci_responder_->SendRawResponse("readyok");
   } else if (command == "setoption") {
-    options_->SetUciOption(GetOrEmpty(params, "name"),
-                           GetOrEmpty(params, "value"),
-                           GetOrEmpty(params, "context"));
+    if (GetOrEmpty(params, "name").empty()) {
+      throw Exception("setoption requires name");
+    } else {
+      options_->SetUciOption(GetOrEmpty(params, "name"),
+                             GetOrEmpty(params, "value"));
+    }
   } else if (command == "ucinewgame") {
     engine_->NewGame();
   } else if (command == "position") {
@@ -203,6 +233,8 @@ bool UciLoop::DispatchCommand(
     UCIGOOPTION(movetime);
 #undef UCIGOOPTION
     engine_->Go(go_params);
+  } else if (command == "wait") {
+    engine_->Wait();
   } else if (command == "stop") {
     engine_->Stop();
   } else if (command == "ponderhit") {

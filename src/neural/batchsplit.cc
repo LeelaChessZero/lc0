@@ -48,6 +48,10 @@ class BatchSplittingBackend : public Backend {
     return wrapped_backend_->UpdateConfiguration(options);
   }
 
+  bool IsSameConfiguration(const OptionsDict& options) const override {
+    return wrapped_backend_->IsSameConfiguration(options);
+  }
+
  private:
   Backend* wrapped_backend_;
 };

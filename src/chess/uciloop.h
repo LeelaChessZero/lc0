@@ -90,6 +90,8 @@ class EngineControllerBase {
   // Must not block.
   virtual void Go(const GoParams& params) = 0;
   virtual void PonderHit() = 0;
+  // Can block
+  virtual void Wait() = 0;
   // Must not block.
   virtual void Stop() = 0;
 

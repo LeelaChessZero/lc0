@@ -39,7 +39,8 @@ class SimpleTimeManager : public TimeManager {
         base_pct_(params.GetOrDefault<float>("base-pct", 1.4f)),
         ply_pct_(params.GetOrDefault<float>("ply-pct", 0.049f)),
         time_factor_(params.GetOrDefault<float>("time-factor", 1.5f)),
-        opening_bonus_pct_(params.GetOrDefault<float>("opening-bonus-pct", 0.0f)) {
+        opening_bonus_pct_(
+            params.GetOrDefault<float>("opening-bonus-pct", 0.0f)) {
     if (base_pct_ <= 0.0f || base_pct_ > 100.0f) {
       throw Exception("base-pct value to be in range [0.0, 100.0]");
     }
@@ -54,7 +55,10 @@ class SimpleTimeManager : public TimeManager {
     }
   }
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const NodeTree& tree) override;
+                                            const Position& position,
+                                            size_t /*total_memory*/,
+                                            size_t /*avg_node_size*/,
+                                            uint32_t /*nodes*/) override;
 
  private:
   const int64_t move_overhead_;
@@ -68,8 +72,8 @@ class SimpleTimeManager : public TimeManager {
 };
 
 std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
-    const GoParams& params, const NodeTree& tree) {
-  const Position& position = tree.HeadPosition();
+    const GoParams& params, const Position& position, size_t /*total_memory*/,
+    size_t /*avg_node_size*/, uint32_t /*nodes*/) {
   const bool is_black = position.IsBlackToMove();
   const std::optional<int64_t>& time = (is_black ? params.btime : params.wtime);
 

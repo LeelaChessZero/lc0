@@ -68,6 +68,11 @@ option('native_cuda',
        value: true,
        description: 'build cuda code for native arch only (if supported)')
 
+option('native_arch',
+       type: 'boolean',
+       value: true, 
+       description: 'build code for native arch only')
+
 option('cudnn',
        type: 'boolean',
        value: false,
@@ -178,6 +183,11 @@ option('cc_cuda',
        value: '',
        description: 'Build for a specific cuda CC, e.g. -Dcc_cuda=35 for CC 3.5')
 
+option('amd_gfx',
+       type: 'string',
+       value: '',
+       description: 'Build for a specific AMD GPU architecture, e.g. -Damd_gfx=90a for gfx90a')
+
 option('onnx_libdir',
        type: 'string',
        value: '',
@@ -213,6 +223,11 @@ option('default_search',
        type: 'string',
        value: '',
        description: 'Default search algorithm to use, e.g. -Ddefault_search=classic')
+
+option('default_backend',
+       type: 'string',
+       value: '',
+       description: 'Default backend to use, e.g. -Ddefault_backend=onnx-trt')
 
 option('dag_classic',
        type: 'boolean',

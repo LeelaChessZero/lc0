@@ -340,7 +340,7 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act, float default_eps);
+               ActivationFunction ffn_act, float default_eps, bool use_gemm_ex);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -393,6 +393,7 @@ class EncoderBlock {
   int smol_global_size_;
 
   const int max_batch_size_;
+  const bool use_gemm_ex_;
 };
 
 // The Attention policy head implementation
@@ -406,12 +407,14 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   using BaseLayer<DataType>::GetC;
   using BaseLayer<DataType>::GetH;
   using BaseLayer<DataType>::GetW;
+  using BaseLayer<DataType>::use_gemm_ex_;
 
  public:
   AttentionPolicyHead(BaseLayer<DataType>* ip,
                       const MultiHeadWeights::PolicyHead& weights,
                       void* scratch, bool attention_body,
-                      ActivationFunction act, int max_batch_size);
+                      ActivationFunction act, int max_batch_size,
+                      bool use_gemm_ex);
   ~AttentionPolicyHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -476,7 +479,8 @@ class AttentionBody : public BaseLayer<DataType> {
  public:
   AttentionBody(const MultiHeadWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
-                int max_batch_size, bool is_pe_dense_embedding);
+                int max_batch_size, bool is_pe_dense_embedding,
+                bool use_gemm_ex);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,

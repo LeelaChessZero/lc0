@@ -42,6 +42,6 @@ class CachingBackend : public Backend {
 // are found, and forwards the request to the wrapped backend otherwise (and
 // caches the result).
 std::unique_ptr<CachingBackend> CreateMemCache(std::unique_ptr<Backend> parent,
-                                               size_t cache_size);
+                                               const OptionsDict& options);
 
 }  // namespace lczero

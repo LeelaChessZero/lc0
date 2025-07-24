@@ -34,37 +34,54 @@ namespace classic {
 
 namespace {
 const OptionId kRamLimitMbId{
-    "ramlimit-mb", "RamLimitMb",
-    "Maximum memory usage for the engine, in megabytes. The estimation is very "
-    "rough, and can be off by a lot. For example, multiple visits to a "
-    "terminal node counted several times, and the estimation assumes that all "
-    "positions have 30 possible moves. When set to 0, no RAM limit is "
-    "enforced."};
+    {.long_flag = "ramlimit-mb",
+     .uci_option = "RamLimitMb",
+     .help_text =
+         "Maximum memory usage for the engine, in megabytes. The estimation is "
+         "very rough, and can be off by a lot. For example, multiple visits to "
+         "a terminal node counted several times, and the estimation assumes "
+         "that all positions have 30 possible moves. When set to 0, no RAM "
+         "limit is enforced.",
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kMinimumKLDGainPerNodeId{
-    "minimum-kldgain-per-node", "MinimumKLDGainPerNode",
-    "If greater than 0 search will abort unless the last "
-    "KLDGainAverageInterval nodes have an average gain per node of at least "
-    "this much."};
+    {.long_flag = "minimum-kldgain-per-node",
+     .uci_option = "MinimumKLDGainPerNode",
+     .help_text = "If greater than 0 search will abort unless the last "
+                  "KLDGainAverageInterval nodes have an average gain per node "
+                  "of at least this much.",
+     .visibility = OptionId::kProOnly}};
 const OptionId kKLDGainAverageIntervalId{
-    "kldgain-average-interval", "KLDGainAverageInterval",
-    "Used to decide how frequently to evaluate the average KLDGainPerNode to "
-    "check the MinimumKLDGainPerNode, if specified."};
+    {.long_flag = "kldgain-average-interval",
+     .uci_option = "KLDGainAverageInterval",
+     .help_text =
+         "Used to decide how frequently to evaluate the average KLDGainPerNode "
+         "to check the MinimumKLDGainPerNode, if specified.",
+     .visibility = OptionId::kProOnly}};
 const OptionId kSmartPruningFactorId{
-    "smart-pruning-factor", "SmartPruningFactor",
-    "Do not spend time on the moves which cannot become bestmove given the "
-    "remaining time to search. When no other move can overtake the current "
-    "best, the search stops, saving the time. Values greater than 1 stop less "
-    "promising moves from being considered even earlier. Values less than 1 "
-    "causes hopeless moves to still have some attention. When set to 0, smart "
-    "pruning is deactivated."};
+    {.long_flag = "smart-pruning-factor",
+     .uci_option = "SmartPruningFactor",
+     .help_text =
+         "Do not spend time on the moves which cannot become bestmove given "
+         "the remaining time to search. When no other move can overtake the "
+         "current best, the search stops, saving the time. Values greater than "
+         "1 stop less promising moves from being considered even earlier. "
+         "Values less than 1 causes hopeless moves to still have some "
+         "attention. When set to 0, smart pruning is deactivated.",
+     .visibility = OptionId::kDefaultVisibility}};
 const OptionId kMinimumSmartPruningBatchesId{
-    "smart-pruning-minimum-batches", "SmartPruningMinimumBatches",
-    "Only allow smart pruning to stop search after at least this many batches "
-    "have been evaluated. It may be useful to have this value greater than the "
-    "number of search threads in use."};
+    {.long_flag = "smart-pruning-minimum-batches",
+     .uci_option = "SmartPruningMinimumBatches",
+     .help_text =
+         "Only allow smart pruning to stop search after at least this many "
+         "batches have been evaluated. It may be useful to have this value "
+         "greater than the number of search threads in use.",
+     .visibility = OptionId::kDefaultVisibility}};
 const OptionId kNodesAsPlayoutsId{
-    "nodes-as-playouts", "NodesAsPlayouts",
-    "Treat UCI `go nodes` command as referring to playouts instead of visits."};
+    {.long_flag = "nodes-as-playouts",
+     .uci_option = "NodesAsPlayouts",
+     .help_text = "Treat UCI `go nodes` command as referring to playouts "
+                  "instead of visits.",
+     .visibility = OptionId::kProOnly}};
 
 }  // namespace
 
@@ -75,17 +92,7 @@ void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options) {
       (for_what == RunType::kUci ? 1.33f : 0.00f);
   options->Add<IntOption>(kMinimumSmartPruningBatchesId, 0, 10000) = 0;
   options->Add<BoolOption>(kNodesAsPlayoutsId) = false;
-
-  if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
-    options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
-    options->HideOption(kMinimumKLDGainPerNodeId);
-    options->HideOption(kKLDGainAverageIntervalId);
-    options->HideOption(kNodesAsPlayoutsId);
-  }
-  if (for_what == RunType::kSimpleUci) {
-    options->HideOption(kSmartPruningFactorId);
-    options->HideOption(kMinimumSmartPruningBatchesId);
-  }
+  options->Add<IntOption>(kRamLimitMbId, 0, 100000000) = 0;
 }
 
 // Parameters needed for selfplay and uci, but not benchmark nor infinite mode.
@@ -110,22 +117,22 @@ namespace {
 // Stoppers for uci mode only.
 void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
                                const OptionsDict& options,
-                               const GoParams& params, int64_t move_overhead) {
+                               const GoParams& params, size_t total_memory,
+                               size_t avg_node_size, uint32_t nodes,
+                               int64_t move_overhead) {
   const bool infinite = params.infinite || params.ponder || params.mate;
 
   // RAM limit watching stopper.
-  const auto cache_size_mb =
-      options.Get<int>(SharedBackendParams::kNNCacheSizeId);
-  const int ram_limit = options.Get<int>(kRamLimitMbId);
-  if (ram_limit) {
+  const int ram_limit_mb = options.Get<int>(kRamLimitMbId);
+  if (ram_limit_mb) {
     stopper->AddStopper(std::make_unique<MemoryWatchingStopper>(
-        cache_size_mb, ram_limit,
+        ram_limit_mb, total_memory, avg_node_size, nodes,
         options.Get<float>(kSmartPruningFactorId) > 0.0f));
   }
 
   // "go nodes" stopper.
-  int64_t node_limit = 0;
-  if (params.nodes) {
+  int64_t node_limit = 4000000000;
+  if (params.nodes.has_value()) {
     if (options.Get<bool>(kNodesAsPlayoutsId)) {
       stopper->AddStopper(std::make_unique<PlayoutsStopper>(
           *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
@@ -133,8 +140,7 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
       node_limit = *params.nodes;
     }
   }
-  // always limit nodes to avoid exceeding the limit 4000000000. That number is
-  // default when node_limit = 0.
+  // Always limit nodes to avoid exceeding the limit 4000000000.
   stopper->AddStopper(std::make_unique<VisitsStopper>(
       node_limit, options.Get<float>(kSmartPruningFactorId) > 0.0f));
 
@@ -168,10 +174,16 @@ class CommonTimeManager : public TimeManager {
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const NodeTree& tree) override {
+                                            const Position& position,
+                                            size_t avg_node_size,
+                                            size_t total_memory,
+                                            uint32_t nodes) override {
     auto result = std::make_unique<ChainedSearchStopper>();
-    if (child_mgr_) result->AddStopper(child_mgr_->GetStopper(params, tree));
-    PopulateCommonUciStoppers(result.get(), options_, params, move_overhead_);
+    if (child_mgr_)
+      result->AddStopper(child_mgr_->GetStopper(params, position, avg_node_size,
+                                                total_memory, nodes));
+    PopulateCommonUciStoppers(result.get(), options_, params, avg_node_size,
+                              total_memory, nodes, move_overhead_);
     return result;
   }
 

@@ -27,6 +27,7 @@
 
 #include "search/classic/stoppers/smooth.h"
 
+#include <cmath>
 #include <functional>
 #include <iomanip>
 #include <optional>
@@ -43,7 +44,7 @@ class Params {
  public:
   Params(const OptionsDict& /* params */, int64_t move_overhead);
 
-  using MovesLeftEstimator = std::function<float(const NodeTree&)>;
+  using MovesLeftEstimator = std::function<float(const Position&)>;
 
   // Which fraction of the tree is reuse after a full move. Initial guess.
   float initial_tree_reuse() const { return initial_tree_reuse_; }
@@ -133,8 +134,8 @@ Params::MovesLeftEstimator CreateMovesLeftEstimator(const OptionsDict& params) {
                                     : params;
   return [midpoint = mle_dict.GetOrDefault<float>("midpoint", 45.2f),
           steepness = mle_dict.GetOrDefault<float>("steepness", 5.93f)](
-             const NodeTree& tree) {
-    const auto ply = tree.HeadPosition().GetGamePly();
+             const Position& position) {
+    const auto ply = position.GetGamePly();
     return ComputeEstimatedMovesToGo(ply, midpoint, steepness);
   };
 }
@@ -335,8 +336,10 @@ class SmoothTimeManager : public TimeManager {
 
  private:
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
-                                            const NodeTree& tree) override {
-    const Position& position = tree.HeadPosition();
+                                            const Position& position,
+                                            size_t /*total_memory*/,
+                                            size_t /*avg_node_size*/,
+                                            uint32_t current_nodes) override {
     const bool is_black = position.IsBlackToMove();
     const std::optional<int64_t>& time =
         (is_black ? params.btime : params.wtime);
@@ -351,7 +354,6 @@ class SmoothTimeManager : public TimeManager {
       is_first_move_ = false;
     }
 
-    const auto current_nodes = tree.GetCurrentHead()->GetN();
     if (last_move_final_nodes_ && last_time_ && avg_ms_per_move_ >= 0.0f) {
       UpdateTreeReuseFactor(current_nodes);
     }
@@ -359,7 +361,7 @@ class SmoothTimeManager : public TimeManager {
     last_time_ = 0;
 
     // Get remaining moves estimation.
-    float remaining_moves = params_.moves_left_estimator()(tree);
+    float remaining_moves = params_.moves_left_estimator()(position);
 
     // If the number of moves remaining until the time control are less than
     // the estimated number of moves left in the game, then use the number of

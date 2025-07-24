@@ -457,7 +457,8 @@ class CudaNetwork : public Network {
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
-              InputEmbedding::INPUT_EMBEDDING_PE_DENSE);
+              InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
+          use_gemm_ex);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -469,7 +470,7 @@ class CudaNetwork : public Network {
       if (attn_policy_) {
         auto AttentionPolicy = std::make_unique<AttentionPolicyHead<DataType>>(
             getLastLayer(), head, scratch_mem_, attn_body_, act,
-            max_batch_size_);
+            max_batch_size_, use_gemm_ex);
         network_.emplace_back(std::move(AttentionPolicy));
 
         auto policymap = std::make_unique<PolicyMapLayer<DataType>>(

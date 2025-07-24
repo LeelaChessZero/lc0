@@ -39,18 +39,26 @@
 namespace lczero {
 namespace {
 const OptionId kSyzygyTablebaseId{
-    "syzygy-paths", "SyzygyPath",
-    "List of Syzygy tablebase directories, list entries separated by system "
-    "separator (\";\" for Windows, \":\" for Linux).",
-    's'};
-const OptionId kStrictUciTiming{"strict-uci-timing", "StrictTiming",
-                                "The UCI host compensates for lag, waits for "
-                                "the 'readyok' reply before sending 'go' and "
-                                "only then starts timing."};
+    {.long_flag = "syzygy-paths",
+     .uci_option = "SyzygyPath",
+     .help_text =
+         "List of Syzygy tablebase directories, list entries separated by "
+         "system separator (\";\" for Windows, \":\" for Linux).",
+     .short_flag = 's',
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId kStrictUciTiming{
+    {.long_flag = "strict-uci-timing",
+     .uci_option = "StrictTiming",
+     .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
+                  "reply before sending 'go' and only then starts timing.",
+     .visibility = OptionId::kProOnly}};
 const OptionId kPonderId{
-    "", "Ponder",
-    "Indicates to the engine that it will be requested to ponder. This "
-    "postpones resetting the search tree until the search is started."};
+    {.long_flag = "",
+     .uci_option = "Ponder",
+     .help_text =
+         "Indicates to the engine that it will be requested to ponder. This "
+         "postpones resetting the search tree until the search is started.",
+     .visibility = OptionId::kAlwaysVisible}};
 
 const OptionId kPreload{"preload", "",
                         "Initialize backend and load net on engine startup."};
@@ -60,7 +68,6 @@ void Engine::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = false;
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<BoolOption>(kStrictUciTiming) = false;
-  options->HideOption(kStrictUciTiming);
   options->Add<BoolOption>(kPreload) = false;
 }
 
@@ -157,16 +164,15 @@ void Engine::EnsureSearchStopped() {
 void Engine::UpdateBackendConfig() {
   const std::string backend_name =
       options_.Get<std::string>(SharedBackendParams::kBackendId);
-  const size_t cache_size =
-      options_.Get<int>(SharedBackendParams::kNNCacheSizeId);
   if (!backend_ || backend_name != backend_name_ ||
       backend_->UpdateConfiguration(options_) == Backend::NEED_RESTART) {
     backend_name_ = backend_name;
     backend_ = CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
-                              cache_size);
+                              options_);
     search_->SetBackend(backend_.get());
   } else {
-    backend_->SetCacheSize(cache_size);
+    backend_->SetCacheSize(
+        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
   }
 }
 
@@ -219,6 +225,7 @@ void Engine::SetPosition(const std::string& fen,
 }
 
 void Engine::NewGame() {
+  if (backend_) backend_->ClearCache();
   search_->NewGame();
   SetPosition(ChessBoard::kStartposFen, {});
 }
@@ -234,6 +241,8 @@ void Engine::Go(const GoParams& params) {
   last_go_params_ = params;
   search_->StartSearch(params);
 }
+
+void Engine::Wait() { search_->WaitSearch(); }
 
 void Engine::Stop() { search_->StopSearch(); }
 
