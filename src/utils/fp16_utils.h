@@ -40,8 +40,38 @@
 
 namespace lczero {
 
-#if defined(NO_POPCNT) || defined(NO_F16C) || \
-    (defined(__GNUC__) && !defined(__F16C__))
+#if defined(HAS_FLOAT16)
+
+inline uint16_t FP32toFP16(float f32) {
+  _Float16 f16 = static_cast<_Float16>(f32);
+  uint16_t x;
+  std::memcpy(&x, &f16, sizeof(uint16_t));
+  return x;
+}
+
+inline float FP16toFP32(uint16_t f16) {
+  _Float16 x;
+  std::memcpy(&x, &f16, sizeof(uint16_t));
+  return static_cast<float>(x);
+}
+
+#elif !defined(NO_POPCNT) && !defined(NO_F16C) && \
+    (!defined(__GNUC__) || defined(__F16C__))
+
+inline uint16_t FP32toFP16(float f32) {
+  __m128 A = _mm_set_ss(f32);
+  __m128i H = _mm_cvtps_ph(A, 0);
+  return _mm_extract_epi16(H, 0);
+}
+
+inline float FP16toFP32(uint16_t f16) {
+  __m128i H = _mm_setzero_si128();
+  H = _mm_insert_epi16(H, f16, 0);
+  __m128 A = _mm_cvtph_ps(H);
+  return _mm_cvtss_f32(A);
+}
+
+#else
 
 inline uint16_t FP32toFP16(float f32) {
   unsigned int x;
@@ -90,21 +120,6 @@ inline float FP16toFP32(uint16_t f16) {
   if (f16 & 0x8000) x |= 0x80000000;
   memcpy(&f, &x, sizeof(float));
   return f;
-}
-
-#else
-
-inline uint16_t FP32toFP16(float f32) {
-  __m128 A = _mm_set_ss(f32);
-  __m128i H = _mm_cvtps_ph(A, 0);
-  return _mm_extract_epi16(H, 0);
-}
-
-inline float FP16toFP32(uint16_t f16) {
-  __m128i H = _mm_setzero_si128();
-  H = _mm_insert_epi16(H, f16, 0);
-  __m128 A = _mm_cvtph_ps(H);
-  return _mm_cvtss_f32(A);
 }
 
 #endif
