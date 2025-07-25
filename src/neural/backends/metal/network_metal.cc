@@ -294,7 +294,7 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 
     if (attn_policy_) {
       // Promotion offset calculation.
-      for (size_t batch = 0; batch < batchSize; batch++) {
+      for (int batch = 0; batch < batchSize; batch++) {
         for (int k = 0; k < 8; k++) {      // y in cuda
           for (int j = 0; j < 8; j++) {    // w in cuda
             for (int i = 0; i < 3; i++) {  // c in cuda
@@ -309,9 +309,9 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
         }
       }
       // Mapping from attention policy to lc0 policy
-      for (size_t batch = 0; batch < batchSize; batch++) {
-        for (size_t i = 0; i < 64 * 64 + 8 * 24; i++) {
-          size_t j = kAttnPolicyMap[i];
+      for (int batch = 0; batch < batchSize; batch++) {
+        for (int i = 0; i < 64 * 64 + 8 * 24; i++) {
+          int j = kAttnPolicyMap[i];
           if (j >= 0) {
             io->op_policy_mem_[batch * 1858 + j] =
                 io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + i];
@@ -320,8 +320,8 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
       }
     } else if (conv_policy_) {
       // Mapping from convolutional policy to lc0 policy
-      for (size_t batch = 0; batch < batchSize; batch++) {
-        for (size_t i = 0; i < 73 * 64; i++) {
+      for (int batch = 0; batch < batchSize; batch++) {
+        for (int i = 0; i < 73 * 64; i++) {
           short j = kConvPolicyMap[i];
           if (j >= 0) {
             io->op_policy_mem_[batch * 1858 + j] =
