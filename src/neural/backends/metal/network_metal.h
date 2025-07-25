@@ -31,19 +31,12 @@
 #include "metal_common.h"
 #include "neural/factory.h"
 #include "neural/network_legacy.h"
-// #include <Foundation/Foundation.h>
 
 namespace lczero {
 namespace metal_backend {
 
 class MetalNetwork;
 class MetalNetworkBuilder;
-
-// bool isMacOSVersionNewer(int major, int minor) {
-//     NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
-//     return (version.majorVersion > major) ||
-//            (version.majorVersion == major && version.minorVersion >= minor);
-// }
 
 class MetalNetworkComputation : public NetworkComputation {
  public:
