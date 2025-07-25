@@ -333,11 +333,13 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 
   } else {
     if (moves_left_) {
-      builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0], batchSize,
+      builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
+                            batchSize,
                             {&io->op_policy_mem_[0], &io->op_value_mem_[0],
                              &io->op_moves_left_mem_[0]});
     } else {
-      builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0], batchSize,
+      builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
+                            batchSize,
                             {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
     }
 

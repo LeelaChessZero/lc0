@@ -84,6 +84,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                 input:(MPSGraphTensor * __nonnull)inputTensor
                                                 label:(NSString * __nonnull)label;
 
+- (nonnull MPSGraphTensor *) broadcastByStackingTensor:(MPSGraphTensor * __nonnull)input
+                                                  axis:(NSInteger)axis
+                                                 count:(NSUInteger)count
+                                                  name:(NSString * __nonnull)name;
+
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
                                            outputChannels:(NSUInteger)outputChannels
                                                kernelSize:(NSUInteger)kernelSize

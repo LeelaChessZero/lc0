@@ -309,28 +309,11 @@ static const NSInteger kMinSubBatchSize = 20;
                                                          shape:@[@1, @1, @64]
                                                       dataType:MPSDataTypeUInt64];
 
-    MPSGraphTensor * targetShapeTensor = [self shapeOfTensor:valueTensor
-                                                        name:[NSString stringWithFormat:@"%@/input_shape", label]];
-    // Extract batch and input plane dimensions.
-    NSMutableArray<MPSGraphTensor *> * shape = [NSMutableArray arrayWithCapacity:valueTensor.shape.count];
-    for (NSUInteger i = 0; i < valueTensor.shape.count - 1; i++) {
-        [shape addObject:[self sliceTensor:targetShapeTensor
-                                 dimension:0
-                                     start:i
-                                    length:1
-                                      name:[NSString stringWithFormat:@"%@/shape_%zu", label, i]]];
-    }
-    [shape addObject:[self constantWithScalar:64.0 shape:@[@1] dataType:MPSDataTypeInt32]];
-    targetShapeTensor = [self concatTensors:shape dimension:0 name:[NSString stringWithFormat:@"%@/shape_concat", label]];
-
     // Broadcast mask and bit index tensors to [N,C,64]
-    maskTensor = [self broadcastTensor:maskTensor
-                         toShapeTensor:targetShapeTensor
-                                  name:[NSString stringWithFormat:@"%@/mask/broadcast", label]];
-
-    bitIndicesTensor = [self broadcastTensor:bitIndicesTensor
-                               toShapeTensor:targetShapeTensor
-                                        name:[NSString stringWithFormat:@"%@/indices/broadcast", label]];
+    maskTensor = [self broadcastByStackingTensor:maskTensor
+                                         axis:3
+                                        count:64
+                                         name:[NSString stringWithFormat:@"%@/mask/broadcast", label]];
 
     // Expand the bitmap using the masks and values.
     MPSGraphTensor * expandedMaskTensor = [self bitwiseANDWithPrimaryTensor:maskTensor
@@ -346,9 +329,10 @@ static const NSInteger kMinSubBatchSize = 20;
                                                     name:[NSString stringWithFormat:@"%@/zero_equals", label]];
 
     // Broadcast input tensor values to match the expanded dimensions.
-    valueTensor = [self broadcastTensor:valueTensor
-                          toShapeTensor:targetShapeTensor
-                                   name:[NSString stringWithFormat:@"%@/input/broadcast", label]];
+    valueTensor = [self broadcastByStackingTensor:valueTensor
+                                             axis:3
+                                            count:64
+                                             name:[NSString stringWithFormat:@"%@/input/broadcast", label]];
 
     expandedMaskTensor = [self castTensor:expandedMaskTensor
                                    toType:MPSDataTypeFloat32
@@ -360,12 +344,21 @@ static const NSInteger kMinSubBatchSize = 20;
                                                           name:[NSString stringWithFormat:@"%@/input/multiply", label]];
 
     // Reshape to final output format [batch_size, kInputPlanes, 8, 8]
-    shape[shape.count - 1] = [self constantWithScalar:8.0 shape:@[@1] dataType:MPSDataTypeInt32];
-    [shape addObject:[self constantWithScalar:8.0 shape:@[@1] dataType:MPSDataTypeInt32]];
-    targetShapeTensor = [self concatTensors:shape dimension:0 name:[NSString stringWithFormat:@"%@/shape_concat_2", label]];
     return [self reshapeTensor:expandedMaskTensor
-               withShapeTensor:targetShapeTensor
+               withShape:@[@(-1), valueTensor.shape[1], @8, @8]
                           name:[NSString stringWithFormat:@"%@/input/reshape", label]];
+}
+
+- (nonnull MPSGraphTensor *) broadcastByStackingTensor:(MPSGraphTensor * __nonnull)input
+                                                  axis:(NSInteger)axis
+                                                 count:(NSUInteger)count
+                                                  name:(NSString * __nonnull)name
+{
+    NSMutableArray<MPSGraphTensor *> * stackedTensors = [NSMutableArray array];
+    for (NSUInteger i = 0; i < count; i++) {
+        [stackedTensors addObject:input];
+    }
+    return [self stackTensors:stackedTensors axis:axis name:name];
 }
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
