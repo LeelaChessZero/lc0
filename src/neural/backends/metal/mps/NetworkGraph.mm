@@ -135,12 +135,6 @@ static const NSInteger kMinSubBatchSize = 20;
     return self;
 }
 
--(bool) isMacOsVersionOrNewer:(int)major minor:(int)minor
-{
-    NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
-    return (version.majorVersion > major) || (version.majorVersion == major && version.minorVersion >= minor);
-}
-
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
                                                            masks:(uint64_t * __nullable)masks
@@ -189,7 +183,7 @@ static const NSInteger kMinSubBatchSize = 20;
     MPSCommandBuffer * commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:_queue];
 
     MPSShape * shape;
-    if ([self isMacOsVersionOrNewer:13 minor:0]) {
+    if (@available(macOS 13.0, *)) {
         shape = @[@(subBatchSize), _inputTensor.shape[1], _inputTensor.shape[2]];
     }
     else {
@@ -198,7 +192,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
     NSData * inputData = [NSData dataWithBytesNoCopy:inputs
                                               length:subBatchSize * sizeof(float)
-                                        freeWhenDone:NO];                      
+                                        freeWhenDone:NO];
 
     MPSGraphTensorData * inputTensorData = [[MPSGraphTensorData alloc] initWithDevice:_device
                                                                                  data:inputData
@@ -206,21 +200,20 @@ static const NSInteger kMinSubBatchSize = 20;
                                                                              dataType:_inputTensor.dataType];
     NSDictionary * feeds = @{_inputTensor : inputTensorData };
 
-    MPSGraphTensorData * inputMaskData;
-    if ([self isMacOsVersionOrNewer:13 minor:0]) {
+    if (@available(macOS 13.0, *)) {
         if (!masks) {
             throw [NSException exceptionWithName:NSInvalidArgumentException
-                                   reason:@"Masks cannot be nil for macOS 13.0 and later."
-                                 userInfo:nil];
+                                          reason:@"Masks cannot be nil for macOS 13.0 and later."
+                                        userInfo:nil];
         }
         NSData * maskData = [NSData dataWithBytesNoCopy:masks
                                                  length:subBatchSize * sizeof(uint64_t)
                                            freeWhenDone:NO];
 
-        inputMaskData = [[MPSGraphTensorData alloc] initWithDevice:_device
-                                                              data:maskData
-                                                             shape:shape
-                                                          dataType:MPSDataTypeUInt64];
+        MPSGraphTensorData * inputMaskData = [[MPSGraphTensorData alloc] initWithDevice:_device
+                                                                                   data:maskData
+                                                                                  shape:shape
+                                                                               dataType:MPSDataTypeUInt64];
 
         feeds = @{_inputTensor : inputTensorData, _maskTensor : inputMaskData};
     }
@@ -278,7 +271,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                         width:(NSUInteger)width
                                                         label:(NSString * __nullable)label
 {
-    if ([self isMacOsVersionOrNewer:13 minor:0]) {
+    if (@available(macOS 13.0, *)) {
         _inputTensor = [self placeholderWithShape:@[@(-1), @(channels), @1] name:label];
     }
     else {
@@ -289,16 +282,18 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) maskPlaceholderWithInputChannels:(NSUInteger)channels
-                                                        label:(NSString * __nullable)label
+                                                       label:(NSString * __nullable)label
 {
-    if ([self isMacOsVersionOrNewer:13 minor:0]) {
-        _maskTensor = [self placeholderWithShape:@[@(-1), @(channels), @1] name:label];
+    if (@available(macOS 13.0, *)) {
+        _maskTensor = [self placeholderWithShape:@[@(-1), @(channels), @1]
+                                        dataType:MPSDataTypeUInt64
+                                            name:label];
     }
     return _maskTensor;
 }
 
 -(nonnull MPSGraphTensor *) expandInputTensorWithMask:(MPSGraphTensor * __nonnull)maskTensor
-                                                input:(MPSGraphTensor * __nonnull)inputTensor
+                                                input:(MPSGraphTensor * __nonnull)valueTensor
                                                 label:(NSString * __nonnull)label
 {
     // 64 values to form the bitboard indices.
@@ -314,108 +309,64 @@ static const NSInteger kMinSubBatchSize = 20;
                                                          shape:@[@1, @1, @64]
                                                       dataType:MPSDataTypeUInt64];
 
+    MPSGraphTensor * targetShapeTensor = [self shapeOfTensor:valueTensor
+                                                        name:[NSString stringWithFormat:@"%@/input_shape", label]];
+    // Extract batch and input plane dimensions.
+    NSMutableArray<MPSGraphTensor *> * shape = [NSMutableArray arrayWithCapacity:valueTensor.shape.count];
+    for (NSUInteger i = 0; i < valueTensor.shape.count - 1; i++) {
+        [shape addObject:[self sliceTensor:targetShapeTensor
+                                 dimension:0
+                                     start:i
+                                    length:1
+                                      name:[NSString stringWithFormat:@"%@/shape_%zu", label, i]]];
+    }
+    [shape addObject:[self constantWithScalar:64.0 shape:@[@1] dataType:MPSDataTypeInt32]];
+    targetShapeTensor = [self concatTensors:shape dimension:0 name:[NSString stringWithFormat:@"%@/shape_concat", label]];
+
     // Broadcast mask and bit index tensors to [N,C,64]
     maskTensor = [self broadcastTensor:maskTensor
-                               toShape:@[@(-1), @(-1), @64]
+                         toShapeTensor:targetShapeTensor
                                   name:[NSString stringWithFormat:@"%@/mask/broadcast", label]];
 
-    // @todo Confirm that this broadcast shape is okay. Maybe should also be @[@(-1), @(-1), @64]
     bitIndicesTensor = [self broadcastTensor:bitIndicesTensor
-                                     toShape:@[maskTensor.shape[0], maskTensor.shape[1], @64]
+                               toShapeTensor:targetShapeTensor
                                         name:[NSString stringWithFormat:@"%@/indices/broadcast", label]];
 
     // Expand the bitmap using the masks and values.
-    MPSGraphTensor * expandedTensor = [self bitwiseANDWithPrimaryTensor:maskTensor
-                                                        secondaryTensor:bitIndicesTensor
-                                                                   name:[NSString stringWithFormat:@"%@/mask/bitwise_and", label]];
+    MPSGraphTensor * expandedMaskTensor = [self bitwiseANDWithPrimaryTensor:maskTensor
+                                                            secondaryTensor:bitIndicesTensor
+                                                                       name:[NSString stringWithFormat:@"%@/mask/bitwise_and", label]];
 
     MPSGraphTensor * zeroTensor = [self constantWithScalar:0.0
-                                                     shape:expandedTensor.shape
+                                                     shape:@[@1]
                                                   dataType:MPSDataTypeUInt64];
 
-    expandedTensor = [self notEqualWithPrimaryTensor:expandedTensor
-                                     secondaryTensor:zeroTensor
-                                                name:[NSString stringWithFormat:@"%@/zero_equals", label]];
+    expandedMaskTensor = [self notEqualWithPrimaryTensor:expandedMaskTensor
+                                         secondaryTensor:zeroTensor
+                                                    name:[NSString stringWithFormat:@"%@/zero_equals", label]];
 
     // Broadcast input tensor values to match the expanded dimensions.
-    inputTensor = [self broadcastTensor:inputTensor
-                                toShape:@[@(-1), @(-1), @64]
+    valueTensor = [self broadcastTensor:valueTensor
+                          toShapeTensor:targetShapeTensor
                                    name:[NSString stringWithFormat:@"%@/input/broadcast", label]];
 
-    MPSGraphTensor * floatMask = [self castTensor:expandedTensor
-                                           toType:MPSDataTypeFloat32
-                                             name:[NSString stringWithFormat:@"%@/input/cast", label]];
+    expandedMaskTensor = [self castTensor:expandedMaskTensor
+                                   toType:MPSDataTypeFloat32
+                                     name:[NSString stringWithFormat:@"%@/input/cast", label]];
 
     // Final multiplication: value * mask
-    expandedTensor = [self multiplicationWithPrimaryTensor:expandedTensor
-                                           secondaryTensor:inputTensor
-                                                      name:[NSString stringWithFormat:@"%@/input/multiply", label]];
+    expandedMaskTensor = [self multiplicationWithPrimaryTensor:expandedMaskTensor
+                                               secondaryTensor:valueTensor
+                                                          name:[NSString stringWithFormat:@"%@/input/multiply", label]];
 
     // Reshape to final output format [batch_size, kInputPlanes, 8, 8]
-    return [self reshapeTensor:expandedTensor
-                     withShape:@[@(-1), @(-1), @8, @8]
+    shape[shape.count - 1] = [self constantWithScalar:8.0 shape:@[@1] dataType:MPSDataTypeInt32];
+    [shape addObject:[self constantWithScalar:8.0 shape:@[@1] dataType:MPSDataTypeInt32]];
+    targetShapeTensor = [self concatTensors:shape dimension:0 name:[NSString stringWithFormat:@"%@/shape_concat_2", label]];
+    return [self reshapeTensor:expandedMaskTensor
+               withShapeTensor:targetShapeTensor
                           name:[NSString stringWithFormat:@"%@/input/reshape", label]];
 }
-
-//-(nonnull MPSGraphTensor *) expandInputTensorWithCustomKernel:(MPSGraphTensor * __nonnull)maskTensor
-//                                                        input:(MPSGraphTensor * __nonnull)inputTensor
-//                                                        label:(NSString * __nonnull)label
-//{
-//    
-//    // Custom Metal kernel for bitboard expansion.
-//    NSString * kernelSource = @R"(
-//        #include <metal_stdlib>
-//        using namespace metal;
-//
-//        kernel void expandInput(constant float* values [[buffer(0)]],
-//                               constant uint64_t* masks [[buffer(1)]],
-//                               device float* output [[buffer(2)]],
-//                               uint3 tid [[thread_position_in_grid]],
-//                               uint3 gridSize [[threads_per_grid]]) {
-//
-//            uint batch = tid.z;
-//            uint plane = tid.y; 
-//            uint bit = tid.x;
-//
-//            if (batch >= gridSize.z || plane >= gridSize.y || bit >= 64) return;
-//
-//            uint inputIdx = batch * gridSize.y + plane;
-//            uint outputIdx = batch * gridSize.y * 64 + plane * 64 + bit;
-//
-//            float value = values[inputIdx];
-//            uint64_t mask = masks[inputIdx];
-//            uint64_t bitMask = 1ULL << bit;
-//
-//            output[outputIdx] = (mask & bitMask) ? value : 0.0f;
-//        }
-//    )";
-//    
-//    // Create custom operation node
-//    MPSGraphExecutableDescriptor * descriptor = [MPSGraphExecutableDescriptor new];
-//    descriptor.sourceCode = kernelSource;
-//    descriptor.functionName = @"expandInput";
-//    
-//    // Input/output descriptors
-//    NSArray<MPSGraphTensorDescriptor *> * inputDescriptors = @[
-//        [inputTensor descriptor],
-//        [maskTensor descriptor]
-//    ];
-//    
-//    // Output shape: [batch_size, kInputPlanes * 64]
-//    NSArray<NSNumber *> * outputShape = @[@(-1), @(-1 * 64)];
-//    MPSGraphTensorDescriptor * outputDescriptor = [MPSGraphTensorDescriptor descriptorWithShape:outputShape
-//                                                                                       dataType:MPSDataTypeFloat32];
-//    
-//    MPSGraphTensor * result = [self customOpWithInputTensors:@[inputTensor, maskTensor]
-//                                           outputDescriptors:@[outputDescriptor]
-//                                                  descriptor:descriptor
-//                                                        name:@"custom_input_expansion"];
-//    
-//    // Reshape to [batch_size, kInputPlanes, 8, 8]
-//    return [self reshapeTensor:result
-//                     withShape:@[@(-1), @(-1), @8, @8]
-//                          name:@"reshaped_expansion"];
-//}
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
                                            outputChannels:(NSUInteger)outputChannels
@@ -1051,7 +1002,8 @@ static const NSInteger kMinSubBatchSize = 20;
 
     qkMatmul = [self multiplicationWithPrimaryTensor:qkMatmul
                                      secondaryTensor:[self constantWithScalar:scale
-                                                                        shape:@[@1] dataType:qkMatmul.dataType]
+                                                                        shape:@[@1]
+                                                                     dataType:qkMatmul.dataType]
                                                 name:[NSString stringWithFormat:@"%@/scale", label]];
     return qkMatmul;
 }
@@ -1560,12 +1512,13 @@ static const NSInteger kMinSubBatchSize = 20;
 
     value = [self addFullyConnectedLayerWithParent:value
                                     outputChannels:head.ip2_val_b.size()
-                                            weights:&head.ip2_val_w[0]
+                                           weights:&head.ip2_val_w[0]
                                             biases:&head.ip2_val_b[0]
                                         activation:wdl ? @"softmax" : @"tanh"
-                                                label:[NSString stringWithFormat:@"%@/fc2", label]];
+                                             label:[NSString stringWithFormat:@"%@/fc2", label]];
 
     return value;
 }
 
 @end
+

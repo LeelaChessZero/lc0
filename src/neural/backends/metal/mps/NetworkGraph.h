@@ -72,8 +72,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
 
--(bool) isMacOsVersionOrNewer:(int)major minor:(int)minor;
-
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
                                                        height:(NSUInteger)height
                                                         width:(NSUInteger)width

@@ -58,8 +58,8 @@ std::string MetalNetworkBuilder::init(int gpu_id)
 
 bool MetalNetworkBuilder::isMacOsVersionOrNewer(int major, int minor) const
 {
-    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-    return [graph isMacOsVersionOrNewer:major minor:minor];
+    NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
+    return (version.majorVersion > major) || (version.majorVersion == major && version.minorVersion >= minor);
 }
 
 void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, InputEmbedding embedding,
@@ -76,7 +76,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
     // 0. Input placeholder.
     // @todo - placeholder can be made directly as NHWC to avoid transposes.
     MPSGraphTensor * layer;
-    if ([graph isMacOsVersionOrNewer:13 minor:0]) {
+    if (@available(macOS 13.0, *)) {
         // New input placeholder of bitboard values.
         layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
                                                   height:1
@@ -85,7 +85,7 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
         // Create a mask placeholder for the new input.
         MPSGraphTensor * maskTensor = [graph maskPlaceholderWithInputChannels:kInputPlanes
                                                                         label:@"inputs/mask"];
-        
+
         layer = [graph expandInputTensorWithMask:maskTensor
                                            input:layer
                                            label:@"inputs/expand"];
