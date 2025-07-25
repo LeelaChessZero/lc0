@@ -677,6 +677,14 @@ if get_option('build_backends')
       add_project_arguments('-fsycl', language : 'cpp')
       add_project_link_arguments('-fsycl', language : 'cpp')
 
+      dpct_args = ['-fsycl']
+      foreach d : get_option('dpct_include')
+        includes += include_directories(d)
+        dpct_args += '-I' + d
+      endforeach
+      # dpct.hpp includes headers from other packages. Check that it compiles.
+      cc.check_header('dpct/dpct.hpp', required: true, args: dpct_args)
+
       files += 'src/neural/backends/sycl/layers.cc.dp.cpp'
       files += 'src/neural/backends/sycl/network_sycl.cc.dp.cpp'
       files += 'src/neural/backends/sycl/common_kernels.dp.cpp'
@@ -691,8 +699,13 @@ if get_option('build_backends')
         deps += cc.find_library('mkl_core', required: true)
         deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
-        deps += cc.find_library('hipblas', required: true)
-        deps += cc.find_library('amdhip64', required: true)
+        hip_libdirs = get_option('hip_libdirs')
+        hip_include = get_option('hip_include')
+        deps += cc.find_library('hipblas', dirs: hip_libdirs, required: true)
+        cc.has_header('hipblas/hipblas.h', required: true, args: '-I' + hip_include)
+        deps += cc.find_library('amdhip64', dirs: hip_libdirs, required: true)
+        cc.has_header('hip/hip_runtime.h', required: true, args: '-I' + hip_include)
+        includes += include_directories(hip_include)
         add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
         add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
         if get_option('amd_gfx') == ''
