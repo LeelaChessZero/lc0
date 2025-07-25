@@ -268,6 +268,8 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     return;
   }
 
+  forwardEvalLegacy(io, batchSize);
+
   // Metal is not thread-safe, so lock is needed.
   lock_.lock();
 
@@ -282,15 +284,21 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     if (moves_left_) {
       builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
                             batchSize,
-                            {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0],
+                            {&io->op_policy_mem_[0], &io->op_value_mem_[0],
                              &io->op_moves_left_mem_[0]});
     } else {
       builder_->forwardEval(
           &io->input_val_mem_[0], &io->input_masks_mem_[0], batchSize,
-          {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0]});
+          {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
     }
     // The next thread can start using the GPU now.
     lock_.unlock();
+
+    for (int i = 0; i < 1858; i++) {
+      CERR << i << ";" << io->op_policy_raw_mem_[i] << ";" << io->op_policy_mem_[i];
+          //  << "; " << kAttnPolicyMap[i] << "; " << kConvPolicyMap[i];
+    }
+    return;
 
     if (attn_policy_) {
       // Promotion offset calculation.
