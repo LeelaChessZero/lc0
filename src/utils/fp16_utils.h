@@ -55,21 +55,6 @@ inline float FP16toFP32(uint16_t f16) {
   return x;
 }
 
-#elif defined(HAS__FP16)
-
-inline uint16_t FP32toFP16(float f32) {
-  __fp16 f16 = f32;
-  uint16_t x;
-  std::memcpy(&x, &f16, sizeof(uint16_t));
-  return x;
-}
-
-inline float FP16toFP32(uint16_t f16) {
-  __fp16 x;
-  std::memcpy(&x, &f16, sizeof(uint16_t));
-  return x;
-}
-
 #elif defined(NO_POPCNT) || defined(NO_F16C) || \
     (defined(__GNUC__) && !defined(__F16C__))
 

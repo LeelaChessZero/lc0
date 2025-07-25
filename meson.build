@@ -763,8 +763,6 @@ endif
 
 if cc.has_type('_Float16')
   add_project_arguments('-DHAS_FLOAT16', language : 'cpp')
-elif cc.has_type('__fp16')
-  add_project_arguments('-DHAS__FP16', language : 'cpp')
 endif
 
 if not get_option('pext')
