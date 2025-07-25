@@ -26,7 +26,6 @@
 */
 #pragma once
 
-#include <bit>
 #include <cstdint>
 #include <cstring>
 
@@ -45,11 +44,14 @@ namespace lczero {
 
 inline uint16_t FP32toFP16(float f32) {
   _Float16 f16 = static_cast<_Float16>(f32);
-  return std::bit_cast<uint16_t>(f16);
+  uint16_t x;
+  std::memcpy(&x, &f16, sizeof(uint16_t));
+  return x;
 }
 
 inline float FP16toFP32(uint16_t f16) {
-  _Float16 x = std::bit_cast<_Float16>(f16);
+  _Float16 x;
+  std::memcpy(&x, &f16, sizeof(uint16_t));
   return x;
 }
 
@@ -57,12 +59,13 @@ inline float FP16toFP32(uint16_t f16) {
 
 inline uint16_t FP32toFP16(float f32) {
   __fp16 f16 = f32;
-  return std::bit_cast<uint16_t>(f16);
+  uint16_t x;
+  std::memcpy(&x, &f16, sizeof(uint16_t));
+  return x;
 }
 
 inline float FP16toFP32(uint16_t f16) {
   __fp16 x;
-  // Unfortunately clang doesn't like std::bit_cast<__fp16>(f16)...
   std::memcpy(&x, &f16, sizeof(uint16_t));
   return x;
 }
@@ -71,8 +74,9 @@ inline float FP16toFP32(uint16_t f16) {
     (defined(__GNUC__) && !defined(__F16C__))
 
 inline uint16_t FP32toFP16(float f32) {
-  unsigned int x = std::bit_cast<unsigned int>(f32);
+  unsigned int x;
   unsigned int sign = 0;
+  memcpy(&x, &f32, sizeof(float));
   if (x & 0x80000000) sign = 0x8000;
   x &= 0x7fffffff;
   if (x >= 0x477ff000) {
@@ -106,7 +110,7 @@ inline float FP16toFP32(uint16_t f16) {
   x = f16 & 0x7fff;
   if ((x & 0x7c00) == 0) {
     f = 5.9604645e-8f * x;
-    x = std::bit_cast<unsigned int>(f);
+    memcpy(&x, &f, sizeof(float));
   } else if (x >= 0x7c00) {
     if (x & 0x1ff) x |= 0x200;
     x = (x + 0x38000) << 13;
@@ -114,7 +118,8 @@ inline float FP16toFP32(uint16_t f16) {
     x = (x + 0x1c000) << 13;
   }
   if (f16 & 0x8000) x |= 0x80000000;
-  return std::bit_cast<float>(x);
+  memcpy(&f, &x, sizeof(float));
+  return f;
 }
 
 #else
