@@ -52,7 +52,7 @@ inline uint16_t FP32toFP16(float f32) {
 inline float FP16toFP32(uint16_t f16) {
   _Float16 x;
   std::memcpy(&x, &f16, sizeof(uint16_t));
-  return x;
+  return static_cast<float>(x);
 }
 
 #elif !defined(NO_POPCNT) && !defined(NO_F16C) && \
