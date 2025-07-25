@@ -42,7 +42,7 @@ std::string MetalNetworkBuilder::init(int gpu_id)
     // All metal devices.
     NSArray<id<MTLDevice>> * devices = MTLCopyAllDevices();
 
-    if ([devices count] <= gpu_id) {
+    if ((NSUInteger)gpu_id >= [devices count]) {
         // No GPU device matching ID.
         [NSException raise:@"Could not find device" format:@"Could not find a GPU or CPU compute device with specified id"];
         return "";

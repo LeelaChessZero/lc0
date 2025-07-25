@@ -66,8 +66,8 @@ static const NSInteger kMinSubBatchSize = 20;
 -(NSUInteger) sizeOfDimensions:(NSArray<NSNumber *> *)dimensions {
     NSUInteger size = 1;
     for (NSNumber * dim in dimensions) {
-        if ([dim intValue] < [self.shape count])
-            size *= [self.shape[[dim intValue]] intValue];
+        if ((NSUInteger)[dim intValue] < [self.shape count])
+            size *= [self.shape[(NSUInteger)[dim intValue]] intValue];
     }
     return size;
 }
@@ -191,8 +191,12 @@ static const NSInteger kMinSubBatchSize = 20;
 
     // Create execution descriptor with block to update results for each iteration.
     MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
-    executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * error) {
-        _resultDataDicts[@(subBatch)] = resultDictionary;
+    executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"Error occurred during execution: %@", error);
+        } else {
+            _resultDataDicts[@(subBatch)] = resultDictionary;
+        }
 
         // Release double buffering semaphore for the next training iteration to be encoded.
         dispatch_semaphore_signal(_doubleBufferingSemaphore);
@@ -226,9 +230,6 @@ static const NSInteger kMinSubBatchSize = 20;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results
 {
-    // Okay to remove nulls from the read variables.
-    [_readVariables removeObjectsForKeys:[_readVariables allKeysForObject:[NSNull null]]];
-
     // Set the results we're interested in.
     _resultTensors = results;
 
@@ -506,7 +507,6 @@ static const NSInteger kMinSubBatchSize = 20;
                                              normtype:(NSString * __nonnull)normtype
                                                 label:(NSString * __nonnull)label
 {
-    NSUInteger dModel = encoder.mha.q_b.size();
     MPSGraphTensor * mhaQ = [self addFullyConnectedLayerWithParent:parent
                                                     outputChannels:encoder.mha.q_b.size()
                                                            weights:&encoder.mha.q_w[0]
@@ -605,7 +605,7 @@ static const NSInteger kMinSubBatchSize = 20;
                                                label:[NSString stringWithFormat:@"%@/ln2", label]];
     }
     else if ([normtype isEqual:@"rmsnorm"] || [normtype isEqual:@"skipfirst"]) {
-        enc = [self addRmsNormalizationWithParent:enc
+        return [self addRmsNormalizationWithParent:enc
                             scaledSecondaryTensor:ffn
                                            gammas:&encoder.ln2_gammas[0]
                                             alpha:alpha
@@ -614,6 +614,7 @@ static const NSInteger kMinSubBatchSize = 20;
     else {
         [NSException raise:@"Invalid normalization type."
                     format:@"Invalid normalization type specified: %@", normtype];
+        return nil;
     }
 }
 
