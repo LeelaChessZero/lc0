@@ -1519,5 +1519,3 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 @end
-
-
