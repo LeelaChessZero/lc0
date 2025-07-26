@@ -256,67 +256,19 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
   // Metal is not thread-safe, so lock is needed.
   lock_.lock();
 
-  if (attn_policy_ || conv_policy_) {
-    /**
-     * @todo policy map implementation has bug in MPSGraph (GatherND not working
-     * in graph). Implementation of policy map to be done in CPU for now.
-     *
-     * Remove this if-branch when bug is fixed. See comments above.
-     */
-
-    if (moves_left_) {
-      builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
-                            batchSize,
-                            {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0],
-                             &io->op_moves_left_mem_[0]});
-    } else {
-      builder_->forwardEval(
-          &io->input_val_mem_[0], &io->input_masks_mem_[0], batchSize,
-          {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0]});
-    }
-    // The next thread can start using the GPU now.
-    lock_.unlock();
-
-
-    if (attn_policy_) {
-      // Mapping from attention policy to lc0 policy
-      for (int batch = 0; batch < batchSize; batch++) {
-        for (int i = 0; i < 64 * 64 + 8 * 24; i++) {
-          int j = kAttnPolicyMap[i];
-          if (j >= 0) {
-            io->op_policy_mem_[batch * 1858 + j] =
-                io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + i];
-          }
-        }
-      }
-    } else if (conv_policy_) {
-      // Mapping from convolutional policy to lc0 policy
-      for (int batch = 0; batch < batchSize; batch++) {
-        for (int i = 0; i < 73 * 64; i++) {
-          short j = kConvPolicyMap[i];
-          if (j >= 0) {
-            io->op_policy_mem_[batch * 1858 + j] =
-                io->op_policy_raw_mem_[batch * 80 * 64 + i];
-          }
-        }
-      }
-    }
-
+  if (moves_left_) {
+    builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
+                          batchSize,
+                          {&io->op_policy_mem_[0], &io->op_value_mem_[0],
+                           &io->op_moves_left_mem_[0]});
   } else {
-    if (moves_left_) {
-      builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
-                            batchSize,
-                            {&io->op_policy_mem_[0], &io->op_value_mem_[0],
-                             &io->op_moves_left_mem_[0]});
-    } else {
-      builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
-                            batchSize,
-                            {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
-    }
-
-    // The next thread can start using the GPU now.
-    lock_.unlock();
+    builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
+                          batchSize,
+                          {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
   }
+
+  // The next thread can start using the GPU now.
+  lock_.unlock();
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
