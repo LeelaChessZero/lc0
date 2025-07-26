@@ -205,21 +205,6 @@ void MetalNetwork::forwardEvalLegacy(InputsOutputs* io, int batchSize) {
     lock_.unlock();
 
     if (attn_policy_) {
-      // Promotion offset calculation.
-      for (int batch = 0; batch < batchSize; batch++) {
-        for (int k = 0; k < 8; k++) {      // y in cuda
-          for (int j = 0; j < 8; j++) {    // w in cuda
-            for (int i = 0; i < 3; i++) {  // c in cuda
-              // Promotion offsets already precalculated and stored in GPU.
-              // Just the main policy offsets need to be added here.
-              io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + 64 * 64 +
-                                     24 * k + 3 * j + i] +=
-                  io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) +
-                                         (48 + k) * 64 + 56 + j];
-            }
-          }
-        }
-      }
       // Mapping from attention policy to lc0 policy
       for (int batch = 0; batch < batchSize; batch++) {
         for (int i = 0; i < 64 * 64 + 8 * 24; i++) {
@@ -268,8 +253,6 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     return;
   }
 
-  forwardEvalLegacy(io, batchSize);
-
   // Metal is not thread-safe, so lock is needed.
   lock_.lock();
 
@@ -284,38 +267,18 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
     if (moves_left_) {
       builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
                             batchSize,
-                            {&io->op_policy_mem_[0], &io->op_value_mem_[0],
+                            {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0],
                              &io->op_moves_left_mem_[0]});
     } else {
       builder_->forwardEval(
           &io->input_val_mem_[0], &io->input_masks_mem_[0], batchSize,
-          {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
+          {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0]});
     }
     // The next thread can start using the GPU now.
     lock_.unlock();
 
-    for (int i = 0; i < 1858; i++) {
-      CERR << i << ";" << io->op_policy_raw_mem_[i] << ";" << io->op_policy_mem_[i];
-          //  << "; " << kAttnPolicyMap[i] << "; " << kConvPolicyMap[i];
-    }
-    return;
 
     if (attn_policy_) {
-      // Promotion offset calculation.
-      for (int batch = 0; batch < batchSize; batch++) {
-        for (int k = 0; k < 8; k++) {      // y in cuda
-          for (int j = 0; j < 8; j++) {    // w in cuda
-            for (int i = 0; i < 3; i++) {  // c in cuda
-              // Promotion offsets already precalculated and stored in GPU.
-              // Just the main policy offsets need to be added here.
-              io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + 64 * 64 +
-                                     24 * k + 3 * j + i] +=
-                  io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) +
-                                         (48 + k) * 64 + 56 + j];
-            }
-          }
-        }
-      }
       // Mapping from attention policy to lc0 policy
       for (int batch = 0; batch < batchSize; batch++) {
         for (int i = 0; i < 64 * 64 + 8 * 24; i++) {
