@@ -52,6 +52,10 @@
 
 
 #ifdef USE_HIPBLAS
+#if hipblasVersionMajor < 3
+#define HIPBLAS_COMPUTE_16F HIPBLAS_R_16F
+#define HIPBLAS_COMPUTE_32F HIPBLAS_R_32F
+#endif
 #define transpose_type hipblasOperation_t 
 #define transpose_type_transpose HIPBLAS_OP_T  
 #define transpose_type_notranspose HIPBLAS_OP_N 
@@ -967,7 +971,7 @@ template <>
       hipblasGemmStridedBatchedEx(
           handle, transpose_type_notranspose, transpose_type_notranspose, N, M,
           K, &alpha, B, HIPBLAS_R_16F, N, N * K, A, HIPBLAS_R_16F, K, K * M,
-          &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_R_16F,
+          &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_COMPUTE_16F,
           HIPBLAS_GEMM_DEFAULT);
 
       hipStreamSynchronize(hipStreamHandle);
@@ -1032,7 +1036,7 @@ template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const
           hipblasGemmStridedBatchedEx(
             handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, HIPBLAS_R_32F, N,
             N * K, A, HIPBLAS_R_32F, K, K * M, &floatZero, Out, HIPBLAS_R_32F, N, N * M,
-          batchSize, HIPBLAS_R_32F, HIPBLAS_GEMM_DEFAULT);
+          batchSize, HIPBLAS_COMPUTE_32F, HIPBLAS_GEMM_DEFAULT);
 
           
           hipStreamSynchronize(hipStreamHandle);
@@ -1216,7 +1220,7 @@ template <>
          hipblasGemmStridedBatchedEx(
               handle, transpose_type_notranspose, transpose_type_notranspose,
               N, M, K, &alpha, B, HIPBLAS_R_16F, N, N * K, A, HIPBLAS_R_16F, K,
-              0, &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_R_16F,
+              0, &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_COMPUTE_16F,
               HIPBLAS_GEMM_DEFAULT);
          hipStreamSynchronize(hipStreamHandle);
       });
@@ -1284,7 +1288,7 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
         hipblasGemmStridedBatchedEx(
           handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, HIPBLAS_R_32F, N,
           N * K, A, HIPBLAS_R_32F, K, 0, &floatZero, Out, HIPBLAS_R_32F, N, N * M,
-          batchSize, HIPBLAS_R_32F, HIPBLAS_GEMM_DEFAULT);
+          batchSize, HIPBLAS_COMPUTE_32F, HIPBLAS_GEMM_DEFAULT);
 
          hipStreamSynchronize(hipStreamHandle);
 
@@ -1910,7 +1914,7 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
         hipblasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha_h, A, HIPBLAS_R_16F, lda, strideA, B,
         HIPBLAS_R_16F, ldb, strideB, &beta_h, C, HIPBLAS_R_16F, ldc, strideC,
-        batchCount, HIPBLAS_R_16F, HIPBLAS_GEMM_DEFAULT);
+        batchCount, HIPBLAS_COMPUTE_16F, HIPBLAS_GEMM_DEFAULT);
 
         hipStreamSynchronize(hipStreamHandle);
 
@@ -1927,7 +1931,7 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
         hipblasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha, A, HIPBLAS_R_32F, lda, strideA, B,
         HIPBLAS_R_32F, ldb, strideB, &beta, C, HIPBLAS_R_32F, ldc, strideC,
-        batchCount, HIPBLAS_R_32F, HIPBLAS_GEMM_DEFAULT);
+        batchCount, HIPBLAS_COMPUTE_32F, HIPBLAS_GEMM_DEFAULT);
   
         hipStreamSynchronize(hipStreamHandle);
   
