@@ -38,7 +38,6 @@ struct InputsOutputs {
                 bool attn_policy) {
     input_masks_mem_.reserve(maxBatchSize * kInputPlanes);
     input_val_mem_.reserve(maxBatchSize * kInputPlanes);
-    input_val_mem_expanded_.reserve(maxBatchSize * kInputPlanes * 64);
     op_policy_mem_.reserve(maxBatchSize * kNumOutputPolicy);
     op_value_mem_.reserve(maxBatchSize * (wdl ? 3 : 1));
 
@@ -62,7 +61,6 @@ struct InputsOutputs {
 
   std::vector<uint64_t> input_masks_mem_;
   std::vector<float> input_val_mem_;
-  std::vector<float> input_val_mem_expanded_;
   std::vector<float> op_policy_mem_;
   std::vector<float> op_value_mem_;
   std::vector<float> op_moves_left_mem_;
