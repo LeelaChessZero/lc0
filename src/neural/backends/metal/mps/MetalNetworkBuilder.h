@@ -45,16 +45,11 @@ class MetalNetworkBuilder {
 
   std::string init(int gpu_id);
 
-  bool isMacOsVersionOrNewer(int major, int minor) const;
-
   void build(int kInputPlanes, MultiHeadWeights& weights,
              InputEmbedding embedding, bool attn_body, bool attn_policy,
              bool conv_policy, bool wdl, bool moves_left,
              Activations& activations, std::string& policy_head,
              std::string& value_head);
-
-  void forwardEvalLegacy(float* inputs, int batchSize,
-                         std::vector<float*> output_mems);
 
   void forwardEval(float* values, uint64_t* masks, int batchSize,
                    std::vector<float*> output_mems);
