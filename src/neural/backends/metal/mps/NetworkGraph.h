@@ -73,8 +73,6 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
-                                                       height:(NSUInteger)height
-                                                        width:(NSUInteger)width
                                                         label:(NSString * __nullable)label;
 
 -(nonnull MPSGraphTensor *) maskPlaceholderWithInputChannels:(NSUInteger)channels
@@ -86,7 +84,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 - (nonnull MPSGraphTensor *) broadcastByStackingTensor:(MPSGraphTensor * __nonnull)input
                                                   axis:(NSInteger)axis
-                                                 count:(NSUInteger)count
+                                                 times:(NSUInteger)times
                                                   name:(NSString * __nonnull)name;
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
@@ -212,11 +210,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
-                                                           masks:(uint64_t * __nullable)masks
+                                                           masks:(uint64_t * __nonnull)masks
                                                          outputs:(float * __nonnull * __nonnull)outputBuffers;
 
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
-                                                     masks:(uint64_t * __nullable)masks
+                                                     masks:(uint64_t * __nonnull)masks
                                                   subBatch:(NSUInteger)subBatch
                                               subBatchSize:(NSUInteger)subBatchSize;
 

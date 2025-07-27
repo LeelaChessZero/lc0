@@ -167,45 +167,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                   value_head);
 }
 
-void MetalNetwork::forwardEvalLegacy(InputsOutputs* io, int batchSize) {
-  // Expand encoded input into N x 112 x 8 x 8.
-  float* dptr = &io->input_val_mem_expanded_[0];
-  for (int i = 0; i < batchSize; i++) {
-    for (int j = 0; j < kInputPlanes; j++) {
-      const float value = io->input_val_mem_[j + i * kInputPlanes];
-      const uint64_t mask = io->input_masks_mem_[j + i * kInputPlanes];
-      for (auto k = 0; k < 64; k++) {
-        *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
-      }
-    }
-  }
-
-  // Metal is not thread-safe, so lock is needed.
-  lock_.lock();
-
-  if (moves_left_) {
-    builder_->forwardEvalLegacy(
-        &io->input_val_mem_expanded_[0], batchSize,
-        {&io->op_policy_mem_[0], &io->op_value_mem_[0],
-          &io->op_moves_left_mem_[0]});
-  } else {
-    builder_->forwardEvalLegacy(
-        &io->input_val_mem_expanded_[0], batchSize,
-        {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
-  }
-
-  // The next thread can start using the GPU now.
-  lock_.unlock();
-}
-
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
-  if (!builder_->isMacOsVersionOrNewer(13, 0)) {
-    // New performance improvements require MacOs versions equal to or greater
-    // than 13.0.
-    forwardEvalLegacy(io, batchSize);
-    return;
-  }
-
   // Metal is not thread-safe, so lock is needed.
   lock_.lock();
 

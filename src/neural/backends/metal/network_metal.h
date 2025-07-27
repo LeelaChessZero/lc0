@@ -113,8 +113,6 @@ class MetalNetwork : public Network {
 
   void forwardEval(InputsOutputs* io, int inputBatchSize);
 
-  void forwardEvalLegacy(InputsOutputs* io, int inputBatchSize);
-
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<MetalNetworkComputation>(this, wdl_, moves_left_);
   }
