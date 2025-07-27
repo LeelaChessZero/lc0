@@ -1073,7 +1073,7 @@ static const NSInteger kMinSubBatchSize = 20;
     MPSGraphTensor * slice = [self sliceTensor:parent dimension:1 start:48 length:8 name:[NSString stringWithFormat:@"%@/slice_policy_1", label]];
     slice = [self sliceTensor:slice dimension:2 start:56 length:8 name:[NSString stringWithFormat:@"%@/slice_policy_2", label]];
     slice = [self reshapeTensor:slice withShape:@[@(-1), @64] name:[NSString stringWithFormat:@"%@/slice_reshape", label]];
-    slice = [self broadcastByStackingTensor:slice axis:2 count:3 name:[NSString stringWithFormat:@"%@/slice_broadcast", label]];
+    slice = [self broadcastByStackingTensor:slice axis:2 times:3 name:[NSString stringWithFormat:@"%@/slice_broadcast", label]];
     slice = [self transposeTensor:slice dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/slice_transpose", label]];
 
     promo = [self additionWithPrimaryTensor:promo secondaryTensor:slice name:[NSString stringWithFormat:@"%@/offset_add", label]];
