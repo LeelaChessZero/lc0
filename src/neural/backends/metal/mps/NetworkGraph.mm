@@ -25,9 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#import "neural/network_legacy.h"
-#import "NetworkGraph.h"
 #import <vector>
+#import "neural/network_legacy.h"
+#import "neural/tables/attention_policy_map.h"
+#import "neural/tables/policy_map.h"
+#import "NetworkGraph.h"
 
 static MPSGraphConvolution2DOpDescriptor * __nonnull convolution2DDescriptor = [MPSGraphConvolution2DOpDescriptor descriptorWithStrideInX:1
                                                                                                                                 strideInY:1
@@ -580,23 +582,37 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                              policyMap:(uint32_t * __nonnull)policyMap
+                                              policyMap:(const short * __nonnull)policyMap
+                                                mapSize:(NSUInteger)mapSize
                                                   label:(NSString * __nonnull)label
 {
-    NSData * policyMapData = [NSData dataWithBytesNoCopy:policyMap
-                                                  length:kNumPolicyOutputs * sizeof(uint32_t)
-                                            freeWhenDone:NO];
+    if ([parent sizeOfDimensionsFrom:@1] < mapSize) {
+        [NSException raise:@"Invalid parent tensor shape"
+                    format:@"Parent tensor non-batch dimensions (%zu) is less than mapping tensor size of (%zu) for policy mapping.",
+                           [parent sizeOfDimensionsFrom:@1], mapSize];
+    }
 
-    MPSGraphTensor * mappingTensor = [self constantWithData:policyMapData
+    // The mapping is an array of 64x?? squares, where each square contains a number from -1 to 1857.
+    // The mapping is flattened to a 1D array of size 1858, where each index corresponds to a square
+    // that had a value != -1.
+    uint32_t mappingIndices[kNumPolicyOutputs];
+    for (NSUInteger i = 0; i < mapSize; i++) {
+        if (policyMap[i] == -1) continue;
+        mappingIndices[policyMap[i]] = i;
+    }
+
+    NSData * policyMapIndexData = [NSData dataWithBytesNoCopy:mappingIndices
+                                                       length:kNumPolicyOutputs * sizeof(uint32_t)
+                                                 freeWhenDone:NO];
+
+    MPSGraphTensor * indicesTensor = [self constantWithData:policyMapIndexData
                                                       shape:@[@(kNumPolicyOutputs)]
                                                    dataType:MPSDataTypeUInt32];
 
-    MPSGraphTensor * flatConvTensor = [self flatten2DTensor:parent
-                                                       axis:1
-                                                       name:[NSString stringWithFormat:@"%@/flatten", label]];
+    parent = [self flatten2DTensor:parent axis:1 name:[NSString stringWithFormat:@"%@/flatten", label]];
 
-    MPSGraphTensor * policyTensor = [self gatherWithUpdatesTensor:flatConvTensor
-                                                    indicesTensor:mappingTensor
+    MPSGraphTensor * policyTensor = [self gatherWithUpdatesTensor:parent
+                                                    indicesTensor:indicesTensor
                                                              axis:1
                                                   batchDimensions:0
                                                              name:[NSString stringWithFormat:@"%@/gather", label]];
@@ -1054,6 +1070,14 @@ static const NSInteger kMinSubBatchSize = 20;
 
     parent = [self reshapeTensor:parent withShape:@[@(-1), @64, @64] name:[NSString stringWithFormat:@"%@/parent_reshape", label]];
 
+    MPSGraphTensor * slice = [self sliceTensor:parent dimension:1 start:48 length:8 name:[NSString stringWithFormat:@"%@/slice_policy_1", label]];
+    slice = [self sliceTensor:slice dimension:2 start:56 length:8 name:[NSString stringWithFormat:@"%@/slice_policy_2", label]];
+    slice = [self reshapeTensor:slice withShape:@[@(-1), @64] name:[NSString stringWithFormat:@"%@/slice_reshape", label]];
+    slice = [self broadcastByStackingTensor:slice axis:2 times:3 name:[NSString stringWithFormat:@"%@/slice_broadcast", label]];
+    slice = [self transposeTensor:slice dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/slice_transpose", label]];
+
+    promo = [self additionWithPrimaryTensor:promo secondaryTensor:slice name:[NSString stringWithFormat:@"%@/offset_add", label]];
+
     return [self concatTensor:parent withTensor:promo dimension:1 name:[NSString stringWithFormat:@"%@/concat", label]];
 }
 
@@ -1373,7 +1397,8 @@ static const NSInteger kMinSubBatchSize = 20;
                                            scale:1.0f / sqrt(policyDModel)
                                            label:[NSString stringWithFormat:@"%@/self_attention/kq", label]];
 
-        // 6. Slice last 8 keys (k[:, 56:, :]) and matmul with policy promotion weights, then concat to matmul_qk.
+        // 6. Slice last 8 keys (k[:, 48:56, 56:64]) and matmul with policy promotion weights,
+        //    add to promotion logits then concat to matmul_qk.
         policy = [self attentionPolicyPromoMatmulConcatWithParent:policy
                                                          withKeys:keys
                                                           weights:&head.ip4_pol_w[0]
@@ -1382,6 +1407,12 @@ static const NSInteger kMinSubBatchSize = 20;
                                                         sliceFrom:56
                                                       channelSize:policyDModel
                                                             label:[NSString stringWithFormat:@"%@/promo_logits", label]];
+
+        policy = [self addPolicyMapLayerWithParent:policy
+                                         policyMap:&lczero::kAttnPolicyMap[0]
+                                           mapSize:(64 * 64 + 8 * 24)
+                                             label:[NSString stringWithFormat:@"%@/policy_mapping", label]];
+
     }
     else if (convolutionPolicy) {
         if (attentionBody) {
@@ -1406,30 +1437,10 @@ static const NSInteger kMinSubBatchSize = 20;
                                                label:[NSString stringWithFormat:@"%@/conv2", label]];
 
 
-        /**
-         * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
-         * Implementation of policy map to be done in CPU for now.
-         *
-         * Reinstate this section when bug is fixed. See comments below.
-         *
-         // [1858 -> HWC or CHW]
-         const bool HWC = false;
-         std::vector<uint32_t> policy_map(1858);
-         for (const auto& mapping : kConvPolicyMap) {
-         if (mapping == -1) continue;
-         const auto index = &mapping - kConvPolicyMap;
-         const auto displacement = index / 64;
-         const auto square = index % 64;
-         const auto row = square / 8;
-         const auto col = square % 8;
-         if (HWC) {
-         policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
-         } else {
-         policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
-         }
-         }
-         policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
-         */
+        policy = [self addPolicyMapLayerWithParent:policy
+                                         policyMap:&lczero::kConvPolicyMap[0]
+                                           mapSize:(73 * 64)
+                                             label:[NSString stringWithFormat:@"%@/policy_mapping", label]];
     }
     else {
         if (attentionBody) {
