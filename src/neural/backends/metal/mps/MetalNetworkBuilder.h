@@ -51,7 +51,7 @@ class MetalNetworkBuilder {
              Activations& activations, std::string& policy_head,
              std::string& value_head, std::string& data_type);
 
-  void forwardEval(float* inputs, int batchSize,
+  void forwardEval(float* values, uint64_t* masks, int batchSize,
                    std::vector<float*> output_mems);
 
  private:

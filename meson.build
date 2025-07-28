@@ -646,6 +646,13 @@ if get_option('build_backends')
     has_backends = true
     add_project_arguments('-fobjc-arc', language : 'objc')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
+
+    # Minimum MacOS version = 12.6.1
+    macos_min_version = '12.6'
+    add_project_arguments(
+      '-mmacosx-version-min=' + macos_min_version,
+      language: ['c', 'cpp', 'objc', 'objcpp']
+    )
   endif
 
   ## ~~~~~~~~
