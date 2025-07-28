@@ -28,7 +28,7 @@
 #include <vector>
 
 #ifdef USE_HIPBLAS 
-#include "hipblas.h"
+#include "hipblas/hipblas.h"
 #include "cuBlasContext.h"
 #elif defined(USE_CUBLAS)
 #include <sycl/backend/cuda.hpp>
