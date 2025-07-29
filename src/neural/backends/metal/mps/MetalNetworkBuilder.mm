@@ -58,8 +58,7 @@ std::string MetalNetworkBuilder::init(int gpu_id)
 
 void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, InputEmbedding embedding,
                                 bool attn_body, bool attn_policy, bool conv_policy, bool wdl, bool moves_left,
-                                Activations& activations, std::string& policy_head, std::string& value_head,
-                                std::string& data_type)
+                                Activations& activations, std::string& policy_head, std::string& value_head)
 {
     Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
     NSString * defaultActivation = [NSString stringWithUTF8String:activations.default_activation.c_str()];
@@ -67,7 +66,6 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
     NSString * ffnActivation = [NSString stringWithUTF8String:activations.ffn_activation.c_str()];
     NSString * policyHead = [NSString stringWithUTF8String:policy_head.c_str()];
     NSString * valueHead = [NSString stringWithUTF8String:value_head.c_str()];
-    NSString * dataType = [NSString stringWithUTF8String:data_type.c_str()];
 
     // 0. Input value and mask placeholders.
     MPSGraphTensor * layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
