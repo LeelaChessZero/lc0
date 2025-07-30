@@ -592,9 +592,11 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## ONNX
   ## ~~~~~~~~~~
-  if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
-    deps += cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
-                            required: true)
+  onnxruntime = cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
+                                required: false)
+  if get_option('onnx') and onnxruntime.found() and\
+     run_command('scripts/checkdir.py', get_option('onnx_include'), check: false).returncode() == 0
+    deps += onnxruntime
     includes += include_directories(get_option('onnx_include'), is_system: true)
     cc.has_header('onnxruntime_cxx_api.h', required: true,
                   args: '-I' + get_option('onnx_include'))
