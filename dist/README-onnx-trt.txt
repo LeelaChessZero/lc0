@@ -35,8 +35,8 @@ The dlls needed are the following:
 The install.cmd script included in this package will download the
 CUDA and cuDNN files needed and will open the TensorRT download page
 using your browser. If it fails, you can download the files manually
-using the following addresses, the dlls are in the `lib` directory
-in the zip files.
+using the following addresses, the dlls are in the `bin` directory
+in the CUDA/cuDNN zips and the `lib` directory in the TensorRT zip.
 
 * https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-12.9.79-archive.zip
 * https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-12.9.1.4-archive.zip
