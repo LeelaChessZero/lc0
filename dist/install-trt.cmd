@@ -60,18 +60,19 @@ tar -xzOf tmp_cudnn.zip cudnn-windows-x86_64-9.11.0.98_cuda12-archive/LICENSE >C
 del /q tmp_cudnn.zip
 
 echo Installed the CUDA and cuDNN dlls needed for onnx-trt.
-echo
+echo(
 echo You will also need the following dlls from tensorRT:
 echo * nvinfer_10.dll
 echo * nvinfer_builder_resource_10.dll
 echo * nvinfer_plugin_10.dll
 echo * nvonnxparser_10.dll
-echo
+echo(
 echo You need to download these yourself from NVIDIA.
 echo The next step will take you to the download page, after registering go to
 echo the "TensorRT 10.12 GA for x86_64 Architecture" section and get the
 echo "TensorRT 10.12 GA for Windows 10, 11, Server 2022 and CUDA 12.0 to 12.9 ZIP Package"
-
+echo(
+echo The above files are in the "lib" directory in the zip package.
 pause
 
 start https://developer.nvidia.com/tensorrt/download/10x#trt1012
