@@ -211,14 +211,8 @@ class SyclNetwork : public Network {
        devices_.insert(devices_.end(), platform_devices.begin(), platform_devices.end());
     }
 
-    // Count the GPU's.
-    for (const auto& device : devices_) {
-        if (device.is_gpu()) { total_gpus_ += 1; }
-    }
-
     if (gpu_id_ >= (int)devices_.size() || gpu_id_ < 0)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
-
     
     // Get the sycl device.
     device_ = devices_[gpu_id_];
@@ -226,7 +220,6 @@ class SyclNetwork : public Network {
     compute_units_ = device_.get_info<sycl::info::device::max_compute_units>();
     // Get context.
     sycl::context context{device_};
-
     auto exceptions_handler = [&] (sycl::exception_list exceptions) {
         for (std::exception_ptr const& e : exceptions) {
            try {
@@ -939,7 +932,7 @@ class SyclNetwork : public Network {
   bool IsCpu() const override { return device_.is_cpu(); }
 
   // 2 threads for cpu and 1 + total_gpu's for multi gpu configs. 
-  int GetThreads() const override { return device_.is_cpu() ? 2 : 1 + total_gpus_; }
+  int GetThreads() const override { return device_.is_cpu() ? 2 : 1 + multi_stream_; }
 
   int GetMiniBatchSize() const override {
      if (device_.is_cpu()) { return 47; }
@@ -985,7 +978,6 @@ class SyclNetwork : public Network {
   int l2_cache_size_;
   int max_batch_size_;
   int compute_units_;
-  int total_gpus_;
   bool wdl_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
@@ -1035,7 +1027,7 @@ class SyclNetwork : public Network {
 
   void showDeviceInfo(const sycl::queue &mqueue) const {
     CERR <<
-          "=================================Device-Info========================================";
+          "Device-Info...";
     CERR << "Platform: " 
          << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>() 
          << " selected";
@@ -1055,7 +1047,7 @@ class SyclNetwork : public Network {
          << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
          << " MB";         
     CERR <<
-          "===============================Device-Info-End======================================="
+          "...Device-Info-End"
             << "\n";
     }
     
@@ -1067,7 +1059,7 @@ class SyclNetwork : public Network {
        
        CERR << "\n";
        CERR <<
-          "=================================Platform-List========================================";
+          "Platform-List...";
         
        for (size_t i = 0; i < platforms.size(); ++i) {
            std::string version = platforms[i].get_info<sycl::info::platform::version>();
@@ -1089,7 +1081,7 @@ class SyclNetwork : public Network {
         }
         
         CERR <<
-           "===============================Platform-List-End====================================="
+           "...Platform-List-End"
              << "\n";
     }
 };
