@@ -240,10 +240,10 @@ class SyclNetwork : public Network {
            try {
                std::rethrow_exception(e);
             } catch(sycl::exception const& e) {
-				std::cout 
+				CERR 
                 << "Caught asynchronous SYCL exception during GEMM:\n"
                 << e.what() 
-                << std::endl;
+                << "\n ";
                 std::terminate();
             }
         }
@@ -1051,35 +1051,35 @@ class SyclNetwork : public Network {
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
   void showDeviceInfo(const sycl::queue &mqueue) const {
-    std::cerr << "PLATFORM: " 
-              << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>() 
-              << " selected"
-              << std::endl;
+    CERR << "PLATFORM: " 
+         << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>() 
+         << " selected"
+         << "\n";
     std::string device_type = mqueue.get_device().is_gpu() ? "GPU" : "CPU";
-    std::cerr << device_type << ": " 
-              << mqueue.get_device().get_info<sycl::info::device::name>() 
-              << std::endl;
-    std::cerr << device_type << ": " 
-              << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>() / (1024 * 1024) 
-              << " MB" 
-              << std::endl;
-    std::cerr << device_type << " clock frequency: " 
-              << mqueue.get_device().get_info<sycl::info::device::max_clock_frequency>() 
-              << " MHz" 
-              << std::endl;
-    std::cerr << "L2 cache capacity: " 
-              << mqueue.get_device().get_info<sycl::info::device::local_mem_size>() / (1024) 
-              << " KB" 
-              << std::endl;
-    std::cerr << "Global memory size: " 
-              << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
-              << " MB" 
-              << std::endl;          
+    CERR << mqueue.get_device().is_gpu() ? "GPU" : "CPU" << ": " 
+         << mqueue.get_device().get_info<sycl::info::device::name>() 
+         << "\n";
+    CERR << device_type << ": " 
+         << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>() / (1024 * 1024) 
+         << " MB" 
+         << "\n";
+    CERR << device_type << " clock frequency: " 
+         << mqueue.get_device().get_info<sycl::info::device::max_clock_frequency>() 
+         << " MHz" 
+         << "\n";
+    CERR << "L2 cache capacity: " 
+         << mqueue.get_device().get_info<sycl::info::device::local_mem_size>() / (1024) 
+         << " KB" 
+         << "\n";
+    CERR << "Global memory size: " 
+         << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
+         << " MB" 
+         << "\n";         
     }
     
     void showPlatformInfo(const std::vector<sycl::platform>& platforms) {
        if (platforms.empty()) {
-           CERR << "No SYCL platform found." << std::endl;
+           CERR << "No SYCL platform found." << "\n";
            return;
         }
     
