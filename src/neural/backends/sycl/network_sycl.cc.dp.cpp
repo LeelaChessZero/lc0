@@ -202,21 +202,13 @@ class SyclNetwork : public Network {
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
-    std::string requested_platform = options.GetOrDefault<std::string>("platform", "OpenCL");
-    
-    std::string search_platform = to_lower(requested_platform);
-
     // Get all available platforms
     auto platforms = sycl::platform::get_platforms();
     showPlatformInfo(platforms);
 
     for (const auto& platform : platforms) {
-       // Check if this platform matches our search criteria
-       std::string platform_name_lower = to_lower(platform.get_info<sycl::info::platform::name>());
-       if (platform_name_lower.find(search_platform) != std::string::npos) {
-          auto platform_devices = platform.get_devices();
-          devices_.insert(devices_.end(), platform_devices.begin(), platform_devices.end());
-        }
+       auto platform_devices = platform.get_devices();
+       devices_.insert(devices_.end(), platform_devices.begin(), platform_devices.end());
     }
 
     // Count the GPU's.
@@ -954,14 +946,6 @@ class SyclNetwork : public Network {
        // Simple heuristic that seems to work for a wide range of GPUs.
        return 2 * compute_units_;
     }
-    
-  // Function to convert a string to lowercase
-  std::string to_lower(const std::string& str) {
-        std::string lower_str = str;
-        std::transform(lower_str.begin(), lower_str.end(), lower_str.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-        return lower_str;
-  }
   
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
@@ -1071,7 +1055,7 @@ class SyclNetwork : public Network {
          << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
          << " MB";         
     CERR <<
-          "===============================Device-Info-End======================================"
+          "===============================Device-Info-End======================================="
             << "\n";
     }
     
@@ -1083,7 +1067,7 @@ class SyclNetwork : public Network {
        
        CERR << "\n";
        CERR <<
-          "=================================Platform-List=======================================";
+          "=================================Platform-List========================================";
         
        for (size_t i = 0; i < platforms.size(); ++i) {
            std::string version = platforms[i].get_info<sycl::info::platform::version>();
@@ -1105,7 +1089,7 @@ class SyclNetwork : public Network {
         }
         
         CERR <<
-           "===============================Platform-List-End===================================="
+           "===============================Platform-List-End====================================="
              << "\n";
     }
 };
