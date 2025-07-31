@@ -81,7 +81,26 @@ jobs:
           root: workspace
           paths: 
             - lc0
-
+  "mac latest":
+    macos:
+      xcode: 16.4.0
+    resource_class: macos.m1.medium.gen1
+    steps:
+      - checkout
+      - run:
+          name: "Pull Submodules"
+          command: git submodule update --init
+      - run:
+          name: Install build tools
+          command: |
+            pip3 install meson
+            pip3 install ninja
+      - run:
+          name: Build lc0 arm
+          command: |
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false
+            cd build-arm
+            ninja
   "upload-github-release":
     macos:
       xcode: 14.1.0
@@ -112,6 +131,7 @@ workflows:
           filters:
             tags:
               only: /v[0-9]+(\.[0-9]+)*(\-.+)?/
+      - "mac latest"
       - "upload-github-release":
           requires:
             - "mac"

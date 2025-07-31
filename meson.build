@@ -20,18 +20,6 @@ project('lc0', 'cpp',
 
 cc = meson.get_compiler('cpp')
 
-if not cc.has_header('optional') or not cc.has_header('string_view')
-    error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
-          'clang v5.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
-          'later.')
-endif
-
-if not cc.has_header('charconv')
-    warning('Your compiler or library does not have full C++17 support. ' +
-            'See the README for compilers that are known to be working. ' +
-            'This will become an error in the future.')
-endif
-
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
@@ -646,6 +634,13 @@ if get_option('build_backends')
     has_backends = true
     add_project_arguments('-fobjc-arc', language : 'objc')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
+
+    # Minimum MacOS version = 12.6.1
+    macos_min_version = '12.6'
+    add_project_arguments(
+      '-mmacosx-version-min=' + macos_min_version,
+      language: ['c', 'cpp', 'objc', 'objcpp']
+    )
   endif
 
   ## ~~~~~~~~
@@ -670,6 +665,26 @@ if get_option('build_backends')
       add_project_arguments('-fsycl', language : 'cpp')
       add_project_link_arguments('-fsycl', language : 'cpp')
 
+      dpct_args = []
+      foreach onemkl_include : get_option('onemkl_include')
+        if run_command('scripts/checkdir.py', onemkl_include, check : false).returncode() == 0
+          includes += include_directories(onemkl_include, is_system: true)
+          dpct_args += '-I' + onemkl_include
+        endif
+      endforeach
+      # Check for oneMKL header which is used by DPC++ CT. It could also depend
+      # on oneMATH headers but L0 Sycl uses oneMKL kernels too.
+      cc.has_header('oneapi/mkl.hpp', required: true, args: dpct_args)
+
+      foreach dpct_include : get_option('dpct_include')
+        if run_command('scripts/checkdir.py', dpct_include, check : false).returncode() == 0
+          includes += include_directories(dpct_include, is_system: true)
+          dpct_args += '-I' + dpct_include
+        endif
+      endforeach
+      # Check for DPC++ Compatibility Tool header.
+      cc.has_header('dpct/dpct.hpp', required: true, args: dpct_args)
+
       files += 'src/neural/backends/sycl/layers.cc.dp.cpp'
       files += 'src/neural/backends/sycl/network_sycl.cc.dp.cpp'
       files += 'src/neural/backends/sycl/common_kernels.dp.cpp'
@@ -684,8 +699,18 @@ if get_option('build_backends')
         deps += cc.find_library('mkl_core', required: true)
         deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
-        deps += cc.find_library('hipblas', required: true)
-        deps += cc.find_library('amdhip64', required: true)
+        hip_libdirs = get_option('hip_libdirs')
+        hip_args = []
+        foreach hip_include : get_option('hip_include')
+          if run_command('scripts/checkdir.py', dpct_include, check : false).returncode() == 0
+            includes += include_directories(hip_include, is_system: true)
+            hip_args += '-I' + hip_include
+          endif
+        endforeach
+        deps += cc.find_library('hipblas', dirs: hip_libdirs, required: true)
+        cc.has_header('hipblas/hipblas.h', required: true, args: hip_args)
+        deps += cc.find_library('amdhip64', dirs: hip_libdirs, required: true)
+        cc.has_header('hip/hip_runtime.h', required: true, args: hip_args)
         add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
         add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
         if get_option('amd_gfx') == ''
@@ -759,6 +784,10 @@ endif
 
 if not get_option('f16c')
   add_project_arguments('-DNO_F16C', language : 'cpp')
+endif
+
+if cc.has_type('_Float16')
+  add_project_arguments('-DHAS_FLOAT16', language : 'cpp')
 endif
 
 if not get_option('pext')

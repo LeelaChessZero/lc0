@@ -36,13 +36,12 @@ namespace metal_backend {
 MetalNetworkBuilder::MetalNetworkBuilder(void){}
 MetalNetworkBuilder::~MetalNetworkBuilder(void){}
 
-//void MetalNetworkBuilder::init(void* weights, void* options)
 std::string MetalNetworkBuilder::init(int gpu_id)
 {
     // All metal devices.
     NSArray<id<MTLDevice>> * devices = MTLCopyAllDevices();
 
-    if ([devices count] <= gpu_id) {
+    if ((NSUInteger)gpu_id >= [devices count]) {
         // No GPU device matching ID.
         [NSException raise:@"Could not find device" format:@"Could not find a GPU or CPU compute device with specified id"];
         return "";
@@ -68,12 +67,16 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
     NSString * policyHead = [NSString stringWithUTF8String:policy_head.c_str()];
     NSString * valueHead = [NSString stringWithUTF8String:value_head.c_str()];
 
-    // 0. Input placeholder.
-    // @todo - placeholder can be made directly as NHWC to avoid transposes.
+    // 0. Input value and mask placeholders.
     MPSGraphTensor * layer = [graph inputPlaceholderWithInputChannels:kInputPlanes
-                                                               height:8
-                                                                width:8
                                                                 label:@"inputs"];
+
+    MPSGraphTensor * maskTensor = [graph maskPlaceholderWithInputChannels:kInputPlanes
+                                                                    label:@"inputs/mask"];
+
+    layer = [graph expandInputTensorWithMask:maskTensor
+                                       input:layer
+                                       label:@"inputs/expand"];
 
     const NSUInteger kernelSize = 3;
     const bool isPeDenseEmbedding = embedding == InputEmbedding::INPUT_EMBEDDING_PE_DENSE;
@@ -302,11 +305,11 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
     }
 }
 
-void MetalNetworkBuilder::forwardEval(float * inputs, int batchSize, std::vector<float *> output_mems)
+void MetalNetworkBuilder::forwardEval(float * inputs, uint64_t * masks, int batchSize, std::vector<float *> output_mems)
 {
     @autoreleasepool {
         Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
-        [graph runInferenceWithBatchSize:batchSize inputs:inputs outputs:&output_mems[0]];
+        [graph runInferenceWithBatchSize:batchSize inputs:inputs masks:masks outputs:&output_mems[0]];
     }
 }
 

@@ -209,6 +209,26 @@ option('sycl',
        value: 'off',
        description: 'Enable SYCL backend')
 
+option('dpct_include',
+       type: 'array',
+       value: ['/opt/intel/oneapi/dpcpp-ct/latest/include'],
+       description: 'Path to DPC++ Compatibility Tool includes')
+
+option('onemkl_include',
+       type: 'array',
+       value: ['/opt/intel/oneapi/mkl/latest/include'],
+       description: 'Path to oneMKL includes')
+
+option('hip_libdirs',
+       type: 'array',
+       value: ['/opt/rocm/lib'],
+       description: 'Paths to AMD HIP libraries')
+
+option('hip_include',
+       type: 'array',
+       value: ['/opt/rocm/include'],
+       description: 'Path to AMD HIP includes')
+
 option('lc0',
        type: 'boolean',
        value: true,
