@@ -215,21 +215,21 @@ class SyclNetwork : public Network {
        std::string platform_name_lower = to_lower(platform.get_info<sycl::info::platform::name>());
        if (platform_name_lower.find(search_platform) != std::string::npos) {
           auto platform_devices = platform.get_devices();
-          devices.insert(devices.end(), platform_devices.begin(), platform_devices.end());
+          devices_.insert(devices_.end(), platform_devices.begin(), platform_devices.end());
         }
     }
 
     // Count the GPU's.
-    for (const auto& device : devices) {
+    for (const auto& device : devices_) {
         if (device.is_gpu()) { total_gpus_ += 1; }
     }
 
-    if (gpu_id_ >= (int)devices.size() || gpu_id_ < 0)
+    if (gpu_id_ >= (int)devices_.size() || gpu_id_ < 0)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
 
     
     // Get the sycl device.
-    device_ = devices[gpu_id_];
+    device_ = devices_[gpu_id_];
     // Get the number of compute units(execution units).
     compute_units_ = device_.get_info<sycl::info::device::max_compute_units>();
     // Get context.
@@ -942,9 +942,6 @@ class SyclNetwork : public Network {
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
   }
-  
-  // A vector to store all sycl devices.
-  std::vector<sycl::device> devices;
 
   // Check if device is the cpu for thread handling.
   bool IsCpu() const override { return device_.is_cpu(); }
@@ -1017,6 +1014,8 @@ class SyclNetwork : public Network {
   mutable std::mutex lock_;
   sycl::queue* sycl_queue_;
   sycl::device device_;
+  // A vector to store all sycl devices.
+  std::vector<sycl::device> devices_;
 
 
   int numBlocks_;
@@ -1051,30 +1050,29 @@ class SyclNetwork : public Network {
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
   void showDeviceInfo(const sycl::queue &mqueue) const {
-    CERR << "PLATFORM: " 
+    CERR <<
+          "=================================Device-Info========================================";
+    CERR << "Platform: " 
          << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>() 
-         << " selected"
-         << "\n";
+         << " selected";
     std::string device_type = mqueue.get_device().is_gpu() ? "GPU" : "CPU";
-    CERR << mqueue.get_device().is_gpu() ? "GPU" : "CPU" << ": " 
-         << mqueue.get_device().get_info<sycl::info::device::name>() 
-         << "\n";
+    CERR << device_type << ": " 
+         << mqueue.get_device().get_info<sycl::info::device::name>();
     CERR << device_type << ": " 
          << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>() / (1024 * 1024) 
-         << " MB" 
-         << "\n";
+         << " MB (max allocation)";
     CERR << device_type << " clock frequency: " 
          << mqueue.get_device().get_info<sycl::info::device::max_clock_frequency>() 
-         << " MHz" 
-         << "\n";
+         << " MHz";
     CERR << "L2 cache capacity: " 
          << mqueue.get_device().get_info<sycl::info::device::local_mem_size>() / (1024) 
-         << " KB" 
-         << "\n";
+         << " KB";
     CERR << "Global memory size: " 
          << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
-         << " MB" 
-         << "\n";         
+         << " MB";         
+    CERR <<
+          "===============================Device-Info-End======================================"
+            << "\n";
     }
     
     void showPlatformInfo(const std::vector<sycl::platform>& platforms) {
@@ -1082,12 +1080,15 @@ class SyclNetwork : public Network {
            CERR << "No SYCL platform found." << "\n";
            return;
         }
-    
-       for (size_t i = 0; i < platforms.size(); ++i) {
-           const auto& platform = platforms[i];
-           std::string version = platform.get_info<sycl::info::platform::version>();
+       
+       CERR << "\n";
+       CERR <<
+          "=================================Platform-List=======================================";
         
-           for (const auto& device : platform.get_devices()) {
+       for (size_t i = 0; i < platforms.size(); ++i) {
+           std::string version = platforms[i].get_info<sycl::info::platform::version>();
+           
+           for (const auto& device : platforms[i].get_devices()) {
                std::string device_type;
                switch (device.get_info<sycl::info::device::device_type>()) {
                    case sycl::info::device_type::gpu: 
@@ -1097,13 +1098,15 @@ class SyclNetwork : public Network {
                    default: 
                        device_type = "Other"; break;
                 }
-            
-               CERR << "Platform " << i << " (version: " << version << "): " << device_type
-                    << "\n Name" << ": " 
-                    << device.get_platform().get_info<sycl::info::platform::name>() 
-                    << "\n ";
+                CERR << "Platform " << i << " (version: " << version << "):" << device_type
+                     << " (Name" << ": " 
+                     << device.get_platform().get_info<sycl::info::platform::name>() << ")";
             }
         }
+        
+        CERR <<
+           "===============================Platform-List-End===================================="
+             << "\n";
     }
 };
 
