@@ -47,6 +47,16 @@ struct BackendAttributes {
   int suggested_num_search_threads;
   int recommended_batch_size;
   int maximum_batch_size;
+
+  void Merge(const BackendAttributes& other) {
+    has_mlh &= other.has_mlh;
+    has_wdl &= other.has_wdl;
+    runs_on_cpu |= other.runs_on_cpu;
+    suggested_num_search_threads += other.suggested_num_search_threads;
+    recommended_batch_size =
+        std::min(recommended_batch_size, other.recommended_batch_size);
+    maximum_batch_size = std::min(maximum_batch_size, other.maximum_batch_size);
+  }
 };
 
 struct EvalResultPtr {
@@ -130,7 +140,8 @@ class BackendFactory {
   // Higher priority is higher.
   virtual int GetPriority() const = 0;
   virtual std::string_view GetName() const = 0;
-  virtual std::unique_ptr<Backend> Create(const OptionsDict&) = 0;
+  virtual std::unique_ptr<Backend> Create(const OptionsDict&,
+                                          const OptionsDict&) = 0;
 };
 
 }  // namespace lczero

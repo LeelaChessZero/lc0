@@ -181,12 +181,12 @@ common_files += [
 files += [
   'src/engine_loop.cc',
   'src/engine.cc',
+  'src/neural/backends/backend_rr.cc',
   'src/neural/backends/network_check.cc',
   'src/neural/backends/network_demux.cc',
   'src/neural/backends/network_mux.cc',
   'src/neural/backends/network_random.cc',
   'src/neural/backends/network_record.cc',
-  'src/neural/backends/network_rr.cc',
   'src/neural/backends/network_trivial.cc',
   'src/neural/memcache.cc',
   'src/neural/network_legacy.cc',
