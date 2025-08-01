@@ -204,22 +204,29 @@ class SyclNetwork : public Network {
 
     // Get all available platforms
     auto platforms = sycl::platform::get_platforms();
+    
+    if (platforms.empty()) {
+      throw Exception("No SYCL platform found.");
+    }
     showPlatformInfo(platforms);
+    
+    // A vector to store all sycl devices.
+    std::vector<sycl::device> devices;
 
     for (const auto& platform : platforms) {
        auto platform_devices = platform.get_devices();
-       devices_.insert(devices_.end(), platform_devices.begin(), platform_devices.end());
+       devices.insert(devices.end(), platform_devices.begin(), platform_devices.end());
     }
 
-    if (gpu_id_ >= (int)devices_.size() || gpu_id_ < 0)
+    if (gpu_id_ >= (int)devices.size() || gpu_id_ < 0)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
     
-    // Get the sycl device.
-    device_ = devices_[gpu_id_];
+    // Is it a cpu device?
+    is_cpu_ = devices[gpu_id_].is_cpu();
     // Get the number of compute units(execution units).
-    compute_units_ = device_.get_info<sycl::info::device::max_compute_units>();
+    compute_units_ = devices[gpu_id_].get_info<sycl::info::device::max_compute_units>();
     // Get context.
-    sycl::context context{device_};
+    sycl::context context{devices[gpu_id_]};
     auto exceptions_handler = [&] (sycl::exception_list exceptions) {
         for (std::exception_ptr const& e : exceptions) {
            try {
@@ -234,7 +241,7 @@ class SyclNetwork : public Network {
         }
     };
     
-    sycl_queue_ = new sycl::queue{context, device_, 
+    sycl_queue_ = new sycl::queue{context, devices[gpu_id_], 
               exceptions_handler, sycl::property_list{sycl::property::queue::in_order{}} };
 
     showDeviceInfo(*sycl_queue_);
@@ -929,12 +936,12 @@ class SyclNetwork : public Network {
   }
 
   // Check if device is the cpu for thread handling.
-  bool IsCpu() const override { return device_.is_cpu(); }
+  bool IsCpu() const override { return is_cpu_; }
 
   int GetThreads() const override { return 1 + multi_stream_; }
 
   int GetMiniBatchSize() const override {
-     if (device_.is_cpu()) { return 47; }
+     if (is_cpu_) return 47;
        // Simple heuristic that seems to work for a wide range of GPUs.
        return 2 * compute_units_;
     }
@@ -984,13 +991,12 @@ class SyclNetwork : public Network {
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;  // try to fit residual block activations in L2 cache
 
+
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
   mutable std::mutex lock_;
   sycl::queue* sycl_queue_;
-  sycl::device device_;
-  // A vector to store all sycl devices.
-  std::vector<sycl::device> devices_;
+  bool is_cpu_;
 
 
   int numBlocks_;
@@ -1025,8 +1031,7 @@ class SyclNetwork : public Network {
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
   void showDeviceInfo(const sycl::queue &mqueue) const {
-    CERR <<
-          "Device-Info...";
+    CERR << "Device-Info...";
     CERR << "Platform: " 
          << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>() 
          << " selected";
@@ -1045,21 +1050,11 @@ class SyclNetwork : public Network {
     CERR << "Global memory size: " 
          << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
          << " MB";         
-    CERR <<
-          "...Device-Info-End"
-            << "\n";
+    CERR << "...Device-Info-End";
     }
     
     void showPlatformInfo(const std::vector<sycl::platform>& platforms) {
-       if (platforms.empty()) {
-           CERR << "No SYCL platform found." << "\n";
-           return;
-        }
-       
-       CERR << "\n";
-       CERR <<
-          "Platform-List...";
-        
+       CERR << "Platform-List...";
        for (size_t i = 0; i < platforms.size(); ++i) {
            std::string version = platforms[i].get_info<sycl::info::platform::version>();
            
@@ -1079,9 +1074,7 @@ class SyclNetwork : public Network {
             }
         }
         
-        CERR <<
-           "...Platform-List-End"
-             << "\n";
+        CERR << "...Platform-List-End";
     }
 };
 
