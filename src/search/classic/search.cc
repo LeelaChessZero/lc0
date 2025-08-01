@@ -1093,25 +1093,22 @@ void SearchWorker::RunTasks(int tid) {
       while (true) {
         int nta = tasks_taken_.load(std::memory_order_acquire);
         int tc = task_count_.load(std::memory_order_acquire);
+
+        // Check if tasks are queued and try increment taken count.
+        while (nta < tc &&
+            !tasks_taken_.compare_exchange_weak(
+              nta, nta + 1, std::memory_order_acq_rel,
+              std::memory_order_acquire)) {
+          // Queue had tasks but another worker increment taken. We check
+          // if new work was added to the queue. Then we try to increment
+          // taken again.
+          tc = task_count_.load(std::memory_order_acquire);
+        }
+        // We incremented taken if nta and tc are different
         if (nta < tc) {
-          int val = 0;
-          if (task_taking_started_.compare_exchange_weak(
-                  val, 1, std::memory_order_acq_rel,
-                  std::memory_order_relaxed)) {
-            nta = tasks_taken_.load(std::memory_order_acquire);
-            tc = task_count_.load(std::memory_order_acquire);
-            // We got the spin lock, double check we're still in the clear.
-            if (nta < tc) {
-              id = tasks_taken_.fetch_add(1, std::memory_order_acq_rel);
-              task = &picking_tasks_[id];
-              task_taking_started_.store(0, std::memory_order_release);
-              break;
-            }
-            task_taking_started_.store(0, std::memory_order_release);
-          }
-          SpinloopPause();
-          spins = 0;
-          continue;
+          id = nta;
+          task = &picking_tasks_[id];
+          break;
         } else if (tc != -1) {
           spins++;
           if (spins >= 512) {
