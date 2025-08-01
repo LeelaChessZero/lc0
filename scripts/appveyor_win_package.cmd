@@ -55,7 +55,9 @@ IF %ONNX%==true (
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip "%PKG_FOLDER%\%ONNX_NAME_TWO%\lib\onnxruntime_providers_cuda.dll"
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip "%PKG_FOLDER%\%ONNX_NAME_TWO%\lib\onnxruntime_providers_tensorrt.dll"
   type dist\README-onnx-trt.txt |more /P > dist\README.txt
+  type dist\install-trt.cmd |more /P > dist\install.cmd
   7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip .\dist\README.txt
+  7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-trt.zip .\dist\install.cmd
 )
 IF %OPENCL%==true type scripts\check_opencl.bat |more /P > dist\check_opencl.bat
 IF %OPENCL%==true 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\check_opencl.bat

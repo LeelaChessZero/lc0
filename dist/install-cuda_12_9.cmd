@@ -15,6 +15,8 @@ echo 2/4. Extracting files.
 tar -xzOf tmp_cudart.zip cuda_cudart-windows-x86_64-12.9.37-archive/bin/cudart64_12.dll >cudart64_12.dll
 if errorlevel 1 goto error
 
+tar -xzOf tmp_cudart.zip cuda_cudart-windows-x86_64-12.9.37-archive/LICENSE >CUDA.txt
+
 del /q tmp_cudart.zip
 
 echo 3/4. Downloading cublas.
