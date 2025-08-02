@@ -960,8 +960,10 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
             sycl::range<3>(1, 1, kBlocks) * sycl::range<3>(1, 1, kBlockSize),
             sycl::range<3>(1, 1, kBlockSize)),
         [=](sycl::nd_item<3> item_ct1) {
-          ((sycl::half*)output, (sycl::half*)input, (sycl::half*)scaleBias,
-           (sycl::half*)prevLayerBias, N * C * 8 * 8, C, 8 * 8 * C, activation);
+          globalScale_kernel_fp16_nhwc(
+              (sycl::half*)output, (sycl::half*)input, (sycl::half*)scaleBias,
+              (sycl::half*)prevLayerBias, N * C * 8 * 8, C, 8 * 8 * C,
+              activation, item_ct1);
         });
   } else {
     sycl_queue.parallel_for(

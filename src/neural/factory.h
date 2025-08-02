@@ -108,23 +108,23 @@ class NetworkFactory {
   friend class Register;
 };
 
-#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)     \
-  namespace {                                                             \
-  namespace ns##counter {                                                 \
-  static NetworkFactory::Register regH38fhs##counter(                     \
-      name,                                                               \
-      [](const std::optional<WeightsFile>& w, const OptionsDict& o) {     \
-        return func(w, o);                                                \
-      },                                                                  \
-      priority);                                                          \
-  static BackendManager::Register regK03nv##counter(                      \
-      std::make_unique<NetworkAsBackendFactory>(                          \
-          name,                                                           \
-          [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
-            return func(w, o);                                            \
-          },                                                              \
-          priority));                                                     \
-  }                                                                       \
+#define REGISTER_NETWORK_WITH_COUNTER2(name, func, priority, counter)       \
+  namespace {                                                               \
+  namespace ns##counter {                                                   \
+    [[maybe_unused]] static NetworkFactory::Register regH38fhs##counter(    \
+        name,                                                               \
+        [](const std::optional<WeightsFile>& w, const OptionsDict& o) {     \
+          return func(w, o);                                                \
+        },                                                                  \
+        priority);                                                          \
+    [[maybe_unused]] static BackendManager::Register regK03nv##counter(     \
+        std::make_unique<NetworkAsBackendFactory>(                          \
+            name,                                                           \
+            [](const std::optional<WeightsFile>& w, const OptionsDict& o) { \
+              return func(w, o);                                            \
+            },                                                              \
+            priority));                                                     \
+  }                                                                         \
   }
 
 #define REGISTER_NETWORK_WITH_COUNTER(name, func, priority, counter) \
