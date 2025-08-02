@@ -2124,27 +2124,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
     if (*offset_pointers == nullptr) {
-      std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_ * 5);
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
-        offsets[i] = mha_k + h * depth + 64 * d_model * n;
-        offsets[i + encoder_heads_ * max_batch_size_] =
-            mha_q + h * depth + 64 * d_model * n;
-        offsets[i + 2 * encoder_heads_ * max_batch_size_] =
-            buffer1 + i * 64 * 64;
-        offsets[i + 3 * encoder_heads_ * max_batch_size_] =
-            mha_v + h * depth + 64 * d_model * n;
-        offsets[i + 4 * encoder_heads_ * max_batch_size_] =
-            buffer2 + h * depth + 64 * d_model * n;
-      }
       
       *offset_pointers = sycl::malloc_device<DataType*>(
                                encoder_heads_ * max_batch_size_ * 5,
                                sycl_queue_);
-
-      sycl_queue.memcpy(*offset_pointers, offsets.data(),
-                      encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)).wait();
+      genOffsetPointers(*offset_pointers, encoder_heads_, max_batch_size_,
+                        depth, d_model, mha_k, mha_q, buffer1,
+                        mha_v, buffer2, sycl_queue_);
     }
 
     cublasXGemmBatched<DataType>(transpose_type_transpose, transpose_type_notranspose,

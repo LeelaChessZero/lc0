@@ -1676,6 +1676,62 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                        });
 }
 
+template<typename T, int kWorkPerThread>
+static void genOffsetPointers_kernel(T** offsets, int block_size, int depth,
+                       int d_model, T* k, T* q, T* b1,
+                       T* v, T* b2,
+                       const sycl::nd_item<2>& item_ct) {
+  const int h = item_ct.get_global_id(1) * kWorkPerThread;
+  const int n = item_ct.get_global_id(0);
+  const int heads = item_ct.get_global_range(1) * kWorkPerThread;
+  const int i = n * heads + h;
+  int w;
+  T* res[kWorkPerThread];
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = k + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = q + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = b1 + i * 64 * 64 + w * 64 * 64;
+    offsets[i + w + 2 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = v + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 3 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] =  b2 + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 4 * block_size] = res[w];
+  }
+}
+
+template <typename T>
+void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
+                       int d_model, T* k, T* q, T* b1,
+                       T* v, T* b2, sycl::queue& sycl_queue) {
+  const int block_size = heads * max_batch;
+  // Process two elements per thread to use 128 bit store instructions.
+  constexpr int kWorkPerThread = 2;
+  constexpr int kWorkGroupSize = 256;
+  sycl::range<2> global(max_batch, heads/kWorkPerThread);
+  sycl::range<2> wg(std::min(max_batch, kWorkGroupSize*kWorkPerThread/heads),
+                    heads/kWorkPerThread);
+  sycl_queue.parallel_for(sycl::nd_range<2>(global, wg),
+      [=](sycl::nd_item<2> item_ct) {
+        genOffsetPointers_kernel<T, kWorkPerThread>(offsets, block_size, depth,
+                                                    d_model, k, q, b1, v, b2,
+                                                    item_ct);
+      });
+}
+
 // Template instantiation.
 template void copyTypeConverted<sycl::half, float>(sycl::half* op, float* ip, int N, sycl::queue &sycl_queue);
 template void copyTypeConverted<float, sycl::half>(float* op, sycl::half* ip, int N, sycl::queue &sycl_queue);
@@ -1950,5 +2006,13 @@ template void applyInputGating<sycl::half>(sycl::half* output, const sycl::half*
 template void applyInputGating<float>(float* output, const float* input,
                                       const float* mult, const float* add,
                                       int N, int C, int output_size, sycl::queue &sycl_queue);
+
+template void genOffsetPointers<float>(float** offsets, int heads, int max_batch, int depth,
+                       int d_model, float* k, float* q, float* b1,
+                       float* v, float* b2, sycl::queue& sycl_queue);
+
+template void genOffsetPointers<sycl::half>(sycl::half** offsets, int heads, int max_batch, int depth,
+                       int d_model, sycl::half* k, sycl::half* q, sycl::half* b1,
+                       sycl::half* v, sycl::half* b2, sycl::queue& sycl_queue);
 }  // namespace sycldnn_backend
 }  // namespace lczero
