@@ -35,6 +35,9 @@ if cc.get_id() == 'msvc'
   # Silence some zlib warnings.
   add_global_arguments('/wd4131', '/wd4267', '/wd4127', '/wd4244', '/wd4245', language : 'c')
 endif
+if cc.get_id() == 'intel-llvm' and get_option('buildtype') == 'release'
+  add_project_arguments('-O2', language : 'cpp')
+endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
   add_project_arguments(cc.get_supported_arguments(['/source-charset:utf-8']), language : 'cpp')
