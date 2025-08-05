@@ -135,7 +135,7 @@ class Search {
   // Node can only be root or ponder (depth 1) and move_to_node is only given
   // for the ponder node.
   std::vector<std::string> GetVerboseStats(
-      Node* node, std::optional<Move> move_to_node) const;
+      const Node* node, std::optional<Move> move_to_node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.

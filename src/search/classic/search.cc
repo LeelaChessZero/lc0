@@ -425,7 +425,7 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
@@ -435,7 +435,7 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
 }
 
 // Faster version for if visited_policy is readily available already.
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
                     float draw_score, float visited_pol) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
@@ -452,7 +452,7 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }
 }  // namespace
 
-std::vector<std::string> Search::GetVerboseStats(Node* node) const {
+std::vector<std::string> Search::GetVerboseStats(const Node* node) const {
   assert(node == root_node_ || node->GetParent() == root_node_);
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
