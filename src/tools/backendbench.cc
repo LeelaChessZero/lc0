@@ -93,15 +93,29 @@ void BackendBenchmark::Run() {
     auto option_dict = options.GetOptionsDict();
 
     auto backend = BackendManager::Get()->CreateFromParams(option_dict);
+    const int threads = option_dict.Get<int>(kThreadsOptionId);
 
     classic::NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
     EvalPosition pos{tree.GetPositionHistory().GetPositions(), {}};
+    std::vector<std::jthread> handles;
 
     // Do any backend initialization outside the loop.
-    auto warmup = backend->CreateComputation();
-    warmup->AddInput(pos, {});
-    warmup->ComputeBlocking();
+    auto warm = [&]() {
+      // Give GPU enough work to make it go from idle clocks to max clocks.
+      for (int i = 0; i < 2; i ++) {
+        auto warmup = backend->CreateComputation();
+        for (int j = 0; j < option_dict.Get<int>(kMaxBatchSizeId); ++j) {
+          warmup->AddInput(pos, {});
+        }
+        warmup->ComputeBlocking();
+      }
+    };
+    for (int t = 1; t < threads; t++) {
+      handles.emplace_back(warm);
+    }
+    warm();
+    handles.clear();
 
     const int batches = option_dict.Get<int>(kBatchesId);
 
@@ -112,29 +126,88 @@ void BackendBenchmark::Run() {
     float best_nps2 = 0.0f;
     float best_nps3 = 0.0f;
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> pending;
-
+    using tp = std::chrono::time_point<std::chrono::steady_clock>;
+    std::vector<std::vector<tp>> ends(threads);
+    for (auto& vend : ends) {
+      vend.resize(batches + 1);
+    }
+    std::vector<std::chrono::duration<double>> times(batches);
+    std::vector<int> thread_counts(threads);
     for (int i = option_dict.Get<int>(kStartBatchSizeId);
          i <= option_dict.Get<int>(kMaxBatchSizeId);
          i += option_dict.Get<int>(kBatchStepId)) {
-      const auto start = std::chrono::steady_clock::now();
-      // TODO: support threads not equal to 1 to be able to more sensibly test
-      // multiplexing backend.
-      for (int j = 0; j < batches; j++) {
-        // Put i copies of tree root node into computation and compute.
-        auto computation = backend->CreateComputation();
-        for (int k = 0; k < i; k++) {
-          computation->AddInput(pos, {});
+
+      handles.reserve(threads);
+      std::atomic<int> j{0};
+
+      auto compute = [&](int tid = 0) {
+        int count = 0;
+        auto& end = ends[tid];
+        end[0] = std::chrono::steady_clock::now();
+        while(j++ < batches) {
+          // Put i copies of tree root node into computation and compute.
+          auto computation = backend->CreateComputation();
+          for (int k = 0; k < i; k++) {
+            computation->AddInput(pos, {});
+          }
+          computation->ComputeBlocking();
+          count++;
+          end[count] = std::chrono::steady_clock::now();
         }
-        computation->ComputeBlocking();
+        thread_counts[tid] = count;
+
+      };
+
+      const auto start = std::chrono::steady_clock::now();
+      for (int t = 1; t < threads; t++) {
+        handles.emplace_back(compute, t);
       }
 
+      compute(0);
+
+      handles.clear();
       const auto end = std::chrono::steady_clock::now();
+
       std::chrono::duration<double> time = end - start;
+      double stddev = 0;
+      double mean = 0;
+      int k = 0;
+      for (int t = 0; t < threads; t++) {
+        for (int j = 0; j < thread_counts[t]; j++) {
+          times[k] = ends[t][j + 1] - ends[t][j];
+          mean += times[k].count();
+          k++;
+        }
+      }
+
+      mean /= batches;
+
+      for (int j = 0; j < batches; j++) {
+        double diff = times[j].count() - mean;
+        stddev += diff * diff;
+      }
+      stddev = std::sqrt(stddev / (batches - 1));
+
+      std::sort(times.begin(), times.end());
+
+      mean *= 1000;
+
       const auto nps = i * batches / time.count();
-      std::cout << "Benchmark batch size " << i
-                << " with inference average time "
-                << time.count() / batches * 1000 << "ms - throughput " << nps
-                << " nps." << std::endl;
+      const auto median = batches % 2 == 0 ?
+          2 * i / (times[batches/2 - 1].count() + times[batches/2].count()) :
+          i / times[batches/2].count();
+      std::cout << "Batch size," << std::setw(3) << i
+                << std::fixed << std::setprecision(0)
+                << ",total nps, " << std::setw(6) << nps
+                << std::defaultfloat << std::setprecision(4)
+                << ",batch mean time, " << std::setw(5) << mean << "ms"
+                << std::fixed << std::setprecision(3)
+                << ",sdev, " << std::setw(5) << stddev * 1000
+                << std::fixed << std::setprecision(0)
+                << ",batch nps max, " << std::setw(6) << i / times[0].count()
+                << ",median, " << std::setw(6) << median
+                << ",min, " << std::setw(6) << i / times[batches - 1].count()
+                << std::endl;
 
       if (option_dict.Get<bool>(kClippyId)) {
         float nps_ingame = std::pow((nps + best_nps) / 2, 1.085);
