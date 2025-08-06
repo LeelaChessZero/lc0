@@ -461,6 +461,9 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }
 }  // namespace
 
+// Ignore the last tuple element when sorting in GetVerboseStats
+static bool operator<(const EdgeAndNode&, const EdgeAndNode&) { return false; }
+
 std::vector<std::string> Search::GetVerboseStats(
     const Node* node, std::optional<Move> move_to_node) const {
   const bool is_root = (node == root_node_);
@@ -471,15 +474,14 @@ std::vector<std::string> Search::GetVerboseStats(
   const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  using edge_map_t = std::multimap<std::tuple<uint32_t, float>, EdgeAndNode>;
-  edge_map_t edges;
+  std::vector<std::tuple<uint32_t, float, EdgeAndNode>> edges;
+  edges.reserve(node->GetNumEdges());
   for (const auto& edge : node->Edges()) {
-    edges.emplace(std::piecewise_construct,
-                  std::forward_as_tuple(edge.GetN(),
-                                        edge.GetQ(fpu, draw_score) +
-                                        edge.GetU(U_coeff)),
-                  std::forward_as_tuple(edge));
+    edges.emplace_back(edge.GetN(),
+                       edge.GetQ(fpu, draw_score) + edge.GetU(U_coeff),
+                       edge);
   }
+  std::sort(edges.begin(), edges.end());
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
@@ -557,8 +559,8 @@ std::vector<std::string> Search::GetVerboseStats(
   std::vector<std::string> infos;
   const auto m_evaluator =
       backend_attributes_.has_mlh ? MEvaluator(params_, node) : MEvaluator();
-  for (const auto& edge_pair : edges) {
-    const auto& edge = edge_pair.second;
+  for (const auto& edge_tuple : edges) {
+    const auto& edge = std::get<2>(edge_tuple);
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
     std::ostringstream oss;
