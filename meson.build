@@ -734,6 +734,7 @@ if get_option('build_backends')
         # For sycl under windows we need to link using icx to generate the device code.
         # This script edits build.ninja for this and for an icx dependency issue.
         meson.add_postconf_script('scripts/sycl_build_hack.py')
+        add_project_link_arguments('-rtlib=compiler-rt', language : 'cpp')
       endif
   endif
 
