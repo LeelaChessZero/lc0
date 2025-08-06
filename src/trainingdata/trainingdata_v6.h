@@ -28,6 +28,7 @@
 #pragma once
 
 #include <cstdint>
+#include "utils/cppattributes.h"
 
 namespace lczero {
 
@@ -81,11 +82,7 @@ struct V6TrainingData {
   // Kullback-Leibler divergence between visits and policy (denominator)
   float policy_kld;
   uint32_t reserved;
-#ifdef __GNUC__
-} __attribute__((packed));
-#else
-};
-#endif
+} PACKED_STRUCT;
 static_assert(sizeof(V6TrainingData) == 8356, "Wrong struct size");
 
 #pragma pack(pop)
