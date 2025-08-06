@@ -30,9 +30,9 @@
 #include <fstream>
 #include <zlib.h>
 
-namespace lczero {
+#include "trainingdata/trainingdata_v6.h"
 
-struct V6TrainingData;
+namespace lczero {
 
 class TrainingDataWriter {
  public:
