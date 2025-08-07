@@ -760,93 +760,72 @@ class SyclNetwork : public Network {
           batchSize, spare1, flow, spare2, scratch_mem, scratch_size_, io_sycl_queue_,
           head_offset_pointers);  // Entire Attention policy head except for the
                                   // policy map
-          io_sycl_queue_.wait();
       if (fp16) {
         network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);  // policy map layer
 
-        io_sycl_queue_.wait();
 
         copyTypeConverted(opPol, (sycl::half*)spare2,
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY output
-        io_sycl_queue_.wait();
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // policy map layer  // POLICY output
         
-        io_sycl_queue_.wait();
       }
  
     } else if (conv_policy_) {
 
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // policy conv1
-      io_sycl_queue_.wait();
 
       network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // policy conv2
-      io_sycl_queue_.wait();
 
       if (fp16) {
         network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);  // policy map layer
 
-        io_sycl_queue_.wait();
         copyTypeConverted(opPol, (sycl::half*)(spare1),
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY output
 
-        io_sycl_queue_.wait();
 
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare2, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  
                             // policy map layer  // POLICY output
-        io_sycl_queue_.wait();
       }
 
     } else {
       
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // pol conv
-      io_sycl_queue_.wait();
 
       if (fp16) {
         network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);  // pol FC
-        io_sycl_queue_.wait();
 
         copyTypeConverted(opPol, (sycl::half*)(spare2),
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY
-        io_sycl_queue_.wait();
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // pol FC  // POLICY
-        io_sycl_queue_.wait();
       }
     }
-
-    // Copy policy output from device memory to host memory.
-
-    io_sycl_queue_.memcpy(io->op_policy_mem_, io->op_policy_mem_gpu_, sizeof(float) * kNumOutputPolicy * batchSize);
-    io_sycl_queue_.wait();
 
 
     // value head
     if (fp16) {
       network_[l++]->Eval(batchSize, spare1, flow, spare2, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // value head
-      io_sycl_queue_.wait();
 
       copyTypeConverted(opVal, (sycl::half*)spare1, wdl_ ? 3 * batchSize : batchSize,
                         io_sycl_queue_);
-      io_sycl_queue_.wait();
     } else {
       network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2,
                           scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // value head
-      io_sycl_queue_.wait();
     }
 
     if (moves_left_) {
@@ -855,12 +834,8 @@ class SyclNetwork : public Network {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // moves conv or embedding
 
-      io_sycl_queue_.wait();
-
       network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // moves FC1
-
-      io_sycl_queue_.wait();
 
       // Moves left FC2
       if (fp16) {
@@ -870,29 +845,28 @@ class SyclNetwork : public Network {
         network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);
         
-        io_sycl_queue_.wait();
 
         copyTypeConverted(opMov, (sycl::half*)(spare1), batchSize, io_sycl_queue_);
-        io_sycl_queue_.wait();
       
       } else {
 
         network_[l++]->Eval(batchSize, (DataType*)opMov, spare2, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);
-        io_sycl_queue_.wait();
 
       }
     }
+    
+    // Copy policy output from device memory to host memory.
+    auto event = io_sycl_queue_.memcpy(io->op_policy_mem_, io->op_policy_mem_gpu_, sizeof(float) * kNumOutputPolicy * batchSize);
 
-    if (multi_stream_) {
-        io_sycl_queue_.wait();
-    } else {
-        io_sycl_queue_.wait();
+    if (!multi_stream_) {
       //ReportCUDAErrors(
         //  DPCT_CHECK_ERROR(dpct::get_current_device().queues_wait_and_throw()));
       // The next thread can start using the GPU now.
       lock_.unlock();
     }
+
+    event.wait();
 
     if (wdl_) {
       // Value softmax done cpu side.
