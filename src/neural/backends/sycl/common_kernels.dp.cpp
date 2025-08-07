@@ -1677,14 +1677,14 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
 }
 
 template<typename T, int kWorkPerThread>
-static void genOffsetPointers_kernel(T** offsets, int block_size, int depth,
-                       int d_model, T* k, T* q, T* b1,
-                       T* v, T* b2,
-                       const sycl::nd_item<2>& item_ct) {
-  const int h = item_ct.get_global_id(1) * kWorkPerThread;
-  const int n = item_ct.get_global_id(0);
-  const int heads = item_ct.get_global_range(1) * kWorkPerThread;
-  const int i = n * heads + h;
+static void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
+                                     int depth, int d_model, T* k, T* q, T* b1,
+                                     T* v, T* b2,
+                                     const sycl::nd_item<1>& item_ct) {
+  const int i = item_ct.get_global_id(0) * kWorkPerThread;
+  if (i >= block_size) return;
+  const int h = i % heads;
+  const int n = i / heads;
   int w;
   T* res[kWorkPerThread];
   for (w = 0; w < kWorkPerThread; w++) {
@@ -1720,16 +1720,28 @@ void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
   const int block_size = heads * max_batch;
   // Process two elements per thread to use 128 bit store instructions.
   constexpr int kWorkPerThread = 2;
-  constexpr int kWorkGroupSize = 256;
-  sycl::range<2> global(max_batch, heads/kWorkPerThread);
-  sycl::range<2> wg(std::min(max_batch, kWorkGroupSize*kWorkPerThread/heads),
-                    heads/kWorkPerThread);
-  sycl_queue.parallel_for(sycl::nd_range<2>(global, wg),
-      [=](sycl::nd_item<2> item_ct) {
-        genOffsetPointers_kernel<T, kWorkPerThread>(offsets, block_size, depth,
-                                                    d_model, k, q, b1, v, b2,
-                                                    item_ct);
-      });
+  constexpr int kWorkGroupSize = 128;
+  if (block_size % kWorkPerThread != 0) {
+    // Handle odd block sizes.
+    sycl::range<1> global(DivUp(block_size, kWorkGroupSize));
+    sycl::range<1> local(kWorkGroupSize);
+    sycl_queue.parallel_for(sycl::nd_range<1>(global*local, local),
+        [=](sycl::nd_item<1> item_ct) {
+        genOffsetPointers_kernel<T, 1>(offsets, heads, block_size,
+                                       depth, d_model, k, q, b1,
+                                       v, b2, item_ct);
+        });
+  } else {
+    // Handle even block size
+    sycl::range<1> global(DivUp(block_size, kWorkGroupSize*kWorkPerThread));
+    sycl::range<1> local(kWorkGroupSize);
+    sycl_queue.parallel_for(sycl::nd_range<1>(global*local, local),
+        [=](sycl::nd_item<1> item_ct) {
+        genOffsetPointers_kernel<T, kWorkPerThread>(offsets, heads, block_size,
+                                                    depth, d_model, k, q, b1,
+                                                    v, b2, item_ct);
+        });
+  }
 }
 
 // Template instantiation.
