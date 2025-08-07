@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <optional>
@@ -43,21 +44,35 @@ class TypeDict {
  protected:
   struct V {
     const T& Get() const {
-      was_read_since_last_set_ = true;
+      was_read_since_last_set_.store(true, std::memory_order::release);
       return value_;
     }
     T& Get() {
-      was_read_since_last_set_ = true;
+      was_read_since_last_set_.store(true, std::memory_order::release);
       return value_;
     }
     void Set(const T& v) {
-      was_read_since_last_set_ = false;
       value_ = v;
+      was_read_since_last_set_.store(false, std::memory_order::release);
     }
-    bool WasReadSinceLastSet() const { return was_read_since_last_set_; }
+    bool WasReadSinceLastSet() const {
+      return was_read_since_last_set_.load(std::memory_order::acquire);
+    }
 
+    V() = default;
+    V(const V& o) :
+      was_read_since_last_set_{o.was_read_since_last_set_.load(std::memory_order::acquire)},
+      value_{o.value_} {
+    }
+    V& operator=(const V& o) {
+      value_ = o.value_;
+      was_read_since_last_set_.store(o.was_read_since_last_set_.load(std::memory_order::acquire),
+                                     std::memory_order::release);
+      return *this;
+    }
+    V(const T& v) : value_{v} {}
    private:
-    mutable bool was_read_since_last_set_ = false;
+    mutable std::atomic<bool> was_read_since_last_set_ = false;
     T value_;
   };
   void EnsureNoUnusedOptions(const std::string& type_name,
