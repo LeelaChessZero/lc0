@@ -459,14 +459,22 @@ struct FileData {
   pblczero::NetworkFormat::InputFormat input_format;
 };
 
-FileData ReadAndValidateFile(const std::string& file) {
-  FileData data;
+std::vector<V6TrainingData> ReadFile(const std::string& file) {
+  std::vector<V6TrainingData> fileContents;
   
   TrainingDataReader reader(file);
   V6TrainingData chunk;
   while (reader.ReadChunk(&chunk)) {
-    data.fileContents.push_back(chunk);
+    fileContents.push_back(chunk);
   }
+  
+  return fileContents;
+}
+
+FileData ProcessAndValidateFileData(const std::vector<V6TrainingData>& fileContents) {
+  FileData data;
+  data.fileContents = fileContents;
+  
   Validate(data.fileContents);
   
   // Decode moves from input data
@@ -1127,8 +1135,11 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
   // Scope to ensure reader and writer are closed before deleting source file.
   {
     try {
-      // Read and validate file data
-      FileData data = ReadAndValidateFile(file);
+      // Read file data
+      std::vector<V6TrainingData> fileContents = ReadFile(file);
+      
+      // Process and validate file data
+      FileData data = ProcessAndValidateFileData(fileContents);
       
       // Update counters
       games += 1;
