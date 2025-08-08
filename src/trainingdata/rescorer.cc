@@ -1067,18 +1067,12 @@ void ConvertInputFormat(FileData& data, int newInputFormat) {
 }
 
 void WriteNnueOutput(const FileData& data, const std::string& nnue_plain_file,
-                     ProcessFileFlags flags, int newInputFormat) {
+                     ProcessFileFlags flags) {
   // Output data in Stockfish plain format.
   if (!nnue_plain_file.empty()) {
     static Mutex mutex;
     std::ostringstream out;
-    pblczero::NetworkFormat::InputFormat format;
-    if (newInputFormat != -1) {
-      format =
-          static_cast<pblczero::NetworkFormat::InputFormat>(newInputFormat);
-    } else {
-      format = data.input_format;
-    }
+    pblczero::NetworkFormat::InputFormat format = data.input_format;
     
     PositionHistory history;
     int rule50ply;
@@ -1171,7 +1165,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       ApplyDeblunder(data, tablebase);
       
       // Write NNUE output before format conversion
-      WriteNnueOutput(data, nnue_plain_file, flags, newInputFormat);
+      WriteNnueOutput(data, nnue_plain_file, flags);
       
       // Convert input format if needed
       ConvertInputFormat(data, newInputFormat);
