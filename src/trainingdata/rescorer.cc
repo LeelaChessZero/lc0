@@ -1066,21 +1066,8 @@ void ConvertInputFormat(FileData& data, int newInputFormat) {
   }
 }
 
-void WriteOutputs(const FileData& data, const std::string& file,
-                  const std::string& outputDir, const std::string& nnue_plain_file,
-                  ProcessFileFlags flags, int newInputFormat) {
-  // Write processed training data
-  if (!outputDir.empty()) {
-    std::string fileName = file.substr(file.find_last_of("/\\") + 1);
-    TrainingDataWriter writer(outputDir + "/" + fileName);
-    for (const auto& chunk : data.fileContents) {
-      // Don't save chunks that just provide move history.
-      if ((chunk.invariance_info & 64) == 0) {
-        writer.WriteChunk(chunk);
-      }
-    }
-  }
-
+void WriteNnueOutput(const FileData& data, const std::string& nnue_plain_file,
+                     ProcessFileFlags flags, int newInputFormat) {
   // Output data in Stockfish plain format.
   if (!nnue_plain_file.empty()) {
     static Mutex mutex;
@@ -1130,6 +1117,21 @@ void WriteOutputs(const FileData& data, const std::string& file,
   }
 }
 
+void WriteOutputs(const FileData& data, const std::string& file,
+                  const std::string& outputDir) {
+  // Write processed training data
+  if (!outputDir.empty()) {
+    std::string fileName = file.substr(file.find_last_of("/\\") + 1);
+    TrainingDataWriter writer(outputDir + "/" + fileName);
+    for (const auto& chunk : data.fileContents) {
+      // Don't save chunks that just provide move history.
+      if ((chunk.invariance_info & 64) == 0) {
+        writer.WriteChunk(chunk);
+      }
+    }
+  }
+}
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
                  float dtzBoost, int newInputFormat,
@@ -1168,11 +1170,14 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       // Apply deblunder processing
       ApplyDeblunder(data, tablebase);
       
+      // Write NNUE output before format conversion
+      WriteNnueOutput(data, nnue_plain_file, flags, newInputFormat);
+      
       // Convert input format if needed
       ConvertInputFormat(data, newInputFormat);
       
       // Write outputs
-      WriteOutputs(data, file, outputDir, nnue_plain_file, flags, newInputFormat);
+      WriteOutputs(data, file, outputDir);
       
     } catch (Exception& ex) {
       std::cerr << "While processing: " << file
