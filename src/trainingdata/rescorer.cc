@@ -29,9 +29,9 @@
 
 #include <optional>
 #include <sstream>
+#include <span>
+#include <algorithm>
 
-#include "absl/algorithm/container.h"
-#include "absl/types/span.h"
 #include "gtb-probe.h"
 #include "neural/decoder.h"
 #include "syzygy/syzygy.h"
@@ -124,7 +124,7 @@ void DataAssert(bool check_result) {
   if (!check_result) throw Exception("Range Violation");
 }
 
-void Validate(absl::Span<const V6TrainingData> fileContents) {
+void Validate(std::span<const V6TrainingData> fileContents) {
   if (fileContents.empty()) throw Exception("Empty File");
 
   for (size_t i = 0; i < fileContents.size(); i++) {
@@ -212,7 +212,7 @@ void Validate(absl::Span<const V6TrainingData> fileContents) {
   }
 }
 
-void Validate(absl::Span<const V6TrainingData> fileContents,
+void Validate(std::span<const V6TrainingData> fileContents,
               const MoveList& moves) {
   PositionHistory history;
   int rule50ply;
@@ -240,7 +240,7 @@ void Validate(absl::Span<const V6TrainingData> fileContents,
       throw Exception("Move performed is marked illegal in probabilities.");
     }
     auto legal = history.Last().GetBoard().GenerateLegalMoves();
-    if (absl::c_find(legal, moves[i]) == legal.end()) {
+    if (std::find(legal.begin(), legal.end(), moves[i]) == legal.end()) {
       std::cerr << "Illegal move: " << moves[i].ToString(true) << std::endl;
       throw Exception("Move performed is an illegal move.");
     }
@@ -1338,7 +1338,7 @@ void RunRescorer() {
       options.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
   if (!policySubsDir.empty()) {
     auto policySubFiles = GetFileList(policySubsDir);
-    absl::c_transform(policySubFiles, policySubFiles.begin(),
+    std::transform(policySubFiles.begin(), policySubFiles.end(), policySubFiles.begin(),
                       [&policySubsDir](const std::string& file) {
                         return policySubsDir + "/" + file;
                       });
@@ -1355,7 +1355,7 @@ void RunRescorer() {
     std::cerr << "No files to process" << std::endl;
     return;
   }
-  absl::c_transform(files, files.begin(), [&inputDir](const std::string& file) {
+  std::transform(files.begin(), files.end(), files.begin(), [&inputDir](const std::string& file) {
     return inputDir + "/" + file;
   });
   float dtz_boost = options.GetOptionsDict().Get<float>(kMinDTZBoostId);
