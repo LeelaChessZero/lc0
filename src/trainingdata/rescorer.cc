@@ -30,6 +30,8 @@
 #include <optional>
 #include <sstream>
 
+#include "absl/algorithm/container.h"
+#include "absl/types/span.h"
 #include "gtb-probe.h"
 #include "neural/decoder.h"
 #include "syzygy/syzygy.h"
@@ -122,7 +124,7 @@ void DataAssert(bool check_result) {
   if (!check_result) throw Exception("Range Violation");
 }
 
-void Validate(const std::vector<V6TrainingData>& fileContents) {
+void Validate(absl::Span<const V6TrainingData> fileContents) {
   if (fileContents.empty()) throw Exception("Empty File");
 
   for (size_t i = 0; i < fileContents.size(); i++) {
@@ -210,7 +212,7 @@ void Validate(const std::vector<V6TrainingData>& fileContents) {
   }
 }
 
-void Validate(const std::vector<V6TrainingData>& fileContents,
+void Validate(absl::Span<const V6TrainingData> fileContents,
               const MoveList& moves) {
   PositionHistory history;
   int rule50ply;
@@ -238,7 +240,7 @@ void Validate(const std::vector<V6TrainingData>& fileContents,
       throw Exception("Move performed is marked illegal in probabilities.");
     }
     auto legal = history.Last().GetBoard().GenerateLegalMoves();
-    if (std::find(legal.begin(), legal.end(), moves[i]) == legal.end()) {
+    if (absl::c_find(legal, moves[i]) == legal.end()) {
       std::cerr << "Illegal move: " << moves[i].ToString(true) << std::endl;
       throw Exception("Move performed is an illegal move.");
     }
@@ -471,9 +473,9 @@ std::vector<V6TrainingData> ReadFile(const std::string& file) {
   return fileContents;
 }
 
-FileData ProcessAndValidateFileData(const std::vector<V6TrainingData>& fileContents) {
+FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
   FileData data;
-  data.fileContents = fileContents;
+  data.fileContents = std::move(fileContents);
   
   Validate(data.fileContents);
   
@@ -1071,7 +1073,7 @@ void WriteOutputs(const FileData& data, const std::string& file,
   if (!outputDir.empty()) {
     std::string fileName = file.substr(file.find_last_of("/\\") + 1);
     TrainingDataWriter writer(outputDir + "/" + fileName);
-    for (auto chunk : data.fileContents) {
+    for (const auto& chunk : data.fileContents) {
       // Don't save chunks that just provide move history.
       if ((chunk.invariance_info & 64) == 0) {
         writer.WriteChunk(chunk);
@@ -1139,7 +1141,7 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
       std::vector<V6TrainingData> fileContents = ReadFile(file);
       
       // Process and validate file data
-      FileData data = ProcessAndValidateFileData(fileContents);
+      FileData data = ProcessAndValidateFileData(std::move(fileContents));
       
       // Update counters
       games += 1;
@@ -1315,7 +1317,7 @@ void RunRescorer() {
   }
   auto dtmPaths =
       options.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId);
-  if (dtmPaths.size() != 0) {
+  if (!dtmPaths.empty()) {
     std::stringstream path_string_stream(dtmPaths);
     std::string path;
     auto paths = tbpaths_init();
@@ -1334,27 +1336,28 @@ void RunRescorer() {
   }
   auto policySubsDir =
       options.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
-  if (policySubsDir.size() != 0) {
+  if (!policySubsDir.empty()) {
     auto policySubFiles = GetFileList(policySubsDir);
-    for (size_t i = 0; i < policySubFiles.size(); i++) {
-      policySubFiles[i] = policySubsDir + "/" + policySubFiles[i];
-    }
+    absl::c_transform(policySubFiles, policySubFiles.begin(),
+                      [&policySubsDir](const std::string& file) {
+                        return policySubsDir + "/" + file;
+                      });
     BuildSubs(policySubFiles);
   }
 
   auto inputDir = options.GetOptionsDict().Get<std::string>(kInputDirId);
-  if (inputDir.size() == 0) {
+  if (inputDir.empty()) {
     std::cerr << "Must provide an input dir." << std::endl;
     return;
   }
   auto files = GetFileList(inputDir);
-  if (files.size() == 0) {
+  if (files.empty()) {
     std::cerr << "No files to process" << std::endl;
     return;
   }
-  for (size_t i = 0; i < files.size(); i++) {
-    files[i] = inputDir + "/" + files[i];
-  }
+  absl::c_transform(files, files.begin(), [&inputDir](const std::string& file) {
+    return inputDir + "/" + file;
+  });
   float dtz_boost = options.GetOptionsDict().Get<float>(kMinDTZBoostId);
   unsigned int threads = options.GetOptionsDict().Get<int>(kThreadsId);
   ProcessFileFlags flags;
