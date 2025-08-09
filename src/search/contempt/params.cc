@@ -34,10 +34,19 @@ const OptionId SearchParams::kScLimitId{
     "search-contempt-node-limit", "ScLimit",
     "UCT until this number of nodes"
     "thompson sampling beyond this limit."};
+// START: ADDED FOR HYBRID SAMPLING
+const OptionId SearchParams::kHybridSamplingRatioId{
+    "hybrid-sampling-ratio", "HybridSamplingRatio",
+    "The ratio of Thompson Sampling to use in hybrid search-contempt mode. "
+    "1.0 is pure TS, 0.0 is pure PUCT."};
+// END: ADDED FOR HYBRID SAMPLING
 
 void SearchParams::Populate(OptionsParser* options) {
   classic::SearchParams::Populate(options);
   options->Add<IntOption>(kScLimitId, 1, 1000000000) = 1000000000;
+  // START: ADDED FOR HYBRID SAMPLING
+  options->Add<FloatOption>(kHybridSamplingRatioId, 0.0f, 1.0f) = 0.8f;
+  // END: ADDED FOR HYBRID SAMPLING
 }
 
 SearchParams::SearchParams(const OptionsDict& options)
