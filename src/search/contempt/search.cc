@@ -1734,7 +1734,7 @@ void SearchWorker::PickNodesToExtendTask(
                                    ? odd_draw_score
                                    : even_draw_score;
 
-      bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 1);
+      bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 0);
 
       int opponent_node_limit = params_.GetScLimit();
       int current_node_count = node->GetN();
