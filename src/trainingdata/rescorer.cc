@@ -27,10 +27,10 @@
 
 #include "trainingdata/rescorer.h"
 
-#include <optional>
-#include <sstream>
-#include <span>
 #include <algorithm>
+#include <optional>
+#include <span>
+#include <sstream>
 
 #include "gtb-probe.h"
 #include "neural/decoder.h"
@@ -472,22 +472,22 @@ bool IsAllDraws(const FileData& data) {
 
 std::vector<V6TrainingData> ReadFile(const std::string& file) {
   std::vector<V6TrainingData> fileContents;
-  
+
   TrainingDataReader reader(file);
   V6TrainingData chunk;
   while (reader.ReadChunk(&chunk)) {
     fileContents.push_back(chunk);
   }
-  
+
   return fileContents;
 }
 
 FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
   FileData data;
   data.fileContents = std::move(fileContents);
-  
+
   Validate(data.fileContents);
-  
+
   // Decode moves from input data
   for (size_t i = 1; i < data.fileContents.size(); i++) {
     data.moves.push_back(
@@ -499,10 +499,10 @@ FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
     data.moves.back().Flip();
   }
   Validate(data.fileContents, data.moves);
-  
+
   data.input_format = static_cast<pblczero::NetworkFormat::InputFormat>(
       data.fileContents[0].input_format);
-  
+
   return data;
 }
 
@@ -511,12 +511,12 @@ void ApplyPolicySubstitutions(FileData& data) {
   int rule50ply;
   int gameply;
   ChessBoard board;
-  
+
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   uint64_t rootHash = HashCat(board.Hash(), rule50ply);
-  
+
   if (policy_subs.find(rootHash) != policy_subs.end()) {
     PolicySubNode* rootNode = &policy_subs[rootHash];
     for (size_t i = 0; i < data.fileContents.size(); i++) {
@@ -543,7 +543,7 @@ void ApplySyzygyRescoring(FileData& data, SyzygyTablebase* tablebase) {
   int rule50ply;
   int gameply;
   ChessBoard board;
-  
+
   // First pass: rescoring positions with rule50ply == 0
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
@@ -551,7 +551,7 @@ void ApplySyzygyRescoring(FileData& data, SyzygyTablebase* tablebase) {
   int last_rescore = -1;
   orig_counts[ResultForData(data.fileContents[0]) + 1]++;
   fixed_counts[ResultForData(data.fileContents[0]) + 1]++;
-  
+
   for (int i = 0; i < static_cast<int>(data.moves.size()); i++) {
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
@@ -593,12 +593,12 @@ void ApplySyzygyRescoring(FileData& data, SyzygyTablebase* tablebase) {
       }
     }
   }
-  
+
   // Second pass: rescoring positions with rule50ply != 0
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
-  
+
   for (size_t i = 0; i < data.moves.size(); i++) {
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
@@ -697,22 +697,22 @@ void ApplySyzygyRescoring(FileData& data, SyzygyTablebase* tablebase) {
   }
 }
 
-void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase, 
-                           float distTemp, float distOffset, float dtzBoost) {
+void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase,
+                            float distTemp, float distOffset, float dtzBoost) {
   if (distTemp == 1.0f && distOffset == 0.0f && dtzBoost == 0.0f) {
-    return; // No adjustments needed
+    return;  // No adjustments needed
   }
-  
+
   PositionHistory history;
   int rule50ply;
   int gameply;
   ChessBoard board;
-  
+
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   int move_index = 0;
-  
+
   for (auto& chunk : data.fileContents) {
     const auto& board = history.Last().GetBoard();
     std::vector<bool> boost_probs(1858, false);
@@ -821,19 +821,19 @@ void EstimateAndCorrectPliesLeft(FileData& data) {
 
 void ApplyGaviotaCorrections(FileData& data) {
   if (!gaviotaEnabled) return;
-  
+
   if (IsAllDraws(data)) return;
-  
+
   PositionHistory history;
   int rule50ply;
   int gameply;
   ChessBoard board;
-  
+
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   int last_rescore = 0;
-  
+
   for (size_t i = 0; i < data.moves.size(); i++) {
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
@@ -896,24 +896,23 @@ void ApplyDTZCorrections(FileData& data, SyzygyTablebase* tablebase) {
   // Correct move_count using DTZ for 3 piece no-pawn positions only.
   // If Gaviota TBs are enabled no need to use syzygy.
   if (gaviotaEnabled) return;
-  
+
   if (IsAllDraws(data)) return;
-  
+
   PositionHistory history;
   int rule50ply;
   int gameply;
   ChessBoard board;
-  
+
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
-  
+
   for (size_t i = 0; i < data.moves.size(); i++) {
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
     if (board.castlings().no_legal_castle() &&
-        (board.ours() | board.theirs()).count() <= 3 &&
-        board.pawns().empty()) {
+        (board.ours() | board.theirs()).count() <= 3 && board.pawns().empty()) {
       ProbeState state;
       WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce
@@ -976,16 +975,16 @@ void ApplyDeblunder(FileData& data, SyzygyTablebase* tablebase) {
   if (!deblunderEnabled || data.fileContents.back().visits == 0) {
     return;
   }
-  
+
   PositionHistory history;
   int rule50ply;
   int gameply;
   ChessBoard board;
-  
+
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
-  
+
   for (size_t i = 0; i < data.moves.size(); i++) {
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
@@ -996,12 +995,12 @@ void ApplyDeblunder(FileData& data, SyzygyTablebase* tablebase) {
       break;
     }
   }
-  
+
   float activeZ[3] = {data.fileContents.back().result_q,
                       data.fileContents.back().result_d,
                       data.fileContents.back().plies_left};
   bool deblunderingStarted = false;
-  
+
   while (true) {
     auto& cur = data.fileContents[history.GetLength() - 1];
     // A blunder is defined by the played move being worse than the
@@ -1019,10 +1018,10 @@ void ApplyDeblunder(FileData& data, SyzygyTablebase* tablebase) {
       // If width > 0 and the deblunder didn't involve a terminal
       // position, we apply a soft threshold by averaging old and new Z.
       if (deblunderQBlunderWidth > 0 && !deblunderTriggerTerminal) {
-        newZRatio = std::min(1.0f, (cur.best_q - cur.played_q -
-                                    deblunderQBlunderThreshold) /
-                                           deblunderQBlunderWidth +
-                                       0.5f);
+        newZRatio = std::min(
+            1.0f, (cur.best_q - cur.played_q - deblunderQBlunderThreshold) /
+                          deblunderQBlunderWidth +
+                      0.5f);
       }
       // Instead of averaging, a randomization can be applied here with
       // newZRatio = newZRatio > rand( [0, 1) ) ? 1.0f : 0.0f;
@@ -1048,17 +1047,17 @@ void ApplyDeblunder(FileData& data, SyzygyTablebase* tablebase) {
 
 void ConvertInputFormat(FileData& data, int newInputFormat) {
   if (newInputFormat == -1) return;
-  
+
   PositionHistory history;
   int rule50ply;
   int gameply;
   ChessBoard board;
-  
+
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
   ChangeInputFormat(newInputFormat, &data.fileContents[0], history);
-  
+
   for (size_t i = 0; i < data.moves.size(); i++) {
     history.Append(data.moves[i]);
     ChangeInputFormat(newInputFormat, &data.fileContents[i + 1], history);
@@ -1071,16 +1070,17 @@ void WriteNnueOutput(const FileData& data, const std::string& nnue_plain_file,
   if (!nnue_plain_file.empty()) {
     static Mutex mutex;
     std::ostringstream out;
-    
+
     PositionHistory history;
     int rule50ply;
     int gameply;
     ChessBoard board;
-    
-    PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]), &board,
+
+    PopulateBoard(data.input_format,
+                  PlanesFromTrainingData(data.fileContents[0]), &board,
                   &rule50ply, &gameply);
     history.Reset(board, rule50ply, gameply);
-    
+
     for (size_t i = 0; i < data.fileContents.size(); i++) {
       auto chunk = data.fileContents[i];
       Position p = history.Last();
@@ -1133,44 +1133,44 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     try {
       // Read file data
       std::vector<V6TrainingData> fileContents = ReadFile(file);
-      
+
       // Process and validate file data
       FileData data = ProcessAndValidateFileData(std::move(fileContents));
-      
+
       // Update counters
       games += 1;
       positions += data.fileContents.size();
-      
+
       // Apply policy substitutions if available
       ApplyPolicySubstitutions(data);
-      
+
       // Apply Syzygy tablebase rescoring
       ApplySyzygyRescoring(data, tablebase);
-      
+
       // Apply policy adjustments (temperature, offset, boost)
       ApplyPolicyAdjustments(data, tablebase, distTemp, distOffset, dtzBoost);
-      
+
       // Estimate and correct plies left
       EstimateAndCorrectPliesLeft(data);
-      
+
       // Apply Gaviota tablebase corrections
       ApplyGaviotaCorrections(data);
-      
-      // Apply DTZ corrections  
+
+      // Apply DTZ corrections
       ApplyDTZCorrections(data, tablebase);
-      
+
       // Apply deblunder processing
       ApplyDeblunder(data, tablebase);
-      
+
       // Write NNUE output before format conversion
       WriteNnueOutput(data, nnue_plain_file, flags);
-      
+
       // Convert input format if needed
       ConvertInputFormat(data, newInputFormat);
-      
+
       // Write outputs
       WriteOutputs(data, file, outputDir);
-      
+
     } catch (Exception& ex) {
       std::cerr << "While processing: " << file
                 << " - Exception thrown: " << ex.what() << std::endl;
@@ -1335,10 +1335,11 @@ void RunRescorer() {
       options.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
   if (!policySubsDir.empty()) {
     auto policySubFiles = GetFileList(policySubsDir);
-    std::transform(policySubFiles.begin(), policySubFiles.end(), policySubFiles.begin(),
-                      [&policySubsDir](const std::string& file) {
-                        return policySubsDir + "/" + file;
-                      });
+    std::transform(policySubFiles.begin(), policySubFiles.end(),
+                   policySubFiles.begin(),
+                   [&policySubsDir](const std::string& file) {
+                     return policySubsDir + "/" + file;
+                   });
     BuildSubs(policySubFiles);
   }
 
@@ -1352,9 +1353,9 @@ void RunRescorer() {
     std::cerr << "No files to process" << std::endl;
     return;
   }
-  std::transform(files.begin(), files.end(), files.begin(), [&inputDir](const std::string& file) {
-    return inputDir + "/" + file;
-  });
+  std::transform(
+      files.begin(), files.end(), files.begin(),
+      [&inputDir](const std::string& file) { return inputDir + "/" + file; });
   float dtz_boost = options.GetOptionsDict().Get<float>(kMinDTZBoostId);
   unsigned int threads = options.GetOptionsDict().Get<int>(kThreadsId);
   ProcessFileFlags flags;
