@@ -1020,16 +1020,20 @@ class CudnnNetwork : public Network {
       major = CUDART_VERSION / 1000;
       minor = (CUDART_VERSION - major * 1000) / 10;
       pl = CUDART_VERSION - major * 1000 - minor * 10;
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
-              "version "
-           << major << "." << minor << "." << pl;
+      // After cuda 11, newer version with same major is OK.
+      if (major < 11 || (major != version / 1000) || version < CUDART_VERSION) {
+        CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+                "version "
+             << major << "." << minor << "." << pl;
+      }
     }
     version = (int)cudnnGetVersion();
     major = version / 1000;
     minor = (version - major * 1000) / 100;
     pl = version - major * 1000 - minor * 100;
     CERR << "Cudnn version: " << major << "." << minor << "." << pl;
-    if (version != CUDNN_VERSION) {
+    // Assuming CUDNN > 7.
+    if (major != CUDNN_MAJOR || minor < CUDNN_MINOR) {
       CERR << "WARNING: CUDNN Runtime version mismatch, was compiled with "
               "version "
            << CUDNN_MAJOR << "." << CUDNN_MINOR << "." << CUDNN_PATCHLEVEL;
