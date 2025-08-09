@@ -44,9 +44,16 @@ class SearchParams : public classic::SearchParams {
 
   // Parameter getters.
   int GetScLimit() const { return options_.Get<int>(kScLimitId); }
+  // START: ADDED FOR HYBRID SAMPLING
+  float GetHybridSamplingRatio() const { return options_.Get<float>(kHybridSamplingRatioId); }
+  // END: ADDED FOR HYBRID SAMPLING
 
   // Search parameter IDs.
   static const OptionId kScLimitId;
+  // START: ADDED FOR HYBRID SAMPLING
+  static const OptionId kHybridSamplingRatioId;
+  // END: ADDED FOR HYBRID SAMPLING
+
 };
 
 }  // namespace contempt
