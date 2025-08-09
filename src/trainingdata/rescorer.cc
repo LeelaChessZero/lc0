@@ -461,6 +461,15 @@ struct FileData {
   pblczero::NetworkFormat::InputFormat input_format;
 };
 
+bool IsAllDraws(const FileData& data) {
+  for (const auto& chunk : data.fileContents) {
+    if (ResultForData(chunk) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::vector<V6TrainingData> ReadFile(const std::string& file) {
   std::vector<V6TrainingData> fileContents;
   
@@ -799,7 +808,6 @@ void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase,
 void EstimateAndCorrectPliesLeft(FileData& data) {
   // Make move_count field plies_left for moves left head.
   int offset = 0;
-  bool all_draws = true;
   for (auto& chunk : data.fileContents) {
     // plies_left can't be 0 for real v5 data, so if it is 0 it must be a v4
     // conversion, and we should populate it ourselves with a better
@@ -808,18 +816,13 @@ void EstimateAndCorrectPliesLeft(FileData& data) {
       chunk.plies_left = (int)(data.fileContents.size() - offset);
     }
     offset++;
-    all_draws = all_draws && (ResultForData(chunk) == 0);
   }
 }
 
 void ApplyGaviotaCorrections(FileData& data) {
   if (!gaviotaEnabled) return;
   
-  bool all_draws = true;
-  for (const auto& chunk : data.fileContents) {
-    all_draws = all_draws && (ResultForData(chunk) == 0);
-  }
-  if (all_draws) return;
+  if (IsAllDraws(data)) return;
   
   PositionHistory history;
   int rule50ply;
@@ -894,11 +897,7 @@ void ApplyDTZCorrections(FileData& data, SyzygyTablebase* tablebase) {
   // If Gaviota TBs are enabled no need to use syzygy.
   if (gaviotaEnabled) return;
   
-  bool all_draws = true;
-  for (const auto& chunk : data.fileContents) {
-    all_draws = all_draws && (ResultForData(chunk) == 0);
-  }
-  if (all_draws) return;
+  if (IsAllDraws(data)) return;
   
   PositionHistory history;
   int rule50ply;
@@ -974,7 +973,7 @@ void ApplyDTZCorrections(FileData& data, SyzygyTablebase* tablebase) {
 void ApplyDeblunder(FileData& data, SyzygyTablebase* tablebase) {
   // Deblunder only works from v6 data onwards. We therefore check
   // the visits field which is 0 if we're dealing with upgraded data.
-  if (!deblunderEnabled || data.fileContents.back().visits <= 0) {
+  if (!deblunderEnabled || data.fileContents.back().visits == 0) {
     return;
   }
   
@@ -1072,14 +1071,13 @@ void WriteNnueOutput(const FileData& data, const std::string& nnue_plain_file,
   if (!nnue_plain_file.empty()) {
     static Mutex mutex;
     std::ostringstream out;
-    pblczero::NetworkFormat::InputFormat format = data.input_format;
     
     PositionHistory history;
     int rule50ply;
     int gameply;
     ChessBoard board;
     
-    PopulateBoard(format, PlanesFromTrainingData(data.fileContents[0]), &board,
+    PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]), &board,
                   &rule50ply, &gameply);
     history.Reset(board, rule50ply, gameply);
     
@@ -1090,7 +1088,7 @@ void WriteNnueOutput(const FileData& data, const std::string& nnue_plain_file,
         // Format is v6 and position is evaluated.
         Move m = MoveFromNNIndex(
             flags.nnue_best_move ? chunk.best_idx : chunk.played_idx,
-            TransformForPosition(format, history));
+            TransformForPosition(data.input_format, history));
         float q = flags.nnue_best_score ? chunk.best_q : chunk.played_q;
         out << AsNnueString(p, m, q, round(chunk.result_q));
       } else if (i < data.moves.size()) {
