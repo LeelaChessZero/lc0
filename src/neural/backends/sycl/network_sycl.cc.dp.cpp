@@ -261,8 +261,7 @@ class SyclNetwork : public Network {
     //sycl_queue_->get_device().get_device_info(deviceProp);
 
 
-    if (fp16) {
-      dpct::has_capability_or_fail(sycl_queue_->get_device(), {sycl::aspect::fp16});
+    if (fp16 && sycl_queue_->get_device().has(sycl::aspect::fp16)) {
         CERR << "Using Fp16 "; 
     } else {
         CERR << "Using Fp32 ";
@@ -1145,12 +1144,16 @@ std::unique_ptr<Network> MakeSyclNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
 
+  auto devices = sycl::device::get_devices();
+  if (gpu_id >= devices.size()) {
+      throw Exception("Invalid GPU ID");
+   }
   try {
     CERR << "Trying to switch to [sycl-fp16]...";
-    dpct::has_capability_or_fail(dpct::dev_mgr::instance().get_device(gpu_id),
-                                 {sycl::aspect::fp16});
-    CERR << "Switched to [sycl-fp16]...";
-    return MakeSyclNetwork<sycl::half>(weights, options);
+    if (devices[gpu_id].has(sycl::aspect::fp16)) {
+        CERR << "Switched to [sycl-fp16]..."; 
+        return MakeSyclNetwork<sycl::half>(weights, options);     
+    } 
   } catch (std::exception& e) {
     CERR << "Device does not support sycl-fp16";
   }
@@ -1158,7 +1161,6 @@ std::unique_ptr<Network> MakeSyclNetworkAuto(
   CERR << "Switched to [sycl]...";
   return MakeSyclNetwork<float>(weights, options);
 }
-
 REGISTER_NETWORK("sycl-auto", MakeSyclNetworkAuto, 132)
 REGISTER_NETWORK("sycl", MakeSyclNetwork<float>, 131)
 REGISTER_NETWORK("sycl-fp16", MakeSyclNetwork<sycl::half>, 130)
