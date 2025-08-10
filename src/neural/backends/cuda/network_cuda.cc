@@ -997,9 +997,12 @@ class CudaNetwork : public Network {
       major = CUDART_VERSION / 1000;
       minor = (CUDART_VERSION - major * 1000) / 10;
       pl = CUDART_VERSION - major * 1000 - minor * 10;
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
-              "version "
-           << major << "." << minor << "." << pl;
+      // After cuda 11, newer version with same major is OK.
+      if (major < 11 || (major != version / 1000) || version < CUDART_VERSION) {
+        CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+                "version "
+             << major << "." << minor << "." << pl;
+      }
     }
     cudaDriverGetVersion(&version);
     major = version / 1000;
