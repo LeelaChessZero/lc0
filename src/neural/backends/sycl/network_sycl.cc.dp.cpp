@@ -261,10 +261,13 @@ class SyclNetwork : public Network {
     //sycl_queue_->get_device().get_device_info(deviceProp);
 
 
-    if (fp16 && sycl_queue_->get_device().has(sycl::aspect::fp16)) {
-        CERR << "Using Fp16 "; 
+    if (fp16) {
+      if (!sycl_queue_->get_device().has(sycl::aspect::fp16)) {
+        throw Exception("Requested fp16 is not supported by the device");
+      }
+      CERR << "Using Fp16 "; 
     } else {
-        CERR << "Using Fp32 ";
+      CERR << "Using Fp32 ";
     }
 
     const int kNumInputPlanes = kInputPlanes;
@@ -1141,19 +1144,17 @@ std::unique_ptr<Network> MakeSyclNetworkAuto(
   if (gpu_id >= devices.size()) {
       throw Exception("Invalid GPU ID");
    }
-  try {
-    CERR << "Trying to switch to [sycl-fp16]...";
-    if (devices[gpu_id].has(sycl::aspect::fp16)) {
-        CERR << "Switched to [sycl-fp16]..."; 
-        return MakeSyclNetwork<sycl::half>(weights, options);     
-    } 
-  } catch (std::exception& e) {
+  CERR << "Trying to switch to [sycl-fp16]...";
+  if (devices[gpu_id].has(sycl::aspect::fp16)) {
+    CERR << "Switched to [sycl-fp16]..."; 
+    return MakeSyclNetwork<sycl::half>(weights, options);     
+  } else {
     CERR << "Device does not support sycl-fp16";
   }
-
   CERR << "Switched to [sycl]...";
   return MakeSyclNetwork<float>(weights, options);
 }
+
 REGISTER_NETWORK("sycl-auto", MakeSyclNetworkAuto, 132)
 REGISTER_NETWORK("sycl", MakeSyclNetwork<float>, 131)
 REGISTER_NETWORK("sycl-fp16", MakeSyclNetwork<sycl::half>, 130)
