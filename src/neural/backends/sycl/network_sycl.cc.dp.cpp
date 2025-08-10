@@ -920,13 +920,6 @@ class SyclNetwork : public Network {
     }
   
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    // Set correct gpu id for this computation (as it might have been called
-    // from a different thread).
-    /*
-    DPCT1093:90: The "gpu_id_" device may be not the one intended for use.
-    Adjust the selected device if needed.
-    */
-    dpct::select_device(gpu_id_);
     return std::make_unique<SyclNetworkComputation<DataType>>(this, wdl_,
                                                               moves_left_);
   }
