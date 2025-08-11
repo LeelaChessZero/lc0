@@ -262,10 +262,12 @@ class SyclNetwork : public Network {
 
 
     if (fp16) {
-      dpct::has_capability_or_fail(sycl_queue_->get_device(), {sycl::aspect::fp16});
-        CERR << "Using Fp16 "; 
+      if (!sycl_queue_->get_device().has(sycl::aspect::fp16)) {
+        throw Exception("Requested fp16 is not supported by the device");
+      }
+      CERR << "Using Fp16 "; 
     } else {
-        CERR << "Using Fp32 ";
+      CERR << "Using Fp32 ";
     }
 
     const int kNumInputPlanes = kInputPlanes;
@@ -921,13 +923,6 @@ class SyclNetwork : public Network {
     }
   
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    // Set correct gpu id for this computation (as it might have been called
-    // from a different thread).
-    /*
-    DPCT1093:90: The "gpu_id_" device may be not the one intended for use.
-    Adjust the selected device if needed.
-    */
-    dpct::select_device(gpu_id_);
     return std::make_unique<SyclNetworkComputation<DataType>>(this, wdl_,
                                                               moves_left_);
   }
@@ -1145,16 +1140,17 @@ std::unique_ptr<Network> MakeSyclNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
 
-  try {
-    CERR << "Trying to switch to [sycl-fp16]...";
-    dpct::has_capability_or_fail(dpct::dev_mgr::instance().get_device(gpu_id),
-                                 {sycl::aspect::fp16});
-    CERR << "Switched to [sycl-fp16]...";
-    return MakeSyclNetwork<sycl::half>(weights, options);
-  } catch (std::exception& e) {
+  auto devices = sycl::device::get_devices();
+  if (gpu_id >= devices.size()) {
+      throw Exception("Invalid GPU ID");
+   }
+  CERR << "Trying to switch to [sycl-fp16]...";
+  if (devices[gpu_id].has(sycl::aspect::fp16)) {
+    CERR << "Switched to [sycl-fp16]..."; 
+    return MakeSyclNetwork<sycl::half>(weights, options);     
+  } else {
     CERR << "Device does not support sycl-fp16";
   }
-
   CERR << "Switched to [sycl]...";
   return MakeSyclNetwork<float>(weights, options);
 }
