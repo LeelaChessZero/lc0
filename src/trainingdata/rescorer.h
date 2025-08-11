@@ -36,7 +36,7 @@ namespace lczero {
 
 void RunRescorer();
 std::vector<V6TrainingData> RescoreTrainingData(
-    const std::vector<V6TrainingData>& fileContents, SyzygyTablebase* tablebase,
+    std::vector<V6TrainingData> fileContents, SyzygyTablebase* tablebase,
     float distTemp = 1.0f, float distOffset = 0.0f, float dtzBoost = 0.0f,
     int newInputFormat = -1);
 

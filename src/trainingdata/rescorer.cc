@@ -1435,10 +1435,11 @@ void RunRescorer() {
 }
 
 std::vector<V6TrainingData> RescoreTrainingData(
-    const std::vector<V6TrainingData>& fileContents, SyzygyTablebase* tablebase,
+    std::vector<V6TrainingData> fileContents, SyzygyTablebase* tablebase,
     float distTemp, float distOffset, float dtzBoost, int newInputFormat) {
-  FileData data = ProcessFileInternal(fileContents, tablebase, distTemp,
-                                      distOffset, dtzBoost, newInputFormat);
+  FileData data =
+      ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
+                          distOffset, dtzBoost, newInputFormat);
   return data.fileContents;
 }
 }  // namespace lczero
