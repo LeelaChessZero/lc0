@@ -29,6 +29,7 @@ import argparse
 import os
 import re
 import sys
+from typing import Any
 
 VARINT_TYPES = {
     'int32': 'std::int32_t',
@@ -72,7 +73,7 @@ RESERVED_WORDS = [
 ] + list(TYPES.keys())
 
 GRAMMAR = ([(r'%s\b' % x, x)
-            for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.,'] + [
+            for x in RESERVED_WORDS] + [('\\' + x, x) for x in '=;{}.,[]'] + [
                 (r'/\*.*?\*/', None),  # /* Comment */
                 (r'//.*?$', None),  # // Comment
                 (r'\s+', None),  # Whitespace
@@ -81,6 +82,10 @@ GRAMMAR = ([(r'%s\b' % x, x)
                 (r'\d+', 'number'),
                 (r'(\w+)', 'identifier'),
             ])
+
+ALLOWED_ATTRIBUTES = {
+    "default",
+}
 
 
 class Lexer:
@@ -283,7 +288,38 @@ class ProtoFieldParser:
         self.name = lexer.Consume('identifier')
         lexer.Consume('=')
         self.number = int(lexer.Consume('number').group(0))
+        self.attributes = ProtoFieldParser.ParseAttributes(lexer)
         lexer.Consume(';')
+
+    @staticmethod
+    def ParseAttributes(lexer) -> dict[str, Any]:
+        attributes = {}
+        token, match = lexer.Pick()
+        if token != "[":
+            return attributes
+        lexer.Consume("[")
+        while True:
+            name = lexer.Consume("identifier").group(0)
+            if name not in ALLOWED_ATTRIBUTES:
+                lexer.Error("Unknown attribute %s" % name)
+            lexer.Consume("=")
+            token, match = lexer.Pick()
+            value = None
+            if token == "string":
+                value = lexer.Consume("string").group(0)
+            elif token == "number":
+                value = int(lexer.Consume("number").group(0))
+            else:
+                lexer.Error("Expected string or number as default value")
+            attributes[name] = value
+            token, _ = lexer.Pick()
+            if token == "]":
+                lexer.Consume("]")
+                return attributes
+            elif token == ",":
+                lexer.Consume(",")
+            else:
+                lexer.Error("Expected ']' or ','")
 
     def IsType(self):
         return False
@@ -326,7 +362,10 @@ class ProtoFieldParser:
             w.Write('%s_.clear();' % name)
         else:
             w.Write('has_%s_ = false;' % name)
-            w.Write('%s_ = {};' % name)
+            if "default" in self.attributes:
+                w.Write("%s_ = %s;" % (name, self.attributes["default"]))
+            else:
+                w.Write('%s_ = {};' % name)
 
     def GenerateOutput(self, w):
         fname = {
@@ -466,7 +505,10 @@ class ProtoFieldParser:
             w.Write("std::vector<%s> %s_;" % (cpp_type, name))
         else:
             w.Write("bool has_%s_{};" % (name))
-            w.Write("%s %s_{};" % (cpp_type, name))
+            if "default" in self.attributes:
+                w.Write("%s %s_{%s};" % (cpp_type, name, self.attributes["default"]))
+            else:
+                w.Write("%s %s_{};" % (cpp_type, name))
         return
 
 
