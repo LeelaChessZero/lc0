@@ -960,8 +960,10 @@ void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
             sycl::range<3>(1, 1, kBlocks) * sycl::range<3>(1, 1, kBlockSize),
             sycl::range<3>(1, 1, kBlockSize)),
         [=](sycl::nd_item<3> item_ct1) {
-          ((sycl::half*)output, (sycl::half*)input, (sycl::half*)scaleBias,
-           (sycl::half*)prevLayerBias, N * C * 8 * 8, C, 8 * 8 * C, activation);
+          globalScale_kernel_fp16_nhwc(
+              (sycl::half*)output, (sycl::half*)input, (sycl::half*)scaleBias,
+              (sycl::half*)prevLayerBias, N * C * 8 * 8, C, 8 * 8 * C,
+              activation, item_ct1);
         });
   } else {
     sycl_queue.parallel_for(
@@ -1676,6 +1678,74 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                        });
 }
 
+template<typename T, int kWorkPerThread>
+static void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
+                                     int depth, int d_model, T* k, T* q, T* b1,
+                                     T* v, T* b2,
+                                     const sycl::nd_item<1>& item_ct) {
+  const int i = item_ct.get_global_id(0) * kWorkPerThread;
+  if (i >= block_size) return;
+  const int h = i % heads;
+  const int n = i / heads;
+  int w;
+  T* res[kWorkPerThread];
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = k + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = q + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = b1 + i * 64 * 64 + w * 64 * 64;
+    offsets[i + w + 2 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = v + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 3 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] =  b2 + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 4 * block_size] = res[w];
+  }
+}
+
+template <typename T>
+void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
+                       int d_model, T* k, T* q, T* b1,
+                       T* v, T* b2, sycl::queue& sycl_queue) {
+  const int block_size = heads * max_batch;
+  // Process two elements per thread to use 128 bit store instructions.
+  constexpr int kWorkPerThread = 2;
+  constexpr int kWorkGroupSize = 128;
+  if (block_size % kWorkPerThread != 0) {
+    // Handle odd block sizes.
+    sycl::range<1> global(DivUp(block_size, kWorkGroupSize));
+    sycl::range<1> local(kWorkGroupSize);
+    sycl_queue.parallel_for(sycl::nd_range<1>(global*local, local),
+        [=](sycl::nd_item<1> item_ct) {
+        genOffsetPointers_kernel<T, 1>(offsets, heads, block_size,
+                                       depth, d_model, k, q, b1,
+                                       v, b2, item_ct);
+        });
+  } else {
+    // Handle even block size
+    sycl::range<1> global(DivUp(block_size, kWorkGroupSize*kWorkPerThread));
+    sycl::range<1> local(kWorkGroupSize);
+    sycl_queue.parallel_for(sycl::nd_range<1>(global*local, local),
+        [=](sycl::nd_item<1> item_ct) {
+        genOffsetPointers_kernel<T, kWorkPerThread>(offsets, heads, block_size,
+                                                    depth, d_model, k, q, b1,
+                                                    v, b2, item_ct);
+        });
+  }
+}
+
 // Template instantiation.
 template void copyTypeConverted<sycl::half, float>(sycl::half* op, float* ip, int N, sycl::queue &sycl_queue);
 template void copyTypeConverted<float, sycl::half>(float* op, sycl::half* ip, int N, sycl::queue &sycl_queue);
@@ -1950,5 +2020,13 @@ template void applyInputGating<sycl::half>(sycl::half* output, const sycl::half*
 template void applyInputGating<float>(float* output, const float* input,
                                       const float* mult, const float* add,
                                       int N, int C, int output_size, sycl::queue &sycl_queue);
+
+template void genOffsetPointers<float>(float** offsets, int heads, int max_batch, int depth,
+                       int d_model, float* k, float* q, float* b1,
+                       float* v, float* b2, sycl::queue& sycl_queue);
+
+template void genOffsetPointers<sycl::half>(sycl::half** offsets, int heads, int max_batch, int depth,
+                       int d_model, sycl::half* k, sycl::half* q, sycl::half* b1,
+                       sycl::half* v, sycl::half* b2, sycl::queue& sycl_queue);
 }  // namespace sycldnn_backend
 }  // namespace lczero

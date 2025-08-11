@@ -210,8 +210,7 @@ void InputTransform_kernel(int N, int C, const T* input, T* output,
 
   // top-left
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -229,8 +228,7 @@ void InputTransform_kernel(int N, int C, const T* input, T* output,
 
   // top-right
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -248,8 +246,7 @@ void InputTransform_kernel(int N, int C, const T* input, T* output,
 
   // bottom-left
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -267,8 +264,7 @@ void InputTransform_kernel(int N, int C, const T* input, T* output,
 
   // bottom-right
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -671,8 +667,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
   int c = k;
   // top-left
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -690,8 +685,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 
   // top-right
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -709,8 +703,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 
   // bottom-left
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -728,8 +721,7 @@ void OutputTransform_SE_relu_InputTransform_kernel(
 
   // bottom-right
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -838,8 +830,7 @@ void OutputTransform_relu_InputTransform_kernel(
   int c = k;
   // top-left
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -857,8 +848,7 @@ void OutputTransform_relu_InputTransform_kernel(
 
   // top-right
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -876,8 +866,7 @@ void OutputTransform_relu_InputTransform_kernel(
 
   // bottom-left
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -895,8 +884,7 @@ void OutputTransform_relu_InputTransform_kernel(
 
   // bottom-right
   {
-    T inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    T inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)

@@ -202,28 +202,47 @@ class SyclNetwork : public Network {
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
 
+    // Get all available platforms
+    auto platforms = sycl::platform::get_platforms();
     
+    if (platforms.empty()) {
+      throw Exception("No SYCL platform found.");
+    }
+    showPlatformInfo(platforms);
+    
+    // A vector to store all sycl devices.
+    std::vector<sycl::device> devices;
 
-    int total_gpus = dpct::dev_mgr::instance().device_count();
+    for (const auto& platform : platforms) {
+       auto platform_devices = platform.get_devices();
+       devices.insert(devices.end(), platform_devices.begin(), platform_devices.end());
+    }
 
-    if (gpu_id_ >= total_gpus)
+    if (gpu_id_ >= (int)devices.size() || gpu_id_ < 0)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
-
     
-    //dpct::dev_mgr::instance().get_device(gpu_id_).get_device_info(deviceProp);
-
-    sycl_queue_ = new sycl::queue{dpct::dev_mgr::instance().get_device(gpu_id_), [] (sycl::exception_list exceptions) {
-
+    // Is it a cpu device?
+    is_cpu_ = devices[gpu_id_].is_cpu();
+    // Get the number of compute units(execution units).
+    compute_units_ = devices[gpu_id_].get_info<sycl::info::device::max_compute_units>();
+    // Get context.
+    sycl::context context{devices[gpu_id_]};
+    auto exceptions_handler = [&] (sycl::exception_list exceptions) {
         for (std::exception_ptr const& e : exceptions) {
-                    try {
-                          std::rethrow_exception(e);
-                        } catch(sycl::exception const& e) {
-                    
-				std::cout << "Caught asynchronous SYCL exception during GEMM:\n" << e.what() << std::endl;
-                        }
-             
-                 }
-    },  sycl::property_list{sycl::property::queue::in_order{}}};
+           try {
+               std::rethrow_exception(e);
+            } catch(sycl::exception const& e) {
+				CERR 
+                << "Caught asynchronous SYCL exception during GEMM:\n"
+                << e.what() 
+                << "\n ";
+                std::terminate();
+            }
+        }
+    };
+    
+    sycl_queue_ = new sycl::queue{context, devices[gpu_id_], 
+              exceptions_handler, sycl::property_list{sycl::property::queue::in_order{}} };
 
     showDeviceInfo(*sycl_queue_);
 
@@ -243,10 +262,12 @@ class SyclNetwork : public Network {
 
 
     if (fp16) {
-      dpct::has_capability_or_fail(sycl_queue_->get_device(), {sycl::aspect::fp16});
-        CERR << "Using Fp16 "; 
+      if (!sycl_queue_->get_device().has(sycl::aspect::fp16)) {
+        throw Exception("Requested fp16 is not supported by the device");
+      }
+      CERR << "Using Fp16 "; 
     } else {
-        CERR << "Using Fp32 ";
+      CERR << "Using Fp32 ";
     }
 
     const int kNumInputPlanes = kInputPlanes;
@@ -741,93 +762,72 @@ class SyclNetwork : public Network {
           batchSize, spare1, flow, spare2, scratch_mem, scratch_size_, io_sycl_queue_,
           head_offset_pointers);  // Entire Attention policy head except for the
                                   // policy map
-          io_sycl_queue_.wait();
       if (fp16) {
         network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);  // policy map layer
 
-        io_sycl_queue_.wait();
 
         copyTypeConverted(opPol, (sycl::half*)spare2,
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY output
-        io_sycl_queue_.wait();
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // policy map layer  // POLICY output
         
-        io_sycl_queue_.wait();
       }
  
     } else if (conv_policy_) {
 
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // policy conv1
-      io_sycl_queue_.wait();
 
       network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // policy conv2
-      io_sycl_queue_.wait();
 
       if (fp16) {
         network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);  // policy map layer
 
-        io_sycl_queue_.wait();
         copyTypeConverted(opPol, (sycl::half*)(spare1),
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY output
 
-        io_sycl_queue_.wait();
 
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare2, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  
                             // policy map layer  // POLICY output
-        io_sycl_queue_.wait();
       }
 
     } else {
       
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // pol conv
-      io_sycl_queue_.wait();
 
       if (fp16) {
         network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);  // pol FC
-        io_sycl_queue_.wait();
 
         copyTypeConverted(opPol, (sycl::half*)(spare2),
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY
-        io_sycl_queue_.wait();
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // pol FC  // POLICY
-        io_sycl_queue_.wait();
       }
     }
-
-    // Copy policy output from device memory to host memory.
-
-    io_sycl_queue_.memcpy(io->op_policy_mem_, io->op_policy_mem_gpu_, sizeof(float) * kNumOutputPolicy * batchSize);
-    io_sycl_queue_.wait();
 
 
     // value head
     if (fp16) {
       network_[l++]->Eval(batchSize, spare1, flow, spare2, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // value head
-      io_sycl_queue_.wait();
 
       copyTypeConverted(opVal, (sycl::half*)spare1, wdl_ ? 3 * batchSize : batchSize,
                         io_sycl_queue_);
-      io_sycl_queue_.wait();
     } else {
       network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2,
                           scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // value head
-      io_sycl_queue_.wait();
     }
 
     if (moves_left_) {
@@ -836,12 +836,8 @@ class SyclNetwork : public Network {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // moves conv or embedding
 
-      io_sycl_queue_.wait();
-
       network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // moves FC1
-
-      io_sycl_queue_.wait();
 
       // Moves left FC2
       if (fp16) {
@@ -851,29 +847,28 @@ class SyclNetwork : public Network {
         network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);
         
-        io_sycl_queue_.wait();
 
         copyTypeConverted(opMov, (sycl::half*)(spare1), batchSize, io_sycl_queue_);
-        io_sycl_queue_.wait();
       
       } else {
 
         network_[l++]->Eval(batchSize, (DataType*)opMov, spare2, nullptr,
                             scratch_mem, scratch_size_, io_sycl_queue_, nullptr);
-        io_sycl_queue_.wait();
 
       }
     }
+    
+    // Copy policy output from device memory to host memory.
+    auto event = io_sycl_queue_.memcpy(io->op_policy_mem_, io->op_policy_mem_gpu_, sizeof(float) * kNumOutputPolicy * batchSize);
 
-    if (multi_stream_) {
-        io_sycl_queue_.wait();
-    } else {
-        io_sycl_queue_.wait();
+    if (!multi_stream_) {
       //ReportCUDAErrors(
         //  DPCT_CHECK_ERROR(dpct::get_current_device().queues_wait_and_throw()));
       // The next thread can start using the GPU now.
       lock_.unlock();
     }
+
+    event.wait();
 
     if (wdl_) {
       // Value softmax done cpu side.
@@ -916,14 +911,18 @@ class SyclNetwork : public Network {
     return capabilities_;
   }
 
+  // Check if device is the cpu for thread handling.
+  bool IsCpu() const override { return is_cpu_; }
+
+  int GetThreads() const override { return 1 + multi_stream_; }
+
+  int GetMiniBatchSize() const override {
+     if (is_cpu_) return 47;
+       // Simple heuristic that seems to work for a wide range of GPUs.
+       return 2 * compute_units_;
+    }
+  
   std::unique_ptr<NetworkComputation> NewComputation() override {
-    // Set correct gpu id for this computation (as it might have been called
-    // from a different thread).
-    /*
-    DPCT1093:90: The "gpu_id_" device may be not the one intended for use.
-    Adjust the selected device if needed.
-    */
-    dpct::select_device(gpu_id_);
     return std::make_unique<SyclNetworkComputation<DataType>>(this, wdl_,
                                                               moves_left_);
   }
@@ -953,6 +952,7 @@ class SyclNetwork : public Network {
   int gpu_id_;
   int l2_cache_size_;
   int max_batch_size_;
+  int compute_units_;
   bool wdl_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
@@ -960,10 +960,12 @@ class SyclNetwork : public Network {
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;  // try to fit residual block activations in L2 cache
 
+
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
   mutable std::mutex lock_;
-  sycl::queue * sycl_queue_;
+  sycl::queue* sycl_queue_;
+  bool is_cpu_;
 
 
   int numBlocks_;
@@ -997,15 +999,52 @@ class SyclNetwork : public Network {
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void showDeviceInfo(const sycl::queue & mqueue) const {
-    CERR << "PLATFORM: " << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>();
-    CERR << "GPU: " << mqueue.get_device().get_info<sycl::info::device::name>();
-    CERR << "GPU memory: " << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>();
-    CERR << "GPU clock frequency: " << mqueue.get_device().get_info<sycl::info::device::max_clock_frequency>(); 
-    CERR << "L2 cache capacity: " << mqueue.get_device().get_info<sycl::info::device::local_mem_size>();
-    CERR << "Global memory Size: " << mqueue.get_device().get_info<sycl::info::device::global_mem_size>();
-
-  } 
+  void showDeviceInfo(const sycl::queue &mqueue) const {
+    CERR << "Device-Info...";
+    CERR << "Platform: " 
+         << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>() 
+         << " selected";
+    std::string device_type = mqueue.get_device().is_gpu() ? "GPU" : "CPU";
+    CERR << device_type << ": " 
+         << mqueue.get_device().get_info<sycl::info::device::name>();
+    CERR << device_type << ": " 
+         << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>() / (1024 * 1024) 
+         << " MB (max allocation)";
+    CERR << device_type << " clock frequency: " 
+         << mqueue.get_device().get_info<sycl::info::device::max_clock_frequency>() 
+         << " MHz";
+    CERR << "L2 cache capacity: " 
+         << mqueue.get_device().get_info<sycl::info::device::local_mem_size>() / (1024) 
+         << " KB";
+    CERR << "Global memory size: " 
+         << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
+         << " MB";         
+    CERR << "...Device-Info-End";
+    }
+    
+    void showPlatformInfo(const std::vector<sycl::platform>& platforms) {
+       CERR << "Platform-List...";
+       for (size_t i = 0; i < platforms.size(); ++i) {
+           std::string version = platforms[i].get_info<sycl::info::platform::version>();
+           
+           for (const auto& device : platforms[i].get_devices()) {
+               std::string device_type;
+               switch (device.get_info<sycl::info::device::device_type>()) {
+                   case sycl::info::device_type::gpu: 
+                       device_type = "GPU"; break;
+                   case sycl::info::device_type::cpu: 
+                       device_type = "CPU"; break;
+                   default: 
+                       device_type = "Other"; break;
+                }
+                CERR << "Platform " << i << " (version: " << version << "):" << device_type
+                     << " (Name" << ": " 
+                     << device.get_platform().get_info<sycl::info::platform::name>() << ")";
+            }
+        }
+        
+        CERR << "...Platform-List-End";
+    }
 };
 
 template <typename DataType>
@@ -1101,16 +1140,17 @@ std::unique_ptr<Network> MakeSyclNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
 
-  try {
-    CERR << "Trying to switch to [sycl-fp16]...";
-    dpct::has_capability_or_fail(dpct::dev_mgr::instance().get_device(gpu_id),
-                                 {sycl::aspect::fp16});
-    CERR << "Switched to [sycl-fp16]...";
-    return MakeSyclNetwork<sycl::half>(weights, options);
-  } catch (std::exception& e) {
+  auto devices = sycl::device::get_devices();
+  if (gpu_id >= devices.size()) {
+      throw Exception("Invalid GPU ID");
+   }
+  CERR << "Trying to switch to [sycl-fp16]...";
+  if (devices[gpu_id].has(sycl::aspect::fp16)) {
+    CERR << "Switched to [sycl-fp16]..."; 
+    return MakeSyclNetwork<sycl::half>(weights, options);     
+  } else {
     CERR << "Device does not support sycl-fp16";
   }
-
   CERR << "Switched to [sycl]...";
   return MakeSyclNetwork<float>(weights, options);
 }

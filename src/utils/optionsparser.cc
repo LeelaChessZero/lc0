@@ -27,6 +27,7 @@
 
 #include "optionsparser.h"
 
+#include <charconv>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -35,12 +36,6 @@
 #include "utils/configfile.h"
 #include "utils/logging.h"
 #include "utils/string.h"
-
-#if __has_include(<charconv>)
-#include <charconv>
-#else
-#define NO_CHARCONV
-#endif
 
 namespace lczero {
 namespace {
@@ -399,7 +394,6 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
-#ifndef NO_CHARCONV
 int IntOption::ValidateIntString(const std::string& val) const {
   int result;
   const auto end = val.data() + val.size();
@@ -414,20 +408,6 @@ int IntOption::ValidateIntString(const std::string& val) const {
     return result;
   }
 }
-#else
-int IntOption::ValidateIntString(const std::string& val) const {
-  char* end;
-  errno = 0;
-  int result = std::strtol(val.c_str(), &end, 10);
-  if (errno == ERANGE) {
-    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
-  } else if (val.length() == 0 || *end != '\0') {
-    throw Exception("Flag '--" + GetLongFlag() + "' value is invalid.");
-  } else {
-    return result;
-  }
-}
-#endif
 
 /////////////////////////////////////////////////////////////////
 // FloatOption

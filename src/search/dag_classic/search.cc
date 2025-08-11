@@ -434,7 +434,7 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
@@ -444,7 +444,7 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
 }
 
 // Faster version for if visited_policy is readily available already.
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
                     float draw_score, float visited_pol) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
@@ -461,8 +461,11 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }
 }  // namespace
 
+// Ignore the last tuple element when sorting in GetVerboseStats
+static bool operator<(const EdgeAndNode&, const EdgeAndNode&) { return false; }
+
 std::vector<std::string> Search::GetVerboseStats(
-    Node* node, std::optional<Move> move_to_node) const {
+    const Node* node, std::optional<Move> move_to_node) const {
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
@@ -471,16 +474,14 @@ std::vector<std::string> Search::GetVerboseStats(
   const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  std::vector<EdgeAndNode> edges;
-  for (const auto& edge : node->Edges()) edges.push_back(edge);
-
-  std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score](EdgeAndNode a, EdgeAndNode b) {
-              return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
-                     std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
-            });
+  std::vector<std::tuple<uint32_t, float, EdgeAndNode>> edges;
+  edges.reserve(node->GetNumEdges());
+  for (const auto& edge : node->Edges()) {
+    edges.emplace_back(edge.GetN(),
+                       edge.GetQ(fpu, draw_score) + edge.GetU(U_coeff),
+                       edge);
+  }
+  std::sort(edges.begin(), edges.end());
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
@@ -558,7 +559,8 @@ std::vector<std::string> Search::GetVerboseStats(
   std::vector<std::string> infos;
   const auto m_evaluator =
       backend_attributes_.has_mlh ? MEvaluator(params_, node) : MEvaluator();
-  for (const auto& edge : edges) {
+  for (const auto& edge_tuple : edges) {
+    const auto& edge = std::get<2>(edge_tuple);
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
     std::ostringstream oss;
