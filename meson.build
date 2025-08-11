@@ -826,10 +826,10 @@ endif
 #############################################################################
 
 if get_option('rescorer')
-  deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
+  gaviota_dep = subproject('gaviotatb').get_variable('gaviotatb_dep')
   executable('rescorer', 'src/rescorer_main.cc',
        [common_files, 'src/trainingdata/rescorer.cc'],
-       include_directories: includes, dependencies: deps, install: true)
+       include_directories: includes, dependencies: [deps, gaviota_dep], install: true)
 endif
 
 #############################################################################

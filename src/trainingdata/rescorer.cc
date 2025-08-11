@@ -711,7 +711,7 @@ void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase,
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
-  int move_index = 0;
+  size_t move_index = 0;
 
   for (auto& chunk : data.fileContents) {
     const auto& board = history.Last().GetBoard();
@@ -1124,59 +1124,62 @@ void WriteOutputs(const FileData& data, const std::string& file,
   }
 }
 
+FileData ProcessFileInternal(const std::vector<V6TrainingData>& fileContents,
+                             SyzygyTablebase* tablebase, float distTemp,
+                             float distOffset, float dtzBoost,
+                             int newInputFormat) {
+  // Process and validate file data
+  FileData data = ProcessAndValidateFileData(std::move(fileContents));
+
+  // Apply policy substitutions if available
+  ApplyPolicySubstitutions(data);
+
+  // Apply Syzygy tablebase rescoring
+  ApplySyzygyRescoring(data, tablebase);
+
+  // Apply policy adjustments (temperature, offset, boost)
+  ApplyPolicyAdjustments(data, tablebase, distTemp, distOffset, dtzBoost);
+
+  // Estimate and correct plies left
+  EstimateAndCorrectPliesLeft(data);
+
+  // Apply Gaviota tablebase corrections
+  ApplyGaviotaCorrections(data);
+
+  // Apply DTZ corrections
+  ApplyDTZCorrections(data, tablebase);
+
+  // Apply deblunder processing
+  ApplyDeblunder(data, tablebase);
+
+  // Convert input format if needed
+  ConvertInputFormat(data, newInputFormat);
+
+  return data;
+}
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
                  float dtzBoost, int newInputFormat,
                  std::string nnue_plain_file, ProcessFileFlags flags) {
-  // Scope to ensure reader and writer are closed before deleting source file.
-  {
-    try {
-      // Read file data
-      std::vector<V6TrainingData> fileContents = ReadFile(file);
+  try {
+    // Read file data
+    std::vector<V6TrainingData> fileContents = ReadFile(file);
 
-      // Process and validate file data
-      FileData data = ProcessAndValidateFileData(std::move(fileContents));
+    FileData data = ProcessFileInternal(fileContents, tablebase, distTemp,
+                                        distOffset, dtzBoost, newInputFormat);
 
-      // Update counters
-      games += 1;
-      positions += data.fileContents.size();
+    // Write NNUE output before format conversion
+    WriteNnueOutput(data, nnue_plain_file, flags);
 
-      // Apply policy substitutions if available
-      ApplyPolicySubstitutions(data);
+    // Write outputs
+    WriteOutputs(data, file, outputDir);
 
-      // Apply Syzygy tablebase rescoring
-      ApplySyzygyRescoring(data, tablebase);
-
-      // Apply policy adjustments (temperature, offset, boost)
-      ApplyPolicyAdjustments(data, tablebase, distTemp, distOffset, dtzBoost);
-
-      // Estimate and correct plies left
-      EstimateAndCorrectPliesLeft(data);
-
-      // Apply Gaviota tablebase corrections
-      ApplyGaviotaCorrections(data);
-
-      // Apply DTZ corrections
-      ApplyDTZCorrections(data, tablebase);
-
-      // Apply deblunder processing
-      ApplyDeblunder(data, tablebase);
-
-      // Write NNUE output before format conversion
-      WriteNnueOutput(data, nnue_plain_file, flags);
-
-      // Convert input format if needed
-      ConvertInputFormat(data, newInputFormat);
-
-      // Write outputs
-      WriteOutputs(data, file, outputDir);
-
-    } catch (Exception& ex) {
-      std::cerr << "While processing: " << file
-                << " - Exception thrown: " << ex.what() << std::endl;
-      if (flags.delete_files) {
-        std::cerr << "It will be deleted." << std::endl;
-      }
+  } catch (Exception& ex) {
+    std::cerr << "While processing: " << file
+              << " - Exception thrown: " << ex.what() << std::endl;
+    if (flags.delete_files) {
+      std::cerr << "It will be deleted." << std::endl;
     }
   }
   if (flags.delete_files) {
@@ -1430,4 +1433,11 @@ void RunRescorer() {
             << std::endl;
 }
 
+std::vector<V6TrainingData> RescoreTrainingData(
+    const std::vector<V6TrainingData>& fileContents, SyzygyTablebase* tablebase,
+    float distTemp, float distOffset, float dtzBoost, int newInputFormat) {
+  FileData data = ProcessFileInternal(fileContents, tablebase, distTemp,
+                                      distOffset, dtzBoost, newInputFormat);
+  return data.fileContents;
+}
 }  // namespace lczero
