@@ -1124,7 +1124,7 @@ void WriteOutputs(const FileData& data, const std::string& file,
   }
 }
 
-FileData ProcessFileInternal(const std::vector<V6TrainingData>& fileContents,
+FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
                              SyzygyTablebase* tablebase, float distTemp,
                              float distOffset, float dtzBoost,
                              int newInputFormat) {
@@ -1166,10 +1166,11 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
     // Read file data
     std::vector<V6TrainingData> fileContents = ReadFile(file);
 
-    FileData data = ProcessFileInternal(fileContents, tablebase, distTemp,
-                                        distOffset, dtzBoost, newInputFormat);
+    FileData data =
+        ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
+                            distOffset, dtzBoost, newInputFormat);
 
-    // Write NNUE output before format conversion
+    // Write NNUE output
     WriteNnueOutput(data, nnue_plain_file, flags);
 
     // Write outputs
