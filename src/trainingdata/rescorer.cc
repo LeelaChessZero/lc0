@@ -507,6 +507,7 @@ FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
 }
 
 void ApplyPolicySubstitutions(FileData& data) {
+  if (policy_subs.empty()) return;
   PositionHistory history;
   int rule50ply;
   int gameply;
@@ -1303,11 +1304,11 @@ void RunRescorer() {
     return;
   }
 
-  deblunderEnabled = options.GetOptionsDict().Get<bool>(kDeblunder);
-  deblunderQBlunderThreshold =
-      options.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold);
-  deblunderQBlunderWidth =
-      options.GetOptionsDict().Get<float>(kDeblunderQBlunderWidth);
+  if (options.GetOptionsDict().Get<bool>(kDeblunder)) {
+    RescorerDeblunderSetup(
+        options.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold),
+        options.GetOptionsDict().Get<float>(kDeblunderQBlunderWidth));
+  }
 
   SyzygyTablebase tablebase;
   if (!tablebase.init(
@@ -1316,36 +1317,12 @@ void RunRescorer() {
     std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
     return;
   }
-  auto dtmPaths =
-      options.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId);
-  if (!dtmPaths.empty()) {
-    std::stringstream path_string_stream(dtmPaths);
-    std::string path;
-    auto paths = tbpaths_init();
-    while (std::getline(path_string_stream, path, SEP_CHAR)) {
-      paths = tbpaths_add(paths, path.c_str());
-    }
-    tb_init(0, tb_CP4, paths);
-    tbcache_init(64 * 1024 * 1024, 64);
-    if (tb_availability() != 63) {
-      std::cerr << "UNEXPECTED gaviota availability" << std::endl;
-      return;
-    } else {
-      std::cerr << "Found Gaviota TBs" << std::endl;
-    }
-    gaviotaEnabled = true;
-  }
-  auto policySubsDir =
-      options.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
-  if (!policySubsDir.empty()) {
-    auto policySubFiles = GetFileList(policySubsDir);
-    std::transform(policySubFiles.begin(), policySubFiles.end(),
-                   policySubFiles.begin(),
-                   [&policySubsDir](const std::string& file) {
-                     return policySubsDir + "/" + file;
-                   });
-    BuildSubs(policySubFiles);
-  }
+
+  RescorerGaviotaSetup(
+      options.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId));
+
+  RescorerPolicySubstitutionSetup(
+      options.GetOptionsDict().Get<std::string>(kPolicySubsDirId));
 
   auto inputDir = options.GetOptionsDict().Get<std::string>(kInputDirId);
   if (inputDir.empty()) {
@@ -1442,4 +1419,46 @@ std::vector<V6TrainingData> RescoreTrainingData(
                           distOffset, dtzBoost, newInputFormat);
   return data.fileContents;
 }
+
+bool RescorerDeblunderSetup(float threshold, float width) {
+  deblunderEnabled = true;
+  deblunderQBlunderThreshold = threshold;
+  deblunderQBlunderWidth = width;
+  return true;
+}
+
+bool RescorerGaviotaSetup(std::string dtmPaths) {
+  if (!dtmPaths.empty()) {
+    std::stringstream path_string_stream(dtmPaths);
+    std::string path;
+    auto paths = tbpaths_init();
+    while (std::getline(path_string_stream, path, SEP_CHAR)) {
+      paths = tbpaths_add(paths, path.c_str());
+    }
+    tb_init(0, tb_CP4, paths);
+    tbcache_init(64 * 1024 * 1024, 64);
+    if (tb_availability() != 63) {
+      throw Exception("UNEXPECTED gaviota availability");
+      return false;
+    } else {
+      std::cerr << "Found Gaviota TBs" << std::endl;
+    }
+    gaviotaEnabled = true;
+  }
+  return gaviotaEnabled;
+}
+
+bool RescorerPolicySubstitutionSetup(std::string policySubsDir) {
+  if (!policySubsDir.empty()) {
+    auto policySubFiles = GetFileList(policySubsDir);
+    std::transform(policySubFiles.begin(), policySubFiles.end(),
+                   policySubFiles.begin(),
+                   [&policySubsDir](const std::string& file) {
+                     return policySubsDir + "/" + file;
+                   });
+    BuildSubs(policySubFiles);
+  }
+  return !policy_subs.empty();
+}
+
 }  // namespace lczero
