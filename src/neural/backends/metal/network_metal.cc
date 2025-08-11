@@ -184,6 +184,24 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 
   // The next thread can start using the GPU now.
   lock_.unlock();
+
+  // The next thread can start using the GPU now.
+  lock_.unlock();
+
+  // CERR << "Policy";
+  // for (int i = 0; i < 1858 * batchSize; i++) {
+  //   CERR << i << ";" << io->op_policy_mem_[i];
+  // }
+  CERR << "\nValue " << batchSize;
+  for (int i = 0; i < (wdl_ ? 3 : 1) * batchSize; i++) {
+    CERR << i << ";" << io->op_value_mem_[i];
+  }
+  // if (moves_left_) {
+  //   CERR << "\nMoves left " << batchSize;
+  //   for (int i = 0; i < batchSize; i++) {
+  //     CERR << i << ";" << io->op_moves_left_mem_[i];
+  //   }
+  // }
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
