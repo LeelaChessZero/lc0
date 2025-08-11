@@ -176,16 +176,16 @@ static const NSInteger kMinSubBatchSize = 20;
 -(void) compileGraph
 {
     if (_isCompiled) {
-        NSLog(@"Graph already compiled, skipping...");
+        if (DEBUG) NSLog(@"Graph already compiled, skipping...");
         return;
     }
 
     if (!_isGraphBuilt || !_inputTensor || !_maskTensor || [_resultTensors count] == 0) {
-        NSLog(@"Graph not ready for compilation - missing components");
+        if (DEBUG) NSLog(@"Graph not ready for compilation - missing components");
         return;
     }
 
-    NSLog(@"Starting graph compilation...");
+    if (DEBUG) NSLog(@"Starting graph compilation...");
     NSTimeInterval startTime = [NSDate timeIntervalSinceReferenceDate];
 
     // Prepare feeds dictionary with dynamic batch size.
@@ -206,7 +206,7 @@ static const NSInteger kMinSubBatchSize = 20;
         NSLog(@"Graph compilation failed after %.3fs", _compilationTime);
         _isCompiled = NO;
     } else {
-        NSLog(@"Graph compilation successful in %.3fs", _compilationTime);
+        if (DEBUG) NSLog(@"Graph compilation successful in %.3fs", _compilationTime);
         _isCompiled = YES;
 
         // Run a warmup inference
@@ -229,7 +229,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
 -(void) performWarmupInference
 {
-    NSLog(@"Running warmup inference...");
+    if (DEBUG) NSLog(@"Running warmup inference...");
 
     // Create minimal dummy data for warmup
     const NSUInteger warmupBatchSize = 1;
@@ -255,7 +255,7 @@ static const NSInteger kMinSubBatchSize = 20;
                 //    executionBackend:nil];
     NSTimeInterval warmupTime = [NSDate timeIntervalSinceReferenceDate] - startTime;
 
-    NSLog(@"Warmup completed in %.3fms", warmupTime * 1000.0);
+    if (DEBUG) NSLog(@"Warmup completed in %.3fms", warmupTime * 1000.0);
 
     // Cleanup
     free(dummyInputs);
@@ -315,7 +315,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
         // Check for execution errors
         if (commandBuffer.commandBuffer.status == MTLCommandBufferStatusError) {
-            NSLog(@"[LC0] Command buffer execution error: %@", commandBuffer.commandBuffer.error.localizedDescription);
+            NSLog(@"Command buffer execution error: %@", commandBuffer.commandBuffer.error.localizedDescription);
         }
     }
 
