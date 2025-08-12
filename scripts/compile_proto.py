@@ -79,6 +79,7 @@ GRAMMAR = ([(r'%s\b' % x, x)
                 (r'\s+', None),  # Whitespace
                 (r'$', 'EOF'),
                 (r'"((?:[^"\\]|\\.)*)"', 'string'),
+                (r"[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?", 'fnumber'),
                 (r'\d+', 'number'),
                 (r'(\w+)', 'identifier'),
             ])
@@ -292,7 +293,7 @@ class ProtoFieldParser:
         lexer.Consume(';')
 
     @staticmethod
-    def ParseAttributes(lexer) -> dict[str, Any]:
+    def ParseAttributes(lexer):
         attributes = {}
         token, match = lexer.Pick()
         if token != "[":
@@ -307,6 +308,8 @@ class ProtoFieldParser:
             value = None
             if token == "string":
                 value = lexer.Consume("string").group(0)
+            elif token == "fnumber":
+                value = float(lexer.Consume("fnumber").group(0))
             elif token == "number":
                 value = int(lexer.Consume("number").group(0))
             else:
