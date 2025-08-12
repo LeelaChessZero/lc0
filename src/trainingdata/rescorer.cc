@@ -507,6 +507,7 @@ FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
 }
 
 void ApplyPolicySubstitutions(FileData& data) {
+  if (policy_subs.empty()) return;
   PositionHistory history;
   int rule50ply;
   int gameply;
@@ -711,7 +712,7 @@ void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase,
   PopulateBoard(data.input_format, PlanesFromTrainingData(data.fileContents[0]),
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
-  int move_index = 0;
+  size_t move_index = 0;
 
   for (auto& chunk : data.fileContents) {
     const auto& board = history.Last().GetBoard();
@@ -1124,59 +1125,63 @@ void WriteOutputs(const FileData& data, const std::string& file,
   }
 }
 
+FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
+                             SyzygyTablebase* tablebase, float distTemp,
+                             float distOffset, float dtzBoost,
+                             int newInputFormat) {
+  // Process and validate file data
+  FileData data = ProcessAndValidateFileData(std::move(fileContents));
+
+  // Apply policy substitutions if available
+  ApplyPolicySubstitutions(data);
+
+  // Apply Syzygy tablebase rescoring
+  ApplySyzygyRescoring(data, tablebase);
+
+  // Apply policy adjustments (temperature, offset, boost)
+  ApplyPolicyAdjustments(data, tablebase, distTemp, distOffset, dtzBoost);
+
+  // Estimate and correct plies left
+  EstimateAndCorrectPliesLeft(data);
+
+  // Apply Gaviota tablebase corrections
+  ApplyGaviotaCorrections(data);
+
+  // Apply DTZ corrections
+  ApplyDTZCorrections(data, tablebase);
+
+  // Apply deblunder processing
+  ApplyDeblunder(data, tablebase);
+
+  // Convert input format if needed
+  ConvertInputFormat(data, newInputFormat);
+
+  return data;
+}
+
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
                  float dtzBoost, int newInputFormat,
                  std::string nnue_plain_file, ProcessFileFlags flags) {
-  // Scope to ensure reader and writer are closed before deleting source file.
-  {
-    try {
-      // Read file data
-      std::vector<V6TrainingData> fileContents = ReadFile(file);
+  try {
+    // Read file data
+    std::vector<V6TrainingData> fileContents = ReadFile(file);
 
-      // Process and validate file data
-      FileData data = ProcessAndValidateFileData(std::move(fileContents));
+    FileData data =
+        ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
+                            distOffset, dtzBoost, newInputFormat);
 
-      // Update counters
-      games += 1;
-      positions += data.fileContents.size();
+    // Write NNUE output
+    WriteNnueOutput(data, nnue_plain_file, flags);
 
-      // Apply policy substitutions if available
-      ApplyPolicySubstitutions(data);
+    // Write outputs
+    WriteOutputs(data, file, outputDir);
 
-      // Apply Syzygy tablebase rescoring
-      ApplySyzygyRescoring(data, tablebase);
-
-      // Apply policy adjustments (temperature, offset, boost)
-      ApplyPolicyAdjustments(data, tablebase, distTemp, distOffset, dtzBoost);
-
-      // Estimate and correct plies left
-      EstimateAndCorrectPliesLeft(data);
-
-      // Apply Gaviota tablebase corrections
-      ApplyGaviotaCorrections(data);
-
-      // Apply DTZ corrections
-      ApplyDTZCorrections(data, tablebase);
-
-      // Apply deblunder processing
-      ApplyDeblunder(data, tablebase);
-
-      // Write NNUE output before format conversion
-      WriteNnueOutput(data, nnue_plain_file, flags);
-
-      // Convert input format if needed
-      ConvertInputFormat(data, newInputFormat);
-
-      // Write outputs
-      WriteOutputs(data, file, outputDir);
-
-    } catch (Exception& ex) {
-      std::cerr << "While processing: " << file
-                << " - Exception thrown: " << ex.what() << std::endl;
-      if (flags.delete_files) {
-        std::cerr << "It will be deleted." << std::endl;
-      }
+  } catch (Exception& ex) {
+    std::cerr << "While processing: " << file
+              << " - Exception thrown: " << ex.what() << std::endl;
+    if (flags.delete_files) {
+      std::cerr << "It will be deleted." << std::endl;
     }
   }
   if (flags.delete_files) {
@@ -1299,11 +1304,11 @@ void RunRescorer() {
     return;
   }
 
-  deblunderEnabled = options.GetOptionsDict().Get<bool>(kDeblunder);
-  deblunderQBlunderThreshold =
-      options.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold);
-  deblunderQBlunderWidth =
-      options.GetOptionsDict().Get<float>(kDeblunderQBlunderWidth);
+  if (options.GetOptionsDict().Get<bool>(kDeblunder)) {
+    RescorerDeblunderSetup(
+        options.GetOptionsDict().Get<float>(kDeblunderQBlunderThreshold),
+        options.GetOptionsDict().Get<float>(kDeblunderQBlunderWidth));
+  }
 
   SyzygyTablebase tablebase;
   if (!tablebase.init(
@@ -1312,36 +1317,12 @@ void RunRescorer() {
     std::cerr << "FAILED TO LOAD SYZYGY" << std::endl;
     return;
   }
-  auto dtmPaths =
-      options.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId);
-  if (!dtmPaths.empty()) {
-    std::stringstream path_string_stream(dtmPaths);
-    std::string path;
-    auto paths = tbpaths_init();
-    while (std::getline(path_string_stream, path, SEP_CHAR)) {
-      paths = tbpaths_add(paths, path.c_str());
-    }
-    tb_init(0, tb_CP4, paths);
-    tbcache_init(64 * 1024 * 1024, 64);
-    if (tb_availability() != 63) {
-      std::cerr << "UNEXPECTED gaviota availability" << std::endl;
-      return;
-    } else {
-      std::cerr << "Found Gaviota TBs" << std::endl;
-    }
-    gaviotaEnabled = true;
-  }
-  auto policySubsDir =
-      options.GetOptionsDict().Get<std::string>(kPolicySubsDirId);
-  if (!policySubsDir.empty()) {
-    auto policySubFiles = GetFileList(policySubsDir);
-    std::transform(policySubFiles.begin(), policySubFiles.end(),
-                   policySubFiles.begin(),
-                   [&policySubsDir](const std::string& file) {
-                     return policySubsDir + "/" + file;
-                   });
-    BuildSubs(policySubFiles);
-  }
+
+  RescorerGaviotaSetup(
+      options.GetOptionsDict().Get<std::string>(kGaviotaTablebaseId));
+
+  RescorerPolicySubstitutionSetup(
+      options.GetOptionsDict().Get<std::string>(kPolicySubsDirId));
 
   auto inputDir = options.GetOptionsDict().Get<std::string>(kInputDirId);
   if (inputDir.empty()) {
@@ -1428,6 +1409,56 @@ void RunRescorer() {
             << " W: " << fixed_counts[2] << std::endl;
   std::cout << "Gaviota DTM move_count rescores: " << gaviota_dtm_rescores
             << std::endl;
+}
+
+std::vector<V6TrainingData> RescoreTrainingData(
+    std::vector<V6TrainingData> fileContents, SyzygyTablebase* tablebase,
+    float distTemp, float distOffset, float dtzBoost, int newInputFormat) {
+  FileData data =
+      ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
+                          distOffset, dtzBoost, newInputFormat);
+  return data.fileContents;
+}
+
+bool RescorerDeblunderSetup(float threshold, float width) {
+  deblunderEnabled = true;
+  deblunderQBlunderThreshold = threshold;
+  deblunderQBlunderWidth = width;
+  return true;
+}
+
+bool RescorerGaviotaSetup(std::string dtmPaths) {
+  if (!dtmPaths.empty()) {
+    std::stringstream path_string_stream(dtmPaths);
+    std::string path;
+    auto paths = tbpaths_init();
+    while (std::getline(path_string_stream, path, SEP_CHAR)) {
+      paths = tbpaths_add(paths, path.c_str());
+    }
+    tb_init(0, tb_CP4, paths);
+    tbcache_init(64 * 1024 * 1024, 64);
+    if (tb_availability() != 63) {
+      throw Exception("UNEXPECTED gaviota availability");
+      return false;
+    } else {
+      std::cerr << "Found Gaviota TBs" << std::endl;
+    }
+    gaviotaEnabled = true;
+  }
+  return gaviotaEnabled;
+}
+
+bool RescorerPolicySubstitutionSetup(std::string policySubsDir) {
+  if (!policySubsDir.empty()) {
+    auto policySubFiles = GetFileList(policySubsDir);
+    std::transform(policySubFiles.begin(), policySubFiles.end(),
+                   policySubFiles.begin(),
+                   [&policySubsDir](const std::string& file) {
+                     return policySubsDir + "/" + file;
+                   });
+    BuildSubs(policySubFiles);
+  }
+  return !policy_subs.empty();
 }
 
 }  // namespace lczero
