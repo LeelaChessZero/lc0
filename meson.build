@@ -20,18 +20,6 @@ project('lc0', 'cpp',
 
 cc = meson.get_compiler('cpp')
 
-if not cc.has_header('optional') or not cc.has_header('string_view')
-    error('Lc0 requires a compiler supporting C++17, for example g++ v8.0, ' +
-          'clang v5.0 or later (with C++17 stdlib) and Visual Studio 2017 or ' +
-          'later.')
-endif
-
-if not cc.has_header('charconv')
-    warning('Your compiler or library does not have full C++17 support. ' +
-            'See the README for compilers that are known to be working. ' +
-            'This will become an error in the future.')
-endif
-
 if cc.get_id() == 'clang'
   # Thread safety annotation
   add_project_arguments('-Wthread-safety', language : 'cpp')
@@ -604,9 +592,11 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## ONNX
   ## ~~~~~~~~~~
-  if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
-    deps += cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
-                            required: true)
+  onnxruntime = cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
+                                required: false)
+  if get_option('onnx') and onnxruntime.found() and\
+     run_command('scripts/checkdir.py', get_option('onnx_include'), check: false).returncode() == 0
+    deps += onnxruntime
     includes += include_directories(get_option('onnx_include'), is_system: true)
     cc.has_header('onnxruntime_cxx_api.h', required: true,
                   args: '-I' + get_option('onnx_include'))
@@ -646,6 +636,13 @@ if get_option('build_backends')
     has_backends = true
     add_project_arguments('-fobjc-arc', language : 'objc')
     add_project_arguments('-fobjc-arc', language : 'objcpp')
+
+    # Minimum MacOS version = 12.6.1
+    macos_min_version = '12.6'
+    add_project_arguments(
+      '-mmacosx-version-min=' + macos_min_version,
+      language: ['c', 'cpp', 'objc', 'objcpp']
+    )
   endif
 
   ## ~~~~~~~~
@@ -670,6 +667,26 @@ if get_option('build_backends')
       add_project_arguments('-fsycl', language : 'cpp')
       add_project_link_arguments('-fsycl', language : 'cpp')
 
+      dpct_args = []
+      foreach onemkl_include : get_option('onemkl_include')
+        if run_command('scripts/checkdir.py', onemkl_include, check : false).returncode() == 0
+          includes += include_directories(onemkl_include, is_system: true)
+          dpct_args += '-I' + onemkl_include
+        endif
+      endforeach
+      # Check for oneMKL header which is used by DPC++ CT. It could also depend
+      # on oneMATH headers but L0 Sycl uses oneMKL kernels too.
+      cc.has_header('oneapi/mkl.hpp', required: true, args: dpct_args)
+
+      foreach dpct_include : get_option('dpct_include')
+        if run_command('scripts/checkdir.py', dpct_include, check : false).returncode() == 0
+          includes += include_directories(dpct_include, is_system: true)
+          dpct_args += '-I' + dpct_include
+        endif
+      endforeach
+      # Check for DPC++ Compatibility Tool header.
+      cc.has_header('dpct/dpct.hpp', required: true, args: dpct_args)
+
       files += 'src/neural/backends/sycl/layers.cc.dp.cpp'
       files += 'src/neural/backends/sycl/network_sycl.cc.dp.cpp'
       files += 'src/neural/backends/sycl/common_kernels.dp.cpp'
@@ -684,8 +701,18 @@ if get_option('build_backends')
         deps += cc.find_library('mkl_core', required: true)
         deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
-        deps += cc.find_library('hipblas', required: true)
-        deps += cc.find_library('amdhip64', required: true)
+        hip_libdirs = get_option('hip_libdirs')
+        hip_args = []
+        foreach hip_include : get_option('hip_include')
+          if run_command('scripts/checkdir.py', dpct_include, check : false).returncode() == 0
+            includes += include_directories(hip_include, is_system: true)
+            hip_args += '-I' + hip_include
+          endif
+        endforeach
+        deps += cc.find_library('hipblas', dirs: hip_libdirs, required: true)
+        cc.has_header('hipblas/hipblas.h', required: true, args: hip_args)
+        deps += cc.find_library('amdhip64', dirs: hip_libdirs, required: true)
+        cc.has_header('hip/hip_runtime.h', required: true, args: hip_args)
         add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
         add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
         if get_option('amd_gfx') == ''
@@ -709,6 +736,7 @@ if get_option('build_backends')
         # For sycl under windows we need to link using icx to generate the device code.
         # This script edits build.ninja for this and for an icx dependency issue.
         meson.add_postconf_script('scripts/sycl_build_hack.py')
+        add_project_link_arguments('-rtlib=compiler-rt', language : 'cpp')
       endif
   endif
 
@@ -761,6 +789,10 @@ if not get_option('f16c')
   add_project_arguments('-DNO_F16C', language : 'cpp')
 endif
 
+if cc.has_type('_Float16')
+  add_project_arguments('-DHAS_FLOAT16', language : 'cpp')
+endif
+
 if not get_option('pext')
   add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
@@ -794,10 +826,10 @@ endif
 #############################################################################
 
 if get_option('rescorer')
-  deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
+  gaviota_dep = subproject('gaviotatb').get_variable('gaviotatb_dep')
   executable('rescorer', 'src/rescorer_main.cc',
        [common_files, 'src/trainingdata/rescorer.cc'],
-       include_directories: includes, dependencies: deps, install: true)
+       include_directories: includes, dependencies: [deps, gaviota_dep], install: true)
 endif
 
 #############################################################################
@@ -807,7 +839,7 @@ endif
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
   gmock = dependency('gmock', fallback: ['gtest', 'gmock_dep'])
-  lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
+  lc0_lib = library('lc0_lib', common_files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
@@ -841,7 +873,8 @@ if get_option('gtest')
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
   test('EngineTest',
-    executable('engine_test', 'src/engine_test.cc', pb_files,
+    executable('engine_test', 'src/engine_test.cc', 'src/engine.cc',
+               'src/neural/memcache.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif

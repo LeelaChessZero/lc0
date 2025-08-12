@@ -28,7 +28,7 @@
 #include <vector>
 
 #ifdef USE_HIPBLAS 
-#include "hipblas.h"
+#include "hipblas/hipblas.h"
 #include "cuBlasContext.h"
 #elif defined(USE_CUBLAS)
 #include <sycl/backend/cuda.hpp>
@@ -52,6 +52,10 @@
 
 
 #ifdef USE_HIPBLAS
+#if hipblasVersionMajor < 3
+#define HIPBLAS_COMPUTE_16F HIPBLAS_R_16F
+#define HIPBLAS_COMPUTE_32F HIPBLAS_R_32F
+#endif
 #define transpose_type hipblasOperation_t 
 #define transpose_type_transpose HIPBLAS_OP_T  
 #define transpose_type_notranspose HIPBLAS_OP_N 
@@ -237,16 +241,14 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
 
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);  
 
         ReportCUBLASErrors(cublasSgemm(handle, transpose_type_transpose, transpose_type_notranspose, numFc1Out_,
                                  N, C, &alpha, w1_, C, op2, C, &beta, op1,
                                  numFc1Out_));
-
-        cudaStreamSynchronize(cudaStreamHandle);
 
         });
   });
@@ -256,16 +258,14 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
 
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);  
 
         hipblasSgemm(handle, transpose_type_transpose, transpose_type_notranspose, numFc1Out_,
                                  N, C, &alpha, w1_, C, op2, C, &beta, op1,
                                  numFc1Out_);
-
-        hipStreamSynchronize(hipStreamHandle);
         });
   });  
   #else
@@ -284,33 +284,30 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
   sycl_queue.submit([&](sycl::handler &cgh) {
         
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
 
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);  
 
         ReportCUBLASErrors(cublasSgemm(handle, transpose_type_transpose, transpose_type_notranspose, 2 * C, N,
                                  numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                  numFc1Out_, &beta, op2, 2 * C));
 
-        cudaStreamSynchronize(cudaStreamHandle);
-        
         });
   });
 
   #elif defined(USE_HIPBLAS)
   sycl_queue.submit([&](sycl::handler &cgh) {
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
 
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);  
 
         hipblasSgemm(handle, transpose_type_transpose, transpose_type_notranspose, 2 * C, N,
                                  numFc1Out_, &alpha, w2_, numFc1Out_, op1,
                                  numFc1Out_, &beta, op2, 2 * C);
 
-        hipStreamSynchronize(hipStreamHandle);
         
         });
   });
@@ -373,17 +370,15 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
 
     sycl_queue.submit([&](sycl::handler &cgh) {
        
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
 
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);  
     
         ReportCUBLASErrors(cublasHgemm(handle, transpose_type_transpose, transpose_type_notranspose, numFc1Out_,
                                    N, C, &alpha, ((const half *)w1_), C, ((const half *)op2), C, &beta, ((half *)op1),
                                    numFc1Out_));
     
-        cudaStreamSynchronize(cudaStreamHandle);
-        
         });
     });
 
@@ -391,10 +386,9 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
     hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
 
     sycl_queue.submit([&](sycl::handler &cgh) {
-      cgh.host_task([=](sycl::interop_handle ih) {
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
 
-        auto hipStreamHandle =
-            sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);
 
         hipblasHgemm(handle, transpose_type_transpose,
@@ -402,7 +396,6 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
                      ((const hipblasHalf *)w1_), C, ((const hipblasHalf *)op2), C,
                      &beta, ((hipblasHalf *)op1), numFc1Out_);
 
-        hipStreamSynchronize(hipStreamHandle);
       });
     });
 #else
@@ -418,9 +411,9 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
 
     sycl_queue_.submit([&](sycl::handler &cgh) {
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
 
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);   
     
         // 3. Second fully connected layer.
@@ -428,16 +421,13 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
                                    numFc1Out_, &alpha, ((const half *)w2_), numFc1Out_, ((const half *)op1),
                                    numFc1Out_, &beta, ((half *)op2), 2 * C));
   
-        cudaStreamSynchronize(cudaStreamHandle);
-        
         });
     });  
     
 #elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
-      cgh.host_task([=](sycl::interop_handle ih) {
-        auto hipStreamHandle =
-            sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
         hipblasSetStream(handle, hipStreamHandle);
 
         hipblasHgemm(
@@ -446,7 +436,6 @@ void SELayer<sycl::half>::Eval(int N, sycl::half* output, const sycl::half* inpu
             ((const hipblasHalf *)op1), numFc1Out_, &beta, ((hipblasHalf *)op2),
             2 * C);
 
-        hipStreamSynchronize(hipStreamHandle);
       });
     });
 #else
@@ -562,9 +551,9 @@ template <>
 
     sycl_queue.submit([&](sycl::handler &cgh) {
         
-         cgh.host_task([=](sycl::interop_handle ih) {
+         cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
 
-         auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+         auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
          cublasSetStream(handle, cudaStreamHandle);    
   
          ReportCUBLASErrors(cublasHgemm(handle, transpose_type_transpose, transpose_type_notranspose, num_outputs,
@@ -572,16 +561,13 @@ template <>
                                   ((const half *)input_tensor), num_inputs, &beta, ((half *)output_tensor),
                                   num_outputs));
 
-         cudaStreamSynchronize(cudaStreamHandle);
-        
        });
    });  
 #elif defined(USE_HIPBLAS)
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   sycl_queue.submit([&](sycl::handler &cgh) {
-    cgh.host_task([=](sycl::interop_handle ih) {
-      auto hipStreamHandle =
-          sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+    cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+      auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
       hipblasSetStream(handle, hipStreamHandle);
 
       hipblasHgemm(
@@ -590,7 +576,6 @@ template <>
           num_inputs, ((const hipblasHalf *)input_tensor), num_inputs, &beta,
           ((hipblasHalf *)output_tensor), num_outputs);
 
-        hipStreamSynchronize(hipStreamHandle);
       });
   });
 #else
@@ -625,9 +610,9 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
 
   sycl_queue.submit([&](sycl::handler &cgh) {
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
 
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);    
 
 
@@ -636,17 +621,14 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs));
 
-        cudaStreamSynchronize(cudaStreamHandle);
-        
       });
   });  
   #elif defined(USE_HIPBLAS)
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
   sycl_queue.submit([&](sycl::handler &cgh) {
-        
-        cgh.host_task([=](sycl::interop_handle ih) {
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
 
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);    
 
 
@@ -655,7 +637,6 @@ void FCLayer<float>::Eval(int N, float* output_tensor,
                                  input_tensor, num_inputs, &beta, output_tensor,
                                  num_outputs);
 
-        hipStreamSynchronize(hipStreamHandle);
         
       });
   });
@@ -939,9 +920,9 @@ template <>
   
    sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
-         cgh.host_task([=](sycl::interop_handle ih) {
+         cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
   
-          auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+          auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
           cublasSetStream(handle, cudaStreamHandle);
 
           ReportCUBLASErrors(cublasGemmStridedBatchedEx(
@@ -950,8 +931,6 @@ template <>
              batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
 
           
-           cudaStreamSynchronize(cudaStreamHandle);
-        
          });   
    });
   
@@ -959,18 +938,16 @@ template <>
   hipblasHandle_t handle = hipBlasContextManager::gethipBlasHandle_t();
 
   sycl_queue.submit([&](sycl::handler &cgh) {
-    cgh.host_task([=](sycl::interop_handle ih) {
-      auto hipStreamHandle =
-          sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+    cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+      auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
       hipblasSetStream(handle, hipStreamHandle);
 
       hipblasGemmStridedBatchedEx(
           handle, transpose_type_notranspose, transpose_type_notranspose, N, M,
           K, &alpha, B, HIPBLAS_R_16F, N, N * K, A, HIPBLAS_R_16F, K, K * M,
-          &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_R_16F,
+          &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_COMPUTE_16F,
           HIPBLAS_GEMM_DEFAULT);
 
-      hipStreamSynchronize(hipStreamHandle);
     });
   });
 #else
@@ -1008,8 +985,8 @@ template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const
     #ifdef USE_CUBLAS
     sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
-        cgh.host_task([=](sycl::interop_handle ih) {
-            auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+            auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
             cublasSetStream(handle, cudaStreamHandle);   
 
           ReportCUBLASErrors(cublasGemmStridedBatchedEx(
@@ -1018,25 +995,21 @@ template <> void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const
           batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
 
           
-          cudaStreamSynchronize(cudaStreamHandle);
-
         });
     });
     #elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
         //auto d_A = b_A.get_access<sycl::access::mode::read_write>(cgh);
-        cgh.host_task([=](sycl::interop_handle ih) {
-            auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+            auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
             hipblasSetStream(handle, hipStreamHandle);   
 
           hipblasGemmStridedBatchedEx(
             handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, HIPBLAS_R_32F, N,
             N * K, A, HIPBLAS_R_32F, K, K * M, &floatZero, Out, HIPBLAS_R_32F, N, N * M,
-          batchSize, HIPBLAS_R_32F, HIPBLAS_GEMM_DEFAULT);
+          batchSize, HIPBLAS_COMPUTE_32F, HIPBLAS_GEMM_DEFAULT);
 
           
-          hipStreamSynchronize(hipStreamHandle);
-
         });
     });  
     #else
@@ -1192,9 +1165,9 @@ template <>
 #ifdef USE_CUBLAS
     sycl_queue.submit([&](sycl::handler &cgh) {
          
-         cgh.host_task([=](sycl::interop_handle ih) {
+         cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
   
-          auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+          auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
           cublasSetStream(handle, cudaStreamHandle);
 
 
@@ -1203,22 +1176,18 @@ template <>
          N * K, A, CUDA_R_16F, K, 0, &zero_h, Out, CUDA_R_16F, N, N * M,
          batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
 
-         cudaStreamSynchronize(cudaStreamHandle);
-        
          });   
    });
 #elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
-      cgh.host_task([=](sycl::interop_handle ih) {
-         auto hipStreamHandle =
-             sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+         auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
          hipblasSetStream(handle, hipStreamHandle);
          hipblasGemmStridedBatchedEx(
               handle, transpose_type_notranspose, transpose_type_notranspose,
               N, M, K, &alpha, B, HIPBLAS_R_16F, N, N * K, A, HIPBLAS_R_16F, K,
-              0, &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_R_16F,
+              0, &beta, Out, HIPBLAS_R_16F, N, N * M, batchSize, HIPBLAS_COMPUTE_16F,
               HIPBLAS_GEMM_DEFAULT);
-         hipStreamSynchronize(hipStreamHandle);
       });
     });
 #else
@@ -1257,9 +1226,9 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
     #ifdef USE_CUBLAS
     sycl_queue.submit([&](sycl::handler &cgh) {
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
   
-         auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+         auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
          cublasSetStream(handle, cudaStreamHandle);
 
 
@@ -1268,25 +1237,21 @@ void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
           N * K, A, CUDA_R_32F, K, 0, &floatZero, Out, CUDA_R_32F, N, N * M,
           batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
 
-         cudaStreamSynchronize(cudaStreamHandle);
-
         });   
     });
     #elif defined(USE_HIPBLAS)
     sycl_queue.submit([&](sycl::handler &cgh) {
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+         auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
   
-         auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
          hipblasSetStream(handle, hipStreamHandle);
 
 
         hipblasGemmStridedBatchedEx(
           handle, transpose_type_notranspose, transpose_type_notranspose, N, M, K, &floatOne, B, HIPBLAS_R_32F, N,
           N * K, A, HIPBLAS_R_32F, K, 0, &floatZero, Out, HIPBLAS_R_32F, N, N * M,
-          batchSize, HIPBLAS_R_32F, HIPBLAS_GEMM_DEFAULT);
-
-         hipStreamSynchronize(hipStreamHandle);
+          batchSize, HIPBLAS_COMPUTE_32F, HIPBLAS_GEMM_DEFAULT);
 
         });   
     });
@@ -1305,14 +1270,11 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
                                 size_t /*scratch_size*/,
                                 sycl::queue &sycl_queue, DataType***) {
 
-  sycl_queue.wait();
-  
   //CERR << "Conv1Layer<DataType>::Eval. ";
 
   cublasSpecialMatrixMul(weights_, input, output, C, H * W, c_input_, N, sycl_queue);
  // CERR << "cublasSpecialMatrixMul. ";
 
-  sycl_queue.wait();
   if (use_bias_){
   // CERR << "addBias. " << N << " " << C << " " << H << " " << W;
     addBias_NCHW(output, output, biases_, N, C, H, W, act_, sycl_queue);
@@ -1320,8 +1282,6 @@ void Conv1Layer<DataType>::Eval(int N, DataType* output, const DataType* input,
     addVectors(output, output, (DataType*)nullptr, N * C * H * W, N * C * H * W, 0, act_, sycl_queue);
   //  CERR << "addVectors. ";
   }
-
-  sycl_queue.wait();
 }
 
 template <typename DataType>
@@ -1792,24 +1752,22 @@ static void cublasXgemm(transpose_type transa,
     unsigned short alpha_h = FP32toFP16(alpha);
     unsigned short beta_h = FP32toFP16(beta);
     sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.host_task([=](sycl::interop_handle ih) {
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);    
         ReportCUBLASErrors(cublasHgemm(
           handle, transa, transb, m, n, k, (const half*)&alpha_h, ((const half *)A),
           lda, ((const half *)B), ldb, (const half*)&beta_h, ((half *)C), ldc));
-        cudaStreamSynchronize(cudaStreamHandle);  
       });
     });
   } else { 
     sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.host_task([=](sycl::interop_handle ih) {  
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {  
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);  
         ReportCUBLASErrors(cublasSgemm(handle, transa, transb, m, n, k, &alpha,
                                    (const float*)A, lda, (const float*)B, ldb,
                                    &beta, (float*)C, ldc));
-        cudaStreamSynchronize(cudaStreamHandle);
 
         });
       });
@@ -1820,21 +1778,19 @@ static void cublasXgemm(transpose_type transa,
     unsigned short alpha_h = FP32toFP16(alpha);
     unsigned short beta_h = FP32toFP16(beta);
     sycl_queue.submit([&](sycl::handler &cgh) {
-      cgh.host_task([=](sycl::interop_handle ih) {
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
         hipblasSetStream(handle, hipStreamHandle);
         hipblasHgemm(handle, transa, transb, m, n, k, &alpha_h, (const hipblasHalf*)A,
           lda, (const hipblasHalf*)B, ldb, &beta_h, (hipblasHalf*)C, ldc);
-        hipStreamSynchronize(hipStreamHandle);
         });
       });
   } else {
     sycl_queue.submit([&](sycl::handler &cgh) {
-      cgh.host_task([=](sycl::interop_handle ih) {  
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {  
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
         hipblasSetStream(handle, hipStreamHandle);  
         hipblasSgemm(handle, transa, transb, m, n, k, &alpha, (const float*)A, lda, (const float*)B, ldb, &beta, (float*)C, ldc);
-        hipStreamSynchronize(hipStreamHandle);
         });
       });
   }
@@ -1860,8 +1816,8 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
     unsigned short beta_h = FP32toFP16(beta);
     
     sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.host_task([=](sycl::interop_handle ih) {
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);    
 
         ReportCUBLASErrors(cublasGemmStridedBatchedEx(
@@ -1869,7 +1825,6 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
           B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
           batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
         
-        cudaStreamSynchronize(cudaStreamHandle);
 
       });
 
@@ -1879,9 +1834,9 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
     
     sycl_queue.submit([&](sycl::handler &cgh) {
         
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
     
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);    
     
         ReportCUBLASErrors(cublasGemmStridedBatchedEx(
@@ -1889,7 +1844,6 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
         CUDA_R_32F, ldb, strideB, &beta, C, CUDA_R_32F, ldc, strideC,
         batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
   
-        cudaStreamSynchronize(cudaStreamHandle);
   
       });
     });
@@ -1902,34 +1856,32 @@ static void cublasXGemmStridedBatched(transpose_type transa, transpose_type tran
 
     sycl_queue.submit([&](sycl::handler &cgh) {
 
-        cgh.host_task([=](sycl::interop_handle ih) {
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
 
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);
 
         hipblasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha_h, A, HIPBLAS_R_16F, lda, strideA, B,
         HIPBLAS_R_16F, ldb, strideB, &beta_h, C, HIPBLAS_R_16F, ldc, strideC,
-        batchCount, HIPBLAS_R_16F, HIPBLAS_GEMM_DEFAULT);
+        batchCount, HIPBLAS_COMPUTE_16F, HIPBLAS_GEMM_DEFAULT);
 
-        hipStreamSynchronize(hipStreamHandle);
 
       });
     });
   } else {
     sycl_queue.submit([&](sycl::handler &cgh) {
 
-        cgh.host_task([=](sycl::interop_handle ih) {
+      cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
     
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);    
     
         hipblasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha, A, HIPBLAS_R_32F, lda, strideA, B,
         HIPBLAS_R_32F, ldb, strideB, &beta, C, HIPBLAS_R_32F, ldc, strideC,
-        batchCount, HIPBLAS_R_32F, HIPBLAS_GEMM_DEFAULT);
+        batchCount, HIPBLAS_COMPUTE_32F, HIPBLAS_GEMM_DEFAULT);
   
-        hipStreamSynchronize(hipStreamHandle);
   
       });
     });
@@ -1957,16 +1909,14 @@ static void cublasXGemmBatched(transpose_type transa,
 
 
     sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.host_task([=](sycl::interop_handle ih) {
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);    
 
         ReportCUBLASErrors(cublasHgemmBatched(
         handle, transa, transb, m, n, k, (const half*)&alpha_h, (half**)A, lda,
         (half**)B, ldb, (const half*)&beta_h, (half**)C, ldc, batchCount));
         
-        cudaStreamSynchronize(cudaStreamHandle);
-
       });
 
     });
@@ -1974,16 +1924,14 @@ static void cublasXGemmBatched(transpose_type transa,
   } else {
     
     sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.host_task([=](sycl::interop_handle ih) {
-        auto cudaStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_cuda>(sycl_queue);
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto cudaStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_cuda>();
         cublasSetStream(handle, cudaStreamHandle);    
 
         ReportCUBLASErrors(cublasSgemmBatched(
         handle, transa, transb, m, n, k, &alpha, (float**)A, lda, (float**)B,
         ldb, &beta, (float**)C, ldc, batchCount));
         
-        cudaStreamSynchronize(cudaStreamHandle);
-
       });
 
     });
@@ -1999,17 +1947,15 @@ static void cublasXGemmBatched(transpose_type transa,
 
 
     sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
 
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);       
 
         hipblasHgemmBatched(
         handle, transa, transb, m, n, k, (const hipblasHalf*)&alpha_h, (hipblasHalf**)A, lda,
         (hipblasHalf**)B, ldb, (const hipblasHalf*)&beta_h, (hipblasHalf**)C, ldc, batchCount);
         
-        hipStreamSynchronize(hipStreamHandle);
-
       });
 
     });
@@ -2017,16 +1963,15 @@ static void cublasXGemmBatched(transpose_type transa,
   } else {
     
     sycl_queue.submit([&](sycl::handler &cgh) {
-        cgh.host_task([=](sycl::interop_handle ih) {
+        cgh.ext_codeplay_enqueue_native_command([=](sycl::interop_handle ih) {
+        auto hipStreamHandle = ih.get_native_queue<sycl::backend::ext_oneapi_hip>();
 
-        auto hipStreamHandle = sycl::get_native<sycl::backend::ext_oneapi_hip>(sycl_queue);
         hipblasSetStream(handle, hipStreamHandle);        
 
         hipblasSgemmBatched(
         handle, transa, transb, m, n, k, &alpha, (float**)A, lda, (float**)B,
         ldb, &beta, (float**)C, ldc, batchCount);
         
-        hipStreamSynchronize(hipStreamHandle);
 
       });
 
@@ -2179,27 +2124,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
     if (*offset_pointers == nullptr) {
-      std::vector<DataType*> offsets(encoder_heads_ * max_batch_size_ * 5);
-      for (int i = 0; i < encoder_heads_ * max_batch_size_; i++) {
-        int h = i % encoder_heads_;
-        int n = i / encoder_heads_;
-        offsets[i] = mha_k + h * depth + 64 * d_model * n;
-        offsets[i + encoder_heads_ * max_batch_size_] =
-            mha_q + h * depth + 64 * d_model * n;
-        offsets[i + 2 * encoder_heads_ * max_batch_size_] =
-            buffer1 + i * 64 * 64;
-        offsets[i + 3 * encoder_heads_ * max_batch_size_] =
-            mha_v + h * depth + 64 * d_model * n;
-        offsets[i + 4 * encoder_heads_ * max_batch_size_] =
-            buffer2 + h * depth + 64 * d_model * n;
-      }
       
       *offset_pointers = sycl::malloc_device<DataType*>(
                                encoder_heads_ * max_batch_size_ * 5,
                                sycl_queue_);
-
-      sycl_queue.memcpy(*offset_pointers, offsets.data(),
-                      encoder_heads_ * max_batch_size_ * 5 * sizeof(DataType*)).wait();
+      genOffsetPointers(*offset_pointers, encoder_heads_, max_batch_size_,
+                        depth, d_model, mha_k, mha_q, buffer1,
+                        mha_v, buffer2, sycl_queue_);
     }
 
     cublasXGemmBatched<DataType>(transpose_type_transpose, transpose_type_notranspose,

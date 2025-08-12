@@ -30,7 +30,12 @@ gaviotatb_includes = [
 
 gaviota_lib = static_library('gaviota',
   gaviotatb_src,
-  c_args : '-Dz_uLong=uLong',
+  c_args : meson.get_compiler('c').get_supported_arguments([
+    '-Dz_uLong=uLong',
+    '-Wno-misleading-indentation',
+    '-Wno-self-assign',
+    '-Wno-language-extension-token',
+    '-Wno-expansion-to-defined']),
   include_directories : gaviotatb_includes)
 
 incdir = include_directories('.')

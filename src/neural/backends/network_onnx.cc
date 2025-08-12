@@ -103,7 +103,8 @@ class OnnxNetwork : public Network {
   }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
-  Ort::SessionOptions GetOptions(int gpu, int threads, int batch_size);
+  Ort::SessionOptions GetOptions(int gpu, int threads, int batch_size,
+                                 uint64_t hash);
 
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;
@@ -296,7 +297,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 }
 
 Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
-                                            int batch_size) {
+                                            int batch_size, uint64_t hash) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -331,8 +332,10 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
+      // We need the batch size as well as the hash, as it is set after loading.
       trt_options["trt_engine_cache_prefix"] =
-          "Lc0_ONNX_TRT_batch_" + std::to_string(batch_size) + "_";
+          "Lc0_ONNX_TRT_ORT_" + Ort::GetVersionString() + "_batch_" +
+          std::to_string(batch_size) + "_" + std::format("{:x}", hash) + "_";
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_timing_cache_path"] = cache_dir;
@@ -457,11 +460,15 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   std::transform(outputs_.begin(), outputs_.end(),
                  std::back_inserter(outputs_cstr_),
                  [](const auto& x) { return x.c_str(); });
+  uint64_t hash = 0;
+  if (provider == OnnxProvider::TRT) {
+    hash = std::hash<std::string_view>()(md.model());
+  }
 
   for (int step = 1; step <= steps_; step++)
     session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
                           file.onnx_model().model().size(),
-                          GetOptions(gpu, threads, batch_size_ * step));
+                          GetOptions(gpu, threads, batch_size_ * step, hash));
 }
 
 template <OnnxProvider kProvider>

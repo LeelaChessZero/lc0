@@ -50,12 +50,13 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
     // Input tensor and tensor data placeholders.
     MPSGraphTensor * _inputTensor;
+    MPSGraphTensor * _maskTensor;
 
     // Variables to track results of graph inference.
     NSArray<MPSGraphTensor *> * _resultTensors;
     NSArray<MPSGraphTensor *> * _targetTensors;
     NSMutableDictionary<NSNumber *, MPSGraphTensorDataDictionary *> * _resultDataDicts;
-    NSMutableDictionary<NSString *, NSObject *> * _readVariables;
+    NSMutableDictionary<NSString *, MPSGraphTensor *> * _readVariables;
 
     // Variables for triple buffering
     dispatch_semaphore_t _doubleBufferingSemaphore;
@@ -72,9 +73,19 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
-                                                       height:(NSUInteger)height
-                                                        width:(NSUInteger)width
                                                         label:(NSString * __nullable)label;
+
+-(nonnull MPSGraphTensor *) maskPlaceholderWithInputChannels:(NSUInteger)channels
+                                                       label:(NSString * __nullable)label;
+
+-(nonnull MPSGraphTensor *) expandInputTensorWithMask:(MPSGraphTensor * __nonnull)maskTensor
+                                                input:(MPSGraphTensor * __nonnull)inputTensor
+                                                label:(NSString * __nonnull)label;
+
+- (nonnull MPSGraphTensor *) broadcastByStackingTensor:(MPSGraphTensor * __nonnull)input
+                                                  axis:(NSInteger)axis
+                                                 times:(NSUInteger)times
+                                                  name:(NSString * __nonnull)name;
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
                                            outputChannels:(NSUInteger)outputChannels
@@ -199,9 +210,11 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
+                                                           masks:(uint64_t * __nonnull)masks
                                                          outputs:(float * __nonnull * __nonnull)outputBuffers;
 
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
+                                                     masks:(uint64_t * __nonnull)masks
                                                   subBatch:(NSUInteger)subBatch
                                               subBatchSize:(NSUInteger)subBatchSize;
 

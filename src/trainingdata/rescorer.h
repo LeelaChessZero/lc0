@@ -27,13 +27,22 @@
 
 #pragma once
 
-#include <thread>
+#include <vector>
 
-#include "chess/uciloop.h"
-#include "utils/optionsparser.h"
+#include "syzygy/syzygy.h"
+#include "trainingdata/trainingdata_v6.h"
 
 namespace lczero {
 
 void RunRescorer();
+
+// Interface for external use.
+bool RescorerDeblunderSetup(float threshold, float width);
+bool RescorerGaviotaSetup(std::string dtmPaths);
+bool RescorerPolicySubstitutionSetup(std::string policySubsDir);
+std::vector<V6TrainingData> RescoreTrainingData(
+    std::vector<V6TrainingData> fileContents, SyzygyTablebase* tablebase,
+    float distTemp = 1.0f, float distOffset = 0.0f, float dtzBoost = 0.0f,
+    int newInputFormat = -1);
 
 }  // namespace lczero

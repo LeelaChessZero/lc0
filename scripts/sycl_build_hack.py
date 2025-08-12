@@ -12,12 +12,12 @@ dep_flag = False
 link_flag = False
 
 for line in lines:
-  # Replace xilink with icx -fsycl as the linker.
+  # Replace xilink with icx as the linker.
   if not link_flag:
     link_flag = 'xilink.exe' in line
   if link_flag:
     line = line.replace('xilink.exe', 'icx')
-    line = line.replace('/MACHINE:x64', '-fsycl')
+    line = line.replace('/MACHINE:x64', '')
     line = line.replace('/OUT:', '-o ')
     line = line.replace('/SUBSYSTEM:CONSOLE', '')
     line = line.replace('/OPT:REF', '')

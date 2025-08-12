@@ -32,7 +32,6 @@
 #include "neural/onnx/adapters.h"
 #include "neural/onnx/onnx.pb.h"
 #include "utils/exception.h"
-#include "utils/random.h"
 #include "version.h"
 
 namespace lczero {
@@ -54,8 +53,8 @@ OnnxBuilder::OnnxBuilder(int opset, int ir) : opset_(opset) {
   model_.set_producer_name("Lc0");
   model_.set_producer_version(GetVersionStr());
   model_.add_opset_import()->set_version(opset);
-  model_.mutable_graph()->set_name("org.lczero/converted/" +
-                                   Random::Get().GetString(16));
+  // TODO change to real network name when it becomes available.
+  model_.mutable_graph()->set_name("org.lczero/converted");
 }
 
 namespace {

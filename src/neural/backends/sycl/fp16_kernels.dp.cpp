@@ -597,9 +597,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
   int c = k;
   // top-left
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -617,9 +615,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
   // top-right
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -637,9 +633,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
   // bottom-left
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -657,9 +651,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
   // bottom-right
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)

@@ -188,14 +188,19 @@ option('amd_gfx',
        value: '',
        description: 'Build for a specific AMD GPU architecture, e.g. -Damd_gfx=90a for gfx90a')
 
+option('onnx',
+       type: 'boolean',
+       value: true,
+       description: 'Enable ONNX backends')
+
 option('onnx_libdir',
        type: 'string',
-       value: '',
+       value: '/usr/lib/',
        description: 'Paths to ONNX runtime libraries')
 
 option('onnx_include',
        type: 'string',
-       value: '',
+       value: '/usr/include/onnxruntime/',
        description: 'Paths to ONNX runtime includes')
 
 option('xla',
@@ -208,6 +213,26 @@ option('sycl',
 	   choices : ['off', 'l0', 'amd', 'nvidia'],
        value: 'off',
        description: 'Enable SYCL backend')
+
+option('dpct_include',
+       type: 'array',
+       value: ['/opt/intel/oneapi/dpcpp-ct/latest/include'],
+       description: 'Path to DPC++ Compatibility Tool includes')
+
+option('onemkl_include',
+       type: 'array',
+       value: ['/opt/intel/oneapi/mkl/latest/include'],
+       description: 'Path to oneMKL includes')
+
+option('hip_libdirs',
+       type: 'array',
+       value: ['/opt/rocm/lib'],
+       description: 'Paths to AMD HIP libraries')
+
+option('hip_include',
+       type: 'array',
+       value: ['/opt/rocm/include'],
+       description: 'Path to AMD HIP includes')
 
 option('lc0',
        type: 'boolean',
