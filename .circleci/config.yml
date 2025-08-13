@@ -121,7 +121,7 @@ jobs:
             gh release upload \
               "$CIRCLE_TAG" \
               /tmp/lc0-$CIRCLE_TAG-macos_12.6.1 \
-              --clobber
+              --clobber --repo LeelaChessZero/lc0
 workflows:
   version: 2
   builds:
