@@ -250,8 +250,10 @@ if get_option('dag_classic')
     'src/search/dag_classic/wrapper.cc',
   ]
 
-  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
-  deps += absl.get_variable('absl_container_dep').as_system()
+  deps += dependency('absl_flat_hash_map',
+                     include_type: 'system',
+                     fallback: ['abseil-cpp', 'absl_container_dep'],
+                     default_options : ['warning_level=0', 'cpp_std=c++20'])
 endif
 
 #############################################################################
