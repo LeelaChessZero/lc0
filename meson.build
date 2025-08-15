@@ -338,7 +338,13 @@ if get_option('build_backends')
 
     endif
 
-    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep']).as_system()
+    eigen_dep = dependency('eigen3')
+    # Check for needed header, bad dependency seen in the widl.
+    if eigen_dep.found() and cc.has_header('Eigen/Core')
+      deps += eigen_dep
+    else
+      deps += subproject('eigen').get_variable('eigen_dep')
+    endif
 
     ispc = find_program('ispc', required: false)
     ispc_arch = 'x86-64'

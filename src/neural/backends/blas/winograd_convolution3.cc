@@ -29,7 +29,7 @@
 #include "winograd_transform_ispc.h"
 #endif
 
-#include <Eigen/Dense>
+#include <Eigen/Core>
 
 namespace lczero {
 template <typename T>
