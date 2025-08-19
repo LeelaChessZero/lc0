@@ -730,6 +730,8 @@ if get_option('build_backends')
             foreach agent : agent_list
               if agent.startswith('gfx')
                 amd_gfx += 'amd_gpu_' + agent
+              else
+                error( '\'' + agent_enum.full_path() + '\' unexpected output: ' + agent)
               endif
             endforeach
             if amd_gfx.length() == 0
