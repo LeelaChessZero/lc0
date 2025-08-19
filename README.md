@@ -54,7 +54,7 @@ Given those basics, the OS and backend specific instructions are below.
 
 1. Install backend (also read the detailed instructions in later sections):
     - If you want to use NVidia graphics cards Install [CUDA](https://developer.nvidia.com/cuda-zone) (and optionally [cuDNN](https://developer.nvidia.com/cudnn)).
-    - If you want to use AMD or intel graphics cards you can try SYCL.
+    - If you want to use AMD or Intel graphics cards you can try SYCL.
     - if you want BLAS install either OpenBLAS or DNNL.
 2. Install ninja build (`ninja-build`), meson, and (optionally) gtest (`libgtest-dev`).
 3. Go to `lc0/`
@@ -145,7 +145,7 @@ The Intel tools can be found in either the "oneAPI Base Toolkit" or "C++ Essenti
 
 The compiler for C code is icx and for C++ code is icx on Windows but icpx on Linux.
 
-To build Lc0 with SYCL you need to set the `sycl` build option using `-Dsycl=l0` (that is el zero) for an inter GPU or `-Dsycl=amd` for (you guessed it) an AMD GPU.
+To build Lc0 with SYCL you need to set the `sycl` build option using `-Dsycl=l0` (that is el zero) for an Intel GPU or `-Dsycl=amd` for (you guessed it) an AMD GPU.
 
 You may also have to set the `dpct_include` option to point to the DPC++ Compatibility Tool includes, the `onemkl_include` similarly for the oneMKL includes, or `hip_libdirs` and `hip_include` to the AMD HIP libraries and includes respectively.
 
@@ -157,6 +157,8 @@ CC=icx CXX=icpx AR=llvm-ar ./build.sh release -Dgtest=false -Dsycl=l0
 The first line is to initialize the build environment and is only needed once per session, while the build line may need modification as described above.
 
 On windows you will have to build using `ninja`, this is provided by Visual Studio if you install the CMake component. We provide a `build-sycl.cmd` script that should build just fine for an Intel GPU. This script has not yet been tested with and AMD GPU, some editing will be required.
+
+You can also install the [oneAPI DPC++/C++ Compiler Runtime](https://www.intel.com/content/www/us/en/developer/articles/tool/compilers-redistributable-libraries-by-version.html) so you can run Lc0 without needing to initialize the build environment every time.
 
 ### BLAS
 
