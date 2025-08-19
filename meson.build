@@ -744,8 +744,8 @@ if get_option('build_backends')
         if amd_gfx.length() == 0
           error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. gfx90a, gfx1100 or similar)')
         endif
-        add_project_arguments('-fsycl-targets='+','.join(amd_gfx), language : 'cpp')
-        add_project_link_arguments('-fsycl-targets='+','.join(amd_gfx), language : 'cpp')
+        add_project_arguments('-fsycl-targets=' + ','.join(amd_gfx), language : 'cpp')
+        add_project_link_arguments('-fsycl-targets=' + ','.join(amd_gfx), language : 'cpp')
       else
         deps += cc.find_library('cublas', required: true)
         deps += cc.find_library('cudart', required: true)
