@@ -189,7 +189,7 @@ class CudnnNetwork : public Network {
 
     cudaDeviceProp deviceProp = {};
     cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    showDeviceInfo(deviceProp);
+    showDeviceInfo(deviceProp, gpu_id_);
 
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
@@ -1049,11 +1049,25 @@ class CudnnNetwork : public Network {
     }
   }
 
-  void showDeviceInfo(const cudaDeviceProp& deviceProp) const {
+  void showDeviceInfo(const cudaDeviceProp& deviceProp, int deviceId) const {
     CERR << "GPU: " << deviceProp.name;
     CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
          << " GiB";
-    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    // Get clock rate
+    float clockRateMHz;
+#if CUDART_VERSION >= 13000
+    int clockRatekHz;
+    cudaError_t err = cudaDeviceGetAttribute(&clockRatekHz, cudaDevAttrClockRate, deviceId);
+    if (err != cudaSuccess) {
+        CERR << "Error getting clock rate: " << cudaGetErrorString(err);
+        clockRateMHz = 0.0f; // Fallback value
+    } else {
+        clockRateMHz = clockRatekHz / 1e3f;
+    }
+#else
+    clockRateMHz = deviceProp.clockRate / 1e3f;
+#endif
+    CERR << "GPU clock frequency: " << clockRateMHz << " MHz";
     CERR << "GPU compute capability: " << deviceProp.major << "."
          << deviceProp.minor;
 
