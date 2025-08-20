@@ -42,9 +42,9 @@ Building should be easier now than it was in the past. Please report any problem
 
 Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as a few libraries. If your system already has these libraries installed, they will be used; otherwise Meson will generate its own copy (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
 
-Backend support includes (in theory) any CBLAS-compatible library for CPU usage, but OpenBLAS or Intel's DNNL are the main ones. For GPUs, CUDA (and optionally cuDNN), various flavors of onnxruntime, Apple's Metal Performance Shaders are supported. There is also experimental SYCL support for AMD and Intel GPUs.
+Backend support includes (in theory) any CBLAS-compatible library for CPU usage, but OpenBLAS or Intel's DNNL are the main ones. For GPUs, the following are supported: CUDA (with optional cuDNN), various flavors of onnxruntime, and Apple's Metal Performance Shaders. There is also experimental SYCL support for AMD and Intel GPUs.
 
-Finally, lc0 requires a compiler supporting C++20. Minimal versions seem to be g++ v10.0, clang v12.0 or Visual Studio 2019 version 16.11.
+Finally, lc0 requires a compiler supporting C++20. Minimal versions tested are g++ v10.0, clang v12.0 and Visual Studio 2019 version 16.11.
 
 Given those basics, the OS and backend specific instructions are below.
 
