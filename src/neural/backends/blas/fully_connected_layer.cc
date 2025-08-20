@@ -23,7 +23,7 @@
 #include <cassert>
 #include <cmath>
 
-#include <Eigen/Dense>
+#include <Eigen/Core>
 
 namespace lczero {
 namespace {
