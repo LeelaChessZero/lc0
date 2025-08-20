@@ -338,7 +338,13 @@ if get_option('build_backends')
 
     endif
 
-    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep']).as_system()
+    eigen_dep = dependency('eigen3')
+    # Check for needed header, bad dependency seen in the widl.
+    if eigen_dep.found() and cc.has_header('Eigen/Core')
+      deps += eigen_dep
+    else
+      deps += subproject('eigen').get_variable('eigen_dep')
+    endif
 
     ispc = find_program('ispc', required: false)
     ispc_arch = 'x86-64'
@@ -715,11 +721,39 @@ if get_option('build_backends')
         cc.has_header('hip/hip_runtime.h', required: true, args: hip_args)
         add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
         add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
-        if get_option('amd_gfx') == ''
-          error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. 90a, 1100 or similar)')
+        amd_gfx = get_option('amd_gfx')
+        if amd_gfx == ''
+          amd_gfx = []
+          agent_enum = find_program('rocm_agent_enumerator', '/opt/rocm/bin/rocm_agent_enumerator',
+                      required: false)
+          if not agent_enum.found()
+            warning( '\'rocm_agent_enumerator\' not found. AMD GPU detection doesn\'t work. You can install rocminfo or set -Damd_gfx.')
+          elif meson.version().version_compare('<1.2.0')
+            warning( 'Automatic AMD GPU detection requires Meson 1.2.0')
+          else
+            agents = run_command(agent_enum, check : false).stdout()
+            agent_list = agents.splitlines()
+            foreach agent : agent_list
+              if agent.startswith('gfx')
+                amd_gfx += 'amd_gpu_' + agent
+              else
+                error( '\'' + agent_enum.full_path() + '\' unexpected output: ' + agent)
+              endif
+            endforeach
+            if amd_gfx.length() == 0
+              warning( '\'' + agent_enum.full_path() + '\' failed to detect any AMD GPUs in the system.')
+            else
+              message( 'Detected AMD GPU cores: ' + ','.join(amd_gfx))
+            endif
+          endif
+        else
+          amd_gfx = ['amd_gpu_' + amd_gfx]
         endif
-        add_project_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
-        add_project_link_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
+        if amd_gfx.length() == 0
+          error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. gfx90a, gfx1100 or similar)')
+        endif
+        add_project_arguments('-fsycl-targets=' + ','.join(amd_gfx), language : 'cpp')
+        add_project_link_arguments('-fsycl-targets=' + ','.join(amd_gfx), language : 'cpp')
       else
         deps += cc.find_library('cublas', required: true)
         deps += cc.find_library('cudart', required: true)

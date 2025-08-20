@@ -84,24 +84,24 @@ Make sure that `~/.local/bin` is in your `PATH` environment variable. You can no
 
 Here are the brief instructions for CUDA/cuDNN, for details and other options see `windows-build.md` and the instructions in the following sections.
 
-0. Install Microsoft Visual Studio (2019 version 16.11 or later)
-1. Install [CUDA](https://developer.nvidia.com/cuda-zone)
-2. (Optionally install [cuDNN](https://developer.nvidia.com/cudnn)).
-3. Install Python3 if you didn't install it with Visual Studio.
-4. Install Meson: `pip3 install --upgrade meson`
-5. If `CUDA_PATH` is not set (run the `set` command to see the full list of variables), edit `build.cmd` and set the `CUDA_PATH` with your CUDA directory
+1. Install Microsoft Visual Studio (2019 version 16.11 or later)
+2. Install [CUDA](https://developer.nvidia.com/cuda-zone)
+3. (Optionally install [cuDNN](https://developer.nvidia.com/cudnn)).
+4. Install Python3 if you didn't install it with Visual Studio.
+5. Install Meson: `pip3 install --upgrade meson`
+6. If `CUDA_PATH` is not set (run the `set` command to see the full list of variables), edit `build.cmd` and set the `CUDA_PATH` with your CUDA directory
 * If you also want cuDNN, set `CUDNN_PATH` with your cuDNN directory (not needed if it is the same with `CUDA_PATH`).
 
-6. Run `build.cmd`. It will ask permission to delete the build directory, then generate MSVS project and pause.
+7. Run `build.cmd`. It will ask permission to delete the build directory, then generate MSVS project and pause.
 
 Then either:
 
-7. Hit `Enter` to build it.
-8. Resulting binary will be `build/lc0.exe`
+8. Hit `Enter` to build it.
+9. Resulting binary will be `build/lc0.exe`
 
 Or.
 
-7. Open generated solution `build/lc0.sln` in Visual Studio and build it yourself.
+8. Open generated solution `build/lc0.sln` in Visual Studio and build it yourself.
 
 ### Mac
 
