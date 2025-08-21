@@ -1,4 +1,10 @@
-﻿v0.32.0-rc2 (2025-08-12)
+﻿v0.32.0 (2025-08-21)
+~~~~~~~
+* Support for building with cuda 13.
+* README update.
+* Build system improvements.
+
+v0.32.0-rc2 (2025-08-12)
 ~~~~~~~
 * Fix for onnx-trt bug, where the wrong network could be used from the cache.
 * Added code to detect RPE nets and give an error instead of bad results.
