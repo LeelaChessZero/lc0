@@ -186,7 +186,7 @@ option('cc_cuda',
 option('amd_gfx',
        type: 'string',
        value: '',
-       description: 'Build for a specific AMD GPU architecture, e.g. -Damd_gfx=90a for gfx90a')
+       description: 'Build for a specific AMD GPU architecture, e.g. -Damd_gfx=gfx90a for gfx90a')
 
 option('onnx',
        type: 'boolean',
