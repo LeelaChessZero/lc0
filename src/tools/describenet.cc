@@ -110,6 +110,11 @@ void ShowNetworkFormatInfo(const pblczero::Net& weights) {
     COUT << Justify("FFN activation")
          << NetworkFormat::ActivationFunction_Name(net_format.ffn_activation());
   }
+  if (net_format.has_input_embedding()) {
+    COUT << Justify("Input embedding")
+         << NetworkFormat::InputEmbeddingFormat_Name(
+                net_format.input_embedding());
+  }
 }
 
 void ShowNetworkTrainingInfo(const pblczero::Net& weights) {
