@@ -1609,10 +1609,6 @@ void SearchWorker::PickNodesToExtendTask(
     std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
   LCTRACE_FUNCTION_SCOPE;
-  // TODO: Bring back pre-cached nodes created outside locks in a way that works
-  // with tasks.
-  // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
-  // width. Maybe even do so outside of lock scope.
   auto& vtp_buffer = workspace->vtp_buffer;
   auto& visits_to_perform = workspace->visits_to_perform;
   visits_to_perform.clear();
@@ -1622,24 +1618,20 @@ void SearchWorker::PickNodesToExtendTask(
   current_path.clear();
   auto& moves_to_path = workspace->moves_to_path;
   moves_to_path = moves_to_base;
-  // Sometimes receiver is reused, othertimes not, so only jump start if small.
   if (receiver->capacity() < 30) {
     receiver->reserve(receiver->size() + 30);
   }
 
-  // These 2 are 'filled pre-emptively'.
   std::array<float, 256> current_pol;
   std::array<float, 256> current_cumulative_pol_frozen;
   std::array<float, 256> current_util;
 
-  // These 3 are 'filled on demand'.
   std::array<float, 256> current_score;
   std::array<int, 256> current_nstarted;
   auto& cur_iters = workspace->cur_iters;
 
   Node::Iterator best_edge;
   Node::Iterator second_best_edge;
-  // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
 
   int passed_off = 0;
@@ -1655,22 +1647,14 @@ void SearchWorker::PickNodesToExtendTask(
 
   current_path.push_back(-1);
   while (current_path.size() > 0) {
-    // First prepare visits_to_perform.
     if (current_path.back() == -1) {
-      // Need to do n visits, where n is either collision_limit, or comes from
-      // visits_to_perform for the current path.
       int cur_limit = collision_limit;
       if (current_path.size() > 1) {
         cur_limit =
             (*visits_to_perform.back())[current_path[current_path.size() - 2]];
       }
-      // First check if node is terminal or not-expanded.  If either than create
-      // a collision of appropriate size and pop current_path.
       if (node->GetN() == 0 || node->IsTerminal()) {
         if (is_root_node) {
-          // Root node is special - since its not reached from anywhere else, so
-          // it needs its own logic. Still need to create the collision to
-          // ensure the outer gather loop gives up.
           if (node->TryStartScoreUpdate()) {
             cur_limit -= 1;
             minibatch_.push_back(NodeToProcess::Visit(
@@ -1678,7 +1662,6 @@ void SearchWorker::PickNodesToExtendTask(
             completed_visits++;
           }
         }
-        // Visits are created elsewhere, just need the collisions here.
         if (cur_limit > 0) {
           int max_count = 0;
           if (cur_limit == collision_limit && base_depth == 0 &&
@@ -1695,12 +1678,9 @@ void SearchWorker::PickNodesToExtendTask(
         continue;
       }
       if (is_root_node) {
-        // Root node is again special - needs its n in flight updated separately
-        // as its not handled on the path to it, since there isn't one.
         node->IncrementNInFlight(cur_limit);
       }
 
-      // Create visits_to_perform new back entry for this level.
       if (vtp_buffer.size() > 0) {
         visits_to_perform.push_back(std::move(vtp_buffer.back()));
         vtp_buffer.pop_back();
@@ -1709,9 +1689,6 @@ void SearchWorker::PickNodesToExtendTask(
       }
       vtp_last_filled.push_back(-1);
 
-      // Cache all constant UCT parameters.
-      // When we're near the leaves we can copy less of the policy, since there
-      // is no way iteration will ever reach it.
       int max_needed = node->GetNumEdges();
       if (!is_root_node || root_move_filter.empty()) {
         max_needed = std::min(max_needed, node->GetNStarted() + cur_limit + 2);
@@ -1720,20 +1697,19 @@ void SearchWorker::PickNodesToExtendTask(
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
-      // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
-      // the weirdness.
-      const float draw_score = ((current_path.size() + base_depth) % 2 == 0)
-                                   ? odd_draw_score
-                                   : even_draw_score;
 
-      bool is_opponent_node = ((current_path.size() + base_depth) % 2 == 1);
+      const int current_depth = (current_path.size() - 1) + base_depth;
+      const float draw_score =
+          (current_depth % 2 != 0) ? odd_draw_score : even_draw_score;
+
+      const bool is_opponent_node = (current_depth % 2 == 1);
 
       int opponent_node_limit = params_.GetScLimit();
       int current_node_count = node->GetN();
       bool node_limit_frozen = node->GetNodeLimitFrozen();
       bool node_limit_frozen_lock = node->GetNodeLimitFrozenLock();
 
-      if (is_opponent_node && current_node_count > opponent_node_limit) {
+      if (is_opponent_node && current_node_count >= opponent_node_limit) {
         if (!(node_limit_frozen)) {
           if (!node_limit_frozen_lock) {
             node->SetNodeLimitFrozenLock(true);
@@ -1759,26 +1735,17 @@ void SearchWorker::PickNodesToExtendTask(
       node_limit_frozen_lock = node->GetNodeLimitFrozenLock();
 
       if (is_opponent_node && node_limit_frozen) {
-        // DYNAMIC HYBRID: Get the ratio dynamically based on the selected mode and params.
         const float hybrid_ratio = params_.GetDynamicHybridRatio(node->GetN());
 
-        int ts_visits = static_cast<int>(std::round(static_cast<float>(cur_limit) * hybrid_ratio));
+        int ts_visits =
+            static_cast<int>(std::round(static_cast<float>(cur_limit) * hybrid_ratio));
         int puct_visits = cur_limit - ts_visits;
 
-        // --- Part 1: Thompson Sampling visits ---
         if (ts_visits > 0) {
           while (node_limit_frozen_lock) {
             node_limit_frozen_lock = node->GetNodeLimitFrozenLock();
           }
 
-          std::mt19937_64 rng;
-          uint64_t timeSeed = std::chrono::high_resolution_clock::now()
-                                  .time_since_epoch()
-                                  .count();
-          std::seed_seq ss{uint32_t(timeSeed & 0xffffffff),
-                           uint32_t(timeSeed >> 32)};
-          rng.seed(ss);
-          std::uniform_real_distribution<double> unif(0, 1);
           node->CopyPolicy_frozen(max_needed,
                                   current_cumulative_pol_frozen.data());
           int visited_num_nodes = int(node->GetVisitedNumberOfEdges());
@@ -1787,11 +1754,9 @@ void SearchWorker::PickNodesToExtendTask(
             tmp_visit_array[i] = 0;
           }
           for (int i = 0; i < ts_visits; i++) {
-            double currentRandomNumber = unif(rng);
-            float search_value = currentRandomNumber;
-            int number;
-            number = find_index(current_cumulative_pol_frozen,
-                                visited_num_nodes, search_value);
+            float search_value = Random::Get().GetFloat(1.0f);
+            int number = find_index(current_cumulative_pol_frozen,
+                                    visited_num_nodes, search_value);
             tmp_visit_array[number]++;
           }
 
@@ -1804,6 +1769,7 @@ void SearchWorker::PickNodesToExtendTask(
                 cur_iters[i] = cur_iters[i - 1];
                 ++cur_iters[i];
               }
+              current_nstarted[i] = cur_iters[i].GetNStarted();
               cache_filled_idx++;
             }
 
@@ -1817,21 +1783,30 @@ void SearchWorker::PickNodesToExtendTask(
               (*visits_to_perform.back())[i] += new_visits;
               Node* child_node = cur_iters[i].GetOrSpawnNode(node);
               EnsureNodeTwoFoldCorrectForDepth(
-                  child_node, current_path.size() + base_depth + 1 - 1);
-
+                  child_node, current_path.size() + base_depth);
+              bool decremented = false;
               if (child_node->TryStartScoreUpdate()) {
+                current_nstarted[i]++;
                 new_visits -= 1;
+                decremented = true;
                 if (child_node->GetN() > 0 && !child_node->IsTerminal()) {
                   child_node->IncrementNInFlight(new_visits);
+                  current_nstarted[i] += new_visits;
                 }
+              }
+
+              if ((decremented &&
+                   (child_node->GetN() == 0 || child_node->IsTerminal()))) {
                 (*visits_to_perform.back())[i] -= 1;
                 receiver->push_back(NodeToProcess::Visit(
-                    child_node, static_cast<uint16_t>(current_path.size() + 1 +
+                    child_node, static_cast<uint16_t>(current_path.size() +
                                                       base_depth)));
                 completed_visits++;
-                receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
+                receiver->back().moves_to_visit.reserve(moves_to_path.size() +
+                                                        1);
                 receiver->back().moves_to_visit = moves_to_path;
-                receiver->back().moves_to_visit.push_back(cur_iters[i].GetMove());
+                receiver->back().moves_to_visit.push_back(
+                    cur_iters[i].GetMove());
               }
 
               if (i > vtp_last_filled.back() &&
@@ -1842,7 +1817,6 @@ void SearchWorker::PickNodesToExtendTask(
           }
         }
 
-        // --- Part 2: PUCT visits ---
         if (puct_visits > 0) {
           m_evaluator.SetParent(node);
           float visited_pol = 0.0f;
@@ -1874,46 +1848,66 @@ void SearchWorker::PickNodesToExtendTask(
             best_edge.Reset();
             for (int idx = 0; idx < max_needed; ++idx) {
               if (idx > cache_filled_idx) {
-                if (idx == 0) { cur_iters[idx] = node->Edges(); } 
-                else { cur_iters[idx] = cur_iters[idx - 1]; ++cur_iters[idx]; }
+                if (idx == 0) {
+                  cur_iters[idx] = node->Edges();
+                } else {
+                  cur_iters[idx] = cur_iters[idx - 1];
+                  ++cur_iters[idx];
+                }
                 current_nstarted[idx] = cur_iters[idx].GetNStarted();
               }
               int nstarted = current_nstarted[idx];
               const float util = current_util[idx];
               if (idx > cache_filled_idx) {
-                current_score[idx] = current_pol[idx] * puct_mult / (1 + nstarted) + util;
+                current_score[idx] =
+                    current_pol[idx] * puct_mult / (1 + nstarted) + util;
                 cache_filled_idx++;
               }
               float score = current_score[idx];
               if (score > best) {
-                second_best = best; second_best_edge = best_edge;
-                best = score; best_idx = idx; best_without_u = util; best_edge = cur_iters[idx];
+                second_best = best;
+                second_best_edge = best_edge;
+                best = score;
+                best_idx = idx;
+                best_without_u = util;
+                best_edge = cur_iters[idx];
               } else if (score > second_best) {
-                second_best = score; second_best_edge = cur_iters[idx];
+                second_best = score;
+                second_best_edge = cur_iters[idx];
               }
               if (can_exit) break;
-              if (nstarted == 0) { can_exit = true; }
+              if (nstarted == 0) {
+                can_exit = true;
+              }
             }
             int new_visits = 0;
             if (second_best_edge) {
-              int estimated_visits_to_change_best = std::numeric_limits<int>::max();
+              int estimated_visits_to_change_best =
+                  std::numeric_limits<int>::max();
               if (best_without_u < second_best) {
                 const auto n1 = current_nstarted[best_idx] + 1;
-                estimated_visits_to_change_best = static_cast<int>(std::max(1.0f, std::min(current_pol[best_idx] * puct_mult / (second_best - best_without_u) - n1 + 1, 1e9f)));
+                estimated_visits_to_change_best = static_cast<int>(
+                    std::max(1.0f, std::min(current_pol[best_idx] * puct_mult /
+                                                   (second_best - best_without_u) -
+                                               n1 + 1,
+                                           1e9f)));
               }
               second_best_edge.Reset();
-              new_visits = std::min(current_puct_limit, estimated_visits_to_change_best);
+              new_visits =
+                  std::min(current_puct_limit, estimated_visits_to_change_best);
             } else {
               new_visits = current_puct_limit;
             }
             if (best_idx >= vtp_last_filled.back()) {
               auto* vtp_array = visits_to_perform.back().get()->data();
-              std::fill(vtp_array + (vtp_last_filled.back() + 1), vtp_array + best_idx + 1, 0);
+              std::fill(vtp_array + (vtp_last_filled.back() + 1),
+                        vtp_array + best_idx + 1, 0);
             }
             (*visits_to_perform.back())[best_idx] += new_visits;
             current_puct_limit -= new_visits;
             Node* child_node = best_edge.GetOrSpawnNode(node);
-            EnsureNodeTwoFoldCorrectForDepth(child_node, current_path.size() + base_depth + 1 - 1);
+            EnsureNodeTwoFoldCorrectForDepth(
+                child_node, current_path.size() + base_depth);
             bool decremented = false;
             if (child_node->TryStartScoreUpdate()) {
               current_nstarted[best_idx]++;
@@ -1923,23 +1917,28 @@ void SearchWorker::PickNodesToExtendTask(
                 child_node->IncrementNInFlight(new_visits);
                 current_nstarted[best_idx] += new_visits;
               }
-              current_score[best_idx] = current_pol[best_idx] * puct_mult / (1 + current_nstarted[best_idx]) + current_util[best_idx];
+              current_score[best_idx] =
+                  current_pol[best_idx] * puct_mult /
+                      (1 + current_nstarted[best_idx]) +
+                  current_util[best_idx];
             }
-            if ((decremented && (child_node->GetN() == 0 || child_node->IsTerminal()))) {
+            if ((decremented &&
+                 (child_node->GetN() == 0 || child_node->IsTerminal()))) {
               (*visits_to_perform.back())[best_idx] -= 1;
-              receiver->push_back(NodeToProcess::Visit(child_node, static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
+              receiver->push_back(NodeToProcess::Visit(
+                  child_node,
+                  static_cast<uint16_t>(current_path.size() + base_depth)));
               completed_visits++;
               receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
               receiver->back().moves_to_visit = moves_to_path;
               receiver->back().moves_to_visit.push_back(best_edge.GetMove());
             }
-            if (best_idx > vtp_last_filled.back() && (*visits_to_perform.back())[best_idx] > 0) {
+            if (best_idx > vtp_last_filled.back() &&
+                (*visits_to_perform.back())[best_idx] > 0) {
               vtp_last_filled.back() = best_idx;
             }
           }
         }
-        cur_limit = 0; // All visits have been allocated.
-
       } else {
         m_evaluator.SetParent(node);
         float visited_pol = 0.0f;
@@ -1962,7 +1961,6 @@ void SearchWorker::PickNodesToExtendTask(
             cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
         int cache_filled_idx = -1;
         while (cur_limit > 0) {
-          // Perform UCT for current node.
           float best = std::numeric_limits<float>::lowest();
           int best_idx = -1;
           float best_without_u = std::numeric_limits<float>::lowest();
@@ -1987,17 +1985,11 @@ void SearchWorker::PickNodesToExtendTask(
               cache_filled_idx++;
             }
             if (is_root_node) {
-              // If there's no chance to catch up to the current best node with
-              // remaining playouts, don't consider it.
-              // best_move_node_ could have changed since best_node_n was
-              // retrieved. To ensure we have at least one node to expand,
-              // always include current best node.
               if (cur_iters[idx] != search_->current_best_edge_ &&
                   latest_time_manager_hints_.GetEstimatedRemainingPlayouts() <
                       best_node_n - cur_iters[idx].GetN()) {
                 continue;
               }
-              // If root move filter exists, make sure move is in the list.
               if (!root_move_filter.empty() &&
                   std::find(root_move_filter.begin(), root_move_filter.end(),
                             cur_iters[idx].GetMove()) ==
@@ -2020,9 +2012,6 @@ void SearchWorker::PickNodesToExtendTask(
             }
             if (can_exit) break;
             if (nstarted == 0) {
-              // One more loop will get 2 unvisited nodes, which is sufficient
-              // to ensure second best is correct. This relies upon the fact
-              // that edges are sorted in policy decreasing order.
               can_exit = true;
             }
           }
@@ -2032,17 +2021,16 @@ void SearchWorker::PickNodesToExtendTask(
                 std::numeric_limits<int>::max();
             if (best_without_u < second_best) {
               const auto n1 = current_nstarted[best_idx] + 1;
-              estimated_visits_to_change_best = static_cast<int>(std::max(
-                  1.0f, std::min(current_pol[best_idx] * puct_mult /
-                                         (second_best - best_without_u) -
-                                     n1 + 1,
-                                 1e9f)));
+              estimated_visits_to_change_best = static_cast<int>(
+                  std::max(1.0f, std::min(current_pol[best_idx] * puct_mult /
+                                                  (second_best - best_without_u) -
+                                              n1 + 1,
+                                          1e9f)));
             }
             second_best_edge.Reset();
             max_limit = std::min(max_limit, estimated_visits_to_change_best);
             new_visits = std::min(cur_limit, estimated_visits_to_change_best);
           } else {
-            // No second best - only one edge, so everything goes in here.
             new_visits = cur_limit;
           }
           if (best_idx >= vtp_last_filled.back()) {
@@ -2054,10 +2042,8 @@ void SearchWorker::PickNodesToExtendTask(
           cur_limit -= new_visits;
           Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
 
-          // Probably best place to check for two-fold draws consistently.
-          // Depth starts with 1 at root, so real depth is depth - 1.
           EnsureNodeTwoFoldCorrectForDepth(
-              child_node, current_path.size() + base_depth + 1 - 1);
+              child_node, current_path.size() + base_depth);
 
           bool decremented = false;
           if (child_node->TryStartScoreUpdate()) {
@@ -2075,12 +2061,10 @@ void SearchWorker::PickNodesToExtendTask(
           }
           if ((decremented &&
                (child_node->GetN() == 0 || child_node->IsTerminal()))) {
-            // Reduce 1 for the visits_to_perform to ensure the collision
-            // created doesn't include this visit.
             (*visits_to_perform.back())[best_idx] -= 1;
             receiver->push_back(NodeToProcess::Visit(
                 child_node,
-                static_cast<uint16_t>(current_path.size() + 1 + base_depth)));
+                static_cast<uint16_t>(current_path.size() + base_depth)));
             completed_visits++;
             receiver->back().moves_to_visit.reserve(moves_to_path.size() + 1);
             receiver->back().moves_to_visit = moves_to_path;
@@ -2093,8 +2077,6 @@ void SearchWorker::PickNodesToExtendTask(
         }
       }
       is_root_node = false;
-      // Actively do any splits now rather than waiting for potentially long
-      // tree walk to get there.
       for (int i = 0; i <= vtp_last_filled.back(); i++) {
         int child_limit = (*visits_to_perform.back())[i];
         if (task_workers_ > 0 &&
@@ -2105,14 +2087,11 @@ void SearchWorker::PickNodesToExtendTask(
                 collision_limit -
                     params_.GetMinimumRemainingWorkSizeForPicking()) {
           Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
-          // Don't split if not expanded or terminal.
           if (child_node->GetN() == 0 || child_node->IsTerminal()) continue;
 
           bool passed = false;
           {
-            // Multiple writers, so need mutex here.
             Mutex::Lock lock(picking_tasks_mutex_);
-            // Ensure not to exceed size of reservation.
             if (picking_tasks_.size() < MAX_TASKS) {
               moves_to_path.push_back(cur_iters[i].GetMove());
               picking_tasks_.emplace_back(
@@ -2130,7 +2109,6 @@ void SearchWorker::PickNodesToExtendTask(
           }
         }
       }
-      // Fall through to select the first child.
     }
     int min_idx = current_path.back();
     bool found_child = false;
@@ -2641,5 +2619,6 @@ void SearchWorker::UpdateCounters() {
 
 }  // namespace contempt
 }  // namespace lczero
+
 
 
