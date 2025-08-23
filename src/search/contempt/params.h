@@ -107,6 +107,7 @@ class SearchParams : public classic::SearchParams {
   // START: ADDED FOR DYNAMIC HYBRID RATIO
   const HybridRatioMode kHybridRatioMode;
   const std::vector<std::pair<int, float>> kHybridRatioSchedule;
+  mutable float chaotic_state_{0.5f}; // Mutable for chaotic function state
   // END: ADDED FOR DYNAMIC HYBRID RATIO
 };
 
