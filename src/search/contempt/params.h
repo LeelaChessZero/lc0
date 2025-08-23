@@ -29,10 +29,43 @@
 
 #include "search/classic/params.h"
 
+#include <cmath>
+#include <vector>
+
+#include "utils/random.h"
+
 namespace lczero {
 namespace contempt {
 
 using ContemptMode = classic::ContemptMode;
+
+// START: ADDED FOR DYNAMIC HYBRID RATIO
+enum class HybridRatioMode {
+  STATIC,
+  MANUAL_SCHEDULE,
+  LINEAR,
+  LOGARITHMIC,
+  POWER,
+  ROOT,
+  SIGMOID,
+  EXPONENTIAL,
+  STEP_DECAY,
+  INVERSE_SIGMOID,
+  STEPS,
+  PLATEAU,
+  GAUSSIAN_PEAK,
+  DOUBLE_PEAK,
+  SAWTOOTH_WAVE,
+  OSCILLATING,
+  HEARTBEAT,
+  MULTI_TIMESCALE,
+  THERMAL_ANNEALING,
+  ASYMPTOTIC_APPROACH,
+  CHAOTIC
+  // Fibonacci and Golden Ratio are complex and stateful, omitted for simplicity
+  // unless a stateful evaluation mechanism is added.
+};
+// END: ADDED FOR DYNAMIC HYBRID RATIO
 
 class SearchParams : public classic::SearchParams {
  public:
@@ -42,18 +75,39 @@ class SearchParams : public classic::SearchParams {
   // Populates UciOptions with search parameters.
   static void Populate(OptionsParser* options);
 
+  // START: ADDED FOR DYNAMIC HYBRID RATIO
+  // The main function to calculate the ratio based on the selected mode.
+  float GetDynamicHybridRatio(int node_count) const;
+  // END: ADDED FOR DYNAMIC HYBRID RATIO
+
   // Parameter getters.
   int GetScLimit() const { return options_.Get<int>(kScLimitId); }
-  // START: ADDED FOR HYBRID SAMPLING
   float GetHybridSamplingRatio() const { return options_.Get<float>(kHybridSamplingRatioId); }
-  // END: ADDED FOR HYBRID SAMPLING
+  HybridRatioMode GetHybridRatioMode() const { return kHybridRatioMode; }
+  const std::vector<std::pair<int, float>>& GetHybridRatioSchedule() const { return kHybridRatioSchedule; }
+  float GetHybridMinRatio() const { return options_.Get<float>(kHybridMinRatioId); }
+  float GetHybridMaxRatio() const { return options_.Get<float>(kHybridMaxRatioId); }
+  int GetHybridScalingFactor() const { return options_.Get<int>(kHybridScalingFactorId); }
+  float GetHybridShapeParam1() const { return options_.Get<float>(kHybridShapeParam1Id); }
+  float GetHybridShapeParam2() const { return options_.Get<float>(kHybridShapeParam2Id); }
 
   // Search parameter IDs.
   static const OptionId kScLimitId;
-  // START: ADDED FOR HYBRID SAMPLING
   static const OptionId kHybridSamplingRatioId;
-  // END: ADDED FOR HYBRID SAMPLING
+  // START: ADDED FOR DYNAMIC HYBRID RATIO
+  static const OptionId kHybridRatioModeId;
+  static const OptionId kHybridRatioScheduleId;
+  static const OptionId kHybridMinRatioId;
+  static const OptionId kHybridMaxRatioId;
+  static const OptionId kHybridScalingFactorId;
+  static const OptionId kHybridShapeParam1Id;
+  static const OptionId kHybridShapeParam2Id;
+  // END: ADDED FOR DYNAMIC HYBRID RATIO
 
+  // START: ADDED FOR DYNAMIC HYBRID RATIO
+  const HybridRatioMode kHybridRatioMode;
+  const std::vector<std::pair<int, float>> kHybridRatioSchedule;
+  // END: ADDED FOR DYNAMIC HYBRID RATIO
 };
 
 }  // namespace contempt
