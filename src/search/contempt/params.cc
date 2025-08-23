@@ -271,10 +271,10 @@ float SearchParams::GetDynamicHybridRatio(int node_count) const {
         }
         case HybridRatioMode::PLATEAU: // p1=mid_ratio, p2=width [0,1]
              if (clamped_progress < (0.5f - p2/2.0f)) { // Ramp up
-                 float sub_progress = clamped_progress / (0.5f - p2/2.0f);
+                 float sub_progress = clamped_progress / std::max(0.001f, 0.5f - p2/2.0f);
                  ratio = min_r + (p1 - min_r) * sub_progress;
              } else if (clamped_progress > (0.5f + p2/2.0f)) { // Ramp up again
-                 float sub_progress = (clamped_progress - (0.5f + p2/2.0f)) / (0.5f - p2/2.0f);
+                 float sub_progress = (clamped_progress - (0.5f + p2/2.0f)) / std::max(0.001f, 0.5f - p2/2.0f);
                  ratio = p1 + (max_r - p1) * sub_progress;
              } else { // Plateau
                  ratio = p1;
