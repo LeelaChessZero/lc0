@@ -1,0 +1,286 @@
+name: Multi-Backend Lc0 Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux only, for now
+          - os: ubuntu-22.04
+            backend: sycl
+            artifact_name: sycl-ubuntu-22.04
+          - os: ubuntu-24.04
+            backend: sycl
+            artifact_name: sycl-ubuntu-24.04 
+          - os: ubuntu-22.04
+            backend: blas
+            artifact_name: blas-ubuntu-22.04
+          - os: ubuntu-24.04
+            backend: blas
+            artifact_name: blas-unbuntu-24.04 
+          - os: ubuntu-22.04
+            backend: cuda
+            artifact_name: cuda-12.9-ubuntu-22.04
+          - os: ubuntu-24.04
+            backend: cuda
+            artifact_name: cuda-12.9-ubuntu-24.04
+            
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Update submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+      - uses: dorny/paths-filter@v3.0.2
+        id: filter
+        with:
+          filters: |
+            sycl:
+              - 'src/neural/backends/sycl/**'
+            blas:
+              - 'src/neural/backends/blas/**'
+            cuda:
+              - 'src/neural/backends/cuda/**'
+            common_files:
+              # Engine files
+              - 'src/engine.cc'
+              - 'src/engine.h'
+              - 'src/engine_loop.cc'
+              - 'src/engine_loop.h'
+              - 'src/engine_test.cc'
+              - 'src/main.cc'
+              # Common filders
+              - 'src/chess/**'
+              - 'src/trainingdata/**'
+              - 'src/python/**'
+              - 'src/utils/**'
+              - 'src/tools/**'
+              - 'src/search/**'
+              - 'src/syzygy/**'
+              # Shared neural files
+              - 'src/neural/register.h'              
+              - 'src/neural/factory.cc'
+              - 'src/neural/common.h'
+              - 'src/neural/common.cc'
+              - 'src/neural/backend.cc'
+              - 'src/neural/backend.h'
+              - 'src/neural/batchsplit.cc'
+              - 'src/neural/batchsplit.h'
+              - 'src/neural/decoder.cc'
+              - 'src/neural/decoder.h'
+              - 'src/neural/encoder.cc'
+              - 'src/neural/encoder.h'
+              - 'src/neural/encoder_test.cc'
+              - 'src/neural/factory.cc'
+              - 'src/neural/factory.h'
+              - 'src/neural/loader.cc'
+              - 'src/neural/loader.h'
+              - 'src/neural/memcache.cc'
+              - 'src/neural/memcache.h'
+              - 'src/neural/mock_backend.h'
+              - 'src/neural/network.h'
+              - 'src/neural/network_legacy.cc'
+              - 'src/neural/network_legacy.h'
+              - 'src/neural/register.cc'
+              - 'src/neural/register.h'
+              - 'src/neural/shared_params.cc'
+              - 'src/neural/shared_params.h'
+              - 'src/neural/wrapper.cc'
+              - 'src/neural/wrapper.h'
+              # Shared backend files
+              - 'src/neural/backends/network_check.cc'
+              - 'src/neural/backends/network_demux.cc'
+              - 'src/neural/backends/network_mux.cc'
+              - 'src/neural/backends/network_onnx.cc'
+              - 'src/neural/backends/network_random.cc'
+              - 'src/neural/backends/network_record.cc'
+              - 'src/neural/backends/network_rr.cc'
+              - 'src/neural/backends/network_tf_cc.cc'
+              - 'src/neural/backends/network_trivial.cc'
+              # Shared Neural  folders
+              - 'src/neural/onnx/**'
+              - 'src/neural/tables/**'
+              # Workflow folder
+              - '.github/workflows/**'
+              # Build files
+              - 'meson.build'
+              - 'meson_options.txt'
+              # External folders
+              - 'subprojects/**'
+              - 'scripts/**'
+              - 'third_party/**'
+
+      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      # ~~  DEPENDENCY INSTALLATION ~~
+      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build curl binutils python3-pip
+          pip3 install meson==1.3.2
+          meson --version
+             
+      - name: Install SYCL Dependencies-(Intel oneAPI)
+        if: |
+          (matrix.backend == 'sycl' && steps.filter.outputs.common_files == 'true') ||
+          (matrix.backend == 'sycl' && steps.filter.outputs.sycl == 'true')
+        run: |
+          # Install Intel oneAPI DPC++ Compiler and dependencies
+          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            intel-oneapi-dpcpp-cpp-2025.2 \
+            intel-oneapi-dpcpp-ct \
+            intel-oneapi-mkl-devel \
+            intel-opencl-icd \
+            libtbbmalloc2 \
+            opencl-headers \
+            ocl-icd-opencl-dev
+            
+          # Verify icpx installation
+          export ICPX=/opt/intel/oneapi/compiler/2025.2/bin/icpx
+          if ! $ICPX --version; then
+            echo "Error: icpx compiler not found!"
+            exit 1
+          fi
+          $ICPX --version
+
+      - name: Install CUDA.12 Dependencies
+        if: |
+          (matrix.backend == 'cuda' && steps.filter.outputs.common_files == 'true') ||
+          (matrix.backend == 'cuda' && steps.filter.outputs.cuda == 'true')
+        run: |
+          # Install CUDA from NVIDIA's repo
+          if [ "${{ matrix.os }}" == "ubuntu-22.04" ]; then
+             wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
+             sudo mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
+             wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-ubuntu2204-12-9-local_12.9.1-575.57.08-1_amd64.deb
+             sudo dpkg -i cuda-repo-ubuntu2204-12-9-local_12.9.1-575.57.08-1_amd64.deb
+             sudo cp /var/cuda-repo-ubuntu2204-12-9-local/cuda-*-keyring.gpg /usr/share/keyrings/
+             sudo apt-get update
+             sudo apt-get -y install cuda-toolkit-12-9
+          else
+             wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
+             sudo mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
+             wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-ubuntu2404-12-9-local_12.9.1-575.57.08-1_amd64.deb
+             sudo dpkg -i cuda-repo-ubuntu2404-12-9-local_12.9.1-575.57.08-1_amd64.deb
+             sudo cp /var/cuda-repo-ubuntu2404-12-9-local/cuda-*-keyring.gpg /usr/share/keyrings/
+             sudo apt-get update
+             sudo apt-get -y install cuda-toolkit-12-9
+          fi
+
+      - name: Install BLAS Dependencies
+        if: |
+           (matrix.backend == 'blas' && steps.filter.outputs.common_files == 'true') || 
+           (matrix.backend == 'blas' && steps.filter.outputs.blas == 'true')
+        run: |
+             sudo apt-get install -y libblas-dev libopenblas-dev
+
+
+      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      # ~~~    BUILD & CONFIGURE   ~~~
+      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+      - name: Remove Build Directory
+        run: |
+          #Delete build dir
+          echo "Cleaning old build..."
+          rm -rf build          
+      - name: Configure Meson and Build SYCL
+        id: build_sycl
+        if:  |
+          (matrix.backend == 'sycl' && steps.filter.outputs.common_files == 'true') ||
+          (matrix.backend == 'sycl' && steps.filter.outputs.sycl == 'true')
+        run: |
+          # Source environment and set compiler for SYCL
+          source /opt/intel/oneapi/setvars.sh
+          # Set compilers manualy as Meson can sometimes find wrong compilers from the env.
+          unset AR
+          export CC=/opt/intel/oneapi/compiler/latest/bin/icx
+          export CXX=/opt/intel/oneapi/compiler/latest/bin/icpx
+          export RANLIB=/opt/intel/oneapi/compiler/latest/bin/xilib
+          export AR=/opt/intel/oneapi/compiler/latest/bin/compiler/llvm-ar
+          echo "Using CC compiler: $CC"
+          echo "Using CXX compiler: $CXX"
+          echo "Using AR: $AR"
+          echo "Using RANLIB: $RANLIB"
+          meson setup --buildtype release build -Dsycl=l0 \
+                      -Dgtest=false -Dnative_arch=false 
+          ninja -C build -v
+      - name: Configure Meson and Build CUDA
+        id: build_cuda
+        if: |
+          (matrix.backend == 'cuda' && steps.filter.outputs.common_files == 'true') ||
+          (matrix.backend == 'cuda' && steps.filter.outputs.cuda == 'true')
+        run: |
+          meson setup --buildtype release build \
+                      -Dplain_cuda=true -Dcudnn=false \
+                      -Dgtest=false -Dnative_arch=false
+          ninja -C build -v
+      - name: Configure Meson and Build BLAS
+        id: build_blas
+        if: |
+           (matrix.backend == 'blas' && steps.filter.outputs.common_files == 'true') || 
+           (matrix.backend == 'blas' && steps.filter.outputs.blas == 'true')
+        run: |
+          meson setup --buildtype release build -Dblas=true \
+                      -Dgtest=false -Dnative_arch=false
+          ninja -C build -v
+      - name: Upload Meson Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: build-logs-${{ matrix.artifact_name }}
+          path: build
+
+      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      # ~~~ Post Build Jobs     ~~~~~~~
+      # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      
+      - name: Download Network
+        if: >-
+          steps.build_sycl.conclusion == 'success' ||
+          steps.build_cuda.conclusion == 'success' ||
+          steps.build_blas.conclusion == 'success'
+        run: |
+          cd build
+          curl -L https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -o T79.pb.gz
+          touch -t 201801010000.00 T79.pb.gz
+      - name: Run tests
+        if: >-
+          steps.build_sycl.conclusion == 'success' ||
+          steps.build_cuda.conclusion == 'success' ||
+          steps.build_blas.conclusion == 'success'
+        run: |
+            # Skip cuda and sycl test as the work machine doesnt support them.
+            if [ "${{ matrix.backend }}" == "blas" ]; then
+             ./build/lc0 benchmark --backend=${{ matrix.backend }} --num-positions=2 --minibatch-size=7 --threads=2
+            fi
+      - name: Upload Build Artifact
+        if: >-
+          steps.build_sycl.conclusion == 'success' ||
+          steps.build_cuda.conclusion == 'success' ||
+          steps.build_blas.conclusion == 'success'
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: lc0-${{ matrix.artifact_name }}
+          path: |
+            build/lc0
+            build/T79.pb.gz
