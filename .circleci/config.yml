@@ -13,6 +13,11 @@ jobs:
             pip3 install meson==0.63
             pip3 install ninja
       - run:
+          name: Install onnxruntime
+          command: |
+            wget https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz -P /tmp
+            tar xzf /tmp/onnxruntime-linux-x64-1.22.0.tgz -C /tmp
+      - run:
           name: "Pull Submodules"
           command: git submodule update --init
       - run:
@@ -20,13 +25,13 @@ jobs:
           environment:
             CC: gcc-10
             CXX: g++-10
-          command: meson build-gcc -Dgtest=false
+          command: meson build-gcc -Dgtest=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
       - run:
           name: Meson Clang
           environment:
             CC: clang-12
             CXX: clang++-12
-          command: meson build-clang -Dgtest=false -Db_lto=false
+          command: meson build-clang -Dgtest=false -Db_lto=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
       - run:
           name: Build GCC
           command: |
