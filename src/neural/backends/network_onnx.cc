@@ -28,8 +28,10 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
+#include <iomanip>
 #include <iterator>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -333,9 +335,11 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
       // We need the batch size as well as the hash, as it is set after loading.
+      std::ostringstream oss;
+      oss << std::hex << hash;
       trt_options["trt_engine_cache_prefix"] =
           "Lc0_ONNX_TRT_ORT_" + Ort::GetVersionString() + "_batch_" +
-          std::to_string(batch_size) + "_" + std::format("{:x}", hash) + "_";
+          std::to_string(batch_size) + "_" + oss.str() + "_";
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_timing_cache_path"] = cache_dir;
