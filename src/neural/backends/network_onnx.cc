@@ -38,6 +38,14 @@
 #define USE_DML
 #endif
 
+#if __has_include("CL/opencl.hpp")
+#include "CL/opencl.hpp"
+#elif __has_include("OpenCL/opencl.hpp")
+#include "OpenCL/opencl.hpp"
+#else
+#include "opencl.hpp"
+#endif
+
 #include "cpu_provider_factory.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
@@ -54,9 +62,48 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT, OPENVINO };
 
 class OnnxNetwork;
+
+// OpenCl context wrapper struct.
+struct OpenCL {   
+    // Member variables
+    cl::Platform platform_;
+    cl::Context context_;
+    cl::Device device_;
+    cl::CommandQueue queue_;
+    
+    explicit OpenCL(std::shared_ptr<std::vector<cl_context_properties>> opencl_context_properties = nullptr) {
+       // Get all available OpenCL platforms
+       std::vector<cl::Platform> platforms;
+       cl::Platform::get(&platforms);
+       if (platforms.empty()) {
+         throw Exception("No OpenCL platforms found");
+        }
+       platform_ = platforms[0];
+       // Get GPU devices from the selected platform
+       std::vector<cl::Device> devices;
+       platform_.getDevices(CL_DEVICE_TYPE_GPU, &devices);
+       if (devices.empty()) {
+         throw Exception("No GPU devices found");
+        }
+       // Use the first GPU device
+       device_ = devices[0];
+       context_ = cl::Context(device_);
+       cl_command_queue_properties props = CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
+       queue_ = cl::CommandQueue(context_, device_, props);
+    }
+    
+    explicit OpenCL(cl_context context) {
+       context_ = cl::Context(context);
+       device_ = cl::Device(context_.getInfo<CL_CONTEXT_DEVICES>()[0]);
+       cl_command_queue_properties props = CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
+       queue_ = cl::CommandQueue(context_, device_, props);
+    }
+
+    cl_context get_handle() const { return context_.get(); }
+};
 
 template <typename DataType>
 class OnnxComputation : public NetworkComputation {
@@ -376,6 +423,25 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       api.ReleaseTensorRTProviderOptions(trt_options_v2);
       break;
     }
+    case OnnxProvider::OPENVINO: {
+      auto ocl_instance = std::make_shared<OpenCL>();
+      cl_context opencl_context = ocl_instance->context_.get();
+      options.SetEpSelectionPolicy(OrtExecutionProviderDevicePolicy_PREFER_GPU);
+      options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);
+      std::unordered_map<std::string, std::string> openvino_options;
+      openvino_options["device_type"] = "GPU"; 
+      openvino_options["precision"] = "FP16";
+      openvino_options["num_of_threads"] = "8";
+      openvino_options["num_streams"] = "8";
+      openvino_options["cache_dir"] = "openvino_cache";
+      openvino_options["context"] = 
+           std::to_string((unsigned long long)(void*)opencl_context);
+      openvino_options["enable_qdq_optimizer"] = "False";
+      // We will use the config_path.json later.
+      //openvino_options["load_config"] = "config_path.json";
+      options.AppendExecutionProvider_OpenVINO_V2(openvino_options);
+     break;
+    }
     case OnnxProvider::ROCM: {
       OrtROCMProviderOptions rocm_options;
       rocm_options.device_id = gpu;
@@ -514,6 +580,7 @@ REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
+REGISTER_NETWORK("onnx-openvino", MakeOnnxNetwork<OnnxProvider::OPENVINO>, 65)
 REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
