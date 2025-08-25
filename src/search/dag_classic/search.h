@@ -361,7 +361,7 @@ class SearchWorker {
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
         auto n = std::get<0>(*it);
-        auto nl = n->GetLowNode();
+        const auto& nl = n->GetLowNode();
         oss << n << ":" << n->GetNInFlight();
         if (nl) {
           oss << "(" << nl << ")";
