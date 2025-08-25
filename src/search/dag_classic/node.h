@@ -332,15 +332,15 @@ class Node {
   // the perspective of the player-to-move for the position. WL stands for "W
   // minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0f;
+  // Averaged draw probability. Works similarly to WL, except that D is not
+  // flipped depending on the side to move.
+  double d_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Pointer to a next sibling. nullptr if there are no further siblings.
   std::unique_ptr<Node> sibling_;
 
   // 4 byte fields.
-  // Averaged draw probability. Works similarly to WL, except that D is not
-  // flipped depending on the side to move.
-  float d_ = 0.0f;
   // Estimated remaining plies.
   float m_ = 0.0f;
   // How many completed visits this node had.
@@ -524,6 +524,9 @@ class LowNode {
   // perspective of the player-to-move for the position.
   // WL stands for "W minus L". Is equal to Q if draw score is 0.
   double wl_ = 0.0f;
+  // Averaged draw probability. Works similarly to WL, except that D is not
+  // flipped depending on the side to move.
+  double d_ = 0.0f;
 
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
@@ -532,9 +535,6 @@ class LowNode {
   std::unique_ptr<Node> child_;
 
   // 4 byte fields.
-  // Averaged draw probability. Works similarly to WL, except that D is not
-  // flipped depending on the side to move.
-  float d_ = 0.0f;
   // Estimated remaining plies.
   float m_ = 0.0f;
   // How many completed visits this node had.
