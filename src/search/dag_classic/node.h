@@ -287,7 +287,7 @@ class Node {
   float GetP() const { return edge_.GetP(); }
   void SetP(float val) { edge_.SetP(val); }
 
-  std::shared_ptr<LowNode> GetLowNode() const { return low_node_; }
+  const std::shared_ptr<LowNode>& GetLowNode() const { return low_node_; }
 
   void SetLowNode(std::shared_ptr<LowNode> low_node);
   void UnsetLowNode();
