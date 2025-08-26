@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <fstream>
 #include <list>
 #include <sstream>
 #include <thread>
@@ -430,14 +431,71 @@ void Node::UnsetLowNode() {
   low_node_.reset();
 }
 
+#ifndef NDEBUG
+namespace {
+static Node::VisitorId::storage current_visitor_id = 0;
+}
+
+Node::VisitorId::VisitorId() {
+  id_ = ++current_visitor_id;
+  if (id_ == 0)
+    id_ = ++current_visitor_id;
+}
+
+Node::VisitorId::~VisitorId() {
+  assert(current_visitor_id == id_);
+}
+
+bool LowNode::Visit(Node::VisitorId::type id) {
+  if (visitor_id_ == id)
+    return false;
+  visitor_id_ = id;
+  return true;
+}
+
+template<typename VisitorType, typename EdgeVisitorType>
+static void TreeWalk(const Node* node, bool as_opponent,
+                     Node::VisitorId::type id,
+                     VisitorType visitor, EdgeVisitorType edge) {
+  const std::shared_ptr<LowNode>& low_node = node->GetLowNode();
+  if (!low_node || !low_node->Visit(id)) {
+    return;
+  }
+
+  visitor(low_node.get(), as_opponent);
+
+  for (auto& child_edge : node->Edges()) {
+    auto child = child_edge.node();
+    if (child == nullptr) {
+      break;
+    }
+    edge(child, as_opponent, low_node.get());
+  }
+
+  for (auto& child_edge : node->Edges()) {
+    auto child = child_edge.node();
+    if (child == nullptr) {
+      return;
+    }
+    TreeWalk(child, !as_opponent, id, visitor, edge);
+  }
+}
+
 static std::string PtrToNodeName(const void* ptr) {
   std::ostringstream oss;
   oss << "n_" << ptr;
   return oss.str();
 }
 
-std::string LowNode::DotNodeString() const {
-  std::ostringstream oss;
+template<typename VisitorType, typename EdgeVisitorType>
+static void TreeWalk(const Node* node, bool as_opponent,
+                     VisitorType visitor, EdgeVisitorType edge) {
+  Node::VisitorId id{};
+  edge(node, as_opponent, nullptr);
+  TreeWalk(node, !as_opponent, id, visitor, edge);
+}
+
+void LowNode::DotNodeString(std::ofstream& oss) const {
   oss << PtrToNodeName(this) << " ["
       << "shape=box";
   // Adjust formatting to limit node size.
@@ -464,12 +522,10 @@ std::string LowNode::DotNodeString() const {
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)
       << "\\nChild=" << child_.get() << "\\n\"";
-  oss << "];";
-  return oss.str();
+  oss << "];" << std::endl;
 }
 
-std::string Node::DotEdgeString(bool as_opponent, const LowNode* parent) const {
-  std::ostringstream oss;
+void Node::DotEdgeString(std::ofstream& oss, bool as_opponent, const LowNode* parent) const {
   oss << (parent == nullptr ? "top" : PtrToNodeName(parent)) << " -> "
       << (low_node_ ? PtrToNodeName(low_node_.get()) : PtrToNodeName(this))
       << " [";
@@ -493,15 +549,10 @@ std::string Node::DotEdgeString(bool as_opponent, const LowNode* parent) const {
       << std::noshowpos                                               //
       << "\\nLowNode=" << low_node_.get() << "\\nParent=" << parent
       << "\\nIndex=" << index_ << "\\nSibling=" << sibling_.get() << "\\n\"";
-  oss << "];";
-  return oss.str();
+  oss << "];" << std::endl;
 }
 
-std::string Node::DotGraphString(bool as_opponent) const {
-  std::ostringstream oss;
-  std::unordered_set<const LowNode*> seen;
-  std::list<std::pair<const Node*, bool>> unvisited_fifo;
-
+void Node::DotGraphString(std::ofstream& oss, bool as_opponent) const {
   oss << "strict digraph {" << std::endl;
   oss << "edge ["
       << "headport=n"
@@ -514,83 +565,37 @@ std::string Node::DotGraphString(bool as_opponent) const {
       << "];" << std::endl;
   oss << "ranksep=" << 4.0f * std::log10(GetN()) << std::endl;
 
-  oss << DotEdgeString(!as_opponent) << std::endl;
-  if (low_node_) {
-    seen.insert(low_node_.get());
-    unvisited_fifo.push_back(std::pair(this, as_opponent));
-  }
-
-  while (!unvisited_fifo.empty()) {
-    auto [parent_node, parent_as_opponent] = unvisited_fifo.front();
-    unvisited_fifo.pop_front();
-
-    auto parent_low_node = parent_node->GetLowNode().get();
-    seen.insert(parent_low_node);
-    oss << parent_low_node->DotNodeString() << std::endl;
-
-    for (auto& child_edge : parent_node->Edges()) {
-      auto child = child_edge.node();
-      if (child == nullptr) break;
-
-      oss << child->DotEdgeString(parent_as_opponent) << std::endl;
-      auto child_low_node = child->GetLowNode().get();
-      if (child_low_node != nullptr &&
-          (seen.find(child_low_node) == seen.end())) {
-        seen.insert(child_low_node);
-        unvisited_fifo.push_back(std::pair(child, !parent_as_opponent));
-      }
-    }
-  }
+  TreeWalk(this, !as_opponent,
+    [&](const LowNode* low_node, bool) {
+      low_node->DotNodeString(oss);
+    },
+    [&](const Node* node, bool as_opponent, const LowNode* parent) {
+      node->DotEdgeString(oss, as_opponent, parent);
+    });
 
   oss << "}" << std::endl;
-
-  return oss.str();
 }
 
 bool Node::ZeroNInFlight() const {
-  std::unordered_set<const LowNode*> seen;
-  std::list<const Node*> unvisited_fifo;
   size_t nonzero_node_count = 0;
-
-  if (GetNInFlight() > 0) {
-    std::cerr << DebugString() << std::endl;
-    ++nonzero_node_count;
-  }
-  if (low_node_) {
-    seen.insert(low_node_.get());
-    unvisited_fifo.push_back(this);
-  }
-
-  while (!unvisited_fifo.empty()) {
-    auto parent_node = unvisited_fifo.front();
-    unvisited_fifo.pop_front();
-
-    for (auto& child_edge : parent_node->Edges()) {
-      auto child = child_edge.node();
-      if (child == nullptr) break;
-
-      if (child->GetNInFlight() > 0) {
-        std::cerr << child->DebugString() << std::endl;
+  TreeWalk(this, false,
+    [](const LowNode*, bool) {},
+    [&](const Node* node, bool, const LowNode*) {
+      if (node->GetNInFlight() > 0) [[unlikely]] {
+        CERR << node->DebugString() << std::endl;
         ++nonzero_node_count;
       }
-
-      auto child_low_node = child->GetLowNode().get();
-      if (child_low_node != nullptr &&
-          (seen.find(child_low_node) == seen.end())) {
-        seen.insert(child_low_node);
-        unvisited_fifo.push_back(child);
-      }
-    }
-  }
+    });
 
   if (nonzero_node_count > 0) {
-    std::cerr << "GetNInFlight() is nonzero on " << nonzero_node_count
+    CERR << "GetNInFlight() is nonzero on " << nonzero_node_count
               << " nodes" << std::endl;
     return false;
   }
 
   return true;
 }
+#endif
 
 void Node::SortEdges() const {
   assert(low_node_);
