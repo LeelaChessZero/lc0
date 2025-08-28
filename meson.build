@@ -340,7 +340,7 @@ if get_option('build_backends')
 
     eigen_dep = dependency('eigen3')
     # Check for needed header, bad dependency seen in the widl.
-    if eigen_dep.found() and cc.has_header('Eigen/Core')
+    if eigen_dep.found() and cc.has_header('Eigen/Core', dependencies: eigen_dep)
       deps += eigen_dep
     else
       deps += subproject('eigen').get_variable('eigen_dep')
