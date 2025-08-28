@@ -161,6 +161,7 @@ common_files += [
   'src/neural/register.cc',
   'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
+  'src/search/common/temperature.cc',
   'src/search/classic/node.cc',
   'src/syzygy/syzygy.cc',
   'src/trainingdata/reader.cc',
@@ -225,6 +226,7 @@ files += [
 
 files += [
   'src/search/instamove/instamove.cc',
+  'src/search/policyhead/policyhead.cc',
 ]
 
 includes += include_directories('src')
@@ -899,6 +901,11 @@ if get_option('gtest')
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:syzygy.xml', timeout: 90)
+
+  test('TemperatureTest',
+    executable('temperature_test', 'src/search/common/temperature_test.cc',
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+  ), args: '--gtest_output=xml:temperature.xml', timeout: 90)
 
   test('EncodePositionForNN',
     executable('encoder_test', 'src/neural/encoder_test.cc', pb_files,
