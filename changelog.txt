@@ -1,4 +1,101 @@
-﻿v0.31.0-rc1 (2024-03-25)
+﻿v0.32.0 (2025-08-21)
+~~~~~~~
+* Support for building with cuda 13.
+* README update.
+* Build system improvements.
+
+v0.32.0-rc2 (2025-08-12)
+~~~~~~~
+* Fix for onnx-trt bug, where the wrong network could be used from the cache.
+* Added code to detect RPE nets and give an error instead of bad results.
+* Better instructions in the readme and install script for onnx-trt.
+* Made `UCI_ShowWDL` again off by default again as some GUIs have issues.
+* Fixed a long standing issue when compiled with `-ffast-math` (or `icx -O3`).
+* Several improvements to the sycl backend.
+* Several improvements to the metal backend.
+* Refactored the rescorer code and training data header to make them usable by
+  external tools.
+* Relaxed cuda/cudnn version checks so that no warnings are shown for mismatched
+  versions that are supported.
+* Several build system updates.
+* Assorted small fixes and improvements.
+
+v0.32.0-rc1 (2025-07-18)
+~~~~~~~
+The code has been reorganized and undergone major changes. Therefore this
+changelog will be less detailed and describe the changes in major groups.
+* We have a new search API that allows search algorithms to co-exist. Currently
+  available are `classic` (the default), `dag-preview` (more later),
+  `valuehead` and `policyhead`. The default algorithm can be changed either at
+  build time by the `default_search` option or by renaming the executable to
+  include the algorithm name (e.g. lc0-valuehead).
+* We also have a new backend interface that is chess oriented and not tied to
+  the network architecture. The existing backends still use the old interface
+  through a wrapper.
+* The source code is reorganized, with a more logical directory structure.
+* The original search was ported to the new search and backend interfaces and
+  is renamed to `classic`. This has allowed some streamlining and
+  simplifications.
+* The `dag-preview` search is the DAG algorithm that lived in a separate branch
+  up to now. It hasn't been so well tested, that's why it has "preview" in its
+  name for now, but lives in the `src/search/dag-classic` directory.
+* The `valuehead` search replaces `ValueOnly` mode and selects the move with the
+  best value head evaluation.
+* The `policyhead` search is equivalent to a single node search, selecting the
+  best move using just the policy head.
+* The new `default_backend` build option allows to override the fixed priority
+  for the backend used by default.
+* The new `native_arch` build option to override the `-march=native` compiler
+  default for linux release builds, to help with distribution package creation.
+* We have a new `sycl` backend that will work with amd, intel and nvidia gpus.
+* There is also a new `onnx-trt` backend, using tensorrt on nvidia gpus.
+* Support simple/normal/pro mode in options was cleaned up, using a common
+  mechanism.
+* Added the `wait` uci extension command to allow running simple tests from the
+  command line.
+* Removed the `fen` uci extension command as it was unnecessarily complicating
+  things.
+* Some preliminary fp8 support was added for onnx and xla. This is not
+  functional, just there to make experimentation easier.
+* Several build system changes and improvements.
+* We now generate binaries for cuda 12, onnx-trt and macos.
+* Support for using lc0 with openbench.
+* New `bench` mode for a quicker benchmark.
+* Assorted small fixes and improvements.
+
+v0.31.2 (2024-10-20)
+~~~~~~~
+* Updated the WDL_mu centipawn fallback.
+* Fix for build issues with newer Linux c++ libraries.
+* Fix for an XLA Mish bug.
+* Minor README.md update.
+
+v0.31.1 (2024-08-11)
+~~~~~~~
+* Make WDL_mu score type work as intended.
+* Fix macos CI builds.
+
+v0.31.0 (2024-06-16)
+~~~~~~~
+* No changes from rc3.
+
+v0.31.0-rc3 (2024-05-29)
+~~~~~~~
+* The `WDLDrawRateTarget` option now accepts the value 0 (new default) to retain
+  raw WDL values if `WDLCalibrationElo` is set to 0 (default).
+* Improvements to the verbose move stats if `WDLEvalObjectivity` is used.
+* The centipawn score is displayed by default for old nets without WDL output.
+* Some build system improvements.
+
+v0.31.0-rc2 (2024-04-16)
+~~~~~~~
+* Changed cuda compilation options to use `-arch=native` or `-arch=all-major`
+  if no specific version is requested, with fallback for older cuda that don't
+  support those options.
+* Updated android builds to use openblas 0.3.27.
+* A few small fixes.
+
+v0.31.0-rc1 (2024-03-25)
 ~~~~~~~
 * The blas, cuda, eigen, metal and onnx backends now have support for multihead
   network architecture and can run BT3/BT4 nets.
@@ -39,6 +136,9 @@
   natively higher draw rates.
 * Made the WDL Rescale sharpness limit configurable via the `--wdl-max-s` hidden
   option.
+* The search task workers can be set automatically, to either 0 for cpu backends
+  or up to 4 depending on the number of cpu cores. This is enabled by
+  `--task-workers=-1` (the new default).
 * Several assorted fixes and code cleanups.
 
 v0.30.0 (2023-07-21)

@@ -142,7 +142,7 @@ bool ConfigFile::ParseFile(std::string& filename) {
     if (line.substr(0, 1) == "#") continue;
     // Skip blank lines.
     if (line.length() == 0) continue;
-    // Allow long form arugments that omit '--'.  If omitted, add here.
+    // Allow long form arguments that omit '--'.  If omitted, add here.
     if (line.substr(0, 1) != "-" && line.substr(0, 2) != "--") {
       line = "--" + line;
     }

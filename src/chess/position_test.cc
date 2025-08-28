@@ -51,7 +51,7 @@ TEST(Position, SetFenGetFen) {
     history.Reset(board, no_capture_ply,
                   2 * game_move - (board.flipped() ? 1 : 2));
     Position pos = history.Last();
-    std::string target_fen = GetFen(pos);
+    std::string target_fen = PositionToFen(pos);
     EXPECT_EQ(source_fens[i], target_fen);
   }
 }
@@ -62,12 +62,12 @@ TEST(PositionHistory, ComputeLastMoveRepetitionsWithoutLegalEnPassant) {
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
   history.Reset(board, 2, 30);
-  history.Append(Move("f7f8", true));
-  history.Append(Move("f2f4", false));
-  history.Append(Move("d7h7", true));
-  history.Append(Move("c4d3", false));
-  history.Append(Move("h7d7", true));
-  history.Append(Move("d3c4", false));
+  history.Append(history.Last().GetBoard().ParseMove("f7f8"));
+  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7h7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4d3"));
+  history.Append(history.Last().GetBoard().ParseMove("h7d7"));
+  history.Append(history.Last().GetBoard().ParseMove("d3c4"));
   int history_idx = history.GetLength() - 1;
   const Position& repeated_position = history.GetPositionAt(history_idx);
   EXPECT_EQ(repeated_position.GetRepetitions(), 1);
@@ -78,12 +78,12 @@ TEST(PositionHistory, ComputeLastMoveRepetitionsWithLegalEnPassant) {
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP2p1/P3P2P/5P2/1R2B3 b - - 2 30");
   history.Reset(board, 2, 30);
-  history.Append(Move("f7f8", true));
-  history.Append(Move("f2f4", false));
-  history.Append(Move("d7h7", true));
-  history.Append(Move("c4d3", false));
-  history.Append(Move("h7d7", true));
-  history.Append(Move("d3c4", false));
+  history.Append(history.Last().GetBoard().ParseMove("f7f8"));
+  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7h7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4d3"));
+  history.Append(history.Last().GetBoard().ParseMove("h7d7"));
+  history.Append(history.Last().GetBoard().ParseMove("d3c4"));
   int history_idx = history.GetLength() - 1;
   const Position& repeated_position = history.GetPositionAt(history_idx);
   EXPECT_EQ(repeated_position.GetRepetitions(), 0);
@@ -94,12 +94,12 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveCurent) {
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
   history.Reset(board, 2, 30);
-  history.Append(Move("f7f8", true));
-  history.Append(Move("f2f4", false));
-  history.Append(Move("d7h7", true));
-  history.Append(Move("c4d3", false));
-  history.Append(Move("h7d7", true));
-  history.Append(Move("d3c4", false));
+  history.Append(history.Last().GetBoard().ParseMove("f7f8"));
+  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7h7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4d3"));
+  history.Append(history.Last().GetBoard().ParseMove("h7d7"));
+  history.Append(history.Last().GetBoard().ParseMove("d3c4"));
   EXPECT_TRUE(history.DidRepeatSinceLastZeroingMove());
 }
 
@@ -108,13 +108,13 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveBefore) {
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
   history.Reset(board, 2, 30);
-  history.Append(Move("f7f8", true));
-  history.Append(Move("f2f4", false));
-  history.Append(Move("d7h7", true));
-  history.Append(Move("c4d3", false));
-  history.Append(Move("h7d7", true));
-  history.Append(Move("d3c4", false));
-  history.Append(Move("d7e7", true));
+  history.Append(history.Last().GetBoard().ParseMove("f7f8"));
+  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7h7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4d3"));
+  history.Append(history.Last().GetBoard().ParseMove("h7d7"));
+  history.Append(history.Last().GetBoard().ParseMove("d3c4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7e7"));
   EXPECT_TRUE(history.DidRepeatSinceLastZeroingMove());
 }
 
@@ -123,14 +123,14 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveOlder) {
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
   history.Reset(board, 2, 30);
-  history.Append(Move("f7f8", true));
-  history.Append(Move("f2f4", false));
-  history.Append(Move("d7h7", true));
-  history.Append(Move("c4d3", false));
-  history.Append(Move("h7d7", true));
-  history.Append(Move("d3c4", false));
-  history.Append(Move("d7e7", true));
-  history.Append(Move("c4b4", false));
+  history.Append(history.Last().GetBoard().ParseMove("f7f8"));
+  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7h7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4d3"));
+  history.Append(history.Last().GetBoard().ParseMove("h7d7"));
+  history.Append(history.Last().GetBoard().ParseMove("d3c4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7e7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4b4"));
   EXPECT_TRUE(history.DidRepeatSinceLastZeroingMove());
 }
 
@@ -139,15 +139,15 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveBeforeZero) {
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
   history.Reset(board, 2, 30);
-  history.Append(Move("f7f8", true));
-  history.Append(Move("f2f4", false));
-  history.Append(Move("d7h7", true));
-  history.Append(Move("c4d3", false));
-  history.Append(Move("h7d7", true));
-  history.Append(Move("d3c4", false));
-  history.Append(Move("d7e7", true));
-  history.Append(Move("c4b4", false));
-  history.Append(Move("h5h4", true));
+  history.Append(history.Last().GetBoard().ParseMove("f7f8"));
+  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7h7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4d3"));
+  history.Append(history.Last().GetBoard().ParseMove("h7d7"));
+  history.Append(history.Last().GetBoard().ParseMove("d3c4"));
+  history.Append(history.Last().GetBoard().ParseMove("d7e7"));
+  history.Append(history.Last().GetBoard().ParseMove("c4b4"));
+  history.Append(history.Last().GetBoard().ParseMove("h5h4"));
   EXPECT_FALSE(history.DidRepeatSinceLastZeroingMove());
 }
 
@@ -156,8 +156,8 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveNeverRepeated) {
   PositionHistory history;
   board.SetFromFen("3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30");
   history.Reset(board, 2, 30);
-  history.Append(Move("f7f8", true));
-  history.Append(Move("f2f4", false));
+  history.Append(history.Last().GetBoard().ParseMove("f7f8"));
+  history.Append(history.Last().GetBoard().ParseMove("f2f4"));
   EXPECT_FALSE(history.DidRepeatSinceLastZeroingMove());
 }
 

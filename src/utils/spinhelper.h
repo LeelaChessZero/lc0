@@ -44,20 +44,17 @@ class SpinHelper {
 class ExponentialBackoffSpinHelper : public SpinHelper {
  public:
   ExponentialBackoffSpinHelper()
-    : backoff_iters_(kMinBackoffIters),
-      spin_to_sleep_iters_(0) {
-  }
+      : backoff_iters_(kMinBackoffIters), spin_to_sleep_iters_(0) {}
 
   virtual void Backoff() {
     thread_local std::uniform_int_distribution<size_t> distribution;
     thread_local std::minstd_rand generator(std::random_device{}());
-    const size_t spin_count = distribution(generator, decltype(distribution)::param_type{0, backoff_iters_});
+    const size_t spin_count = distribution(
+        generator, decltype(distribution)::param_type{0, backoff_iters_});
 
-    for (volatile size_t i=0; i<spin_count; i++) {
-      SpinloopPause();
-    }
+    for (size_t i = 0; i < spin_count; i++) SpinloopPause();
 
-    backoff_iters_ = std::min(2*backoff_iters_, kMaxBackoffIters);
+    backoff_iters_ = std::min(2 * backoff_iters_, kMaxBackoffIters);
     spin_to_sleep_iters_ = 0;
   }
 

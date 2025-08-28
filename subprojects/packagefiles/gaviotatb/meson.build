@@ -24,11 +24,22 @@ gaviotatb_includes = [
   'compression',
   'compression/huffman',
   'compression/liblzf',
-  'compression/lzma'
+  'compression/lzma',
+  'compression/zlib'
 ]
 
+gaviota_lib = static_library('gaviota',
+  gaviotatb_src,
+  c_args : meson.get_compiler('c').get_supported_arguments([
+    '-Dz_uLong=uLong',
+    '-Wno-misleading-indentation',
+    '-Wno-self-assign',
+    '-Wno-language-extension-token',
+    '-Wno-expansion-to-defined']),
+  include_directories : gaviotatb_includes)
+
+incdir = include_directories('.')
+
 gaviotatb_dep = declare_dependency(
-  sources: gaviotatb_src,
-  include_directories: gaviotatb_includes,
-  compile_args:'-Dz_uLong=uLong'
-)
+  link_with : gaviota_lib,
+  include_directories : gaviotatb_includes)

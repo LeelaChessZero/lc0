@@ -73,9 +73,14 @@ option('native_cuda',
        value: true,
        description: 'build cuda code for native arch only (if supported)')
 
+option('native_arch',
+       type: 'boolean',
+       value: true, 
+       description: 'build code for native arch only')
+
 option('cudnn',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable cuDNN backend')
 
 option('plain_cuda',
@@ -90,12 +95,12 @@ option('cutlass',
 
 option('opencl',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable OpenCL backend')
 
 option('dx',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable DirectX12 backend')
 
 option('tensorflow',
@@ -115,7 +120,7 @@ option('openblas',
 
 option('mkl',
        type: 'boolean',
-       value: true,
+       value: false,
        description: 'Enable MKL BLAS support')
 
 option('dnnl',
@@ -188,20 +193,56 @@ option('cc_cuda',
        value: '',
        description: 'Build for a specific cuda CC, e.g. -Dcc_cuda=35 for CC 3.5')
 
-option('onnx_libdir',
+option('amd_gfx',
        type: 'string',
        value: '',
+       description: 'Build for a specific AMD GPU architecture, e.g. -Damd_gfx=gfx90a for gfx90a')
+
+option('onnx',
+       type: 'boolean',
+       value: true,
+       description: 'Enable ONNX backends')
+
+option('onnx_libdir',
+       type: 'string',
+       value: '/usr/lib/',
        description: 'Paths to ONNX runtime libraries')
 
 option('onnx_include',
        type: 'string',
-       value: '',
+       value: '/usr/include/onnxruntime/',
        description: 'Paths to ONNX runtime includes')
 
 option('xla',
        type: 'boolean',
        value: false,
        description: 'Enable XLA backend')
+
+option('sycl',
+       type: 'combo',
+	   choices : ['off', 'l0', 'amd', 'nvidia'],
+       value: 'off',
+       description: 'Enable SYCL backend')
+
+option('dpct_include',
+       type: 'array',
+       value: ['/opt/intel/oneapi/dpcpp-ct/latest/include'],
+       description: 'Path to DPC++ Compatibility Tool includes')
+
+option('onemkl_include',
+       type: 'array',
+       value: ['/opt/intel/oneapi/mkl/latest/include'],
+       description: 'Path to oneMKL includes')
+
+option('hip_libdirs',
+       type: 'array',
+       value: ['/opt/rocm/lib'],
+       description: 'Paths to AMD HIP libraries')
+
+option('hip_include',
+       type: 'array',
+       value: ['/opt/rocm/include'],
+       description: 'Path to AMD HIP includes')
 
 option('lc0',
        type: 'boolean',
@@ -212,3 +253,18 @@ option('rescorer',
        type: 'boolean',
        value: false,
        description: 'Build rescorer')
+
+option('default_search',
+       type: 'string',
+       value: '',
+       description: 'Default search algorithm to use, e.g. -Ddefault_search=classic')
+
+option('default_backend',
+       type: 'string',
+       value: '',
+       description: 'Default backend to use, e.g. -Ddefault_backend=onnx-trt')
+
+option('dag_classic',
+       type: 'boolean',
+       value: true,
+       description: 'Enable dag-classic search algorithm')

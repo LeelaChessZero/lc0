@@ -150,8 +150,7 @@ class HashKeyedCache {
     size_t idx = key % hash_.size();
     while (true) {
       if (!hash_[idx].in_use) break;
-      if (hash_[idx].key == key &&
-          hash_[idx].value.get() == value) {
+      if (hash_[idx].key == key && hash_[idx].value.get() == value) {
         --hash_[idx].pins;
         return;
       }
@@ -301,6 +300,7 @@ class HashKeyedCacheLock {
   HashKeyedCacheLock(const HashKeyedCacheLock&) = delete;
 
   // Returns whether lock holds any value.
+  bool holds_value() const { return value_; }
   operator bool() const { return value_; }
 
   // Gets the value.

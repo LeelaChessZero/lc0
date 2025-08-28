@@ -41,7 +41,7 @@
 
 namespace lczero {
 
-inline uint8_t FP32toFP8E5M2(float f32) {
+inline uint8_t FP32toFP8E5M2(float f32, bool saturate = true) {
   unsigned int x;
   unsigned int sign = 0;
   memcpy(&x, &f32, sizeof(float));
@@ -50,6 +50,8 @@ inline uint8_t FP32toFP8E5M2(float f32) {
   if (x >= 0x47700000) {
     if (x > 0x7f800000) {
       x = 0x7f;
+    } else if (saturate) {
+      x = 0x7b;
     } else {
       x = 0x7c;
     }
@@ -68,6 +70,10 @@ inline uint8_t FP32toFP8E5M2(float f32) {
     x >>= 21;
   }
   return x | sign;
+}
+
+inline uint8_t FP32toFP8E5M2_Saturate(float f32) {
+  return FP32toFP8E5M2(f32, true);
 }
 
 #if defined(NO_POPCNT) || defined(NO_F16C) || \
@@ -102,14 +108,18 @@ inline float FP8E5M2toFP32(uint8_t f8) {
 
 #endif
 
-inline uint8_t FP32toFP8E4M3FN(float f32) {
+inline uint8_t FP32toFP8E4M3FN(float f32, bool saturate = true) {
   unsigned int x;
   unsigned int sign = 0;
   memcpy(&x, &f32, sizeof(float));
   if (x & 0x80000000) sign = 0x80;
   x &= 0x7fffffff;
-  if (x >= 0x43f80000) {
-    x = 0x7f;
+  if (x >= 0x43e80000) {
+    if (saturate && x <= 0x7f800000) {
+      x = 0x7e;
+    } else {
+      x = 0x7f;
+    }
   } else if (x < 0x3a800000) {
     x = 0;
   } else if (x < 0x3c800000) {
