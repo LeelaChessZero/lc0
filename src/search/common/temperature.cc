@@ -8,18 +8,21 @@
 
 namespace lczero {
 
-double EffectiveTau(const TempParams& p, int fullmove_number) {
-  double tau = p.temperature;
-  if (p.temp_cutoff_move > 0 && fullmove_number >= p.temp_cutoff_move) {
+float EffectiveTau(const TempParams& p, int ply) {
+  const int moves = ply / 2;
+
+  float tau = p.temperature;
+  if (p.temp_cutoff_move > 0 && (moves + 1) >= p.temp_cutoff_move) {
     tau = p.temp_endgame;
-  } else if (p.temp_decay_moves > 0 && tau > 0) {
-    int moves_played = fullmove_number - 1;
-    if (moves_played >= p.temp_decay_moves) {
+  } else if (tau > 0.0 && p.temp_decay_moves > 0) {
+    if (moves >= p.temp_decay_moves) {
       tau = 0.0;
     } else {
-      tau *= static_cast<double>(p.temp_decay_moves - moves_played) /
+      tau *= static_cast<double>(p.temp_decay_moves - moves) /
              static_cast<double>(p.temp_decay_moves);
     }
+    // don't allow temp to decay below endgame temp
+    if (tau < p.temp_endgame) tau = p.temp_endgame;
   }
   if (tau < 0.0) tau = 0.0;
   return tau;
@@ -28,7 +31,7 @@ double EffectiveTau(const TempParams& p, int fullmove_number) {
 int SampleWithTemperature(std::span<const double> base_weights,
                           std::span<const double> winprob,
                           const TempParams& p,
-                          double tau,
+                          float tau,
                           Random& rng,
                           int fallback_index) {
   const size_t n = base_weights.size();
@@ -40,7 +43,7 @@ int SampleWithTemperature(std::span<const double> base_weights,
     }
   }
   double sum = 0.0;
-  const double inv_tau = tau > 0 ? 1.0 / tau : 0.0;
+  const double inv_tau = tau > 0 ? 1.0 / static_cast<double>(tau) : 0.0;
   for (size_t i = 0; i < n; ++i) {
     double w = base_weights[i];
     if (!winprob.empty() && max_winprob - winprob[i] > p.value_cutoff) {

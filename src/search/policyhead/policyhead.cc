@@ -119,10 +119,10 @@ class PolicyHeadTempSearch : public InstamoveSearch {
     }};
     uci_responder_->OutputThinkingInfo(&infos);
 
-    Move best_move;
-    const int fullmove = positions.back().GetGamePly() / 2 + 1;
-    const double tau = EffectiveTau(params_, fullmove);
-    if (tau > 0.0 && legal_moves.size() > 1) {
+  Move best_move;
+  const int ply = positions.back().GetGamePly();
+  const float tau = EffectiveTau(params_, ply);
+  if (tau > 0.0 && legal_moves.size() > 1) {
       std::vector<double> policy(res[0].p.begin(), res[0].p.end());
       TempParams p = params_;
       p.visit_offset = 0.0;
