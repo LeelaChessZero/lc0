@@ -206,7 +206,7 @@ Search::Search(const NodeTree& tree, Backend* backend,
 }
 
 namespace {
-void ApplyDirichletNoise(Node* node, float eps, double alpha) {
+void ApplyDirichletNoise(LowNode* node, float eps, double alpha) {
   float total = 0;
   std::vector<float> noise;
 
@@ -219,10 +219,12 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
   if (total < std::numeric_limits<float>::min()) return;
 
   int noise_idx = 0;
-  for (const auto& child : node->Edges()) {
-    auto* edge = child.edge();
-    edge->SetP(edge->GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
-  }
+  auto edges = node->GetEdges();
+  std::transform(edges, edges + node->GetNumEdges(), edges,
+      [&](auto edge) {
+        edge.SetP(edge.GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
+        return edge;
+      });
 }
 }  // namespace
 
@@ -2008,8 +2010,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     }
   }
 
-  picked_node.nn_queried = true;  // Node::SetLowNode() required.
-
   // Check the transposition table first and NN cache second before asking for
   // NN evaluation.
   picked_node.hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
@@ -2044,67 +2044,43 @@ void SearchWorker::RunNNComputation() {
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
-  SharedMutex::Lock nodes_lock(search_->nodes_mutex_);
   // Populate NN/cached results, or terminal results, into nodes.
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process);
   }
 }
 
-void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process)
-    REQUIRES(search_->nodes_mutex_) {
+void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   if (!node_to_process->nn_queried) return;
 
-  if (!node_to_process->is_tt_hit) {
-    auto [tt_iter, is_tt_miss] = search_->tt_->insert(
-        {node_to_process->hash, node_to_process->tt_low_node});
-    auto wdl_rescale = [&]() {
-      if (params_.GetWDLRescaleRatio() != 1.0f ||
-          (params_.GetWDLRescaleDiff() != 0.0f &&
-           search_->contempt_mode_ != ContemptMode::NONE)) {
-        // Check whether root moves are from the set perspective.
-        bool root_stm = search_->contempt_mode_ == ContemptMode::WHITE;
-        auto sign = (root_stm ^ node_to_process->history.IsBlackToMove())
-                        ? 1.0f
-                        : -1.0f;
-        WDLRescale(node_to_process->eval->q, node_to_process->eval->d,
-                   params_.GetWDLRescaleRatio(),
-                   search_->contempt_mode_ == ContemptMode::NONE
-                       ? 0
-                       : params_.GetWDLRescaleDiff(),
-                   sign, false, params_.GetWDLMaxS());
-      }
-    };
-    if (is_tt_miss) {
-      assert(!tt_iter->second.expired());
-      wdl_rescale();
-      node_to_process->tt_low_node->SetNNEval(node_to_process->eval.get());
-      node_to_process->tt_low_node->SortEdges();
-    } else {
-      auto tt_low_node = tt_iter->second.lock();
-      if (!tt_low_node) {
-        tt_iter->second = node_to_process->tt_low_node;
-        wdl_rescale();
-        node_to_process->tt_low_node->SetNNEval(node_to_process->eval.get());
-        node_to_process->tt_low_node->SortEdges();
-      } else {
-        assert(!tt_iter->second.expired());
-        node_to_process->tt_low_node = tt_iter->second.lock();
-      }
+  auto wdl_rescale = [&]() {
+    if (params_.GetWDLRescaleRatio() != 1.0f ||
+        (params_.GetWDLRescaleDiff() != 0.0f &&
+         search_->contempt_mode_ != ContemptMode::NONE)) {
+      // Check whether root moves are from the set perspective.
+      bool root_stm = search_->contempt_mode_ == ContemptMode::WHITE;
+      auto sign = (root_stm ^ node_to_process->history.IsBlackToMove())
+                      ? 1.0f
+                      : -1.0f;
+      WDLRescale(node_to_process->eval->q, node_to_process->eval->d,
+                 params_.GetWDLRescaleRatio(),
+                 search_->contempt_mode_ == ContemptMode::NONE
+                     ? 0
+                     : params_.GetWDLRescaleDiff(),
+                 sign, false, params_.GetWDLMaxS());
     }
-  }
+  };
+  wdl_rescale();
+  node_to_process->tt_low_node->SetNNEval(node_to_process->eval.get());
+  node_to_process->tt_low_node->SortEdges();
 
   // Add NN results to node.
   Node* node = node_to_process->node;
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    node->SetLowNode(
-        std::make_shared<LowNode>(*node_to_process->tt_low_node.get()));
-    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
-                        params_.GetNoiseAlpha());
-    node->SortEdges();
-  } else {
-    node->SetLowNode(node_to_process->tt_low_node);
+    ApplyDirichletNoise(node_to_process->tt_low_node.get(),
+                        params_.GetNoiseEpsilon(), params_.GetNoiseAlpha());
+    node_to_process->tt_low_node->SortEdges();
   }
 }
 
@@ -2188,6 +2164,27 @@ void SearchWorker::DoBackupUpdateSingleNode(
   }
 
   auto path = node_to_process.path;
+
+  if (node_to_process.nn_queried) {
+    auto [tt_iter, is_tt_miss] = search_->tt_->try_emplace(
+        node_to_process.hash, node_to_process.tt_low_node);
+    if (is_tt_miss) {
+      assert(!tt_iter->second.expired());
+      node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+    } else {
+      auto tt_low_node = tt_iter->second.lock();
+      if (!tt_low_node) {
+        tt_iter->second = node_to_process.tt_low_node;
+        node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+      } else {
+        assert(!tt_iter->second.expired());
+        node_to_process.node->SetLowNode(tt_low_node);
+      }
+    }
+  } else if (node_to_process.is_tt_hit) {
+    node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+  }
+
   auto [n, nr, nm] = path.back();
   // For the first visit to a terminal, maybe update parent bounds too.
   auto update_parent_bounds =
