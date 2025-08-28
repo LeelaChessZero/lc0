@@ -1290,10 +1290,10 @@ void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
   int cur_n = 0;
-  {
-    SharedMutex::Lock lock(search_->nodes_mutex_);
-    cur_n = search_->root_node_->GetN();
-  }
+  // We take the nodes_mutex_ only once to avoid bouncing between this thread
+  // and a thread returning from RunNNComputation.
+  SharedMutex::Lock lock(search_->nodes_mutex_);
+  cur_n = search_->root_node_->GetN();
   // TODO: GetEstimatedRemainingPlayouts has already had smart pruning factor
   // applied, which doesn't clearly make sense to include here...
   int64_t remaining_n =
@@ -1347,10 +1347,6 @@ void SearchWorker::GatherMinibatch() {
     }
 
     {
-      // This lock must be held until after the task_completed_ wait succeeds
-      // below. Since the tasks perform work which assumes they have the lock,
-      // even though actually this thread does.
-      SharedMutex::Lock lock(search_->nodes_mutex_);
 
       bool needs_wait = false;
       int ppt_start = new_start;
@@ -1394,7 +1390,6 @@ void SearchWorker::GatherMinibatch() {
       }
     }
     if (some_ooo) {
-      SharedMutex::Lock lock(search_->nodes_mutex_);
       for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start;
            i--) {
         // If there was any OOO, revert 'all' new collisions - it isn't possible
@@ -1425,7 +1420,6 @@ void SearchWorker::GatherMinibatch() {
         // Check to see if we can upsize the collision to exit sooner.
         if (picked_node.maxvisit > 0 &&
             collisions_left > picked_node.multivisit) {
-          SharedMutex::Lock lock(search_->nodes_mutex_);
           int extra = std::min(picked_node.maxvisit, collisions_left) -
                       picked_node.multivisit;
           picked_node.multivisit += extra;
@@ -1441,7 +1435,8 @@ void SearchWorker::GatherMinibatch() {
   }
 }
 
-void SearchWorker::ProcessPickedTask(int start_idx, int end_idx) {
+void SearchWorker::ProcessPickedTask(int start_idx, int end_idx)
+    REQUIRES(search_->nodes_mutex_) {
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
@@ -1479,7 +1474,8 @@ int SearchWorker::WaitForTasks() {
   }
 }
 
-void SearchWorker::PickNodesToExtend(int collision_limit) {
+void SearchWorker::PickNodesToExtend(int collision_limit)
+    REQUIRES(search_->nodes_mutex_) {
   ResetTasks();
   if (task_workers_ > 0 && !search_->backend_attributes_.runs_on_cpu) {
     // While nothing is ready yet - wake the task runners so they are ready to
@@ -1488,10 +1484,6 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
     task_added_.notify_all();
   }
   std::vector<Move> empty_movelist;
-  // This lock must be held until after the task_completed_ wait succeeds below.
-  // Since the tasks perform work which assumes they have the lock, even though
-  // actually this thread does.
-  SharedMutex::Lock lock(search_->nodes_mutex_);
   history_.Trim(search_->played_history_.GetLength());
   PickNodesToExtendTask({std::make_tuple(search_->root_node_, 0, 0)},
                         collision_limit, history_, &minibatch_,
