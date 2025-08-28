@@ -95,7 +95,7 @@ class InstamoveSearch : public SearchBase {
 
 class PolicyHeadTempSearch : public InstamoveSearch {
  public:
-  PolicyHeadTempSearch(UciResponder* responder, TempParams params)
+  PolicyHeadTempSearch(UciResponder* responder, TemperatureParams params)
       : InstamoveSearch(responder), params_(params) {}
 
  private:
@@ -119,12 +119,12 @@ class PolicyHeadTempSearch : public InstamoveSearch {
     }};
     uci_responder_->OutputThinkingInfo(&infos);
 
-  Move best_move;
-  const int ply = positions.back().GetGamePly();
-  const float tau = EffectiveTau(params_, ply);
-  if (tau > 0.0 && legal_moves.size() > 1) {
+    Move best_move;
+    const int ply = positions.back().GetGamePly();
+    const float tau = EffectiveTau(params_, ply);
+    if (tau > 0.0 && legal_moves.size() > 1) {
       std::vector<double> policy(res[0].p.begin(), res[0].p.end());
-      TempParams p = params_;
+      TemperatureParams p = params_;
       p.visit_offset = 0.0;
       int idx = SampleWithTemperature(policy, std::span<const double>(), p, tau,
                                       Random::Get(),
@@ -136,7 +136,7 @@ class PolicyHeadTempSearch : public InstamoveSearch {
     return best_move;
   }
 
-  TempParams params_;
+  TemperatureParams params_;
 };
 
 class PolicyHeadTempFactory : public SearchFactory {
@@ -147,9 +147,10 @@ class PolicyHeadTempFactory : public SearchFactory {
   std::unique_ptr<SearchBase> CreateSearch(UciResponder* responder,
                                            const OptionsDict* options) const override {
     classic::BaseSearchParams base_params(*options);
-    TempParams params{
+    TemperatureParams params{
         .temperature = base_params.GetTemperature(),
         .temp_decay_moves = base_params.GetTempDecayMoves(),
+        .temp_decay_delay_moves = base_params.GetTempDecayDelayMoves(),
         .temp_cutoff_move = base_params.GetTemperatureCutoffMove(),
         .temp_endgame = base_params.GetTemperatureEndgame(),
         .value_cutoff = base_params.GetTemperatureWinpctCutoff(),
