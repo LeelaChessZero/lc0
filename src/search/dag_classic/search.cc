@@ -1459,7 +1459,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx)
   }
 }
 
-#define MAX_TASKS 100
+#define MAX_TASKS 256
 
 void SearchWorker::ResetTasks() {
   task_count_.store(0, std::memory_order_release);
