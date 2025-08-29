@@ -41,6 +41,7 @@
 #include "utils/fastmath.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
+#include "search/common/temperature.h"
 
 namespace lczero {
 namespace dag_classic {
