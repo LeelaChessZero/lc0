@@ -107,17 +107,18 @@ class PolicyHeadTempSearch : public InstamoveSearch {
     const size_t best_move_idx =
         std::max_element(res[0].p.begin(), res[0].p.end()) - res[0].p.begin();
 
-    std::vector<ThinkingInfo> infos = {{
-        .depth = 1,
-        .seldepth = 1,
-        .nodes = 1,
-        .score = 90 * std::tan(1.5637541897 * res[0].q),
-        .wdl = ThinkingInfo::WDL{
-            static_cast<int>(std::round(500 * (1 + res[0].q - res[0].d))),
-            static_cast<int>(std::round(1000 * res[0].d)),
-            static_cast<int>(std::round(500 * (1 - res[0].q - res[0].d)))}},
-    }};
-    uci_responder_->OutputThinkingInfo(&infos);
+  std::vector<ThinkingInfo> infos;
+  ThinkingInfo ti;
+  ti.depth = 1;
+  ti.seldepth = 1;
+  ti.nodes = 1;
+  ti.score = 90 * std::tan(1.5637541897 * res[0].q);
+  ti.wdl = ThinkingInfo::WDL{
+      static_cast<int>(std::round(500 * (1 + res[0].q - res[0].d))),
+      static_cast<int>(std::round(1000 * res[0].d)),
+      static_cast<int>(std::round(500 * (1 - res[0].q - res[0].d)))};
+  infos.push_back(ti);
+  uci_responder_->OutputThinkingInfo(&infos);
 
     Move best_move;
     const int ply = positions.back().GetGamePly();
