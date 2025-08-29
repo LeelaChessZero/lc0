@@ -470,6 +470,10 @@ class SearchWorker {
   void ProcessPickedTask(int batch_start, int batch_end);
   void ExtendNode(NodeToProcess& picked_node);
   void FetchSingleNodeResult(NodeToProcess* node_to_process);
+  std::tuple<PickTask*, int> PickTaskToProcess();
+  void ProcessTask(PickTask* task, int id,
+                   std::vector<NodeToProcess>* receiver,
+                   TaskWorkspace* workspace);
   void RunTasks(int tid);
   void ResetTasks();
   // Returns how many tasks there were.
@@ -496,7 +500,6 @@ class SearchWorker {
   Mutex picking_tasks_mutex_;
   std::vector<PickTask> picking_tasks_;
   std::atomic<int> task_count_ = -1;
-  std::atomic<int> task_taking_started_ = 0;
   std::atomic<int> tasks_taken_ = 0;
   std::atomic<int> completed_tasks_ = 0;
   std::condition_variable task_added_;

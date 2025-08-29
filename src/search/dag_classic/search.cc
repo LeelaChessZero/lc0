@@ -1093,6 +1093,46 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
+std::tuple<SearchWorker::PickTask*, int> SearchWorker::PickTaskToProcess() {
+  int nta = tasks_taken_.load(std::memory_order_acquire);
+  int tc = task_count_.load(std::memory_order_acquire);
+
+  // Check if tasks are queued and try increment taken count.
+  while (nta < tc &&
+      !tasks_taken_.compare_exchange_weak(
+        nta, nta + 1, std::memory_order_acq_rel,
+        std::memory_order_acquire)) {
+    // Queue had tasks but another worker increment taken. We check
+    // if new work was added to the queue. Then we try to increment
+    // taken again.
+    tc = task_count_.load(std::memory_order_acquire);
+  }
+  // We incremented taken if nta and tc are different
+  if (nta < tc) {
+    return {picking_tasks_.data() + nta, nta};
+  }
+  return {nullptr, tc};
+}
+
+void SearchWorker::ProcessTask(PickTask* task, int id,
+                               std::vector<NodeToProcess>* receiver,
+                               TaskWorkspace* workspace) {
+  switch (task->task_type) {
+    case PickTask::kGathering: {
+      PickNodesToExtendTask(task->start_path, task->collision_limit,
+                            task->history, receiver,
+                            workspace);
+      break;
+    }
+    case PickTask::kProcessing: {
+      ProcessPickedTask(task->start_idx, task->end_idx);
+      break;
+    }
+  }
+  picking_tasks_.data()[id].complete = true;
+  completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
+}
+
 void SearchWorker::RunTasks(int tid) {
   while (true) {
     PickTask* task = nullptr;
@@ -1100,28 +1140,10 @@ void SearchWorker::RunTasks(int tid) {
     {
       int spins = 0;
       while (true) {
-        int nta = tasks_taken_.load(std::memory_order_acquire);
-        int tc = task_count_.load(std::memory_order_acquire);
-        if (nta < tc) {
-          int val = 0;
-          if (task_taking_started_.compare_exchange_weak(
-                  val, 1, std::memory_order_acq_rel,
-                  std::memory_order_relaxed)) {
-            nta = tasks_taken_.load(std::memory_order_acquire);
-            tc = task_count_.load(std::memory_order_acquire);
-            // We got the spin lock, double check we're still in the clear.
-            if (nta < tc) {
-              id = tasks_taken_.fetch_add(1, std::memory_order_acq_rel);
-              task = picking_tasks_.data() + id;
-              task_taking_started_.store(0, std::memory_order_release);
-              break;
-            }
-            task_taking_started_.store(0, std::memory_order_release);
-          }
-          SpinloopPause();
-          spins = 0;
-          continue;
-        } else if (tc != -1) {
+        std::tie(task, id) = PickTaskToProcess();
+        if (task) {
+          break;
+        } else if (id != -1) {
           spins++;
           if (spins >= 512) {
             std::this_thread::yield();
@@ -1135,8 +1157,8 @@ void SearchWorker::RunTasks(int tid) {
         // Looks like sleep time.
         Mutex::Lock lock(picking_tasks_mutex_);
         // Refresh them now we have the lock.
-        nta = tasks_taken_.load(std::memory_order_acquire);
-        tc = task_count_.load(std::memory_order_acquire);
+        int nta = tasks_taken_.load(std::memory_order_acquire);
+        int tc = task_count_.load(std::memory_order_acquire);
         if (tc != -1) continue;
         if (nta >= tc && exiting_) return;
         task_added_.wait(lock.get_raw());
@@ -1147,20 +1169,7 @@ void SearchWorker::RunTasks(int tid) {
       }
     }
     if (task != nullptr) {
-      switch (task->task_type) {
-        case PickTask::kGathering: {
-          PickNodesToExtendTask(task->start_path, task->collision_limit,
-                                task->history, &(task->results),
-                                &(task_workspaces_[tid]));
-          break;
-        }
-        case PickTask::kProcessing: {
-          ProcessPickedTask(task->start_idx, task->end_idx);
-          break;
-        }
-      }
-      picking_tasks_.data()[id].complete = true;
-      completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
+      ProcessTask(task, id, &(task->results), &(task_workspaces_[tid]));
     }
   }
 }
@@ -1470,8 +1479,17 @@ void SearchWorker::ResetTasks() {
   picking_tasks_.reserve(MAX_TASKS);
 }
 
-int SearchWorker::WaitForTasks() {
+int SearchWorker::WaitForTasks() REQUIRES(search_->nodes_mutex_) {
   // Spin lock, other tasks should be done soon.
+  while (true) {
+    PickTask* task = nullptr;
+    int id = 0;
+    std::tie(task, id) = PickTaskToProcess();
+    if (task == nullptr) {
+      break;
+    }
+    ProcessTask(task, id, &minibatch_, &main_workspace_);
+  }
   while (true) {
     int completed = completed_tasks_.load(std::memory_order_acquire);
     int todo = task_count_.load(std::memory_order_acquire);
