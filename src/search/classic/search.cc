@@ -690,13 +690,13 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   if (!root_node_->HasChildren()) return;
 
   TemperatureParams tp{
-      .temperature = params_.GetTemperature(),
-      .temp_decay_moves = params_.GetTempDecayMoves(),
-      .temp_decay_delay_moves = params_.GetTempDecayDelayMoves(),
-      .temp_cutoff_move = params_.GetTemperatureCutoffMove(),
-      .temp_endgame = params_.GetTemperatureEndgame(),
-      .value_cutoff = params_.GetTemperatureWinpctCutoff(),
-      .visit_offset = params_.GetTemperatureVisitOffset(),
+    .temperature = params_.GetTemperature(),
+    .temp_decay_moves = params_.GetTempDecayMoves(),
+    .temp_cutoff_move = params_.GetTemperatureCutoffMove(),
+    .temp_decay_delay_moves = params_.GetTempDecayDelayMoves(),
+    .temp_endgame = params_.GetTemperatureEndgame(),
+    .value_cutoff = params_.GetTemperatureWinpctCutoff(),
+    .visit_offset = params_.GetTemperatureVisitOffset(),
   };
   const int ply = played_history_.Last().GetGamePly();
   const float temperature = EffectiveTau(tp, ply);

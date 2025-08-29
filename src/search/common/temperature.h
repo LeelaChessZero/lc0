@@ -9,8 +9,8 @@ struct TemperatureParams {
   float temperature;
   int temp_decay_moves;
   int temp_cutoff_move;
-  float temp_endgame;
   int temp_decay_delay_moves;
+  float temp_endgame;
   float value_cutoff;
   float visit_offset;
 };

@@ -148,13 +148,13 @@ class PolicyHeadTempFactory : public SearchFactory {
                                            const OptionsDict* options) const override {
     classic::BaseSearchParams base_params(*options);
     TemperatureParams params{
-        .temperature = base_params.GetTemperature(),
-        .temp_decay_moves = base_params.GetTempDecayMoves(),
-        .temp_decay_delay_moves = base_params.GetTempDecayDelayMoves(),
-        .temp_cutoff_move = base_params.GetTemperatureCutoffMove(),
-        .temp_endgame = base_params.GetTemperatureEndgame(),
-        .value_cutoff = base_params.GetTemperatureWinpctCutoff(),
-        .visit_offset = base_params.GetTemperatureVisitOffset(),
+      .temperature = base_params.GetTemperature(),
+      .temp_decay_moves = base_params.GetTempDecayMoves(),
+      .temp_cutoff_move = base_params.GetTemperatureCutoffMove(),
+      .temp_decay_delay_moves = base_params.GetTempDecayDelayMoves(),
+      .temp_endgame = base_params.GetTemperatureEndgame(),
+      .value_cutoff = base_params.GetTemperatureWinpctCutoff(),
+      .visit_offset = base_params.GetTemperatureVisitOffset(),
     };
     return std::make_unique<PolicyHeadTempSearch>(responder, params);
   }

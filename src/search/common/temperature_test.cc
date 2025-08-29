@@ -8,7 +8,14 @@ namespace lczero {
 
 TEST(TemperatureTest, EffectiveTauDecayAndCutoff) {
   // temperature = 1.0, decay over 10 moves
-  TemperatureParams p{1.0f, 10, 0, 0.0f, 0, 0.0f, 0.0f};
+  TemperatureParams p{};
+  p.temperature = 1.0f;
+  p.temp_decay_moves = 10;
+  p.temp_cutoff_move = 0;
+  p.temp_decay_delay_moves = 0;
+  p.temp_endgame = 0.0f;
+  p.value_cutoff = 0.0f;
+  p.visit_offset = 0.0f;
   // fullmove 1 -> ply 0
   EXPECT_FLOAT_EQ(EffectiveTau(p, 0), 1.0f);
   // fullmove 5 -> moves_played = 4 -> ply ~8
@@ -23,7 +30,14 @@ TEST(TemperatureTest, EffectiveTauDecayAndCutoff) {
 }
 
 TEST(TemperatureTest, SampleProbabilityShift) {
-  TemperatureParams p{0.0f, 0, 0, 0.0f, 0, 0.0f, 0.0f};
+  TemperatureParams p{};
+  p.temperature = 0.0f;
+  p.temp_decay_moves = 0;
+  p.temp_cutoff_move = 0;
+  p.temp_decay_delay_moves = 0;
+  p.temp_endgame = 0.0f;
+  p.value_cutoff = 0.0f;
+  p.visit_offset = 0.0f;
   std::vector<double> base{1.0, 4.0};
   std::vector<double> wp{0.5, 0.5};
   int count = 0;
@@ -44,7 +58,14 @@ TEST(TemperatureTest, SampleProbabilityShift) {
 }
 
 TEST(TemperatureTest, CutoffAndVisitOffset) {
-  TemperatureParams p{0.0f, 0, 0, 0.0f, 0, 0.1f, 0.0f};
+  TemperatureParams p{};
+  p.temperature = 0.0f;
+  p.temp_decay_moves = 0;
+  p.temp_cutoff_move = 0;
+  p.temp_decay_delay_moves = 0;
+  p.temp_endgame = 0.0f;
+  p.value_cutoff = 0.1f;
+  p.visit_offset = 0.0f;
   std::vector<double> base{1.0, 1.0};
   std::vector<double> wp{1.0, 0.8};
   for (int i = 0; i < 10; ++i) {
