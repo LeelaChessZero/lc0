@@ -538,6 +538,19 @@ if get_option('build_backends')
         nvcc_extra_args += '-gencode=arch=compute_75,code=compute_75'
       endif
     endif
+    nvcc_cutlass_args = []
+    if get_option('cutlass') and run_command('scripts/checkdir.py', get_option('cutlass_include'), check: false).returncode() == 0
+      add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
+      cuda_arguments += ['-DUSE_CUTLASS']
+      cuda_arguments += ['-I', get_option('cutlass_include')]
+      if cuda_cc != ''
+        nvcc_cutlass_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
+      else
+        warning('You need to set "cc_cuda" for cutlass')
+      endif
+    endif
+
+    cuda_arguments += ['-isystem=@CURRENT_SOURCE_DIR@/third_party']
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
     endforeach
@@ -553,6 +566,14 @@ if get_option('build_backends')
       depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
       command : [nvcc, nvcc_extra_args, cuda_arguments]
     )
+
+    if nvcc_cutlass_args.length() > 0
+      files += custom_target('cuda cutlass code',
+        input : 'src/neural/backends/cuda/cutlass_kernels.cu',
+        output : outputname,
+        command : [nvcc, nvcc_cutlass_args, cuda_arguments]
+      )
+    endif
 
     files += custom_target('cuda fp16 code',
       input : 'src/neural/backends/cuda/fp16_kernels.cu',
