@@ -127,34 +127,36 @@ class atomic_unique_ptr {
 
   // Replace the managed pointer, deleting the old one.
   void reset(pointer p = pointer()) noexcept {
-    auto old = ptr.exchange(p, std::memory_order_acquire);
+    auto old = ptr.exchange(p, std::memory_order_acq_rel);
     if (old) delete old;
   }
   // Release ownership of and delete the owned pointer.
   ~atomic_unique_ptr() { reset(); }
 
   // Returns the managed pointer.
-  operator pointer() const noexcept { return ptr; }
+  operator pointer() const noexcept { return get(); }
   // Returns the managed pointer.
-  pointer operator->() const noexcept { return ptr; }
+  pointer operator->() const noexcept { return get(); }
   // Returns the managed pointer.
-  pointer get() const noexcept { return ptr; }
+  pointer get() const noexcept {
+    return ptr.load(std::memory_order_acquire);
+  }
 
   // Checks whether there is a managed pointer.
-  explicit operator bool() const noexcept { return ptr != pointer(); }
+  explicit operator bool() const noexcept { return get() != pointer(); }
 
   // Replace the managed pointer, only releasing returning the old one.
   pointer set(pointer p = pointer()) noexcept {
-    return ptr.exchange(p, std::memory_order_acquire);
+    return ptr.exchange(p, std::memory_order_acq_rel);
   }
   // Return the managed pointer and release its ownership.
   pointer release() noexcept { return set(pointer()); }
 
   // Move managed pointer from @source, iff the managed pointer equals
   // @expected.
-  bool compare_exchange(pointer expected,
+  bool compare_exchange(pointer& expected,
                         atomic_unique_ptr<T>& source) noexcept {
-    if (ptr.compare_exchange_strong(expected, source.ptr,
+    if (ptr.compare_exchange_strong(expected, source.get(),
                                     std::memory_order_acq_rel)) {
       source.release();
       return true;
