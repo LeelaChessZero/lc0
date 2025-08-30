@@ -296,11 +296,12 @@ class Node {
   std::string DebugString() const;
   // Return string describing the edge from node's parent to its low node in the
   // Graphviz dot format.
-  std::string DotEdgeString(bool as_opponent = false,
-                            const LowNode* parent = nullptr) const;
+  void DotEdgeString(std::ofstream& file,
+                     bool as_opponent = false,
+                     const LowNode* parent = nullptr) const;
   // Return string describing the graph starting at this node in the Graphviz
   // dot format.
-  std::string DotGraphString(bool as_opponent = false) const;
+  void DotGraphString(std::ofstream& file, bool as_opponent = false) const;
 
   // Returns true if graph under this node has every n_in_flight_ == 0 and
   // prints offending nodes and low nodes and stats to cerr otherwise.
@@ -315,6 +316,34 @@ class Node {
   bool IsRepetition() const { return repetition_; }
 
   bool WLDMInvariantsHold() const;
+
+#ifndef NDEBUG
+  // RAII holder was a visitor. It will automatically release the reservation
+  // when going out of scope. It is possible to use visitor for branches. There
+  // must be a full tree walk before id value wraps arround or walk will ignore
+  // some nodes.
+  // It doesn't support concurrent access currently. API emulates mutexes which
+  // makes it possible to add limited number of concurrent access and waiting
+  // for free resources if needed.
+  struct VisitorId {
+    using type = uint32_t;
+    using storage = uint32_t;
+
+    VisitorId(const VisitorId&) = delete;
+
+    explicit VisitorId();
+    ~VisitorId();
+
+    operator type() const {
+      return id_;
+    }
+
+    friend class Node;
+    friend class LowNode;
+  private:
+    type id_;
+  };
+#endif
 
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
@@ -487,7 +516,7 @@ class LowNode {
   // Debug information about the node.
   std::string DebugString() const;
   // Return string describing this node in the Graphviz dot format.
-  std::string DotNodeString() const;
+  void DotNodeString(std::ofstream& file) const;
 
   void SortEdges() {
     assert(edges_);
@@ -511,6 +540,10 @@ class LowNode {
   bool IsTransposition() const { return is_transposition; }
 
   bool WLDMInvariantsHold() const;
+
+#ifndef NDEBUG
+  bool Visit(Node::VisitorId::type id);
+#endif
 
  private:
   // To minimize the number of padding bytes and to avoid having unnecessary
@@ -555,6 +588,11 @@ class LowNode {
   GameResult upper_bound_ : 2;
   // Low node is a transposition (for ever).
   bool is_transposition : 1;
+  // Debug only id as the last to avoid taking place of actively used variables
+  // in the cache.
+#ifndef NDEBUG
+  Node::VisitorId::storage visitor_id_ = {};
+#endif
 };
 
 // Check that LowNode still fits into an expected cache line size.

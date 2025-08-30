@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,7 +12,7 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holdvr nor the names of its
+ * 3. Neither the name of the copyright holder nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
  *
@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 #pragma once
-#include <float.h>
-#include <stdio.h>
+#include <cfloat>
+#include <cstdio>
 #include <cmath>
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -40,7 +40,7 @@
 // Nans & inf detection
 #define NANCHECK(frag)                         \
   {                                            \
-    for (int _i = 0; _i < frag.size(); ++_i) { \
+    for (size_t _i = 0; _i < frag.size(); ++_i) { \
       assert(std::isfinite(float(frag[_i])));  \
       assert(!std::isnan(float(frag[_i])));    \
     }                                          \
@@ -147,7 +147,7 @@ constexpr __string_view __get_type_name() {
   {                                                           \
     auto typeStr = __get_type_name<decltype(frag)>();         \
     PRINT_B0_T0("printing %s (%s)", name, typeStr.data);      \
-    for (int _start = 0; _start < frag.size(); _start += 8) { \
+    for (size_t _start = 0; _start < frag.size(); _start += 8) { \
       PRINT_ACCUM8_T0_L0_START("  ", frag, _start);           \
     }                                                         \
     /*__syncthreads();                                        \

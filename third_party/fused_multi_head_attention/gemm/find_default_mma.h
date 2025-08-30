@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,7 +12,7 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holdvr nor the names of its
+ * 3. Neither the name of the copyright holder nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
  *
@@ -31,7 +31,7 @@
 
 /*! \file
     \brief Cutlass provides helper template functions to figure out the right
-   datastructures to instanciate to run a GEMM with various parameters (see
+   datastructures to instantiate to run a GEMM with various parameters (see
    `cutlass/gemm/threadblock/default_mma.h`). However, due to template
    instantiation priority rules, it will only create an MmaMultiStage with
    kStages=3 (otherwise creates an MmePipelined - which is not compatible with
@@ -83,7 +83,7 @@ template <
     typename InstructionShape,
     /// Number of stages used in the pipelined mainloop
     int Stages,
-    /// Operation perfomed by GEMM
+    /// Operation performed by GEMM
     typename Operator,
     typename Enable_ = void>
 struct FindDefaultMma {

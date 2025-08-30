@@ -21,14 +21,6 @@ if "%CUDA%"=="true" (
   )
 )
 
-if "%CUDA%"=="true" (
-  if not defined CUDA_PATH (
-    echo WARNING: CUDA_PATH environment variable not found. Using default value.
-  ) else (
-    echo CUDA_PATH found in system environment: "%CUDA_PATH%"
-  )
-)
-
 rem 2. Edit the paths for the build dependencies.
 if not defined CUDA_PATH set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9
 set CUDNN_PATH=%CUDA_PATH%

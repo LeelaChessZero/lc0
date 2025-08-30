@@ -1,12 +1,12 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights
- *reserved. SPDX-License-Identifier: BSD-3-Clause
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
- * 1. Redistributions of source code must retain the above copyright notice,
- *this list of conditions and the following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
  *
  * 2. Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimer in the documentation
@@ -18,15 +18,14 @@
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- *ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- *LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- *CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- *SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- *CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- *ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- *POSSIBILITY OF SUCH DAMAGE.
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
 /*! \file
@@ -56,6 +55,7 @@ template <
     Operand Operand_,
     /// Data type of A elements
     typename Element_,
+    typename InstructionShape_,
     bool kTranspose = false>
 class WarpIteratorFromSmem {
  public:
@@ -64,6 +64,9 @@ class WarpIteratorFromSmem {
 
   /// Operand tag
   static Operand const kOperand = Operand_;
+  static_assert(
+      kOperand == Operand::kA,
+      "No support for OperandB at the moment");
 
   /// Basic check
   static_assert(
@@ -78,7 +81,11 @@ class WarpIteratorFromSmem {
   using Layout = cutlass::layout::RowMajor;
 
   /// Shape of one matrix product operation (concept: MatrixShape)
-  using InstructionShape = cutlass::MatrixShape<16, 8>;
+  using InstructionShape = InstructionShape_;
+  static_assert(InstructionShape::kRow == 16, "Only supports 16x8x8 / 16x8x16");
+  static_assert(
+      InstructionShape::kColumn == 8 || InstructionShape::kColumn == 16,
+      "Only supports 16x8x8 / 16x8x16");
 
   /// Delta between *MMA operations (in units of *MMA operations, concept:
   /// MatrixShape)
@@ -133,7 +140,9 @@ class WarpIteratorFromSmem {
                                : InstructionShape::kRow);
   static int constexpr kAccessesInner =
       (kWarpShapeDivisibleInner / kElementsPerAccess) / 4;
+  // Number of 32bits tiles to load per `ldmatrix`
   static int const kTilesPerInstruction = InstructionShape::kRow / 8;
+  static_assert(kTilesPerInstruction == 2, "Only supports 16x8x16 and 16x8x8");
 
  private:
   /// Underlying tensor reference
@@ -153,38 +162,28 @@ class WarpIteratorFromSmem {
   CUTLASS_HOST_DEVICE
   WarpIteratorFromSmem(TensorRef const& ref, TensorCoord extent, int lane_id)
       : ref_(ref), iterations_(0) {
+    // See also:
+    // https://docs.nvidia.com/cuda/archive/11.7.1/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688
+    // 16x8x8: kAccessesInner = 1 (1 ldmatrix.x4)
+    // 16x8x16: kAccessesInner = 2 (2 ldmatrix.x4)
     int ldsm_vec_num = (lane_id >> 3);
     if (kOperand == Operand::kA) {
       origin_ = MatrixCoord(lane_id % 8, 0);
       static_assert(
-          InstructionCount::kRow * kAccessesInner * kTilesPerInstruction == 4,
-          "");
-      CUTLASS_PRAGMA_UNROLL
-      for (int inst_m_idx = 0; inst_m_idx < InstructionCount::kRow;
-           ++inst_m_idx) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int inner_idx = 0; inner_idx < kAccessesInner; ++inner_idx) {
-          CUTLASS_PRAGMA_UNROLL
-          for (int access_m_idx = 0; access_m_idx < kTilesPerInstruction;
-               ++access_m_idx) {
-            int access_idx = access_m_idx +
-                kTilesPerInstruction *
-                    (inner_idx + kAccessesInner * inst_m_idx);
-
-            MatrixCoord offset(
-                access_m_idx * 8 + inst_m_idx * InstructionShape::kRow,
-                inner_idx * 4 * kElementsPerAccess);
-
-            if (access_idx == ldsm_vec_num) {
-              if (kTranspose) {
-                offset = MatrixCoord(offset.column(), offset.row());
-              }
-              origin_ += offset;
-            }
-          }
-        }
+          InstructionCount::kRow * kTilesPerInstruction == 4,
+          "can't use ldmatrix.x4");
+      int access_m_idx = ldsm_vec_num % kTilesPerInstruction;
+      int inner_idx = (ldsm_vec_num / kTilesPerInstruction) % kAccessesInner;
+      int inst_m_idx = ldsm_vec_num / (kTilesPerInstruction * kAccessesInner);
+      MatrixCoord offset(
+          access_m_idx * 8 + inst_m_idx * InstructionShape::kRow,
+          inner_idx * 4 * kElementsPerAccess);
+      if (kTranspose) {
+        offset = MatrixCoord(offset.column(), offset.row());
       }
+      origin_ += offset;
     } else {
+      // Note: This is not tested or used
       origin_ = MatrixCoord(0, lane_id % 8);
       static_assert(InstructionCount::kColumn * kAccessesInner == 4, "");
       CUTLASS_PRAGMA_UNROLL
@@ -256,17 +255,23 @@ class WarpIteratorFromSmem {
     using LoadLayout = typename platform::
         conditional<kTranspose, layout::ColumnMajor, layout::RowMajor>::type;
 
-    MatrixCoord offset;
-    if (kOperand == Operand::kA) {
-      offset = MatrixCoord(0, iterations_ * InstructionShape::kColumn);
-    } else {
-      offset = MatrixCoord(iterations_ * InstructionShape::kRow, 0);
+    CUTLASS_PRAGMA_UNROLL
+    for (int access_m_idx = 0; access_m_idx <
+         (InstructionCount::kRow * kTilesPerInstruction * kAccessesInner) / 4;
+         ++access_m_idx) {
+      MatrixCoord offset;
+      if (kOperand == Operand::kA) {
+        offset = MatrixCoord(
+            access_m_idx * 16, iterations_ * InstructionShape::kColumn);
+      } else {
+        offset = MatrixCoord(iterations_ * InstructionShape::kRow, 0);
+      }
+      if (kTranspose) {
+        offset = MatrixCoord(offset.column(), offset.row());
+      }
+      cutlass::arch::ldsm<LoadLayout, 4>(
+          access_ptr[access_m_idx], ref_.data() + ref_.offset(offset));
     }
-    if (kTranspose) {
-      offset = MatrixCoord(offset.column(), offset.row());
-    }
-    cutlass::arch::ldsm<LoadLayout, 4>(
-        access_ptr[0], ref_.data() + ref_.offset(offset));
   }
 };
 

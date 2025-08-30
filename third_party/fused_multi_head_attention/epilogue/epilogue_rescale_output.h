@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,7 +12,7 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holdvr nor the names of its
+ * 3. Neither the name of the copyright holder nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
  *
@@ -43,11 +43,7 @@
 
 #pragma once
 
-#if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
-#else
-#include <assert.h>
-#endif
 
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/array.h"
@@ -57,16 +53,12 @@
 #include "cutlass/layout/vector.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/tensor_coord.h"
-
 #include "cutlass/gemm/gemm.h"
-
 #include "cutlass/transform/pitch_linear_thread_map.h"
 #include "cutlass/transform/threadblock/regular_tile_iterator.h"
-
 #include "cutlass/epilogue/threadblock/epilogue_base.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
 #include "cutlass/numeric_types.h"
-
 #include "cutlass/array.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/scale_type.h"

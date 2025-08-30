@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -12,7 +12,7 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holdvr nor the names of its
+ * 3. Neither the name of the copyright holder nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
  *
@@ -44,10 +44,12 @@ template <
     cutlass::gemm::Operand Operand,
     /// Data type of A elements
     typename Element,
+    typename InstructionShape,
     bool kTranspose>
 struct TransposeWarpIterator<
-    cutlass::gemm::warp::WarpIteratorFromSmem<Operand, Element, kTranspose>> {
-  using Iterator =
-      cutlass::gemm::warp::WarpIteratorFromSmem<Operand, Element, !kTranspose>;
+    cutlass::gemm::warp::
+        WarpIteratorFromSmem<Operand, Element, InstructionShape, kTranspose>> {
+  using Iterator = cutlass::gemm::warp::
+      WarpIteratorFromSmem<Operand, Element, InstructionShape, !kTranspose>;
   static bool constexpr kSupportsTranspose = true;
 };
