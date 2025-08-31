@@ -75,9 +75,9 @@ void dumpTensor(T* memory, int elements, const char* message, bool only_summary 
         }
 
         if (!only_summary || i < 2 || i == elements - 1) {
-           printf("%8.4f ", val);
-           if ((i % 8) == 7) printf("\n");
-          //printf("%i;%.6f\n", i, val);
+          // printf("%8.4f ", val);
+          // if ((i % 8) == 7) printf("\n");
+          printf("%i;%.6f\n", i, val);
         }
     }
     free(temp);

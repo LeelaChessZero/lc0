@@ -210,6 +210,10 @@ class CudaNetwork : public Network {
 
     showInfo();
 
+#ifdef USE_CUTLASS
+    CERR << "Compiled with CUTLASS enabled";
+#endif
+
     int total_gpus;
     ReportCUDAErrors(cudaGetDeviceCount(&total_gpus));
 
