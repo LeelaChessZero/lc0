@@ -63,6 +63,7 @@ class DagClassicSearch : public SearchBase {
     move_start_time_ = std::chrono::steady_clock::now();
   }
   void WaitSearch() override {
+    LOGFILE << "Waiting for the search.";
     if (search_) search_->Wait();
   }
   void StopSearch() override {
@@ -99,6 +100,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 }
 
 void DagClassicSearch::NewGame() {
+  LOGFILE << "New game.";
   search_.reset();
   tt_.clear();
   tree_.reset();
@@ -108,13 +110,17 @@ void DagClassicSearch::NewGame() {
 void DagClassicSearch::SetPosition(const GameState& pos) {
   if (!tree_) tree_ = std::make_unique<NodeTree>();
   const bool is_same_game = tree_->ResetToPosition(pos);
+  LOGFILE << "Tree reset to a new position.";
   if (!is_same_game) time_manager_ = classic::MakeTimeManager(*options_);
 }
 
 void DagClassicSearch::StartSearch(const GoParams& params) {
   auto forwarder =
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
-  if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
+  if (options_->Get<Button>(kClearTree).TestAndReset()) {
+    tree_->TrimTreeAtHead();
+    LOGFILE << "Tree cleared.";
+  }
 
   const auto cache_size =
       options_->Get<int>(SharedBackendParams::kNNCacheSizeId);
