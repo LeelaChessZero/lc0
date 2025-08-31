@@ -188,8 +188,7 @@ std::string LowNode::DebugString() const {
       << " M:" << m_ << " N:" << n_ << " NP:" << num_parents_
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2
-      << " IsTransposition:" << is_transposition;
+      << static_cast<int>(upper_bound_) - 2;
   return oss.str();
 }
 
@@ -521,7 +520,6 @@ void LowNode::DotNodeString(std::ofstream& oss) const {
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2
-      << "\\nIsTransposition=" << is_transposition  //
       << std::noshowpos                             //
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)

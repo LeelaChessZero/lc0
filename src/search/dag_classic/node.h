@@ -480,8 +480,7 @@ class LowNode {
   LowNode()
       : terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {}
+        upper_bound_(GameResult::WHITE_WON) {}
   // Init from from another low node, but use it for NNEval only.
   LowNode(const LowNode& p)
       : wl_(p.wl_),
@@ -490,8 +489,7 @@ class LowNode {
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        upper_bound_(GameResult::WHITE_WON) {
     assert(p.edges_);
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
@@ -501,8 +499,7 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        upper_bound_(GameResult::WHITE_WON) {
     edges_ = Edge::FromMovelist(moves);
   }
   // Init @edges_ with moves from @moves and 0 policy.
@@ -511,8 +508,7 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        upper_bound_(GameResult::WHITE_WON) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(edges_[index], index);
   }
@@ -600,18 +596,18 @@ class LowNode {
 
   // Add new parent with @n_in_flight visits.
   void AddParent() {
-    ++num_parents_;
+    num_parents_.fetch_add(1, std::memory_order_acq_rel);
 
     assert(num_parents_ > 0);
-
-    is_transposition |= num_parents_ > 1;
   }
   // Remove parent and its first visit.
   void RemoveParent() {
     assert(num_parents_ > 0);
-    --num_parents_;
+    num_parents_.fetch_sub(1, std::memory_order_acq_rel);
   }
-  bool IsTransposition() const { return is_transposition; }
+  bool IsTransposition() const {
+    return num_parents_.load(std::memory_order_acquire) > 1;
+  }
 
   bool WLDMInvariantsHold() const;
 
@@ -649,7 +645,7 @@ class LowNode {
 
   // 2 byte fields.
   // Number of parents.
-  uint16_t num_parents_ = 0;
+  std::atomic<uint16_t> num_parents_ = {};
 
   // 1 byte fields.
   // Number of edges in @edges_.
@@ -660,8 +656,6 @@ class LowNode {
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
-  // Low node is a transposition (for ever).
-  bool is_transposition : 1;
   // Debug only id as the last to avoid taking place of actively used variables
   // in the cache.
 #ifndef NDEBUG
