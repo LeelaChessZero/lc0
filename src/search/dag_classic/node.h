@@ -36,6 +36,11 @@
 #include <memory>
 #include <mutex>
 
+#if __cpp_lib_atomic_wait < 201907L
+#define NO_STD_ATOMIC_WAIT 1
+#include <condition_variable>
+#endif
+
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/gamestate.h"
@@ -1060,6 +1065,12 @@ private:
   }
 
   std::atomic<State> state_ = {Sleeping};
+#ifdef NO_STD_ATOMIC_WAIT
+  // Fallback conditional variable when c++ library doesn't implement
+  // std::atomic::wait().
+  mutable Mutex state_mutex_;
+  mutable std::condition_variable state_signal_;
+#endif
   std::thread gc_thread_;
   SpinMutex mutex_;
   std::deque<std::vector<std::unique_ptr<Node>>> released_nodes_ GUARDED_BY(mutex_);

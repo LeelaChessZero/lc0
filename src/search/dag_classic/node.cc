@@ -744,14 +744,28 @@ void NodeGarbageCollector::AddToGcQueue(UniquePtr& shared_node) {
 
 NodeGarbageCollector::~NodeGarbageCollector() {
   state_.store(Exit, std::memory_order_release);
+#ifndef NO_STD_ATOMIC_WAIT
   state_.notify_all();
+#else
+  {
+    Mutex::Lock lock(state_mutex_);
+    state_signal_.notify_all();
+  }
+#endif
   gc_thread_.join();
 }
 
 bool NodeGarbageCollector::SetState(State& old, State desired) {
   bool rv =  state_.compare_exchange_strong(old, desired,
                                             std::memory_order_acq_rel);
-  if (rv) state_.notify_all();
+  if (rv) {
+#ifndef NO_STD_ATOMIC_WAIT
+    state_.notify_all();
+#else
+    Mutex::Lock lock(state_mutex_);
+    state_signal_.notify_all();
+#endif
+  }
   return rv;
 }
 
@@ -774,7 +788,12 @@ NodeGarbageCollector::State NodeGarbageCollector::Wait() const {
   State s;
   while ((s = state_.load(std::memory_order_acquire)) != Sleeping) {
     assert(s != Exit);
+#ifndef NO_STD_ATOMIC_WAIT
     state_.wait(s, std::memory_order_acquire);
+#else
+    Mutex::Lock lock(state_mutex_);
+    state_signal_.wait(lock.get_raw(), [this, s]() {return s != state_;});
+#endif
   }
   return s;
 }
@@ -822,7 +841,12 @@ void NodeGarbageCollector::GCThread() {
       }
     }
     if (s == Sleeping) {
+#ifndef NO_STD_ATOMIC_WAIT
       state_.wait(Sleeping, std::memory_order_acquire);
+#else
+      Mutex::Lock lock(state_mutex_);
+      state_signal_.wait(lock.get_raw(), [this]() {return Sleeping != state_;});
+#endif
       if (!shared_work.empty()) {
         // Check for early exit from previous free. The work can be freed
         // before the batch is full.
