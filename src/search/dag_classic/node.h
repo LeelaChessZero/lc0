@@ -277,7 +277,7 @@ class Node {
   // Get next sibling.
   atomic_unique_ptr<Node>* GetSibling() { return &sibling_; }
   // Moves sibling in.
-  void MoveSiblingIn(std::unique_ptr<Node>& sibling) {
+  void MoveSiblingIn(atomic_unique_ptr<Node>& sibling) {
     sibling_ = std::move(sibling);
   }
 
@@ -348,7 +348,7 @@ class Node {
   // afterwards.
   void ReleaseChildrenExceptOne(
       Node* node_to_save,
-      std::vector<std::unique_ptr<Node>>& released_nodes) const;
+      std::vector<atomic_unique_ptr<Node>>& released_nodes) const;
 
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
@@ -576,13 +576,13 @@ class LowNode {
   void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
 
   // Deletes all children.
-  void ReleaseChildren(std::vector<std::unique_ptr<Node>>& released_nodes);
+  void ReleaseChildren(std::vector<atomic_unique_ptr<Node>>& released_nodes);
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
   void ReleaseChildrenExceptOne(
-      Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes);
+      Node* node_to_save, std::vector<atomic_unique_ptr<Node>>& released_nodes);
 
   // Return move policy for edge/node at @index.
   const Edge& GetEdgeAt(uint16_t index) const;
@@ -988,11 +988,11 @@ class NodeTree {
   // A node which to start search from.
   Node* current_head_ = nullptr;
   // Root node of a game tree.
-  std::unique_ptr<Node> gamebegin_node_;
+  atomic_unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
   std::vector<Move> moves_;
   // Nodes released from DAG and to be freed later.
-  std::vector<std::unique_ptr<Node>> released_nodes_;
+  std::vector<atomic_unique_ptr<Node>> released_nodes_;
 };
 
 }  // namespace dag_classic

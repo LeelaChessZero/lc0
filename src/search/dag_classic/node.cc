@@ -392,12 +392,12 @@ void Node::IncrementNInFlight(uint32_t multivisit) {
 }
 
 void LowNode::ReleaseChildren(
-    std::vector<std::unique_ptr<Node>>& released_nodes) {
+    std::vector<atomic_unique_ptr<Node>>& released_nodes) {
   released_nodes.emplace_back(std::move(child_));
 }
 
 void LowNode::ReleaseChildrenExceptOne(
-    Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
+    Node* node_to_save, std::vector<atomic_unique_ptr<Node>>& released_nodes) {
   // Stores node which will have to survive (or nullptr if it's not found).
   atomic_unique_ptr<Node> saved_node;
   // Pointer to unique_ptr, so that we could move from it.
@@ -418,7 +418,7 @@ void LowNode::ReleaseChildrenExceptOne(
 
 void Node::ReleaseChildrenExceptOne(
     Node* node_to_save,
-    std::vector<std::unique_ptr<Node>>& released_nodes) const {
+    std::vector<atomic_unique_ptr<Node>>& released_nodes) const {
   // Sometime we have no graph yet or a reverted terminal without low node.
   if (low_node_) {
     low_node_->ReleaseChildrenExceptOne(node_to_save, released_nodes);
