@@ -671,10 +671,12 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
   if (stats.total_nodes == 0) return;
 
   if (!stop_.load(std::memory_order_acquire)) {
+    const float delay = params_.GetGarbageCollectionDelay() / 100.0f;
     if (stopper_->ShouldStop(stats, hints)) {
       FireStopInternal();
     } else if (!gc_started_ &&
-        stats.time_since_movestart > hints->GetEstimatedRemainingTimeMs() >> 5) {
+        stats.time_since_movestart > delay *
+        (stats.time_since_movestart + hints->GetEstimatedRemainingTimeMs())) {
       NodeGarbageCollector::Instance().Start();
       gc_started_ = true;
     }
