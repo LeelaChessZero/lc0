@@ -404,6 +404,7 @@ void LowNode::ReleaseChildren() {
 }
 
 void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
+  auto& ngc = NodeGarbageCollector::Instance();
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to atomic_unique_ptr, so that we could move from it.
@@ -411,14 +412,14 @@ void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      NodeGarbageCollector::Instance().AddToGcQueue(*(*node)->GetSibling());
+      ngc.AddToGcQueue(*(*node)->GetSibling());
       // Save the node, and take the ownership from the unique_ptr.
       saved_node.reset(node->release());
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
-  NodeGarbageCollector::Instance().AddToGcQueue(child_);
+  ngc.AddToGcQueue(child_);
   child_ = std::move(saved_node);
 }
 
@@ -650,8 +651,11 @@ std::string EdgeAndNode::DebugString() const {
 /////////////////////////////////////////////////////////////////////////
 
 NodeTree::~NodeTree() {
-  NodeGarbageCollector::Instance().AddToGcQueue(gamebegin_node_);
-  NodeGarbageCollector::Instance().NotifyThreadGoingSleep();
+  auto& ngc = NodeGarbageCollector::Instance();
+  ngc.AddToGcQueue(gamebegin_node_);
+  ngc.NotifyThreadGoingSleep();
+  // Start garbage collection now because we delete everything.
+  ngc.Start();
 }
 
 void NodeTree::MakeMove(Move move) {
@@ -707,6 +711,7 @@ bool NodeTree::ResetToPosition(const GameState& pos) {
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
+  NodeGarbageCollector::Instance().NotifyThreadGoingSleep();
   return seen_old_head;
 }
 
@@ -770,9 +775,12 @@ bool NodeGarbageCollector::SetState(State& old, State desired) {
 }
 
 void NodeGarbageCollector::Start() {
-  State s = Wait();
-  assert(s == Sleeping);
-  SetState(s, Running);
+  State s = state_.load(std::memory_order_acquire);
+  do {
+    if (s == Running)
+      break;
+    assert(s != Exit);
+  } while (!SetState(s, Running));
 }
 
 void NodeGarbageCollector::Stop() {
@@ -882,21 +890,26 @@ void NodeGarbageCollector::GCThread() {
       nodes.pop_back();
     }
 
-    // There wasn't enough time to free all nodes. They must go back to the
-    // list.
-    if (!nodes.empty()) {
-      SpinMutex::Lock lock(mutex_);
-      released_nodes_.emplace_front(std::move(nodes));
-    }
-
     if (!empty) {
       LOGFILE << "Garbage collection ending.";
     }
 
     // Go to sleep if empty or search stopped.
     if (empty || !IsActive()) {
-      State old = Running;
-      SetState(old, Sleeping);
+      // Lock is requrired to avoid race between other thread queueing work and
+      // calling Start().
+      SpinMutex::Lock lock(mutex_);
+      // There wasn't enough time to free all nodes. They must go back to the
+      // list.
+      if (!nodes.empty()) {
+        released_nodes_.emplace_front(std::move(nodes));
+      }
+
+      // Going to sleep if the queue is empty.
+      if (released_nodes_.empty()) {
+        State old = Running;
+        SetState(old, Sleeping);
+      }
     }
   }
 }
