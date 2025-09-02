@@ -392,33 +392,33 @@ void Node::IncrementNInFlight(uint32_t multivisit) {
 }
 
 void LowNode::ReleaseChildren(
-    std::vector<atomic_unique_ptr<Node>>& released_nodes) {
-  released_nodes.emplace_back(std::move(child_));
+    std::vector<std::unique_ptr<Node>>& released_nodes) {
+  released_nodes.emplace_back(child_.release());
 }
 
 void LowNode::ReleaseChildrenExceptOne(
-    Node* node_to_save, std::vector<atomic_unique_ptr<Node>>& released_nodes) {
+    Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
   // Stores node which will have to survive (or nullptr if it's not found).
-  atomic_unique_ptr<Node> saved_node;
-  // Pointer to unique_ptr, so that we could move from it.
+  std::unique_ptr<Node> saved_node;
+  // Pointer to atomic_unique_ptr, so that we could move from it.
   for (auto node = &child_; *node; node = (*node)->GetSibling()) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      released_nodes.emplace_back(std::move(*(*node)->GetSibling()));
+      released_nodes.emplace_back((*node)->GetSibling()->release());
       // Save the node, and take the ownership from the unique_ptr.
-      saved_node = std::move(*node);
+      saved_node.reset(node->release());
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
-  released_nodes.emplace_back(std::move(child_));
+  released_nodes.emplace_back(child_.release());
   child_ = std::move(saved_node);
 }
 
 void Node::ReleaseChildrenExceptOne(
     Node* node_to_save,
-    std::vector<atomic_unique_ptr<Node>>& released_nodes) const {
+    std::vector<std::unique_ptr<Node>>& released_nodes) const {
   // Sometime we have no graph yet or a reverted terminal without low node.
   if (low_node_) {
     low_node_->ReleaseChildrenExceptOne(node_to_save, released_nodes);
