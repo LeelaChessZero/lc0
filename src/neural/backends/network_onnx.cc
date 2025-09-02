@@ -38,12 +38,14 @@
 #define USE_DML
 #endif
 
+#ifdef USE_OPENCL
 #if __has_include("CL/opencl.hpp")
 #include "CL/opencl.hpp"
 #elif __has_include("OpenCL/opencl.hpp")
 #include "OpenCL/opencl.hpp"
 #else
 #include "opencl.hpp"
+#endif
 #endif
 
 #include "cpu_provider_factory.h"
@@ -65,45 +67,84 @@ namespace {
 enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT, OPENVINO };
 
 class OnnxNetwork;
-
-// OpenCl context wrapper struct.
+#ifdef USE_OPENCL
 struct OpenCL {   
-    // Member variables
     cl::Platform platform_;
     cl::Context context_;
     cl::Device device_;
     cl::CommandQueue queue_;
     
+    cl_context GetContext() const { 
+        if (!context_.get()) { 
+            throw Exception("OCL error: OpenCL context is null"); 
+        }
+        return context_.get(); 
+    } 
+    
     explicit OpenCL(std::shared_ptr<std::vector<cl_context_properties>> opencl_context_properties = nullptr) {
-       // Get all available OpenCL platforms
-       std::vector<cl::Platform> platforms;
-       cl::Platform::get(&platforms);
-       if (platforms.empty()) {
-         throw Exception("No OpenCL platforms found");
+        // suppress warning until used
+        (void)opencl_context_properties;
+
+        std::vector<cl::Platform> platforms;
+        cl::Platform::get(&platforms);
+        if (platforms.empty()) {
+            throw Exception("No OpenCL platforms found");
         }
-       platform_ = platforms[0];
-       // Get GPU devices from the selected platform
-       std::vector<cl::Device> devices;
-       platform_.getDevices(CL_DEVICE_TYPE_GPU, &devices);
-       if (devices.empty()) {
-         throw Exception("No GPU devices found");
+        platform_ = platforms[0];
+
+        std::vector<cl::Device> devices;
+        platform_.getDevices(CL_DEVICE_TYPE_GPU, &devices);
+        if (devices.empty()) {
+            throw Exception("No GPU devices found");
         }
-       // Use the first GPU device
-       device_ = devices[0];
-       context_ = cl::Context(device_);
-       cl_command_queue_properties props = CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
-       queue_ = cl::CommandQueue(context_, device_, props);
+        device_ = devices[0];
+
+        // Use context properties if available
+        const cl_context_properties* props_ptr = 
+            opencl_context_properties ? opencl_context_properties->data() : nullptr;
+        context_ = cl::Context(device_, props_ptr, nullptr, nullptr);
+
+        // Check if device supports out-of-order execution
+        cl_command_queue_properties supported_props = 
+            device_.getInfo<CL_DEVICE_QUEUE_PROPERTIES>();
+
+        cl_command_queue_properties queue_props = 0;
+        if (supported_props & CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE) {
+            queue_props |= CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
+        }
+        queue_ = cl::CommandQueue(context_, device_, queue_props);
     }
     
     explicit OpenCL(cl_context context) {
-       context_ = cl::Context(context);
-       device_ = cl::Device(context_.getInfo<CL_CONTEXT_DEVICES>()[0]);
-       cl_command_queue_properties props = CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
-       queue_ = cl::CommandQueue(context_, device_, props);
-    }
+        context_ = cl::Context(context);
 
-    cl_context get_handle() const { return context_.get(); }
+        auto devices = context_.getInfo<CL_CONTEXT_DEVICES>();
+        if (devices.empty()) {
+            throw Exception("Provided OpenCL context has no devices");
+        }
+        device_ = cl::Device(devices[0]);
+
+        // Reconstruct platform from device.
+        cl_device_id device_id = device_();
+        cl_platform_id platform_id;
+        cl_int err = clGetDeviceInfo(device_id, CL_DEVICE_PLATFORM, sizeof(platform_id), &platform_id, nullptr);
+        if (err != CL_SUCCESS) {
+           throw Exception("Failed to get platform from device");
+        }
+        cl::Platform platform(platform_id);
+        // The idea is to use this(commad_queue) later,
+        // when I get back to developing this more.        
+        cl_command_queue_properties supported_props = 
+            device_.getInfo<CL_DEVICE_QUEUE_PROPERTIES>();
+
+        cl_command_queue_properties queue_props = 0;
+        if (supported_props & CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE) {
+            queue_props |= CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
+        }
+        queue_ = cl::CommandQueue(context_, device_, queue_props);
+    }
 };
+#endif
 
 template <typename DataType>
 class OnnxComputation : public NetworkComputation {
@@ -424,8 +465,14 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       break;
     }
     case OnnxProvider::OPENVINO: {
-      auto ocl_instance = std::make_shared<OpenCL>();
-      cl_context opencl_context = ocl_instance->context_.get();
+#ifdef USE_OPENCL
+      // Use olc_instance that might already have been created.
+      static std::shared_ptr<OpenCL> ocl_instance;
+      if (!ocl_instance) {
+         ocl_instance = std::make_shared<OpenCL>();
+        }
+      cl_context opencl_context = ocl_instance->GetContext();
+#endif
       options.SetEpSelectionPolicy(OrtExecutionProviderDevicePolicy_PREFER_GPU);
       options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);
       std::unordered_map<std::string, std::string> openvino_options;
@@ -434,9 +481,11 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       openvino_options["num_of_threads"] = "8";
       openvino_options["num_streams"] = "8";
       openvino_options["cache_dir"] = "openvino_cache";
+#ifdef USE_OPENCL
       openvino_options["context"] = 
            std::to_string((unsigned long long)(void*)opencl_context);
-      openvino_options["enable_qdq_optimizer"] = "False";
+#endif
+      openvino_options["enable_qdq_optimizer"] = "True";
       // We will use the config_path.json later.
       //openvino_options["load_config"] = "config_path.json";
       options.AppendExecutionProvider_OpenVINO_V2(openvino_options);
@@ -580,7 +629,9 @@ REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
+#ifdef USE_OPENCL
 REGISTER_NETWORK("onnx-openvino", MakeOnnxNetwork<OnnxProvider::OPENVINO>, 65)
+#endif
 REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
