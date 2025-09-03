@@ -129,7 +129,7 @@ void Node::Trim() {
   d_ = 0.0f;
   m_ = 0.0f;
   n_ = 0;
-  n_in_flight_ = 0;
+  n_in_flight_.store(0, std::memory_order_release);
 
   // edge_
 
@@ -155,7 +155,7 @@ float Node::GetVisitedPolicy() const {
 }
 
 uint32_t Node::GetNInFlight() const {
-  return n_in_flight_;
+  return n_in_flight_.load(std::memory_order_acquire);
 }
 
 uint32_t Node::GetChildrenVisits() const {
@@ -173,7 +173,7 @@ std::string Node::DebugString() const {
   oss << " <Node> This:" << this << " LowNode:" << low_node_.get()
       << " Index:" << index_ << " Move:" << GetMove().ToString(true)
       << " Sibling:" << sibling_.get() << " P:" << GetP() << " WL:" << wl_
-      << " D:" << d_ << " M:" << m_ << " N:" << n_ << " N_:" << n_in_flight_
+      << " D:" << d_ << " M:" << m_ << " N:" << n_ << " N_:" << GetNInFlight()
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
@@ -320,14 +320,19 @@ void Node::SetBounds(GameResult lower, GameResult upper) {
 }
 
 bool Node::TryStartScoreUpdate() {
-  if (n_ == 0 && n_in_flight_ > 0) return false;
-  ++n_in_flight_;
-  return true;
+  if (n_ > 0) {
+    n_in_flight_.fetch_add(1, std::memory_order_acq_rel);
+    return true;
+  } else {
+    uint32_t expected_n_if_flight_ = 0;
+    return n_in_flight_.compare_exchange_strong(expected_n_if_flight_, 1,
+                                              std::memory_order_acq_rel);
+  }
 }
 
 void Node::CancelScoreUpdate(uint32_t multivisit) {
-  assert(n_in_flight_ >= (uint32_t)multivisit);
-  n_in_flight_ -= multivisit;
+  assert(GetNInFlight() >= (uint32_t)multivisit);
+  n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
 void LowNode::FinalizeScoreUpdate(float v, float d, float m,
@@ -367,8 +372,8 @@ void Node::FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit) {
   // Increment N.
   n_ += multivisit;
   // Decrement virtual loss.
-  assert(n_in_flight_ >= (uint32_t)multivisit);
-  n_in_flight_ -= multivisit;
+  assert(GetNInFlight() >= (uint32_t)multivisit);
+  n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
 void Node::AdjustForTerminal(float v, float d, float m, uint32_t multivisit) {
@@ -383,32 +388,31 @@ void Node::AdjustForTerminal(float v, float d, float m, uint32_t multivisit) {
 }
 
 void Node::IncrementNInFlight(uint32_t multivisit) {
-  n_in_flight_ += multivisit;
+  n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
 }
 
 void LowNode::ReleaseChildren(
     std::vector<std::unique_ptr<Node>>& released_nodes) {
-  released_nodes.emplace_back(std::move(child_));
+  released_nodes.emplace_back(child_.release());
 }
 
 void LowNode::ReleaseChildrenExceptOne(
     Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
-  // Pointer to unique_ptr, so that we could move from it.
-  for (std::unique_ptr<Node>* node = &child_; *node;
-       node = (*node)->GetSibling()) {
+  // Pointer to atomic_unique_ptr, so that we could move from it.
+  for (auto node = &child_; *node; node = (*node)->GetSibling()) {
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      released_nodes.emplace_back(std::move(*(*node)->GetSibling()));
+      released_nodes.emplace_back((*node)->GetSibling()->release());
       // Save the node, and take the ownership from the unique_ptr.
-      saved_node = std::move(*node);
+      saved_node.reset(node->release());
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
-  released_nodes.emplace_back(std::move(child_));
+  released_nodes.emplace_back(child_.release());
   child_ = std::move(saved_node);
 }
 
@@ -531,7 +535,7 @@ void Node::DotEdgeString(std::ofstream& oss, bool as_opponent, const LowNode* pa
       << " [";
   oss << "label=\""
       << (parent == nullptr ? "N/A" : GetMove(as_opponent).ToString(true))
-      << "\\lN=" << n_ << "\\lN_=" << n_in_flight_;
+      << "\\lN=" << n_ << "\\lN_=" << GetNInFlight();
   oss << "\\l\"";
   // Set precision for tooltip.
   oss << std::fixed << std::setprecision(5);
@@ -541,7 +545,7 @@ void Node::DotEdgeString(std::ofstream& oss, bool as_opponent, const LowNode* pa
       << "\\nWL= " << wl_                             //
       << std::noshowpos                               //
       << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
-      << "\\nN_=" << n_in_flight_
+      << "\\nN_=" << GetNInFlight()
       << "\\nTerm=" << static_cast<int>(terminal_type_)  //
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
