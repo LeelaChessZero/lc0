@@ -39,6 +39,7 @@
 #include "chess/position.h"
 #include "neural/encoder.h"
 #include "proto/net.pb.h"
+#include "search/node_gc.h"
 #include "utils/mutex.h"
 
 namespace lczero {
@@ -140,6 +141,7 @@ class Node {
         upper_bound_(GameResult::WHITE_WON),
         solid_children_(false) {}
 
+  Node() = default;
   // We have a custom destructor, but its behavior does not need to be emulated
   // during move operations so default is fine.
   Node(Node&& move_from) = default;
@@ -259,17 +261,7 @@ class Node {
   // Index in parent edges - useful for correlated ordering.
   uint16_t Index() const { return index_; }
 
-  ~Node() {
-    if (solid_children_ && child_) {
-      // As a hack, solid_children is actually storing an array in here, release
-      // so we can correctly invoke the array delete.
-      for (int i = 0; i < num_edges_; i++) {
-        child_.get()[i].~Node();
-      }
-      std::allocator<Node> alloc;
-      alloc.deallocate(child_.release(), num_edges_);
-    }
-  }
+  ~Node();
 
  private:
   // For each child, ensures that its parent pointer is pointing to this.
@@ -294,10 +286,10 @@ class Node {
   Node* parent_ = nullptr;
   // Pointer to a first child. nullptr for a leaf node.
   // As a 'hack' actually a unique_ptr to Node[] if solid_children.
-  std::unique_ptr<Node> child_;
+  std::unique_ptr<Node[]> child_;
   // Pointer to a next sibling. nullptr if there are no further siblings.
   // Also null in the solid case.
-  std::unique_ptr<Node> sibling_;
+  std::unique_ptr<Node[]> sibling_;
 
   // 4 byte fields.
   // Averaged draw probability. Works similarly to WL, except that D is not
@@ -437,8 +429,8 @@ class EdgeAndNode {
 template <bool is_const>
 class Edge_Iterator : public EdgeAndNode {
  public:
-  using Ptr = std::conditional_t<is_const, const std::unique_ptr<Node>*,
-                                 std::unique_ptr<Node>*>;
+  using Ptr = std::conditional_t<is_const, const std::unique_ptr<Node[]>*,
+                                 std::unique_ptr<Node[]>*>;
   using value_type = Edge_Iterator;
   using iterator_category = std::forward_iterator_tag;
   using difference_type = std::ptrdiff_t;
@@ -496,15 +488,15 @@ class Edge_Iterator : public EdgeAndNode {
     // 1. Store pointer to a node idx_.7:
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  nullptr
     //    tmp -> Node(idx_.7)
-    std::unique_ptr<Node> tmp = std::move(*node_ptr_);
+    std::unique_ptr<Node[]> tmp = std::move(*node_ptr_);
     // 2. Create fresh Node(idx_.5):
     //    node_ptr_ -> &Node(idx_.3).sibling_  ->  Node(idx_.5)
     //    tmp -> Node(idx_.7)
-    *node_ptr_ = std::make_unique<Node>(parent, current_idx_);
+    node_ptr_->reset(new Node[1] {Node(parent, current_idx_)});
     // 3. Attach stored pointer back to a list:
     //    node_ptr_ ->
     //         &Node(idx_.3).sibling_ -> Node(idx_.5).sibling_ -> Node(idx_.7)
-    (*node_ptr_)->sibling_ = std::move(tmp);
+    (*node_ptr_)[0].sibling_ = std::move(tmp);
     // 4. Actualize:
     //    node_ -> &Node(idx_.5)
     //    node_ptr_ -> &Node(idx_.5).sibling_ -> Node(idx_.7)
@@ -520,13 +512,13 @@ class Edge_Iterator : public EdgeAndNode {
     // This is needed (and has to be 'while' rather than 'if') as other threads
     // could spawn new nodes between &node_ptr_ and *node_ptr_ while we didn't
     // see.
-    while (*node_ptr_ && (*node_ptr_)->index_ < current_idx_) {
-      node_ptr_ = &(*node_ptr_)->sibling_;
+    while (*node_ptr_ && (*node_ptr_)[0].index_ < current_idx_) {
+      node_ptr_ = &(*node_ptr_)[0].sibling_;
     }
     // If in the end node_ptr_ points to the node that we need, populate node_
     // and advance node_ptr_.
-    if (*node_ptr_ && (*node_ptr_)->index_ == current_idx_) {
-      node_ = (*node_ptr_).get();
+    if (*node_ptr_ && (*node_ptr_)[0].index_ == current_idx_) {
+      node_ = &(*node_ptr_)[0];
       node_ptr_ = &node_->sibling_;
     } else {
       node_ = nullptr;
@@ -635,7 +627,7 @@ inline VisitedNode_Iterator<false> Node::VisitedNodes() {
 
 class NodeTree {
  public:
-  ~NodeTree() { DeallocateTree(); }
+  ~NodeTree();
   // Adds a move to current_head_.
   void MakeMove(Move move);
   // Resets the current head to ensure it doesn't carry over details from a
@@ -662,9 +654,12 @@ class NodeTree {
   // A node which to start search from.
   Node* current_head_ = nullptr;
   // Root node of a game tree.
-  std::unique_ptr<Node> gamebegin_node_;
+  std::unique_ptr<Node[]> gamebegin_node_;
   PositionHistory history_;
 };
+
+// Define types for garbage collection.
+using NodeGarbageCollector = lczero::NodeGarbageCollector<Node[], 128>;
 
 }  // namespace classic
 }  // namespace lczero

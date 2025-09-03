@@ -40,9 +40,8 @@ namespace lczero {
 
 // Implement thread local queues. It tracks GC thread to allow faster removal in
 // the thread.
-template<typename Node>
+template<typename Node, size_t kCapacity>
 class ReleaseNodesWork {
-  static constexpr size_t kCapacity = 32;
 public:
   ReleaseNodesWork(bool gc_thread = false);
   ~ReleaseNodesWork();
@@ -64,7 +63,7 @@ private:
   bool is_gc_thread_;
 };
 
-template<typename Node>
+template<typename Node, size_t kCapacity>
 class NodeGarbageCollector {
   NodeGarbageCollector();
   ~NodeGarbageCollector();
@@ -106,8 +105,8 @@ private:
   void GCThread();
   // Thread local collection queue. Local queues flush to the shared queue
   // in batches to avoid lock contention.
-  static ReleaseNodesWork<Node>& LocalWork(bool gc_thread = false) {
-    static thread_local ReleaseNodesWork<Node> shared{gc_thread};
+  static ReleaseNodesWork<Node, kCapacity>& LocalWork(bool gc_thread = false) {
+    static thread_local ReleaseNodesWork<Node, kCapacity> shared{gc_thread};
     return shared;
   }
 
@@ -122,25 +121,25 @@ private:
   SpinMutex mutex_;
   std::deque<std::vector<std::unique_ptr<Node>>> released_nodes_ GUARDED_BY(mutex_);
 
-  friend class ReleaseNodesWork<Node>;
+  friend class ReleaseNodesWork<Node, kCapacity>;
 };
 
-template<typename Node>
-NodeGarbageCollector<Node>::NodeGarbageCollector() :
+template<typename Node, size_t kCapacity>
+NodeGarbageCollector<Node, kCapacity>::NodeGarbageCollector() :
   gc_thread_{[this]() {GCThread();}} {
 }
 
-template<typename Node>
+template<typename Node, size_t kCapacity>
 template<typename UniquePtr>
-void NodeGarbageCollector<Node>::AddToGcQueue(UniquePtr& shared_node) {
+void NodeGarbageCollector<Node, kCapacity>::AddToGcQueue(UniquePtr& shared_node) {
   std::unique_ptr<Node> node(shared_node.release());
   if (ShouldQueue(node)) {
     LocalWork().emplace_back(std::move(node));
   }
 }
 
-template<typename Node>
-NodeGarbageCollector<Node>::~NodeGarbageCollector() {
+template<typename Node, size_t kCapacity>
+NodeGarbageCollector<Node, kCapacity>::~NodeGarbageCollector() {
   state_.store(Exit, std::memory_order_release);
 #ifndef NO_STD_ATOMIC_WAIT
   state_.notify_all();
@@ -153,8 +152,8 @@ NodeGarbageCollector<Node>::~NodeGarbageCollector() {
   gc_thread_.join();
 }
 
-template<typename Node>
-bool NodeGarbageCollector<Node>::SetState(State& old, State desired) {
+template<typename Node, size_t kCapacity>
+bool NodeGarbageCollector<Node, kCapacity>::SetState(State& old, State desired) {
   bool rv =  state_.compare_exchange_strong(old, desired,
                                             std::memory_order_acq_rel);
   if (rv) {
@@ -168,8 +167,8 @@ bool NodeGarbageCollector<Node>::SetState(State& old, State desired) {
   return rv;
 }
 
-template<typename Node>
-void NodeGarbageCollector<Node>::Start() {
+template<typename Node, size_t kCapacity>
+void NodeGarbageCollector<Node, kCapacity>::Start() {
   State s = state_.load(std::memory_order_acquire);
   do {
     if (s == Running)
@@ -178,19 +177,19 @@ void NodeGarbageCollector<Node>::Start() {
   } while (!SetState(s, Running));
 }
 
-template<typename Node>
-void NodeGarbageCollector<Node>::Stop() {
+template<typename Node, size_t kCapacity>
+void NodeGarbageCollector<Node, kCapacity>::Stop() {
   State old = Running;
   SetState(old, GoToSleep);
 }
 
-template<typename Node>
-void NodeGarbageCollector<Node>::Abort() {
+template<typename Node, size_t kCapacity>
+void NodeGarbageCollector<Node, kCapacity>::Abort() {
   Stop();
 }
 
-template<typename Node>
-NodeGarbageCollector<Node>::State NodeGarbageCollector<Node>::Wait() const {
+template<typename Node, size_t kCapacity>
+NodeGarbageCollector<Node, kCapacity>::State NodeGarbageCollector<Node, kCapacity>::Wait() const {
   State s;
   while ((s = state_.load(std::memory_order_acquire)) != Sleeping) {
     assert(s != Exit);
@@ -204,22 +203,22 @@ NodeGarbageCollector<Node>::State NodeGarbageCollector<Node>::Wait() const {
   return s;
 }
 
-template<typename Node>
-void NodeGarbageCollector<Node>::NotifyThreadGoingSleep() {
+template<typename Node, size_t kCapacity>
+void NodeGarbageCollector<Node, kCapacity>::NotifyThreadGoingSleep() {
   if (LocalWork().empty()) {
     return;
   }
-  ReleaseNodesWork<Node> new_work;
+  ReleaseNodesWork<Node, kCapacity> new_work;
   LocalWork().swap(new_work);
 }
 
-template<typename Node>
-bool NodeGarbageCollector<Node>::IsActive() const {
+template<typename Node, size_t kCapacity>
+bool NodeGarbageCollector<Node, kCapacity>::IsActive() const {
   return state_.load(std::memory_order_acquire) == Running;
 }
 
-template<typename Node>
-bool NodeGarbageCollector<Node>::ShouldQueue(std::unique_ptr<Node>& node) const {
+template<typename Node, size_t kCapacity>
+bool NodeGarbageCollector<Node, kCapacity>::ShouldQueue(std::unique_ptr<Node>& node) const {
   // We don't want to queue null pointers.
   if (!node) {
     return false;
@@ -236,8 +235,8 @@ bool NodeGarbageCollector<Node>::ShouldQueue(std::unique_ptr<Node>& node) const 
   return s != Running || !LocalWork().IsWorker();
 }
 
-template<typename Node>
-void NodeGarbageCollector<Node>::GCThread() {
+template<typename Node, size_t kCapacity>
+void NodeGarbageCollector<Node, kCapacity>::GCThread() {
   auto& shared_work = LocalWork(true);
   assert(shared_work.IsWorker());
   State s;
@@ -262,7 +261,7 @@ void NodeGarbageCollector<Node>::GCThread() {
       if (!shared_work.empty()) {
         // Check for early exit from previous free. The work can be freed
         // before the batch is full.
-        ReleaseNodesWork<Node> new_work(true);
+        ReleaseNodesWork<Node, kCapacity> new_work(true);
         new_work.swap(shared_work);
       }
       continue;
@@ -281,10 +280,6 @@ void NodeGarbageCollector<Node>::GCThread() {
       }
     }
 
-    if (!empty) {
-      LOGFILE << "Garbage collection starting.";
-    }
-
     // Free nodes one by one. LowNode destructor calls AddToGcQueue which allows
     // recursive destruction terminate before freeing a whole branch.
     while (!nodes.empty()) {
@@ -292,10 +287,6 @@ void NodeGarbageCollector<Node>::GCThread() {
         break;
       }
       nodes.pop_back();
-    }
-
-    if (!empty) {
-      LOGFILE << "Garbage collection ending.";
     }
 
     // Go to sleep if empty or search stopped.
@@ -318,19 +309,19 @@ void NodeGarbageCollector<Node>::GCThread() {
   }
 }
 
-template<typename Node>
-ReleaseNodesWork<Node>::ReleaseNodesWork(bool gc_thread) :
+template<typename Node, size_t kCapacity>
+ReleaseNodesWork<Node, kCapacity>::ReleaseNodesWork(bool gc_thread) :
     is_gc_thread_(gc_thread) {
   released_nodes_.reserve(kCapacity);
 }
 
-template<typename Node>
-bool ReleaseNodesWork<Node>::IsWorker() const {
+template<typename Node, size_t kCapacity>
+bool ReleaseNodesWork<Node, kCapacity>::IsWorker() const {
   return is_gc_thread_;
 }
 
-template<typename Node>
-void ReleaseNodesWork<Node>::emplace_back(std::unique_ptr<Node>&& node) {
+template<typename Node, size_t kCapacity>
+void ReleaseNodesWork<Node, kCapacity>::emplace_back(std::unique_ptr<Node>&& node) {
   if (!node) return;
   released_nodes_.emplace_back(std::forward<std::unique_ptr<Node>>(node));
   if (released_nodes_.size() == kCapacity) {
@@ -339,28 +330,28 @@ void ReleaseNodesWork<Node>::emplace_back(std::unique_ptr<Node>&& node) {
   }
 }
 
-template<typename Node>
-bool ReleaseNodesWork<Node>::empty() const {
+template<typename Node, size_t kCapacity>
+bool ReleaseNodesWork<Node, kCapacity>::empty() const {
   return released_nodes_.empty();
 }
 
-template<typename Node>
-void ReleaseNodesWork<Node>::swap(ReleaseNodesWork &other) {
+template<typename Node, size_t kCapacity>
+void ReleaseNodesWork<Node, kCapacity>::swap(ReleaseNodesWork &other) {
   assert(IsWorker() == other.IsWorker());
   std::swap(released_nodes_, other.released_nodes_);
 }
 
-template<typename Node>
-ReleaseNodesWork<Node>::~ReleaseNodesWork() {
+template<typename Node, size_t kCapacity>
+ReleaseNodesWork<Node, kCapacity>::~ReleaseNodesWork() {
   Submit();
 }
 
-template<typename Node>
-void ReleaseNodesWork<Node>::Submit() {
+template<typename Node, size_t kCapacity>
+void ReleaseNodesWork<Node, kCapacity>::Submit() {
   if (released_nodes_.empty()) {
     return;
   }
-  auto& worker = NodeGarbageCollector<Node>::Instance();
+  auto& worker = NodeGarbageCollector<Node, kCapacity>::Instance();
   SpinMutex::Lock lock(worker.mutex_);
   // If this is worker, we have oldest nodes. Keep them at front of the queue.
   if (IsWorker()) {

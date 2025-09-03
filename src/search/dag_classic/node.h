@@ -987,7 +987,7 @@ class NodeTree {
 };
 
 // Define types for garbage collection.
-using NodeGarbageCollector = lczero::NodeGarbageCollector<Node>;
+using NodeGarbageCollector = lczero::NodeGarbageCollector<Node, 32>;
 
 }  // namespace dag_classic
 }  // namespace lczero
