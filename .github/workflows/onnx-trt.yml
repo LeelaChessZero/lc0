@@ -58,9 +58,10 @@ jobs:
           fi
       - name: Install ONNX Runtime GPU
         run: |
-          # Create a temporary project to pull the NuGet package          
+          # Create a temporary project to pull the NuGet package
           dotnet new console -o dummy_onnx_project
           cd dummy_onnx_project
+
           # Add the correct Linux GPU package (note: Microsoft.ML.OnnxRuntime.Gpu.Linux)
           dotnet add package Microsoft.ML.OnnxRuntime.Gpu.Linux --version 1.22.1
           dotnet restore
