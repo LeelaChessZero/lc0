@@ -189,7 +189,8 @@ void NodeGarbageCollector<Node, kCapacity>::Abort() {
 }
 
 template<typename Node, size_t kCapacity>
-NodeGarbageCollector<Node, kCapacity>::State NodeGarbageCollector<Node, kCapacity>::Wait() const {
+typename NodeGarbageCollector<Node, kCapacity>::State
+    NodeGarbageCollector<Node, kCapacity>::Wait() const {
   State s;
   while ((s = state_.load(std::memory_order_acquire)) != Sleeping) {
     assert(s != Exit);

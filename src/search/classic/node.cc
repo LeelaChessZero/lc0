@@ -197,7 +197,7 @@ bool Node::MakeSolid() {
   if (total_in_flight != GetNInFlight()) {
     return false;
   }
-  std::unique_ptr<Node[]> new_children = std::make_unique_for_overwrite<Node[]>(num_edges_);
+  std::unique_ptr<Node[]> new_children = std::make_unique<Node[]>(num_edges_);
   for (int i = 0; i < num_edges_; i++) {
     new (&(new_children[i])) Node(this, i);
   }
