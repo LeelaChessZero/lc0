@@ -1,0 +1,89 @@
+name: SYCL Backend Build
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Update submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build curl binutils python3-pip
+          pip3 install meson==1.3.2
+          meson --version
+      - name: Install SYCL Dependencies (Intel oneAPI)
+        run: |
+          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            intel-oneapi-dpcpp-cpp-2025.2 \
+            intel-oneapi-dpcpp-ct \
+            intel-oneapi-mkl-devel \
+            intel-opencl-icd \
+            libtbbmalloc2 \
+            opencl-headers \
+            ocl-icd-opencl-dev
+          export ICPX=/opt/intel/oneapi/compiler/2025.2/bin/icpx
+          if ! $ICPX --version; then
+            echo "Error: icpx compiler not found!"
+            exit 1
+          fi
+          $ICPX --version
+      - name: Remove Build Directory
+        run: |
+          echo "Cleaning old build..."
+          rm -rf build
+      - name: Configure Meson and Build SYCL
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          unset AR
+          export CC=/opt/intel/oneapi/compiler/latest/bin/icx
+          export CXX=/opt/intel/oneapi/compiler/latest/bin/icpx
+          export RANLIB=/opt/intel/oneapi/compiler/latest/bin/xilib
+          export AR=/opt/intel/oneapi/compiler/latest/bin/compiler/llvm-ar
+          echo "Using CC compiler: $CC"
+          echo "Using CXX compiler: $CXX"
+          echo "Using AR: $AR"
+          echo "Using RANLIB: $RANLIB"
+          meson setup --buildtype release build -Dsycl=l0 \
+                      -Dgtest=false -Dnative_arch=false
+          ninja -C build -v
+      - name: Upload Meson Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: build-logs-${{ inputs.artifact_name }}
+          path: build
+      - name: Download Network
+        if: success()
+        run: |
+          cd build
+          curl -L https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -o T79.pb.gz
+          touch -t 201801010000.00 T79.pb.gz
+      - name: Upload a Build Artifact
+        if: success()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: lc0-${{ inputs.artifact_name }}
+          path: |
+            build/lc0
+            build/T79.pb.gz

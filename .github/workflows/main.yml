@@ -1,0 +1,173 @@
+name: Multi-Backend Lc0 Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+    runs-on: ubuntu-latest
+    outputs:
+      sycl: ${{ steps.filter.outputs.sycl }}
+      blas: ${{ steps.filter.outputs.blas }}
+      cuda: ${{ steps.filter.outputs.cuda }}
+      onnx: ${{ steps.filter.outputs.onnx }}
+      common_files: ${{ steps.filter.outputs.common_files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Update submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+      - uses: dorny/paths-filter@v3.0.2
+        id: filter
+        with:
+          filters: |
+            sycl:
+              - 'src/neural/backends/sycl/**'
+            blas:
+              - 'src/neural/backends/blas/**'
+            cuda:
+              - 'src/neural/backends/cuda/**'
+            onnx:
+              - 'src/neural/backends/network_onnx.cc'
+              - 'src/neural/onnx/**'
+            common_files:
+              # Engine files
+              - 'src/engine.cc'
+              - 'src/engine.h'
+              - 'src/engine_loop.cc'
+              - 'src/engine_loop.h'
+              - 'src/engine_test.cc'
+              - 'src/main.cc'
+              # Common filders
+              - 'src/chess/**'
+              - 'src/trainingdata/**'
+              - 'src/python/**'
+              - 'src/utils/**'
+              - 'src/tools/**'
+              - 'src/search/**'
+              - 'src/syzygy/**'
+              # Shared neural files           
+              - 'src/neural/factory.cc'
+              - 'src/neural/common.h'
+              - 'src/neural/common.cc'
+              - 'src/neural/backend.cc'
+              - 'src/neural/backend.h'
+              - 'src/neural/batchsplit.cc'
+              - 'src/neural/batchsplit.h'
+              - 'src/neural/decoder.cc'
+              - 'src/neural/decoder.h'
+              - 'src/neural/encoder.cc'
+              - 'src/neural/encoder.h'
+              - 'src/neural/encoder_test.cc'
+              - 'src/neural/factory.cc'
+              - 'src/neural/factory.h'
+              - 'src/neural/loader.cc'
+              - 'src/neural/loader.h'
+              - 'src/neural/memcache.cc'
+              - 'src/neural/memcache.h'
+              - 'src/neural/mock_backend.h'
+              - 'src/neural/network.h'
+              - 'src/neural/network_legacy.cc'
+              - 'src/neural/network_legacy.h'
+              - 'src/neural/register.cc'
+              - 'src/neural/register.h'
+              - 'src/neural/shared_params.cc'
+              - 'src/neural/shared_params.h'
+              - 'src/neural/wrapper.cc'
+              - 'src/neural/wrapper.h'
+              # Shared backend files
+              - 'src/neural/backends/network_check.cc'
+              - 'src/neural/backends/network_demux.cc'
+              - 'src/neural/backends/network_mux.cc'
+              - 'src/neural/backends/network_random.cc'
+              - 'src/neural/backends/network_record.cc'
+              - 'src/neural/backends/network_rr.cc'
+              - 'src/neural/backends/network_tf_cc.cc'
+              - 'src/neural/backends/network_trivial.cc'
+              # Shared Neural  folders
+              - 'src/neural/tables/**'
+              # Workflow folder
+              - '.github/workflows/**'
+              # Build files
+              - 'meson.build'
+              - 'meson_options.txt'
+              # External folders
+              - 'subprojects/**'
+              - 'scripts/**'
+              - 'third_party/**'
+
+
+  sycl-build:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.sycl == 'true' }}
+    uses: ./.github/workflows/sycl.yml
+    with:
+      os: ubuntu-22.04
+      artifact_name: sycl-ubuntu-22.04
+
+  sycl-build-24:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.sycl == 'true' }}
+    uses: ./.github/workflows/sycl.yml
+    with:
+      os: ubuntu-24.04
+      artifact_name: sycl-ubuntu-24.04
+
+  cuda-build:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.cuda == 'true' }}
+    uses: ./.github/workflows/cuda.yml
+    with:
+      os: ubuntu-22.04
+      artifact_name: cuda-12.9-ubuntu-22.04
+
+  cuda-build-24:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.cuda == 'true' }}
+    uses: ./.github/workflows/cuda.yml
+    with:
+      os: ubuntu-24.04
+      artifact_name: cuda-12.9-ubuntu-24.04
+
+  blas-build:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.blas == 'true' }}
+    uses: ./.github/workflows/blas.yml
+    with:
+      os: ubuntu-22.04
+      artifact_name: blas-ubuntu-22.04
+
+  blas-build-24:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.blas == 'true' }}
+    uses: ./.github/workflows/blas.yml
+    with:
+      os: ubuntu-24.04
+      artifact_name: blas-ubuntu-24.04
+
+  onnx-trt-build:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.onnx == 'true' }}
+    uses: ./.github/workflows/onnx-trt.yml
+    with:
+      os: ubuntu-22.04
+      artifact_name: onnx-trt-ubuntu-22.04
+
+  onnx-trt-build-24:
+    needs: build
+    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.onnx == 'true' }}
+    uses: ./.github/workflows/onnx-trt.yml
+    with:
+      os: ubuntu-24.04
+      artifact_name: onnx-trt-ubuntu-24.04
