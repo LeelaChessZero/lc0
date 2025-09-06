@@ -47,14 +47,14 @@ namespace lczero {
 namespace classic {
 
 namespace {
-FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
+FillEmptyHistory EncodeHistoryFill(const std::string& history_fill) {
   if (history_fill == "fen_only") return FillEmptyHistory::FEN_ONLY;
   if (history_fill == "always") return FillEmptyHistory::ALWAYS;
   assert(history_fill == "no");
   return FillEmptyHistory::NO;
 }
 
-float GetContempt(std::string name, std::string contempt_str,
+float GetContempt(std::string name, const std::string& contempt_str,
                   float uci_rating_adv) {
   float contempt = uci_rating_adv;
   for (auto& entry : StrSplit(contempt_str, ",")) {

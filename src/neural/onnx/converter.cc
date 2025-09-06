@@ -169,10 +169,10 @@ class Converter {
   std::unique_ptr<OnnxConst> GetScalarConverter(float in);
 
   std::string StartOptionalBf16Fix(OnnxBuilder* builder, std::string flow,
-                                   std::string name);
+                                   const std::string& name);
 
   std::string EndOptionalBf16Fix(OnnxBuilder* builder, std::string flow,
-                                 std::string name);
+                                 const std::string& name);
 
   const pblczero::Net& src_;
   const WeightsToOnnxConverterOptions& options_;
@@ -228,7 +228,7 @@ std::unique_ptr<OnnxConst> Converter::GetScalarConverter(float in) {
 
 std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
                                             std::string flow,
-                                            std::string name) {
+                                            const std::string& name) {
   if (options_.opset >= 22 ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
@@ -238,7 +238,8 @@ std::string Converter::StartOptionalBf16Fix(OnnxBuilder* builder,
 }
 
 std::string Converter::EndOptionalBf16Fix(OnnxBuilder* builder,
-                                          std::string flow, std::string name) {
+                                          std::string flow, const std::string&
+                                          name) {
   if (options_.opset >= 22 ||
       options_.data_type !=
           WeightsToOnnxConverterOptions::DataType::kBFloat16) {
