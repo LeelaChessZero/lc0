@@ -146,6 +146,44 @@ class MEvaluator {
   bool parent_within_threshold_ = false;
 };
 
+// Unpack task_count_ atomic which holds both task_count_ and tasks_taken_. It
+// can unpack a value from an already read value or load it from the atomic
+// variable.
+// Variables are packed together because there is a potential race between task
+// workers and ResetTasks. A task worker can read tasks_taken_ and task_count
+// to a local register. A task worker can be suspended by kernel before tries
+// to acquire work. Other threads can process all tasks and main thread resets
+// tasks before the suspended thread resumes. The suspended thread now manages
+// to acquire work based on stale values if the stale tasks_taken was zero.
+// Packed values avoid the race because compare exchange is checking both when
+// incrementing tasks_taken_.
+template<typename T>
+std::tuple<int, int, int> ReadTaskCount(T& task_count) {
+  int packed;
+  if constexpr(std::is_same_v<T, std::atomic<int>>) {
+    packed = task_count.load(std::memory_order_acquire);
+  } else {
+    packed = task_count;
+  }
+  // The top half is tasks taken.
+  const int shift = SearchWorker::kTasksTakenShift;
+  int tasks_taken = packed >> shift;
+  // The bottom is task count. The first shift moves the sign bit from the lower
+  // half to the hardware sign bit. The second shift lowers bits back to the
+  // original positions and duplicates the sign bit if it is set.
+  int tc = (packed << shift) >> shift;
+  return {packed, tasks_taken, tc};
+}
+
+[[maybe_unused]]
+bool IsTasksCompleted(const std::atomic<int>& task_count,
+                      const std::atomic<int>& completed_tasks) {
+  int tc = 0, nta = 0;
+  std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count);
+  int ct = completed_tasks.load(std::memory_order_acquire);
+  return tc == ct || (nta == ct && tc == -1);
+}
+
 }  // namespace
 
 Search::Search(const NodeTree& tree, Backend* backend,
@@ -1095,25 +1133,40 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
-std::tuple<SearchWorker::PickTask*, int> SearchWorker::PickTaskToProcess() {
-  int nta = tasks_taken_.load(std::memory_order_acquire);
-  int tc = task_count_.load(std::memory_order_acquire);
+SearchWorker::~SearchWorker()
+{
+  {
+    // Tasks must be completed before destructor. If a gather tasks is running,
+    // it can increment task_count_ which would break the exit state.
+    assert(IsTasksCompleted(task_count_, completed_tasks_));
+    task_count_.fetch_or(kTaskCountSuspend, std::memory_order_release);
+    Mutex::Lock lock(picking_tasks_mutex_);
+    exiting_ = true;
+    task_added_.notify_all();
+  }
+  for (size_t i = 0; i < task_threads_.size(); i++) {
+    task_threads_[i].join();
+  }
+  LOGFILE << "Search worker destroyed.";
+}
+
+std::tuple<SearchWorker::PickTask*, int, int> SearchWorker::PickTaskToProcess() {
+  auto [packed_value, nta, tc] = ReadTaskCount(task_count_);
 
   // Check if tasks are queued and try increment taken count.
   while (nta < tc &&
-      !tasks_taken_.compare_exchange_weak(
-        nta, nta + 1, std::memory_order_acq_rel,
-        std::memory_order_acquire)) {
+      !task_count_.compare_exchange_weak(packed_value, packed_value + kTasksTakenOne,
+                                         std::memory_order_acq_rel)) {
     // Queue had tasks but another worker increment taken. We check
     // if new work was added to the queue. Then we try to increment
     // taken again.
-    tc = task_count_.load(std::memory_order_acquire);
+    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
   }
   // We incremented taken if nta and tc are different
   if (nta < tc) {
-    return {picking_tasks_.data() + nta, nta};
+    return {picking_tasks_.data() + nta, nta, tc};
   }
-  return {nullptr, tc};
+  return {nullptr, nta, tc};
 }
 
 void SearchWorker::ProcessTask(PickTask* task, int id,
@@ -1139,13 +1192,14 @@ void SearchWorker::RunTasks(int tid) {
   while (true) {
     PickTask* task = nullptr;
     int id = 0;
+    int tc = 0;
     {
       int spins = 0;
       while (true) {
-        std::tie(task, id) = PickTaskToProcess();
+        std::tie(task, id, tc) = PickTaskToProcess();
         if (task) {
           break;
-        } else if (id != -1) {
+        } else if (tc != -1) {
           spins++;
           if (spins >= 512) {
             std::this_thread::yield();
@@ -1159,14 +1213,12 @@ void SearchWorker::RunTasks(int tid) {
         // Looks like sleep time.
         Mutex::Lock lock(picking_tasks_mutex_);
         // Refresh them now we have the lock.
-        int nta = tasks_taken_.load(std::memory_order_acquire);
-        int tc = task_count_.load(std::memory_order_acquire);
+        int tc, nta;
+        std::tie(std::ignore, std::ignore, tc) = ReadTaskCount(task_count_);
         if (tc != -1) continue;
-        if (nta >= tc && exiting_) return;
+        if (exiting_) return;
         task_added_.wait(lock.get_raw());
-        // And refresh again now we're awake.
-        nta = tasks_taken_.load(std::memory_order_acquire);
-        tc = task_count_.load(std::memory_order_acquire);
+        std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count_);
         if (nta >= tc && exiting_) return;
       }
     }
@@ -1218,7 +1270,8 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 2. Gather minibatch.
   GatherMinibatch();
-  task_count_.store(-1, std::memory_order_release);
+  assert(IsTasksCompleted(task_count_, completed_tasks_));
+  task_count_.fetch_or(kTaskCountSuspend, std::memory_order_release);
   search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
@@ -1473,8 +1526,9 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx)
 #define MAX_TASKS 256
 
 void SearchWorker::ResetTasks() {
+  // Tasks must be completed before reset.
+  assert(IsTasksCompleted(task_count_, completed_tasks_));
   task_count_.store(0, std::memory_order_release);
-  tasks_taken_.store(0, std::memory_order_release);
   completed_tasks_.store(0, std::memory_order_release);
   picking_tasks_.clear();
   // Reserve because resizing breaks pointers held by the task threads.
@@ -1482,19 +1536,22 @@ void SearchWorker::ResetTasks() {
 }
 
 int SearchWorker::WaitForTasks() REQUIRES(search_->nodes_mutex_) {
-  // Spin lock, other tasks should be done soon.
   while (true) {
     PickTask* task = nullptr;
     int id = 0;
-    std::tie(task, id) = PickTaskToProcess();
+    std::tie(task, id, std::ignore) = PickTaskToProcess();
     if (task == nullptr) {
       break;
     }
     ProcessTask(task, id, &minibatch_, &main_workspace_);
   }
+  // Spin lock, other tasks should be done soon.
   while (true) {
     int completed = completed_tasks_.load(std::memory_order_acquire);
-    int todo = task_count_.load(std::memory_order_acquire);
+    int todo, nta;
+    std::tie(std::ignore, nta, todo) = ReadTaskCount(task_count_);
+    std::ignore = nta;
+    assert(nta <= todo);
     if (todo == completed) return completed;
     SpinloopPause();
   }

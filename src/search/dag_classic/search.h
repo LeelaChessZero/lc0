@@ -209,6 +209,12 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
+  static constexpr int kTaskCountDigits = std::numeric_limits<int>::digits + 1;
+  static constexpr int kTasksTakenShift = kTaskCountDigits/2;
+  static constexpr int kTasksTakenOne = 1 << kTasksTakenShift;
+  // Suspend is -1 for the low half.
+  static constexpr int kTaskCountSuspend = kTasksTakenOne - 1;
+
   SearchWorker(Search* search, const SearchParams& params)
       : search_(search),
         history_(search_->played_history_),
@@ -243,18 +249,7 @@ class SearchWorker {
                                      target_minibatch_size_));
   }
 
-  ~SearchWorker() {
-    {
-      task_count_.store(-1, std::memory_order_release);
-      Mutex::Lock lock(picking_tasks_mutex_);
-      exiting_ = true;
-      task_added_.notify_all();
-    }
-    for (size_t i = 0; i < task_threads_.size(); i++) {
-      task_threads_[i].join();
-    }
-    LOGFILE << "Search worker destroyed.";
-  }
+  ~SearchWorker();
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -470,7 +465,7 @@ class SearchWorker {
   void ProcessPickedTask(int batch_start, int batch_end);
   void ExtendNode(NodeToProcess& picked_node);
   void FetchSingleNodeResult(NodeToProcess* node_to_process);
-  std::tuple<PickTask*, int> PickTaskToProcess();
+  std::tuple<PickTask*, int, int> PickTaskToProcess();
   void ProcessTask(PickTask* task, int id,
                    std::vector<NodeToProcess>* receiver,
                    TaskWorkspace* workspace);
@@ -499,8 +494,8 @@ class SearchWorker {
 
   Mutex picking_tasks_mutex_;
   std::vector<PickTask> picking_tasks_;
-  std::atomic<int> task_count_ = -1;
-  std::atomic<int> tasks_taken_ = 0;
+  // A packed atomic. LSB half is task_count_. MSB half is tasks_taken_.
+  std::atomic<int> task_count_ = kTaskCountSuspend;
   std::atomic<int> completed_tasks_ = 0;
   std::condition_variable task_added_;
   std::vector<std::thread> task_threads_;
