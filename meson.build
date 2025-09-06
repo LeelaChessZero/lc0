@@ -510,7 +510,7 @@ if get_option('build_backends')
         cuda_arguments += ['-Xcompiler', '-MD']
       endif
     else
-      cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
+      cuda_arguments += ['--std=c++17', '-Xcompiler', '-fPIC']
     endif
     if get_option('nvcc_ccbin') != ''
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
