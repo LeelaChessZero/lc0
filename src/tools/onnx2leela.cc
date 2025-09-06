@@ -167,7 +167,7 @@ bool ValidateNetwork(const pblczero::Net& weights, pblczero::ModelProto& onnx) {
 
   auto check_exists = [](std::string_view n, std::set<std::string>* nodes) {
     std::string name(n);
-    if (nodes->count(name) == 0) {
+    if (!nodes->contains(name)) {
       CERR << "Node '" << name << "' doesn't exist in ONNX.";
       return false;
     }
