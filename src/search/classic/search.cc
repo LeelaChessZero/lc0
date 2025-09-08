@@ -480,7 +480,7 @@ std::vector<std::string> Search::GetVerboseStats(const Node* node) const {
   };
   auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p) {
     *oss << std::fixed;
-    print(oss, "", std::move(label), " ", 5);
+    print(oss, "", label, " ", 5);
     print(oss, "(", i, ") ", 4);
     *oss << std::right;
     print(oss, "N: ", n, " ", 7);
