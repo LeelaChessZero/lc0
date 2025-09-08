@@ -61,6 +61,7 @@ class AtomicVector {
     return *reinterpret_cast<const T*>(&data_[i]);
   }
 
+  bool empty() const { return size() == 0; }
   size_t size() const { return size_.load(std::memory_order_relaxed); }
   size_t capacity() const { return capacity_; }
 
@@ -70,6 +71,16 @@ class AtomicVector {
       reinterpret_cast<T*>(&data_[i])->~T();
     }
     size_.store(0, std::memory_order_relaxed);
+  }
+
+  // Not thread safe.
+  void erase(T* start, T* end) {
+    assert(end ==  this->end());
+    size_t first = start - begin();
+    for (size_t i = size_.load(std::memory_order_relaxed); i-- > first;) {
+      reinterpret_cast<T*>(&data_[i])->~T();
+    }
+    size_.fetch_add(start-end, std::memory_order_relaxed);
   }
 
   T* begin() { return reinterpret_cast<T*>(data_); }

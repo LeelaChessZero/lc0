@@ -28,6 +28,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <condition_variable>
 #include <functional>
 #include <optional>
@@ -35,6 +36,8 @@
 #include <thread>
 #include <tuple>
 #include <vector>
+#include <span>
+#include <absl/cleanup/cleanup.h>
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
@@ -43,6 +46,7 @@
 #include "search/dag_classic/node.h"
 #include "search/dag_classic/params.h"
 #include "syzygy/syzygy.h"
+#include "utils/atomic_vector.h"
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
@@ -180,8 +184,6 @@ class Search {
   Eval GetBestEval(Move* move = nullptr, bool* is_terminal = nullptr) const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
-  // Returns the search parameters.
-  const SearchParams& GetParams() const { return params_; }
 
   // If called after GetBestMove, another call to GetBestMove will have results
   // from temperature having been applied again.
@@ -291,6 +293,9 @@ class Search {
   friend class SearchWorker;
 };
 
+template<typename TaskType>
+using TaskVector = std::vector<TaskType, IterationMemoryAllocator<TaskType>>;
+
 // Single thread worker of the search engine.
 // That used to be just a function Search::Worker(), but to parallelize it
 // within one thread, have to split into stages.
@@ -299,43 +304,14 @@ class SearchWorker {
   static constexpr int kTaskCountDigits = std::numeric_limits<int>::digits + 1;
   static constexpr int kTasksTakenShift = kTaskCountDigits/2;
   static constexpr int kTasksTakenOne = 1 << kTasksTakenShift;
-  // Suspend is -1 for the low half.
-  static constexpr int kTaskCountSuspend = kTasksTakenOne - 1;
+#if __cpp_lib_hardware_interference_size >= 201603
+  static constexpr auto kCacheLineSize = std::hardware_destructive_interference_size;
+#else
+  static constexpr auto kCacheLineSize = 64;
+#endif
+  static constexpr int kMaxMovesInPosition = 218;
 
-  SearchWorker(Search* search, const SearchParams& params)
-      : search_(search),
-        history_(search_->played_history_),
-        params_(params),
-        moves_left_support_(search_->backend_attributes_.has_mlh) {
-    task_workers_ = params.GetTaskWorkersPerSearchWorker();
-    if (task_workers_ < 0) {
-      if (search_->backend_attributes_.runs_on_cpu) {
-        task_workers_ = 0;
-      } else {
-        int working_threads = std::max(
-            search_->thread_count_.load(std::memory_order_acquire) - 1, 1);
-        task_workers_ = std::min(
-            std::thread::hardware_concurrency() / working_threads - 1, 4U);
-      }
-    }
-    for (int i = 0; i < task_workers_; i++) {
-      task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() {
-          LOGFILE << "Task worker " << i << " starting.";
-          this->RunTasks(i);
-          LOGFILE << "Task worker " << i << " exiting.";
-        });
-    }
-    target_minibatch_size_ = params_.GetMiniBatchSize();
-    if (target_minibatch_size_ == 0) {
-      target_minibatch_size_ =
-          search_->backend_attributes_.recommended_batch_size;
-    }
-    max_out_of_order_ =
-        std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvalsFactor() *
-                                     target_minibatch_size_));
-    iteration_memory_managers_.resize(task_threads_.size() + 1);
-  }
+  SearchWorker(Search* search, const SearchParams& params);
 
   ~SearchWorker();
 
@@ -392,58 +368,239 @@ class SearchWorker {
   IterationMemoryManager& GetIterationMemoryManager(int tid);
   size_t GetIterationAge() const;
 
- private:
-  struct NodeToProcess {
-    bool IsExtendable() const {
-      return !is_collision && !node->IsTerminal() && !node->GetLowNode();
+  // Interface for tasks.
+  template<bool starting_from_root = false>
+  std::conditional_t<starting_from_root, std::tuple<int, int>, int>
+    PickNodesToExtendTask(int collision_limit, int tid,
+                          const EdgeAndNode& current_best_edge = {});
+  void ProcessPickedTask(int start_idx, int end_idx);
+  void CancelCollisionsTask(int start, int end, bool stop);
+  int AddCollisions(int collisions);
+
+  void StartTasks(int count);
+  void CompleteTask();
+
+  // Returns the search parameters.
+  const SearchParams& GetParams() const { return params_; }
+
+  // Combine visits to perform, index, and node state flags into a packed
+  // variable. Packed value stores required visit infromation which can be
+  // pushed into the current_path stack.
+  struct CurrentPath {
+    struct Bits {
+        uint32_t visits_        : 21; // <= collision limit
+        uint32_t last_child_    : 1; // bool
+        uint32_t visit_child_   : 1; // bool
+        uint32_t stop_picking_  : 1; // bool
+        uint32_t index_         : 8; // < 218
+    };
+    union {
+      Bits bits_;
+      uint32_t value_;
+    };
+    CurrentPath(unsigned visits, bool last, bool visit, bool stop,
+                unsigned index) :
+      bits_(visits, last, visit, stop, index)
+    {}
+    // Implicit conversion from int to allow comparing to a visit integer.
+    CurrentPath(int visits) :
+      bits_(visits, 0, 0, 0, 0)
+    {}
+    CurrentPath() {}
+
+    auto operator<=>(CurrentPath b) const {
+      return (uint32_t)bits_.visits_ <=> (uint32_t)b.bits_.visits_;
     }
-    bool IsCollision() const { return is_collision; }
-    bool CanEvalOutOfOrder() const {
-      return is_tt_hit || is_cache_hit || node->IsTerminal() ||
-             node->GetLowNode();
+    bool operator==(CurrentPath b) const {
+      return (uint32_t)bits_.visits_ == (uint32_t)b.bits_.visits_;
+    }
+    explicit operator bool() const { return !!bits_.visits_; }
+
+    CurrentPath& operator+=(unsigned visits) {
+      CurrentPath temp(*this);
+      std::ignore = temp;
+      assert(temp.bits_.visits_ += visits == visits + bits_.visits_);
+      value_ += visits;
+      return *this;
+    }
+    CurrentPath& operator-=(unsigned visits) {
+      assert(bits_.visits_ >= visits);
+      value_ -= visits;
+      return *this;
+    }
+  };
+
+  // Holds per task worker scratch data
+  struct TaskWorkspace {
+    std::array<Node::Iterator, kMaxMovesInPosition> cur_iters;
+    std::vector<CurrentPath> current_path;
+    std::vector<std::unique_ptr<BackupPath>> fp_buffer;
+    std::vector<std::unique_ptr<BackupPath>> full_path;
+    std::vector<std::unique_ptr<PositionHistory>> h_buffer;
+    std::vector<std::unique_ptr<PositionHistory>> history;
+    TaskWorkspace() {
+      // Reserve everything for a small number of recursions in a large tree.
+      current_path.reserve(1024);
+      full_path.reserve(8);
+      fp_buffer.reserve(8);
+      history.reserve(8);
+      h_buffer.reserve(8);
     }
 
+    [[nodiscard]]
+    auto Push(std::span<const BackupPath::value_type> path,
+              std::span<const Position> in_history,
+              const PositionHistory& played_history) {
+      assert(path.size() == in_history.size() + 1);
+      if (h_buffer.empty()) {
+        int expected_size = std::bit_ceil(played_history.GetLength() +
+                                          in_history.size() + 16);
+        history.push_back(std::make_unique<PositionHistory>());
+        history.back()->Reserve(expected_size);
+        auto played = played_history.GetPositions();
+        history.back()->Assign(played.begin(), played.end());
+      } else {
+        history.push_back(std::move(h_buffer.back()));
+        h_buffer.pop_back();
+      }
+      history.back()->Trim(played_history.GetLength());
+      history.back()->Insert(in_history.begin(), in_history.end());
+
+      if (fp_buffer.empty()) {
+        int expected_size = std::bit_ceil(path.size() + 16);
+        full_path.push_back(std::make_unique<BackupPath>());
+        full_path.back()->reserve(expected_size);
+      } else {
+        full_path.push_back(std::move(fp_buffer.back()));
+        fp_buffer.pop_back();
+      }
+      full_path.back()->assign(path.begin(), path.end());
+      return absl::Cleanup{[&] { Pop(); }};
+    }
+private:
+    void Pop() {
+      fp_buffer.push_back(std::move(full_path.back()));
+      full_path.pop_back();
+      h_buffer.push_back(std::move(history.back()));
+      history.pop_back();
+    }
+  };
+
+  // Return task workspace for the current thread.
+  TaskWorkspace& GetWorkspace(int tid) { return task_workspaces_[tid]; }
+  // Return history at the root node.
+  const PositionHistory& GetPlayedHistory() const {
+    return search_->played_history_;
+  }
+
+  // Task base type. Derived classes can be scheduled to task workers. Task
+  // worker threads start counting from thread id 1 because zero is reserved for
+  // the thraed which schedules tasks. Derived classes should use final keyword
+  // to let compiler optimise virtual function calls.
+  struct PickTask {
+    PickTask(const PickTask& other) = default;
+    PickTask() = default;
+    virtual ~PickTask();
+
+    void operator()(int tid);
+
+    // Dervied class should implement it if there is need to wait for a specific
+    // task completing. Default implementation is to do nothing.
+    virtual void Wait(int tid) const {std::ignore = tid;};
+
+  private:
+    // Dervied class implements task processing. It is called from
+    // operator()(int tid).
+    virtual void DoTask(int tid) = 0;
+  };
+
+  // Tasks cancel collisions.
+  struct PickTaskCancelCollisions final : public PickTask {
+    using Base = SearchWorker::PickTask;
+    PickTaskCancelCollisions(SearchWorker& worker);
+    ~PickTaskCancelCollisions();
+    void Reset(int start_idx, int end_idx, bool stop);
+    void Wait(int tid) const override;
+
+  private:
+    SearchWorker& worker_;
+    int start_idx_;
+    int end_idx_;
+    bool stop_;
+    std::atomic<bool> completed_ = false;
+
+    void DoTask(int) override;
+  };
+
+  using PickTaskPtr = std::atomic<const PickTask*>;
+
+ private:
+  // TODO: Is there false sharing issues when inserting to AtomicVector?
+  struct CollisionNode {
     // The path to the node to extend.
-    BackupPath path;
-    // The node to extend.
-    Node* node;
-    std::unique_ptr<EvalResult> eval;
     int multivisit = 0;
     // If greater than multivisit, and other parameters don't imply a lower
     // limit, multivist could be increased to this value without additional
     // change in outcome of next selection.
     int maxvisit = 0;
+
+    std::string DebugString(const BackupPath& path) const {
+      std::ostringstream oss;
+      oss << "<CollisionNode> This:" << this << " Depth:" << path.size()
+        << " Multivisit:" << multivisit << " Path:";
+      for (auto it = path.cbegin(); it != path.cend(); ++it) {
+        if (it != path.cbegin()) oss << "->";
+        auto n = std::get<0>(*it);
+        const auto& nl = n->GetLowNode();
+        oss << n << ":" << n->GetNInFlight();
+        if (nl) {
+          oss << "(" << nl << ")";
+        }
+      }
+      auto node = std::get<0>(path.back());
+      oss << " --- " << node->DebugString();
+      if (node->GetLowNode())
+        oss << " --- " << node->GetLowNode()->DebugString();
+
+      return oss.str();
+    }
+
+    CollisionNode() = default;
+
+    CollisionNode(uint32_t multivisit, int maxvisit)
+        : multivisit(multivisit),
+          maxvisit(maxvisit)
+    {}
+  };
+  struct NodeToProcess {
+    bool IsExtendable(const BackupPath& path) const {
+      auto node = std::get<0>(path.back());
+      return !node->IsTerminal() && !node->GetLowNode();
+    }
+    bool CanEvalOutOfOrder(const BackupPath& path) const {
+      auto node = std::get<0>(path.back());
+      return is_tt_hit || is_cache_hit || node->IsTerminal() ||
+             node->GetLowNode();
+    }
+
+    // The node to extend.
+    int eval_index = -1;
     bool nn_queried = false;
     bool is_tt_hit = false;
     bool is_cache_hit = false;
-    bool is_collision = false;
+    bool is_black_to_move = false;
 
     // Details that are filled in as we go.
     uint64_t hash;
     std::shared_ptr<LowNode> tt_low_node;
-    PositionHistory history;
-    bool ooo_completed = false;
 
-    // Repetition draws.
-    int repetitions = 0;
-
-    static NodeToProcess Collision(const BackupPath& path, int collision_count,
-                                   int max_count) {
-      return NodeToProcess(path, collision_count, max_count);
-    }
-    static NodeToProcess Visit(const BackupPath& path,
-                               const PositionHistory& history) {
-      return NodeToProcess(path, history);
-    }
-
-    std::string DebugString() const {
+    std::string DebugString(const BackupPath& path) const {
+      auto node = std::get<0>(path.back());
       std::ostringstream oss;
       oss << "<NodeToProcess> This:" << this << " Depth:" << path.size()
-          << " Node:" << node << " Multivisit:" << multivisit
-          << " Maxvisit:" << maxvisit << " NNQueried:" << nn_queried
+          << " Node:" << node << " NNQueried:" << nn_queried
           << " TTHit:" << is_tt_hit << " CacheHit:" << is_cache_hit
-          << " Collision:" << is_collision << " OOO:" << ooo_completed
-          << " Repetitions:" << repetitions << " Path:";
+          << " Path:";
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
         auto n = std::get<0>(*it);
@@ -460,70 +617,11 @@ class SearchWorker {
       return oss.str();
     }
 
-   private:
-    NodeToProcess(const BackupPath& path, uint32_t multivisit,
-                  uint32_t max_count)
-        : path(path),
-          node(std::get<0>(path.back())),
-          eval(std::make_unique<EvalResult>()),
-          multivisit(multivisit),
-          maxvisit(max_count),
-          is_collision(true),
-          repetitions(0) {}
-    NodeToProcess(const BackupPath& path, const PositionHistory& in_history)
-        : path(path),
-          node(std::get<0>(path.back())),
-          eval(std::make_unique<EvalResult>()),
-          multivisit(1),
-          maxvisit(0),
-          is_collision(false),
-          history(in_history),
-          repetitions(std::get<1>(path.back())) {}
-  };
+    NodeToProcess& operator=(NodeToProcess&&) = default;
+    NodeToProcess(NodeToProcess&&) = default;
 
-  // Holds per task worker scratch data
-  struct TaskWorkspace {
-    std::array<Node::Iterator, 256> cur_iters;
-    std::vector<std::unique_ptr<std::array<int, 256>>> vtp_buffer;
-    std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
-    std::vector<int> vtp_last_filled;
-    std::vector<int> current_path;
-    BackupPath full_path;
-    TaskWorkspace() {
-      vtp_buffer.reserve(30);
-      visits_to_perform.reserve(30);
-      vtp_last_filled.reserve(30);
-      current_path.reserve(30);
-      full_path.reserve(30);
-    }
-  };
-
-  struct PickTask {
-    enum PickTaskType { kGathering, kProcessing };
-    PickTaskType task_type;
-
-    // For task type gathering.
-    BackupPath start_path;
-    Node* start;
-    int collision_limit;
-    PositionHistory history;
-    std::vector<NodeToProcess> results;
-
-    // Task type post gather processing.
-    int start_idx;
-    int end_idx;
-
-    bool complete = false;
-
-    PickTask(const BackupPath& start_path, const PositionHistory& in_history,
-             int collision_limit)
-        : task_type(kGathering),
-          start_path(start_path),
-          start(std::get<0>(start_path.back())),
-          collision_limit(collision_limit),
-          history(in_history) {}
-    PickTask(int start_idx, int end_idx)
-        : task_type(kProcessing), start_idx(start_idx), end_idx(end_idx) {}
+    NodeToProcess(const PositionHistory& history)
+        : is_black_to_move(history.IsBlackToMove()) {}
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
@@ -537,47 +635,63 @@ class SearchWorker {
                                              uint32_t& n_to_fix, float& v_delta,
                                              float& d_delta, float& m_delta,
                                              bool& update_parent_bounds) const;
-  void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
+  void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process,
+                                const BackupPath& path);
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
-  void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(const BackupPath& path, int collision_limit,
-                             PositionHistory& history,
-                             std::vector<NodeToProcess>* receiver,
-                             TaskWorkspace* workspace);
-  void CancelCollisions();
+  std::tuple<int, int> PickNodesToExtend(int collision_limit);
+  void ScheduleCancelTask(int start, int end, bool stop);
+  int ExpandCollision(int idenx, int collisions_left);
 
-  // Check if the situation described by @depth under root and @position is a
-  // safe two-fold or a draw by repetition and return the number of safe
-  // repetitions and moves_left.
-  std::pair<int, int> GetRepetitions(int depth, const Position& position);
+  // Add visits or collisions to nodes
+  int Collision(const BackupPath& path, int collision_count, int maxvisits);
+  void Visit(const BackupPath& path, const PositionHistory& history);
+
   // Check if there is a reason to stop picking and pick @node.
   bool ShouldStopPickingHere(Node* node, bool is_root_node, int repetitions);
-  void ProcessPickedTask(int batch_start, int batch_end);
-  void ExtendNode(NodeToProcess& picked_node);
-  void FetchSingleNodeResult(NodeToProcess* node_to_process);
-  std::tuple<PickTask*, int, int> PickTaskToProcess();
-  void ProcessTask(PickTask* task, int id,
-                   std::vector<NodeToProcess>* receiver,
-                   TaskWorkspace* workspace);
+  void ExtendNode(NodeToProcess& picked_node, const BackupPath& path,
+                  const PositionHistory& history);
+  void FetchSingleNodeResult(NodeToProcess* node_to_process,
+                             const BackupPath& path);
+  PickTask* PickTaskToProcess();
+  // Process a queued task.
+  void ProcessTask(int tid);
+  // Submit list of tasks to the queue.
+  template<typename TaskVector>
+  void SubmitTasks(const TaskVector& tasks, int tid);
+  template<typename TaskType>
+  void SubmitTask(const TaskType& task, int tid);
   void RunTasks(int tid);
-  void ResetTasks();
-  // Returns how many tasks there were.
-  int WaitForTasks();
+  // Activate worker threads because we are about to submit work
+  void ActivateTasks();
+  void WaitForTasks();
+
+  // Helpers to lookup picked node paths.
+  const BackupPath& GetMinibatchPath(int index) const;
+  const BackupPath& GetOutOfOrderPath(int index) const;
+  const BackupPath& GetCollisionPath(int index) const;
+  // Helpers to assign picked node paths.
+  void AssignMinibatchPath(int index, const BackupPath& path);
+  void AssignOutOfOrderPath(int index, const BackupPath& path);
+  void AssignCollisionPath(int index, const BackupPath& path);
 
   Search* const search_;
-  // List of nodes to process.
-  std::vector<NodeToProcess> minibatch_;
-  std::unique_ptr<BackendComputation> computation_;
   int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;
+  int number_out_of_order_ = 0;
   size_t iteration_memory_age_ = 0;
   std::vector<IterationMemoryManager> iteration_memory_managers_;
-  // History is reset and extended by PickNodeToExtend().
-  PositionHistory history_;
-  int number_out_of_order_ = 0;
+  // List of nodes to process.
+  alignas(kCacheLineSize) std::atomic<int> collisions_left_;
+  alignas(kCacheLineSize) std::atomic<int> eval_used_;
+  alignas(kCacheLineSize) AtomicVector<NodeToProcess> minibatch_;
+  alignas(kCacheLineSize) AtomicVector<NodeToProcess> ooobatch_;
+  alignas(kCacheLineSize) AtomicVector<CollisionNode> collisions_;
+  std::vector<EvalResult> eval_results_;
+  std::vector<BackupPath> node_paths_;
+  std::unique_ptr<BackendComputation> computation_;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;
@@ -587,14 +701,18 @@ class SearchWorker {
   // Multigather task related fields.
 
   Mutex picking_tasks_mutex_;
-  std::vector<PickTask> picking_tasks_;
+  // Size is the smalles power of two which has enough space to hold all child
+  // nodes in any positions. Typically there is much less visited children. The
+  // bigger size helps avoid cache line contention when scaling to more threads.
+  std::array<PickTaskPtr, 256> picking_tasks_;
   // A packed atomic. LSB half is task_count_. MSB half is tasks_taken_.
-  std::atomic<int> task_count_ = kTaskCountSuspend;
-  std::atomic<int> completed_tasks_ = 0;
-  std::condition_variable task_added_;
+  alignas(kCacheLineSize) std::atomic<int> task_count_ = 0;
+  alignas(kCacheLineSize) std::atomic<int> outstanding_tasks_ = 0;
+  alignas(kCacheLineSize) std::atomic<int> active_task_threads_ = 0;
+  alignas(kCacheLineSize) std::condition_variable task_added_;
+  PickTaskCancelCollisions cancel_task_;
   std::vector<std::thread> task_threads_;
   std::vector<TaskWorkspace> task_workspaces_;
-  TaskWorkspace main_workspace_;
   bool exiting_ = false;
 };
 
