@@ -49,6 +49,93 @@
 namespace lczero {
 namespace dag_classic {
 
+class SearchWorker;
+class StackLikeArenaTag {};
+
+// Simple memory allocation arena which allows cheap batched deallocation.
+template<size_t bytes, size_t alignment>
+class StackLikeArena {
+public:
+  StackLikeArena() = default;
+  StackLikeArena(StackLikeArenaTag) : StackLikeArena() {}
+  StackLikeArena(const StackLikeArena&) = delete;
+  ~StackLikeArena();
+
+  char* Begin() { return std::begin(buffer_); }
+  char* End() { return std::end(buffer_); }
+private:
+  alignas(alignment) char buffer_[bytes];
+};
+
+// Implement memory allocation which has automatic life SearchWorker iteration
+// life time. This memory can be allocated rapidly from a StackLikeAreana.
+// Deallocation will be delayed until the next iteration starts.
+class IterationMemoryManager {
+public:
+  using ArenaType = StackLikeArena<16*1024 - sizeof(void*) - sizeof(size_t),
+                                   alignof(std::max_align_t)>;
+  using ArenaTuple = std::tuple<ArenaType, size_t>;
+  IterationMemoryManager();
+  IterationMemoryManager(const IterationMemoryManager&) = delete;
+  IterationMemoryManager(IterationMemoryManager&&) = default;
+  IterationMemoryManager& operator=(IterationMemoryManager&&) = default;
+
+  template<typename T>
+  T* Allocate(size_t n);
+
+  // Thread local manager for Allocator.
+  static IterationMemoryManager& LocalManager();
+  // Tells manager that a new iteration has started. It must be called before
+  // the first call to LocalManager in the thread.
+  static void ResetLocalManager(SearchWorker &worker, int tid);
+
+private:
+  // Threads add randmoness to where thinks are allocated. Deallocations will be
+  // delayed for a few seconds to avoid constantly allocating and deallocating
+  // memory.
+  static constexpr size_t kMaxArenaAge = 200;
+  // Helper to acess the active arena.
+  ArenaType& GetActiveArena();
+  // Activate a new empty arena.
+  ArenaType& GetNewArena();
+  // Honor type required alignment.
+  char* AlignedPointer(size_t align);
+
+  // If age has changed, move all allocations to the free list.
+  void Reset(size_t age);
+  // Helper to check the age of active arena.
+  size_t Age() const;
+
+  std::forward_list<ArenaTuple> alloc_;
+  std::forward_list<ArenaTuple> free_;
+  char* pointer_;
+
+  static thread_local IterationMemoryManager* local_manager_;
+};
+
+// Allocator interface to IterationMemoryManager. It can be used for stl
+// containers or replacement for new/unique_ptr.
+template<typename T>
+class IterationMemoryAllocator {
+public:
+  using value_type = T;
+  using propagate_on_container_move_assignment = std::false_type;
+
+  IterationMemoryAllocator(const IterationMemoryAllocator&) = default;
+  IterationMemoryAllocator& operator=(const IterationMemoryAllocator&) = delete;
+  template<typename U>
+  IterationMemoryAllocator(const IterationMemoryAllocator<U>&)
+  {}
+
+  IterationMemoryAllocator() = default;
+
+  T* allocate(size_t n);
+  void deallocate(T*, size_t) noexcept;
+
+private:
+  template<typename U> friend class IterationMemoryAllocator;
+};
+
 // The tuple elements are (node, repetitons, moves left).
 typedef std::vector<std::tuple<Node*, int, int>> BackupPath;
 
@@ -247,6 +334,7 @@ class SearchWorker {
     max_out_of_order_ =
         std::max(1, static_cast<int>(params_.GetMaxOutOfOrderEvalsFactor() *
                                      target_minibatch_size_));
+    iteration_memory_managers_.resize(task_threads_.size() + 1);
   }
 
   ~SearchWorker();
@@ -299,6 +387,10 @@ class SearchWorker {
 
   // 7. Update the Search's status and progress information.
   void UpdateCounters();
+
+  // Interface for IterationMemoryAllocator support.
+  IterationMemoryManager& GetIterationMemoryManager(int tid);
+  size_t GetIterationAge() const;
 
  private:
   struct NodeToProcess {
@@ -481,6 +573,8 @@ class SearchWorker {
   int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;
+  size_t iteration_memory_age_ = 0;
+  std::vector<IterationMemoryManager> iteration_memory_managers_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
   int number_out_of_order_ = 0;

@@ -42,6 +42,15 @@
 #include "utils/random.h"
 #include "utils/spinhelper.h"
 
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+
+#if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
+#include <sanitizer/asan_interface.h>
+#define ASAN_BUILD 1
+#endif
+
 namespace lczero {
 namespace dag_classic {
 
@@ -184,7 +193,155 @@ bool IsTasksCompleted(const std::atomic<int>& task_count,
   return tc == ct || (nta == ct && tc == -1);
 }
 
+static constexpr size_t kRedZoneSize = 16;
+#if ASAN_BUILD
+static constexpr size_t kAsanEnabled = 1;
+#else
+static constexpr size_t kAsanEnabled = 0;
+#endif
+
 }  // namespace
+
+template<size_t bytes, size_t alignment>
+StackLikeArena<bytes, alignment>::~StackLikeArena() {
+#if ASAN_BUILD
+  // Unpoison memory before freeing it to the system allocator.
+  ASAN_UNPOISON_MEMORY_REGION(Begin(), End() - Begin());
+#endif
+}
+
+IterationMemoryManager::IterationMemoryManager()
+  : alloc_(1),
+    pointer_(GetActiveArena().Begin()) {
+}
+
+// The pointer to the free zone can have any alignment. It needs to be adjusted
+// to honor type required alignment. AlignedPointer is a helper method to
+// calculate the correct alignment.
+char* IterationMemoryManager::AlignedPointer(size_t align) {
+  char* base = nullptr;
+  intptr_t ptr = pointer_ - base;
+  intptr_t aligned = (ptr + align - 1) & ~(align - 1);
+  return pointer_ + (aligned - ptr);
+}
+
+template<typename T>
+T* IterationMemoryManager::Allocate(size_t n) {
+  size_t align = alignof(T);
+  // Add a unallocated poisoned zone after each allocation when using address
+  // sanitizer.
+  size_t red_zone = std::max(kRedZoneSize, sizeof(T)) * kAsanEnabled;
+  size_t size = sizeof(T) * n + red_zone;
+  auto &arena = GetActiveArena();
+  char* pointer = AlignedPointer(align);
+  // Check if current arena has enough space left.
+  if (pointer + size >= arena.End()) {
+    // Get a new empty arena.
+    auto &arena = GetNewArena();
+    pointer = AlignedPointer(align);
+    std::ignore = arena;
+    // There must be enough space in the empty arena.
+    assert(pointer + size < arena.End());
+  }
+  // Free zone start at the end of current.
+  pointer_ = pointer + size;
+#if ASAN_BUILD
+  // Let sanitizer know that we allocated a memory region.
+  ASAN_UNPOISON_MEMORY_REGION(pointer, size - red_zone);
+#endif
+  return reinterpret_cast<T*>(pointer);
+}
+
+IterationMemoryManager::ArenaType& IterationMemoryManager::GetActiveArena() {
+  return std::get<0>(alloc_.front());
+}
+
+size_t IterationMemoryManager::Age() const {
+  return std::get<1>(alloc_.front());
+}
+
+IterationMemoryManager::ArenaType& IterationMemoryManager::GetNewArena() {
+  size_t age = Age();
+  if (free_.empty()) {
+    // No cached arena in the free list. We need to allocate a new arena.
+    alloc_.emplace_front(StackLikeArenaTag{}, age);
+  } else {
+    // Reuse a cached allocation. The first free are is moved to the begin of
+    // allocated list.
+    alloc_.splice_after(alloc_.cbefore_begin(), free_, free_.cbefore_begin());
+    std::get<1>(alloc_.front()) = age;
+  }
+  // The new arena is completely free
+  pointer_ = GetActiveArena().Begin();
+#if ASAN_BUILD
+  // Fill the new arena with an easy recognise value. It will make it easier to
+  // notice if some code uses uninitialised memory.
+  ASAN_UNPOISON_MEMORY_REGION(pointer_, GetActiveArena().End() - pointer_);
+  assert(std::distance(pointer_, GetActiveArena().End()) % sizeof(int) == 0);
+  std::fill((int*)pointer_, (int*)GetActiveArena().End(), 0xBEAFdead);
+  // The new arena must not be used before allocations. ASAN validates accesses
+  // to user poisoned memory.
+  ASAN_POISON_MEMORY_REGION(pointer_, GetActiveArena().End() - pointer_);
+#endif
+  return GetActiveArena();
+}
+
+void IterationMemoryManager::Reset(size_t age) {
+  if (Age() == age) return;
+  // Free unused cached arena allocations.
+  free_.remove_if([&](const auto& arena ) {
+      return age - std::get<1>(arena) > kMaxArenaAge;
+    });
+  // Move old allocations to the free list. We keep the most recent allocation
+  // at the front of allocation list.
+  free_.splice_after(free_.cbefore_begin(), alloc_,
+                     alloc_.cbegin(), alloc_.cend());
+  // Reset the age when we are reusing an old allocation.
+  std::get<1>(alloc_.front()) = age;
+
+  // There is a new empty arena.
+  pointer_ = GetActiveArena().Begin();
+#if ASAN_BUILD
+  // Fill the new arena to help debug like in GetNewArena. We use a different
+  // value. It can be helpful to see the first arena when debugging.
+  ASAN_UNPOISON_MEMORY_REGION(pointer_, GetActiveArena().End() - pointer_);
+  assert(std::distance(pointer_, GetActiveArena().End()) % sizeof(int) == 0);
+  std::fill((int*)pointer_, (int*)GetActiveArena().End(), 0xdeadBEAF);
+  ASAN_POISON_MEMORY_REGION(pointer_, GetActiveArena().End() - pointer_);
+#endif
+}
+
+// Thread local iteration mememory manager which is a shared state for
+// IterationMemoryAllocators.
+thread_local IterationMemoryManager* IterationMemoryManager::local_manager_ = nullptr;
+
+IterationMemoryManager& IterationMemoryManager::LocalManager() {
+  assert(local_manager_);
+  return *local_manager_;
+}
+
+// Activate a worker owned memory manager. Free allocations if a new iteration
+// has stated since the last use of the manager.
+void IterationMemoryManager::ResetLocalManager(SearchWorker& worker, int tid) {
+  local_manager_ = &worker.GetIterationMemoryManager(tid);
+  local_manager_->Reset(worker.GetIterationAge());
+}
+
+template<typename T>
+T* IterationMemoryAllocator<T>::allocate(size_t n) {
+  return IterationMemoryManager::LocalManager().template Allocate<T>(n);
+}
+
+template<typename T>
+void IterationMemoryAllocator<T>::deallocate(T* ptr, size_t n) noexcept {
+  std::ignore = ptr;
+  std::ignore = n;
+  // Memory will deallocate when the next iteration starts. ASAN will validated
+  // pointer access so we don't use objects after destructor has been called.
+#if ASAN_BUILD
+  ASAN_POISON_MEMORY_REGION(ptr, sizeof(T) * n);
+#endif
+}
 
 Search::Search(const NodeTree& tree, Backend* backend,
                std::unique_ptr<UciResponder> uci_responder,
@@ -1318,7 +1475,10 @@ void SearchWorker::InitializeIteration(
     std::unique_ptr<BackendComputation> computation) {
   computation_ = std::move(computation);
   minibatch_.clear();
+  // Free iteration memory allocations.
+  iteration_memory_age_++;
   minibatch_.reserve(2 * target_minibatch_size_);
+  IterationMemoryManager::ResetLocalManager(*this, 0);
 }
 
 // 2. Gather minibatch.
@@ -1345,6 +1505,14 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
                       params.GetMaxCollisionVisitsScalingPower()));
 }
 }  // namespace
+
+IterationMemoryManager& SearchWorker::GetIterationMemoryManager(int tid) {
+  return iteration_memory_managers_[tid];
+}
+
+size_t SearchWorker::GetIterationAge() const {
+  return iteration_memory_age_;
+}
 
 void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
