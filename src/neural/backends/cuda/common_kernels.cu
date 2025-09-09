@@ -849,9 +849,9 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input,
     x[1] += x[3];
   }
   if (fp16) {
-    // Guard against Inf: 1e6 is outside the fp16 range.
-    x[0] = clamp(x[0], -1e6, 1e6);
-    x[1] = clamp(x[1], -1e6, 1e6);
+    // Guard against Inf: 131008 is twice the fp16 max.
+    x[0] = clamp(x[0], -131008.0f, 131008.0f);
+    x[1] = clamp(x[1], -131008.0f, 131008.0f);
   }
   float threadMax = max(x[0], x[1]);
   float maxval = warpMax(threadMax);
@@ -895,8 +895,8 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
   float x = (float)input[index];
   if (input2 != nullptr) x += (float)input2[index];
   if (std::is_same<half, T>::value) {
-    // Guard against Inf: 1e6 is outside the fp16 range.
-    x = clamp(x, -1e6, 1e6);
+    // Guard against Inf: 131008 is twice the fp16 max.
+    x = clamp(x, -131008.0f, 131008.0f);
   }
 
   __shared__ float sum, maxval;
