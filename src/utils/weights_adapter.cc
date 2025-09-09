@@ -25,19 +25,47 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "src/utils/weights_adapter.h"
+#include "utils/weights_adapter.h"
+
+#include "utils/bf16_utils.h"
+#include "utils/exception.h"
+#include "utils/fp16_utils.h"
 
 namespace lczero {
+
 float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
                                            const LayerAdapter* adapter) {
-  return *ptr / static_cast<float>(0xffff) * adapter->range_ + adapter->min_;
+  switch (adapter->encoding_) {
+    case pblczero::Weights::Layer::LINEAR16:
+      return *ptr / static_cast<float>(0xffff) * adapter->range_ +
+             adapter->min_;
+    case pblczero::Weights::Layer::FLOAT16:
+      return FP16toFP32(*ptr) * adapter->max_;
+    case pblczero::Weights::Layer::BFLOAT16:
+      return BF16toFP32(*ptr) * adapter->max_;
+    [[unlikely]] default:
+      return 0;
+  }
 }
 
 LayerAdapter::LayerAdapter(const pblczero::Weights::Layer& layer)
     : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
       size_(layer.params().size() / sizeof(uint16_t)),
+      max_(layer.max_val()),
       min_(layer.min_val()),
-      range_(layer.max_val() - min_) {}
+      range_(max_ - min_),
+      encoding_(layer.has_encoding() ? layer.encoding()
+                                     : pblczero::Weights::Layer::LINEAR16) {
+  switch (encoding_) {
+    case pblczero::Weights::Layer::LINEAR16:
+    case pblczero::Weights::Layer::FLOAT16:
+    case pblczero::Weights::Layer::BFLOAT16:
+      break;
+    default:
+      throw Exception("Unknown layer encoding " +
+                      pblczero::Weights::Layer::Encoding_Name(encoding_));
+  }
+}
 
 std::vector<float> LayerAdapter::as_vector() const {
   return std::vector<float>(begin(), end());
