@@ -404,8 +404,8 @@ class SearchWorker {
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(Node* starting_point, int collision_limit,
-                             int base_depth,
+  void PickNodesToExtendTask(Node* starting_point, int base_depth,
+                             int collision_limit,
                              const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
@@ -431,7 +431,6 @@ class SearchWorker {
   PositionHistory history_;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
-  std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;

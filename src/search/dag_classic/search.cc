@@ -176,6 +176,8 @@ Search::Search(const NodeTree& tree, Backend* backend,
   // enough to prevent expired entries later during the search.
   absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
 
+  LOGFILE << "Transposition table garbage collection done.";
+
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
@@ -1063,6 +1065,7 @@ void Search::Wait() {
     threads_.back().join();
     threads_.pop_back();
   }
+  LOGFILE << "Search threads cleaned.";
 }
 
 void Search::CancelSharedCollisions() REQUIRES(nodes_mutex_) {
@@ -1575,9 +1578,6 @@ void SearchWorker::PickNodesToExtendTask(
     const BackupPath& path, int collision_limit, PositionHistory& history,
     std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
-  // TODO: Find a safe way to make helper threads work in parallel without
-  // excessive locking.
-  Mutex::Lock lock(picking_tasks_mutex_);
   assert(path.size() == (size_t)history.GetLength() -
                             search_->played_history_.GetLength() + 1);
 
@@ -1860,9 +1860,8 @@ void SearchWorker::PickNodesToExtendTask(
           if (!ShouldStopPickingHere(child_node, false, child_repetitions)) {
             bool passed = false;
             {
-              // TODO: Reinstate this lock when the whole function lock is gone.
               // Multiple writers, so need mutex here.
-              // Mutex::Lock lock(picking_tasks_mutex_);
+              Mutex::Lock lock(picking_tasks_mutex_);
               // Ensure not to exceed size of reservation.
               if (picking_tasks_.size() < MAX_TASKS) {
                 picking_tasks_.emplace_back(full_path, history, child_limit);

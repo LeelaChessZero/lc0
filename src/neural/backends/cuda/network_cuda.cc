@@ -342,14 +342,14 @@ class CudaNetwork : public Network {
     std::string policy_head =
         options.GetOrDefault<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
-    if (weights.policy_heads.count(policy_head) == 0) {
+    if (!weights.policy_heads.contains(policy_head)) {
       throw Exception("The policy head you specified '" + policy_head +
                       "' does not exist in this net.");
     }
     std::string value_head =
         options.GetOrDefault<std::string>("value_head", "winner");
     // Check that selected value head exists.
-    if (weights.value_heads.count(value_head) == 0) {
+    if (!weights.value_heads.contains(value_head)) {
       throw Exception("The value head you specified '" + value_head +
                       "' does not exist in this net.");
     }

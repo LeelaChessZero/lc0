@@ -660,7 +660,7 @@ class Onnx2HloConverter {
   bool AllInputsConstant(const pblczero::NodeProto& node) {
     for (const auto& input : node.input()) {
       const std::string name(input);
-      if (initializers_.count(name)) continue;
+      if (initializers_.contains(name)) continue;
       if (auto iter = onnx_name_to_hlo_flow_.find(name);
           iter != onnx_name_to_hlo_flow_.end() &&
           iter->second->opcode() == "constant") {

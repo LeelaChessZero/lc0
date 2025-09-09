@@ -162,6 +162,7 @@ void Engine::EnsureSearchStopped() {
 }
 
 void Engine::UpdateBackendConfig() {
+  LOGFILE << "Update backend configuration.";
   const std::string backend_name =
       options_.Get<std::string>(SharedBackendParams::kBackendId);
   if (!backend_ || backend_name != backend_name_ ||
@@ -182,6 +183,7 @@ void Engine::EnsureSyzygyTablebasesLoaded() {
   previous_tb_paths_ = tb_paths;
 
   if (tb_paths.empty()) {
+    LOGFILE << "Reset Syzygy tablebases.";
     syzygy_tb_.reset();
   } else {
     syzygy_tb_ = std::make_unique<SyzygyTablebase>();
@@ -198,6 +200,7 @@ void Engine::EnsureSyzygyTablebasesLoaded() {
 // Initializes the search with either the specified position for the normal
 // search or the position one ply trimmed for the ponder search.
 void Engine::InitializeSearchPosition(bool for_ponder) {
+  LOGFILE << "Setting a new search position.";
   assert(last_position_);
   if (!for_ponder) {
     search_->SetPosition(*last_position_);
