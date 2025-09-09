@@ -809,9 +809,8 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
 }
 
 __device__ __forceinline__ float clamp(float val, float low, float high) {
-  if (val > high) return high;
-  if (val < low) return low;
-  return val;
+  if (__builtin_expect(isnan(val), 0)) return val;
+  return fminf(fmaxf(val, low), high);
 }
 
 // softmax along C dimension which is assumed to be 64
