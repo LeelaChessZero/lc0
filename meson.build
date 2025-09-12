@@ -317,9 +317,9 @@ if get_option('build_backends')
     eigen_dep = dependency('eigen3')
     # Check for needed header, bad dependency seen in the widl.
     if eigen_dep.found() and cc.has_header('Eigen/Core', dependencies: eigen_dep)
-      deps += eigen_dep
+      deps += eigen_dep.as_system()
     else
-      deps += subproject('eigen').get_variable('eigen_dep')
+      deps += subproject('eigen').get_variable('eigen_dep').as_system()
     endif
 
     ispc = find_program('ispc', required: false)
