@@ -114,17 +114,11 @@ elif get_option('malloc') != ''
 endif
 
 # ONNX and HLO protobufs.
-gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
-  arguments : [
-    '--proto_path=@CURRENT_SOURCE_DIR@',
-    '--cpp_out=@BUILD_DIR@',
-    '@INPUT@'])
-
 files += gen.process('proto/onnx.proto',
   preserve_path_from : meson.current_source_dir())
 
-files += gen_proto_src.process('src/neural/xla/hlo.proto',
-  preserve_path_from : meson.current_source_dir() + '/src/')
+files += gen.process('proto/hlo.proto',
+  preserve_path_from : meson.current_source_dir())
 
 #############################################################################
 ## Main files
