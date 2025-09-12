@@ -31,8 +31,8 @@
 #include <fstream>
 #include <set>
 
-#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "proto/onnx.pb.h"
 #include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/fp16_utils.h"

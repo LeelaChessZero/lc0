@@ -28,7 +28,7 @@
 #include "tools/describenet.h"
 
 #include "neural/loader.h"
-#include "neural/onnx/onnx.pb.h"
+#include "proto/onnx.pb.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
