@@ -54,6 +54,7 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
                             const PositionHistory& history, bool fast_play,
+                            bool contempt_mode_tb_enable,
                             std::atomic<int>* tb_hits, bool* dtz_success) {
   assert(tb_hits);
   assert(dtz_success);
@@ -62,7 +63,8 @@ MoveList MakeRootMoveFilter(const MoveList& searchmoves,
   const auto& board = history.Last().GetBoard();
   MoveList root_moves;
   if (!syzygy_tb || !board.castlings().no_legal_castle() ||
-      (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality()) {
+      (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality() ||
+      contempt_mode_tb_enable) {
     return root_moves;
   }
   if (syzygy_tb->root_probe(
@@ -170,7 +172,8 @@ Search::Search(const NodeTree& tree, Backend* backend,
       initial_visits_(root_node_->GetN()),
       root_move_filter_(MakeRootMoveFilter(
           searchmoves_, syzygy_tb_, played_history_,
-          params_.GetSyzygyFastPlay(), &tb_hits_, &root_is_in_dtz_)),
+          params_.GetSyzygyFastPlay(), params_.GetContemptModeTBEnable(),
+          &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
@@ -2142,6 +2145,26 @@ void SearchWorker::PickNodesToExtendTask(
   }
 }
 
+bool IsContemptModeTBEnabled(ContemptMode contempt_mode,
+                             const PositionHistory& history,
+                             const SearchParams& params) {
+  if (!params.GetContemptModeTBEnable())
+    return false;
+  switch (contempt_mode) {
+    case ContemptMode::NONE:
+      return false;
+    case ContemptMode::BLACK:
+      return history.Last().IsBlackToMove();
+    case ContemptMode::WHITE:
+      return !history.Last().IsBlackToMove();
+    case ContemptMode::PLAY:
+      /* unreachable */
+      assert(false);
+      return false;
+  }
+}
+
+
 void SearchWorker::ExtendNode(Node* node, int depth,
                               const std::vector<Move>& moves_to_node,
                               PositionHistory* history) {
@@ -2200,7 +2223,8 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
         board.castlings().no_legal_castle() &&
-        history->Last().GetRule50Ply() == 0 &&
+        (history->Last().GetRule50Ply() == 0 ||
+          IsContemptModeTBEnabled(search_->contempt_mode_, *history, params_)) &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
@@ -2219,18 +2243,29 @@ void SearchWorker::ExtendNode(Node* node, int depth,
             m = std::max(0.0f, parent->GetM() - 1.0f);
           }
         }
+        bool use_value = true;
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
+          if (params_.GetContemptModeTBEnable()) {
+            int sm = search_->syzygy_tb_->probe_dtz(history->Last(), &state);
+            if (state != FAIL) {
+              m = sm;
+            }
+          }
           node->MakeTerminal(GameResult::BLACK_WON, m,
                              Node::Terminal::Tablebase);
-        } else if (wdl == WDL_LOSS) {
+        } else if (!params_.GetContemptModeTBEnable() && wdl == WDL_LOSS) {
           node->MakeTerminal(GameResult::WHITE_WON, m,
                              Node::Terminal::Tablebase);
-        } else {  // Cursed wins and blessed losses count as draws.
+        } else if (!params_.GetContemptModeTBEnable()) {  // Cursed wins and blessed losses count as draws.
           node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
+        } else {
+          use_value = false;
         }
-        search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
+        if (use_value) {
+          search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
+          return;
+        }
       }
     }
   }

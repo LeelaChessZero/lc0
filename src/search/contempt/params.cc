@@ -96,6 +96,11 @@ const OptionId SearchParams::kScLimitId{
     "search-contempt-node-limit", "ScLimit",
     "UCT until this number of nodes"
     "thompson sampling beyond this limit."};
+const OptionId SearchParams::kContemptModeTBEnableId{
+    "contempt-mode-tb-enable", "ContemptModeTBEnable",
+    "Use only our side winning when probing the tablebase. It modifies "
+    "tablebase lookup based ContemptMode. It has no effect if syzygy table "
+    "bases are missing."};
 const OptionId SearchParams::kHybridSamplingRatioId{
     "hybrid-sampling-ratio", "HybridSamplingRatio",
     "The ratio of Thompson Sampling to use in hybrid search-contempt mode. "
@@ -131,6 +136,7 @@ const OptionId SearchParams::kHybridShapeParam2Id{
 void SearchParams::Populate(OptionsParser* options) {
   classic::SearchParams::Populate(options);
   options->Add<IntOption>(kScLimitId, 1, 1000000000) = 1000000000;
+  options->Add<BoolOption>(kContemptModeTBEnableId) = true;
   options->Add<FloatOption>(kHybridSamplingRatioId, 0.0f, 1.0f) = 0.8f;
 
   // START: ADDED FOR DYNAMIC HYBRID RATIO
@@ -151,6 +157,7 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : classic::SearchParams(options),
+      kContemptModeTBEnable(options.Get<bool>(kContemptModeTBEnableId)),
       // START: ADDED FOR DYNAMIC HYBRID RATIO
       kHybridRatioMode(EncodeHybridRatioMode(options.Get<std::string>(kHybridRatioModeId))),
       kHybridRatioSchedule(ParseHybridRatioSchedule(options.Get<std::string>(kHybridRatioScheduleId)))
