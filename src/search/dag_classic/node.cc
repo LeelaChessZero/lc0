@@ -141,6 +141,15 @@ void Node::Trim() {
   repetition_ = false;
 }
 
+LowNode::~LowNode() {
+  NodeGarbageCollector::Instance().AddToGcQueue(child_);
+}
+
+Node::~Node() {
+  NodeGarbageCollector::Instance().AddToGcQueue(sibling_);
+  UnsetLowNode();
+}
+
 Node* Node::GetChild() const {
   if (!low_node_) return nullptr;
   return low_node_->GetChild()->get();
@@ -188,8 +197,7 @@ std::string LowNode::DebugString() const {
       << " M:" << m_ << " N:" << n_ << " NP:" << num_parents_
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2
-      << " IsTransposition:" << is_transposition;
+      << static_cast<int>(upper_bound_) - 2;
   return oss.str();
 }
 
@@ -391,13 +399,12 @@ void Node::IncrementNInFlight(uint32_t multivisit) {
   n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
 }
 
-void LowNode::ReleaseChildren(
-    std::vector<std::unique_ptr<Node>>& released_nodes) {
-  released_nodes.emplace_back(child_.release());
+void LowNode::ReleaseChildren() {
+  NodeGarbageCollector::Instance().AddToGcQueue(child_);
 }
 
-void LowNode::ReleaseChildrenExceptOne(
-    Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
+void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
+  auto& ngc = NodeGarbageCollector::Instance();
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to atomic_unique_ptr, so that we could move from it.
@@ -405,23 +412,21 @@ void LowNode::ReleaseChildrenExceptOne(
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      released_nodes.emplace_back((*node)->GetSibling()->release());
+      ngc.AddToGcQueue(*(*node)->GetSibling());
       // Save the node, and take the ownership from the unique_ptr.
       saved_node.reset(node->release());
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
-  released_nodes.emplace_back(child_.release());
+  ngc.AddToGcQueue(child_);
   child_ = std::move(saved_node);
 }
 
-void Node::ReleaseChildrenExceptOne(
-    Node* node_to_save,
-    std::vector<std::unique_ptr<Node>>& released_nodes) const {
+void Node::ReleaseChildrenExceptOne(Node* node_to_save) const {
   // Sometime we have no graph yet or a reverted terminal without low node.
   if (low_node_) {
-    low_node_->ReleaseChildrenExceptOne(node_to_save, released_nodes);
+    low_node_->ReleaseChildrenExceptOne(node_to_save);
   }
 }
 
@@ -521,7 +526,6 @@ void LowNode::DotNodeString(std::ofstream& oss) const {
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2
-      << "\\nIsTransposition=" << is_transposition  //
       << std::noshowpos                             //
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)
@@ -646,6 +650,14 @@ std::string EdgeAndNode::DebugString() const {
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
+NodeTree::~NodeTree() {
+  auto& ngc = NodeGarbageCollector::Instance();
+  ngc.AddToGcQueue(gamebegin_node_);
+  ngc.NotifyThreadGoingSleep();
+  // Start garbage collection now because we delete everything.
+  ngc.Start();
+}
+
 void NodeTree::MakeMove(Move move) {
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
@@ -657,10 +669,8 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
-  // Free old released nodes before adding new.
-  released_nodes_.clear();
   // Release nodes from last move if any.
-  current_head_->ReleaseChildrenExceptOne(new_head, released_nodes_);
+  current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->GetChild();
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
@@ -670,6 +680,8 @@ void NodeTree::MakeMove(Move move) {
 
 void NodeTree::TrimTreeAtHead() {
   current_head_->Trim();
+  // Flush the thread local destruction queue.
+  NodeGarbageCollector::Instance().NotifyThreadGoingSleep();
 }
 
 bool NodeTree::ResetToPosition(const GameState& pos) {
@@ -699,6 +711,7 @@ bool NodeTree::ResetToPosition(const GameState& pos) {
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
+  NodeGarbageCollector::Instance().NotifyThreadGoingSleep();
   return seen_old_head;
 }
 
@@ -718,9 +731,7 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
 }
 
 void NodeTree::DeallocateTree() {
-  released_nodes_.emplace_back(std::move(gamebegin_node_));
-  // Free all released nodes.
-  released_nodes_.clear();
+  NodeGarbageCollector::Instance().AddToGcQueue(gamebegin_node_);
   current_head_ = nullptr;
 }
 

@@ -150,6 +150,8 @@ class Search {
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
+  // Node garbage collection has been started for this search.
+  int64_t gc_started_time_ GUARDED_BY(counters_mutex_) = 0;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
   Move final_bestmove_ GUARDED_BY(counters_mutex_);
