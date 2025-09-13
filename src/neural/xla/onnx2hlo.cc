@@ -32,8 +32,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "neural/onnx/onnx.pb.h"
-#include "neural/xla/hlo.pb.h"
 #include "neural/xla/hlo_builder.h"
 #include "neural/xla/print_hlo.h"
 #include "utils/bf16_utils.h"
