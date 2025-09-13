@@ -808,6 +808,15 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+__device__ __forceinline__ float clamp(float val, float low, float high) {
+  if (__builtin_expect(isnan(val), 0)) return val;
+  return fminf(fmaxf(val, low), high);
+}
+
+namespace {
+constexpr float kTwiceHalfMax = 131008.0f; // Twice the max finite fp16 value.
+}  // namespace
+
 // softmax along C dimension which is assumed to be 64
 // each thread processes two elements. Each warp computes a sum (over 64
 // elements)
@@ -842,6 +851,11 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input,
   if (input2 != nullptr) {
     x[0] += x[2];
     x[1] += x[3];
+  }
+  if (fp16) {
+    // Guard against Inf from fp16 overflow.
+    x[0] = clamp(x[0], -kTwiceHalfMax, kTwiceHalfMax);
+    x[1] = clamp(x[1], -kTwiceHalfMax, kTwiceHalfMax);
   }
   float threadMax = max(x[0], x[1]);
   float maxval = warpMax(threadMax);
@@ -884,6 +898,10 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
 
   float x = (float)input[index];
   if (input2 != nullptr) x += (float)input2[index];
+  if (std::is_same<half, T>::value) {
+    // Guard against Inf from fp16 overflow.
+    x = clamp(x, -kTwiceHalfMax, kTwiceHalfMax);
+  }
 
   __shared__ float sum, maxval;
   if (c == 0) {
