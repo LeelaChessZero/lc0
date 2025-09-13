@@ -124,6 +124,13 @@ class Lexer {
     static const std::string kNumberChars = "0123456789-.";
     if (kNumberChars.find(str_[idx_]) != std::string::npos) {
       ReadNumber();
+      // If the next character isn't a separator, this is probably an identifier
+      // starting with a digit.
+      if (idx_ != str_.size() && !std::isspace(str_[idx_]) &&
+          str_[idx_] != ',' && str_[idx_] != ')') {
+        idx_ = last_offset_;
+        ReadIdentifier();
+      }
       return;
     }
 
