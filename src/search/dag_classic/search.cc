@@ -1536,6 +1536,8 @@ void SearchWorker::ResetTasks() {
 }
 
 int SearchWorker::WaitForTasks() REQUIRES(search_->nodes_mutex_) {
+  // Process any outstanding tasks before checking if compelted. This avoids a
+  // long polling loop when PickNodesToExtend scheduled many tasks.
   while (true) {
     PickTask* task = nullptr;
     int id = 0;
