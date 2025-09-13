@@ -50,7 +50,10 @@ const OptionId kClearTree{
      .visibility = OptionId::kProOnly}};
 
 #ifdef FIX_TT
-const OptionId kHashId{"hash", "Hash", "Size of the transposition table."};
+const OptionId kHashId{{.long_flag = "hash",
+                        .uci_option = "Hash",
+                        .help_text = "Size of the transposition table in MB.",
+                        .visibility = OptionId::kAlwaysVisible}};
 #endif
 
 class DagClassicSearch : public SearchBase {
@@ -122,7 +125,8 @@ void DagClassicSearch::SetPosition(const GameState& pos) {
   if (!is_same_game) time_manager_ = classic::MakeTimeManager(*options_);
 #ifdef FIX_TT
   // Transposition table size.
-  tt_.SetCapacity(options_->Get<int>(kHashId));
+  tt_.SetCapacity(options_->Get<int>(kHashId) * 1000000 /
+                  tt_.GetItemStructSize());
 #endif
 }
 
@@ -172,7 +176,7 @@ class DagClassicSearchFactory : public SearchFactory {
   void PopulateParams(OptionsParser* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
 #ifdef FIX_TT
-    parser->Add<IntOption>(kHashId, 0, 999999999) = 2000000;
+    parser->Add<IntOption>(kHashId, 0, 2000) = 50;
 #endif
     SearchParams::Populate(parser);
     classic::PopulateTimeManagementOptions(classic::RunType::kUci, parser);
