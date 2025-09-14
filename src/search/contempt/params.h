@@ -38,6 +38,7 @@ namespace lczero {
 namespace contempt {
 
 using ContemptMode = classic::ContemptMode;
+enum class ContemptModeTB { NONE, ONLY_6_WINS, ONLY_WINS };
 
 // START: ADDED FOR DYNAMIC HYBRID RATIO
 enum class HybridRatioMode {
@@ -82,6 +83,7 @@ class SearchParams : public classic::SearchParams {
 
   // Parameter getters.
   int GetScLimit() const { return options_.Get<int>(kScLimitId); }
+  ContemptModeTB GetContemptModeTB() const { return kContemptModeTB; }
   float GetHybridSamplingRatio() const { return options_.Get<float>(kHybridSamplingRatioId); }
   HybridRatioMode GetHybridRatioMode() const { return kHybridRatioMode; }
   const std::vector<std::pair<int, float>>& GetHybridRatioSchedule() const { return kHybridRatioSchedule; }
@@ -90,11 +92,10 @@ class SearchParams : public classic::SearchParams {
   int GetHybridScalingFactor() const { return options_.Get<int>(kHybridScalingFactorId); }
   float GetHybridShapeParam1() const { return options_.Get<float>(kHybridShapeParam1Id); }
   float GetHybridShapeParam2() const { return options_.Get<float>(kHybridShapeParam2Id); }
-  bool GetContemptModeTBEnable() const { return kContemptModeTBEnable; }
 
   // Search parameter IDs.
   static const OptionId kScLimitId;
-  static const OptionId kContemptModeTBEnableId;
+  static const OptionId kContemptModeTBId;
   static const OptionId kHybridSamplingRatioId;
   // START: ADDED FOR DYNAMIC HYBRID RATIO
   static const OptionId kHybridRatioModeId;
@@ -106,7 +107,7 @@ class SearchParams : public classic::SearchParams {
   static const OptionId kHybridShapeParam2Id;
   // END: ADDED FOR DYNAMIC HYBRID RATIO
 
-  const bool kContemptModeTBEnable;
+  const ContemptModeTB kContemptModeTB;
   // START: ADDED FOR DYNAMIC HYBRID RATIO
   const HybridRatioMode kHybridRatioMode;
   const std::vector<std::pair<int, float>> kHybridRatioSchedule;

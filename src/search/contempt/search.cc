@@ -53,23 +53,33 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
-                            const PositionHistory& history, bool fast_play,
-                            bool contempt_mode_tb_enable,
+                            const PositionHistory& history,
+                            const SearchParams& params,
                             std::atomic<int>* tb_hits, bool* dtz_success) {
   assert(tb_hits);
   assert(dtz_success);
   // Search moves overrides tablebase.
   if (!searchmoves.empty()) return searchmoves;
+  bool fast_play = params.GetSyzygyFastPlay();
+  ContemptModeTB contempt_mode_tb =  params.GetContemptModeTB();
+  ContemptMode contempt_mode = params.GetContemptMode();
   const auto& board = history.Last().GetBoard();
+  const auto piece_count = (board.ours() | board.theirs()).count();
+  bool use_only_wins = contempt_mode_tb == ContemptModeTB::ONLY_WINS ||
+    (contempt_mode_tb == ContemptModeTB::ONLY_6_WINS && piece_count >= 6);
+  bool contempt_no_root_probe = contempt_mode_tb != ContemptModeTB::NONE && (
+      (contempt_mode == ContemptMode::WHITE && history.Last().IsBlackToMove()) ||
+      (contempt_mode == ContemptMode::BLACK && !history.Last().IsBlackToMove())
+    );
   MoveList root_moves;
   if (!syzygy_tb || !board.castlings().no_legal_castle() ||
       (board.ours() | board.theirs()).count() > syzygy_tb->max_cardinality() ||
-      contempt_mode_tb_enable) {
+      contempt_no_root_probe) {
     return root_moves;
   }
   if (syzygy_tb->root_probe(
           history.Last(), fast_play || history.DidRepeatSinceLastZeroingMove(),
-          false, &root_moves)) {
+          use_only_wins, &root_moves)) {
     *dtz_success = true;
     tb_hits->fetch_add(1, std::memory_order_acq_rel);
   } else if (syzygy_tb->root_probe_wdl(history.Last(), &root_moves)) {
@@ -172,8 +182,7 @@ Search::Search(const NodeTree& tree, Backend* backend,
       initial_visits_(root_node_->GetN()),
       root_move_filter_(MakeRootMoveFilter(
           searchmoves_, syzygy_tb_, played_history_,
-          params_.GetSyzygyFastPlay(), params_.GetContemptModeTBEnable(),
-          &tb_hits_, &root_is_in_dtz_)),
+          params_, &tb_hits_, &root_is_in_dtz_)),
       uci_responder_(std::move(uci_responder)) {
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
@@ -2145,10 +2154,12 @@ void SearchWorker::PickNodesToExtendTask(
   }
 }
 
+namespace {
+
 bool IsContemptModeTBEnabled(ContemptMode contempt_mode,
                              const PositionHistory& history,
                              const SearchParams& params) {
-  if (!params.GetContemptModeTBEnable())
+  if (params.GetContemptModeTB() == ContemptModeTB::NONE)
     return false;
   switch (contempt_mode) {
     case ContemptMode::NONE:
@@ -2162,6 +2173,20 @@ bool IsContemptModeTBEnabled(ContemptMode contempt_mode,
       assert(false);
       return false;
   }
+}
+
+bool IsContemptModeTBOnlyWins(const SearchParams& params,
+                              const ChessBoard& board) {
+  switch(params.GetContemptModeTB()) {
+    case ContemptModeTB::NONE:
+      return false;
+    case ContemptModeTB::ONLY_WINS:
+      return true;
+    case ContemptModeTB::ONLY_6_WINS:
+      return (board.ours() | board.theirs()).count() >= 6;
+  }
+}
+
 }
 
 
@@ -2224,11 +2249,11 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
         board.castlings().no_legal_castle() &&
         (history->Last().GetRule50Ply() == 0 ||
-          IsContemptModeTBEnabled(search_->contempt_mode_, *history, params_)) &&
+         IsContemptModeTBEnabled(search_->contempt_mode_, *history, params_)) &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
-      const WDLScore wdl =
+      WDLScore wdl =
           search_->syzygy_tb_->probe_wdl(history->Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce correct
       // result with a stat other than OK.
@@ -2243,21 +2268,28 @@ void SearchWorker::ExtendNode(Node* node, int depth,
             m = std::max(0.0f, parent->GetM() - 1.0f);
           }
         }
+        if (params_.GetContemptModeTB() != ContemptModeTB::NONE &&
+            (wdl == WDL_WIN || wdl == WDL_LOSS)) {
+          int dtz = search_->syzygy_tb_->probe_dtz(history->Last(), &state);
+          if (state != FAIL) {
+            if (history->Last().GetRule50Ply() + std::abs(dtz) >= 100) {
+              // It is a draw by 50 move rule.
+              wdl = WDL_DRAW;
+            } else {
+              // There is a win. Set moves left based on dtz distance.
+              m = dtz;
+            }
+          }
+        }
         bool use_value = true;
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
-          if (params_.GetContemptModeTBEnable()) {
-            int sm = search_->syzygy_tb_->probe_dtz(history->Last(), &state);
-            if (state != FAIL) {
-              m = sm;
-            }
-          }
           node->MakeTerminal(GameResult::BLACK_WON, m,
                              Node::Terminal::Tablebase);
-        } else if (!params_.GetContemptModeTBEnable() && wdl == WDL_LOSS) {
+        } else if (!IsContemptModeTBOnlyWins(params_, board) && wdl == WDL_LOSS) {
           node->MakeTerminal(GameResult::WHITE_WON, m,
                              Node::Terminal::Tablebase);
-        } else if (!params_.GetContemptModeTBEnable()) {  // Cursed wins and blessed losses count as draws.
+        } else if (!IsContemptModeTBOnlyWins(params_, board)) {  // Cursed wins and blessed losses count as draws.
           node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
         } else {
           use_value = false;
