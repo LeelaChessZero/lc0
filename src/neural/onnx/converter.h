@@ -29,8 +29,8 @@
 
 #include <string>
 
-#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "proto/onnx.pb.h"
 
 namespace lczero {
 

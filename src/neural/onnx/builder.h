@@ -30,7 +30,7 @@
 #include <initializer_list>
 #include <string>
 
-#include "neural/onnx/onnx.pb.h"
+#include "proto/onnx.pb.h"
 
 namespace lczero {
 

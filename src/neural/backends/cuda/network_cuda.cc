@@ -1015,7 +1015,8 @@ class CudaNetwork : public Network {
     }
   }
 
-  void showDeviceInfo(const cudaDeviceProp& deviceProp, int deviceId) const {
+  void showDeviceInfo(const cudaDeviceProp& deviceProp,
+                      [[maybe_unused]] int deviceId) const {
     CERR << "GPU: " << deviceProp.name;
     CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
          << " Gb";

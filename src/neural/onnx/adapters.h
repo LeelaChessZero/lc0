@@ -30,8 +30,8 @@
 #include <initializer_list>
 
 #include "neural/onnx/builder.h"
-#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "proto/onnx.pb.h"
 #include "utils/weights_adapter.h"
 
 namespace lczero {
