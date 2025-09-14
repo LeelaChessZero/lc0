@@ -305,7 +305,8 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
 }
 }  // namespace
 
-void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
+void Search::SendUciInfo(const classic::IterationStats& stats)
+                         REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
   const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
@@ -318,15 +319,12 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   ThinkingInfo common_info;
   common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   common_info.seldepth = max_depth_;
-  common_info.time = GetTimeSinceStart();
+  common_info.time = stats.time_since_movestart;
   if (!per_pv_counters) {
     common_info.nodes = total_playouts_ + initial_visits_;
   }
-  if (nps_start_time_) {
-    const auto time_since_first_batch_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - *nps_start_time_)
-            .count();
+  if (stats.time_since_first_batch) {
+    const auto time_since_first_batch_ms = stats.time_since_first_batch;
     if (time_since_first_batch_ms > 0) {
       common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
     }
@@ -431,7 +429,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
 
 // Decides whether anything important changed in stats and new info should be
 // shown to a user.
-void Search::MaybeOutputInfo() {
+void Search::MaybeOutputInfo(const classic::IterationStats& stats) {
   SharedMutex::Lock lock(nodes_mutex_);
   Mutex::Lock counters_lock(counters_mutex_);
   if (!bestmove_is_sent_ && current_best_edge_ &&
@@ -442,7 +440,7 @@ void Search::MaybeOutputInfo() {
        last_outputted_uci_info_.seldepth != max_depth_ ||
        last_outputted_uci_info_.time + kUciInfoMinimumFrequencyMs <
            GetTimeSinceStart())) {
-    SendUciInfo();
+    SendUciInfo(stats);
     if (params_.GetLogLiveStats()) {
       SendMovesStats();
     }
@@ -461,11 +459,16 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
-int64_t Search::GetTimeSinceFirstBatch() const REQUIRES(counters_mutex_) {
+int64_t Search::GetTimeSinceFirstBatch() const REQUIRES(nodes_mutex_) {
   if (!nps_start_time_) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - *nps_start_time_)
       .count();
+}
+
+void Search::RecordNPSStartTime() REQUIRES(nodes_mutex_) {
+  if (nps_start_time_) return;
+  nps_start_time_ = std::chrono::steady_clock::now();
 }
 
 // Root is depth 0, i.e. even depth.
@@ -677,7 +680,7 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
   // If we are the first to see that stop is needed.
   if (stop_.load(std::memory_order_acquire) && ok_to_respond_bestmove_ &&
       !bestmove_is_sent_) {
-    SendUciInfo();
+    SendUciInfo(stats);
     EnsureBestMoveKnown();
     SendMovesStats();
     BestMoveInfo info(final_bestmove_, final_pondermove_);
@@ -974,13 +977,7 @@ void Search::PopulateCommonIterationStats(classic::IterationStats* stats) {
   stats->time_since_movestart = GetTimeSinceStart();
 
   SharedMutex::SharedLock nodes_lock(nodes_mutex_);
-  {
-    Mutex::Lock counters_lock(counters_mutex_);
-    stats->time_since_first_batch = GetTimeSinceFirstBatch();
-    if (!nps_start_time_ && total_playouts_ > 0) {
-      nps_start_time_ = std::chrono::steady_clock::now();
-    }
-  }
+  stats->time_since_first_batch = GetTimeSinceFirstBatch();
   stats->total_nodes = total_playouts_ + initial_visits_;
   stats->nodes_since_movestart = total_playouts_;
   stats->batches_since_movestart = total_batches_;
@@ -1051,7 +1048,7 @@ void Search::WatchdogThread() {
   while (true) {
     PopulateCommonIterationStats(&stats);
     MaybeTriggerStop(stats, &hints);
-    MaybeOutputInfo();
+    MaybeOutputInfo(stats);
 
     constexpr auto kMaxWaitTimeMs = 100;
     constexpr auto kMinWaitTimeMs = 1;
@@ -1294,13 +1291,9 @@ void SearchWorker::ExecuteOneIteration() {
   // If required, waste time to limit nps.
   if (params_.GetNpsLimit() > 0) {
     while (search_->IsSearchActive()) {
-      int64_t time_since_first_batch_ms = 0;
-      {
-        Mutex::Lock lock(search_->counters_mutex_);
-        time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
-      }
+      int64_t time_since_first_batch_ms = iteration_stats_.time_since_first_batch;
       if (time_since_first_batch_ms <= 0) {
-        time_since_first_batch_ms = search_->GetTimeSinceStart();
+        time_since_first_batch_ms = iteration_stats_.time_since_movestart;
       }
       auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
       if (nps > params_.GetNpsLimit()) {
@@ -1375,6 +1368,16 @@ void SearchWorker::GatherMinibatch() {
   number_out_of_order_ = 0;
 
   int thread_count = search_->thread_count_.load(std::memory_order_acquire);
+
+  struct RecordBatchStartTime {
+    ~RecordBatchStartTime() REQUIRES(search_->nodes_mutex_) {
+      if (minibatch_size_) {
+        search_->RecordNPSStartTime();
+      }
+    }
+    Search* search_;
+    int& minibatch_size_;
+  } record_batch_start_time = {search_, minibatch_size};
 
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
@@ -2437,7 +2440,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
 void SearchWorker::UpdateCounters() {
   search_->PopulateCommonIterationStats(&iteration_stats_);
   search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
-  search_->MaybeOutputInfo();
+  search_->MaybeOutputInfo(iteration_stats_);
 
   // If this thread had no work, not even out of order, then sleep for some
   // milliseconds. Collisions don't count as work, so have to enumerate to find
