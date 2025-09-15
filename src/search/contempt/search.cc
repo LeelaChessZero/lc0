@@ -61,13 +61,13 @@ MoveList MakeRootMoveFilter(const MoveList& searchmoves,
   // Search moves overrides tablebase.
   if (!searchmoves.empty()) return searchmoves;
   bool fast_play = params.GetSyzygyFastPlay();
-  ContemptModeTB contempt_mode_tb =  params.GetContemptModeTB();
+  int contempt_mode_tb =  params.GetContemptModeTB();
   ContemptMode contempt_mode = params.GetContemptMode();
   const auto& board = history.Last().GetBoard();
   const auto piece_count = (board.ours() | board.theirs()).count();
-  bool use_only_wins = contempt_mode_tb == ContemptModeTB::ONLY_WINS ||
-    (contempt_mode_tb == ContemptModeTB::ONLY_6_WINS && piece_count >= 6);
-  bool contempt_no_root_probe = contempt_mode_tb != ContemptModeTB::NONE && (
+  bool use_only_wins = contempt_mode_tb > 0 &&
+    (piece_count >= contempt_mode_tb);
+  bool contempt_no_root_probe = contempt_mode_tb != 0 && (
       (contempt_mode == ContemptMode::WHITE && history.Last().IsBlackToMove()) ||
       (contempt_mode == ContemptMode::BLACK && !history.Last().IsBlackToMove())
     );
@@ -2159,7 +2159,7 @@ namespace {
 bool IsContemptModeTBEnabled(ContemptMode contempt_mode,
                              const PositionHistory& history,
                              const SearchParams& params) {
-  if (params.GetContemptModeTB() == ContemptModeTB::NONE)
+  if (params.GetContemptModeTB() == 0)
     return false;
   switch (contempt_mode) {
     case ContemptMode::NONE:
@@ -2177,13 +2177,12 @@ bool IsContemptModeTBEnabled(ContemptMode contempt_mode,
 
 bool IsContemptModeTBOnlyWins(const SearchParams& params,
                               const ChessBoard& board) {
-  switch(params.GetContemptModeTB()) {
-    case ContemptModeTB::NONE:
+  int mode = params.GetContemptModeTB();
+  switch(mode) {
+    case 0:
       return false;
-    case ContemptModeTB::ONLY_WINS:
-      return true;
-    case ContemptModeTB::ONLY_6_WINS:
-      return (board.ours() | board.theirs()).count() >= 6;
+    default:
+      return (board.ours() | board.theirs()).count() >= mode;
   }
 }
 
@@ -2268,7 +2267,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
             m = std::max(0.0f, parent->GetM() - 1.0f);
           }
         }
-        if (params_.GetContemptModeTB() != ContemptModeTB::NONE &&
+        if (params_.GetContemptModeTB() != 0 &&
             (wdl == WDL_WIN || wdl == WDL_LOSS)) {
           int dtz = search_->syzygy_tb_->probe_dtz(history->Last(), &state);
           if (state != FAIL) {

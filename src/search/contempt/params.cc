@@ -90,12 +90,6 @@ HybridRatioMode EncodeHybridRatioMode(const std::string& mode_str) {
 }
 // END: ADDED FOR DYNAMIC HYBRID RATIO
 
-ContemptModeTB ParseTBMode(const std::string& mode_str) {
-  if (mode_str == "disable") return ContemptModeTB::NONE;
-  if (mode_str == "win_only") return ContemptModeTB::ONLY_WINS;
-  return ContemptModeTB::ONLY_6_WINS;
-}
-
 }  // namespace
 
 const OptionId SearchParams::kScLimitId{
@@ -104,10 +98,11 @@ const OptionId SearchParams::kScLimitId{
     "thompson sampling beyond this limit."};
 const OptionId SearchParams::kContemptModeTBId{
     "contempt-mode-tb", "ContemptModeTB",
-    "Choose asymmetric tablebase probing method. Default is 'only_6_wins'. It "
-    "uses wins only for the playing side when 6 pieces. Any tablebase result "
-    "will be used when 5 or less pieces. 'only_wins' limits tablebase results "
-    "for any material count. 'disable' uses default tablebase probing method."
+    "Choose asymmetric tablebase probing method. If a position has greator or "
+    "eqaul number of piecese, probing uses only tablebase result on winning "
+    "positions. Setting it to 6 uses only winning information if position has "
+    "6 or more pieces. If a position has less pieces, tablebase is used to "
+    "avoid losing moves too. Setting it to 0 disables assymetric probe."
     };
 const OptionId SearchParams::kHybridSamplingRatioId{
     "hybrid-sampling-ratio", "HybridSamplingRatio",
@@ -144,8 +139,7 @@ const OptionId SearchParams::kHybridShapeParam2Id{
 void SearchParams::Populate(OptionsParser* options) {
   classic::SearchParams::Populate(options);
   options->Add<IntOption>(kScLimitId, 1, 1000000000) = 1000000000;
-  std::vector<std::string> mode_tb = {"disable", "only_6_wins", "only_wins"};
-  options->Add<ChoiceOption>(kContemptModeTBId, mode_tb) = "only_6_wins";
+  options->Add<IntOption>(kContemptModeTBId, 0, 9) = 6;
   options->Add<FloatOption>(kHybridSamplingRatioId, 0.0f, 1.0f) = 0.8f;
 
   // START: ADDED FOR DYNAMIC HYBRID RATIO
@@ -166,7 +160,7 @@ void SearchParams::Populate(OptionsParser* options) {
 
 SearchParams::SearchParams(const OptionsDict& options)
     : classic::SearchParams(options),
-      kContemptModeTB(ParseTBMode(options.Get<std::string>(kContemptModeTBId))),
+      kContemptModeTB(options.Get<int>(kContemptModeTBId)),
       // START: ADDED FOR DYNAMIC HYBRID RATIO
       kHybridRatioMode(EncodeHybridRatioMode(options.Get<std::string>(kHybridRatioModeId))),
       kHybridRatioSchedule(ParseHybridRatioSchedule(options.Get<std::string>(kHybridRatioScheduleId)))

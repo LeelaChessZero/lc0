@@ -38,7 +38,6 @@ namespace lczero {
 namespace contempt {
 
 using ContemptMode = classic::ContemptMode;
-enum class ContemptModeTB { NONE, ONLY_6_WINS, ONLY_WINS };
 
 // START: ADDED FOR DYNAMIC HYBRID RATIO
 enum class HybridRatioMode {
@@ -83,7 +82,7 @@ class SearchParams : public classic::SearchParams {
 
   // Parameter getters.
   int GetScLimit() const { return options_.Get<int>(kScLimitId); }
-  ContemptModeTB GetContemptModeTB() const { return kContemptModeTB; }
+  int GetContemptModeTB() const { return kContemptModeTB; }
   float GetHybridSamplingRatio() const { return options_.Get<float>(kHybridSamplingRatioId); }
   HybridRatioMode GetHybridRatioMode() const { return kHybridRatioMode; }
   const std::vector<std::pair<int, float>>& GetHybridRatioSchedule() const { return kHybridRatioSchedule; }
@@ -107,7 +106,7 @@ class SearchParams : public classic::SearchParams {
   static const OptionId kHybridShapeParam2Id;
   // END: ADDED FOR DYNAMIC HYBRID RATIO
 
-  const ContemptModeTB kContemptModeTB;
+  const int kContemptModeTB;
   // START: ADDED FOR DYNAMIC HYBRID RATIO
   const HybridRatioMode kHybridRatioMode;
   const std::vector<std::pair<int, float>> kHybridRatioSchedule;
