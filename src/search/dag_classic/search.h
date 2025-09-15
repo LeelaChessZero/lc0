@@ -196,9 +196,8 @@ class Search {
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
 
   // The start time of search. It is set when the first thread exits
-  // GatherMinibatch.
-  std::optional<std::chrono::steady_clock::time_point> nps_start_time_
-      GUARDED_BY(nodes_mutex_);
+  // GatherMinibatch. It is guarded by nodes mutex until set once.
+  std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
 
   std::atomic<int> pending_searchers_{0};
   std::atomic<int> backend_waiting_counter_{0};

@@ -459,14 +459,14 @@ int64_t Search::GetTimeSinceStart() const {
       .count();
 }
 
-int64_t Search::GetTimeSinceFirstBatch() const REQUIRES(nodes_mutex_) {
+int64_t Search::GetTimeSinceFirstBatch() const {
   if (!nps_start_time_) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - *nps_start_time_)
       .count();
 }
 
-void Search::RecordNPSStartTime() REQUIRES(nodes_mutex_) {
+void Search::RecordNPSStartTime() {
   if (nps_start_time_) return;
   nps_start_time_ = std::chrono::steady_clock::now();
 }
@@ -1289,12 +1289,11 @@ void SearchWorker::ExecuteOneIteration() {
   UpdateCounters();
 
   // If required, waste time to limit nps.
-  if (params_.GetNpsLimit() > 0) {
+  if (params_.GetNpsLimit() > 0 && iteration_stats_.time_since_first_batch) {
     while (search_->IsSearchActive()) {
-      int64_t time_since_first_batch_ms = iteration_stats_.time_since_first_batch;
-      if (time_since_first_batch_ms <= 0) {
-        time_since_first_batch_ms = iteration_stats_.time_since_movestart;
-      }
+      // GetTimeSinceFirstBatch is set only once. We check iteration_stats_ to
+      // know if it was set and later read inside nodes_mutex_.
+      int64_t time_since_first_batch_ms = search_->GetTimeSinceFirstBatch();
       auto nps = search_->GetTotalPlayouts() * 1e3f / time_since_first_batch_ms;
       if (nps > params_.GetNpsLimit()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1370,7 +1369,7 @@ void SearchWorker::GatherMinibatch() {
   int thread_count = search_->thread_count_.load(std::memory_order_acquire);
 
   struct RecordBatchStartTime {
-    ~RecordBatchStartTime() REQUIRES(search_->nodes_mutex_) {
+    ~RecordBatchStartTime() {
       if (minibatch_size_) {
         search_->RecordNPSStartTime();
       }
