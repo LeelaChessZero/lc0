@@ -43,8 +43,12 @@ float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
       return FP16toFP32(*ptr);
     case pblczero::Weights::Layer::BFLOAT16:
       return BF16toFP32(*ptr);
-    [[unlikely]] default:
-      return 0;
+    [[unlikely]] default:  // To silence a couple of warnings.
+#ifdef __GNUC__
+      __builtin_unreachable();
+#else
+      __assume(false);
+#endif
   }
 }
 
