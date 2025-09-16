@@ -1248,16 +1248,22 @@ void Search::StartThreads(size_t how_many) {
     how_many = backend_attributes_.suggested_num_search_threads +
                !backend_attributes_.runs_on_cpu;
   }
-  thread_count_.store(how_many, std::memory_order_release);
+  // Only one thread can do work until the root has been evaluated. Other
+  // workers will wait until the first thread increases the thread_count_.
+  if (root_node_->GetN() > 0) {
+    thread_count_.store(how_many, std::memory_order_relaxed);
+  } else {
+    thread_count_.store(1, std::memory_order_relaxed);
+  }
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
     threads_.emplace_back([this]() { WatchdogThread(); });
   }
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
-    threads_.emplace_back([this]() {
+    threads_.emplace_back([this, i]() {
       SearchWorker worker(this, params_);
-      worker.RunBlocking();
+      worker.RunBlocking(i);
     });
   }
   LOGFILE << "Search started. "
@@ -1407,6 +1413,13 @@ void Search::Abort() {
 
 void Search::Wait() {
   Mutex::Lock lock(threads_mutex_);
+  // Make sure there is no threads waiting on the atomic if we abort early.
+  thread_count_.store(0, std::memory_order_relaxed);
+#ifndef NO_STD_ATOMIC_WAIT
+  thread_count_.notify_all();
+#else
+  threads_cond_.notify_all();
+#endif
   while (!threads_.empty()) {
     threads_.back().join();
     threads_.pop_back();
@@ -1451,7 +1464,7 @@ SearchWorker::SearchWorker(Search* search, const SearchParams& params)
       task_workers_ = 0;
     } else {
       int working_threads = std::max(
-          search_->thread_count_.load(std::memory_order_acquire) - 1, 1);
+          search_->thread_count_.load(std::memory_order_relaxed) - 1, 1);
       task_workers_ = std::min(
           std::thread::hardware_concurrency() / working_threads - 1, 4U);
     }
@@ -1839,7 +1852,7 @@ void SearchWorker::GatherMinibatch() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
-  int thread_count = search_->thread_count_.load(std::memory_order_acquire);
+  int thread_count = search_->thread_count_.load(std::memory_order_relaxed);
 
   ActivateTasks();
 
@@ -2625,6 +2638,23 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 void SearchWorker::DoBackupUpdate() {
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
+  if (wake_other_workers_) {
+    // The second thread is waiting until we have evaluated the root node. We
+    // need to wake it up to do work.
+    Mutex::Lock lock(search_->threads_mutex_);
+    size_t count = search_->thread_count_.load(std::memory_order_relaxed);
+    // Watchdog thread must be excluded.
+    size_t total = search_->threads_.size() - 1;
+    if (total != count) {
+      search_->thread_count_.store(total, std::memory_order_relaxed);
+#ifndef NO_STD_ATOMIC_WAIT
+      search_->thread_count_.notify_all();
+#else
+      search->threads_cond_.notify_all();
+#endif
+    }
+    wake_other_workers_ = false;
+  }
 
   bool work_done = number_out_of_order_ > 0 || !minibatch_.empty();
   int i = 0;
@@ -2907,14 +2937,6 @@ void SearchWorker::UpdateCounters() {
   search_->PopulateCommonIterationStats(&iteration_stats_);
   search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
   search_->MaybeOutputInfo();
-
-  // If this thread had no work, not even out of order, then sleep for some
-  // milliseconds. Collisions don't count as work, so have to enumerate to find
-  // out if there was anything done.
-  bool work_done = number_out_of_order_ > 0 || !minibatch_.empty();
-  if (!work_done) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
 }
 
 }  // namespace dag_classic

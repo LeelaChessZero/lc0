@@ -251,6 +251,9 @@ class Search {
 
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
+#if NO_STD_ATOMIC_WAIT
+  std::condition_variable threads_cond_;
+#endif
 
   Node* root_node_;
   TranspositionTable* tt_;
@@ -316,8 +319,20 @@ class SearchWorker {
   ~SearchWorker();
 
   // Runs iterations while needed.
-  void RunBlocking() {
+  void RunBlocking(size_t i) {
     LOGFILE << "Started search thread.";
+    // Wait here until root node has been evaluated.
+    if (i > 0) {
+#ifndef NO_STD_ATOMIC_WAIT
+      search_->thread_count_.wait(1, std::memory_order_relaxed);
+#else
+      Mutex::Lock lock(threads_mutex_);
+      threads_cond_.wait(lock.get_raw(),
+          [this]() { return 1 != search_->threads_; });
+#endif
+    } else {
+      wake_other_workers_ = true;
+    }
     try {
       // A very early stop may arrive before this point, so the test is at the
       // end to ensure at least one iteration runs before exiting.
@@ -695,6 +710,7 @@ private:
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;
+  bool wake_other_workers_ = false;
   classic::IterationStats iteration_stats_;
   classic::StoppersHints latest_time_manager_hints_;
 
