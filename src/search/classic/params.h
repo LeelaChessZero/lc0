@@ -83,6 +83,8 @@ class BaseSearchParams {
   }
   float GetNoiseEpsilon() const { return kNoiseEpsilon; }
   float GetNoiseAlpha() const { return kNoiseAlpha; }
+  int GetScLimit() const { return options_.Get<int>(kScLimitId); }
+  float GetScTemperature() const { return options_.Get<float>(kScTemperatureId); }
   bool GetVerboseStats() const { return options_.Get<bool>(kVerboseStatsId); }
   bool GetLogLiveStats() const { return options_.Get<bool>(kLogLiveStatsId); }
   bool GetFpuAbsolute(bool at_root) const {
@@ -178,6 +180,8 @@ class BaseSearchParams {
   static const OptionId kTemperatureVisitOffsetId;
   static const OptionId kNoiseEpsilonId;
   static const OptionId kNoiseAlphaId;
+  static const OptionId kScLimitId;
+  static const OptionId kScTemperatureId;
   static const OptionId kVerboseStatsId;
   static const OptionId kLogLiveStatsId;
   static const OptionId kFpuStrategyId;
