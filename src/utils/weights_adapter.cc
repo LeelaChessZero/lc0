@@ -38,9 +38,10 @@ namespace lczero {
 float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
                                            const LayerAdapter* adapter) {
   switch (adapter->encoding_) {
-    case pblczero::Weights::Layer::LINEAR16:
-      return *ptr / static_cast<float>(0xffff) * adapter->range_ +
-             adapter->min_;
+    case pblczero::Weights::Layer::LINEAR16: {
+      float theta = *ptr / static_cast<float>(0xffff);
+      return adapter->min_ * (1 - theta) + adapter->max_ * theta;
+    }
     case pblczero::Weights::Layer::FLOAT16:
       return FP16toFP32(*ptr);
     case pblczero::Weights::Layer::BFLOAT16:
@@ -54,7 +55,7 @@ LayerAdapter::LayerAdapter(const pblczero::Weights::Layer& layer)
     : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
       size_(layer.params().size() / sizeof(uint16_t)),
       min_(layer.min_val()),
-      range_(layer.max_val() - min_),
+      max_(layer.max_val()),
       encoding_(layer.has_encoding() ? layer.encoding()
                                      : pblczero::Weights::Layer::LINEAR16) {
   switch (encoding_) {
