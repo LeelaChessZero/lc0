@@ -205,6 +205,11 @@ files += [
 
 includes += include_directories('src')
 
+deps += dependency('absl_flat_hash_map',
+                   include_type: 'system',
+                   fallback: ['abseil-cpp', 'absl_container_dep'],
+                   default_options : ['warning_level=0', 'cpp_std=c++20'])
+
 deps += dependency('threads')
 
 #############################################################################
@@ -225,11 +230,6 @@ if get_option('dag_classic')
     'src/search/dag_classic/search.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
-
-  deps += dependency('absl_flat_hash_map',
-                     include_type: 'system',
-                     fallback: ['abseil-cpp', 'absl_container_dep'],
-                     default_options : ['warning_level=0', 'cpp_std=c++20'])
 endif
 
 #############################################################################

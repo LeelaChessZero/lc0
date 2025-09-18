@@ -90,7 +90,8 @@ class LayerAdapter {
   const uint16_t* data_ = nullptr;
   const size_t size_ = 0;
   const float min_;
-  const float range_;
+  const float max_;
+  const pblczero::Weights::Layer::Encoding encoding_;
 };
 
 }  // namespace lczero
