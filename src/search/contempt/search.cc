@@ -1502,7 +1502,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
+      ExtendNode(node, picked_node, &history);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
         MoveList legal_moves;
@@ -2160,10 +2160,10 @@ bool IsContemptModeTBEnabled(ContemptMode contempt_mode,
                              const PositionHistory& history,
                              const SearchParams& params) {
   if (params.GetContemptModeTB() == 0)
-    return false;
+    return history.Last().GetRule50Ply() == 0;
   switch (contempt_mode) {
     case ContemptMode::NONE:
-      return false;
+      return history.Last().GetRule50Ply() == 0;
     case ContemptMode::BLACK:
       return history.Last().IsBlackToMove();
     case ContemptMode::WHITE:
@@ -2175,23 +2175,24 @@ bool IsContemptModeTBEnabled(ContemptMode contempt_mode,
   }
 }
 
-bool IsContemptModeTBOnlyWins(const SearchParams& params,
-                              const ChessBoard& board) {
+bool IsContemptModeTBDrawAllowed(const SearchParams& params,
+                                 const ChessBoard& board) {
   int mode = params.GetContemptModeTB();
   switch(mode) {
     case 0:
       return false;
     default:
-      return (board.ours() | board.theirs()).count() >= mode;
+      return (board.ours() | board.theirs()).count() < mode;
   }
 }
 
 }
 
 
-void SearchWorker::ExtendNode(Node* node, int depth,
-                              const std::vector<Move>& moves_to_node,
+void SearchWorker::ExtendNode(Node* node, NodeToProcess& picked_node,
                               PositionHistory* history) {
+  int depth = picked_node.depth;
+  const std::vector<Move>& moves_to_node = picked_node.moves_to_visit;
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
   for (size_t i = 0; i < moves_to_node.size(); i++) {
@@ -2247,8 +2248,7 @@ void SearchWorker::ExtendNode(Node* node, int depth,
     // Neither by-position or by-rule termination, but maybe it's a TB position.
     if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
         board.castlings().no_legal_castle() &&
-        (history->Last().GetRule50Ply() == 0 ||
-         IsContemptModeTBEnabled(search_->contempt_mode_, *history, params_)) &&
+        IsContemptModeTBEnabled(search_->contempt_mode_, *history, params_) &&
         (board.ours() | board.theirs()).count() <=
             search_->syzygy_tb_->max_cardinality()) {
       ProbeState state;
@@ -2281,17 +2281,27 @@ void SearchWorker::ExtendNode(Node* node, int depth,
           }
         }
         bool use_value = true;
+        bool use_draw_and_lose = params_.GetContemptModeTB() == 0;
         // If the colors seem backwards, check the checkmate check above.
         if (wdl == WDL_WIN) {
           node->MakeTerminal(GameResult::BLACK_WON, m,
                              Node::Terminal::Tablebase);
-        } else if (!IsContemptModeTBOnlyWins(params_, board) && wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON, m,
-                             Node::Terminal::Tablebase);
-        } else if (!IsContemptModeTBOnlyWins(params_, board)) {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
-        } else {
-          use_value = false;
+        } else if (wdl == WDL_LOSS) {
+          if (use_draw_and_lose) {
+            node->MakeTerminal(GameResult::WHITE_WON, m,
+                               Node::Terminal::Tablebase);
+          } else {
+            use_value = false;
+          }
+        } else {  // Cursed wins and blessed losses count as draws.
+          if (use_draw_and_lose) {
+            node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
+          } else {
+            if (IsContemptModeTBDrawAllowed(params_, board)) {
+              picked_node.wdl = NodeToProcess::WDL_DRAW;
+            }
+            use_value = false;
+          }
         }
         if (use_value) {
           search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
@@ -2473,6 +2483,13 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
                    ? 0
                    : params_.GetWDLRescaleDiff(),
                sign, false, params_.GetWDLMaxS());
+  }
+  if (node_to_process->wdl == NodeToProcess::WDL_DRAW) {
+    // We use draw as minumum evaluation when tablebase evaluated it as a draw.
+    if (node_to_process->eval->q > 0.0f) {
+      node_to_process->eval->q = 0.0f;
+      node_to_process->eval->d = 1.0f;
+    }
   }
   for (size_t p_idx = 0; auto& edge : node->Edges()) {
     edge.edge()->SetP(node_to_process->eval->p[p_idx++]);
