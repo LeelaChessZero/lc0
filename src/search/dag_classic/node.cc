@@ -141,6 +141,15 @@ void Node::Trim() {
   repetition_ = false;
 }
 
+LowNode::~LowNode() {
+  NodeGarbageCollector::Instance().AddToGcQueue(child_);
+}
+
+Node::~Node() {
+  NodeGarbageCollector::Instance().AddToGcQueue(sibling_);
+  UnsetLowNode();
+}
+
 Node* Node::GetChild() const {
   if (!low_node_) return nullptr;
   return low_node_->GetChild()->get();
@@ -188,8 +197,7 @@ std::string LowNode::DebugString() const {
       << " M:" << m_ << " N:" << n_ << " NP:" << num_parents_
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2
-      << " IsTransposition:" << is_transposition;
+      << static_cast<int>(upper_bound_) - 2;
   return oss.str();
 }
 
@@ -391,13 +399,12 @@ void Node::IncrementNInFlight(uint32_t multivisit) {
   n_in_flight_.fetch_add(multivisit, std::memory_order_acq_rel);
 }
 
-void LowNode::ReleaseChildren(
-    std::vector<std::unique_ptr<Node>>& released_nodes) {
-  released_nodes.emplace_back(child_.release());
+void LowNode::ReleaseChildren() {
+  NodeGarbageCollector::Instance().AddToGcQueue(child_);
 }
 
-void LowNode::ReleaseChildrenExceptOne(
-    Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes) {
+void LowNode::ReleaseChildrenExceptOne(Node* node_to_save) {
+  auto& ngc = NodeGarbageCollector::Instance();
   // Stores node which will have to survive (or nullptr if it's not found).
   std::unique_ptr<Node> saved_node;
   // Pointer to atomic_unique_ptr, so that we could move from it.
@@ -405,23 +412,21 @@ void LowNode::ReleaseChildrenExceptOne(
     // If current node is the one that we have to save.
     if (node->get() == node_to_save) {
       // Kill all remaining siblings.
-      released_nodes.emplace_back((*node)->GetSibling()->release());
+      ngc.AddToGcQueue(*(*node)->GetSibling());
       // Save the node, and take the ownership from the unique_ptr.
       saved_node.reset(node->release());
       break;
     }
   }
   // Make saved node the only child. (kills previous siblings).
-  released_nodes.emplace_back(child_.release());
+  ngc.AddToGcQueue(child_);
   child_ = std::move(saved_node);
 }
 
-void Node::ReleaseChildrenExceptOne(
-    Node* node_to_save,
-    std::vector<std::unique_ptr<Node>>& released_nodes) const {
+void Node::ReleaseChildrenExceptOne(Node* node_to_save) const {
   // Sometime we have no graph yet or a reverted terminal without low node.
   if (low_node_) {
-    low_node_->ReleaseChildrenExceptOne(node_to_save, released_nodes);
+    low_node_->ReleaseChildrenExceptOne(node_to_save);
   }
 }
 
@@ -521,7 +526,6 @@ void LowNode::DotNodeString(std::ofstream& oss) const {
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2
-      << "\\nIsTransposition=" << is_transposition  //
       << std::noshowpos                             //
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)
@@ -646,6 +650,14 @@ std::string EdgeAndNode::DebugString() const {
 // NodeTree
 /////////////////////////////////////////////////////////////////////////
 
+NodeTree::~NodeTree() {
+  auto& ngc = NodeGarbageCollector::Instance();
+  ngc.AddToGcQueue(gamebegin_node_);
+  ngc.NotifyThreadGoingSleep();
+  // Start garbage collection now because we delete everything.
+  ngc.Start();
+}
+
 void NodeTree::MakeMove(Move move) {
   Node* new_head = nullptr;
   for (auto& n : current_head_->Edges()) {
@@ -657,10 +669,8 @@ void NodeTree::MakeMove(Move move) {
       break;
     }
   }
-  // Free old released nodes before adding new.
-  released_nodes_.clear();
   // Release nodes from last move if any.
-  current_head_->ReleaseChildrenExceptOne(new_head, released_nodes_);
+  current_head_->ReleaseChildrenExceptOne(new_head);
   new_head = current_head_->GetChild();
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
@@ -670,6 +680,8 @@ void NodeTree::MakeMove(Move move) {
 
 void NodeTree::TrimTreeAtHead() {
   current_head_->Trim();
+  // Flush the thread local destruction queue.
+  NodeGarbageCollector::Instance().NotifyThreadGoingSleep();
 }
 
 bool NodeTree::ResetToPosition(const GameState& pos) {
@@ -699,6 +711,7 @@ bool NodeTree::ResetToPosition(const GameState& pos) {
   // retain old n_ and q_ (etc) data, even though its old children were
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
+  NodeGarbageCollector::Instance().NotifyThreadGoingSleep();
   return seen_old_head;
 }
 
@@ -718,10 +731,231 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
 }
 
 void NodeTree::DeallocateTree() {
-  released_nodes_.emplace_back(std::move(gamebegin_node_));
-  // Free all released nodes.
-  released_nodes_.clear();
+  NodeGarbageCollector::Instance().AddToGcQueue(gamebegin_node_);
   current_head_ = nullptr;
+}
+
+NodeGarbageCollector::NodeGarbageCollector() :
+  gc_thread_{[this]() {GCThread();}} {
+}
+
+template<typename UniquePtr>
+void NodeGarbageCollector::AddToGcQueue(UniquePtr& shared_node) {
+  std::unique_ptr<Node> node(shared_node.release());
+  if (ShouldQueue(node)) {
+    LocalWork().emplace_back(std::move(node));
+  }
+}
+
+NodeGarbageCollector::~NodeGarbageCollector() {
+  state_.store(Exit, std::memory_order_release);
+#ifndef NO_STD_ATOMIC_WAIT
+  state_.notify_all();
+#else
+  {
+    Mutex::Lock lock(state_mutex_);
+    state_signal_.notify_all();
+  }
+#endif
+  gc_thread_.join();
+}
+
+bool NodeGarbageCollector::SetState(State& old, State desired) {
+  bool rv =  state_.compare_exchange_strong(old, desired,
+                                            std::memory_order_acq_rel);
+  if (rv) {
+#ifndef NO_STD_ATOMIC_WAIT
+    state_.notify_all();
+#else
+    Mutex::Lock lock(state_mutex_);
+    state_signal_.notify_all();
+#endif
+  }
+  return rv;
+}
+
+void NodeGarbageCollector::Start() {
+  State s = state_.load(std::memory_order_acquire);
+  do {
+    if (s == Running)
+      break;
+    assert(s != Exit);
+  } while (!SetState(s, Running));
+}
+
+void NodeGarbageCollector::Stop() {
+  State old = Running;
+  SetState(old, GoToSleep);
+}
+
+void NodeGarbageCollector::Abort() {
+  Stop();
+}
+
+NodeGarbageCollector::State NodeGarbageCollector::Wait() const {
+  State s;
+  while ((s = state_.load(std::memory_order_acquire)) != Sleeping) {
+    assert(s != Exit);
+#ifndef NO_STD_ATOMIC_WAIT
+    state_.wait(s, std::memory_order_acquire);
+#else
+    Mutex::Lock lock(state_mutex_);
+    state_signal_.wait(lock.get_raw(), [this, s]() {return s != state_;});
+#endif
+  }
+  return s;
+}
+
+void NodeGarbageCollector::NotifyThreadGoingSleep() {
+  if (LocalWork().empty()) {
+    return;
+  }
+  ReleaseNodesWork new_work;
+  LocalWork().swap(new_work);
+}
+
+bool NodeGarbageCollector::IsActive() const {
+  return state_.load(std::memory_order_acquire) == Running;
+}
+
+bool NodeGarbageCollector::ShouldQueue(std::unique_ptr<Node>& node) const {
+  // We don't want to queue null pointers.
+  if (!node) {
+    return false;
+  }
+
+  // If state is exit, it means thread local queues have been destroyed.
+  State s = state_.load(std::memory_order_acquire);
+  if (s == Exit) {
+    return false;
+  }
+
+  // We directly free the node, if queue is running and we are in the GC thread.
+  // All other queue request should be pushed to the thread local batch.
+  return s != Running || !LocalWork().IsWorker();
+}
+
+void NodeGarbageCollector::GCThread() {
+  auto& shared_work = LocalWork(true);
+  assert(shared_work.IsWorker());
+  State s;
+  while ((s = state_.load(std::memory_order_acquire)) != Exit) {
+    if (s == GoToSleep) {
+      // Signal other threads that we have stopped destruction work.
+      if (SetState(s, Sleeping)) {
+        s = Sleeping;
+      } else {
+        continue;
+      }
+    }
+    if (s == Sleeping) {
+#ifndef NO_STD_ATOMIC_WAIT
+      state_.wait(Sleeping, std::memory_order_acquire);
+#else
+      Mutex::Lock lock(state_mutex_);
+      state_signal_.wait(lock.get_raw(), [this]() {return Sleeping != state_;});
+#endif
+      if (!shared_work.empty()) {
+        // Check for early exit from previous free. The work can be freed
+        // before the batch is full.
+        ReleaseNodesWork new_work(true);
+        new_work.swap(shared_work);
+      }
+      continue;
+    }
+
+    assert(s == Running);
+
+    bool empty = true;
+    std::vector<std::unique_ptr<Node>> nodes;
+    {
+      SpinMutex::Lock lock(mutex_);
+      if (!released_nodes_.empty()) {
+        empty = false;
+        nodes = std::move(released_nodes_.front());
+        released_nodes_.pop_front();
+      }
+    }
+
+    if (!empty) {
+      LOGFILE << "Garbage collection starting.";
+    }
+
+    // Free nodes one by one. LowNode destructor calls AddToGcQueue which allows
+    // recursive destruction terminate before freeing a whole branch.
+    while (!nodes.empty()) {
+      if (!IsActive()) {
+        break;
+      }
+      nodes.pop_back();
+    }
+
+    if (!empty) {
+      LOGFILE << "Garbage collection ending.";
+    }
+
+    // Go to sleep if empty or search stopped.
+    if (empty || !IsActive()) {
+      // Lock is requrired to avoid race between other thread queueing work and
+      // calling Start().
+      SpinMutex::Lock lock(mutex_);
+      // There wasn't enough time to free all nodes. They must go back to the
+      // list.
+      if (!nodes.empty()) {
+        released_nodes_.emplace_front(std::move(nodes));
+      }
+
+      // Going to sleep if the queue is empty.
+      if (released_nodes_.empty()) {
+        State old = Running;
+        SetState(old, Sleeping);
+      }
+    }
+  }
+}
+ReleaseNodesWork::ReleaseNodesWork(bool gc_thread) :
+    is_gc_thread_(gc_thread) {
+  released_nodes_.reserve(kCapacity);
+}
+
+bool ReleaseNodesWork::IsWorker() const {
+  return is_gc_thread_;
+}
+
+void ReleaseNodesWork::emplace_back(std::unique_ptr<Node>&& node) {
+  if (!node) return;
+  released_nodes_.emplace_back(std::forward<std::unique_ptr<Node>>(node));
+  if (released_nodes_.size() == kCapacity) {
+    ReleaseNodesWork new_work(is_gc_thread_);
+    swap(new_work);
+  }
+}
+
+bool ReleaseNodesWork::empty() const {
+  return released_nodes_.empty();
+}
+
+void ReleaseNodesWork::swap(ReleaseNodesWork &other) {
+  assert(IsWorker() == other.IsWorker());
+  std::swap(released_nodes_, other.released_nodes_);
+}
+
+ReleaseNodesWork::~ReleaseNodesWork() {
+  Submit();
+}
+
+void ReleaseNodesWork::Submit() {
+  if (released_nodes_.empty()) {
+    return;
+  }
+  auto& worker = NodeGarbageCollector::Instance();
+  SpinMutex::Lock lock(worker.mutex_);
+  // If this is worker, we have oldest nodes. Keep them at front of the queue.
+  if (IsWorker()) {
+    worker.released_nodes_.emplace_front(std::move(released_nodes_));
+  } else {
+    worker.released_nodes_.emplace_back(std::move(released_nodes_));
+  }
 }
 
 }  // namespace dag_classic
