@@ -2256,21 +2256,22 @@ void SearchWorker::DoBackupUpdateSingleNode(
     } else {
 #ifdef FIX_TT
       auto tt_low_node = entry->lock();
-      search_->tt_->Unpin(node_to_process.hash, entry);
 #else
       auto tt_low_node = tt_iter->second.lock();
 #endif
       if (!tt_low_node) {
 #ifdef FIX_TT
-        search_->tt_->Insert(node_to_process.hash,
-                             std::make_unique<std::weak_ptr<LowNode>>(
-                                 node_to_process.tt_low_node));
+        // An insert would fail, so update the (expired) entry directly.
+        *entry = node_to_process.tt_low_node;
+        search_->tt_->Unpin(node_to_process.hash, entry);
 #else
         tt_iter->second = node_to_process.tt_low_node;
 #endif
         node_to_process.node->SetLowNode(node_to_process.tt_low_node);
       } else {
-#ifndef FIX_TT
+#ifdef FIX_TT
+        search_->tt_->Unpin(node_to_process.hash, entry);
+#else
         assert(!tt_iter->second.expired());
 #endif
         node_to_process.node->SetLowNode(tt_low_node);
