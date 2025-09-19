@@ -151,6 +151,9 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
       3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
       sizeof(float[classic::MemoryWatchingStopper::kAvgMovesPerPosition]);
   size_t total_memory = tree_.get()->GetCurrentHead()->GetN() * kAvgNodeSize +
+#ifdef FIX_TT
+                        tt_.GetCapacity() * tt_.GetItemStructSize() +
+#endif
                         cache_size * kAvgCacheItemSize;
   auto stopper = time_manager_->GetStopper(
       params, tree_.get()->HeadPosition(), total_memory, kAvgNodeSize,
