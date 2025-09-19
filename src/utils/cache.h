@@ -63,8 +63,9 @@ class HashKeyedCache {
 
   // Inserts the element under key @key with value @val. Unless the key is
   // already in the cache.
-  void Insert(uint64_t key, std::unique_ptr<V> val) {
-    if (capacity_.load(std::memory_order_relaxed) == 0) return;
+  // Returns false if the hash is found in the cache, blocking insertion.
+  bool Insert(uint64_t key, std::unique_ptr<V> val) {
+    if (capacity_.load(std::memory_order_relaxed) == 0) return true;
 
     SpinMutex::Lock lock(mutex_);
 
@@ -73,7 +74,7 @@ class HashKeyedCache {
       if (!hash_[idx].in_use) break;
       if (hash_[idx].key == key) {
         // Already exists.
-        return;
+        return false;
       }
       ++idx;
       if (idx >= hash_.size()) idx -= hash_.size();
@@ -87,6 +88,7 @@ class HashKeyedCache {
     ++allocated_;
 
     EvictToCapacity(capacity_);
+    return true;
   }
 
   // Checks whether a key exists. Doesn't pin. Of course the next moment the

@@ -2239,17 +2239,23 @@ void SearchWorker::DoBackupUpdateSingleNode(
   if (node_to_process.nn_queried) {
 #ifdef FIX_TT
     auto entry = search_->tt_->LookupAndPin(node_to_process.hash);
+    if (!entry) {
+      bool insert_ok = search_->tt_->Insert(
+          node_to_process.hash, std::make_unique<std::weak_ptr<LowNode>>(
+                                    node_to_process.tt_low_node));
+      if (!insert_ok) {
+        // The insert may fail if another thread added the same hash.
+        // In the unlikely case it fails, the search will still work OK.
+        entry = search_->tt_->LookupAndPin(node_to_process.hash);
+      }
+    }
     bool is_tt_miss = !entry;
 #else
     auto [tt_iter, is_tt_miss] = search_->tt_->try_emplace(
         node_to_process.hash, node_to_process.tt_low_node);
 #endif
     if (is_tt_miss) {
-#ifdef FIX_TT
-      search_->tt_->Insert(node_to_process.hash,
-                           std::make_unique<std::weak_ptr<LowNode>>(
-                               node_to_process.tt_low_node));
-#else
+#ifndef FIX_TT
       assert(!tt_iter->second.expired());
 #endif
       node_to_process.node->SetLowNode(node_to_process.tt_low_node);
