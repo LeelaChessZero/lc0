@@ -226,6 +226,15 @@ if get_option('dag_classic')
     'src/search/dag_classic/wrapper.cc',
   ]
 
+  ## ~~~~~~~~~~
+  ## Transposition table
+  ## ~~~~~~~~~~
+  fix_tt = get_option('fixed_tt')
+  if fix_tt
+    # Change transposition table to a fixed size one.
+    add_project_arguments('-DFIX_TT', language : 'cpp')
+  endif
+
   deps += dependency('absl_flat_hash_map',
                      include_type: 'system',
                      fallback: ['abseil-cpp', 'absl_container_dep'],
