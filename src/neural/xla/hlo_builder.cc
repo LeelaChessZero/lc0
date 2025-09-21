@@ -536,7 +536,7 @@ std::optional<HloComputation> HloBuilder::GetComputationId(
 HloComputation HloBuilder::AddComputation(std::string_view name,
                                           const HloBuilder& builder) {
   std::unordered_map<size_t, size_t> id_map;
-  if (computation_names_.count(std::string(name))) {
+  if (computation_names_.contains(std::string(name))) {
     throw Exception("Computation with name " + std::string(name) +
                     " already exists");
   }

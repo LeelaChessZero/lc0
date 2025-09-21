@@ -29,7 +29,7 @@
 
 #include <iostream>
 
-#include "neural/xla/hlo.pb.h"
+#include "proto/hlo.pb.h"
 
 namespace lczero {
 

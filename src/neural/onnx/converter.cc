@@ -921,7 +921,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                                const std::string& input,
                                const MultiHeadWeights& weights) {
   // Check that selected policy head exists.
-  if (weights.policy_heads.count(options_.policy_head) == 0) {
+  if (!weights.policy_heads.contains(options_.policy_head)) {
     throw Exception("The policy head you specified '" + options_.policy_head +
                     "'" + " does not exist in this net.");
   }
@@ -989,7 +989,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                               const std::string& input,
                               const MultiHeadWeights& weights) {
   // Check that selected value head exists.
-  if (weights.value_heads.count(options_.value_head) == 0) {
+  if (!weights.value_heads.contains(options_.value_head)) {
     throw Exception("The value head you specified '" + options_.value_head +
                     "'" + " does not exist in this net.");
   }
