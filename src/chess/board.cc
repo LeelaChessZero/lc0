@@ -1160,7 +1160,7 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
     // Qeenside castling.
     return Move::WhiteCastling(from.file(), kFileA);
   }
-  if (from.file() != to.file() && pawns_.get(from) && !their_pieces_.get(to)) {
+  if (from.file() != to.file() && pawns().get(from) && !their_pieces_.get(to)) {
     // En passant.
     return Move::WhiteEnPassant(from, to);
   }
