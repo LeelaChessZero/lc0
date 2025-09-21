@@ -573,8 +573,35 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
   return result;
 }  // namespace lczero
 
+bool ChessBoard::IsValid(Move move) const {
+  const auto all = ours() | theirs();
+  auto check = all | pawns() | bishops() | rooks() | queens() | kings();
+  if (check != all ||
+      (pawns() & bishops()).as_int() ||
+      (pawns() & rooks()).as_int() ||
+      (pawns() & queens()).as_int() ||
+      (pawns() & kings()).as_int() ||
+      (bishops() & rooks()).as_int() ||
+      (bishops() & queens()).as_int() ||
+      (bishops() & kings()).as_int() ||
+      (rooks() & queens()).as_int() ||
+      (rooks() & kings()).as_int() ||
+      (queens() & kings()).as_int()) {
+    CERR << DebugString() << " " << move.ToString(false);
+    return false;
+  }
+  return true;
+}
+
 bool ChessBoard::ApplyMove(Move move) {
   assert(our_pieces_.intersects(BitBoard::FromSquare(move.from())));
+  struct BoardValidate {
+    const ChessBoard& board_;
+    const Move move_;
+    ~BoardValidate() {
+      assert(board_.IsValid(move_) && "after ChessBoard::ApplyMove");
+    }
+  } validator(*this, move);
   const Square& from = move.from();
   const Square& to = move.to();
   const Rank from_rank = from.rank();

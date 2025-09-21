@@ -231,6 +231,7 @@ class ChessBoard {
  private:
   // Sets the piece on the square.
   void PutPiece(Square square, PieceType piece, bool is_theirs);
+  bool IsValid(Move move) const;
 
   // All white pieces.
   BitBoard our_pieces_;
