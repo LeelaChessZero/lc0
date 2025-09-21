@@ -2236,6 +2236,20 @@ TEST(ChessBoard, InvalidEnPassantFromKnightPromotion) {
   EXPECT_TRUE(board.en_passant().empty());
 }
 
+// Move from an en-passant flag square was mistakenly marked as en-passant.
+TEST(ChessBoard, QueenMoveFromEnPassantFlagBug) {
+  ChessBoard board;
+  board.SetFromFen("1Qnkr3/1p1b4/p2P2p1/P1q5/1NP3pP/1KN5/8/3R4 b - - 0 32");
+  board.ApplyMove(board.ParseMove("b7b5"));
+  board.Mirror();
+  auto m = board.ParseMove("b8c7");
+  EXPECT_FALSE(m.is_en_passant());
+  board.ApplyMove(m);
+  board.Mirror();
+  MoveList legal_moves = {board.ParseMove("c5c7")};
+  EXPECT_EQ(board.GenerateLegalMoves(), legal_moves);
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
