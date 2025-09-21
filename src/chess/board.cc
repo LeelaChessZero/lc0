@@ -34,6 +34,7 @@
 #include <cstring>
 #include <sstream>
 #include <utility>
+#include <absl/cleanup/cleanup.h>
 
 #include "utils/exception.h"
 
@@ -587,7 +588,11 @@ bool ChessBoard::IsValid(Move move) const {
       (rooks() & queens()).as_int() ||
       (rooks() & kings()).as_int() ||
       (queens() & kings()).as_int()) {
-    CERR << DebugString() << " " << move.ToString(false);
+    std::string move_string = "";
+    if (move.raw_data()) {
+      move_string = " move " + move.ToString(false);
+    }
+    CERR << DebugString() << move_string;
     return false;
   }
   return true;
@@ -595,14 +600,9 @@ bool ChessBoard::IsValid(Move move) const {
 
 bool ChessBoard::ApplyMove(Move move) {
   assert(our_pieces_.intersects(BitBoard::FromSquare(move.from())));
-  struct BoardValidate {
-    const ChessBoard& board_;
-    const Move move_;
-    BoardValidate(const ChessBoard& b, Move m) : board_(b), move_(m) {}
-    ~BoardValidate() {
-      assert(board_.IsValid(move_) && "after ChessBoard::ApplyMove");
-    }
-  } validator(*this, move);
+  absl::Cleanup validate = [&] {assert(IsValid(move) &&
+                                       "after ChessBoard::ApplyMove");};
+
   const Square& from = move.from();
   const Square& to = move.to();
   const Rank from_rank = from.rank();
