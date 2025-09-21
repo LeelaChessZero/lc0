@@ -598,6 +598,7 @@ bool ChessBoard::ApplyMove(Move move) {
   struct BoardValidate {
     const ChessBoard& board_;
     const Move move_;
+    BoardValidate(const ChessBoard& b, Move m) : board_(b), move_(m) {}
     ~BoardValidate() {
       assert(board_.IsValid(move_) && "after ChessBoard::ApplyMove");
     }
