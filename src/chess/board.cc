@@ -574,7 +574,7 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
   return result;
 }  // namespace lczero
 
-bool ChessBoard::IsValid(Move move) const {
+bool ChessBoard::IsValid() const {
   const auto all = ours() | theirs();
   auto check = all | pawns() | bishops() | rooks() | queens() | kings();
   if (check != all ||
@@ -588,11 +588,6 @@ bool ChessBoard::IsValid(Move move) const {
       (rooks() & queens()).as_int() ||
       (rooks() & kings()).as_int() ||
       (queens() & kings()).as_int()) {
-    std::string move_string = "";
-    if (move.raw_data()) {
-      move_string = " move " + move.ToString(false);
-    }
-    CERR << DebugString() << move_string;
     return false;
   }
   return true;
@@ -600,9 +595,15 @@ bool ChessBoard::IsValid(Move move) const {
 
 bool ChessBoard::ApplyMove(Move move) {
   assert(our_pieces_.intersects(BitBoard::FromSquare(move.from())));
-  absl::Cleanup validate = [&] {assert(IsValid(move) &&
-                                       "after ChessBoard::ApplyMove");};
-
+#ifndef NDEBUG
+  absl::Cleanup validate = [&] {
+    if (!IsValid()) {
+      CERR << "Move " + move.ToString(true) +
+                  " resulted in invalid board: " + DebugString();
+      assert(false);
+    }
+  };
+#endif
   const Square& from = move.from();
   const Square& to = move.to();
   const Rank from_rank = from.rank();
@@ -1141,7 +1142,9 @@ bool ChessBoard::HasMatingMaterial() const {
 }
 
 std::string ChessBoard::DebugString() const {
-  return "https://lc0.org/fen/" + BoardToFen(*this);
+  auto fen = BoardToFen(*this);
+  std::replace(fen.begin(), fen.end(), ' ', '_');
+  return "https://lc0.org/fen/" + fen;
 }
 
 Move ChessBoard::ParseMove(std::string_view move_str) const {

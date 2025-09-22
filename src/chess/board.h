@@ -231,9 +231,8 @@ class ChessBoard {
  private:
   // Sets the piece on the square.
   void PutPiece(Square square, PieceType piece, bool is_theirs);
-  // Check internal state is consistent after state transformations. Move can be
-  // passed to provide context when transformation is related to making a move.
-  bool IsValid(Move move = Move()) const;
+  // Check internal state is consistent after state transformations.
+  bool IsValid() const;
 
   // All white pieces.
   BitBoard our_pieces_;
