@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <utility>
 
 #include "neural/encoder.h"
 #include "neural/shared_params.h"
@@ -38,7 +39,7 @@
 namespace lczero {
 namespace {
 
-FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
+FillEmptyHistory EncodeHistoryFill(const std::string& history_fill) {
   if (history_fill == "fen_only") return FillEmptyHistory::FEN_ONLY;
   if (history_fill == "always") return FillEmptyHistory::ALWAYS;
   assert(history_fill == "no");
@@ -174,7 +175,7 @@ std::unique_ptr<BackendComputation> NetworkAsBackend::CreateComputation() {
 NetworkAsBackendFactory::NetworkAsBackendFactory(const std::string& name,
                                                  FactoryFunc factory,
                                                  int priority)
-    : name_(name), factory_(factory), priority_(priority) {}
+    : name_(name), factory_(std::move(factory)), priority_(priority) {}
 
 std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
     const OptionsDict& options) {

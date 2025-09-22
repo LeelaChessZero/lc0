@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <utility>
+
 #include "trainingdata/reader.h"
 
 namespace lczero {
@@ -118,7 +120,7 @@ InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {
 }
 
 TrainingDataReader::TrainingDataReader(std::string filename)
-    : filename_(filename) {
+    : filename_(std::move(filename)) {
   fin_ = gzopen(filename_.c_str(), "rb");
   if (!fin_) {
     throw Exception("Cannot open gzip file " + filename_);
