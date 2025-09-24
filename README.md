@@ -7,7 +7,7 @@ Lc0 is a UCI-compliant chess engine designed to play chess via neural network, s
 
 ## Downloading source
 
-Lc0 can be acquired either via a git clone or an archive download from GitHub. Be aware that there is a required submodule which isn't included in source archives.
+Lc0 can be acquired either via a git clone or an archive download from GitHub.
 
 For essentially all purposes, including selfplay game generation and match play, we highly recommend using the latest `release/version` branch (for example `release/0.32`), which is equivalent to using the latest version tag.
 
@@ -16,7 +16,7 @@ Versioning follows the Semantic Versioning guidelines, with major, minor and pat
 Download using git:
 
 ```shell
-git clone -b release/0.32 --recurse-submodules https://github.com/LeelaChessZero/lc0.git
+git clone -b release/0.32 https://github.com/LeelaChessZero/lc0.git
 ```
 
 If you have cloned already an old version, fetch, view and checkout a new branch:
@@ -26,12 +26,9 @@ git branch --all
 git checkout -t remotes/origin/release/0.32
 ```
 
-If you prefer to download an archive, you need to also download and place the submodule:
+If you prefer to download an archive:
  * Download the [.zip](https://api.github.com/repos/LeelaChessZero/lc0/zipball/release/0.32) file ([.tar.gz](https://api.github.com/repos/LeelaChessZero/lc0/tarball/release/0.32) archive is also available)
  * Extract
- * Download https://github.com/LeelaChessZero/lczero-common/archive/master.zip (also available as [.tar.gz](https://github.com/LeelaChessZero/lczero-common/archive/master.tar.gz))
- * Move the second archive into the first archive's `libs/lczero-common/` folder and extract
- * The final form should look like `<TOP>/libs/lczero-common/proto/`
 
 Having successfully acquired Lc0 via either of these methods, proceed to the build section below and follow the instructions for your OS.
 
@@ -40,7 +37,7 @@ Having successfully acquired Lc0 via either of these methods, proceed to the bui
 
 Building should be easier now than it was in the past. Please report any problems you have.
 
-Aside from the git submodule, lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as a few libraries. If your system already has these libraries installed, they will be used; otherwise Meson will generate its own copy (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
+Building lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as a few libraries. If your system already has these libraries installed, they will be used; otherwise Meson will generate its own copy (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
 
 Backend support includes (in theory) any CBLAS-compatible library for CPU usage, but OpenBLAS or Intel's DNNL are the main ones. For GPUs, the following are supported: CUDA (with optional cuDNN), various flavors of onnxruntime, and Apple's Metal Performance Shaders. There is also experimental SYCL support for AMD and Intel GPUs.
 
@@ -110,7 +107,7 @@ You will need xcode and python3 installed. Then you need to install some require
 1. Install meson: `pip3 install meson`
 2. Install ninja: `pip3 install ninja`
 
-Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page. Don't forget the submodule.
+Now download the lc0 source, if you haven't already done so, following the instructions earlier in the page.
 
 3. Go to the lc0 directory.
 4. Run `./build.sh -Dgtest=false`

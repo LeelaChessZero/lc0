@@ -31,8 +31,8 @@
 #include <fstream>
 #include <set>
 
-#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "proto/onnx.pb.h"
 #include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/fp16_utils.h"
@@ -465,9 +465,11 @@ void ConvertOnnxToLeela() {
       NetworkFormat::ValueFormat_AllValues, NetworkFormat::ValueFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
     onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
+    format->set_output(NetworkFormat::OUTPUT_CLASSICAL);
   }
   if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
     onnx->set_output_wdl(dict.Get<std::string>(kOnnxOutputWdlId));
+    format->set_output(NetworkFormat::OUTPUT_WDL);
   }
 
   // Mlh.

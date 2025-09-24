@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++20', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
-        meson_version: '>=0.55')
+        meson_version: '>=0.57')
 
 cc = meson.get_compiler('cpp')
 
@@ -60,37 +60,19 @@ includes += include_directories('third_party', is_system: true)
 compile_proto = find_program('scripts/compile_proto.py')
 gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
   arguments : [
-    '--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common',
+    '--proto_path=@CURRENT_SOURCE_DIR@',
     '--cpp_out=@BUILD_DIR@',
     '@INPUT@'])
 
-# Handle submodules.
-git = find_program('git', required: false)
-if run_command('scripts/checkdir.py', 'libs/lczero-common/proto', check : false).returncode() != 0
-  if git.found()
-    if run_command(git, 'status', check : false).returncode() == 0
-      message('updating git submodule libs/lczero-common')
-      run_command(git, 'submodule', 'update', '--init', '--recursive', check : false)
-    else
-      message('cloning lczero-common.git into libs/lczero-common')
-      run_command(git, 'clone', '--depth=1',
-                  'https://github.com/LeelaChessZero/lczero-common.git',
-                  'libs/lczero-common/', check : false)
-    endif
-  else
-    error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
-  endif
-endif
-
 pb_files = [
   'src/utils/protomessage.cc',
-  gen.process('libs/lczero-common/proto/net.proto',
-    preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+  gen.process('proto/net.proto', preserve_path_from : meson.current_source_dir())
 ]
 common_files += pb_files
 
 # Extract git short revision.
 short_rev = 'unknown'
+git = find_program('git', required: false)
 if git.found()
   r = run_command(git, 'rev-parse', '--short', 'HEAD', check : false)
   if r.returncode() == 0
@@ -132,17 +114,11 @@ elif get_option('malloc') != ''
 endif
 
 # ONNX and HLO protobufs.
-gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
-  arguments : [
-    '--proto_path=@CURRENT_SOURCE_DIR@/src',
-    '--cpp_out=@BUILD_DIR@',
-    '@INPUT@'])
+files += gen.process('proto/onnx.proto',
+  preserve_path_from : meson.current_source_dir())
 
-files += gen_proto_src.process('src/neural/onnx/onnx.proto',
-  preserve_path_from : meson.current_source_dir() + '/src/')
-
-files += gen_proto_src.process('src/neural/xla/hlo.proto',
-  preserve_path_from : meson.current_source_dir() + '/src/')
+files += gen.process('proto/hlo.proto',
+  preserve_path_from : meson.current_source_dir())
 
 #############################################################################
 ## Main files
@@ -250,8 +226,10 @@ if get_option('dag_classic')
     'src/search/dag_classic/wrapper.cc',
   ]
 
-  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
-  deps += absl.get_variable('absl_container_dep').as_system()
+  deps += dependency('absl_flat_hash_map',
+                     include_type: 'system',
+                     fallback: ['abseil-cpp', 'absl_container_dep'],
+                     default_options : ['warning_level=0', 'cpp_std=c++20'])
 endif
 
 #############################################################################
@@ -341,9 +319,9 @@ if get_option('build_backends')
     eigen_dep = dependency('eigen3')
     # Check for needed header, bad dependency seen in the widl.
     if eigen_dep.found() and cc.has_header('Eigen/Core', dependencies: eigen_dep)
-      deps += eigen_dep
+      deps += eigen_dep.as_system()
     else
-      deps += subproject('eigen').get_variable('eigen_dep')
+      deps += subproject('eigen').get_variable('eigen_dep').as_system()
     endif
 
     ispc = find_program('ispc', required: false)
@@ -630,7 +608,7 @@ if get_option('build_backends')
                                 modules : ['Foundation', 'Metal', 'MetalPerformanceShaders', 'MetalPerformanceShadersGraph'],
                                 required: get_option('metal'))
 
-  if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
+  if metal_frameworks.found() and add_languages('objc', 'objcpp', native: false)
     deps += metal_frameworks
 
     files += [
@@ -805,11 +783,11 @@ endif
   ## Profiler
   ## ~~~~~~~~
   if get_option('buildtype') != 'release'
-    deps += cc.find_library('libprofiler',
+    deps += cc.find_library('profiler',
       dirs: ['/usr/local/lib'], required: false)
   endif
 
-  deps += cc.find_library('libatomic', required: false)
+  deps += cc.find_library('atomic', required: false)
 
 #############################################################################
 ## Main Executable

@@ -146,6 +146,44 @@ class MEvaluator {
   bool parent_within_threshold_ = false;
 };
 
+// Unpack task_count_ atomic which holds both task_count_ and tasks_taken_. It
+// can unpack a value from an already read value or load it from the atomic
+// variable.
+// Variables are packed together because there is a potential race between task
+// workers and ResetTasks. A task worker can read tasks_taken_ and task_count
+// to a local register. A task worker can be suspended by kernel before tries
+// to acquire work. Other threads can process all tasks and main thread resets
+// tasks before the suspended thread resumes. The suspended thread now manages
+// to acquire work based on stale values if the stale tasks_taken was zero.
+// Packed values avoid the race because compare exchange is checking both when
+// incrementing tasks_taken_.
+template<typename T>
+std::tuple<int, int, int> ReadTaskCount(T& task_count) {
+  int packed;
+  if constexpr(std::is_same_v<T, std::atomic<int>>) {
+    packed = task_count.load(std::memory_order_acquire);
+  } else {
+    packed = task_count;
+  }
+  // The top half is tasks taken.
+  const int shift = SearchWorker::kTasksTakenShift;
+  int tasks_taken = packed >> shift;
+  // The bottom is task count. The first shift moves the sign bit from the lower
+  // half to the hardware sign bit. The second shift lowers bits back to the
+  // original positions and duplicates the sign bit if it is set.
+  int tc = (packed << shift) >> shift;
+  return {packed, tasks_taken, tc};
+}
+
+[[maybe_unused]]
+bool IsTasksCompleted(const std::atomic<int>& task_count,
+                      const std::atomic<int>& completed_tasks) {
+  int tc = 0, nta = 0;
+  std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count);
+  int ct = completed_tasks.load(std::memory_order_acquire);
+  return tc == ct || (nta == ct && tc == -1);
+}
+
 }  // namespace
 
 Search::Search(const NodeTree& tree, Backend* backend,
@@ -206,7 +244,7 @@ Search::Search(const NodeTree& tree, Backend* backend,
 }
 
 namespace {
-void ApplyDirichletNoise(Node* node, float eps, double alpha) {
+void ApplyDirichletNoise(LowNode* node, float eps, double alpha) {
   float total = 0;
   std::vector<float> noise;
 
@@ -219,10 +257,12 @@ void ApplyDirichletNoise(Node* node, float eps, double alpha) {
   if (total < std::numeric_limits<float>::min()) return;
 
   int noise_idx = 0;
-  for (const auto& child : node->Edges()) {
-    auto* edge = child.edge();
-    edge->SetP(edge->GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
-  }
+  auto edges = node->GetEdges();
+  std::transform(edges, edges + node->GetNumEdges(), edges,
+      [&](auto edge) {
+        edge.SetP(edge.GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
+        return edge;
+      });
 }
 }  // namespace
 
@@ -628,7 +668,7 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
   // Already responded bestmove, nothing to do here.
   if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
-  if (total_playouts_ + initial_visits_ == 0) return;
+  if (stats.total_nodes == 0) return;
 
   if (!stop_.load(std::memory_order_acquire)) {
     if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
@@ -1068,14 +1108,14 @@ void Search::Wait() {
   LOGFILE << "Search threads cleaned.";
 }
 
-void Search::CancelSharedCollisions() REQUIRES(nodes_mutex_) {
-  for (auto& entry : shared_collisions_) {
-    auto path = entry.first;
+void SearchWorker::CancelCollisions() {
+  for (auto& entry : minibatch_) {
+    if (!entry.IsCollision()) continue;
+    auto path = entry.path;
     for (auto it = ++(path.crbegin()); it != path.crend(); ++it) {
-      std::get<0>(*it)->CancelScoreUpdate(entry.second);
+      std::get<0>(*it)->CancelScoreUpdate(entry.multivisit);
     }
   }
-  shared_collisions_.clear();
 }
 
 Search::~Search() {
@@ -1083,7 +1123,6 @@ Search::~Search() {
   Wait();
   {
     SharedMutex::Lock lock(nodes_mutex_);
-    CancelSharedCollisions();
 
     assert(root_node_->ZeroNInFlight());
   }
@@ -1094,34 +1133,72 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
+SearchWorker::~SearchWorker()
+{
+  {
+    // Tasks must be completed before destructor. If a gather tasks is running,
+    // it can increment task_count_ which would break the exit state.
+    assert(IsTasksCompleted(task_count_, completed_tasks_));
+    task_count_.fetch_or(kTaskCountSuspend, std::memory_order_release);
+    Mutex::Lock lock(picking_tasks_mutex_);
+    exiting_ = true;
+    task_added_.notify_all();
+  }
+  for (size_t i = 0; i < task_threads_.size(); i++) {
+    task_threads_[i].join();
+  }
+  LOGFILE << "Search worker destroyed.";
+}
+
+std::tuple<SearchWorker::PickTask*, int, int> SearchWorker::PickTaskToProcess() {
+  auto [packed_value, nta, tc] = ReadTaskCount(task_count_);
+
+  // Check if tasks are queued and try increment taken count.
+  while (nta < tc &&
+      !task_count_.compare_exchange_weak(packed_value, packed_value + kTasksTakenOne,
+                                         std::memory_order_acq_rel)) {
+    // Queue had tasks but another worker increment taken. We check
+    // if new work was added to the queue. Then we try to increment
+    // taken again.
+    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
+  }
+  // We incremented taken if nta and tc are different
+  if (nta < tc) {
+    return {picking_tasks_.data() + nta, nta, tc};
+  }
+  return {nullptr, nta, tc};
+}
+
+void SearchWorker::ProcessTask(PickTask* task, int id,
+                               std::vector<NodeToProcess>* receiver,
+                               TaskWorkspace* workspace) {
+  switch (task->task_type) {
+    case PickTask::kGathering: {
+      PickNodesToExtendTask(task->start_path, task->collision_limit,
+                            task->history, receiver,
+                            workspace);
+      break;
+    }
+    case PickTask::kProcessing: {
+      ProcessPickedTask(task->start_idx, task->end_idx);
+      break;
+    }
+  }
+  picking_tasks_.data()[id].complete = true;
+  completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
+}
+
 void SearchWorker::RunTasks(int tid) {
   while (true) {
     PickTask* task = nullptr;
     int id = 0;
+    int tc = 0;
     {
       int spins = 0;
       while (true) {
-        int nta = tasks_taken_.load(std::memory_order_acquire);
-        int tc = task_count_.load(std::memory_order_acquire);
-        if (nta < tc) {
-          int val = 0;
-          if (task_taking_started_.compare_exchange_weak(
-                  val, 1, std::memory_order_acq_rel,
-                  std::memory_order_relaxed)) {
-            nta = tasks_taken_.load(std::memory_order_acquire);
-            tc = task_count_.load(std::memory_order_acquire);
-            // We got the spin lock, double check we're still in the clear.
-            if (nta < tc) {
-              id = tasks_taken_.fetch_add(1, std::memory_order_acq_rel);
-              task = picking_tasks_.data() + id;
-              task_taking_started_.store(0, std::memory_order_release);
-              break;
-            }
-            task_taking_started_.store(0, std::memory_order_release);
-          }
-          SpinloopPause();
-          spins = 0;
-          continue;
+        std::tie(task, id, tc) = PickTaskToProcess();
+        if (task) {
+          break;
         } else if (tc != -1) {
           spins++;
           if (spins >= 512) {
@@ -1136,32 +1213,17 @@ void SearchWorker::RunTasks(int tid) {
         // Looks like sleep time.
         Mutex::Lock lock(picking_tasks_mutex_);
         // Refresh them now we have the lock.
-        nta = tasks_taken_.load(std::memory_order_acquire);
-        tc = task_count_.load(std::memory_order_acquire);
+        int tc, nta;
+        std::tie(std::ignore, std::ignore, tc) = ReadTaskCount(task_count_);
         if (tc != -1) continue;
-        if (nta >= tc && exiting_) return;
+        if (exiting_) return;
         task_added_.wait(lock.get_raw());
-        // And refresh again now we're awake.
-        nta = tasks_taken_.load(std::memory_order_acquire);
-        tc = task_count_.load(std::memory_order_acquire);
+        std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count_);
         if (nta >= tc && exiting_) return;
       }
     }
     if (task != nullptr) {
-      switch (task->task_type) {
-        case PickTask::kGathering: {
-          PickNodesToExtendTask(task->start_path, task->collision_limit,
-                                task->history, &(task->results),
-                                &(task_workspaces_[tid]));
-          break;
-        }
-        case PickTask::kProcessing: {
-          ProcessPickedTask(task->start_idx, task->end_idx);
-          break;
-        }
-      }
-      picking_tasks_.data()[id].complete = true;
-      completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
+      ProcessTask(task, id, &(task->results), &(task_workspaces_[tid]));
     }
   }
 }
@@ -1208,11 +1270,9 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 2. Gather minibatch.
   GatherMinibatch();
-  task_count_.store(-1, std::memory_order_release);
+  assert(IsTasksCompleted(task_count_, completed_tasks_));
+  task_count_.fetch_or(kTaskCountSuspend, std::memory_order_release);
   search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
-
-  // 2b. Collect collisions.
-  CollectCollisions();
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     search_->pending_searchers_.fetch_add(1, std::memory_order_acq_rel);
@@ -1290,10 +1350,20 @@ void SearchWorker::GatherMinibatch() {
   // Total number of nodes to process.
   int minibatch_size = 0;
   int cur_n = 0;
-  {
-    SharedMutex::Lock lock(search_->nodes_mutex_);
-    cur_n = search_->root_node_->GetN();
-  }
+
+  // Collision use atomic operations. We can cancel them outside the lock.
+  struct CollisionsManager {
+    SearchWorker& worker;
+    CollisionsManager(SearchWorker& worker) : worker(worker) {
+    }
+    ~CollisionsManager() {
+      worker.CancelCollisions();
+    }
+  } cancel_collisions_object(*this);
+  // We take the nodes_mutex_ only once to avoid bouncing between this thread
+  // and a thread returning from RunNNComputation.
+  SharedMutex::Lock lock(search_->nodes_mutex_);
+  cur_n = search_->root_node_->GetN();
   // TODO: GetEstimatedRemainingPlayouts has already had smart pruning factor
   // applied, which doesn't clearly make sense to include here...
   int64_t remaining_n =
@@ -1347,10 +1417,6 @@ void SearchWorker::GatherMinibatch() {
     }
 
     {
-      // This lock must be held until after the task_completed_ wait succeeds
-      // below. Since the tasks perform work which assumes they have the lock,
-      // even though actually this thread does.
-      SharedMutex::Lock lock(search_->nodes_mutex_);
 
       bool needs_wait = false;
       int ppt_start = new_start;
@@ -1394,7 +1460,6 @@ void SearchWorker::GatherMinibatch() {
       }
     }
     if (some_ooo) {
-      SharedMutex::Lock lock(search_->nodes_mutex_);
       for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start;
            i--) {
         // If there was any OOO, revert 'all' new collisions - it isn't possible
@@ -1425,7 +1490,6 @@ void SearchWorker::GatherMinibatch() {
         // Check to see if we can upsize the collision to exit sooner.
         if (picked_node.maxvisit > 0 &&
             collisions_left > picked_node.multivisit) {
-          SharedMutex::Lock lock(search_->nodes_mutex_);
           int extra = std::min(picked_node.maxvisit, collisions_left) -
                       picked_node.multivisit;
           picked_node.multivisit += extra;
@@ -1441,7 +1505,8 @@ void SearchWorker::GatherMinibatch() {
   }
 }
 
-void SearchWorker::ProcessPickedTask(int start_idx, int end_idx) {
+void SearchWorker::ProcessPickedTask(int start_idx, int end_idx)
+    REQUIRES(search_->nodes_mutex_) {
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
@@ -1458,28 +1523,44 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx) {
   }
 }
 
-#define MAX_TASKS 100
+#define MAX_TASKS 256
 
 void SearchWorker::ResetTasks() {
+  // Tasks must be completed before reset.
+  assert(IsTasksCompleted(task_count_, completed_tasks_));
   task_count_.store(0, std::memory_order_release);
-  tasks_taken_.store(0, std::memory_order_release);
   completed_tasks_.store(0, std::memory_order_release);
   picking_tasks_.clear();
   // Reserve because resizing breaks pointers held by the task threads.
   picking_tasks_.reserve(MAX_TASKS);
 }
 
-int SearchWorker::WaitForTasks() {
+int SearchWorker::WaitForTasks() REQUIRES(search_->nodes_mutex_) {
+  // Process any outstanding tasks before checking if compelted. This avoids a
+  // long polling loop when PickNodesToExtend scheduled many tasks.
+  while (true) {
+    PickTask* task = nullptr;
+    int id = 0;
+    std::tie(task, id, std::ignore) = PickTaskToProcess();
+    if (task == nullptr) {
+      break;
+    }
+    ProcessTask(task, id, &minibatch_, &main_workspace_);
+  }
   // Spin lock, other tasks should be done soon.
   while (true) {
     int completed = completed_tasks_.load(std::memory_order_acquire);
-    int todo = task_count_.load(std::memory_order_acquire);
+    int todo, nta;
+    std::tie(std::ignore, nta, todo) = ReadTaskCount(task_count_);
+    std::ignore = nta;
+    assert(nta <= todo);
     if (todo == completed) return completed;
     SpinloopPause();
   }
 }
 
-void SearchWorker::PickNodesToExtend(int collision_limit) {
+void SearchWorker::PickNodesToExtend(int collision_limit)
+    REQUIRES(search_->nodes_mutex_) {
   ResetTasks();
   if (task_workers_ > 0 && !search_->backend_attributes_.runs_on_cpu) {
     // While nothing is ready yet - wake the task runners so they are ready to
@@ -1488,10 +1569,6 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
     task_added_.notify_all();
   }
   std::vector<Move> empty_movelist;
-  // This lock must be held until after the task_completed_ wait succeeds below.
-  // Since the tasks perform work which assumes they have the lock, even though
-  // actually this thread does.
-  SharedMutex::Lock lock(search_->nodes_mutex_);
   history_.Trim(search_->played_history_.GetLength());
   PickNodesToExtendTask({std::make_tuple(search_->root_node_, 0, 0)},
                         collision_limit, history_, &minibatch_,
@@ -1992,8 +2069,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     }
   }
 
-  picked_node.nn_queried = true;  // Node::SetLowNode() required.
-
   // Check the transposition table first before asking for NN evaluation.
   // The board Hash() doesn't include repetitions; the position Hash() does.
   picked_node.hash =
@@ -2020,18 +2095,6 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
   }
 }
 
-// 2b. Copy collisions into shared collisions.
-void SearchWorker::CollectCollisions() {
-  SharedMutex::Lock lock(search_->nodes_mutex_);
-
-  for (const NodeToProcess& node_to_process : minibatch_) {
-    if (node_to_process.IsCollision()) {
-      search_->shared_collisions_.emplace_back(node_to_process.path,
-                                               node_to_process.multivisit);
-    }
-  }
-}
-
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() {
@@ -2041,67 +2104,43 @@ void SearchWorker::RunNNComputation() {
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
-  SharedMutex::Lock nodes_lock(search_->nodes_mutex_);
   // Populate NN/cached results, or terminal results, into nodes.
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process);
   }
 }
 
-void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process)
-    REQUIRES(search_->nodes_mutex_) {
+void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   if (!node_to_process->nn_queried) return;
 
-  if (!node_to_process->is_tt_hit) {
-    auto [tt_iter, is_tt_miss] = search_->tt_->insert(
-        {node_to_process->hash, node_to_process->tt_low_node});
-    auto wdl_rescale = [&]() {
-      if (params_.GetWDLRescaleRatio() != 1.0f ||
-          (params_.GetWDLRescaleDiff() != 0.0f &&
-           search_->contempt_mode_ != ContemptMode::NONE)) {
-        // Check whether root moves are from the set perspective.
-        bool root_stm = search_->contempt_mode_ == ContemptMode::WHITE;
-        auto sign = (root_stm ^ node_to_process->history.IsBlackToMove())
-                        ? 1.0f
-                        : -1.0f;
-        WDLRescale(node_to_process->eval->q, node_to_process->eval->d,
-                   params_.GetWDLRescaleRatio(),
-                   search_->contempt_mode_ == ContemptMode::NONE
-                       ? 0
-                       : params_.GetWDLRescaleDiff(),
-                   sign, false, params_.GetWDLMaxS());
-      }
-    };
-    if (is_tt_miss) {
-      assert(!tt_iter->second.expired());
-      wdl_rescale();
-      node_to_process->tt_low_node->SetNNEval(node_to_process->eval.get());
-      node_to_process->tt_low_node->SortEdges();
-    } else {
-      auto tt_low_node = tt_iter->second.lock();
-      if (!tt_low_node) {
-        tt_iter->second = node_to_process->tt_low_node;
-        wdl_rescale();
-        node_to_process->tt_low_node->SetNNEval(node_to_process->eval.get());
-        node_to_process->tt_low_node->SortEdges();
-      } else {
-        assert(!tt_iter->second.expired());
-        node_to_process->tt_low_node = tt_iter->second.lock();
-      }
+  auto wdl_rescale = [&]() {
+    if (params_.GetWDLRescaleRatio() != 1.0f ||
+        (params_.GetWDLRescaleDiff() != 0.0f &&
+         search_->contempt_mode_ != ContemptMode::NONE)) {
+      // Check whether root moves are from the set perspective.
+      bool root_stm = search_->contempt_mode_ == ContemptMode::WHITE;
+      auto sign = (root_stm ^ node_to_process->history.IsBlackToMove())
+                      ? 1.0f
+                      : -1.0f;
+      WDLRescale(node_to_process->eval->q, node_to_process->eval->d,
+                 params_.GetWDLRescaleRatio(),
+                 search_->contempt_mode_ == ContemptMode::NONE
+                     ? 0
+                     : params_.GetWDLRescaleDiff(),
+                 sign, false, params_.GetWDLMaxS());
     }
-  }
+  };
+  wdl_rescale();
+  node_to_process->tt_low_node->SetNNEval(node_to_process->eval.get());
+  node_to_process->tt_low_node->SortEdges();
 
   // Add NN results to node.
   Node* node = node_to_process->node;
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    node->SetLowNode(
-        std::make_shared<LowNode>(*node_to_process->tt_low_node.get()));
-    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
-                        params_.GetNoiseAlpha());
-    node->SortEdges();
-  } else {
-    node->SetLowNode(node_to_process->tt_low_node);
+    ApplyDirichletNoise(node_to_process->tt_low_node.get(),
+                        params_.GetNoiseEpsilon(), params_.GetNoiseAlpha());
+    node_to_process->tt_low_node->SortEdges();
   }
 }
 
@@ -2119,7 +2158,6 @@ void SearchWorker::DoBackupUpdate() {
     }
   }
   if (!work_done) return;
-  search_->CancelSharedCollisions();
   search_->total_batches_ += 1;
 }
 
@@ -2182,11 +2220,31 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
 void SearchWorker::DoBackupUpdateSingleNode(
     const NodeToProcess& node_to_process) REQUIRES(search_->nodes_mutex_) {
   if (node_to_process.IsCollision()) {
-    // Collisions are handled via shared_collisions instead.
     return;
   }
 
   auto path = node_to_process.path;
+
+  if (node_to_process.nn_queried) {
+    auto [tt_iter, is_tt_miss] = search_->tt_->try_emplace(
+        node_to_process.hash, node_to_process.tt_low_node);
+    if (is_tt_miss) {
+      assert(!tt_iter->second.expired());
+      node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+    } else {
+      auto tt_low_node = tt_iter->second.lock();
+      if (!tt_low_node) {
+        tt_iter->second = node_to_process.tt_low_node;
+        node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+      } else {
+        assert(!tt_iter->second.expired());
+        node_to_process.node->SetLowNode(tt_low_node);
+      }
+    }
+  } else if (node_to_process.is_tt_hit) {
+    node_to_process.node->SetLowNode(node_to_process.tt_low_node);
+  }
+
   auto [n, nr, nm] = path.back();
   // For the first visit to a terminal, maybe update parent bounds too.
   auto update_parent_bounds =
