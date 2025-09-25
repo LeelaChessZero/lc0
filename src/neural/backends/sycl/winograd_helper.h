@@ -20,12 +20,12 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 
 namespace lczero {
 namespace sycldnn_backend {
 
-__dpct_inline__ float mishActivate(float el) {
+[[gnu::always_inline]]
+inline float mishActivate(float el) {
   auto e = sycl::native::exp(el);
   auto n = e * e + 2.0f * e;
   auto d = el / (n + 2.0f);
@@ -35,7 +35,8 @@ __dpct_inline__ float mishActivate(float el) {
     return el - 2.0f * d;
   }
 }
-__dpct_inline__ float activate(float cVal, ActivationFunction activation) {
+[[gnu::always_inline]]
+inline float activate(float cVal, ActivationFunction activation) {
   switch (activation) {
     case ACTIVATION_RELU:
       if (cVal < 0) cVal = 0;
@@ -69,7 +70,8 @@ __dpct_inline__ float activate(float cVal, ActivationFunction activation) {
 }
 
 template <typename T, int M, int N, int K>
-__dpct_inline__ void matrixMul_gpu_serial(T* c, const T* a, const T* b) {
+[[gnu::always_inline]]
+inline void matrixMul_gpu_serial(T* c, const T* a, const T* b) {
 #ifndef SKIP_FP16_BITS
 #pragma unroll
   for (int i = 0; i < M; ++i)
@@ -84,7 +86,8 @@ __dpct_inline__ void matrixMul_gpu_serial(T* c, const T* a, const T* b) {
 }
 
 template <typename T>
-__dpct_inline__ void FilterTransform4x4(T* transformed_filter,
+[[gnu::always_inline]]
+inline void FilterTransform4x4(T* transformed_filter,
                                         const T* filter) {
   // transform applied to filter (of size 3x3)
   T G[6 * 3] = {1.0f / 4,  0,         0,         -1.0f / 6,  -1.0f / 6,
@@ -102,7 +105,8 @@ __dpct_inline__ void FilterTransform4x4(T* transformed_filter,
 }
 
 template <typename T>
-__dpct_inline__ void InputTransform4x4(T* transformedInput, const T* input) {
+[[gnu::always_inline]]
+inline void InputTransform4x4(T* transformedInput, const T* input) {
   // transform applied to input tile (of size 4x4)
   const T Bt[6 * 6] = {4, 0, -5, 0,  1, 0, 0, -4, -4, 1,  1, 0,
                        0, 4, -4, -1, 1, 0, 0, -2, -1, 2,  1, 0,
@@ -118,7 +122,8 @@ __dpct_inline__ void InputTransform4x4(T* transformedInput, const T* input) {
 }
 
 template <typename T>
-__dpct_inline__ void OutputTransform4x4(T* output, const T* transformedOutput) {
+[[gnu::always_inline]]
+inline void OutputTransform4x4(T* output, const T* transformedOutput) {
   // transform applied to result
   const T At[4 * 6] = {1, 1, 1, 1, 1, 0, 0, 1, -1, 2, -2, 0,
                        0, 1, 1, 4, 4, 0, 0, 1, -1, 8, -8, 1};
@@ -442,7 +447,8 @@ void OutputTransform_kernel(int N, int C, int se_K, T* output,
 }
 
 // fast reduction for the warp
-__dpct_inline__ float warpReduce(float x, const sycl::nd_item<3>& item_ct1) {
+[[gnu::always_inline]]
+inline float warpReduce(float x, const sycl::nd_item<3>& item_ct1) {
 #pragma unroll
   for (int mask = 16; mask > 0; mask >>= 1)
     /*
@@ -458,13 +464,14 @@ __dpct_inline__ float warpReduce(float x, const sycl::nd_item<3>& item_ct1) {
     device. Modify the size of the work-group to ensure that the value of the
     right-most dimension is a multiple of "32".
     */
-    x += dpct::permute_sub_group_by_xor(item_ct1.get_sub_group(), x, mask);
+    x += sycl::permute_group_by_xor(item_ct1.get_sub_group(), x, mask);
 
   return x;
 }
 
 // fast max reduction for the warp
-__dpct_inline__ float warpMax(float x, const sycl::nd_item<3>& item_ct1) {
+[[gnu::always_inline]]
+inline float warpMax(float x, const sycl::nd_item<3>& item_ct1) {
 #pragma unroll
   for (int mask = 16; mask > 0; mask >>= 1)
     /*
@@ -480,29 +487,16 @@ __dpct_inline__ float warpMax(float x, const sycl::nd_item<3>& item_ct1) {
     device. Modify the size of the work-group to ensure that the value of the
     right-most dimension is a multiple of "32".
     */
-    x = sycl::max(x, (float)(dpct::permute_sub_group_by_xor(
+    x = sycl::max(x, (float)(sycl::permute_group_by_xor(
                          item_ct1.get_sub_group(), x, mask)));
 
   return x;
 }
 
-// atomic max implementation for floats
-__dpct_inline__ float atomicMaxFloat(float* addr, float val) {
-  float max;
-  max = !sycl::signbit(val)
-            ? sycl::bit_cast<float>(dpct::atomic_fetch_max<
-                                    sycl::access::address_space::generic_space>(
-                  (int*)addr, sycl::bit_cast<int>(val)))
-            : sycl::bit_cast<float>(dpct::atomic_fetch_min<
-                                    sycl::access::address_space::generic_space>(
-                  (unsigned int*)addr, sycl::bit_cast<unsigned int>(val)));
-
-  return max;
-}
-
 // Helper fuction to do vector loads/stores
 template <typename T>
-__dpct_inline__ void copyAs(void* dst, const void* src) {
+[[gnu::always_inline]]
+inline void copyAs(void* dst, const void* src) {
   *((T*)(dst)) = *((const T*)(src));
 }
 
