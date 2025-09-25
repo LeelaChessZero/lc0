@@ -72,7 +72,6 @@ inline float activate(float cVal, ActivationFunction activation) {
 template <typename T, int M, int N, int K>
 [[gnu::always_inline]]
 inline void matrixMul_gpu_serial(T* c, const T* a, const T* b) {
-#ifndef SKIP_FP16_BITS
 #pragma unroll
   for (int i = 0; i < M; ++i)
 #pragma unroll
@@ -82,7 +81,6 @@ inline void matrixMul_gpu_serial(T* c, const T* a, const T* b) {
       for (int k = 0; k < K; ++k) S += a[i * K + k] * b[k * N + j];
       c[i * N + j] = S;
     }
-#endif
 }
 
 template <typename T>
@@ -302,7 +300,6 @@ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* w2, const T* b2,
                                        const sycl::nd_item<3> &item_ct1,
                                        float *shared_data) {
-#ifndef SKIP_FP16_BITS
   const bool fp16 = std::is_same<sycl::half, T>::value;
 
   int k = item_ct1.get_local_id(2);
@@ -443,7 +440,6 @@ void OutputTransform_kernel(int N, int C, int se_K, T* output,
             *((sycl::uint4*)&board[h][4]);
     }
   }
-#endif
 }
 
 // fast reduction for the warp
@@ -520,7 +516,6 @@ void OutputTransform_SE_relu_InputTransform_kernel(
     const T* w1, const T* b1, const T* w2, const T* b2,
     const sycl::nd_item<3>& item_ct1, float* shared_data,
     sycl::local_accessor<float, 2> shared_sums) {
-#ifndef SKIP_FP16_BITS
   const bool fp16 = std::is_same<sycl::half, T>::value;
 
   int k = item_ct1.get_local_id(2);
@@ -730,7 +725,6 @@ void OutputTransform_SE_relu_InputTransform_kernel(
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
   }
-#endif
 }
 
 constexpr int kOpInpTransformBlockSize = 64;
@@ -746,7 +740,6 @@ register pressure.
 void OutputTransform_relu_InputTransform_kernel(
     int N, int C, T* output, const T* input, T* skip, const T* bias,
     const sycl::nd_item<3>& item_ct1) {
-#ifndef SKIP_FP16_BITS
   const bool fp16 = std::is_same<sycl::half, T>::value;
 
   int k = item_ct1.get_local_id(2) +
@@ -893,7 +886,6 @@ void OutputTransform_relu_InputTransform_kernel(
       for (int x = 0; x < 6; x++)
         output[TEMP_INDEX_HWNC(y, x, n * 4 + 3, c)] = inEl[y][x];
   }
-#endif
 }
 
 template <typename T>
