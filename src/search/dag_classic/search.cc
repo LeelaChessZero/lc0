@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -1392,6 +1393,17 @@ void Search::WatchdogThread() {
 void Search::FireStopInternal() {
   stop_.store(true, std::memory_order_release);
   watchdog_cv_.notify_all();
+
+  // Make sure there is no threads waiting on the atomic if we abort early.
+  thread_count_.store(0, std::memory_order_relaxed);
+#ifndef NO_STD_ATOMIC_WAIT
+  thread_count_.notify_all();
+#else
+  {
+    Mutex::Lock lock(threads_mutex_);
+    threads_cond_.notify_all();
+  }
+#endif
 }
 
 void Search::Stop() {
@@ -1412,16 +1424,11 @@ void Search::Abort() {
 }
 
 void Search::Wait() {
+  for (auto& t : threads_) {
+    t.join();
+  }
   Mutex::Lock lock(threads_mutex_);
-  // Make sure there is no threads waiting on the atomic if we abort early.
-  thread_count_.store(0, std::memory_order_relaxed);
-#ifndef NO_STD_ATOMIC_WAIT
-  thread_count_.notify_all();
-#else
-  threads_cond_.notify_all();
-#endif
   while (!threads_.empty()) {
-    threads_.back().join();
     threads_.pop_back();
   }
   LOGFILE << "Search threads cleaned.";
@@ -1852,8 +1859,6 @@ void SearchWorker::GatherMinibatch() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
-  int thread_count = search_->thread_count_.load(std::memory_order_relaxed);
-
   ActivateTasks();
 
   // Gather nodes to process in the current batch.
@@ -1871,12 +1876,14 @@ void SearchWorker::GatherMinibatch() {
     // early exit from every batch since there is never another search thread to
     // be keeping the backend busy. Which would mean that threads=1 has a
     // massive nps drop.
-    if (thread_count > 1 && minibatch_size > 0 &&
+    int thread_count = search_->thread_count_.load(std::memory_order_relaxed);
+
+    if (thread_count == 0 || (thread_count > 1 && minibatch_size > 0 &&
         static_cast<int>(computation_->UsedBatchSize()) >
             params_.GetIdlingMinimumWork() &&
         thread_count - search_->backend_waiting_counter_.load(
                            std::memory_order_relaxed) >
-            params_.GetThreadIdlingThreshold()) {
+            params_.GetThreadIdlingThreshold())) {
       return;
     }
 
@@ -2642,11 +2649,14 @@ void SearchWorker::DoBackupUpdate() {
     // The second thread is waiting until we have evaluated the root node. We
     // need to wake it up to do work.
     Mutex::Lock lock(search_->threads_mutex_);
-    size_t count = search_->thread_count_.load(std::memory_order_relaxed);
+    auto& tc = search_->thread_count_;
+    int count = tc.load(std::memory_order_relaxed);
     // Watchdog thread must be excluded.
-    size_t total = search_->threads_.size() - 1;
-    if (total != count) {
-      search_->thread_count_.store(total, std::memory_order_relaxed);
+    int total = search_->threads_.size() - 1;
+    if (total != count && count != 0) {
+      while (count != 0 &&
+             !tc.compare_exchange_weak(count, total,
+                                       std::memory_order_relaxed));
 #ifndef NO_STD_ATOMIC_WAIT
       search_->thread_count_.notify_all();
 #else
