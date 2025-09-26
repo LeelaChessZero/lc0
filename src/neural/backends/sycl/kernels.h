@@ -20,7 +20,6 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 #include "sycl_common.h"
 #include "neural/backends/shared/activation.h"
 
