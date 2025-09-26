@@ -183,9 +183,9 @@ struct PickTaskGather final : public SearchWorker::PickTask {
   using PositionAllocator = IterationMemoryAllocator<Position>;
   struct Arguments {
     Arguments(const BackupPath& start_path, const PositionHistory& history)
-      : start_path_(PathAllocator().allocate(start_path.size())),
-        history_(PositionAllocator().allocate(start_path.size())),
-        depth_(start_path.size()) {
+        : start_path_(PathAllocator().allocate(start_path.size())),
+          history_(PositionAllocator().allocate(start_path.size())),
+          depth_(start_path.size()) {
       std::copy(start_path.begin(), start_path.end(), start_path_);
       auto positions = history.GetPositions();
       std::copy(positions.end() - depth_ + 1, positions.end(), history_);
@@ -197,21 +197,20 @@ struct PickTaskGather final : public SearchWorker::PickTask {
   using ArgumentAllocator = IterationMemoryAllocator<Arguments>;
   struct Initializer {
     Initializer(const BackupPath& start_path, const PositionHistory& history)
-      : arguments_(ArgumentAllocator().allocate(1)) {
+        : arguments_(ArgumentAllocator().allocate(1)) {
       std::construct_at(arguments_, start_path, history);
     }
     Arguments* arguments_;
   };
   PickTaskGather(SearchWorker& worker, const Initializer& init, Node* node,
                  Move move, int collision_limit)
-    : worker_(worker),
-      args_(init.arguments_),
-      node_(node),
-      collision_limit_(collision_limit),
-      move_(move) {
-  }
+      : worker_(worker),
+        args_(init.arguments_),
+        node_(node),
+        collision_limit_(collision_limit),
+        move_(move) {}
 
-private:
+ private:
   // For task type gathering.
   SearchWorker& worker_;
   const Arguments* args_;
@@ -237,7 +236,7 @@ private:
 
     history.Append(move_);
     auto [child_repetitions, child_moves_left] =
-      GetRepetitions(full_path.size(), history.Last(), worker_.GetParams());
+        GetRepetitions(full_path.size(), history.Last(), worker_.GetParams());
     full_path.push_back({node_, child_repetitions, child_moves_left});
 
     int c = worker_.PickNodesToExtendTask(collision_limit_, tid);
@@ -251,15 +250,12 @@ private:
 // dependad allocations must use the same allocator or ownership must be passed
 // to a permanentally managed object. It emulates a vector but doesn't implement
 // full interface.
-template<typename TaskType>
+template <typename TaskType>
 struct TaskArray {
   using Allocator = IterationMemoryAllocator<TaskType>;
 
-  TaskArray(int capacity) :
-    tasks_(Allocator().allocate(capacity)),
-    size_(0),
-    capacity_(capacity)
-  {}
+  TaskArray(int capacity)
+      : tasks_(Allocator().allocate(capacity)), size_(0), capacity_(capacity) {}
 
   bool empty() const { return size_ == 0; }
   size_t size() const { return size_; }
@@ -269,22 +265,21 @@ struct TaskArray {
     assert(idx < size_);
     return tasks_[idx];
   }
-  const TaskType* data() const {
-    return tasks_;
-  }
+  const TaskType* data() const { return tasks_; }
 
-  template<typename... Args>
+  template <typename... Args>
   void emplace_back(Args&&... args) {
     assert(size_ < capacity_);
     std::construct_at(tasks_ + size_, std::forward<Args>(args)...);
     size_++;
   }
 
-private:
+ private:
   TaskType* tasks_;
   int size_;
   int capacity_;
-};;
+};
+;
 
 // Unpack task_count_ atomic which holds both task_count_ and tasks_taken_. It
 // can unpack a value from an already read value or load it from the atomic
@@ -297,10 +292,10 @@ private:
 // to acquire work based on stale values if the stale tasks_taken was zero.
 // Packed values avoid the race because compare exchange is checking both when
 // incrementing tasks_taken_.
-template<typename T>
+template <typename T>
 std::tuple<int, int, int> ReadTaskCount(T& task_count) {
   int packed;
-  if constexpr(std::is_same_v<T, std::atomic<int>>) {
+  if constexpr (std::is_same_v<T, std::atomic<int>>) {
     packed = task_count.load(std::memory_order_acquire);
   } else {
     packed = task_count;
@@ -316,8 +311,7 @@ std::tuple<int, int, int> ReadTaskCount(T& task_count) {
 }
 
 bool IsTasksIdle(std::atomic<int>& task_count) {
-  [[maybe_unused]]
-  auto [dummy, nta, tc] = ReadTaskCount(task_count);
+  [[maybe_unused]] auto [dummy, nta, tc] = ReadTaskCount(task_count);
   return nta == tc;
 }
 
@@ -325,14 +319,14 @@ bool IsTasksIdle(std::atomic<int>& task_count) {
 // cache line contention when task workers read pointers. There is going to be
 // a little random false sharing when a writer happens to target the same cache
 // line as a reader.
-template<typename TasksArray>
+template <typename TasksArray>
 TasksArray::value_type& PickingTaskIndex(TasksArray& tasks, unsigned index) {
-  const unsigned number_of_cache_lines = sizeof(tasks) /
-                                         SearchWorker::kCacheLineSize;
+  const unsigned number_of_cache_lines =
+      sizeof(tasks) / SearchWorker::kCacheLineSize;
   const unsigned buckets_per_cache_line = tasks.size() / number_of_cache_lines;
   unsigned cache_line = index % number_of_cache_lines;
-  unsigned bucket = cache_line * buckets_per_cache_line +
-                    index / number_of_cache_lines;
+  unsigned bucket =
+      cache_line * buckets_per_cache_line + index / number_of_cache_lines;
   return tasks[bucket];
 }
 
@@ -343,7 +337,7 @@ static constexpr size_t kAsanEnabled = 1;
 static constexpr size_t kAsanEnabled = 0;
 #endif
 
-template<typename T>
+template <typename T>
 static T DivUp(T dividend, T divisor) {
   assert(dividend >= 0);
   assert(divisor > 0);
@@ -352,7 +346,7 @@ static T DivUp(T dividend, T divisor) {
 
 }  // namespace
 
-template<size_t bytes, size_t alignment>
+template <size_t bytes, size_t alignment>
 StackLikeArena<bytes, alignment>::~StackLikeArena() {
 #if ASAN_BUILD
   // Unpoison memory before freeing it to the system allocator.
@@ -361,9 +355,7 @@ StackLikeArena<bytes, alignment>::~StackLikeArena() {
 }
 
 IterationMemoryManager::IterationMemoryManager()
-  : alloc_(1),
-    pointer_(GetActiveArena().Begin()) {
-}
+    : alloc_(1), pointer_(GetActiveArena().Begin()) {}
 
 // The pointer to the free zone can have any alignment. It needs to be adjusted
 // to honor type required alignment. AlignedPointer is a helper method to
@@ -375,19 +367,19 @@ char* IterationMemoryManager::AlignedPointer(size_t align) {
   return pointer_ + (aligned - ptr);
 }
 
-template<typename T>
+template <typename T>
 T* IterationMemoryManager::Allocate(size_t n) {
   size_t align = alignof(T);
   // Add a unallocated poisoned zone after each allocation when using address
   // sanitizer.
   size_t red_zone = std::max(kRedZoneSize, sizeof(T)) * kAsanEnabled;
   size_t size = sizeof(T) * n + red_zone;
-  auto &arena = GetActiveArena();
+  auto& arena = GetActiveArena();
   char* pointer = AlignedPointer(align);
   // Check if current arena has enough space left.
   if (pointer + size >= arena.End()) {
     // Get a new empty arena.
-    auto &arena = GetNewArena();
+    auto& arena = GetNewArena();
     pointer = AlignedPointer(align);
     std::ignore = arena;
     // There must be enough space in the empty arena.
@@ -439,13 +431,13 @@ IterationMemoryManager::ArenaType& IterationMemoryManager::GetNewArena() {
 void IterationMemoryManager::Reset(size_t age) {
   if (Age() == age) return;
   // Free unused cached arena allocations.
-  free_.remove_if([&](const auto& arena ) {
-      return age - std::get<1>(arena) > kMaxArenaAge;
-    });
+  free_.remove_if([&](const auto& arena) {
+    return age - std::get<1>(arena) > kMaxArenaAge;
+  });
   // Move old allocations to the free list. We keep the most recent allocation
   // at the front of allocation list.
-  free_.splice_after(free_.cbefore_begin(), alloc_,
-                     alloc_.cbegin(), alloc_.cend());
+  free_.splice_after(free_.cbefore_begin(), alloc_, alloc_.cbegin(),
+                     alloc_.cend());
   // Reset the age when we are reusing an old allocation.
   std::get<1>(alloc_.front()) = age;
 
@@ -463,7 +455,8 @@ void IterationMemoryManager::Reset(size_t age) {
 
 // Thread local iteration mememory manager which is a shared state for
 // IterationMemoryAllocators.
-thread_local IterationMemoryManager* IterationMemoryManager::local_manager_ = nullptr;
+thread_local IterationMemoryManager* IterationMemoryManager::local_manager_ =
+    nullptr;
 
 IterationMemoryManager& IterationMemoryManager::LocalManager() {
   assert(local_manager_);
@@ -477,12 +470,12 @@ void IterationMemoryManager::ResetLocalManager(SearchWorker& worker, int tid) {
   local_manager_->Reset(worker.GetIterationAge());
 }
 
-template<typename T>
+template <typename T>
 T* IterationMemoryAllocator<T>::allocate(size_t n) {
   return IterationMemoryManager::LocalManager().template Allocate<T>(n);
 }
 
-template<typename T>
+template <typename T>
 void IterationMemoryAllocator<T>::deallocate(T* ptr, size_t n) noexcept {
   std::ignore = ptr;
   std::ignore = n;
@@ -565,11 +558,10 @@ void ApplyDirichletNoise(LowNode* node, float eps, double alpha) {
 
   int noise_idx = 0;
   auto edges = node->GetEdges();
-  std::transform(edges, edges + node->GetNumEdges(), edges,
-      [&](auto edge) {
-        edge.SetP(edge.GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
-        return edge;
-      });
+  std::transform(edges, edges + node->GetNumEdges(), edges, [&](auto edge) {
+    edge.SetP(edge.GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
+    return edge;
+  });
 }
 }  // namespace
 
@@ -783,8 +775,8 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
-                    float draw_score) {
+inline float GetFpu(const SearchParams& params, const Node* node,
+                    bool is_root_node, float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
@@ -793,8 +785,8 @@ inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_n
 }
 
 // Faster version for if visited_policy is readily available already.
-inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
-                    float draw_score, float visited_pol) {
+inline float GetFpu(const SearchParams& params, const Node* node,
+                    bool is_root_node, float draw_score, float visited_pol) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
              ? value
@@ -827,8 +819,7 @@ std::vector<std::string> Search::GetVerboseStats(
   edges.reserve(node->GetNumEdges());
   for (const auto& edge : node->Edges()) {
     edges.emplace_back(edge.GetN(),
-                       edge.GetQ(fpu, draw_score) + edge.GetU(U_coeff),
-                       edge);
+                       edge.GetQ(fpu, draw_score) + edge.GetU(U_coeff), edge);
   }
   std::sort(edges.begin(), edges.end());
 
@@ -1450,21 +1441,23 @@ Search::~Search() {
 //////////////////////////////////////////////////////////////////////////////
 
 SearchWorker::SearchWorker(Search* search, const SearchParams& params)
-      : search_(search),
-        target_minibatch_size_(params.GetMiniBatchSize() ?
-            params.GetMiniBatchSize() : search_->backend_attributes_.recommended_batch_size),
-        max_out_of_order_(std::max(0,
-              static_cast<int>(params.GetMaxOutOfOrderEvalsFactor() *
-                               target_minibatch_size_))),
-        minibatch_(target_minibatch_size_*2),
-        ooobatch_(max_out_of_order_),
-        collisions_(params.GetMaxCollisionVisits()),
-        eval_results_(minibatch_.capacity() + ooobatch_.capacity()),
-        node_paths_(minibatch_.capacity() + ooobatch_.capacity() +
-                    collisions_.capacity()),
-        params_(params),
-        moves_left_support_(search_->backend_attributes_.has_mlh),
-        cancel_task_(*this) {
+    : search_(search),
+      target_minibatch_size_(
+          params.GetMiniBatchSize()
+              ? params.GetMiniBatchSize()
+              : search_->backend_attributes_.recommended_batch_size),
+      max_out_of_order_(
+          std::max(0, static_cast<int>(params.GetMaxOutOfOrderEvalsFactor() *
+                                       target_minibatch_size_))),
+      minibatch_(target_minibatch_size_ * 2),
+      ooobatch_(max_out_of_order_),
+      collisions_(params.GetMaxCollisionVisits()),
+      eval_results_(minibatch_.capacity() + ooobatch_.capacity()),
+      node_paths_(minibatch_.capacity() + ooobatch_.capacity() +
+                  collisions_.capacity()),
+      params_(params),
+      moves_left_support_(search_->backend_attributes_.has_mlh),
+      cancel_task_(*this) {
   task_workers_ = params.GetTaskWorkersPerSearchWorker();
   if (task_workers_ < 0) {
     if (search_->backend_attributes_.runs_on_cpu) {
@@ -1480,16 +1473,15 @@ SearchWorker::SearchWorker(Search* search, const SearchParams& params)
   for (int i = 0; i < task_workers_; i++) {
     task_workspaces_.emplace_back();
     task_threads_.emplace_back([this, i]() {
-        LOGFILE << "Task worker " << i << " starting.";
-        this->RunTasks(i);
-        LOGFILE << "Task worker " << i << " exiting.";
-      });
+      LOGFILE << "Task worker " << i << " starting.";
+      this->RunTasks(i);
+      LOGFILE << "Task worker " << i << " exiting.";
+    });
   }
   iteration_memory_managers_.resize(task_threads_.size() + 1);
 }
 
-SearchWorker::~SearchWorker()
-{
+SearchWorker::~SearchWorker() {
   {
     // Tasks must be completed before destructor. If a gather tasks is running,
     // it can increment task_count_ which would break the exit state.
@@ -1510,10 +1502,9 @@ SearchWorker::PickTask* SearchWorker::PickTaskToProcess() {
   int mask = (picking_tasks_.size() << kTasksTakenShift) - 1;
 
   // Check if tasks are queued and try increment taken count.
-  while (nta != tc &&
-      !task_count_.compare_exchange_weak(packed_value,
-                                         (packed_value + kTasksTakenOne) & mask,
-                                         std::memory_order_acq_rel)) {
+  while (nta != tc && !task_count_.compare_exchange_weak(
+                          packed_value, (packed_value + kTasksTakenOne) & mask,
+                          std::memory_order_acq_rel)) {
     // Queue had tasks but another worker increment taken. We check
     // if new work was added to the queue. Then we try to increment
     // taken again.
@@ -1544,7 +1535,7 @@ void SearchWorker::ProcessTask(int tid) {
 }
 
 // Queue a list of task to workers.
-template<typename TaskVector>
+template <typename TaskVector>
 void SearchWorker::SubmitTasks(const TaskVector& tasks, int tid) {
   if (tasks.empty()) return;
 
@@ -1562,8 +1553,8 @@ void SearchWorker::SubmitTasks(const TaskVector& tasks, int tid) {
       std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
     }
     new_value = (packed_value + tasks.size()) & mask;
-  } while(!task_count_.compare_exchange_weak(packed_value, new_value,
-                                             std::memory_order_acq_rel));
+  } while (!task_count_.compare_exchange_weak(packed_value, new_value,
+                                              std::memory_order_acq_rel));
 
   // tc and nta must be equal only when the ring buffer is empty.
   assert(nta != (tc + tasks.size()) % size);
@@ -1579,7 +1570,7 @@ void SearchWorker::SubmitTasks(const TaskVector& tasks, int tid) {
 }
 
 // Submit a task to the queue.
-template<typename TaskType>
+template <typename TaskType>
 void SearchWorker::SubmitTask(const TaskType& task, int tid) {
   const size_t size = picking_tasks_.size();
   unsigned nta, tc;
@@ -1593,33 +1584,26 @@ void SearchWorker::SubmitTask(const TaskType& task, int tid) {
       std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
     }
     new_value = (packed_value + 1) & mask;
-  } while(!task_count_.compare_exchange_weak(packed_value, new_value,
-                                             std::memory_order_acq_rel));
+  } while (!task_count_.compare_exchange_weak(packed_value, new_value,
+                                              std::memory_order_acq_rel));
 
   assert(nta != (tc + 1) % size);
   auto& bucket = PickingTaskIndex(picking_tasks_, tc);
   while (bucket.load(std::memory_order_acquire)) {
     SpinloopPause();
   }
-  bucket.store(static_cast<const PickTask*>(&task),
-               std::memory_order_release);
+  bucket.store(static_cast<const PickTask*>(&task), std::memory_order_release);
 }
 
-void SearchWorker::PickTask::operator()(int tid) {
-  DoTask(tid);
-}
+void SearchWorker::PickTask::operator()(int tid) { DoTask(tid); }
 
-SearchWorker::PickTask::~PickTask() {
-}
+SearchWorker::PickTask::~PickTask() {}
 
 SearchWorker::PickTaskCancelCollisions::PickTaskCancelCollisions(
     SearchWorker& worker)
-  : worker_(worker),
-    completed_(true) {
-}
+    : worker_(worker), completed_(true) {}
 
-SearchWorker::PickTaskCancelCollisions::~PickTaskCancelCollisions() {
-}
+SearchWorker::PickTaskCancelCollisions::~PickTaskCancelCollisions() {}
 
 void SearchWorker::PickTaskCancelCollisions::Reset(int start_idx, int end_idx,
                                                    bool stop) {
@@ -1797,9 +1781,7 @@ IterationMemoryManager& SearchWorker::GetIterationMemoryManager(int tid) {
   return iteration_memory_managers_[tid];
 }
 
-size_t SearchWorker::GetIterationAge() const {
-  return iteration_memory_age_;
-}
+size_t SearchWorker::GetIterationAge() const { return iteration_memory_age_; }
 
 // Schedule a task to cancel collisions. Cancel task is left running at the
 // background when worker sends a batch to be evaluated.
@@ -1865,8 +1847,7 @@ void SearchWorker::GatherMinibatch() {
   // If we had too many nodes out of order, also interrupt the iteration so
   // that search can exit.
   while (minibatch_size < target_minibatch_size_ &&
-         number_out_of_order_ < max_out_of_order_ &&
-         collisions_left > 0) {
+         number_out_of_order_ < max_out_of_order_ && collisions_left > 0) {
     // If there's something to process without touching slow neural net, do it.
     if (minibatch_size > 0 && computation_->UsedBatchSize() == 0) return;
 
@@ -1878,12 +1859,13 @@ void SearchWorker::GatherMinibatch() {
     // massive nps drop.
     int thread_count = search_->thread_count_.load(std::memory_order_relaxed);
 
-    if (thread_count == 0 || (thread_count > 1 && minibatch_size > 0 &&
-        static_cast<int>(computation_->UsedBatchSize()) >
-            params_.GetIdlingMinimumWork() &&
-        thread_count - search_->backend_waiting_counter_.load(
-                           std::memory_order_relaxed) >
-            params_.GetThreadIdlingThreshold())) {
+    if (thread_count == 0 ||
+        (thread_count > 1 && minibatch_size > 0 &&
+         static_cast<int>(computation_->UsedBatchSize()) >
+             params_.GetIdlingMinimumWork() &&
+         thread_count - search_->backend_waiting_counter_.load(
+                            std::memory_order_relaxed) >
+             params_.GetThreadIdlingThreshold())) {
       return;
     }
 
@@ -1911,8 +1893,7 @@ void SearchWorker::GatherMinibatch() {
       // This may remove too many items, but hopefully most of the time they
       // will just be added back in the same in the next gather.
       ScheduleCancelTask(collisions_start, collisions_end, false);
-      for (int i = ooobatch_.size() - 1; i >= 0;
-           i--) {
+      for (int i = ooobatch_.size() - 1; i >= 0; i--) {
         FetchSingleNodeResult(&ooobatch_[i], GetOutOfOrderPath(i));
         DoBackupUpdateSingleNode(ooobatch_[i], GetOutOfOrderPath(i));
         ++number_out_of_order_;
@@ -1937,7 +1918,7 @@ void SearchWorker::GatherMinibatch() {
 
 int SearchWorker::AddCollisions(int collisions) {
   return collisions_left_.fetch_sub(collisions, std::memory_order_relaxed) -
-    collisions;
+         collisions;
 }
 
 void SearchWorker::CancelCollisionsTask(int start, int end, bool stop) {
@@ -1993,8 +1974,7 @@ std::tuple<int, int> SearchWorker::PickNodesToExtend(int collision_limit)
     REQUIRES(search_->nodes_mutex_) {
   TaskWorkspace& workspace = task_workspaces_[0];
   auto frame = workspace.Push({{std::make_tuple(search_->root_node_, 0, 0)}},
-                              {},
-                              search_->played_history_);
+                              {}, search_->played_history_);
   auto rv = PickNodesToExtendTask<true>(collision_limit, 0,
                                         search_->current_best_edge_);
 
@@ -2049,11 +2029,10 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, bool is_root_node,
   return false;
 }
 
-template<bool starting_from_root>
+template <bool starting_from_root>
 std::conditional_t<starting_from_root, std::tuple<int, int>, int>
 SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
                                     const EdgeAndNode& current_best_edge) {
-
   TaskWorkspace* workspace = &task_workspaces_[tid];
   auto& current_path = workspace->current_path;
   auto& history = *workspace->history.back();
@@ -2080,8 +2059,8 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
   const size_t starting_path_size = current_path.size();
   // Root node is special - since its not reached from anywhere else, so
   // it needs its own logic.
-  const bool stop_root = is_root_node &&
-                          ShouldStopPickingHere(node, true, repetitions);
+  const bool stop_root =
+      is_root_node && ShouldStopPickingHere(node, true, repetitions);
   const bool visit_root = stop_root && node->TryStartScoreUpdate();
   current_path.emplace_back(collision_limit, true, visit_root, stop_root, 0);
   while (current_path.size() > starting_path_size) {
@@ -2112,7 +2091,7 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
         history.Pop();
         full_path.pop_back();
         current_path.pop_back();
-      } while(saved_is_last_child && current_path.size() > starting_path_size);
+      } while (saved_is_last_child && current_path.size() > starting_path_size);
       if (!full_path.empty()) {
         std::tie(node, repetitions, moves_left) = full_path.back();
       }
@@ -2317,8 +2296,7 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
                 std::greater<CurrentPath>());
       // Find the last visited children.
       auto end = std::find(visits_to_perform.begin(),
-                           visits_to_perform.begin() + vtp_last_filled,
-                           0);
+                           visits_to_perform.begin() + vtp_last_filled, 0);
       // There should be at least one child to visit.
       assert(end != visits_to_perform.begin());
       // Actively do any splits now rather than waiting for potentially long
@@ -2328,15 +2306,16 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
           collision_left >= params_.GetMinimumRemainingWorkSizeForPicking()) {
         // Queue all branches to taks if they are idling.
         const int kLowUtilizationLimit =
-          params_.GetMinimumRemainingWorkSizeForPicking() * task_workers_;
-        const bool low_task_utilization = starting_from_root &&
-          collision_limit - collision_left < kLowUtilizationLimit &&
-          IsTasksIdle(task_count_);
-        const int kMinimumSize = low_task_utilization ? 0 :
-                                    params_.GetMinimumWorkSizeForPicking();
+            params_.GetMinimumRemainingWorkSizeForPicking() * task_workers_;
+        const bool low_task_utilization =
+            starting_from_root &&
+            collision_limit - collision_left < kLowUtilizationLimit &&
+            IsTasksIdle(task_count_);
+        const int kMinimumSize =
+            low_task_utilization ? 0 : params_.GetMinimumWorkSizeForPicking();
 
-        int task_count = std::count_if(visits_to_perform.begin() + 1, end,
-            [=](CurrentPath v) {
+        int task_count = std::count_if(
+            visits_to_perform.begin() + 1, end, [=](CurrentPath v) {
               return !v.bits_.stop_picking_ && v >= kMinimumSize;
             });
 
@@ -2345,13 +2324,14 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
         if (task_count > 0) {
           PickTaskGather::Initializer gather_init(full_path, history);
 
-          end = std::copy_if(visits_to_perform.begin() + 1, end,
-                             visits_to_perform.begin() + 1,
+          end = std::copy_if(
+              visits_to_perform.begin() + 1, end, visits_to_perform.begin() + 1,
               [&](CurrentPath v) {
                 // Don't split if not expanded or terminal.
                 if (!v.bits_.stop_picking_ && v >= kMinimumSize) {
                   int i = v.bits_.index_;
-                  Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
+                  Node* child_node =
+                      cur_iters[i].GetOrSpawnNode(/* parent */ node);
                   Move move = cur_iters[i].GetMove();
                   tasks.emplace_back(*this, gather_init, child_node, move,
                                      int(v.bits_.visits_));
@@ -2403,7 +2383,7 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
     }
   }
 
-  if constexpr(starting_from_root) {
+  if constexpr (starting_from_root) {
     return {collisions, expandable_collision};
   } else {
     std::ignore = expandable_collision;
@@ -2433,7 +2413,7 @@ int GetEvalIndex(std::atomic<int>& eval_used, int size) {
   }
   return index;
 }
-} // namespace
+}  // namespace
 
 // Helpers to managege cached path allocations.
 const BackupPath& SearchWorker::GetMinibatchPath(int index) const {
@@ -2462,14 +2442,16 @@ void SearchWorker::AssignCollisionPath(int index, const BackupPath& path) {
 }
 
 // Create a node collision to process.
-int SearchWorker::Collision(const BackupPath& path, int collision_count, int max_limit) {
+int SearchWorker::Collision(const BackupPath& path, int collision_count,
+                            int max_limit) {
   int i = collisions_.emplace_back(collision_count, max_limit);
   AssignCollisionPath(i, path);
   return i;
 }
 
 // Create a node visit to process.
-void SearchWorker::Visit(const BackupPath& path, const PositionHistory& history) {
+void SearchWorker::Visit(const BackupPath& path,
+                         const PositionHistory& history) {
   NodeToProcess picked_node(history);
   if (picked_node.IsExtendable(path)) {
     ExtendNode(picked_node, path, history);
@@ -2575,13 +2557,13 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
     assert(picked_node.eval_index < (int)eval_results_.size());
     auto& eval = eval_results_[picked_node.eval_index];
     eval.p.resize(legal_moves.size());
-    picked_node.is_cache_hit = computation_->AddInput(
-                                   EvalPosition{
-                                       .pos = history.GetPositions(),
-                                       .legal_moves = legal_moves,
-                                   },
-                                   eval.AsPtr()) ==
-                               BackendComputation::FETCHED_IMMEDIATELY;
+    picked_node.is_cache_hit =
+        computation_->AddInput(
+            EvalPosition{
+                .pos = history.GetPositions(),
+                .legal_moves = legal_moves,
+            },
+            eval.AsPtr()) == BackendComputation::FETCHED_IMMEDIATELY;
   }
 }
 
@@ -2615,11 +2597,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
          search_->contempt_mode_ != ContemptMode::NONE)) {
       // Check whether root moves are from the set perspective.
       bool root_stm = search_->contempt_mode_ == ContemptMode::WHITE;
-      auto sign = (root_stm ^ node_to_process->is_black_to_move)
-                      ? 1.0f
-                      : -1.0f;
-      WDLRescale(eval.q, eval.d,
-                 params_.GetWDLRescaleRatio(),
+      auto sign = (root_stm ^ node_to_process->is_black_to_move) ? 1.0f : -1.0f;
+      WDLRescale(eval.q, eval.d, params_.GetWDLRescaleRatio(),
                  search_->contempt_mode_ == ContemptMode::NONE
                      ? 0
                      : params_.GetWDLRescaleDiff(),
@@ -2654,9 +2633,8 @@ void SearchWorker::DoBackupUpdate() {
     // Watchdog thread must be excluded.
     int total = search_->threads_.size() - 1;
     if (total != count && count != 0) {
-      while (count != 0 &&
-             !tc.compare_exchange_weak(count, total,
-                                       std::memory_order_relaxed));
+      while (count != 0 && !tc.compare_exchange_weak(
+                               count, total, std::memory_order_relaxed));
 #ifndef NO_STD_ATOMIC_WAIT
       search_->thread_count_.notify_all();
 #else
@@ -2732,9 +2710,8 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
 // transposition and/or get more information even during this batch. Both low
 // node and node may adjust bounds and become a terminal during this batch.
 void SearchWorker::DoBackupUpdateSingleNode(
-    const NodeToProcess& node_to_process,
-    const BackupPath& path) REQUIRES(search_->nodes_mutex_) {
-
+    const NodeToProcess& node_to_process, const BackupPath& path)
+    REQUIRES(search_->nodes_mutex_) {
   auto [n, nr, nm] = path.back();
   if (node_to_process.nn_queried) {
     auto [tt_iter, is_tt_miss] = search_->tt_->try_emplace(
@@ -2867,8 +2844,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   }
   search_->total_playouts_ += 1;
   search_->cum_depth_ += path.size();
-  search_->max_depth_ =
-      std::max(search_->max_depth_, (uint16_t)path.size());
+  search_->max_depth_ = std::max(search_->max_depth_, (uint16_t)path.size());
 }
 
 bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,

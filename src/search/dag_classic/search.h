@@ -27,17 +27,18 @@
 
 #pragma once
 
+#include <absl/cleanup/cleanup.h>
+
 #include <array>
 #include <bit>
 #include <condition_variable>
 #include <functional>
 #include <optional>
 #include <shared_mutex>
+#include <span>
 #include <thread>
 #include <tuple>
 #include <vector>
-#include <span>
-#include <absl/cleanup/cleanup.h>
 
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
@@ -57,9 +58,9 @@ class SearchWorker;
 class StackLikeArenaTag {};
 
 // Simple memory allocation arena which allows cheap batched deallocation.
-template<size_t bytes, size_t alignment>
+template <size_t bytes, size_t alignment>
 class StackLikeArena {
-public:
+ public:
   StackLikeArena() = default;
   StackLikeArena(StackLikeArenaTag) : StackLikeArena() {}
   StackLikeArena(const StackLikeArena&) = delete;
@@ -67,7 +68,8 @@ public:
 
   char* Begin() { return std::begin(buffer_); }
   char* End() { return std::end(buffer_); }
-private:
+
+ private:
   alignas(alignment) char buffer_[bytes];
 };
 
@@ -75,8 +77,8 @@ private:
 // life time. This memory can be allocated rapidly from a StackLikeAreana.
 // Deallocation will be delayed until the next iteration starts.
 class IterationMemoryManager {
-public:
-  using ArenaType = StackLikeArena<16*1024 - sizeof(void*) - sizeof(size_t),
+ public:
+  using ArenaType = StackLikeArena<16 * 1024 - sizeof(void*) - sizeof(size_t),
                                    alignof(std::max_align_t)>;
   using ArenaTuple = std::tuple<ArenaType, size_t>;
   IterationMemoryManager();
@@ -84,16 +86,16 @@ public:
   IterationMemoryManager(IterationMemoryManager&&) = default;
   IterationMemoryManager& operator=(IterationMemoryManager&&) = default;
 
-  template<typename T>
+  template <typename T>
   T* Allocate(size_t n);
 
   // Thread local manager for Allocator.
   static IterationMemoryManager& LocalManager();
   // Tells manager that a new iteration has started. It must be called before
   // the first call to LocalManager in the thread.
-  static void ResetLocalManager(SearchWorker &worker, int tid);
+  static void ResetLocalManager(SearchWorker& worker, int tid);
 
-private:
+ private:
   // Threads add randmoness to where thinks are allocated. Deallocations will be
   // delayed for a few seconds to avoid constantly allocating and deallocating
   // memory.
@@ -119,25 +121,25 @@ private:
 
 // Allocator interface to IterationMemoryManager. It can be used for stl
 // containers or replacement for new/unique_ptr.
-template<typename T>
+template <typename T>
 class IterationMemoryAllocator {
-public:
+ public:
   using value_type = T;
   using propagate_on_container_move_assignment = std::false_type;
 
   IterationMemoryAllocator(const IterationMemoryAllocator&) = default;
   IterationMemoryAllocator& operator=(const IterationMemoryAllocator&) = delete;
-  template<typename U>
-  IterationMemoryAllocator(const IterationMemoryAllocator<U>&)
-  {}
+  template <typename U>
+  IterationMemoryAllocator(const IterationMemoryAllocator<U>&) {}
 
   IterationMemoryAllocator() = default;
 
   T* allocate(size_t n);
   void deallocate(T*, size_t) noexcept;
 
-private:
-  template<typename U> friend class IterationMemoryAllocator;
+ private:
+  template <typename U>
+  friend class IterationMemoryAllocator;
 };
 
 // The tuple elements are (node, repetitons, moves left).
@@ -296,7 +298,7 @@ class Search {
   friend class SearchWorker;
 };
 
-template<typename TaskType>
+template <typename TaskType>
 using TaskVector = std::vector<TaskType, IterationMemoryAllocator<TaskType>>;
 
 // Single thread worker of the search engine.
@@ -305,10 +307,11 @@ using TaskVector = std::vector<TaskType, IterationMemoryAllocator<TaskType>>;
 class SearchWorker {
  public:
   static constexpr int kTaskCountDigits = std::numeric_limits<int>::digits + 1;
-  static constexpr int kTasksTakenShift = kTaskCountDigits/2;
+  static constexpr int kTasksTakenShift = kTaskCountDigits / 2;
   static constexpr int kTasksTakenOne = 1 << kTasksTakenShift;
 #if __cpp_lib_hardware_interference_size >= 201603
-  static constexpr auto kCacheLineSize = std::hardware_destructive_interference_size;
+  static constexpr auto kCacheLineSize =
+      std::hardware_destructive_interference_size;
 #else
   static constexpr auto kCacheLineSize = 64;
 #endif
@@ -328,7 +331,7 @@ class SearchWorker {
 #else
       Mutex::Lock lock(threads_mutex_);
       threads_cond_.wait(lock.get_raw(),
-          [this]() { return 1 != search_->threads_; });
+                         [this]() { return 1 != search_->threads_; });
 #endif
     } else {
       wake_other_workers_ = true;
@@ -384,10 +387,10 @@ class SearchWorker {
   size_t GetIterationAge() const;
 
   // Interface for tasks.
-  template<bool starting_from_root = false>
+  template <bool starting_from_root = false>
   std::conditional_t<starting_from_root, std::tuple<int, int>, int>
-    PickNodesToExtendTask(int collision_limit, int tid,
-                          const EdgeAndNode& current_best_edge = {});
+  PickNodesToExtendTask(int collision_limit, int tid,
+                        const EdgeAndNode& current_best_edge = {});
   void ProcessPickedTask(int start_idx, int end_idx);
   void CancelCollisionsTask(int start, int end, bool stop);
   int AddCollisions(int collisions);
@@ -403,24 +406,21 @@ class SearchWorker {
   // pushed into the current_path stack.
   struct CurrentPath {
     struct Bits {
-        uint32_t visits_        : 21; // <= collision limit
-        uint32_t last_child_    : 1; // bool
-        uint32_t visit_child_   : 1; // bool
-        uint32_t stop_picking_  : 1; // bool
-        uint32_t index_         : 8; // < 218
+      uint32_t visits_ : 21;       // <= collision limit
+      uint32_t last_child_ : 1;    // bool
+      uint32_t visit_child_ : 1;   // bool
+      uint32_t stop_picking_ : 1;  // bool
+      uint32_t index_ : 8;         // < 218
     };
     union {
       Bits bits_;
       uint32_t value_;
     };
     CurrentPath(unsigned visits, bool last, bool visit, bool stop,
-                unsigned index) :
-      bits_(visits, last, visit, stop, index)
-    {}
+                unsigned index)
+        : bits_(visits, last, visit, stop, index) {}
     // Implicit conversion from int to allow comparing to a visit integer.
-    CurrentPath(int visits) :
-      bits_(visits, 0, 0, 0, 0)
-    {}
+    CurrentPath(int visits) : bits_(visits, 0, 0, 0, 0) {}
     CurrentPath() {}
 
     auto operator<=>(CurrentPath b) const {
@@ -468,8 +468,8 @@ class SearchWorker {
               const PositionHistory& played_history) {
       assert(path.size() == in_history.size() + 1);
       if (h_buffer.empty()) {
-        int expected_size = std::bit_ceil(played_history.GetLength() +
-                                          in_history.size() + 16);
+        int expected_size =
+            std::bit_ceil(played_history.GetLength() + in_history.size() + 16);
         history.push_back(std::make_unique<PositionHistory>());
         history.back()->Reserve(expected_size);
         auto played = played_history.GetPositions();
@@ -492,7 +492,8 @@ class SearchWorker {
       full_path.back()->assign(path.begin(), path.end());
       return absl::Cleanup{[&] { Pop(); }};
     }
-private:
+
+   private:
     void Pop() {
       fp_buffer.push_back(std::move(full_path.back()));
       full_path.pop_back();
@@ -521,9 +522,9 @@ private:
 
     // Dervied class should implement it if there is need to wait for a specific
     // task completing. Default implementation is to do nothing.
-    virtual void Wait(int tid) const {std::ignore = tid;};
+    virtual void Wait(int tid) const { std::ignore = tid; };
 
-  private:
+   private:
     // Dervied class implements task processing. It is called from
     // operator()(int tid).
     virtual void DoTask(int tid) = 0;
@@ -537,7 +538,7 @@ private:
     void Reset(int start_idx, int end_idx, bool stop);
     void Wait(int tid) const override;
 
-  private:
+   private:
     SearchWorker& worker_;
     int start_idx_;
     int end_idx_;
@@ -562,7 +563,7 @@ private:
     std::string DebugString(const BackupPath& path) const {
       std::ostringstream oss;
       oss << "<CollisionNode> This:" << this << " Depth:" << path.size()
-        << " Multivisit:" << multivisit << " Path:";
+          << " Multivisit:" << multivisit << " Path:";
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
         auto n = std::get<0>(*it);
@@ -583,9 +584,7 @@ private:
     CollisionNode() = default;
 
     CollisionNode(uint32_t multivisit, int maxvisit)
-        : multivisit(multivisit),
-          maxvisit(maxvisit)
-    {}
+        : multivisit(multivisit), maxvisit(maxvisit) {}
   };
   struct NodeToProcess {
     bool IsExtendable(const BackupPath& path) const {
@@ -614,8 +613,7 @@ private:
       std::ostringstream oss;
       oss << "<NodeToProcess> This:" << this << " Depth:" << path.size()
           << " Node:" << node << " NNQueried:" << nn_queried
-          << " TTHit:" << is_tt_hit << " CacheHit:" << is_cache_hit
-          << " Path:";
+          << " TTHit:" << is_tt_hit << " CacheHit:" << is_cache_hit << " Path:";
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
         auto n = std::get<0>(*it);
@@ -673,9 +671,9 @@ private:
   // Process a queued task.
   void ProcessTask(int tid);
   // Submit list of tasks to the queue.
-  template<typename TaskVector>
+  template <typename TaskVector>
   void SubmitTasks(const TaskVector& tasks, int tid);
-  template<typename TaskType>
+  template <typename TaskType>
   void SubmitTask(const TaskType& task, int tid);
   void RunTasks(int tid);
   // Activate worker threads because we are about to submit work
