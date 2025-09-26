@@ -229,6 +229,9 @@ files += [
 
 includes += include_directories('src')
 
+absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
+deps += absl.get_variable('absl_container_dep').as_system()
+
 deps += dependency('threads')
 
 #############################################################################
@@ -249,9 +252,6 @@ if get_option('dag_classic')
     'src/search/dag_classic/search.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
-
-  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
-  deps += absl.get_variable('absl_container_dep').as_system()
 endif
 
 #############################################################################
