@@ -148,6 +148,81 @@ typedef std::vector<std::tuple<Node*, int, int>> BackupPath;
 struct SearchWorkerCachedState;
 struct SearchCachedState;
 
+#if __cpp_lib_hardware_interference_size >= 201603
+static constexpr auto kCacheLineSize =
+    std::hardware_destructive_interference_size;
+#else
+static constexpr size_t kCacheLineSize = 64;
+#endif
+
+class TaskQueue {
+ public:
+  static constexpr int kTaskCountDigits = std::numeric_limits<int>::digits + 1;
+  static constexpr int kTasksTakenShift = kTaskCountDigits / 2;
+  static constexpr int kTasksTakenOne = 1 << kTasksTakenShift;
+
+  TaskQueue();
+  ~TaskQueue();
+
+  // Task base type. Derived classes can be scheduled to task workers. Task
+  // worker threads start counting from thread id 1 because zero is reserved for
+  // the thraed which schedules tasks. Derived classes should use final keyword
+  // to let compiler optimise virtual function calls.
+  struct PickTask {
+    PickTask(const PickTask& other) = default;
+    PickTask() = default;
+    virtual ~PickTask();
+
+    void operator()(int tid);
+
+    // Dervied class should implement it if there is need to wait for a specific
+    // task completing. Default implementation is to do nothing.
+    virtual void Wait(int tid) const { std::ignore = tid; };
+
+   private:
+    // Dervied class implements task processing. It is called from
+    // operator()(int tid).
+    virtual void DoTask(int tid) = 0;
+  };
+
+  using PickTaskPtr = std::atomic<const PickTask*>;
+
+  size_t Size() const;
+
+  bool IsTasksIdle() const;
+  PickTask* PickTaskToProcess();
+  // Process a queued task.
+  void ProcessTask(int tid);
+  // Submit list of tasks to the queue.
+  template <typename TaskVector>
+  void SubmitTasks(const TaskVector& tasks, int tid);
+  template <typename TaskType>
+  void SubmitTask(const TaskType& task, int tid);
+  // Activate worker threads when we are about to submit tasks.
+  void ActivateTasks();
+  // Deactivate worker threads.
+  void DeactivateTasks();
+
+  // Make sure the state matches the latest user configuration.
+  void StartANewSearch(size_t task_workers);
+
+ private:
+  void ShutdownThreads();
+  void RunTasks(int tid);
+
+  std::vector<std::thread> task_threads_;
+  bool exiting_ = false;
+  alignas(kCacheLineSize) std::condition_variable task_added_;
+  Mutex picking_tasks_mutex_;
+  // Size is the smalles power of two which has enough space to hold all child
+  // nodes in any positions. Typically there is much less visited children. The
+  // bigger size helps avoid cache line contention when scaling to more threads.
+  std::array<PickTaskPtr, 256> picking_tasks_;
+  // A packed atomic. LSB half is task_count_. MSB half is tasks_taken_.
+  alignas(kCacheLineSize) std::atomic<int> task_count_ = 0;
+  alignas(kCacheLineSize) std::atomic<int> active_users_ = 0;
+};
+
 class Search {
  public:
   Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
@@ -310,15 +385,6 @@ using TaskVector = std::vector<TaskType, IterationMemoryAllocator<TaskType>>;
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
-  static constexpr int kTaskCountDigits = std::numeric_limits<int>::digits + 1;
-  static constexpr int kTasksTakenShift = kTaskCountDigits / 2;
-  static constexpr int kTasksTakenOne = 1 << kTasksTakenShift;
-#if __cpp_lib_hardware_interference_size >= 201603
-  static constexpr auto kCacheLineSize =
-      std::hardware_destructive_interference_size;
-#else
-  static constexpr auto kCacheLineSize = 64;
-#endif
   static constexpr int kMaxMovesInPosition = 218;
 
   SearchWorker(SearchWorkerCachedState& state, Search* search,
@@ -514,30 +580,9 @@ class SearchWorker {
     return search_->played_history_;
   }
 
-  // Task base type. Derived classes can be scheduled to task workers. Task
-  // worker threads start counting from thread id 1 because zero is reserved for
-  // the thraed which schedules tasks. Derived classes should use final keyword
-  // to let compiler optimise virtual function calls.
-  struct PickTask {
-    PickTask(const PickTask& other) = default;
-    PickTask() = default;
-    virtual ~PickTask();
-
-    void operator()(int tid);
-
-    // Dervied class should implement it if there is need to wait for a specific
-    // task completing. Default implementation is to do nothing.
-    virtual void Wait(int tid) const { std::ignore = tid; };
-
-   private:
-    // Dervied class implements task processing. It is called from
-    // operator()(int tid).
-    virtual void DoTask(int tid) = 0;
-  };
-
   // Tasks cancel collisions.
-  struct PickTaskCancelCollisions final : public PickTask {
-    using Base = SearchWorker::PickTask;
+  struct PickTaskCancelCollisions final : public TaskQueue::PickTask {
+    using Base = TaskQueue::PickTask;
     PickTaskCancelCollisions(SearchWorker& worker);
     ~PickTaskCancelCollisions();
     void Reset(int start_idx, int end_idx, bool stop);
@@ -552,8 +597,6 @@ class SearchWorker {
 
     void DoTask(int) override;
   };
-
-  using PickTaskPtr = std::atomic<const PickTask*>;
 
  private:
   // TODO: Is there false sharing issues when inserting to AtomicVector?
@@ -672,17 +715,8 @@ class SearchWorker {
                   const PositionHistory& history);
   void FetchSingleNodeResult(NodeToProcess* node_to_process,
                              const BackupPath& path);
-  PickTask* PickTaskToProcess();
   // Process a queued task.
   void ProcessTask(int tid);
-  // Submit list of tasks to the queue.
-  template <typename TaskVector>
-  void SubmitTasks(const TaskVector& tasks, int tid);
-  template <typename TaskType>
-  void SubmitTask(const TaskType& task, int tid);
-  void RunTasks(int tid);
-  // Activate worker threads because we are about to submit work
-  void ActivateTasks();
   void WaitForTasks();
 
   // Helpers to lookup picked node paths.
@@ -696,7 +730,6 @@ class SearchWorker {
 
   Search* const search_;
   SearchWorkerCachedState& state_;
-  int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;
   int number_out_of_order_ = 0;
@@ -715,27 +748,14 @@ class SearchWorker {
 
   // Multigather task related fields.
 
-  Mutex picking_tasks_mutex_;
-  // Size is the smalles power of two which has enough space to hold all child
-  // nodes in any positions. Typically there is much less visited children. The
-  // bigger size helps avoid cache line contention when scaling to more threads.
-  std::array<PickTaskPtr, 256> picking_tasks_;
-  // A packed atomic. LSB half is task_count_. MSB half is tasks_taken_.
-  alignas(kCacheLineSize) std::atomic<int> task_count_ = 0;
   alignas(kCacheLineSize) std::atomic<int> outstanding_tasks_ = 0;
-  alignas(kCacheLineSize) std::atomic<int> active_task_threads_ = 0;
-  alignas(kCacheLineSize) std::condition_variable task_added_;
   PickTaskCancelCollisions cancel_task_;
-  std::vector<std::thread> task_threads_;
   std::vector<TaskWorkspace> task_workspaces_;
-  bool exiting_ = false;
   friend struct SearchWorkerCachedState;
 };
 
 // Cached worker state between subsequent searches.
 struct SearchWorkerCachedState {
-  static constexpr auto kCacheLineSize = SearchWorker::kCacheLineSize;
-
   // Make sure the cached state is ready for a new search.
   void StartANewSearch(const SearchParams& params, size_t target_minibatch_size,
                        size_t max_out_of_order);
@@ -749,6 +769,9 @@ struct SearchWorkerCachedState {
 
 // Cached state between subsequent searches.
 struct SearchCachedState {
+  void StartANewSearch(int task_workers);
+
+  TaskQueue task_queue_;
   std::vector<SearchWorkerCachedState> worker_states_;
 };
 

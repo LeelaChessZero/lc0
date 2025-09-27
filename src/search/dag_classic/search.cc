@@ -177,8 +177,8 @@ std::pair<int, int> GetRepetitions(int depth, const Position& position,
   return {0, 0};
 }
 
-struct PickTaskGather final : public SearchWorker::PickTask {
-  using Base = SearchWorker::PickTask;
+struct PickTaskGather final : public TaskQueue::PickTask {
+  using Base = TaskQueue::PickTask;
   using PathAllocator = IterationMemoryAllocator<BackupPath::value_type>;
   using PositionAllocator = IterationMemoryAllocator<Position>;
   struct Arguments {
@@ -301,7 +301,7 @@ std::tuple<int, int, int> ReadTaskCount(T& task_count) {
     packed = task_count;
   }
   // The top half is tasks taken.
-  const int shift = SearchWorker::kTasksTakenShift;
+  const int shift = TaskQueue::kTasksTakenShift;
   int tasks_taken = packed >> shift;
   // The bottom is task count. The first shift moves the sign bit from the lower
   // half to the hardware sign bit. The second shift lowers bits back to the
@@ -310,19 +310,13 @@ std::tuple<int, int, int> ReadTaskCount(T& task_count) {
   return {packed, tasks_taken, tc};
 }
 
-bool IsTasksIdle(std::atomic<int>& task_count) {
-  [[maybe_unused]] auto [dummy, nta, tc] = ReadTaskCount(task_count);
-  return nta == tc;
-}
-
 // Each subsequent index jumps to the next cache line. The aim is to reduce
 // cache line contention when task workers read pointers. There is going to be
 // a little random false sharing when a writer happens to target the same cache
 // line as a reader.
 template <typename TasksArray>
 TasksArray::value_type& PickingTaskIndex(TasksArray& tasks, unsigned index) {
-  const unsigned number_of_cache_lines =
-      sizeof(tasks) / SearchWorker::kCacheLineSize;
+  const unsigned number_of_cache_lines = sizeof(tasks) / kCacheLineSize;
   const unsigned buckets_per_cache_line = tasks.size() / number_of_cache_lines;
   unsigned cache_line = index % number_of_cache_lines;
   unsigned bucket =
@@ -484,6 +478,199 @@ void IterationMemoryAllocator<T>::deallocate(T* ptr, size_t n) noexcept {
 #if ASAN_BUILD
   ASAN_POISON_MEMORY_REGION(ptr, sizeof(T) * n);
 #endif
+}
+
+TaskQueue::TaskQueue() {}
+
+TaskQueue::~TaskQueue() { ShutdownThreads(); }
+
+void TaskQueue::ShutdownThreads() {
+  if (task_threads_.empty()) return;
+  {
+    assert(IsTasksIdle());
+    Mutex::Lock lock(picking_tasks_mutex_);
+    exiting_ = true;
+    task_added_.notify_all();
+  }
+  for (auto& t : task_threads_) {
+    t.join();
+  }
+  task_threads_.clear();
+}
+
+bool TaskQueue::IsTasksIdle() const {
+  [[maybe_unused]] auto [dummy, nta, tc] = ReadTaskCount(task_count_);
+  return nta == tc;
+}
+
+size_t TaskQueue::Size() const { return task_threads_.size(); }
+
+void TaskQueue::StartANewSearch(size_t task_workers) {
+  if (task_threads_.size() == task_workers) return;
+
+  ShutdownThreads();
+
+  exiting_ = false;
+
+  for (size_t i = 0; i < task_workers; i++) {
+    task_threads_.emplace_back([this, i]() {
+      LOGFILE << "Task worker " << i << " starting.";
+      this->RunTasks(i);
+      LOGFILE << "Task worker " << i << " exiting.";
+    });
+  }
+}
+
+TaskQueue::PickTask* TaskQueue::PickTaskToProcess() {
+  auto [packed_value, nta, tc] = ReadTaskCount(task_count_);
+  int mask = (picking_tasks_.size() << kTasksTakenShift) - 1;
+
+  // Check if tasks are queued and try increment taken count.
+  while (nta != tc && !task_count_.compare_exchange_weak(
+                          packed_value, (packed_value + kTasksTakenOne) & mask,
+                          std::memory_order_acq_rel)) {
+    // Queue had tasks but another worker increment taken. We check
+    // if new work was added to the queue. Then we try to increment
+    // taken again.
+    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
+  }
+  // We incremented taken if nta and tc are different
+  if (nta != tc) {
+    auto& bucket = PickingTaskIndex(picking_tasks_, nta);
+    const PickTask* task;
+    // Scheduling side first reserves region to write pointers. We have to wait
+    // until pointer can be read from the bucket. Bucket has to be set back to
+    // nullptr when read. Scheduling can write a new pointer to the bucket only
+    // when it is nullptr.
+    while (!(task = bucket.exchange(nullptr, std::memory_order_acquire))) {
+      SpinloopPause();
+    }
+    return const_cast<PickTask*>(task);
+  }
+  return nullptr;
+}
+
+// Try processing a task if any has been queued.
+void TaskQueue::ProcessTask(int tid) {
+  PickTask* task = PickTaskToProcess();
+  if (task != nullptr) {
+    (*task)(tid);
+  }
+}
+
+// Queue a list of task to workers.
+template <typename TaskVector>
+void TaskQueue::SubmitTasks(const TaskVector& tasks, int tid) {
+  if (tasks.empty()) return;
+
+  const size_t size = picking_tasks_.size();
+  assert(tasks.size() < size);
+  unsigned nta, tc;
+  int packed_value, new_value;
+  int mask = -1 << kTasksTakenShift | (size - 1);
+  std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
+  do {
+    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
+    // Check that there is enough space for all tasks in the list.
+    while (size - (tc - nta) % size <= tasks.size()) {
+      ProcessTask(tid);
+      std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
+    }
+    new_value = (packed_value + tasks.size()) & mask;
+  } while (!task_count_.compare_exchange_weak(packed_value, new_value,
+                                              std::memory_order_acq_rel));
+
+  // tc and nta must be equal only when the ring buffer is empty.
+  assert(nta != (tc + tasks.size()) % size);
+  for (unsigned i = 0; i < tasks.size(); i++) {
+    auto& bucket = PickingTaskIndex(picking_tasks_, (tc + i) % size);
+    // Make sure that previous read has completed.
+    while (bucket.load(std::memory_order_relaxed)) {
+      SpinloopPause();
+    }
+    bucket.store(static_cast<const PickTask*>(tasks.data() + i),
+                 std::memory_order_release);
+  }
+}
+
+// Submit a task to the queue.
+template <typename TaskType>
+void TaskQueue::SubmitTask(const TaskType& task, int tid) {
+  const size_t size = picking_tasks_.size();
+  unsigned nta, tc;
+  int packed_value, new_value;
+  int mask = -1 << kTasksTakenShift | (size - 1);
+  std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
+  do {
+    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
+    while (size - (tc - nta) % size <= 1) {
+      ProcessTask(tid);
+      std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
+    }
+    new_value = (packed_value + 1) & mask;
+  } while (!task_count_.compare_exchange_weak(packed_value, new_value,
+                                              std::memory_order_acq_rel));
+
+  assert(nta != (tc + 1) % size);
+  auto& bucket = PickingTaskIndex(picking_tasks_, tc);
+  while (bucket.load(std::memory_order_acquire)) {
+    SpinloopPause();
+  }
+  bucket.store(static_cast<const PickTask*>(&task), std::memory_order_release);
+}
+
+void TaskQueue::ActivateTasks() {
+  if (task_threads_.empty()) return;
+  int active = active_users_.fetch_add(1, std::memory_order_relaxed);
+  if (active == 0) {
+    Mutex::Lock lock(picking_tasks_mutex_);
+    task_added_.notify_all();
+  }
+}
+
+void TaskQueue::DeactivateTasks() {
+  if (task_threads_.empty()) return;
+  active_users_.fetch_sub(1, std::memory_order_relaxed);
+}
+
+void TaskQueue::RunTasks(int tid) {
+  // The first thread is SearchWorker. We increment our id to account for it.
+  tid++;
+  while (true) {
+    int nta = 0;
+    int tc = 0;
+    int spins = 0;
+    while (active_users_.load(std::memory_order_relaxed) > 0) {
+      ProcessTask(tid);
+      spins++;
+      if (spins >= 512) {
+        std::this_thread::yield();
+        spins = 0;
+      } else {
+        SpinloopPause();
+      }
+    }
+    spins = 0;
+    // Looks like sleep time.
+    Mutex::Lock lock(picking_tasks_mutex_);
+    // Refresh them now we have the lock.
+    std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count_);
+    if (active_users_.load(std::memory_order_relaxed) > 0 || nta != tc) {
+      continue;
+    }
+    if (exiting_) return;
+    task_added_.wait(lock.get_raw());
+    std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count_);
+    if (nta == tc && exiting_) return;
+  }
+}
+
+void TaskQueue::PickTask::operator()(int tid) { DoTask(tid); }
+
+TaskQueue::PickTask::~PickTask() {}
+
+void SearchCachedState::StartANewSearch(int task_workers) {
+  task_queue_.StartANewSearch(task_workers);
 }
 
 Search::Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
@@ -1241,6 +1428,16 @@ void Search::StartThreads(size_t how_many) {
     how_many = backend_attributes_.suggested_num_search_threads +
                !backend_attributes_.runs_on_cpu;
   }
+
+  int task_workers = params_.GetTaskWorkersPerSearchWorker();
+  if (task_workers < 0) {
+    if (backend_attributes_.runs_on_cpu) {
+      task_workers = 0;
+    } else {
+      task_workers = std::min(std::thread::hardware_concurrency() - 1, 4U);
+    }
+  }
+  state_.StartANewSearch(task_workers);
   // Only one thread can do work until the root has been evaluated. Other
   // workers will wait until the first thread increases the thread_count_.
   if (root_node_->GetN() > 0) {
@@ -1486,147 +1683,18 @@ SearchWorker::SearchWorker(SearchWorkerCachedState& state, Search* search,
       params_(params),
       moves_left_support_(search_->backend_attributes_.has_mlh),
       cancel_task_(*this) {
-  task_workers_ = params.GetTaskWorkersPerSearchWorker();
-  if (task_workers_ < 0) {
-    if (search_->backend_attributes_.runs_on_cpu) {
-      task_workers_ = 0;
-    } else {
-      int working_threads = std::max(
-          search_->thread_count_.load(std::memory_order_relaxed) - 1, 1);
-      task_workers_ = std::min(
-          std::thread::hardware_concurrency() / working_threads - 1, 4U);
-    }
-  }
-  task_workspaces_.emplace_back();
-  for (int i = 0; i < task_workers_; i++) {
-    task_workspaces_.emplace_back();
-    task_threads_.emplace_back([this, i]() {
-      LOGFILE << "Task worker " << i << " starting.";
-      this->RunTasks(i);
-      LOGFILE << "Task worker " << i << " exiting.";
-    });
-  }
-  iteration_memory_managers_.resize(task_threads_.size() + 1);
+  int task_workers = search_->state_.task_queue_.Size() + 1;
+  task_workspaces_.resize(task_workers);
+  iteration_memory_managers_.resize(task_workers);
   state_.StartANewSearch(params_, target_minibatch_size_, max_out_of_order_);
 }
 
 SearchWorker::~SearchWorker() {
-  {
-    // Tasks must be completed before destructor. If a gather tasks is running,
-    // it can increment task_count_ which would break the exit state.
-    cancel_task_.Wait(0);
-    assert(IsTasksIdle(task_count_));
-    Mutex::Lock lock(picking_tasks_mutex_);
-    exiting_ = true;
-    task_added_.notify_all();
-  }
-  for (size_t i = 0; i < task_threads_.size(); i++) {
-    task_threads_[i].join();
-  }
+  // Tasks must be completed before destructor. If a gather tasks is running,
+  // it can increment task_count_ which would break the exit state.
+  cancel_task_.Wait(0);
   LOGFILE << "Search worker destroyed.";
 }
-
-SearchWorker::PickTask* SearchWorker::PickTaskToProcess() {
-  auto [packed_value, nta, tc] = ReadTaskCount(task_count_);
-  int mask = (picking_tasks_.size() << kTasksTakenShift) - 1;
-
-  // Check if tasks are queued and try increment taken count.
-  while (nta != tc && !task_count_.compare_exchange_weak(
-                          packed_value, (packed_value + kTasksTakenOne) & mask,
-                          std::memory_order_acq_rel)) {
-    // Queue had tasks but another worker increment taken. We check
-    // if new work was added to the queue. Then we try to increment
-    // taken again.
-    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
-  }
-  // We incremented taken if nta and tc are different
-  if (nta != tc) {
-    auto& bucket = PickingTaskIndex(picking_tasks_, nta);
-    const PickTask* task;
-    // Scheduling side first reserves region to write pointers. We have to wait
-    // until pointer can be read from the bucket. Bucket has to be set back to
-    // nullptr when read. Scheduling can write a new pointer to the bucket only
-    // when it is nullptr.
-    while (!(task = bucket.exchange(nullptr, std::memory_order_acquire))) {
-      SpinloopPause();
-    }
-    return const_cast<PickTask*>(task);
-  }
-  return nullptr;
-}
-
-// Try processing a task if any has been queued.
-void SearchWorker::ProcessTask(int tid) {
-  PickTask* task = PickTaskToProcess();
-  if (task != nullptr) {
-    (*task)(tid);
-  }
-}
-
-// Queue a list of task to workers.
-template <typename TaskVector>
-void SearchWorker::SubmitTasks(const TaskVector& tasks, int tid) {
-  if (tasks.empty()) return;
-
-  const size_t size = picking_tasks_.size();
-  assert(tasks.size() < size);
-  unsigned nta, tc;
-  int packed_value, new_value;
-  int mask = -1 << kTasksTakenShift | (size - 1);
-  std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
-  do {
-    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
-    // Check that there is enough space for all tasks in the list.
-    while (size - (tc - nta) % size <= tasks.size()) {
-      ProcessTask(tid);
-      std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
-    }
-    new_value = (packed_value + tasks.size()) & mask;
-  } while (!task_count_.compare_exchange_weak(packed_value, new_value,
-                                              std::memory_order_acq_rel));
-
-  // tc and nta must be equal only when the ring buffer is empty.
-  assert(nta != (tc + tasks.size()) % size);
-  for (unsigned i = 0; i < tasks.size(); i++) {
-    auto& bucket = PickingTaskIndex(picking_tasks_, (tc + i) % size);
-    // Make sure that previous read has completed.
-    while (bucket.load(std::memory_order_relaxed)) {
-      SpinloopPause();
-    }
-    bucket.store(static_cast<const PickTask*>(tasks.data() + i),
-                 std::memory_order_release);
-  }
-}
-
-// Submit a task to the queue.
-template <typename TaskType>
-void SearchWorker::SubmitTask(const TaskType& task, int tid) {
-  const size_t size = picking_tasks_.size();
-  unsigned nta, tc;
-  int packed_value, new_value;
-  int mask = -1 << kTasksTakenShift | (size - 1);
-  std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
-  do {
-    std::tie(packed_value, nta, tc) = ReadTaskCount(packed_value);
-    while (size - (tc - nta) % size <= 1) {
-      ProcessTask(tid);
-      std::tie(packed_value, nta, tc) = ReadTaskCount(task_count_);
-    }
-    new_value = (packed_value + 1) & mask;
-  } while (!task_count_.compare_exchange_weak(packed_value, new_value,
-                                              std::memory_order_acq_rel));
-
-  assert(nta != (tc + 1) % size);
-  auto& bucket = PickingTaskIndex(picking_tasks_, tc);
-  while (bucket.load(std::memory_order_acquire)) {
-    SpinloopPause();
-  }
-  bucket.store(static_cast<const PickTask*>(&task), std::memory_order_release);
-}
-
-void SearchWorker::PickTask::operator()(int tid) { DoTask(tid); }
-
-SearchWorker::PickTask::~PickTask() {}
 
 SearchWorker::PickTaskCancelCollisions::PickTaskCancelCollisions(
     SearchWorker& worker)
@@ -1653,38 +1721,6 @@ void SearchWorker::PickTaskCancelCollisions::Wait(int tid) const {
 void SearchWorker::PickTaskCancelCollisions::DoTask(int) {
   worker_.CancelCollisionsTask(start_idx_, end_idx_, stop_);
   completed_.store(true, std::memory_order_release);
-}
-
-void SearchWorker::RunTasks(int tid) {
-  // The first thread is SearchWorker. We increment our id to account for it.
-  tid++;
-  while (true) {
-    int nta = 0;
-    int tc = 0;
-    int spins = 0;
-    while (active_task_threads_.load(std::memory_order_relaxed) > 0) {
-      ProcessTask(tid);
-      spins++;
-      if (spins >= 512) {
-        std::this_thread::yield();
-        spins = 0;
-      } else {
-        SpinloopPause();
-      }
-    }
-    spins = 0;
-    // Looks like sleep time.
-    Mutex::Lock lock(picking_tasks_mutex_);
-    // Refresh them now we have the lock.
-    std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count_);
-    if (active_task_threads_.load(std::memory_order_relaxed) > 0 || nta != tc) {
-      continue;
-    }
-    if (exiting_) return;
-    task_added_.wait(lock.get_raw());
-    std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count_);
-    if (nta == tc && exiting_) return;
-  }
 }
 
 void SearchWorker::ExecuteOneIteration() {
@@ -1819,14 +1855,14 @@ void SearchWorker::ScheduleCancelTask(int start, int end, bool stop) {
   if (end == start) {
     // Do we need to stop task workers?
     if (stop) {
-      active_task_threads_.fetch_sub(1, std::memory_order_relaxed);
+      search_->state_.task_queue_.DeactivateTasks();
     }
     return;
   }
 
   // Schedule the work to a task thread.
   cancel_task_.Reset(start, end, stop);
-  SubmitTask(cancel_task_, 0);
+  search_->state_.task_queue_.SubmitTask(cancel_task_, 0);
 }
 
 int SearchWorker::ExpandCollision(int index, int collisions_left) {
@@ -1870,7 +1906,7 @@ void SearchWorker::GatherMinibatch() {
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
 
-  ActivateTasks();
+  search_->state_.task_queue_.ActivateTasks();
 
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
@@ -1952,7 +1988,7 @@ int SearchWorker::AddCollisions(int collisions) {
 
 void SearchWorker::CancelCollisionsTask(int start, int end, bool stop) {
   if (stop) {
-    active_task_threads_.fetch_sub(1, std::memory_order_relaxed);
+    search_->state_.task_queue_.DeactivateTasks();
   }
   int total = 0;
   for (int i = start; i < end; i++) {
@@ -1967,15 +2003,6 @@ void SearchWorker::CancelCollisionsTask(int start, int end, bool stop) {
   AddCollisions(-total);
 }
 
-void SearchWorker::ActivateTasks() {
-  if (task_workers_ == 0) return;
-  int active = active_task_threads_.fetch_add(1, std::memory_order_relaxed);
-  if (active == 0) {
-    Mutex::Lock lock(picking_tasks_mutex_);
-    task_added_.notify_all();
-  }
-}
-
 // Count tasks before submitting them to workers.
 void SearchWorker::StartTasks(int count) {
   [[maybe_unused]]
@@ -1988,6 +2015,10 @@ void SearchWorker::CompleteTask() {
   [[maybe_unused]]
   auto old = outstanding_tasks_.fetch_sub(1, std::memory_order_release);
   assert(old > 0);
+}
+
+void SearchWorker::ProcessTask(int tid) {
+  search_->state_.task_queue_.ProcessTask(tid);
 }
 
 // Check for any outstanding gather tasks. Task objects aren't tracked so we
@@ -2331,15 +2362,16 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
       // Actively do any splits now rather than waiting for potentially long
       // tree walk to get there. We don't split tasks when remaining limit is
       // too low compared to the cost of scheduling tasks.
-      if (task_workers_ > 0 &&
+      int task_workers = search_->state_.task_queue_.Size();
+      if (task_workers > 0 &&
           collision_left >= params_.GetMinimumRemainingWorkSizeForPicking()) {
         // Queue all branches to taks if they are idling.
         const int kLowUtilizationLimit =
-            params_.GetMinimumRemainingWorkSizeForPicking() * task_workers_;
+            params_.GetMinimumRemainingWorkSizeForPicking() * task_workers;
         const bool low_task_utilization =
             starting_from_root &&
             collision_limit - collision_left < kLowUtilizationLimit &&
-            IsTasksIdle(task_count_);
+            search_->state_.task_queue_.IsTasksIdle();
         const int kMinimumSize =
             low_task_utilization ? 0 : params_.GetMinimumWorkSizeForPicking();
 
@@ -2383,7 +2415,7 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
         // situation where tasks complete before we increment outstanding
         // number.
         StartTasks(tasks.size());
-        SubmitTasks(tasks, tid);
+        search_->state_.task_queue_.SubmitTasks(tasks, tid);
       } else {
         auto rend = visits_to_perform.rend();
         auto rbegin = rend - std::distance(visits_to_perform.begin(), end);
