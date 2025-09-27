@@ -1723,9 +1723,8 @@ void SearchWorker::PickTaskCancelCollisions::Reset(int start_idx, int end_idx,
   completed_.store(false, std::memory_order_release);
 }
 
-void SearchWorker::PickTaskCancelCollisions::Wait(int tid) const {
+void SearchWorker::PickTaskCancelCollisions::Wait(int) const {
   while (!completed_.load(std::memory_order_acquire)) {
-    worker_.ProcessTask(tid);
     SpinloopPause();
   }
 }
