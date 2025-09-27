@@ -718,7 +718,7 @@ struct TaskWorkspace {
     assert(path.size() == in_history.size() + 1);
     if (h_buffer.empty()) {
       int expected_size =
-          std::bit_ceil(played_history.GetLength() + in_history.size() + 16);
+          std::bit_ceil(played_history.GetLength() + in_history.size() + 64);
       history.push_back(std::make_unique<PositionHistory>());
       history.back()->Reserve(expected_size);
       auto played = played_history.GetPositions();
@@ -732,7 +732,7 @@ struct TaskWorkspace {
     history.back()->Insert(in_history.begin(), in_history.end());
 
     if (fp_buffer.empty()) {
-      int expected_size = std::bit_ceil(path.size() + 16);
+      int expected_size = std::bit_ceil(path.size() + 32);
       full_path.push_back(std::make_unique<BackupPath>());
       full_path.back()->reserve(expected_size);
     } else {

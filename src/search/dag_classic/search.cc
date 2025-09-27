@@ -2478,7 +2478,7 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
 namespace {
 // Helper to reserve space and assign a new path to a cached path allocation.
 void AssignPath(BackupPath& target, const BackupPath& path) {
-  if (target.capacity() == 0) {
+  if (target.capacity() < path.size()) {
     target.reserve(path.capacity());
   }
   target.assign(path.begin(), path.end());
