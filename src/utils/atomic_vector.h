@@ -37,13 +37,34 @@ class AtomicVector {
   using Allocator = std::allocator<T>;
 
  public:
+  AtomicVector() = default;
   explicit AtomicVector(size_t capacity) : capacity_(capacity), size_(0) {
     data_ = Allocator().allocate(capacity);
   }
 
   ~AtomicVector() {
     clear();
-    Allocator().deallocate(data_, capacity_);
+    if (data_) {
+      Allocator().deallocate(data_, capacity_);
+    }
+  }
+
+  // Not thread safe.
+  AtomicVector(AtomicVector&& other)
+      : capacity_(other.capacity_),
+        size_(other.size_.exchange(0, std::memory_order_relaxed)),
+        data_(other.data_) {
+    other.data_ = nullptr;
+  }
+
+  // Not thread safe.
+  AtomicVector& operator=(AtomicVector&& other) {
+    AtomicVector temp(std::move(*this));
+    const_cast<size_t&>(capacity_) = other.capacity_;
+    size_.store(other.size_.exchange(0, std::memory_order_relaxed),
+                std::memory_order_relaxed);
+    std::swap(data_, other.data_);
+    return *this;
   }
 
   // Thread safe, returns the index of the inserted element.
