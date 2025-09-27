@@ -139,6 +139,9 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
   auto stopper = time_manager_->GetStopper(
       params, tree_.get()->HeadPosition(), total_memory, kAvgNodeSize,
       tree_.get()->GetCurrentHead()->GetN());
+  // The previous search should stop using shared state before the new search
+  // starts using it.
+  search_.reset();
   search_ = std::make_unique<Search>(
       search_cached_state_, *tree_, backend_, std::move(forwarder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),

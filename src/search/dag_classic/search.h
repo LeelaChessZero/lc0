@@ -218,6 +218,7 @@ class TaskQueue {
   // A packed atomic. LSB half is task_count_. MSB half is tasks_taken_.
   alignas(kCacheLineSize) std::atomic<int> task_count_ = 0;
   alignas(kCacheLineSize) std::atomic<int> active_users_ = 0;
+  alignas(kCacheLineSize) std::atomic<int> sleeping_threads_ = 0;
 };
 
 class Search {
@@ -377,6 +378,51 @@ class Search {
 template <typename TaskType>
 using TaskVector = std::vector<TaskType, IterationMemoryAllocator<TaskType>>;
 
+// Combine visits to perform, index, and node state flags into a packed
+// variable. Packed value stores required visit infromation which can be
+// pushed into the current_path stack.
+struct CurrentPath {
+  struct Bits {
+    uint32_t visits_ : 21;       // <= collision limit
+    uint32_t last_child_ : 1;    // bool
+    uint32_t visit_child_ : 1;   // bool
+    uint32_t stop_picking_ : 1;  // bool
+    uint32_t index_ : 8;         // < 218
+  };
+  union {
+    Bits bits_;
+    uint32_t value_;
+  };
+  CurrentPath(unsigned visits, bool last, bool visit, bool stop, unsigned index)
+      : bits_(visits, last, visit, stop, index) {}
+  // Implicit conversion from int to allow comparing to a visit integer.
+  CurrentPath(int visits) : bits_(visits, 0, 0, 0, 0) {}
+  CurrentPath() {}
+
+  auto operator<=>(CurrentPath b) const {
+    return (uint32_t)bits_.visits_ <=> (uint32_t)b.bits_.visits_;
+  }
+  bool operator==(CurrentPath b) const {
+    return (uint32_t)bits_.visits_ == (uint32_t)b.bits_.visits_;
+  }
+  explicit operator bool() const { return !!bits_.visits_; }
+
+  CurrentPath& operator+=(unsigned visits) {
+    CurrentPath temp(*this);
+    std::ignore = temp;
+    assert(temp.bits_.visits_ += visits == visits + bits_.visits_);
+    value_ += visits;
+    return *this;
+  }
+  CurrentPath& operator-=(unsigned visits) {
+    assert(bits_.visits_ >= visits);
+    value_ -= visits;
+    return *this;
+  }
+};
+
+struct TaskWorkspace;
+
 // Single thread worker of the search engine.
 // That used to be just a function Search::Worker(), but to parallelize it
 // within one thread, have to split into stages.
@@ -469,109 +515,8 @@ class SearchWorker {
   // Returns the search parameters.
   const SearchParams& GetParams() const { return params_; }
 
-  // Combine visits to perform, index, and node state flags into a packed
-  // variable. Packed value stores required visit infromation which can be
-  // pushed into the current_path stack.
-  struct CurrentPath {
-    struct Bits {
-      uint32_t visits_ : 21;       // <= collision limit
-      uint32_t last_child_ : 1;    // bool
-      uint32_t visit_child_ : 1;   // bool
-      uint32_t stop_picking_ : 1;  // bool
-      uint32_t index_ : 8;         // < 218
-    };
-    union {
-      Bits bits_;
-      uint32_t value_;
-    };
-    CurrentPath(unsigned visits, bool last, bool visit, bool stop,
-                unsigned index)
-        : bits_(visits, last, visit, stop, index) {}
-    // Implicit conversion from int to allow comparing to a visit integer.
-    CurrentPath(int visits) : bits_(visits, 0, 0, 0, 0) {}
-    CurrentPath() {}
-
-    auto operator<=>(CurrentPath b) const {
-      return (uint32_t)bits_.visits_ <=> (uint32_t)b.bits_.visits_;
-    }
-    bool operator==(CurrentPath b) const {
-      return (uint32_t)bits_.visits_ == (uint32_t)b.bits_.visits_;
-    }
-    explicit operator bool() const { return !!bits_.visits_; }
-
-    CurrentPath& operator+=(unsigned visits) {
-      CurrentPath temp(*this);
-      std::ignore = temp;
-      assert(temp.bits_.visits_ += visits == visits + bits_.visits_);
-      value_ += visits;
-      return *this;
-    }
-    CurrentPath& operator-=(unsigned visits) {
-      assert(bits_.visits_ >= visits);
-      value_ -= visits;
-      return *this;
-    }
-  };
-
-  // Holds per task worker scratch data
-  struct TaskWorkspace {
-    std::array<Node::Iterator, kMaxMovesInPosition> cur_iters;
-    std::vector<CurrentPath> current_path;
-    std::vector<std::unique_ptr<BackupPath>> fp_buffer;
-    std::vector<std::unique_ptr<BackupPath>> full_path;
-    std::vector<std::unique_ptr<PositionHistory>> h_buffer;
-    std::vector<std::unique_ptr<PositionHistory>> history;
-    TaskWorkspace() {
-      // Reserve everything for a small number of recursions in a large tree.
-      current_path.reserve(1024);
-      full_path.reserve(8);
-      fp_buffer.reserve(8);
-      history.reserve(8);
-      h_buffer.reserve(8);
-    }
-
-    [[nodiscard]]
-    auto Push(std::span<const BackupPath::value_type> path,
-              std::span<const Position> in_history,
-              const PositionHistory& played_history) {
-      assert(path.size() == in_history.size() + 1);
-      if (h_buffer.empty()) {
-        int expected_size =
-            std::bit_ceil(played_history.GetLength() + in_history.size() + 16);
-        history.push_back(std::make_unique<PositionHistory>());
-        history.back()->Reserve(expected_size);
-        auto played = played_history.GetPositions();
-        history.back()->Assign(played.begin(), played.end());
-      } else {
-        history.push_back(std::move(h_buffer.back()));
-        h_buffer.pop_back();
-      }
-      history.back()->Trim(played_history.GetLength());
-      history.back()->Insert(in_history.begin(), in_history.end());
-
-      if (fp_buffer.empty()) {
-        int expected_size = std::bit_ceil(path.size() + 16);
-        full_path.push_back(std::make_unique<BackupPath>());
-        full_path.back()->reserve(expected_size);
-      } else {
-        full_path.push_back(std::move(fp_buffer.back()));
-        fp_buffer.pop_back();
-      }
-      full_path.back()->assign(path.begin(), path.end());
-      return absl::Cleanup{[&] { Pop(); }};
-    }
-
-   private:
-    void Pop() {
-      fp_buffer.push_back(std::move(full_path.back()));
-      full_path.pop_back();
-      h_buffer.push_back(std::move(history.back()));
-      history.pop_back();
-    }
-  };
-
   // Return task workspace for the current thread.
-  TaskWorkspace& GetWorkspace(int tid) { return task_workspaces_[tid]; }
+  TaskWorkspace& GetWorkspace(int tid);
   // Return history at the root node.
   const PositionHistory& GetPlayedHistory() const {
     return search_->played_history_;
@@ -737,7 +682,6 @@ class SearchWorker {
   alignas(kCacheLineSize) std::atomic<int> eval_used_;
   std::unique_ptr<BackendComputation> computation_;
   const SearchParams& params_;
-  std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;
   bool wake_other_workers_ = false;
   classic::IterationStats iteration_stats_;
@@ -747,8 +691,73 @@ class SearchWorker {
 
   alignas(kCacheLineSize) std::atomic<int> outstanding_tasks_ = 0;
   PickTaskCancelCollisions cancel_task_;
-  std::vector<TaskWorkspace> task_workspaces_;
   friend struct SearchWorkerCachedState;
+};
+
+// Holds per task worker scratch data
+struct TaskWorkspace {
+  std::array<Node::Iterator, SearchWorker::kMaxMovesInPosition> cur_iters;
+  std::vector<CurrentPath> current_path;
+  std::vector<std::unique_ptr<BackupPath>> fp_buffer;
+  std::vector<std::unique_ptr<BackupPath>> full_path;
+  std::vector<std::unique_ptr<PositionHistory>> h_buffer;
+  std::vector<std::unique_ptr<PositionHistory>> history;
+  TaskWorkspace() {
+    // Reserve everything for a small number of recursions in a large tree.
+    current_path.reserve(1024);
+    full_path.reserve(8);
+    fp_buffer.reserve(8);
+    history.reserve(8);
+    h_buffer.reserve(8);
+  }
+
+  [[nodiscard]]
+  auto Push(std::span<const BackupPath::value_type> path,
+            std::span<const Position> in_history,
+            const PositionHistory& played_history) {
+    assert(path.size() == in_history.size() + 1);
+    if (h_buffer.empty()) {
+      int expected_size =
+          std::bit_ceil(played_history.GetLength() + in_history.size() + 16);
+      history.push_back(std::make_unique<PositionHistory>());
+      history.back()->Reserve(expected_size);
+      auto played = played_history.GetPositions();
+      history.back()->Assign(played.begin(), played.end());
+    } else {
+      history.push_back(std::move(h_buffer.back()));
+      h_buffer.pop_back();
+    }
+    assert(history.back()->GetLength() >= played_history.GetLength());
+    history.back()->Trim(played_history.GetLength());
+    history.back()->Insert(in_history.begin(), in_history.end());
+
+    if (fp_buffer.empty()) {
+      int expected_size = std::bit_ceil(path.size() + 16);
+      full_path.push_back(std::make_unique<BackupPath>());
+      full_path.back()->reserve(expected_size);
+    } else {
+      full_path.push_back(std::move(fp_buffer.back()));
+      fp_buffer.pop_back();
+    }
+    full_path.back()->assign(path.begin(), path.end());
+    return absl::Cleanup{[&] { Pop(); }};
+  }
+
+  void StartANewSearch(const PositionHistory& played_history) {
+    assert(history.empty());
+    auto played = played_history.GetPositions();
+    for (auto& history_ptr : h_buffer) {
+      history_ptr->Assign(played.begin(), played.end());
+    }
+  }
+
+ private:
+  void Pop() {
+    fp_buffer.push_back(std::move(full_path.back()));
+    full_path.pop_back();
+    h_buffer.push_back(std::move(history.back()));
+    history.pop_back();
+  }
 };
 
 // Cached worker state between subsequent searches.
@@ -766,8 +775,9 @@ struct SearchWorkerCachedState {
 
 // Cached state between subsequent searches.
 struct SearchCachedState {
-  void StartANewSearch(int task_workers);
+  void StartANewSearch(int task_workers, const PositionHistory& played_history);
 
+  std::vector<TaskWorkspace> task_workspaces_;
   TaskQueue task_queue_;
   std::vector<SearchWorkerCachedState> worker_states_;
 };

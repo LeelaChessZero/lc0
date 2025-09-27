@@ -506,6 +506,12 @@ bool TaskQueue::IsTasksIdle() const {
 size_t TaskQueue::Size() const { return task_threads_.size(); }
 
 void TaskQueue::StartANewSearch(size_t task_workers) {
+
+  int tasks = task_threads_.size();
+  while (sleeping_threads_.load(std::memory_order_acquire) < tasks) {
+    SpinloopPause();
+  }
+
   if (task_threads_.size() == task_workers) return;
 
   ShutdownThreads();
@@ -659,7 +665,9 @@ void TaskQueue::RunTasks(int tid) {
       continue;
     }
     if (exiting_) return;
+    sleeping_threads_.fetch_add(1, std::memory_order_release);
     task_added_.wait(lock.get_raw());
+    sleeping_threads_.fetch_sub(1, std::memory_order_relaxed);
     std::tie(std::ignore, nta, tc) = ReadTaskCount(task_count_);
     if (nta == tc && exiting_) return;
   }
@@ -669,8 +677,13 @@ void TaskQueue::PickTask::operator()(int tid) { DoTask(tid); }
 
 TaskQueue::PickTask::~PickTask() {}
 
-void SearchCachedState::StartANewSearch(int task_workers) {
+void SearchCachedState::StartANewSearch(int task_workers,
+                                        const PositionHistory& played_history) {
   task_queue_.StartANewSearch(task_workers);
+  task_workspaces_.resize(task_workers + 1);
+  for (auto& w : task_workspaces_) {
+    w.StartANewSearch(played_history);
+  }
 }
 
 Search::Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
@@ -1437,7 +1450,7 @@ void Search::StartThreads(size_t how_many) {
       task_workers = std::min(std::thread::hardware_concurrency() - 1, 4U);
     }
   }
-  state_.StartANewSearch(task_workers);
+  state_.StartANewSearch(task_workers, played_history_);
   // Only one thread can do work until the root has been evaluated. Other
   // workers will wait until the first thread increases the thread_count_.
   if (root_node_->GetN() > 0) {
@@ -1684,7 +1697,6 @@ SearchWorker::SearchWorker(SearchWorkerCachedState& state, Search* search,
       moves_left_support_(search_->backend_attributes_.has_mlh),
       cancel_task_(*this) {
   int task_workers = search_->state_.task_queue_.Size() + 1;
-  task_workspaces_.resize(task_workers);
   iteration_memory_managers_.resize(task_workers);
   state_.StartANewSearch(params_, target_minibatch_size_, max_out_of_order_);
 }
@@ -2030,9 +2042,13 @@ void SearchWorker::WaitForTasks() {
   }
 }
 
+TaskWorkspace& SearchWorker::GetWorkspace(int tid) {
+  return search_->state_.task_workspaces_[tid];
+}
+
 std::tuple<int, int> SearchWorker::PickNodesToExtend(int collision_limit)
     REQUIRES(search_->nodes_mutex_) {
-  TaskWorkspace& workspace = task_workspaces_[0];
+  TaskWorkspace& workspace = GetWorkspace(0);
   auto frame = workspace.Push({{std::make_tuple(search_->root_node_, 0, 0)}},
                               {}, search_->played_history_);
   auto rv = PickNodesToExtendTask<true>(collision_limit, 0,
@@ -2093,10 +2109,12 @@ template <bool starting_from_root>
 std::conditional_t<starting_from_root, std::tuple<int, int>, int>
 SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
                                     const EdgeAndNode& current_best_edge) {
-  TaskWorkspace* workspace = &task_workspaces_[tid];
+  TaskWorkspace* workspace = &GetWorkspace(tid);
   auto& current_path = workspace->current_path;
   auto& history = *workspace->history.back();
   auto& full_path = *workspace->full_path.back();
+  assert((int)full_path.size() ==
+         history.GetLength() - search_->played_history_.GetLength() + 1);
   auto [node, repetitions, moves_left] = full_path.back();
 
   auto& cur_iters = workspace->cur_iters;
@@ -2116,12 +2134,12 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
   int expandable_collision = -1;
   int max_limit = is_root_node ? std::numeric_limits<int>::max() : 0;
 
-  const size_t starting_path_size = current_path.size();
   // Root node is special - since its not reached from anywhere else, so
   // it needs its own logic.
   const bool stop_root =
       is_root_node && ShouldStopPickingHere(node, true, repetitions);
   const bool visit_root = stop_root && node->TryStartScoreUpdate();
+  const size_t starting_path_size = current_path.size();
   current_path.emplace_back(collision_limit, true, visit_root, stop_root, 0);
   while (current_path.size() > starting_path_size) {
     assert(!full_path.empty());
@@ -2148,13 +2166,13 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
       bool saved_is_last_child;
       do {
         saved_is_last_child = current_path.back().bits_.last_child_;
+        current_path.pop_back();
+        if (current_path.size() == starting_path_size) break;
         history.Pop();
         full_path.pop_back();
-        current_path.pop_back();
-      } while (saved_is_last_child && current_path.size() > starting_path_size);
-      if (!full_path.empty()) {
-        std::tie(node, repetitions, moves_left) = full_path.back();
-      }
+      } while (saved_is_last_child);
+      assert(!full_path.empty());
+      std::tie(node, repetitions, moves_left) = full_path.back();
     } else {
       // Compiler can overwrite these stack variables if there is recursion to a
       // task.
@@ -2443,7 +2461,9 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
       full_path.push_back({node, repetitions, moves_left});
     }
   }
-
+  assert(!starting_from_root ||
+         history.GetLength() == search_->played_history_.GetLength());
+  assert(!full_path.empty());
   if constexpr (starting_from_root) {
     return {collisions, expandable_collision};
   } else {
