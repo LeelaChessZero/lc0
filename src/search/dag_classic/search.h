@@ -32,16 +32,13 @@
 #include <array>
 #include <bit>
 #include <condition_variable>
-#include <functional>
 #include <optional>
-#include <shared_mutex>
 #include <span>
 #include <thread>
 #include <tuple>
 #include <vector>
 
 #include "chess/callbacks.h"
-#include "chess/uciloop.h"
 #include "neural/backend.h"
 #include "search/classic/stoppers/timemgr.h"
 #include "search/dag_classic/node.h"
