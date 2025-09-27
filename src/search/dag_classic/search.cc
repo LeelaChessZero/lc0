@@ -2048,10 +2048,14 @@ TaskWorkspace& SearchWorker::GetWorkspace(int tid) {
 std::tuple<int, int> SearchWorker::PickNodesToExtend(int collision_limit)
     REQUIRES(search_->nodes_mutex_) {
   TaskWorkspace& workspace = GetWorkspace(0);
-  auto frame = workspace.Push({{std::make_tuple(search_->root_node_, 0, 0)}},
-                              {}, search_->played_history_);
-  auto rv = PickNodesToExtendTask<true>(collision_limit, 0,
-                                        search_->current_best_edge_);
+  std::tuple<int, int> rv;
+  {
+    assert(workspace.history.empty() && workspace.full_path.empty());
+    auto frame = workspace.Push({{std::make_tuple(search_->root_node_, 0, 0)}},
+                                {}, search_->played_history_);
+    rv = PickNodesToExtendTask<true>(collision_limit, 0,
+                                     search_->current_best_edge_);
+  }
 
   WaitForTasks();
   return rv;
