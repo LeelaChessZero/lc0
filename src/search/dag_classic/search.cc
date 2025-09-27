@@ -649,7 +649,7 @@ void TaskQueue::RunTasks(int tid) {
     while (active_users_.load(std::memory_order_relaxed) > 0) {
       ProcessTask(tid);
       spins++;
-      if (spins >= 512) {
+      if (spins >= 4096) {
         std::this_thread::yield();
         spins = 0;
       } else {
