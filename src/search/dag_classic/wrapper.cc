@@ -79,6 +79,7 @@ class DagClassicSearch : public SearchBase {
   std::unique_ptr<NodeTree> tree_;
   TranspositionTable tt_;
   std::optional<std::chrono::steady_clock::time_point> move_start_time_;
+  SearchCachedState search_cached_state_;
 };
 
 MoveList StringsToMovelist(const std::vector<std::string>& moves,
@@ -139,7 +140,7 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
       params, tree_.get()->HeadPosition(), total_memory, kAvgNodeSize,
       tree_.get()->GetCurrentHead()->GetN());
   search_ = std::make_unique<Search>(
-      *tree_, backend_, std::move(forwarder),
+      search_cached_state_, *tree_, backend_, std::move(forwarder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
       *options_, &tt_, syzygy_tb_);

@@ -145,9 +145,12 @@ class IterationMemoryAllocator {
 // The tuple elements are (node, repetitons, moves left).
 typedef std::vector<std::tuple<Node*, int, int>> BackupPath;
 
+struct SearchWorkerCachedState;
+struct SearchCachedState;
+
 class Search {
  public:
-  Search(const NodeTree& tree, Backend* backend,
+  Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
@@ -233,6 +236,7 @@ class Search {
   // Depth of a root node is 0 (even number).
   float GetDrawScore(bool is_odd_depth) const;
 
+  SearchCachedState& state_;
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -317,7 +321,8 @@ class SearchWorker {
 #endif
   static constexpr int kMaxMovesInPosition = 218;
 
-  SearchWorker(Search* search, const SearchParams& params);
+  SearchWorker(SearchWorkerCachedState& state, Search* search,
+               const SearchParams& params);
 
   ~SearchWorker();
 
@@ -690,6 +695,7 @@ class SearchWorker {
   void AssignCollisionPath(int index, const BackupPath& path);
 
   Search* const search_;
+  SearchWorkerCachedState& state_;
   int task_workers_;
   int target_minibatch_size_;
   int max_out_of_order_;
@@ -699,11 +705,6 @@ class SearchWorker {
   // List of nodes to process.
   alignas(kCacheLineSize) std::atomic<int> collisions_left_;
   alignas(kCacheLineSize) std::atomic<int> eval_used_;
-  alignas(kCacheLineSize) AtomicVector<NodeToProcess> minibatch_;
-  alignas(kCacheLineSize) AtomicVector<NodeToProcess> ooobatch_;
-  alignas(kCacheLineSize) AtomicVector<CollisionNode> collisions_;
-  std::vector<EvalResult> eval_results_;
-  std::vector<BackupPath> node_paths_;
   std::unique_ptr<BackendComputation> computation_;
   const SearchParams& params_;
   std::unique_ptr<Node> precached_node_;
@@ -728,6 +729,27 @@ class SearchWorker {
   std::vector<std::thread> task_threads_;
   std::vector<TaskWorkspace> task_workspaces_;
   bool exiting_ = false;
+  friend struct SearchWorkerCachedState;
+};
+
+// Cached worker state between subsequent searches.
+struct SearchWorkerCachedState {
+  static constexpr auto kCacheLineSize = SearchWorker::kCacheLineSize;
+
+  // Make sure the cached state is ready for a new search.
+  void StartANewSearch(const SearchParams& params, size_t target_minibatch_size,
+                       size_t max_out_of_order);
+
+  alignas(kCacheLineSize) AtomicVector<SearchWorker::NodeToProcess> minibatch_;
+  alignas(kCacheLineSize) AtomicVector<SearchWorker::NodeToProcess> ooobatch_;
+  alignas(kCacheLineSize) AtomicVector<SearchWorker::CollisionNode> collisions_;
+  std::vector<EvalResult> eval_results_;
+  std::vector<BackupPath> node_paths_;
+};
+
+// Cached state between subsequent searches.
+struct SearchCachedState {
+  std::vector<SearchWorkerCachedState> worker_states_;
 };
 
 }  // namespace dag_classic

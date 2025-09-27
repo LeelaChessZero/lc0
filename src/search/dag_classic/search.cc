@@ -486,14 +486,15 @@ void IterationMemoryAllocator<T>::deallocate(T* ptr, size_t n) noexcept {
 #endif
 }
 
-Search::Search(const NodeTree& tree, Backend* backend,
+Search::Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
                std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<classic::SearchStopper> stopper, bool infinite,
                bool ponder, const OptionsDict& options, TranspositionTable* tt,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!infinite && !ponder),
+    : state_(state),
+      ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       tt_(tt),
@@ -1251,10 +1252,11 @@ void Search::StartThreads(size_t how_many) {
   if (threads_.size() == 0) {
     threads_.emplace_back([this]() { WatchdogThread(); });
   }
+  state_.worker_states_.resize(how_many);
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
     threads_.emplace_back([this, i]() {
-      SearchWorker worker(this, params_);
+      SearchWorker worker(state_.worker_states_[i], this, params_);
       worker.RunBlocking(i);
     });
   }
@@ -1440,8 +1442,40 @@ Search::~Search() {
 // SearchWorker
 //////////////////////////////////////////////////////////////////////////////
 
-SearchWorker::SearchWorker(Search* search, const SearchParams& params)
+void SearchWorkerCachedState::StartANewSearch(const SearchParams& params,
+                                              size_t target_minibatch_size,
+                                              size_t max_out_of_order) {
+  if (minibatch_.capacity() < target_minibatch_size) {
+    decltype(minibatch_) minibatch(target_minibatch_size);
+    minibatch_ = std::move(minibatch);
+  }
+
+  if (ooobatch_.capacity() < max_out_of_order) {
+    decltype(ooobatch_) ooobatch(max_out_of_order);
+    ooobatch_ = std::move(ooobatch);
+  }
+  const size_t max_collisions = params.GetMaxCollisionVisits();
+  if (collisions_.size() < max_collisions) {
+    decltype(collisions_) collisions(max_collisions);
+    collisions_ = std::move(collisions);
+  }
+
+  const size_t eval_size = minibatch_.capacity() + ooobatch_.capacity();
+  if (eval_results_.size() < eval_size) {
+    eval_results_.resize(eval_size);
+  }
+
+  const size_t node_path_size =
+      minibatch_.capacity() + ooobatch_.capacity() + collisions_.capacity();
+  if (node_paths_.size() < node_path_size) {
+    node_paths_.resize(node_path_size);
+  }
+}
+
+SearchWorker::SearchWorker(SearchWorkerCachedState& state, Search* search,
+                           const SearchParams& params)
     : search_(search),
+      state_(state),
       target_minibatch_size_(
           params.GetMiniBatchSize()
               ? params.GetMiniBatchSize()
@@ -1449,12 +1483,6 @@ SearchWorker::SearchWorker(Search* search, const SearchParams& params)
       max_out_of_order_(
           std::max(0, static_cast<int>(params.GetMaxOutOfOrderEvalsFactor() *
                                        target_minibatch_size_))),
-      minibatch_(target_minibatch_size_ * 2),
-      ooobatch_(max_out_of_order_),
-      collisions_(params.GetMaxCollisionVisits()),
-      eval_results_(minibatch_.capacity() + ooobatch_.capacity()),
-      node_paths_(minibatch_.capacity() + ooobatch_.capacity() +
-                  collisions_.capacity()),
       params_(params),
       moves_left_support_(search_->backend_attributes_.has_mlh),
       cancel_task_(*this) {
@@ -1479,6 +1507,7 @@ SearchWorker::SearchWorker(Search* search, const SearchParams& params)
     });
   }
   iteration_memory_managers_.resize(task_threads_.size() + 1);
+  state_.StartANewSearch(params_, target_minibatch_size_, max_out_of_order_);
 }
 
 SearchWorker::~SearchWorker() {
@@ -1746,9 +1775,9 @@ void SearchWorker::InitializeIteration(
     std::unique_ptr<BackendComputation> computation) {
   cancel_task_.Wait(0);
   computation_ = std::move(computation);
-  minibatch_.clear();
-  ooobatch_.clear();
-  collisions_.clear();
+  state_.minibatch_.clear();
+  state_.ooobatch_.clear();
+  state_.collisions_.clear();
   eval_used_.store(0, std::memory_order_relaxed);
 }
 
@@ -1802,7 +1831,7 @@ void SearchWorker::ScheduleCancelTask(int start, int end, bool stop) {
 
 int SearchWorker::ExpandCollision(int index, int collisions_left) {
   int total = 0;
-  auto& picked_node = collisions_[index];
+  auto& picked_node = state_.collisions_[index];
 
   // Check to see if we can upsize the collision to exit sooner.
   if (picked_node.maxvisit > picked_node.multivisit) {
@@ -1825,7 +1854,7 @@ void SearchWorker::GatherMinibatch() {
 
   // Collision use atomic operations. We can cancel them outside the lock.
   absl::Cleanup cancel_collsions = [&] {
-    ScheduleCancelTask(0, collisions_.size(), true);
+    ScheduleCancelTask(0, state_.collisions_.size(), true);
   };
   // We take the nodes_mutex_ only once to avoid bouncing between this thread
   // and a thread returning from RunNNComputation.
@@ -1873,8 +1902,8 @@ void SearchWorker::GatherMinibatch() {
     iteration_memory_age_++;
     IterationMemoryManager::ResetLocalManager(*this, 0);
 
-    int new_start = minibatch_.size();
-    int collisions_start = collisions_.size();
+    int new_start = state_.minibatch_.size();
+    int collisions_start = state_.collisions_.size();
 
     auto [local_collisions, expandable_collision] = PickNodesToExtend(
         std::min({collisions_left, target_minibatch_size_ - minibatch_size,
@@ -1882,26 +1911,26 @@ void SearchWorker::GatherMinibatch() {
     collisions_left = AddCollisions(local_collisions);
 
     // Count the non-collisions.
-    int new_end = minibatch_.size();
-    int collisions_end = collisions_.size();
+    int new_end = state_.minibatch_.size();
+    int collisions_end = state_.collisions_.size();
     int non_collisions = new_end - new_start;
     minibatch_size += non_collisions;
 
-    if (!ooobatch_.empty()) {
+    if (!state_.ooobatch_.empty()) {
       // If there was any OOO, revert 'all' new collisions - it isn't possible
       // to identify exactly which ones are afterwards and only prune those.
       // This may remove too many items, but hopefully most of the time they
       // will just be added back in the same in the next gather.
       ScheduleCancelTask(collisions_start, collisions_end, false);
-      for (int i = ooobatch_.size() - 1; i >= 0; i--) {
-        FetchSingleNodeResult(&ooobatch_[i], GetOutOfOrderPath(i));
-        DoBackupUpdateSingleNode(ooobatch_[i], GetOutOfOrderPath(i));
+      for (int i = state_.ooobatch_.size() - 1; i >= 0; i--) {
+        FetchSingleNodeResult(&state_.ooobatch_[i], GetOutOfOrderPath(i));
+        DoBackupUpdateSingleNode(state_.ooobatch_[i], GetOutOfOrderPath(i));
         ++number_out_of_order_;
       }
-      ooobatch_.clear();
+      state_.ooobatch_.clear();
       cancel_task_.Wait(0);
-      collisions_.erase(collisions_.begin() + collisions_start,
-                        collisions_.begin() + collisions_end);
+      state_.collisions_.erase(state_.collisions_.begin() + collisions_start,
+                               state_.collisions_.begin() + collisions_end);
       collisions_end = collisions_start;
       collisions_left = collisions_left_.load(std::memory_order_relaxed);
     }
@@ -1927,7 +1956,7 @@ void SearchWorker::CancelCollisionsTask(int start, int end, bool stop) {
   }
   int total = 0;
   for (int i = start; i < end; i++) {
-    const auto& entry = collisions_[i];
+    const auto& entry = state_.collisions_[i];
     total += entry.multivisit;
     const auto& path = GetCollisionPath(i);
     for (auto it = ++(path.crbegin()); it != path.crend(); ++it) {
@@ -2417,34 +2446,34 @@ int GetEvalIndex(std::atomic<int>& eval_used, int size) {
 
 // Helpers to managege cached path allocations.
 const BackupPath& SearchWorker::GetMinibatchPath(int index) const {
-  return node_paths_[index];
+  return state_.node_paths_[index];
 }
 void SearchWorker::AssignMinibatchPath(int index, const BackupPath& path) {
-  AssignPath(node_paths_[index], path);
+  AssignPath(state_.node_paths_[index], path);
 }
 
 const BackupPath& SearchWorker::GetOutOfOrderPath(int index) const {
-  index += minibatch_.capacity();
-  return node_paths_[index];
+  index += state_.minibatch_.capacity();
+  return state_.node_paths_[index];
 }
 void SearchWorker::AssignOutOfOrderPath(int index, const BackupPath& path) {
-  index += minibatch_.capacity();
-  AssignPath(node_paths_[index], path);
+  index += state_.minibatch_.capacity();
+  AssignPath(state_.node_paths_[index], path);
 }
 
 const BackupPath& SearchWorker::GetCollisionPath(int index) const {
-  index += minibatch_.capacity() + ooobatch_.capacity();
-  return node_paths_[index];
+  index += state_.minibatch_.capacity() + state_.ooobatch_.capacity();
+  return state_.node_paths_[index];
 }
 void SearchWorker::AssignCollisionPath(int index, const BackupPath& path) {
-  index += minibatch_.capacity() + ooobatch_.capacity();
-  AssignPath(node_paths_[index], path);
+  index += state_.minibatch_.capacity() + state_.ooobatch_.capacity();
+  AssignPath(state_.node_paths_[index], path);
 }
 
 // Create a node collision to process.
 int SearchWorker::Collision(const BackupPath& path, int collision_count,
                             int max_limit) {
-  int i = collisions_.emplace_back(collision_count, max_limit);
+  int i = state_.collisions_.emplace_back(collision_count, max_limit);
   AssignCollisionPath(i, path);
   return i;
 }
@@ -2457,10 +2486,10 @@ void SearchWorker::Visit(const BackupPath& path,
     ExtendNode(picked_node, path, history);
   }
   if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder(path)) {
-    int i = ooobatch_.emplace_back(std::move(picked_node));
+    int i = state_.ooobatch_.emplace_back(std::move(picked_node));
     AssignOutOfOrderPath(i, path);
   } else {
-    int i = minibatch_.emplace_back(std::move(picked_node));
+    int i = state_.minibatch_.emplace_back(std::move(picked_node));
     AssignMinibatchPath(i, path);
   }
 }
@@ -2553,9 +2582,13 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node,
   } else {
     picked_node.tt_low_node = std::make_shared<LowNode>(legal_moves);
     picked_node.nn_queried = true;
-    picked_node.eval_index = GetEvalIndex(eval_used_, eval_results_.size());
-    assert(picked_node.eval_index < (int)eval_results_.size());
-    auto& eval = eval_results_[picked_node.eval_index];
+    picked_node.eval_index =
+        GetEvalIndex(eval_used_, state_.eval_results_.size());
+    assert(picked_node.eval_index < (int)state_.eval_results_.size());
+    auto& eval = state_.eval_results_[picked_node.eval_index];
+    if (eval.p.capacity() == 0) {
+      eval.p.reserve(60);
+    }
     eval.p.resize(legal_moves.size());
     picked_node.is_cache_hit =
         computation_->AddInput(
@@ -2578,7 +2611,7 @@ void SearchWorker::RunNNComputation() {
 void SearchWorker::FetchMinibatchResults() {
   // Populate NN/cached results, or terminal results, into nodes.
   int i = 0;
-  for (auto& node_to_process : minibatch_) {
+  for (auto& node_to_process : state_.minibatch_) {
     FetchSingleNodeResult(&node_to_process, GetMinibatchPath(i++));
   }
 }
@@ -2588,8 +2621,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   if (!node_to_process->nn_queried) return;
 
   assert(node_to_process->eval_index >= 0);
-  assert(node_to_process->eval_index < (int)eval_results_.size());
-  auto& eval = eval_results_[node_to_process->eval_index];
+  assert(node_to_process->eval_index < (int)state_.eval_results_.size());
+  auto& eval = state_.eval_results_[node_to_process->eval_index];
 
   auto wdl_rescale = [&]() {
     if (params_.GetWDLRescaleRatio() != 1.0f ||
@@ -2644,9 +2677,9 @@ void SearchWorker::DoBackupUpdate() {
     wake_other_workers_ = false;
   }
 
-  bool work_done = number_out_of_order_ > 0 || !minibatch_.empty();
+  bool work_done = number_out_of_order_ > 0 || !state_.minibatch_.empty();
   int i = 0;
-  for (const NodeToProcess& node_to_process : minibatch_) {
+  for (const NodeToProcess& node_to_process : state_.minibatch_) {
     DoBackupUpdateSingleNode(node_to_process, GetMinibatchPath(i++));
   }
   if (!work_done) return;
