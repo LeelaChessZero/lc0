@@ -684,6 +684,10 @@ struct TaskWorkspace {
   std::vector<std::unique_ptr<BackupPath>> full_path;
   std::vector<std::unique_ptr<PositionHistory>> h_buffer;
   std::vector<std::unique_ptr<PositionHistory>> history;
+
+  int go_count_ = 0;
+  int history_age_ = 0;
+
   TaskWorkspace() {
     // Reserve everything for a small number of recursions in a large tree.
     current_path.reserve(1024);
@@ -698,6 +702,14 @@ struct TaskWorkspace {
             std::span<const Position> in_history,
             const PositionHistory& played_history) {
     assert(path.size() == in_history.size() + 1);
+    if (go_count_ != history_age_) {
+      assert(history.empty());
+      auto played = played_history.GetPositions();
+      for (auto& history_ptr : h_buffer) {
+        history_ptr->Assign(played.begin(), played.end());
+      }
+      history_age_ = go_count_;
+    }
     if (h_buffer.empty()) {
       int expected_size =
           std::bit_ceil(played_history.GetLength() + in_history.size() + 64);
@@ -725,12 +737,8 @@ struct TaskWorkspace {
     return absl::Cleanup{[&] { Pop(); }};
   }
 
-  void StartANewSearch(const PositionHistory& played_history) {
-    assert(history.empty());
-    auto played = played_history.GetPositions();
-    for (auto& history_ptr : h_buffer) {
-      history_ptr->Assign(played.begin(), played.end());
-    }
+  void StartANewSearch() {
+    go_count_++;
   }
 
  private:
@@ -757,8 +765,7 @@ struct SearchWorkerCachedState {
 
 // Cached state between subsequent searches.
 struct SearchCachedState {
-  void StartANewSearch(int task_workers, int search_workers,
-                       const PositionHistory& played_history);
+  void StartANewSearch(int task_workers, int search_workers);
 
   std::vector<TaskWorkspace> task_workspaces_;
   TaskQueue task_queue_;

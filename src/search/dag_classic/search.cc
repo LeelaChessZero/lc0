@@ -674,12 +674,11 @@ void TaskQueue::PickTask::operator()(int tid) { DoTask(tid); }
 
 TaskQueue::PickTask::~PickTask() {}
 
-void SearchCachedState::StartANewSearch(int task_workers, int search_workers,
-                                        const PositionHistory& played_history) {
+void SearchCachedState::StartANewSearch(int task_workers, int search_workers) {
   task_queue_.StartANewSearch(task_workers);
   task_workspaces_.resize(task_workers + search_workers);
   for (auto& w : task_workspaces_) {
-    w.StartANewSearch(played_history);
+    w.StartANewSearch();
   }
 }
 
@@ -1446,7 +1445,7 @@ void Search::StartThreads(size_t how_many) {
       task_workers = std::min(std::thread::hardware_concurrency() - 1, 4U);
     }
   }
-  state_.StartANewSearch(task_workers, how_many, played_history_);
+  state_.StartANewSearch(task_workers, how_many);
   // Only one thread can do work until the root has been evaluated. Other
   // workers will wait until the first thread increases the thread_count_.
   total_workers_ = how_many;
