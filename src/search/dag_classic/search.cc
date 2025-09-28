@@ -2032,9 +2032,10 @@ void SearchWorker::CancelCollisionsTask(int start, int end, bool stop) {
       std::get<0>(*it)->CancelScoreUpdate(entry.multivisit);
     }
   }
-  // Account for canceled collisions.
-  AddCollisions(-total);
-  using namespace std::chrono_literals;
+  // Account for canceled collisions if not stopping.
+  if (!stop) {
+    AddCollisions(-total);
+  }
 }
 
 // Count tasks before submitting them to workers.
