@@ -2744,7 +2744,7 @@ void SearchWorker::DoBackupUpdate() {
     // Watchdog thread must be excluded.
     int total = search_->total_workers_;
     if (total != count && count != 0) {
-      while (count != 0 && !tc.compare_exchange_weak(
+      while (count > 0 && !tc.compare_exchange_weak(
                                count, total, std::memory_order_relaxed));
 #ifndef NO_STD_ATOMIC_WAIT
       search_->thread_count_.notify_all();
