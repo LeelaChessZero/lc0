@@ -3034,6 +3034,17 @@ void SearchWorker::UpdateCounters() {
   search_->PopulateCommonIterationStats(&iteration_stats_);
   search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
   search_->MaybeOutputInfo();
+  if (state_.minibatch_.empty() && number_out_of_order_ == 0) {
+    int tc = search_->thread_count_.fetch_sub(1, std::memory_order_relaxed) - 1;
+    if (tc <= 0) return;
+#ifndef NO_STD_ATOMIC_WAIT
+    search_->thread_count_.wait(tc, std::memory_order_relaxed);
+#else
+    Mutex::Lock lock(search_->fallback_threads_mutex_);
+    search_->fallback_threads_cond_.wait(
+        lock.get_raw(), [this]() { return tc != search_->thread_count_; });
+#endif
+  }
 }
 
 }  // namespace dag_classic
