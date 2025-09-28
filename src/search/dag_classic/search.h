@@ -48,6 +48,11 @@
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
+#if __cpp_lib_atomic_wait < 201907L
+#include <condition_variable>
+#define NO_STD_ATOMIC_WAIT 1
+#endif
+
 namespace lczero {
 namespace dag_classic {
 
@@ -328,11 +333,8 @@ class Search {
   Move final_pondermove_ GUARDED_BY(counters_mutex_);
   std::unique_ptr<classic::SearchStopper> stopper_ GUARDED_BY(counters_mutex_);
 
-  Mutex threads_mutex_;
-  std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
-#if NO_STD_ATOMIC_WAIT
-  std::condition_variable threads_cond_;
-#endif
+  // List of threads. Only accessed by main thread.
+  std::vector<std::thread> threads_;
 
   Node* root_node_;
   TranspositionTable* tt_;
@@ -369,6 +371,11 @@ class Search {
   std::atomic<int> pending_searchers_{0};
   std::atomic<int> backend_waiting_counter_{0};
   std::atomic<int> thread_count_{0};
+#if NO_STD_ATOMIC_WAIT
+  Mutex fallback_threads_mutex_;
+  std::condition_variable fallback_threads_cond_;
+#endif
+  int total_workers_ = 0;
 
   std::unique_ptr<UciResponder> uci_responder_;
   ContemptMode contempt_mode_;
@@ -443,12 +450,10 @@ class SearchWorker {
 #ifndef NO_STD_ATOMIC_WAIT
       search_->thread_count_.wait(1, std::memory_order_relaxed);
 #else
-      Mutex::Lock lock(threads_mutex_);
-      threads_cond_.wait(lock.get_raw(),
-                         [this]() { return 1 != search_->threads_; });
+      Mutex::Lock lock(search_->fallback_threads_mutex_);
+      search_->fallback_threads_cond_.wait(
+          lock.get_raw(), [this]() { return 1 != search_->thread_count_; });
 #endif
-    } else {
-      wake_other_workers_ = true;
     }
     try {
       // A very early stop may arrive before this point, so the test is at the
@@ -683,7 +688,6 @@ class SearchWorker {
   std::unique_ptr<BackendComputation> computation_;
   const SearchParams& params_;
   const bool moves_left_support_;
-  bool wake_other_workers_ = false;
   classic::IterationStats iteration_stats_;
   classic::StoppersHints latest_time_manager_hints_;
 

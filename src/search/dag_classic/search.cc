@@ -506,7 +506,6 @@ bool TaskQueue::IsTasksIdle() const {
 size_t TaskQueue::Size() const { return task_threads_.size(); }
 
 void TaskQueue::StartANewSearch(size_t task_workers) {
-
   int tasks = task_threads_.size();
   while (sleeping_threads_.load(std::memory_order_acquire) < tasks) {
     SpinloopPause();
@@ -1436,7 +1435,6 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 }
 
 void Search::StartThreads(size_t how_many) {
-  Mutex::Lock lock(threads_mutex_);
   if (how_many == 0 && threads_.size() == 0) {
     how_many = backend_attributes_.suggested_num_search_threads +
                !backend_attributes_.runs_on_cpu;
@@ -1453,6 +1451,7 @@ void Search::StartThreads(size_t how_many) {
   state_.StartANewSearch(task_workers, played_history_);
   // Only one thread can do work until the root has been evaluated. Other
   // workers will wait until the first thread increases the thread_count_.
+  total_workers_ = how_many;
   if (root_node_->GetN() > 0) {
     thread_count_.store(how_many, std::memory_order_relaxed);
   } else {
@@ -1603,8 +1602,8 @@ void Search::FireStopInternal() {
   thread_count_.notify_all();
 #else
   {
-    Mutex::Lock lock(threads_mutex_);
-    threads_cond_.notify_all();
+    Mutex::Lock lock(fallback_threads_mutex_);
+    fallback_threads_cond_.notify_all();
   }
 #endif
 }
@@ -1627,11 +1626,8 @@ void Search::Abort() {
 }
 
 void Search::Wait() {
-  for (auto& t : threads_) {
-    t.join();
-  }
-  Mutex::Lock lock(threads_mutex_);
   while (!threads_.empty()) {
+    threads_.back().join();
     threads_.pop_back();
   }
   LOGFILE << "Search threads cleaned.";
@@ -2712,24 +2708,23 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 void SearchWorker::DoBackupUpdate() {
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  if (wake_other_workers_) {
+  auto& tc = search_->thread_count_;
+  int count = tc.load(std::memory_order_relaxed);
+  if (count != search_->total_workers_) {
     // The second thread is waiting until we have evaluated the root node. We
     // need to wake it up to do work.
-    Mutex::Lock lock(search_->threads_mutex_);
-    auto& tc = search_->thread_count_;
-    int count = tc.load(std::memory_order_relaxed);
     // Watchdog thread must be excluded.
-    int total = search_->threads_.size() - 1;
+    int total = search_->total_workers_;
     if (total != count && count != 0) {
       while (count != 0 && !tc.compare_exchange_weak(
                                count, total, std::memory_order_relaxed));
 #ifndef NO_STD_ATOMIC_WAIT
       search_->thread_count_.notify_all();
 #else
-      search->threads_cond_.notify_all();
+      Mutex::Lock lock(search_->fallback_threads_mutex_);
+      search_->fallback_threads_cond_.notify_all();
 #endif
     }
-    wake_other_workers_ = false;
   }
 
   bool work_done = number_out_of_order_ > 0 || !state_.minibatch_.empty();
