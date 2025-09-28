@@ -206,7 +206,7 @@ class TaskQueue {
   void DeactivateTasks();
 
   // Make sure the state matches the latest user configuration.
-  void StartANewSearch(size_t task_workers, int search_workers);
+  void StartANewSearch(size_t task_workers);
 
  private:
   void ShutdownThreads();
@@ -443,30 +443,7 @@ class SearchWorker {
   ~SearchWorker();
 
   // Runs iterations while needed.
-  void RunBlocking() {
-    LOGFILE << "Started search thread.";
-    // Wait here until root node has been evaluated.
-    if (tid_ > 0) {
-#ifndef NO_STD_ATOMIC_WAIT
-      search_->thread_count_.wait(1, std::memory_order_relaxed);
-#else
-      Mutex::Lock lock(search_->fallback_threads_mutex_);
-      search_->fallback_threads_cond_.wait(
-          lock.get_raw(), [this]() { return 1 != search_->thread_count_; });
-#endif
-    }
-    try {
-      // A very early stop may arrive before this point, so the test is at the
-      // end to ensure at least one iteration runs before exiting.
-      do {
-        ExecuteOneIteration();
-      } while (search_->IsSearchActive());
-    } catch (std::exception& e) {
-      std::cerr << "Unhandled exception in worker thread: " << e.what()
-                << std::endl;
-      abort();
-    }
-  }
+  void RunBlocking();
 
   // Does one full iteration of MCTS search:
   // 1. Initialize internal structures.

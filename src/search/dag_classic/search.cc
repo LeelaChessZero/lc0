@@ -505,7 +505,7 @@ bool TaskQueue::IsTasksIdle() const {
 
 size_t TaskQueue::Size() const { return task_threads_.size(); }
 
-void TaskQueue::StartANewSearch(size_t task_workers, int search_workers) {
+void TaskQueue::StartANewSearch(size_t task_workers) {
   int tasks = task_threads_.size();
   while (sleeping_threads_.load(std::memory_order_acquire) < tasks) {
     SpinloopPause();
@@ -517,7 +517,7 @@ void TaskQueue::StartANewSearch(size_t task_workers, int search_workers) {
 
   exiting_ = false;
 
-  for (size_t i = search_workers; i < task_workers + search_workers; i++) {
+  for (size_t i = 0; i < task_workers; i++) {
     task_threads_.emplace_back([this, i]() {
       LOGFILE << "Task worker " << i << " starting.";
       this->RunTasks(i);
@@ -676,7 +676,7 @@ TaskQueue::PickTask::~PickTask() {}
 
 void SearchCachedState::StartANewSearch(int task_workers, int search_workers,
                                         const PositionHistory& played_history) {
-  task_queue_.StartANewSearch(task_workers, search_workers);
+  task_queue_.StartANewSearch(task_workers);
   task_workspaces_.resize(task_workers + search_workers);
   for (auto& w : task_workspaces_) {
     w.StartANewSearch(played_history);
@@ -1462,8 +1462,9 @@ void Search::StartThreads(size_t how_many) {
   state_.worker_states_.resize(how_many);
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
-    threads_.emplace_back([this, i]() {
-      SearchWorker worker(i, state_.worker_states_[i], this, params_);
+    threads_.emplace_back([this, i, task_workers]() {
+      SearchWorker worker(i + task_workers, state_.worker_states_[i], this,
+                          params_);
       worker.RunBlocking();
     });
   }
@@ -1691,7 +1692,8 @@ SearchWorker::SearchWorker(int tid, SearchWorkerCachedState& state,
       params_(params),
       moves_left_support_(search_->backend_attributes_.has_mlh),
       cancel_task_(*this) {
-  int total_workers = search_->state_.task_queue_.Size() + search_->total_workers_;
+  int total_workers =
+      search_->state_.task_queue_.Size() + search_->total_workers_;
   iteration_memory_managers_.resize(total_workers);
   state_.StartANewSearch(params_, target_minibatch_size_, max_out_of_order_);
 }
@@ -1728,6 +1730,31 @@ void SearchWorker::PickTaskCancelCollisions::Wait(int tid) const {
 void SearchWorker::PickTaskCancelCollisions::DoTask(int) {
   worker_.CancelCollisionsTask(start_idx_, end_idx_, stop_);
   completed_.store(true, std::memory_order_release);
+}
+
+void SearchWorker::RunBlocking() {
+  LOGFILE << "Started search thread.";
+  // Wait here until root node has been evaluated.
+  if (tid_ > (int)search_->state_.task_queue_.Size()) {
+#ifndef NO_STD_ATOMIC_WAIT
+    search_->thread_count_.wait(1, std::memory_order_relaxed);
+#else
+    Mutex::Lock lock(search_->fallback_threads_mutex_);
+    search_->fallback_threads_cond_.wait(
+        lock.get_raw(), [this]() { return 1 != search_->thread_count_; });
+#endif
+  }
+  try {
+    // A very early stop may arrive before this point, so the test is at the
+    // end to ensure at least one iteration runs before exiting.
+    do {
+      ExecuteOneIteration();
+    } while (search_->IsSearchActive());
+  } catch (std::exception& e) {
+    std::cerr << "Unhandled exception in worker thread: " << e.what()
+              << std::endl;
+    abort();
+  }
 }
 
 void SearchWorker::ExecuteOneIteration() {
