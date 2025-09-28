@@ -505,7 +505,7 @@ bool TaskQueue::IsTasksIdle() const {
 
 size_t TaskQueue::Size() const { return task_threads_.size(); }
 
-void TaskQueue::StartANewSearch(size_t task_workers) {
+void TaskQueue::StartANewSearch(size_t task_workers, int search_workers) {
   int tasks = task_threads_.size();
   while (sleeping_threads_.load(std::memory_order_acquire) < tasks) {
     SpinloopPause();
@@ -517,7 +517,7 @@ void TaskQueue::StartANewSearch(size_t task_workers) {
 
   exiting_ = false;
 
-  for (size_t i = 0; i < task_workers; i++) {
+  for (size_t i = search_workers; i < task_workers + search_workers; i++) {
     task_threads_.emplace_back([this, i]() {
       LOGFILE << "Task worker " << i << " starting.";
       this->RunTasks(i);
@@ -639,8 +639,6 @@ void TaskQueue::DeactivateTasks() {
 }
 
 void TaskQueue::RunTasks(int tid) {
-  // The first thread is SearchWorker. We increment our id to account for it.
-  tid++;
   while (true) {
     int nta = 0;
     int tc = 0;
@@ -676,10 +674,10 @@ void TaskQueue::PickTask::operator()(int tid) { DoTask(tid); }
 
 TaskQueue::PickTask::~PickTask() {}
 
-void SearchCachedState::StartANewSearch(int task_workers,
+void SearchCachedState::StartANewSearch(int task_workers, int search_workers,
                                         const PositionHistory& played_history) {
-  task_queue_.StartANewSearch(task_workers);
-  task_workspaces_.resize(task_workers + 1);
+  task_queue_.StartANewSearch(task_workers, search_workers);
+  task_workspaces_.resize(task_workers + search_workers);
   for (auto& w : task_workspaces_) {
     w.StartANewSearch(played_history);
   }
@@ -1448,7 +1446,7 @@ void Search::StartThreads(size_t how_many) {
       task_workers = std::min(std::thread::hardware_concurrency() - 1, 4U);
     }
   }
-  state_.StartANewSearch(task_workers, played_history_);
+  state_.StartANewSearch(task_workers, how_many, played_history_);
   // Only one thread can do work until the root has been evaluated. Other
   // workers will wait until the first thread increases the thread_count_.
   total_workers_ = how_many;
@@ -1465,8 +1463,8 @@ void Search::StartThreads(size_t how_many) {
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
     threads_.emplace_back([this, i]() {
-      SearchWorker worker(state_.worker_states_[i], this, params_);
-      worker.RunBlocking(i);
+      SearchWorker worker(i, state_.worker_states_[i], this, params_);
+      worker.RunBlocking();
     });
   }
   LOGFILE << "Search started. "
@@ -1678,10 +1676,11 @@ void SearchWorkerCachedState::StartANewSearch(const SearchParams& params,
   }
 }
 
-SearchWorker::SearchWorker(SearchWorkerCachedState& state, Search* search,
-                           const SearchParams& params)
+SearchWorker::SearchWorker(int tid, SearchWorkerCachedState& state,
+                           Search* search, const SearchParams& params)
     : search_(search),
       state_(state),
+      tid_(tid),
       target_minibatch_size_(
           params.GetMiniBatchSize()
               ? params.GetMiniBatchSize()
@@ -1692,15 +1691,15 @@ SearchWorker::SearchWorker(SearchWorkerCachedState& state, Search* search,
       params_(params),
       moves_left_support_(search_->backend_attributes_.has_mlh),
       cancel_task_(*this) {
-  int task_workers = search_->state_.task_queue_.Size() + 1;
-  iteration_memory_managers_.resize(task_workers);
+  int total_workers = search_->state_.task_queue_.Size() + search_->total_workers_;
+  iteration_memory_managers_.resize(total_workers);
   state_.StartANewSearch(params_, target_minibatch_size_, max_out_of_order_);
 }
 
 SearchWorker::~SearchWorker() {
   // Tasks must be completed before destructor. If a gather tasks is running,
   // it can increment task_count_ which would break the exit state.
-  cancel_task_.Wait(0);
+  cancel_task_.Wait(tid_);
   LOGFILE << "Search worker destroyed.";
 }
 
@@ -1719,8 +1718,9 @@ void SearchWorker::PickTaskCancelCollisions::Reset(int start_idx, int end_idx,
   completed_.store(false, std::memory_order_release);
 }
 
-void SearchWorker::PickTaskCancelCollisions::Wait(int) const {
+void SearchWorker::PickTaskCancelCollisions::Wait(int tid) const {
   while (!completed_.load(std::memory_order_acquire)) {
+    worker_.ProcessTask(tid);
     SpinloopPause();
   }
 }
@@ -1816,7 +1816,7 @@ void SearchWorker::ExecuteOneIteration() {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration(
     std::unique_ptr<BackendComputation> computation) {
-  cancel_task_.Wait(0);
+  cancel_task_.Wait(tid_);
   computation_ = std::move(computation);
   state_.minibatch_.clear();
   state_.ooobatch_.clear();
@@ -1869,7 +1869,7 @@ void SearchWorker::ScheduleCancelTask(int start, int end, bool stop) {
 
   // Schedule the work to a task thread.
   cancel_task_.Reset(start, end, stop);
-  search_->state_.task_queue_.SubmitTask(cancel_task_, 0);
+  search_->state_.task_queue_.SubmitTask(cancel_task_, tid_);
 }
 
 int SearchWorker::ExpandCollision(int index, int collisions_left) {
@@ -1943,7 +1943,7 @@ void SearchWorker::GatherMinibatch() {
 
     // Free iteration memory allocations.
     iteration_memory_age_++;
-    IterationMemoryManager::ResetLocalManager(*this, 0);
+    IterationMemoryManager::ResetLocalManager(*this, tid_);
 
     int new_start = state_.minibatch_.size();
     int collisions_start = state_.collisions_.size();
@@ -1971,7 +1971,7 @@ void SearchWorker::GatherMinibatch() {
         ++number_out_of_order_;
       }
       state_.ooobatch_.clear();
-      cancel_task_.Wait(0);
+      cancel_task_.Wait(tid_);
       state_.collisions_.erase(state_.collisions_.begin() + collisions_start,
                                state_.collisions_.begin() + collisions_end);
       collisions_end = collisions_start;
@@ -2008,6 +2008,7 @@ void SearchWorker::CancelCollisionsTask(int start, int end, bool stop) {
   }
   // Account for canceled collisions.
   AddCollisions(-total);
+  using namespace std::chrono_literals;
 }
 
 // Count tasks before submitting them to workers.
@@ -2032,7 +2033,7 @@ void SearchWorker::ProcessTask(int tid) {
 // need a shared counter to know when all of them are done.
 void SearchWorker::WaitForTasks() {
   while (outstanding_tasks_.load(std::memory_order_acquire)) {
-    ProcessTask(0);
+    ProcessTask(tid_);
     SpinloopPause();
   }
 }
@@ -2043,13 +2044,13 @@ TaskWorkspace& SearchWorker::GetWorkspace(int tid) {
 
 std::tuple<int, int> SearchWorker::PickNodesToExtend(int collision_limit)
     REQUIRES(search_->nodes_mutex_) {
-  TaskWorkspace& workspace = GetWorkspace(0);
+  TaskWorkspace& workspace = GetWorkspace(tid_);
   std::tuple<int, int> rv;
   {
     assert(workspace.history.empty() && workspace.full_path.empty());
     auto frame = workspace.Push({{std::make_tuple(search_->root_node_, 0, 0)}},
                                 {}, search_->played_history_);
-    rv = PickNodesToExtendTask<true>(collision_limit, 0,
+    rv = PickNodesToExtendTask<true>(collision_limit, tid_,
                                      search_->current_best_edge_);
   }
 

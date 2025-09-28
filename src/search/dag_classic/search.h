@@ -206,7 +206,7 @@ class TaskQueue {
   void DeactivateTasks();
 
   // Make sure the state matches the latest user configuration.
-  void StartANewSearch(size_t task_workers);
+  void StartANewSearch(size_t task_workers, int search_workers);
 
  private:
   void ShutdownThreads();
@@ -437,16 +437,16 @@ class SearchWorker {
  public:
   static constexpr int kMaxMovesInPosition = 218;
 
-  SearchWorker(SearchWorkerCachedState& state, Search* search,
+  SearchWorker(int tid, SearchWorkerCachedState& state, Search* search,
                const SearchParams& params);
 
   ~SearchWorker();
 
   // Runs iterations while needed.
-  void RunBlocking(size_t i) {
+  void RunBlocking() {
     LOGFILE << "Started search thread.";
     // Wait here until root node has been evaluated.
-    if (i > 0) {
+    if (tid_ > 0) {
 #ifndef NO_STD_ATOMIC_WAIT
       search_->thread_count_.wait(1, std::memory_order_relaxed);
 #else
@@ -677,6 +677,7 @@ class SearchWorker {
 
   Search* const search_;
   SearchWorkerCachedState& state_;
+  int tid_ = -1;
   int target_minibatch_size_;
   int max_out_of_order_;
   int number_out_of_order_ = 0;
@@ -779,7 +780,8 @@ struct SearchWorkerCachedState {
 
 // Cached state between subsequent searches.
 struct SearchCachedState {
-  void StartANewSearch(int task_workers, const PositionHistory& played_history);
+  void StartANewSearch(int task_workers, int search_workers,
+                       const PositionHistory& played_history);
 
   std::vector<TaskWorkspace> task_workspaces_;
   TaskQueue task_queue_;
