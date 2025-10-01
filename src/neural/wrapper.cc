@@ -36,7 +36,6 @@
 #include "utils/fastmath.h"
 
 namespace lczero {
-namespace {
 
 FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   if (history_fill == "fen_only") return FillEmptyHistory::FEN_ONLY;
@@ -45,22 +44,19 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
+namespace {
+
 class NetworkAsBackend : public Backend {
  public:
   NetworkAsBackend(std::unique_ptr<Network> network, const OptionsDict& options)
       : network_(std::move(network)),
+        attrs_(*network_),
         backend_opts_(
             options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
         weights_path_(
             options.Get<std::string>(SharedBackendParams::kWeightsId)) {
     UpdateConfiguration(options);
     const NetworkCapabilities& caps = network_->GetCapabilities();
-    attrs_.has_mlh = caps.has_mlh();
-    attrs_.has_wdl = caps.has_wdl();
-    attrs_.runs_on_cpu = network_->IsCpu();
-    attrs_.suggested_num_search_threads = network_->GetThreads();
-    attrs_.recommended_batch_size = network_->GetMiniBatchSize();
-    attrs_.maximum_batch_size = 1024;
     input_format_ = caps.input_format;
   }
 
@@ -191,5 +187,4 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
   network_options.CheckAllOptionsRead(name_);
   return std::make_unique<NetworkAsBackend>(std::move(network), options);
 }
-
 }  // namespace lczero

@@ -47,6 +47,11 @@ struct BackendAttributes {
   int suggested_num_search_threads;
   int recommended_batch_size;
   int maximum_batch_size;
+  int preferred_batch_step;
+
+  BackendAttributes() = default;
+  BackendAttributes(const Network& network);
+  BackendAttributes& operator+=(const BackendAttributes& other);
 };
 
 struct EvalResultPtr {

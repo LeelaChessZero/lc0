@@ -30,10 +30,13 @@
 #include <functional>
 #include <string>
 
+#include "neural/encoder.h"
 #include "neural/network.h"
 #include "neural/register.h"
 
 namespace lczero {
+
+FillEmptyHistory EncodeHistoryFill(std::string history_fill);
 
 class NetworkAsBackendFactory : public BackendFactory {
  public:
