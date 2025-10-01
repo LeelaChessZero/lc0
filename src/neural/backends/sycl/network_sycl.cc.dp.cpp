@@ -22,7 +22,6 @@
 #define DPCT_COMPAT_RT_VERSION 12020
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 #include <algorithm>
 #include <cassert>
 #include <functional>
