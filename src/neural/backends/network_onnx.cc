@@ -30,6 +30,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iterator>
+#include <list>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -58,12 +59,51 @@ namespace {
 
 enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
 
+static constexpr int kNumOutputPolicy = 1858;
+
+struct InputsOutputs {
+  InputsOutputs(int maxBatchSize, int value_head, int wdl_head, int policy_head,
+                int mlh_head, int data_size) {
+    int outputs_size =
+        std::max({value_head, wdl_head, policy_head, mlh_head}) + 1;
+    output_tensors_data_.resize(outputs_size);
+    output_tensors_step_.resize(outputs_size);
+    output_tensors_step_[policy_head] = kNumOutputPolicy;
+    output_tensors_data_[policy_head] =
+        malloc(maxBatchSize * kNumOutputPolicy * data_size);
+    if (wdl_head != -1) {
+      output_tensors_step_[wdl_head] = 3;
+      output_tensors_data_[wdl_head] = malloc(maxBatchSize * 3 * data_size);
+    }
+    if (value_head != -1) {
+      output_tensors_step_[value_head] = 1;
+      output_tensors_data_[value_head] = malloc(maxBatchSize * data_size);
+    }
+    if (mlh_head != -1) {
+      output_tensors_step_[mlh_head] = 1;
+      output_tensors_data_[mlh_head] = malloc(maxBatchSize * data_size);
+    }
+    input_tensor_data_ =
+        malloc(maxBatchSize * kInputPlanes * 8 * 8 * data_size);
+  }
+  ~InputsOutputs() {
+    free(input_tensor_data_);
+    for (void* ptr : output_tensors_data_) {
+      free(ptr);
+    }
+  }
+  void* input_tensor_data_;
+  std::vector<void*> output_tensors_data_;
+  std::vector<size_t> output_tensors_step_;
+};
+
 class OnnxNetwork;
 
 template <typename DataType>
 class OnnxComputation : public NetworkComputation {
  public:
   OnnxComputation(OnnxNetwork* network);
+  ~OnnxComputation();
   void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override { return raw_input_.size(); }
   void ComputeBlocking() override;
@@ -77,10 +117,8 @@ class OnnxComputation : public NetworkComputation {
 
   OnnxNetwork* network_;
   std::vector<InputPlanes> raw_input_;
-  std::vector<DataType> input_tensor_data_;
   std::vector<Ort::Value> output_tensors_;
-  std::vector<std::vector<DataType>> output_tensors_data_;
-  std::vector<size_t> output_tensors_step_;
+  std::unique_ptr<InputsOutputs> inputs_outputs_;
 };
 
 class OnnxNetwork : public Network {
@@ -108,6 +146,25 @@ class OnnxNetwork : public Network {
   Ort::SessionOptions GetOptions(int gpu, int threads, int batch_size,
                                  uint64_t hash);
 
+  std::unique_ptr<InputsOutputs> GetInputsOutputs() {
+    std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
+    if (free_inputs_outputs_.empty()) {
+      return std::make_unique<InputsOutputs>(max_batch_size_, value_head_,
+                                             wdl_head_, policy_head_, mlh_head_,
+                                             (fp16_ | bf16_) ? 2 : 4);
+    } else {
+      std::unique_ptr<InputsOutputs> resource =
+          std::move(free_inputs_outputs_.front());
+      free_inputs_outputs_.pop_front();
+      return resource;
+    }
+  }
+
+  void ReleaseInputsOutputs(std::unique_ptr<InputsOutputs> resource) {
+    std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
+    free_inputs_outputs_.push_back(std::move(resource));
+  }
+
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;
   int steps_;
@@ -134,31 +191,21 @@ class OnnxNetwork : public Network {
   // For conditional locking if running the DML/ROCM/TRT provider.
   OnnxProvider provider_;
   std::mutex lock_;
+
+ private:
+  std::mutex inputs_outputs_lock_;
+  std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 };
 
 template <typename DataType>
 OnnxComputation<DataType>::OnnxComputation(OnnxNetwork* network)
     : network_(network) {
-  output_tensors_data_.resize(network_->outputs_.size());
-  output_tensors_step_.resize(network_->outputs_.size());
-  output_tensors_step_[network_->policy_head_] = 1858;
-  output_tensors_data_[network_->policy_head_] =
-      std::vector<DataType>(1858 * network_->max_batch_size_);
-  if (network_->wdl_head_ != -1) {
-    output_tensors_step_[network_->wdl_head_] = 3;
-    output_tensors_data_[network_->wdl_head_] =
-        std::vector<DataType>(3 * network_->max_batch_size_);
-  }
-  if (network_->value_head_ != -1) {
-    output_tensors_step_[network_->value_head_] = 1;
-    output_tensors_data_[network_->value_head_] =
-        std::vector<DataType>(network_->max_batch_size_);
-  }
-  if (network_->mlh_head_ != -1) {
-    output_tensors_step_[network_->mlh_head_] = 1;
-    output_tensors_data_[network_->mlh_head_] =
-        std::vector<DataType>(network_->max_batch_size_);
-  }
+  inputs_outputs_ = network_->GetInputsOutputs();
+}
+
+template <typename DataType>
+OnnxComputation<DataType>::~OnnxComputation() {
+  network_->ReleaseInputsOutputs(std::move(inputs_outputs_));
 }
 
 template <typename DataType>
@@ -185,10 +232,12 @@ float AsFloat(Ort::BFloat16_t x) {
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
   if (network_->wdl_head_ != -1) {
-    const auto& data = output_tensors_data_[network_->wdl_head_];
+    DataType* data = static_cast<DataType*>(
+        inputs_outputs_->output_tensors_data_[network_->wdl_head_]);
     return AsFloat(data[sample * 3 + 0]) - AsFloat(data[sample * 3 + 2]);
   } else {
-    const auto& data = output_tensors_data_[network_->value_head_];
+    DataType* data = static_cast<DataType*>(
+        inputs_outputs_->output_tensors_data_[network_->value_head_]);
     return AsFloat(data[sample]);
   }
 }
@@ -196,20 +245,23 @@ float OnnxComputation<DataType>::GetQVal(int sample) const {
 template <typename DataType>
 float OnnxComputation<DataType>::GetDVal(int sample) const {
   if (network_->wdl_head_ == -1) return 0.0f;
-  const auto& data = output_tensors_data_[network_->wdl_head_];
+  DataType* data = static_cast<DataType*>(
+      inputs_outputs_->output_tensors_data_[network_->wdl_head_]);
   return AsFloat(data[sample * 3 + 1]);
 }
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetPVal(int sample, int move_id) const {
-  const auto& data = output_tensors_data_[network_->policy_head_];
-  return AsFloat(data[sample * 1858 + move_id]);
+  DataType* data = static_cast<DataType*>(
+      inputs_outputs_->output_tensors_data_[network_->policy_head_]);
+  return AsFloat(data[sample * kNumOutputPolicy + move_id]);
 }
 
 template <typename DataType>
 float OnnxComputation<DataType>::GetMVal(int sample) const {
   if (network_->mlh_head_ == -1) return 0.0f;
-  const auto& data = output_tensors_data_[network_->mlh_head_];
+  DataType* data = static_cast<DataType*>(
+      inputs_outputs_->output_tensors_data_[network_->mlh_head_]);
   return AsFloat(data[sample]);
 }
 
@@ -225,9 +277,9 @@ void AsDataType(float x, Ort::BFloat16_t* y) {
 
 template <typename DataType>
 Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
-  input_tensor_data_.clear();
-  input_tensor_data_.resize(batch_size * kInputPlanes * 8 * 8);
-  auto iter = input_tensor_data_.data();
+  std::memset(inputs_outputs_->input_tensor_data_, 0,
+              batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
+  DataType* iter = static_cast<DataType*>(inputs_outputs_->input_tensor_data_);
   int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
   for (int i = start; i < end; i++) {
     for (const auto& plane : raw_input_[i]) {
@@ -239,28 +291,24 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
       iter += 64;
     }
   }
-  for (int i = end; i < start + batch_size; i++) {
-    for (int j = 0; j < kInputPlanes * 64; j++) {
-      *iter++ = DataType();
-    }
-  }
-
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
   output_tensors_.clear();
-  for (size_t i = 0; i < output_tensors_step_.size(); i++) {
-    int size = output_tensors_step_[i];
+  for (size_t i = 0; i < inputs_outputs_->output_tensors_step_.size(); i++) {
+    int size = inputs_outputs_->output_tensors_step_[i];
     int64_t dims[] = {batch_size, size};
     output_tensors_.emplace_back(Ort::Value::CreateTensor<DataType>(
-        memory_info, output_tensors_data_[i].data() + start * size,
+        memory_info,
+        static_cast<DataType*>(inputs_outputs_->output_tensors_data_[i]) +
+            start * size,
         size * batch_size, dims, 2));
   }
 
   int64_t dims[] = {batch_size, kInputPlanes, 8, 8};
-  return Ort::Value::CreateTensor<DataType>(memory_info,
-                                            input_tensor_data_.data(),
-                                            input_tensor_data_.size(), dims, 4);
+  return Ort::Value::CreateTensor<DataType>(
+      memory_info, static_cast<DataType*>(inputs_outputs_->input_tensor_data_),
+      batch_size * kInputPlanes * 8 * 8, dims, 4);
 }
 
 template <typename DataType>
