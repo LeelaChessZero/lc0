@@ -319,7 +319,7 @@ class PgnReader {
     std::optional<Square> enpassant = std::nullopt;
     if (!board.en_passant().empty()) {
       auto sq = *board.en_passant().begin();
-      enpassant = Square(sq.file(), kRank6);
+      enpassant = Square(sq.file(), board.flipped() ? kRank3 : kRank6);
     }
     Square from(File::FromIdx(c1), Rank::FromIdx(r1));
     Square to(File::FromIdx(c2), Rank::FromIdx(r2));
