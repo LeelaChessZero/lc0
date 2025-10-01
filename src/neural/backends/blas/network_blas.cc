@@ -205,9 +205,9 @@ class BlasNetwork : public Network {
   bool attn_policy_;
   bool attn_body_;
   bool is_pe_dense_embedding_;
-  ActivationFunction default_activation_;
-  ActivationFunction smolgen_activation_;
-  ActivationFunction ffn_activation_;
+  ActivationFunction default_activation_ = ACTIVATION_NONE;
+  ActivationFunction smolgen_activation_ = ACTIVATION_NONE;
+  ActivationFunction ffn_activation_ = ACTIVATION_NONE;
   std::string policy_head_;
   std::string value_head_;
   std::mutex buffers_lock_;
