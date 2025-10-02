@@ -1101,9 +1101,15 @@ void Search::Abort() {
 
 void Search::Wait() {
   Mutex::Lock lock(threads_mutex_);
+  bool active_threads = !threads_.empty();
   while (!threads_.empty()) {
     threads_.back().join();
     threads_.pop_back();
+  }
+  if (active_threads) {
+    SharedMutex::Lock lock(nodes_mutex_);
+
+    assert(root_node_->ZeroNInFlight());
   }
   LOGFILE << "Search threads cleaned.";
 }
@@ -1121,11 +1127,6 @@ void SearchWorker::CancelCollisions() {
 Search::~Search() {
   Abort();
   Wait();
-  {
-    SharedMutex::Lock lock(nodes_mutex_);
-
-    assert(root_node_->ZeroNInFlight());
-  }
   LOGFILE << "Search destroyed.";
 }
 
