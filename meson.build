@@ -163,6 +163,7 @@ files += [
   'src/neural/backends/network_random.cc',
   'src/neural/backends/network_record.cc',
   'src/neural/backends/network_rr.cc',
+  'src/neural/backends/network_switch.cc',
   'src/neural/backends/network_trivial.cc',
   'src/neural/memcache.cc',
   'src/neural/network_legacy.cc',
