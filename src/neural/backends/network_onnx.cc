@@ -123,7 +123,7 @@ struct InputsOutputs {
               &output_tensors_data_device_[i], output_tensors_data_[i], 0));
         }
         memory_info_ =
-            Ort::MemoryInfo{"Cuda", OrtDeviceAllocator, 0, OrtMemTypeDefault};
+            Ort::MemoryInfo{"Cuda", OrtDeviceAllocator, gpu, OrtMemTypeDefault};
         break;
 #endif
       default:
