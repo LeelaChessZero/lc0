@@ -551,15 +551,30 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
       provider_(provider) {
   onnx_env_.DisableTelemetryEvents();
+
+  gpu_ = opts.GetOrDefault<int>("gpu", 0);
+
+#ifdef CUDART_VERSION
+  if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
+    cudaDeviceProp deviceProp = {};
+    if (!cudaGetDeviceProperties(&deviceProp, gpu_)) {
+      CERR << "GPU: " << deviceProp.name;
+      CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
+           << " Gb";
+      CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    }
+  }
+#endif
+
+  int threads =
+      opts.GetOrDefault<int>("threads", provider == OnnxProvider::CPU ? 1 : 0);
+
   batch_size_ =
       opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
   steps_ =
       opts.GetOrDefault<int>("steps", provider == OnnxProvider::DML ? 4 : 1);
   min_batch_size_ = opts.GetOrDefault<int>(
       "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
-  gpu_ = opts.GetOrDefault<int>("gpu", 0);
-  int threads =
-      opts.GetOrDefault<int>("threads", provider == OnnxProvider::CPU ? 1 : 0);
 
   // Sanity checks.
   if (batch_size_ <= 0) {
