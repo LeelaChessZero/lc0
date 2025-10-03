@@ -134,6 +134,7 @@ class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
               OnnxProvider provider, bool cpu_wdl);
+  ~OnnxNetwork();
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
@@ -195,6 +196,9 @@ class OnnxNetwork : public Network {
   // For conditional locking if running the DML/ROCM/TRT provider.
   OnnxProvider provider_;
   std::mutex lock_;
+  // For shared device addresses.
+  void* input_tensor_data_device_ = nullptr;
+  std::vector<void*> output_tensors_data_device_;
 
  private:
   std::mutex inputs_outputs_lock_;
@@ -234,19 +238,27 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
 #ifdef CUDART_VERSION
       ReportCUDAErrors(
           cudaHostAlloc(&input_tensor_data_,
-                        max_batch_size * kInputPlanes * 8 * 8 * data_size,
-                        cudaHostAllocMapped));
+                        max_batch_size * kInputPlanes * 8 * 8 * data_size, 0));
       for (int i = 0; i < outputs_size; i++) {
-        ReportCUDAErrors(
-            cudaHostAlloc(&output_tensors_data_[i],
-                          max_batch_size * output_tensors_step_[i] * data_size,
-                          cudaHostAllocMapped));
+        ReportCUDAErrors(cudaHostAlloc(
+            &output_tensors_data_[i],
+            max_batch_size * output_tensors_step_[i] * data_size, 0));
       }
-      ReportCUDAErrors(cudaHostGetDevicePointer(&input_tensor_data_device_,
-                                                input_tensor_data_, 0));
+      if (network->input_tensor_data_device_ == nullptr) {
+        network->output_tensors_data_device_.resize(outputs_size);
+        ReportCUDAErrors(
+            cudaMalloc(&network->input_tensor_data_device_,
+                       max_batch_size * kInputPlanes * 8 * 8 * data_size));
+        for (int i = 0; i < outputs_size; i++) {
+          ReportCUDAErrors(
+              cudaMalloc(&network->output_tensors_data_device_[i],
+                         max_batch_size * output_tensors_step_[i] * data_size));
+        }
+      }
+      input_tensor_data_device_ = network->input_tensor_data_device_;
       for (int i = 0; i < outputs_size; i++) {
-        ReportCUDAErrors(cudaHostGetDevicePointer(
-            &output_tensors_data_device_[i], output_tensors_data_[i], 0));
+        output_tensors_data_device_[i] =
+            network->output_tensors_data_device_[i];
       }
       memory_info_ = Ort::MemoryInfo{"Cuda", OrtDeviceAllocator, network->gpu_,
                                      OrtMemTypeDefault};
@@ -256,7 +268,7 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
       input_tensor_data_ =
           malloc(max_batch_size * kInputPlanes * 8 * 8 * data_size);
       for (int i = 0; i < outputs_size; i++) {
-        output_tensors_data_[policy_head] =
+        output_tensors_data_[i] =
             malloc(max_batch_size * output_tensors_step_[i] * data_size);
       }
       input_tensor_data_device_ = input_tensor_data_;
@@ -266,6 +278,19 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
       memory_info_ =
           Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
   }
+}
+
+OnnxNetwork::~OnnxNetwork() {
+#ifdef CUDART_VERSION
+  if (provider_ == OnnxProvider::TRT || provider_ == OnnxProvider::CUDA) {
+    if (input_tensor_data_device_ != nullptr) {
+      ReportCUDAErrors(cudaFree(input_tensor_data_device_));
+      for (void* ptr : output_tensors_data_device_) {
+        ReportCUDAErrors(cudaFree(ptr));
+      }
+    }
+  }
+#endif
 }
 
 template <typename DataType>
@@ -368,7 +393,7 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
         inputs_outputs_->memory_info_,
         static_cast<DataType*>(
             inputs_outputs_->output_tensors_data_device_[i]) +
-            start * size,
+            (network_->input_tensor_data_device_ == nullptr ? start : 0) * size,
         size * batch_size, dims, 2));
   }
 
@@ -408,7 +433,33 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         network_->provider_ == OnnxProvider::TRT) {
       network_->lock_.lock();
     }
+#ifdef CUDART_VERSION
+    if (network_->provider_ == OnnxProvider::TRT ||
+        network_->provider_ == OnnxProvider::CUDA) {
+      ReportCUDAErrors(
+          cudaMemcpyAsync(inputs_outputs_->input_tensor_data_device_,
+                          inputs_outputs_->input_tensor_data_,
+                          batch * kInputPlanes * 8 * 8 * sizeof(DataType),
+                          cudaMemcpyHostToDevice, 0));
+      ReportCUDAErrors(cudaDeviceSynchronize());
+    }
+#endif
     network_->session_[step - 1].Run({}, binding);
+#ifdef CUDART_VERSION
+    if (network_->provider_ == OnnxProvider::TRT ||
+        network_->provider_ == OnnxProvider::CUDA) {
+      for (size_t j = 0; j < inputs_outputs_->output_tensors_step_.size();
+           j++) {
+        ReportCUDAErrors(cudaMemcpyAsync(
+            static_cast<DataType*>(inputs_outputs_->output_tensors_data_[j]) +
+                i * inputs_outputs_->output_tensors_step_[j] * sizeof(DataType),
+            inputs_outputs_->output_tensors_data_device_[j],
+            batch * inputs_outputs_->output_tensors_step_[j] * sizeof(DataType),
+            cudaMemcpyDeviceToHost, 0));
+      }
+      ReportCUDAErrors(cudaDeviceSynchronize());
+    }
+#endif
     binding.SynchronizeOutputs();
     if (network_->provider_ == OnnxProvider::DML ||
         network_->provider_ == OnnxProvider::ROCM ||
