@@ -63,6 +63,8 @@ namespace {
 
 enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
 
+class OnnxNetwork;
+
 static constexpr int kNumOutputPolicy = 1858;
 
 #ifdef CUDART_VERSION
@@ -77,84 +79,7 @@ void CudaError(cudaError_t status, const char* file, int line) {
 #endif
 
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, int value_head, int wdl_head, int policy_head,
-                int mlh_head, int data_size, OnnxProvider provider,
-                [[maybe_unused]] int gpu)
-      : provider_(provider) {
-    int outputs_size =
-        std::max({value_head, wdl_head, policy_head, mlh_head}) + 1;
-    output_tensors_data_.resize(outputs_size);
-    output_tensors_data_device_.resize(outputs_size);
-    output_tensors_step_.resize(outputs_size);
-    if (wdl_head != -1) {
-      wdl_output_data_.resize(3 * maxBatchSize);
-    }
-    switch (provider) {
-      case OnnxProvider::CUDA:
-      case OnnxProvider::TRT:
-#ifdef CUDART_VERSION
-        output_tensors_step_[policy_head] = kNumOutputPolicy;
-        ReportCUDAErrors(cudaHostAlloc(
-            &output_tensors_data_[policy_head],
-            maxBatchSize * kNumOutputPolicy * data_size, cudaHostAllocMapped));
-        if (wdl_head != -1) {
-          output_tensors_step_[wdl_head] = 3;
-          ReportCUDAErrors(cudaHostAlloc(&output_tensors_data_[wdl_head],
-                                         maxBatchSize * 3 * data_size,
-                                         cudaHostAllocMapped));
-        }
-        if (value_head != -1) {
-          output_tensors_step_[value_head] = 1;
-          ReportCUDAErrors(cudaHostAlloc(&output_tensors_data_[value_head],
-                                         maxBatchSize * data_size,
-                                         cudaHostAllocMapped));
-        }
-        if (mlh_head != -1) {
-          output_tensors_step_[mlh_head] = 1;
-          ReportCUDAErrors(cudaHostAlloc(&output_tensors_data_[mlh_head],
-                                         maxBatchSize * data_size,
-                                         cudaHostAllocMapped));
-        }
-        ReportCUDAErrors(
-            cudaHostAlloc(&input_tensor_data_,
-                          maxBatchSize * kInputPlanes * 8 * 8 * data_size,
-                          cudaHostAllocMapped));
-        ReportCUDAErrors(cudaHostGetDevicePointer(&input_tensor_data_device_,
-                                                  input_tensor_data_, 0));
-        for (int i = 0; i < outputs_size; i++) {
-          ReportCUDAErrors(cudaHostGetDevicePointer(
-              &output_tensors_data_device_[i], output_tensors_data_[i], 0));
-        }
-        memory_info_ =
-            Ort::MemoryInfo{"Cuda", OrtDeviceAllocator, gpu, OrtMemTypeDefault};
-        break;
-#endif
-      default:
-        output_tensors_step_[policy_head] = kNumOutputPolicy;
-        output_tensors_data_[policy_head] =
-            malloc(maxBatchSize * kNumOutputPolicy * data_size);
-        if (wdl_head != -1) {
-          output_tensors_step_[wdl_head] = 3;
-          output_tensors_data_[wdl_head] = malloc(maxBatchSize * 3 * data_size);
-        }
-        if (value_head != -1) {
-          output_tensors_step_[value_head] = 1;
-          output_tensors_data_[value_head] = malloc(maxBatchSize * data_size);
-        }
-        if (mlh_head != -1) {
-          output_tensors_step_[mlh_head] = 1;
-          output_tensors_data_[mlh_head] = malloc(maxBatchSize * data_size);
-        }
-        input_tensor_data_ =
-            malloc(maxBatchSize * kInputPlanes * 8 * 8 * data_size);
-        input_tensor_data_device_ = input_tensor_data_;
-        for (int i = 0; i < outputs_size; i++) {
-          output_tensors_data_device_[i] = output_tensors_data_[i];
-        }
-        memory_info_ =
-            Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    }
-  }
+  InputsOutputs(OnnxNetwork* network);
   ~InputsOutputs() {
     switch (provider_) {
       case OnnxProvider::CUDA:
@@ -182,8 +107,6 @@ struct InputsOutputs {
   std::vector<float> wdl_output_data_;
   Ort::MemoryInfo memory_info_{nullptr};
 };
-
-class OnnxNetwork;
 
 template <typename DataType>
 class OnnxComputation : public NetworkComputation {
@@ -234,9 +157,7 @@ class OnnxNetwork : public Network {
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(
-          max_batch_size_, value_head_, wdl_head_, policy_head_, mlh_head_,
-          (fp16_ | bf16_) ? 2 : 4, provider_, gpu_);
+      return std::make_unique<InputsOutputs>(this);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -279,6 +200,89 @@ class OnnxNetwork : public Network {
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 };
+
+InputsOutputs::InputsOutputs(OnnxNetwork* network)
+    : provider_(network->provider_) {
+  int max_batch_size = network->max_batch_size_;
+  int value_head = network->value_head_;
+  int wdl_head = network->wdl_head_;
+  int policy_head = network->policy_head_;
+  int mlh_head = network->mlh_head_;
+  int data_size = (network->fp16_ | network->bf16_) ? 2 : 4;
+  int outputs_size =
+      std::max({value_head, wdl_head, policy_head, mlh_head}) + 1;
+  output_tensors_data_.resize(outputs_size);
+  output_tensors_data_device_.resize(outputs_size);
+  output_tensors_step_.resize(outputs_size);
+  if (wdl_head != -1) {
+    wdl_output_data_.resize(3 * max_batch_size);
+  }
+  switch (provider_) {
+    case OnnxProvider::CUDA:
+    case OnnxProvider::TRT:
+#ifdef CUDART_VERSION
+      output_tensors_step_[policy_head] = kNumOutputPolicy;
+      ReportCUDAErrors(cudaHostAlloc(
+          &output_tensors_data_[policy_head],
+          max_batch_size * kNumOutputPolicy * data_size, cudaHostAllocMapped));
+      if (wdl_head != -1) {
+        output_tensors_step_[wdl_head] = 3;
+        ReportCUDAErrors(cudaHostAlloc(&output_tensors_data_[wdl_head],
+                                       max_batch_size * 3 * data_size,
+                                       cudaHostAllocMapped));
+      }
+      if (value_head != -1) {
+        output_tensors_step_[value_head] = 1;
+        ReportCUDAErrors(cudaHostAlloc(&output_tensors_data_[value_head],
+                                       max_batch_size * data_size,
+                                       cudaHostAllocMapped));
+      }
+      if (mlh_head != -1) {
+        output_tensors_step_[mlh_head] = 1;
+        ReportCUDAErrors(cudaHostAlloc(&output_tensors_data_[mlh_head],
+                                       max_batch_size * data_size,
+                                       cudaHostAllocMapped));
+      }
+      ReportCUDAErrors(
+          cudaHostAlloc(&input_tensor_data_,
+                        max_batch_size * kInputPlanes * 8 * 8 * data_size,
+                        cudaHostAllocMapped));
+      ReportCUDAErrors(cudaHostGetDevicePointer(&input_tensor_data_device_,
+                                                input_tensor_data_, 0));
+      for (int i = 0; i < outputs_size; i++) {
+        ReportCUDAErrors(cudaHostGetDevicePointer(
+            &output_tensors_data_device_[i], output_tensors_data_[i], 0));
+      }
+      memory_info_ = Ort::MemoryInfo{"Cuda", OrtDeviceAllocator, network->gpu_,
+                                     OrtMemTypeDefault};
+      break;
+#endif
+    default:
+      output_tensors_step_[policy_head] = kNumOutputPolicy;
+      output_tensors_data_[policy_head] =
+          malloc(max_batch_size * kNumOutputPolicy * data_size);
+      if (wdl_head != -1) {
+        output_tensors_step_[wdl_head] = 3;
+        output_tensors_data_[wdl_head] = malloc(max_batch_size * 3 * data_size);
+      }
+      if (value_head != -1) {
+        output_tensors_step_[value_head] = 1;
+        output_tensors_data_[value_head] = malloc(max_batch_size * data_size);
+      }
+      if (mlh_head != -1) {
+        output_tensors_step_[mlh_head] = 1;
+        output_tensors_data_[mlh_head] = malloc(max_batch_size * data_size);
+      }
+      input_tensor_data_ =
+          malloc(max_batch_size * kInputPlanes * 8 * 8 * data_size);
+      input_tensor_data_device_ = input_tensor_data_;
+      for (int i = 0; i < outputs_size; i++) {
+        output_tensors_data_device_[i] = output_tensors_data_[i];
+      }
+      memory_info_ =
+          Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  }
+}
 
 template <typename DataType>
 OnnxComputation<DataType>::OnnxComputation(OnnxNetwork* network)
