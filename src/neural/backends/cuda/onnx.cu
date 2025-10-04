@@ -34,16 +34,16 @@ namespace lczero {
 namespace cudnn_backend {
 
 template <unsigned bits_per_thread, typename DataType>
-__global__ void expandPlanes_kernel(DataType* output, const InputPlane* input,
-                                    unsigned n) {
+__global__ void expandPlanes_kernel(DataType* output, const uint64_t* masks,
+                                    const DataType* values, unsigned n) {
   unsigned index = threadIdx.x + blockDim.x * blockIdx.x;
   index *= bits_per_thread;
   unsigned planeIndex = index >> 6;
   if (planeIndex >= n) return;
 
-  uint64_t mask = input[planeIndex].mask;
+  uint64_t mask = masks[planeIndex];
   unsigned sqIndex = index & 0x3F;
-  DataType value = static_cast<DataType>(input[planeIndex].value);
+  DataType value = static_cast<DataType>(values[planeIndex]);
   DataType op[bits_per_thread] = {};
   mask >>= sqIndex;
   for (unsigned i = 0; i < bits_per_thread; i++) {
@@ -58,26 +58,29 @@ __global__ void expandPlanes_kernel(DataType* output, const InputPlane* input,
 }
 
 template <typename DataType>
-void expandPlanesOnnx(DataType* output, const InputPlane* input, unsigned n,
+void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
                       cudaStream_t stream) {
   constexpr unsigned bits_per_thread = 2;
   int threads = n * 8 * 8 / bits_per_thread;
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);
 
+  const uint64_t* masks = static_cast<const uint64_t*>(input);
+  const DataType* values = reinterpret_cast<const DataType*>(masks + n);
+
   expandPlanes_kernel<bits_per_thread>
-      <<<blocks, blockSize, 0, stream>>>(output, input, n);
+      <<<blocks, blockSize, 0, stream>>>(output, masks, values, n);
 
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template void expandPlanesOnnx<half>(half* output, const InputPlane* input,
+template void expandPlanesOnnx<half>(half* output, const void* input,
                                      unsigned n, cudaStream_t stream);
-template void expandPlanesOnnx<float>(float* output, const InputPlane* input,
+template void expandPlanesOnnx<float>(float* output, const void* input,
                                       unsigned n, cudaStream_t stream);
 template void expandPlanesOnnx<__nv_bfloat16>(__nv_bfloat16* output,
-                                              const InputPlane* input,
-                                              unsigned n, cudaStream_t stream);
+                                              const void* input, unsigned n,
+                                              cudaStream_t stream);
 
 }  // namespace cudnn_backend
 }  // namespace lczero
