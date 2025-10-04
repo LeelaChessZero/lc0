@@ -518,8 +518,13 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     }
     i += batch;
   }
-  ReportCUDAErrors(
-      cudaEventSynchronize(inputs_outputs_->outputs_download_event_));
+#ifdef CUDART_VERSION
+  if (network_->provider_ == OnnxProvider::TRT ||
+      network_->provider_ == OnnxProvider::CUDA) {
+    ReportCUDAErrors(
+        cudaEventSynchronize(inputs_outputs_->outputs_download_event_));
+  }
+#endif
 }
 
 Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
