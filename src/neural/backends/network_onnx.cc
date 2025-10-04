@@ -436,7 +436,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 #ifdef CUDART_VERSION
     if (network_->provider_ == OnnxProvider::TRT ||
         network_->provider_ == OnnxProvider::CUDA) {
-      ReportCUDAErrors(cudaEventSynchronize(inputs_outputs_->inputs_uploaded_event_));
+      ReportCUDAErrors(
+          cudaEventSynchronize(inputs_outputs_->inputs_uploaded_event_));
     }
 #endif
 
@@ -470,7 +471,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
                                        network_->upload_stream_));
       ReportCUDAErrors(cudaStreamWaitEvent(
           network_->compute_stream_, inputs_outputs_->inputs_uploaded_event_));
-      // Simulate GPU expandPlanes_kernel 
+      // Simulate GPU expandPlanes_kernel. CPU did expanding for us.
       ReportCUDAErrors(
           cudaMemcpyAsync(inputs_outputs_->input_tensor_data_device_,
                           inputs_outputs_->input_tensor_upload_device_,
@@ -478,6 +479,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
                           cudaMemcpyDeviceToDevice, network_->upload_stream_));
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_processed_event_,
                                        network_->upload_stream_));
+      ReportCUDAErrors(cudaStreamWaitEvent(
+          network_->compute_stream_, inputs_outputs_->outputs_download_event_));
     } else {
       binding.SynchronizeInputs();
     }
