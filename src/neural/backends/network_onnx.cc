@@ -452,7 +452,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
            j++) {
         ReportCUDAErrors(cudaMemcpyAsync(
             static_cast<DataType*>(inputs_outputs_->output_tensors_data_[j]) +
-                i * inputs_outputs_->output_tensors_step_[j] * sizeof(DataType),
+                i * inputs_outputs_->output_tensors_step_[j],
             inputs_outputs_->output_tensors_data_device_[j],
             batch * inputs_outputs_->output_tensors_step_[j] * sizeof(DataType),
             cudaMemcpyDeviceToHost, 0));
