@@ -45,6 +45,10 @@
 #include "cuda_runtime.h"
 #endif
 
+#ifdef CUDART_VERSION
+#include "neural/backends/cuda/onnx_kernels.h"
+#endif
+
 #include "cpu_provider_factory.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
@@ -124,12 +128,12 @@ struct InputsOutputs {
 };
 
 template <typename DataType>
-class OnnxComputation : public NetworkComputation {
+class OnnxComputation final : public NetworkComputation {
  public:
   OnnxComputation(OnnxNetwork* network);
   ~OnnxComputation();
   void AddInput(InputPlanes&& input) override;
-  int GetBatchSize() const override { return raw_input_.size(); }
+  int GetBatchSize() const override;
   void ComputeBlocking() override;
   float GetQVal(int sample) const override;
   float GetDVal(int sample) const override;
@@ -141,11 +145,14 @@ class OnnxComputation : public NetworkComputation {
 
   OnnxNetwork* network_;
   std::vector<InputPlanes> raw_input_;
+#if CUDART_VERSION
+  size_t input_size_ = 0;
+#endif
   std::vector<Ort::Value> output_tensors_;
   std::unique_ptr<InputsOutputs> inputs_outputs_;
 };
 
-class OnnxNetwork : public Network {
+class OnnxNetwork final : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
               OnnxProvider provider);
@@ -260,7 +267,7 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
           cudaEventCreate(&outputs_download_event_, cudaEventDisableTiming));
       ReportCUDAErrors(
           cudaHostAlloc(&input_tensor_data_,
-                        max_batch_size * kInputPlanes * 8 * 8 * data_size, 0));
+                        max_batch_size * kInputPlanes * sizeof(InputPlane), 0));
       for (int i = 0; i < outputs_size; i++) {
         ReportCUDAErrors(cudaHostAlloc(
             &output_tensors_data_[i],
@@ -270,7 +277,7 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
       output_tensors_data_device_.resize(outputs_size);
       ReportCUDAErrors(
           cudaMalloc(&input_tensor_upload_device_,
-                     max_batch_size * kInputPlanes * 8 * 8 * data_size));
+                     max_batch_size * kInputPlanes * sizeof(InputPlane)));
       ReportCUDAErrors(
           cudaMalloc(&input_tensor_data_device_,
                      max_batch_size * kInputPlanes * 8 * 8 * data_size));
@@ -319,11 +326,36 @@ OnnxComputation<DataType>::~OnnxComputation() {
 
 template <typename DataType>
 void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
+#if CUDART_VERSION
+  if (network_->provider_ == OnnxProvider::CUDA ||
+      network_->provider_ == OnnxProvider::TRT) {
+    assert(input.size() == kInputPlanes);
+    std::copy(input.begin(), input.end(),
+              static_cast<InputPlane*>(inputs_outputs_->input_tensor_data_) +
+                  input_size_ * kInputPlanes);
+    input_size_++;
+    if (input_size_ > network_->max_batch_size_) {
+      throw Exception("NN input exceeds max batch size of " +
+                      std::to_string(network_->max_batch_size_) + ".");
+    }
+    return;
+  }
+#endif
   raw_input_.emplace_back(input);
   if (raw_input_.size() > network_->max_batch_size_) {
     throw Exception("NN input exceeds max batch size of " +
                     std::to_string(network_->max_batch_size_) + ".");
   }
+}
+template <typename DataType>
+int OnnxComputation<DataType>::GetBatchSize() const {
+#if CUDART_VERSION
+  if (network_->provider_ == OnnxProvider::CUDA ||
+      network_->provider_ == OnnxProvider::TRT) {
+    return input_size_;
+  }
+#endif
+  return raw_input_.size();
 }
 
 float AsFloat(float x) { return x; }
@@ -386,18 +418,25 @@ void AsDataType(float x, Ort::BFloat16_t* y) {
 
 template <typename DataType>
 Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
-  std::memset(inputs_outputs_->input_tensor_data_, 0,
-              batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
-  DataType* iter = static_cast<DataType*>(inputs_outputs_->input_tensor_data_);
-  int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
-  for (int i = start; i < end; i++) {
-    for (const auto& plane : raw_input_[i]) {
-      DataType value;
-      AsDataType(plane.value, &value);
-      for (auto bit : IterateBits(plane.mask)) {
-        *(iter + bit) = value;
+#if CUDART_VERSION
+  if (network_->provider_ != OnnxProvider::CUDA &&
+      network_->provider_ != OnnxProvider::TRT)
+#endif
+  {
+    std::memset(inputs_outputs_->input_tensor_data_, 0,
+                batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
+    DataType* iter =
+        static_cast<DataType*>(inputs_outputs_->input_tensor_data_);
+    int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
+    for (int i = start; i < end; i++) {
+      for (const auto& plane : raw_input_[i]) {
+        DataType value;
+        AsDataType(plane.value, &value);
+        for (auto bit : IterateBits(plane.mask)) {
+          *(iter + bit) = value;
+        }
+        iter += 64;
       }
-      iter += 64;
     }
   }
 
@@ -426,11 +465,11 @@ template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
-    batch_size = std::max(static_cast<int>(raw_input_.size()),
-                          network_->min_batch_size_);
+    batch_size =
+        std::max(static_cast<int>(GetBatchSize()), network_->min_batch_size_);
   }
-  for (size_t i = 0; i < raw_input_.size();) {
-    int step = (raw_input_.size() - i + batch_size - 1) / batch_size;
+  for (size_t i = 0; i < (size_t)GetBatchSize();) {
+    int step = (GetBatchSize() - i + batch_size - 1) / batch_size;
     if (step > network_->steps_) step = network_->steps_;
     int batch = batch_size * step;
 #ifdef CUDART_VERSION
@@ -465,18 +504,36 @@ void OnnxComputation<DataType>::ComputeBlocking() {
       ReportCUDAErrors(
           cudaMemcpyAsync(inputs_outputs_->input_tensor_upload_device_,
                           inputs_outputs_->input_tensor_data_,
-                          batch * kInputPlanes * 8 * 8 * sizeof(DataType),
+                          batch * kInputPlanes * sizeof(InputPlane),
                           cudaMemcpyHostToDevice, network_->upload_stream_));
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_uploaded_event_,
                                        network_->upload_stream_));
       ReportCUDAErrors(cudaStreamWaitEvent(
           network_->compute_stream_, inputs_outputs_->inputs_uploaded_event_));
-      // Simulate GPU expandPlanes_kernel. CPU did expanding for us.
-      ReportCUDAErrors(
-          cudaMemcpyAsync(inputs_outputs_->input_tensor_data_device_,
-                          inputs_outputs_->input_tensor_upload_device_,
-                          batch * kInputPlanes * 8 * 8 * sizeof(DataType),
-                          cudaMemcpyDeviceToDevice, network_->upload_stream_));
+      using InputPlane = cudnn_backend::InputPlane;
+      if (network_->fp16_) {
+        half* dst =
+            reinterpret_cast<half*>(inputs_outputs_->input_tensor_data_device_);
+        const InputPlane* src = static_cast<const InputPlane*>(
+            inputs_outputs_->input_tensor_upload_device_);
+        cudnn_backend::expandPlanesOnnx(dst, src, batch * kInputPlanes,
+                                        network_->compute_stream_);
+      } else if (network_->bf16_) {
+        __nv_bfloat16* dst =
+            reinterpret_cast<__nv_bfloat16*>(inputs_outputs_->input_tensor_data_device_);
+        const InputPlane* src = static_cast<const InputPlane*>(
+            inputs_outputs_->input_tensor_upload_device_);
+        cudnn_backend::expandPlanesOnnx(dst, src, batch * kInputPlanes,
+                                        network_->compute_stream_);
+      } else {
+        float* dst = reinterpret_cast<float*>(
+            inputs_outputs_->input_tensor_data_device_);
+        const InputPlane* src = static_cast<const InputPlane*>(
+            inputs_outputs_->input_tensor_upload_device_);
+        cudnn_backend::expandPlanesOnnx(dst, src, batch * kInputPlanes,
+                                        network_->compute_stream_);
+      }
+
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_processed_event_,
                                        network_->upload_stream_));
       ReportCUDAErrors(cudaStreamWaitEvent(

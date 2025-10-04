@@ -603,6 +603,11 @@ if get_option('build_backends')
           includes += include_directories(d, is_system: true)
         endif
       endforeach
+      files += custom_target('cuda onnx code',
+        input : 'src/neural/backends/cuda/onnx.cu',
+        output : outputname,
+        command : [nvcc, nvcc_extra_args, cuda_arguments]
+        )
     endif
     has_backends = true
   endif
