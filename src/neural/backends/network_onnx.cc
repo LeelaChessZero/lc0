@@ -636,9 +636,6 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       // Looks like we need I/O binding to enable this.
 #if CUDART_VERSION
       trt_options["has_user_compute_stream"] = "1";
-      std::ostringstream ss;
-      ss << compute_stream_;
-      trt_options["user_compute_stream"] = ss.str().c_str();
 #endif
       if (batch_size < 0) {
         trt_options["trt_profile_min_shapes"] =
@@ -669,6 +666,10 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt_options_v2));
       Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(
           trt_options_v2, keys.data(), values.data(), keys.size()));
+#if CUDART_VERSION
+      Ort::ThrowOnError(api.UpdateTensorRTProviderOptionsWithValue(
+          trt_options_v2, "user_compute_stream", compute_stream_));
+#endif
       options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
       api.ReleaseTensorRTProviderOptions(trt_options_v2);
       break;
