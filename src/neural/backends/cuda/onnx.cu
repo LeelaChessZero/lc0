@@ -60,7 +60,7 @@ __global__ void expandPlanes_kernel(DataType* output, const InputPlane* input,
 template <typename DataType>
 void expandPlanesOnnx(DataType* output, const InputPlane* input, unsigned n,
                       cudaStream_t stream) {
-  constexpr unsigned bits_per_thread = 1;
+  constexpr unsigned bits_per_thread = 2;
   int threads = n * 8 * 8 / bits_per_thread;
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);
