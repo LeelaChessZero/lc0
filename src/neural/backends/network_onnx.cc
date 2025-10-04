@@ -520,8 +520,13 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     }
     i += batch;
   }
-  ReportCUDAErrors(
-      cudaEventSynchronize(inputs_outputs_->outputs_download_event_));
+#ifdef CUDART_VERSION
+  if (network_->provider_ == OnnxProvider::TRT ||
+      network_->provider_ == OnnxProvider::CUDA) {
+    ReportCUDAErrors(
+        cudaEventSynchronize(inputs_outputs_->outputs_download_event_));
+  }
+#endif
   if (network_->wdl_head_ != -1) {
     const DataType* data = static_cast<DataType*>(
         inputs_outputs_->output_tensors_data_[network_->wdl_head_]);
