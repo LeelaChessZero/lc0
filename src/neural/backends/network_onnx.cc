@@ -496,6 +496,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         network_->provider_ == OnnxProvider::TRT) {
       network_->lock_.lock();
     }
+    Ort::RunOptions options = {};
 #ifdef CUDART_VERSION
     if (network_->provider_ == OnnxProvider::TRT ||
         network_->provider_ == OnnxProvider::CUDA) {
@@ -538,11 +539,12 @@ void OnnxComputation<DataType>::ComputeBlocking() {
                                        network_->upload_stream_));
       ReportCUDAErrors(cudaStreamWaitEvent(
           network_->compute_stream_, inputs_outputs_->outputs_download_event_));
+      options.AddConfigEntry("disable_synchronize_execution_providers", "1");
     } else {
       binding.SynchronizeInputs();
     }
 #endif
-    network_->session_[step - 1].Run({}, binding);
+    network_->session_[step - 1].Run(options, binding);
 #ifdef CUDART_VERSION
     if (network_->provider_ == OnnxProvider::TRT ||
         network_->provider_ == OnnxProvider::CUDA) {
@@ -634,6 +636,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       // Looks like we need I/O binding to enable this.
 #if CUDART_VERSION
       trt_options["has_user_compute_stream"] = "1";
+      std::ostringstream ss;
+      ss << compute_stream_;
+      trt_options["user_compute_stream"] = ss.str().c_str();
 #endif
       if (batch_size < 0) {
         trt_options["trt_profile_min_shapes"] =
@@ -664,10 +669,6 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt_options_v2));
       Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(
           trt_options_v2, keys.data(), values.data(), keys.size()));
-#if CUDART_VERSION
-      Ort::ThrowOnError(api.UpdateTensorRTProviderOptionsWithValue(
-          trt_options_v2, "user_compute_stream", compute_stream_));
-#endif
       options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
       api.ReleaseTensorRTProviderOptions(trt_options_v2);
       break;
