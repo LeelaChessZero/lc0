@@ -324,15 +324,36 @@ OnnxComputation<DataType>::~OnnxComputation() {
   network_->ReleaseInputsOutputs(std::move(inputs_outputs_));
 }
 
+void AsDataType(float x, float* y) { *y = x; }
+void AsDataType(float x, Ort::Float16_t* y) {
+  uint16_t tmp = FP32toFP16(x);
+  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
+}
+void AsDataType(float x, Ort::BFloat16_t* y) {
+  uint16_t tmp = FP32toBF16(x);
+  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
+}
+
 template <typename DataType>
 void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
 #if CUDART_VERSION
   if (network_->provider_ == OnnxProvider::CUDA ||
       network_->provider_ == OnnxProvider::TRT) {
     assert(input.size() == kInputPlanes);
-    std::copy(input.begin(), input.end(),
-              static_cast<InputPlane*>(inputs_outputs_->input_tensor_data_) +
-                  input_size_ * kInputPlanes);
+    uint64_t* masks =
+        static_cast<uint64_t*>(inputs_outputs_->input_tensor_data_) +
+        input_size_ * kInputPlanes;
+    uint64_t* mask_end =
+        static_cast<uint64_t*>(inputs_outputs_->input_tensor_data_) +
+        network_->max_batch_size_ * kInputPlanes;
+    DataType* values =
+        reinterpret_cast<DataType*>(mask_end) + input_size_ * kInputPlanes;
+    for (size_t i = 0; i < kInputPlanes; i++) {
+      masks[i] = input[i].mask;
+      DataType value;
+      AsDataType(input[i].value, &value);
+      values[i] = value;
+    }
     input_size_++;
     if (input_size_ > network_->max_batch_size_) {
       throw Exception("NN input exceeds max batch size of " +
@@ -404,16 +425,6 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
   DataType* data = static_cast<DataType*>(
       inputs_outputs_->output_tensors_data_[network_->mlh_head_]);
   return AsFloat(data[sample]);
-}
-
-void AsDataType(float x, float* y) { *y = x; }
-void AsDataType(float x, Ort::Float16_t* y) {
-  uint16_t tmp = FP32toFP16(x);
-  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
-}
-void AsDataType(float x, Ort::BFloat16_t* y) {
-  uint16_t tmp = FP32toBF16(x);
-  std::memcpy(reinterpret_cast<uint16_t*>(y), &tmp, sizeof(uint16_t));
 }
 
 template <typename DataType>
@@ -505,34 +516,39 @@ void OnnxComputation<DataType>::ComputeBlocking() {
       ReportCUDAErrors(
           cudaMemcpyAsync(inputs_outputs_->input_tensor_upload_device_,
                           inputs_outputs_->input_tensor_data_,
-                          batch * kInputPlanes * sizeof(InputPlane),
+                          batch * kInputPlanes * sizeof(uint64_t),
                           cudaMemcpyHostToDevice, network_->upload_stream_));
+      char* dst =
+          static_cast<char*>(inputs_outputs_->input_tensor_upload_device_);
+      dst += batch * kInputPlanes * sizeof(uint64_t);
+      ReportCUDAErrors(cudaMemcpyAsync(
+          dst,
+          static_cast<char*>(inputs_outputs_->input_tensor_data_) +
+              network_->max_batch_size_ * kInputPlanes * sizeof(uint64_t),
+          batch * kInputPlanes * sizeof(DataType), cudaMemcpyHostToDevice,
+          network_->upload_stream_));
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_uploaded_event_,
                                        network_->upload_stream_));
       ReportCUDAErrors(cudaStreamWaitEvent(
           network_->compute_stream_, inputs_outputs_->inputs_uploaded_event_));
-      using InputPlane = cudnn_backend::InputPlane;
       if (network_->fp16_) {
         half* dst =
             reinterpret_cast<half*>(inputs_outputs_->input_tensor_data_device_);
-        const InputPlane* src = static_cast<const InputPlane*>(
-            inputs_outputs_->input_tensor_upload_device_);
-        cudnn_backend::expandPlanesOnnx(dst, src, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        cudnn_backend::expandPlanesOnnx(
+            dst, inputs_outputs_->input_tensor_upload_device_,
+            batch * kInputPlanes, network_->compute_stream_);
       } else if (network_->bf16_) {
-        __nv_bfloat16* dst =
-            reinterpret_cast<__nv_bfloat16*>(inputs_outputs_->input_tensor_data_device_);
-        const InputPlane* src = static_cast<const InputPlane*>(
-            inputs_outputs_->input_tensor_upload_device_);
-        cudnn_backend::expandPlanesOnnx(dst, src, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        __nv_bfloat16* dst = reinterpret_cast<__nv_bfloat16*>(
+            inputs_outputs_->input_tensor_data_device_);
+        cudnn_backend::expandPlanesOnnx(
+            dst, inputs_outputs_->input_tensor_upload_device_,
+            batch * kInputPlanes, network_->compute_stream_);
       } else {
         float* dst = reinterpret_cast<float*>(
             inputs_outputs_->input_tensor_data_device_);
-        const InputPlane* src = static_cast<const InputPlane*>(
-            inputs_outputs_->input_tensor_upload_device_);
-        cudnn_backend::expandPlanesOnnx(dst, src, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        cudnn_backend::expandPlanesOnnx(
+            dst, inputs_outputs_->input_tensor_upload_device_,
+            batch * kInputPlanes, network_->compute_stream_);
       }
 
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_processed_event_,

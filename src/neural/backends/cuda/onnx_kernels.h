@@ -31,14 +31,9 @@
 
 namespace lczero {
 namespace cudnn_backend {
-struct InputPlane {
-  InputPlane() = default;
-  std::uint64_t mask = 0ull;
-  float value = 1.0f;
-};
 
 template <typename DataType>
-void expandPlanesOnnx(DataType* output, const InputPlane* input, unsigned n,
+void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
                       cudaStream_t stream);
 
 }  // namespace cudnn_backend
