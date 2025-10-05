@@ -43,7 +43,6 @@
 
 #ifdef USE_ONNX_CUDART
 #include "cuda_runtime.h"
-
 #include "neural/backends/cuda/onnx_kernels.h"
 #endif
 
@@ -116,6 +115,7 @@ struct InputsOutputs {
   std::vector<void*> output_tensors_data_;
   std::vector<void*> output_tensors_data_device_;
   std::vector<size_t> output_tensors_step_;
+  // To be removed when converting to new backend interface.
   std::vector<float> wdl_output_data_;
   Ort::MemoryInfo memory_info_{nullptr};
 #if USE_ONNX_CUDART
@@ -683,7 +683,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       trt_options["trt_timing_cache_path"] = cache_dir;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
-        trt_options["trt_context_memory_sharing_enable"] = "1";
+      trt_options["trt_context_memory_sharing_enable"] = "1";
       // Looks like we need I/O binding to enable this.
 #if USE_ONNX_CUDART
       trt_options["has_user_compute_stream"] = "1";
