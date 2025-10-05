@@ -506,12 +506,16 @@ FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
 }
 
 void NormalizeOriginalMetrics(FileData& data) {
-  for (auto& chunk : data.fileContents) {
-    if (std::isnan(chunk.orig_m)) continue;
-    if (chunk.orig_m < 0.0f) {
-      std::cerr << "Warning: negative orig_m (" << chunk.orig_m
-                << ") encountered; clamping to 0" << std::endl;
-      chunk.orig_m = 0.0f;
+  bool warning_printed = false;
+  for (auto& position : data.fileContents) {
+    if (std::isnan(position.orig_m)) continue;
+    if (position.orig_m < 0.0f) {
+      if (!warning_printed) {
+        std::cerr << "Warning: negative orig_m (" << position.orig_m
+                  << ") encountered; clamping to 0" << std::endl;
+        warning_printed = true;
+      }
+      position.orig_m = 0.0f;
     }
   }
 }
@@ -1141,7 +1145,7 @@ FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
                              int newInputFormat) {
   // Process and validate file data
   FileData data = ProcessAndValidateFileData(std::move(fileContents));
-  
+
   NormalizeOriginalMetrics(data);
 
   // Apply policy substitutions if available
