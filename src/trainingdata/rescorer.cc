@@ -136,16 +136,6 @@ RangeViolationDetail RangeDetail(std::string_view name, const T& value) {
   return {std::string(name), stream.str()};
 }
 
-inline RangeViolationDetail RangeDetail(std::string_view name,
-                                        const char* value) {
-  return {std::string(name), std::string(value)};
-}
-
-inline RangeViolationDetail RangeDetail(std::string_view name,
-                                        std::string_view value) {
-  return {std::string(name), std::string(value)};
-}
-
 void DataAssert(bool check_result, std::string_view condition_description = {},
                 std::initializer_list<RangeViolationDetail> details = {},
                 std::source_location loc = std::source_location::current()) {
