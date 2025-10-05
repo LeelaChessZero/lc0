@@ -506,6 +506,17 @@ FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
   return data;
 }
 
+void NormalizeOriginalMetrics(FileData& data) {
+  for (auto& chunk : data.fileContents) {
+    if (std::isnan(chunk.orig_m)) continue;
+    if (chunk.orig_m < 0.0f) {
+      std::cerr << "Warning: negative orig_m (" << chunk.orig_m
+                << ") encountered; clamping to 0" << std::endl;
+      chunk.orig_m = 0.0f;
+    }
+  }
+}
+
 void ApplyPolicySubstitutions(FileData& data) {
   if (policy_subs.empty()) return;
   PositionHistory history;
@@ -1131,6 +1142,8 @@ FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
                              int newInputFormat) {
   // Process and validate file data
   FileData data = ProcessAndValidateFileData(std::move(fileContents));
+  
+  NormalizeOriginalMetrics(data);
 
   // Apply policy substitutions if available
   ApplyPolicySubstitutions(data);
