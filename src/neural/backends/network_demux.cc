@@ -235,7 +235,7 @@ class DemuxingComputation final : public BackendComputation {
     return ENQUEUED_FOR_EVAL;
   }
 
-  void ComputeBlocking() override;
+  void ComputeBlocking(ComputationCallback callback) override;
 
   size_t UsedBatchSize() const override { return entries_.size(); }
 
@@ -265,10 +265,12 @@ class DemuxingComputation final : public BackendComputation {
   DemuxingBackend* backend_;
   AtomicVector<Entry> entries_;
   std::vector<DemuxingWork> children_;
+  ComputationCallback callback_;
 
   std::mutex mutex_;
   std::condition_variable dataready_cv_;
   std::atomic<int> dataready_ = -1;
+  std::atomic<bool> first_done_ = false;
 
   friend class DemuxingChildBackend;
 };
@@ -346,14 +348,19 @@ void DemuxingChildBackend::Worker(std::atomic<bool>& abort) {
         work->computation_->AddInput(std::move(entries[i].input));
       }
       work->computation_->ComputeBlocking();
+      bool expected = false;
+      if (work->source_->first_done_.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+        work->source_->callback_(ComputationEvent::FIRST_BACKEND_IDLE);
+      }
       work->ProcessResults();
       work->source_->NotifyComplete();
     }
   }
 }
 
-void DemuxingComputation::ComputeBlocking() {
-  if (UsedBatchSize() == 0) return;
+void DemuxingComputation::ComputeBlocking(ComputationCallback callback) {
+  assert(UsedBatchSize() != 0);
+  callback_ = callback;
   // Calculate batch_step_ size split count.
   int splits =
       1 + (UsedBatchSize() - 1) / backend_->attrs_.preferred_batch_step;

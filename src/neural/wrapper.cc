@@ -114,9 +114,10 @@ class NetworkAsBackendComputation : public BackendComputation {
     return ENQUEUED_FOR_EVAL;
   }
 
-  void ComputeBlocking() override {
+  void ComputeBlocking(ComputationCallback callback) override {
     for (auto& entry : entries_) computation_->AddInput(std::move(entry.input));
     computation_->ComputeBlocking();
+    callback(ComputationEvent::FIRST_BACKEND_IDLE);
     for (size_t i = 0; i < entries_.size(); ++i) {
       const EvalResultPtr& result = entries_[i].result;
       if (result.q) *result.q = computation_->GetQVal(i);
