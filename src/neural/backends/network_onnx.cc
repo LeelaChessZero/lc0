@@ -43,7 +43,6 @@
 
 #ifdef USE_ONNX_CUDART
 #include "cuda_runtime.h"
-
 #include "neural/backends/cuda/onnx_kernels.h"
 #endif
 
@@ -147,9 +146,6 @@ class OnnxComputation final : public NetworkComputation {
   size_t input_size_ = 0;
 #endif
   std::unique_ptr<InputsOutputs> inputs_outputs_;
-  std::vector<DataType> input_tensor_data_;
-  std::vector<std::vector<DataType>> output_tensors_data_;
-  std::vector<size_t> output_tensors_step_;
   // To be removed when converting to new backend interface.
   std::vector<float> wdl_output_data_;
 };
@@ -320,26 +316,8 @@ template <typename DataType>
 OnnxComputation<DataType>::OnnxComputation(OnnxNetwork* network)
     : network_(network) {
   inputs_outputs_ = network_->GetInputsOutputs();
-  output_tensors_data_.resize(network_->outputs_.size());
-  output_tensors_step_.resize(network_->outputs_.size());
-  output_tensors_step_[network_->policy_head_] = 1858;
-  output_tensors_data_[network_->policy_head_] =
-      std::vector<DataType>(1858 * network_->max_batch_size_);
   if (network_->wdl_head_ != -1) {
-    output_tensors_step_[network_->wdl_head_] = 3;
-    output_tensors_data_[network_->wdl_head_] =
-        std::vector<DataType>(3 * network_->max_batch_size_);
     wdl_output_data_.resize(3 * network_->max_batch_size_);
-  }
-  if (network_->value_head_ != -1) {
-    output_tensors_step_[network_->value_head_] = 1;
-    output_tensors_data_[network_->value_head_] =
-        std::vector<DataType>(network_->max_batch_size_);
-  }
-  if (network_->mlh_head_ != -1) {
-    output_tensors_step_[network_->mlh_head_] = 1;
-    output_tensors_data_[network_->mlh_head_] =
-        std::vector<DataType>(network_->max_batch_size_);
   }
 }
 
@@ -630,7 +608,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
   }
 #endif
   if (network_->wdl_head_ != -1) {
-    const auto& data = output_tensors_data_[network_->wdl_head_];
+    const DataType* data = static_cast<DataType*>(
+        inputs_outputs_->output_tensors_data_[network_->wdl_head_]);
     for (size_t i = 0; i < raw_input_.size(); i++) {
       float w = AsFloat(data[i * 3 + 0]);
       float d = AsFloat(data[i * 3 + 1]);
@@ -703,7 +682,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       trt_options["trt_timing_cache_path"] = cache_dir;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
-        trt_options["trt_context_memory_sharing_enable"] = "1";
+      trt_options["trt_context_memory_sharing_enable"] = "1";
       // Looks like we need I/O binding to enable this.
 #if USE_ONNX_CUDART
       trt_options["has_user_compute_stream"] = "1";
