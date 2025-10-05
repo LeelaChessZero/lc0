@@ -671,7 +671,15 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
   if (stats.total_nodes == 0) return;
 
   if (!stop_.load(std::memory_order_acquire)) {
-    if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
+    const float delay = params_.GetGarbageCollectionDelay() / 100.0f;
+    if (stopper_->ShouldStop(stats, hints)) {
+      FireStopInternal();
+    } else if (!gc_started_ &&
+        stats.time_since_movestart > delay *
+        (stats.time_since_movestart + hints->GetEstimatedRemainingTimeMs())) {
+      NodeGarbageCollector::Instance().Start();
+      gc_started_ = true;
+    }
   }
 
   // If we are the first to see that stop is needed.
@@ -685,6 +693,7 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
     stopper_->OnSearchDone(stats);
     bestmove_is_sent_ = true;
     current_best_edge_ = EdgeAndNode();
+    NodeGarbageCollector::Instance().Stop();
   }
 }
 
@@ -1083,6 +1092,7 @@ void Search::FireStopInternal() {
 }
 
 void Search::Stop() {
+  NodeGarbageCollector::Instance().Stop();
   Mutex::Lock lock(counters_mutex_);
   ok_to_respond_bestmove_ = true;
   FireStopInternal();
@@ -1090,6 +1100,7 @@ void Search::Stop() {
 }
 
 void Search::Abort() {
+  NodeGarbageCollector::Instance().Abort();
   Mutex::Lock lock(counters_mutex_);
   if (!stop_.load(std::memory_order_acquire) ||
       (!bestmove_is_sent_ && !ok_to_respond_bestmove_)) {
@@ -1100,10 +1111,17 @@ void Search::Abort() {
 }
 
 void Search::Wait() {
+  NodeGarbageCollector::Instance().Wait();
   Mutex::Lock lock(threads_mutex_);
+  bool active_threads = !threads_.empty();
   while (!threads_.empty()) {
     threads_.back().join();
     threads_.pop_back();
+  }
+  if (active_threads) {
+    SharedMutex::Lock lock(nodes_mutex_);
+
+    assert(root_node_->ZeroNInFlight());
   }
   LOGFILE << "Search threads cleaned.";
 }
@@ -1121,11 +1139,6 @@ void SearchWorker::CancelCollisions() {
 Search::~Search() {
   Abort();
   Wait();
-  {
-    SharedMutex::Lock lock(nodes_mutex_);
-
-    assert(root_node_->ZeroNInFlight());
-  }
   LOGFILE << "Search destroyed.";
 }
 
@@ -2173,7 +2186,7 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
   }
 
   // Use information from transposition or a new terminal.
-  if (nl->IsTransposition() || nl->IsTerminal()) {
+  if (nl->IsTransposition() || nl->IsTerminal() || n->GetN() < nl->GetN()) {
     // Adapt information from low node to node by flipping Q sign, bounds,
     // result and incrementing m.
     v = -nl->GetWL();
