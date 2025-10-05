@@ -36,6 +36,11 @@
 #include <memory>
 #include <mutex>
 
+#if __cpp_lib_atomic_wait < 201907L
+#define NO_STD_ATOMIC_WAIT 1
+#include <condition_variable>
+#endif
+
 #include "chess/board.h"
 #include "chess/callbacks.h"
 #include "chess/gamestate.h"
@@ -237,6 +242,9 @@ class Edge_Iterator;
 template <bool is_const>
 class VisitedNode_Iterator;
 
+class NodeGarbageCollector;
+class ReleaseNodesWork;
+
 class LowNode;
 class Node {
  public:
@@ -258,7 +266,7 @@ class Node {
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
         repetition_(false) {}
-  ~Node() { UnsetLowNode(); }
+  ~Node();
 
   // Trim node, resetting everything except parent, sibling, edge and index.
   void Trim();
@@ -346,9 +354,7 @@ class Node {
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(
-      Node* node_to_save,
-      std::vector<std::unique_ptr<Node>>& released_nodes) const;
+  void ReleaseChildrenExceptOne(Node* node_to_save) const;
 
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
@@ -480,8 +486,7 @@ class LowNode {
   LowNode()
       : terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {}
+        upper_bound_(GameResult::WHITE_WON) {}
   // Init from from another low node, but use it for NNEval only.
   LowNode(const LowNode& p)
       : wl_(p.wl_),
@@ -490,8 +495,7 @@ class LowNode {
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        upper_bound_(GameResult::WHITE_WON) {
     assert(p.edges_);
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
@@ -501,8 +505,7 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        upper_bound_(GameResult::WHITE_WON) {
     edges_ = Edge::FromMovelist(moves);
   }
   // Init @edges_ with moves from @moves and 0 policy.
@@ -511,11 +514,11 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON),
-        is_transposition(false) {
+        upper_bound_(GameResult::WHITE_WON) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(edges_[index], index);
   }
+  ~LowNode();
 
   void SetNNEval(const EvalResult* eval) {
     assert(n_ == 0);
@@ -576,13 +579,12 @@ class LowNode {
   void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
 
   // Deletes all children.
-  void ReleaseChildren(std::vector<std::unique_ptr<Node>>& released_nodes);
+  void ReleaseChildren();
 
   // Deletes all children except one.
   // The node provided may be moved, so should not be relied upon to exist
   // afterwards.
-  void ReleaseChildrenExceptOne(
-      Node* node_to_save, std::vector<std::unique_ptr<Node>>& released_nodes);
+  void ReleaseChildrenExceptOne(Node* node_to_save);
 
   // Return move policy for edge/node at @index.
   const Edge& GetEdgeAt(uint16_t index) const;
@@ -600,18 +602,18 @@ class LowNode {
 
   // Add new parent with @n_in_flight visits.
   void AddParent() {
-    ++num_parents_;
+    num_parents_.fetch_add(1, std::memory_order_acq_rel);
 
     assert(num_parents_ > 0);
-
-    is_transposition |= num_parents_ > 1;
   }
   // Remove parent and its first visit.
   void RemoveParent() {
     assert(num_parents_ > 0);
-    --num_parents_;
+    num_parents_.fetch_sub(1, std::memory_order_acq_rel);
   }
-  bool IsTransposition() const { return is_transposition; }
+  bool IsTransposition() const {
+    return num_parents_.load(std::memory_order_acquire) > 1;
+  }
 
   bool WLDMInvariantsHold() const;
 
@@ -649,7 +651,7 @@ class LowNode {
 
   // 2 byte fields.
   // Number of parents.
-  uint16_t num_parents_ = 0;
+  std::atomic<uint16_t> num_parents_ = {};
 
   // 1 byte fields.
   // Number of edges in @edges_.
@@ -660,8 +662,6 @@ class LowNode {
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
-  // Low node is a transposition (for ever).
-  bool is_transposition : 1;
   // Debug only id as the last to avoid taking place of actively used variables
   // in the cache.
 #ifndef NDEBUG
@@ -960,7 +960,7 @@ typedef absl::flat_hash_map<uint64_t, std::weak_ptr<LowNode>>
 
 class NodeTree {
  public:
-  ~NodeTree() { DeallocateTree(); }
+  ~NodeTree();
   // Adds a move to current_head_.
   void MakeMove(Move move);
   // Resets the current head to ensure it doesn't carry over details from a
@@ -991,8 +991,91 @@ class NodeTree {
   std::unique_ptr<Node> gamebegin_node_;
   PositionHistory history_;
   std::vector<Move> moves_;
-  // Nodes released from DAG and to be freed later.
+};
+
+// Implement thread local queues. It tracks GC thread to allow faster removal in
+// the thread.
+class ReleaseNodesWork {
+  static constexpr size_t kCapacity = 32;
+public:
+  ReleaseNodesWork(bool gc_thread = false);
+  ~ReleaseNodesWork();
+  bool IsWorker() const;
+
+  // A limited vector like interface to operate on the container.
+  void emplace_back(std::unique_ptr<Node>&& node);
+  bool empty() const;
+
+  // Swap is used to transfer queue into a new stack variable. The stack
+  // variable will flush the queue in the desctructor.
+  void swap(ReleaseNodesWork &other);
+private:
+  // Flush the local queue to the shared queue.
+  void Submit();
+
+  // No locks required because only one thread can access this object.
   std::vector<std::unique_ptr<Node>> released_nodes_;
+  bool is_gc_thread_;
+};
+
+class NodeGarbageCollector {
+  NodeGarbageCollector();
+  ~NodeGarbageCollector();
+public:
+  enum State {
+    Running,
+    GoToSleep,
+    Sleeping,
+    Exit,
+  };
+
+  // Access to the singleton which is only created on the demand.
+  static NodeGarbageCollector& Instance() {
+    static NodeGarbageCollector singleton;
+    return singleton;
+  }
+  // Delays node destruction until GC thread activates.
+  template<typename UniquePtr>
+  void AddToGcQueue(UniquePtr& node);
+
+  // Allow search to control when garbage collection runs.
+  void Start();
+  void Stop();
+  State Wait() const;
+  void Abort();
+
+  // Moves thread local GC queue to the shared queue. This avoid case where a
+  // thread frees only a few branches which will be stuck in the thread local
+  // queue. A few big branches can have a major memory impact. If thread exits,
+  // there is no need to call this.
+  void NotifyThreadGoingSleep();
+
+private:
+  // Helper to transition between states safely
+  bool SetState(State& old, State desired);
+  bool IsActive() const;
+  bool ShouldQueue(std::unique_ptr<Node>& node) const;
+  // The collection thread implementation.
+  void GCThread();
+  // Thread local collection queue. Local queues flush to the shared queue
+  // in batches to avoid lock contention.
+  static ReleaseNodesWork& LocalWork(bool gc_thread = false) {
+    static thread_local ReleaseNodesWork shared{gc_thread};
+    return shared;
+  }
+
+  std::atomic<State> state_ = {Sleeping};
+#ifdef NO_STD_ATOMIC_WAIT
+  // Fallback conditional variable when c++ library doesn't implement
+  // std::atomic::wait().
+  mutable Mutex state_mutex_;
+  mutable std::condition_variable state_signal_;
+#endif
+  std::thread gc_thread_;
+  SpinMutex mutex_;
+  std::deque<std::vector<std::unique_ptr<Node>>> released_nodes_ GUARDED_BY(mutex_);
+
+  friend class ReleaseNodesWork;
 };
 
 }  // namespace dag_classic
