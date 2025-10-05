@@ -490,6 +490,9 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     int step = (GetBatchSize() - i + batch_size - 1) / batch_size;
     if (step > network_->steps_) step = network_->steps_;
     int batch = batch_size * step;
+    if (network_->provider_ == OnnxProvider::TRT && network_->batch_size_ > 0) {
+      batch = std::min(GetBatchSize() - (int)i, batch);
+    }
 
     auto binding = PrepareInputs(i, batch, step);
 
@@ -638,7 +641,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
   options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-  if (batch_size > 0) {
+  if (batch_size > 0 && provider_ != OnnxProvider::TRT) {
     // Override the default (variable) batch size.
     Ort::ThrowOnError(
         OrtGetApiBase()
@@ -673,12 +676,16 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       oss << std::hex << hash;
       trt_options["trt_engine_cache_prefix"] =
           "Lc0_ONNX_TRT_ORT_" + Ort::GetVersionString() + "_batch_" +
-          std::to_string(batch_size) + "_" + oss.str() + "_";
+          (batch_size < 0 ? std::to_string(batch_size)
+                          : std::to_string(batch_size - batch_size_ + 1) + "-" +
+                                std::to_string(batch_size)) +
+          "_" + oss.str() + "_";
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_timing_cache_path"] = cache_dir;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
+        trt_options["trt_context_memory_sharing_enable"] = "1";
       // Looks like we need I/O binding to enable this.
 #if CUDART_VERSION
       trt_options["has_user_compute_stream"] = "1";
@@ -692,12 +699,13 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
             inputs_[0] + ":" + std::to_string(max_batch_size_ / 4) + "x112x8x8";
       } else {
         trt_options["trt_profile_min_shapes"] =
-            inputs_[0] + ":" + std::to_string(batch_size_) + "x112x8x8";
-        trt_options["trt_profile_max_shapes"] =
-            inputs_[0] + ":" + std::to_string(batch_size_ * steps_) +
+            inputs_[0] + ":" + std::to_string(batch_size - batch_size_ + 1) +
             "x112x8x8";
+        trt_options["trt_profile_max_shapes"] =
+            inputs_[0] + ":" + std::to_string(batch_size) + "x112x8x8";
         trt_options["trt_profile_opt_shapes"] =
-            inputs_[0] + ":" + std::to_string(batch_size_ * steps_) +
+            inputs_[0] + ":" +
+            std::to_string(batch_size == batch_size_ ? 1 : batch_size) +
             "x112x8x8";
       }
       std::vector<const char*> keys;
