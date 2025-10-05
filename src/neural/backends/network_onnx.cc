@@ -142,14 +142,13 @@ class OnnxComputation final : public NetworkComputation {
   float GetMVal(int sample) const override;
 
  private:
-  Ort::Value PrepareInputs(int start, int batch_size);
+  Ort::IoBinding PrepareInputs(int start, int batch_size, int step);
 
   OnnxNetwork* network_;
   std::vector<InputPlanes> raw_input_;
 #if CUDART_VERSION
   size_t input_size_ = 0;
 #endif
-  std::vector<Ort::Value> output_tensors_;
   std::unique_ptr<InputsOutputs> inputs_outputs_;
 };
 
@@ -430,7 +429,9 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
 }
 
 template <typename DataType>
-Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
+Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
+                                                        int batch_size,
+                                                        int step) {
 #if CUDART_VERSION
   if (network_->provider_ != OnnxProvider::CUDA &&
       network_->provider_ != OnnxProvider::TRT)
@@ -453,24 +454,29 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
     }
   }
 
-  output_tensors_.clear();
+  Ort::IoBinding binding{network_->session_[step - 1]};
   for (size_t i = 0; i < inputs_outputs_->output_tensors_step_.size(); i++) {
     int size = inputs_outputs_->output_tensors_step_[i];
     int64_t dims[] = {batch_size, size};
-    output_tensors_.emplace_back(Ort::Value::CreateTensor<DataType>(
-        inputs_outputs_->memory_info_,
-        static_cast<DataType*>(
-            inputs_outputs_->output_tensors_data_device_[i]) +
-            start * size,
-        size * batch_size, dims, 2));
+    binding.BindOutput(
+        network_->outputs_[i].c_str(),
+        Ort::Value::CreateTensor<DataType>(
+            inputs_outputs_->memory_info_,
+            static_cast<DataType*>(
+                inputs_outputs_->output_tensors_data_device_[i]) +
+                start * size,
+            size * batch_size, dims, 2));
   }
 
   int64_t dims[] = {batch_size, kInputPlanes, 8, 8};
-  return Ort::Value::CreateTensor<DataType>(
-      inputs_outputs_->memory_info_,
-      static_cast<DataType*>(inputs_outputs_->input_tensor_data_device_) +
-          start * kInputPlanes * 8 * 8,
-      batch_size * kInputPlanes * 8 * 8, dims, 4);
+  binding.BindInput(
+      network_->inputs_[0].c_str(),
+      Ort::Value::CreateTensor<DataType>(
+          inputs_outputs_->memory_info_,
+          static_cast<DataType*>(inputs_outputs_->input_tensor_data_device_) +
+              start * kInputPlanes * 8 * 8,
+          batch_size * kInputPlanes * 8 * 8, dims, 4));
+  return binding;
 }
 
 template <typename DataType>
@@ -485,13 +491,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     if (step > network_->steps_) step = network_->steps_;
     int batch = batch_size * step;
 
-    auto input_tensor = PrepareInputs(i, batch);
+    auto binding = PrepareInputs(i, batch, step);
 
-    Ort::IoBinding binding{network_->session_[step - 1]};
-    binding.BindInput(network_->inputs_[0].c_str(), input_tensor);
-    for (size_t i = 0; i < output_tensors_.size(); i++) {
-      binding.BindOutput(network_->outputs_[i].c_str(), output_tensors_[i]);
-    }
     // The DML onnxruntime execution provider is documented as not supporting
     // multi-threaded calls to Run on the same inference session. We found the
     // same to be true for the ROCm execution provider (at least for CNNs).
