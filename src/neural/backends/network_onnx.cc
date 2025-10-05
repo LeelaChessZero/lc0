@@ -434,10 +434,10 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
       network_->provider_ != OnnxProvider::TRT)
 #endif
   {
-    std::memset(inputs_outputs_->input_tensor_data_, 0,
-                batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
     DataType* iter =
         static_cast<DataType*>(inputs_outputs_->input_tensor_data_);
+    iter += start * kInputPlanes * 8 * 8;
+    std::memset(iter, 0, batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
     int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
     for (int i = start; i < end; i++) {
       for (const auto& plane : raw_input_[i]) {
@@ -459,16 +459,15 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
         inputs_outputs_->memory_info_,
         static_cast<DataType*>(
             inputs_outputs_->output_tensors_data_device_[i]) +
-            (inputs_outputs_->input_tensor_data_device_ == nullptr ? start
-                                                                   : 0) *
-                size,
+            start * size,
         size * batch_size, dims, 2));
   }
 
   int64_t dims[] = {batch_size, kInputPlanes, 8, 8};
   return Ort::Value::CreateTensor<DataType>(
       inputs_outputs_->memory_info_,
-      static_cast<DataType*>(inputs_outputs_->input_tensor_data_device_),
+      static_cast<DataType*>(inputs_outputs_->input_tensor_data_device_) +
+          start * kInputPlanes * 8 * 8,
       batch_size * kInputPlanes * 8 * 8, dims, 4);
 }
 
@@ -483,13 +482,6 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     int step = (GetBatchSize() - i + batch_size - 1) / batch_size;
     if (step > network_->steps_) step = network_->steps_;
     int batch = batch_size * step;
-#ifdef CUDART_VERSION
-    if (network_->provider_ == OnnxProvider::TRT ||
-        network_->provider_ == OnnxProvider::CUDA) {
-      ReportCUDAErrors(
-          cudaEventSynchronize(inputs_outputs_->inputs_uploaded_event_));
-    }
-#endif
 
     auto input_tensor = PrepareInputs(i, batch);
 
@@ -511,22 +503,28 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 #ifdef CUDART_VERSION
     if (network_->provider_ == OnnxProvider::TRT ||
         network_->provider_ == OnnxProvider::CUDA) {
-      ReportCUDAErrors(cudaStreamWaitEvent(
-          network_->upload_stream_, inputs_outputs_->inputs_processed_event_));
-      ReportCUDAErrors(
-          cudaMemcpyAsync(inputs_outputs_->input_tensor_upload_device_,
-                          inputs_outputs_->input_tensor_data_,
-                          batch * kInputPlanes * sizeof(uint64_t),
-                          cudaMemcpyHostToDevice, network_->upload_stream_));
-      char* dst =
+      if (i == 0) {
+        ReportCUDAErrors(
+            cudaStreamWaitEvent(network_->upload_stream_,
+                                inputs_outputs_->inputs_processed_event_));
+      }
+      const char* src_masks =
+          static_cast<char*>(inputs_outputs_->input_tensor_data_);
+      char* dst_masks =
           static_cast<char*>(inputs_outputs_->input_tensor_upload_device_);
-      dst += batch * kInputPlanes * sizeof(uint64_t);
+      src_masks += i * kInputPlanes * sizeof(uint64_t);
+      dst_masks += i * kInputPlanes * (sizeof(uint64_t) + sizeof(DataType));
       ReportCUDAErrors(cudaMemcpyAsync(
-          dst,
-          static_cast<char*>(inputs_outputs_->input_tensor_data_) +
-              network_->max_batch_size_ * kInputPlanes * sizeof(uint64_t),
-          batch * kInputPlanes * sizeof(DataType), cudaMemcpyHostToDevice,
-          network_->upload_stream_));
+          dst_masks, src_masks, batch * kInputPlanes * sizeof(uint64_t),
+          cudaMemcpyHostToDevice, network_->upload_stream_));
+      char* src_values =
+          static_cast<char*>(inputs_outputs_->input_tensor_data_);
+      src_values += network_->max_batch_size_ * kInputPlanes * sizeof(uint64_t);
+      src_values += i * kInputPlanes * sizeof(DataType);
+      char* dst_values = dst_masks + batch * kInputPlanes * sizeof(uint64_t);
+      ReportCUDAErrors(cudaMemcpyAsync(
+          dst_values, src_values, batch * kInputPlanes * sizeof(DataType),
+          cudaMemcpyHostToDevice, network_->upload_stream_));
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_uploaded_event_,
                                        network_->upload_stream_));
       ReportCUDAErrors(cudaStreamWaitEvent(
@@ -534,27 +532,30 @@ void OnnxComputation<DataType>::ComputeBlocking() {
       if (network_->fp16_) {
         half* dst =
             reinterpret_cast<half*>(inputs_outputs_->input_tensor_data_device_);
-        cudnn_backend::expandPlanesOnnx(
-            dst, inputs_outputs_->input_tensor_upload_device_,
-            batch * kInputPlanes, network_->compute_stream_);
+        dst += i * kInputPlanes * 8 * 8;
+        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                                        network_->compute_stream_);
       } else if (network_->bf16_) {
         __nv_bfloat16* dst = reinterpret_cast<__nv_bfloat16*>(
             inputs_outputs_->input_tensor_data_device_);
-        cudnn_backend::expandPlanesOnnx(
-            dst, inputs_outputs_->input_tensor_upload_device_,
-            batch * kInputPlanes, network_->compute_stream_);
+        dst += i * kInputPlanes * 8 * 8;
+        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                                        network_->compute_stream_);
       } else {
         float* dst = reinterpret_cast<float*>(
             inputs_outputs_->input_tensor_data_device_);
-        cudnn_backend::expandPlanesOnnx(
-            dst, inputs_outputs_->input_tensor_upload_device_,
-            batch * kInputPlanes, network_->compute_stream_);
+        dst += i * kInputPlanes * 8 * 8;
+        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                                        network_->compute_stream_);
       }
 
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_processed_event_,
                                        network_->upload_stream_));
-      ReportCUDAErrors(cudaStreamWaitEvent(
-          network_->compute_stream_, inputs_outputs_->outputs_download_event_));
+      if (i == 0) {
+        ReportCUDAErrors(
+            cudaStreamWaitEvent(network_->compute_stream_,
+                                inputs_outputs_->outputs_download_event_));
+      }
       options.AddConfigEntry("disable_synchronize_execution_providers", "1");
     } else {
       binding.SynchronizeInputs();
@@ -572,10 +573,13 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         ReportCUDAErrors(
             cudaStreamWaitEvent(network_->download_stream_,
                                 inputs_outputs_->evaluation_done_event_));
+        size_t offset = i * inputs_outputs_->output_tensors_step_[j];
         ReportCUDAErrors(cudaMemcpyAsync(
             static_cast<DataType*>(inputs_outputs_->output_tensors_data_[j]) +
-                i * inputs_outputs_->output_tensors_step_[j],
-            inputs_outputs_->output_tensors_data_device_[j],
+                offset,
+            static_cast<DataType*>(
+                inputs_outputs_->output_tensors_data_device_[j]) +
+                offset,
             batch * inputs_outputs_->output_tensors_step_[j] * sizeof(DataType),
             cudaMemcpyDeviceToHost, network_->download_stream_));
         ReportCUDAErrors(
