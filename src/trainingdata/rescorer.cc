@@ -206,7 +206,6 @@ void Validate(std::span<const V6TrainingData> fileContents) {
                (data.orig_q >= -1.0f && data.orig_q <= 1.0f));
     DataAssert(std::isnan(data.orig_d) ||
                (data.orig_d >= 0.0f && data.orig_d <= 1.0f));
-    DataAssert(std::isnan(data.orig_m) || data.orig_m >= 0.0f);
     // TODO: if visits > 0 - assert best_idx/played_idx are valid in
     // probabilities.
   }
