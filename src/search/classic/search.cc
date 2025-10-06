@@ -1252,7 +1252,7 @@ void SearchWorker::ExecuteOneIteration() {
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration() {
   // Free the old computation before allocating a new one. This works better
-  // when backend cache buffer allocations between computations.
+  // when backend caches buffer allocations between computations.
   computation_.reset();
   computation_ = search_->backend_->CreateComputation();
   minibatch_.clear();
