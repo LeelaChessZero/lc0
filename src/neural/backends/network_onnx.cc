@@ -610,7 +610,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
   if (network_->wdl_head_ != -1) {
     const DataType* data = static_cast<DataType*>(
         inputs_outputs_->output_tensors_data_[network_->wdl_head_]);
-    for (size_t i = 0; i < raw_input_.size(); i++) {
+    for (size_t i = 0; i < (size_t)GetBatchSize(); i++) {
       float w = AsFloat(data[i * 3 + 0]);
       float d = AsFloat(data[i * 3 + 1]);
       float l = AsFloat(data[i * 3 + 2]);
