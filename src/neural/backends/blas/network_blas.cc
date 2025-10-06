@@ -199,6 +199,7 @@ class BlasNetwork : public Network {
   const NetworkCapabilities capabilities_;
   MultiHeadWeights weights_;
   size_t max_batch_size_;
+  int threads_;
   bool wdl_;
   bool moves_left_;
   bool conv_policy_;
@@ -240,7 +241,7 @@ BlasComputation<use_eigen>::BlasComputation(
       value_head_(value_head),
       network_(network) {
 #ifdef USE_DNNL
-  omp_set_num_threads(1);
+  omp_set_num_threads(network_->threads_);
 #endif
 }
 
@@ -989,6 +990,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));
+  threads_ = options.GetOrDefault<int>("threads", 1);
 
   auto nf = file.format().network_format();
   using NF = pblczero::NetworkFormat;
@@ -1075,7 +1077,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   } else {
 #ifdef USE_OPENBLAS
     int num_procs = openblas_get_num_procs();
-    openblas_set_num_threads(1);
+    openblas_set_num_threads(threads_);
     const char* core_name = openblas_get_corename();
     const char* config = openblas_get_config();
     CERR << "BLAS vendor: OpenBLAS.";
@@ -1084,7 +1086,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
 #endif
 
 #ifdef USE_MKL
-    mkl_set_num_threads(1);
+    mkl_set_num_threads(threads_);
     CERR << "BLAS vendor: MKL.";
     constexpr int len = 256;
     char versionbuf[len];
