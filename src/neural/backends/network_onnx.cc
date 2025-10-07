@@ -566,10 +566,11 @@ void OnnxComputation<DataType>::ComputeBlocking() {
                                 inputs_outputs_->outputs_download_event_));
       }
       options.AddConfigEntry("disable_synchronize_execution_providers", "1");
-    } else {
+    } else
+#endif
+    {
       binding.SynchronizeInputs();
     }
-#endif
     network_->session_[step - 1].Run(options, binding);
 #ifdef USE_ONNX_CUDART
     if (network_->provider_ == OnnxProvider::TRT ||
@@ -595,10 +596,11 @@ void OnnxComputation<DataType>::ComputeBlocking() {
             cudaEventRecord(inputs_outputs_->outputs_download_event_,
                             network_->download_stream_));
       }
-    } else {
+    } else
+#endif
+    {
       binding.SynchronizeOutputs();
     }
-#endif
     if (network_->provider_ == OnnxProvider::DML ||
         network_->provider_ == OnnxProvider::ROCM ||
         network_->provider_ == OnnxProvider::TRT) {
