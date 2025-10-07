@@ -156,6 +156,11 @@ class OnnxNetwork final : public Network {
               OnnxProvider provider, bool cpu_wdl);
   ~OnnxNetwork();
   std::unique_ptr<NetworkComputation> NewComputation() override {
+#if USE_ONNX_CUDART
+    if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
+      ReportCUDAErrors(cudaSetDevice(gpu_));
+    }
+#endif
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
     } else if (bf16_) {
