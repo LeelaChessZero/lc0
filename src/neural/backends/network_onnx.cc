@@ -785,6 +785,17 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
            << " Gb";
       CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
     }
+    int attr;
+    ReportCUDAErrors(
+        cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciDeviceId, gpu_));
+    uint32_t pci_device = attr;
+    CERR << "GPU device ID: " << std::hex << (pci_device & 0xffff) << ":"
+         << (pci_device >> 16);
+    ReportCUDAErrors(
+        cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciSubsystemId, gpu_));
+    uint32_t pci_subsystem = attr;
+    CERR << "GPU subsystem ID: " << std::hex << (pci_subsystem & 0xffff) << ":"
+         << (pci_subsystem >> 16) << std::dec;
   }
 #endif
 
