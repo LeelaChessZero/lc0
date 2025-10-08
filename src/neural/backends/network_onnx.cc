@@ -785,17 +785,21 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
     }
 #if CUDART_VERSION >= 12080
-    int attr;
-    ReportCUDAErrors(
-        cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciDeviceId, gpu_));
-    uint32_t pci_device = attr;
-    CERR << "GPU device ID: " << std::hex << (pci_device & 0xffff) << ":"
-         << (pci_device >> 16);
-    ReportCUDAErrors(
-        cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciSubsystemId, gpu_));
-    uint32_t pci_subsystem = attr;
-    CERR << "GPU subsystem ID: " << std::hex << (pci_subsystem & 0xffff) << ":"
-         << (pci_subsystem >> 16) << std::dec;
+    int runtime_version;
+    ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
+    if (runtime_version >= 12080) {
+      int attr;
+      ReportCUDAErrors(
+          cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciDeviceId, gpu_));
+      uint32_t pci_device = attr;
+      CERR << "GPU device ID: " << std::hex << (pci_device & 0xffff) << ":"
+           << (pci_device >> 16);
+      ReportCUDAErrors(
+          cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciSubsystemId, gpu_));
+      uint32_t pci_subsystem = attr;
+      CERR << "GPU subsystem ID: " << std::hex << (pci_subsystem & 0xffff)
+           << ":" << (pci_subsystem >> 16) << std::dec;
+    }
 #endif
   }
 #endif
