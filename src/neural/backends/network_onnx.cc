@@ -708,9 +708,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
         trt_options["trt_profile_max_shapes"] =
             inputs_[0] + ":" + std::to_string(batch_size) + "x112x8x8";
         trt_options["trt_profile_opt_shapes"] =
-            inputs_[0] + ":" +
-            std::to_string(batch_size == batch_size_ ? 1 : batch_size) +
-            "x112x8x8";
+            inputs_[0] + ":" + std::to_string(batch_size) + "x112x8x8";
       }
       std::vector<const char*> keys;
       std::vector<const char*> values;
