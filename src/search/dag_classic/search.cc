@@ -27,6 +27,8 @@
 
 #include "search/dag_classic/search.h"
 
+#include <absl/cleanup/cleanup.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -1381,15 +1383,9 @@ void SearchWorker::GatherMinibatch() {
 
   int thread_count = search_->thread_count_.load(std::memory_order_acquire);
 
-  struct RecordBatchStartTime {
-    ~RecordBatchStartTime() {
-      if (minibatch_size_) {
-        search_->RecordNPSStartTime();
-      }
-    }
-    Search* search_;
-    int& minibatch_size_;
-  } record_batch_start_time = {search_, minibatch_size};
+  absl::Cleanup record_batch_start_time = [&] {
+    if (minibatch_size) search_->RecordNPSStartTime();
+  };
 
   // Gather nodes to process in the current batch.
   // If we had too many nodes out of order, also interrupt the iteration so
