@@ -109,7 +109,8 @@ class DemuxingChildBackend {
 class DemuxingBackend final : public Backend {
  public:
   DemuxingBackend(const std::optional<WeightsFile>& weights,
-                  const OptionsDict& options, const OptionsDict& backend_options)
+                  const OptionsDict& options,
+                  const OptionsDict& backend_options)
       : backends_(std::max(size_t(1), backend_options.ListSubdicts().size())),
         backend_opts_(
             options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
@@ -128,6 +129,12 @@ class DemuxingBackend final : public Backend {
     for (const auto& name : parents) {
       AddBackend(i++, name, weights, backend_options.GetSubdict(name));
     }
+    attrs_.maximum_batch_size =
+        std::max(attrs_.recommended_batch_size, attrs_.maximum_batch_size);
+    attrs_.maximum_batch_size = backend_options.GetOrDefault<int>(
+        "max_batch", attrs_.maximum_batch_size);
+    attrs_.recommended_batch_size =
+        std::min(attrs_.maximum_batch_size, attrs_.recommended_batch_size);
   }
 
   void AddBackend(int index, const std::string& name,
@@ -349,7 +356,8 @@ void DemuxingChildBackend::Worker(std::atomic<bool>& abort) {
       }
       work->computation_->ComputeBlocking();
       bool expected = false;
-      if (work->source_->first_done_.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+      if (work->source_->first_done_.compare_exchange_strong(
+              expected, true, std::memory_order_relaxed)) {
         work->source_->callback_(ComputationEvent::FIRST_BACKEND_IDLE);
       }
       work->ProcessResults();
