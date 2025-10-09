@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++20', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
-        meson_version: '>=0.55')
+        meson_version: '>=0.57')
 
 cc = meson.get_compiler('cpp')
 
@@ -205,6 +205,11 @@ files += [
 
 includes += include_directories('src')
 
+deps += dependency('absl_flat_hash_map',
+                   include_type: 'system',
+                   fallback: ['abseil-cpp', 'absl_container_dep'],
+                   default_options : ['warning_level=0', 'cpp_std=c++20'])
+
 deps += dependency('threads')
 
 #############################################################################
@@ -225,9 +230,6 @@ if get_option('dag_classic')
     'src/search/dag_classic/search.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
-
-  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
-  deps += absl.get_variable('absl_container_dep').as_system()
 endif
 
 #############################################################################
@@ -606,7 +608,7 @@ if get_option('build_backends')
                                 modules : ['Foundation', 'Metal', 'MetalPerformanceShaders', 'MetalPerformanceShadersGraph'],
                                 required: get_option('metal'))
 
-  if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
+  if metal_frameworks.found() and add_languages('objc', 'objcpp', native: false)
     deps += metal_frameworks
 
     files += [
@@ -781,11 +783,11 @@ endif
   ## Profiler
   ## ~~~~~~~~
   if get_option('buildtype') != 'release'
-    deps += cc.find_library('libprofiler',
+    deps += cc.find_library('profiler',
       dirs: ['/usr/local/lib'], required: false)
   endif
 
-  deps += cc.find_library('libatomic', required: false)
+  deps += cc.find_library('atomic', required: false)
 
 #############################################################################
 ## Main Executable

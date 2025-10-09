@@ -81,12 +81,14 @@ class OnnxComputation : public NetworkComputation {
   std::vector<Ort::Value> output_tensors_;
   std::vector<std::vector<DataType>> output_tensors_data_;
   std::vector<size_t> output_tensors_step_;
+  // To be removed when converting to new backend interface.
+  std::vector<float> wdl_output_data_;
 };
 
 class OnnxNetwork : public Network {
  public:
   OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
-              OnnxProvider provider);
+              OnnxProvider provider, bool cpu_wdl);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
       return std::make_unique<OnnxComputation<Ort::Float16_t>>(this);
@@ -126,6 +128,7 @@ class OnnxNetwork : public Network {
   NetworkCapabilities capabilities_;
   bool fp16_;
   bool bf16_;
+  bool cpu_wdl_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
   // The lower limit for variable batch size.
@@ -148,6 +151,7 @@ OnnxComputation<DataType>::OnnxComputation(OnnxNetwork* network)
     output_tensors_step_[network_->wdl_head_] = 3;
     output_tensors_data_[network_->wdl_head_] =
         std::vector<DataType>(3 * network_->max_batch_size_);
+    wdl_output_data_.resize(3 * network_->max_batch_size_);
   }
   if (network_->value_head_ != -1) {
     output_tensors_step_[network_->value_head_] = 1;
@@ -185,8 +189,7 @@ float AsFloat(Ort::BFloat16_t x) {
 template <typename DataType>
 float OnnxComputation<DataType>::GetQVal(int sample) const {
   if (network_->wdl_head_ != -1) {
-    const auto& data = output_tensors_data_[network_->wdl_head_];
-    return AsFloat(data[sample * 3 + 0]) - AsFloat(data[sample * 3 + 2]);
+    return wdl_output_data_[sample * 3 + 0] - wdl_output_data_[sample * 3 + 2];
   } else {
     const auto& data = output_tensors_data_[network_->value_head_];
     return AsFloat(data[sample]);
@@ -196,8 +199,7 @@ float OnnxComputation<DataType>::GetQVal(int sample) const {
 template <typename DataType>
 float OnnxComputation<DataType>::GetDVal(int sample) const {
   if (network_->wdl_head_ == -1) return 0.0f;
-  const auto& data = output_tensors_data_[network_->wdl_head_];
-  return AsFloat(data[sample * 3 + 1]);
+  return wdl_output_data_[sample * 3 + 1];
 }
 
 template <typename DataType>
@@ -295,6 +297,28 @@ void OnnxComputation<DataType>::ComputeBlocking() {
       network_->lock_.unlock();
     }
     i += batch;
+  }
+  if (network_->wdl_head_ != -1) {
+    const auto& data = output_tensors_data_[network_->wdl_head_];
+    for (size_t i = 0; i < raw_input_.size(); i++) {
+      float w = AsFloat(data[i * 3 + 0]);
+      float d = AsFloat(data[i * 3 + 1]);
+      float l = AsFloat(data[i * 3 + 2]);
+      if (network_->cpu_wdl_) {
+        // Value softmax done cpu side.
+        float m = std::max({w, d, l});
+        w = std::exp(w - m);
+        d = std::exp(d - m);
+        l = std::exp(l - m);
+        float sum = w + d + l;
+        w /= sum;
+        l /= sum;
+        d = 1.0f - w - l;
+      }
+      wdl_output_data_[3 * i + 0] = w;
+      wdl_output_data_[3 * i + 1] = d;
+      wdl_output_data_[3 * i + 2] = l;
+    }
   }
 }
 
@@ -407,13 +431,14 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
 }
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
-                         OnnxProvider provider)
+                         OnnxProvider provider, bool cpu_wdl)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
       fp16_(file.onnx_model().data_type() == pblczero::OnnxModel::FLOAT16),
       bf16_(file.onnx_model().data_type() == pblczero::OnnxModel::BFLOAT16),
+      cpu_wdl_(cpu_wdl),
       provider_(provider) {
   onnx_env_.DisableTelemetryEvents();
   batch_size_ =
@@ -481,7 +506,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
   if (w->has_onnx_model()) {
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider);
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, false);
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.opset = opts.GetOrDefault<int>("opset", 17);
@@ -495,6 +520,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         opts.GetOrDefault<std::string>("policy_head", "vanilla");
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
+    converter_options.no_wdl_softmax = true;
 
     std::string datatype;
     if (opts.Exists<std::string>("datatype")) {
@@ -508,7 +534,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
-    return std::make_unique<OnnxNetwork>(converted, opts, kProvider);
+    return std::make_unique<OnnxNetwork>(converted, opts, kProvider, true);
   }
 }
 

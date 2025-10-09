@@ -465,9 +465,11 @@ void ConvertOnnxToLeela() {
       NetworkFormat::ValueFormat_AllValues, NetworkFormat::ValueFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
     onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
+    format->set_output(NetworkFormat::OUTPUT_CLASSICAL);
   }
   if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
     onnx->set_output_wdl(dict.Get<std::string>(kOnnxOutputWdlId));
+    format->set_output(NetworkFormat::OUTPUT_WDL);
   }
 
   // Mlh.
