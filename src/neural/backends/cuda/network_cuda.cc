@@ -210,6 +210,10 @@ class CudaNetwork : public Network {
 
     showInfo();
 
+#ifdef USE_CUTLASS
+    CERR << "Compiled with CUTLASS enabled";
+#endif
+
     int total_gpus;
     ReportCUDAErrors(cudaGetDeviceCount(&total_gpus));
 
@@ -308,6 +312,11 @@ class CudaNetwork : public Network {
     // Override if set in backend-opts.
     if (options.Exists<bool>("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
+    }
+
+    bool use_fused_mha = false;
+    if (deviceProp.major >= 8 && fp16) {
+      use_fused_mha = options.GetOrDefault<bool>("fused_mha", true);
     }
 
     const bool use_gemm_ex = deviceProp.major >= 5;
@@ -458,7 +467,7 @@ class CudaNetwork : public Network {
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
               InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
-          use_gemm_ex);
+          use_gemm_ex, use_fused_mha);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();

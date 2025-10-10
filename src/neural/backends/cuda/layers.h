@@ -340,7 +340,8 @@ class EncoderBlock {
                int heads, int size, float alpha,
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
-               ActivationFunction ffn_act, float default_eps, bool use_gemm_ex);
+               ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
+               bool fused_mha);
   ~EncoderBlock();
 
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
@@ -393,6 +394,7 @@ class EncoderBlock {
   int smol_global_size_;
 
   const int max_batch_size_;
+  const bool use_fused_mha_;
   const bool use_gemm_ex_;
 };
 
@@ -480,7 +482,7 @@ class AttentionBody : public BaseLayer<DataType> {
   AttentionBody(const MultiHeadWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
                 int max_batch_size, bool is_pe_dense_embedding,
-                bool use_gemm_ex);
+                bool use_gemm_ex, bool fused_mha);
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -511,6 +513,7 @@ class AttentionBody : public BaseLayer<DataType> {
   const bool has_gating_;
   const bool has_smolgen_;
   bool is_pe_dense_embedding_;  // flag for dense position encoding
+  const bool use_fused_mha_;
 };
 
 // The value head implementation
@@ -527,8 +530,8 @@ class ValueHead : public BaseLayer<DataType> {
 
  public:
   ValueHead(BaseLayer<DataType>* ip, const MultiHeadWeights::ValueHead& weights,
-            void* scratch, bool attention_body, bool wdl, ActivationFunction act,
-            int max_batch_size, bool use_gemm_ex);
+            void* scratch, bool attention_body, bool wdl,
+            ActivationFunction act, int max_batch_size, bool use_gemm_ex);
   ~ValueHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -551,7 +554,6 @@ class ValueHead : public BaseLayer<DataType> {
   bool attention_body_;
   ActivationFunction act_;
 };
-
 
 }  // namespace cudnn_backend
 }  // namespace lczero
