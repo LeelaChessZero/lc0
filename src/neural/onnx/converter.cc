@@ -1094,8 +1094,8 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
       *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}, {1, 0}));
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
-  flow = MakeActivation(builder, flow, "/mlh/dense2", default_activation_);
-  auto output = builder->Identity(options_.output_mlh, flow);
+  // Explicity ReLU activation.
+  auto output = builder->Relu(options_.output_mlh, flow);
   builder->AddOutput(output, {options_.batch_size, 1}, GetDataType());
   onnx->set_output_mlh(output);
 }
