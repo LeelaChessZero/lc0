@@ -30,7 +30,6 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <mutex>
-#include <numeric>
 #include <queue>
 #include <thread>
 
@@ -38,7 +37,6 @@
 #include "neural/factory.h"
 #include "neural/shared_params.h"
 #include "utils/atomic_vector.h"
-#include "utils/fastmath.h"
 
 namespace lczero {
 namespace {
