@@ -20,7 +20,6 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 #include "layers.h"
 
 #include <cassert>
@@ -46,7 +45,6 @@
 #include "neural/network.h"
 #include "neural/tables/attention_policy_map.h"
 #include "utils/fp16_utils.h"
-#include "dpct/lib_common_utils.hpp"
 
 #include <cmath>
 

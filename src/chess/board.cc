@@ -34,6 +34,7 @@
 #include <cstring>
 #include <sstream>
 #include <utility>
+#include <absl/cleanup/cleanup.h>
 
 #include "utils/exception.h"
 
@@ -573,8 +574,36 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
   return result;
 }  // namespace lczero
 
+bool ChessBoard::IsValid() const {
+  const auto all = ours() | theirs();
+  auto check = all | pawns() | bishops() | rooks() | queens() | kings();
+  if (check != all ||
+      (pawns() & bishops()).as_int() ||
+      (pawns() & rooks()).as_int() ||
+      (pawns() & queens()).as_int() ||
+      (pawns() & kings()).as_int() ||
+      (bishops() & rooks()).as_int() ||
+      (bishops() & queens()).as_int() ||
+      (bishops() & kings()).as_int() ||
+      (rooks() & queens()).as_int() ||
+      (rooks() & kings()).as_int() ||
+      (queens() & kings()).as_int()) {
+    return false;
+  }
+  return true;
+}
+
 bool ChessBoard::ApplyMove(Move move) {
   assert(our_pieces_.intersects(BitBoard::FromSquare(move.from())));
+#ifndef NDEBUG
+  absl::Cleanup validate = [&] {
+    if (!IsValid()) {
+      CERR << "Move " + move.ToString(true) +
+                  " resulted in invalid board: " + DebugString();
+      assert(false);
+    }
+  };
+#endif
   const Square& from = move.from();
   const Square& to = move.to();
   const Rank from_rank = from.rank();
@@ -1113,7 +1142,9 @@ bool ChessBoard::HasMatingMaterial() const {
 }
 
 std::string ChessBoard::DebugString() const {
-  return "https://lc0.org/fen/" + BoardToFen(*this);
+  auto fen = BoardToFen(*this);
+  std::replace(fen.begin(), fen.end(), ' ', '_');
+  return "https://lc0.org/fen/" + fen;
 }
 
 Move ChessBoard::ParseMove(std::string_view move_str) const {
@@ -1160,7 +1191,7 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
     // Qeenside castling.
     return Move::WhiteCastling(from.file(), kFileA);
   }
-  if (from.file() != to.file() && pawns_.get(from) && !their_pieces_.get(to)) {
+  if (from.file() != to.file() && pawns().get(from) && !their_pieces_.get(to)) {
     // En passant.
     return Move::WhiteEnPassant(from, to);
   }

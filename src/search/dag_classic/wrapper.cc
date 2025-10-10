@@ -143,18 +143,18 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
   // FIXME: This is too conservative.
   const size_t kAvgNodeSize =
       sizeof(Node) + sizeof(LowNode) +
-#ifndef FIX_TT
-      sizeof(TranspositionTable::slot_type) +
-#endif
       classic::MemoryWatchingStopper::kAvgMovesPerPosition * sizeof(Edge);
   const size_t kAvgCacheItemSize =
       3 * sizeof(float) + sizeof(std::unique_ptr<float[]>) +
       sizeof(float[classic::MemoryWatchingStopper::kAvgMovesPerPosition]);
-  size_t total_memory = tree_.get()->GetCurrentHead()->GetN() * kAvgNodeSize +
+  size_t total_memory =
+      tree_.get()->GetCurrentHead()->GetN() * kAvgNodeSize +
 #ifdef FIX_TT
-                        tt_.GetCapacity() * tt_.GetItemStructSize() +
+      tt_.GetCapacity() * tt_.GetItemStructSize() +
+#else
+      (sizeof(TranspositionTable::value_type) + 1) * tt_.bucket_count() +
 #endif
-                        cache_size * kAvgCacheItemSize;
+      cache_size * kAvgCacheItemSize;
   auto stopper = time_manager_->GetStopper(
       params, tree_.get()->HeadPosition(), total_memory, kAvgNodeSize,
       tree_.get()->GetCurrentHead()->GetN());
