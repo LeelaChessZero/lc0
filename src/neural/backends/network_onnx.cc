@@ -105,6 +105,9 @@ class OnnxNetwork : public Network {
     return batch_size_ == -1 ? Network::GetMiniBatchSize()
                              : batch_size_ * steps_;
   }
+  int GetPreferredBatchStep() const override {
+    return batch_size_ == -1 ? min_batch_size_ : batch_size_;
+  }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
   Ort::SessionOptions GetOptions(int gpu, int threads, int batch_size,
