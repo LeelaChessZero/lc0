@@ -232,7 +232,7 @@ class DemuxingComputation final : public BackendComputation {
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
     int transform;
-    const size_t idx = entries_.emplace_back(Entry{
+    const size_t idx = entries_.emplace_back(NetworkComputationRequest{
         .input = EncodePositionForNN(backend_->input_format_, pos.pos, 8,
                                      backend_->fill_empty_history_, &transform),
         .legal_moves = MoveList(pos.legal_moves.begin(), pos.legal_moves.end()),
@@ -262,15 +262,8 @@ class DemuxingComputation final : public BackendComputation {
                      size_t index);
 
  private:
-  struct Entry {
-    InputPlanes input;
-    MoveList legal_moves;
-    EvalResultPtr result;
-    int transform;
-  };
-
   DemuxingBackend* backend_;
-  AtomicVector<Entry> entries_;
+  AtomicVector<NetworkComputationRequest> entries_;
   std::vector<DemuxingWork> children_;
   ComputationCallback callback_;
 
@@ -287,36 +280,9 @@ void DemuxingWork::ProcessResults() { source_->ProcessResults(*this); }
 void DemuxingComputation::ProcessResults(const DemuxingWork& work) {
   size_t size = work.end_ - work.start_;
   for (size_t i = 0; i < size; ++i) {
-    const EvalResultPtr& result = entries_[work.start_ + i].result;
-    if (result.q) *result.q = work.computation_->GetQVal(i);
-    if (result.d) *result.d = work.computation_->GetDVal(i);
-    if (result.m) *result.m = work.computation_->GetMVal(i);
-    if (!result.p.empty()) SoftmaxPolicy(result.p, work, i);
+    entries_[work.start_ + i].ProcessResult(
+        *work.computation_, i, backend_->softmax_policy_temperature_);
   }
-}
-
-void DemuxingComputation::SoftmaxPolicy(std::span<float> dst,
-                                        const DemuxingWork& work,
-                                        size_t index) {
-  const std::vector<Move>& moves = entries_[work.start_ + index].legal_moves;
-  const int transform = entries_[work.start_ + index].transform;
-  // Copy the values to the destination array and compute the maximum.
-  assert(dst.size() == moves.size());
-  const float max_p = std::accumulate(
-      moves.begin(), moves.end(), std::numeric_limits<float>::lowest(),
-      [&, counter = 0](float max_p, const Move& move) mutable {
-        return std::max(max_p, dst[counter++] = work.computation_->GetPVal(
-                                   index, MoveToNNIndex(move, transform)));
-      });
-  // Compute the softmax and compute the total.
-  const float temperature = backend_->softmax_policy_temperature_;
-  float total = std::accumulate(
-      dst.begin(), dst.end(), 0.0f, [&](float total, float& val) {
-        return total + (val = FastExp((val - max_p) * temperature));
-      });
-  const float scale = total > 0.0f ? 1.0f / total : 1.0f;
-  // Scale the values to sum to 1.0.
-  std::for_each(dst.begin(), dst.end(), [&](float& val) { val *= scale; });
 }
 
 std::unique_ptr<BackendComputation> DemuxingBackend::CreateComputation() {

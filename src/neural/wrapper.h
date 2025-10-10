@@ -38,6 +38,17 @@ namespace lczero {
 
 FillEmptyHistory EncodeHistoryFill(std::string history_fill);
 
+class NetworkComputationRequest {
+ public:
+  InputPlanes input;
+  MoveList legal_moves;
+  EvalResultPtr result;
+  int transform;
+
+  void ProcessResult(const NetworkComputation& computation, int sample,
+                     const float temperature);
+};
+
 class NetworkAsBackendFactory : public BackendFactory {
  public:
   using FactoryFunc = std::function<std::unique_ptr<Network>(
