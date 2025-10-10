@@ -1161,7 +1161,7 @@ void SearchWorker::RunTasks(int tid) {
 
 void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
-  InitializeIteration(search_->backend_->CreateComputation());
+  InitializeIteration();
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     std::unique_ptr<SpinHelper> spin_helper;
@@ -1250,9 +1250,11 @@ void SearchWorker::ExecuteOneIteration() {
 
 // 1. Initialize internal structures.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::InitializeIteration(
-    std::unique_ptr<BackendComputation> computation) {
-  computation_ = std::move(computation);
+void SearchWorker::InitializeIteration() {
+  // Free the old computation before allocating a new one. This works better
+  // when backend caches buffer allocations between computations.
+  computation_.reset();
+  computation_ = search_->backend_->CreateComputation();
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
 }
