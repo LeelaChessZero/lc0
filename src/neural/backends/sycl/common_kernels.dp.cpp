@@ -20,7 +20,6 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 #include <algorithm>
 #include <cassert>
 
@@ -881,7 +880,7 @@ void globalAvgPool_kernel(T* output, const T* input,
     "--use-experimental-features=masked-sub-group-operation" to use the
     experimental helper function to migrate __shfl_down_sync.
     */
-    S += dpct::shift_sub_group_left(item_ct1.get_sub_group(), S, offset);
+    S += sycl::shift_group_left(item_ct1.get_sub_group(), S, offset);
   }
 
   float avg = S / elementsPerWarp;
@@ -1128,7 +1127,7 @@ void softmax_opt_64_kernel(T* output, const T* input,
   "--use-experimental-features=masked-sub-group-operation" to use the
   experimental helper function to migrate __shfl_sync.
   */
-  maxval = dpct::select_from_sub_group(item_ct1.get_sub_group(), maxval, 0);
+  maxval = sycl::select_from_group(item_ct1.get_sub_group(), maxval, 0);
 
   ex[0] = sycl::exp(x[0] - maxval);
   ex[1] = sycl::exp(x[1] - maxval);
@@ -1141,7 +1140,7 @@ void softmax_opt_64_kernel(T* output, const T* input,
   "--use-experimental-features=masked-sub-group-operation" to use the
   experimental helper function to migrate __shfl_sync.
   */
-  Sum = dpct::select_from_sub_group(item_ct1.get_sub_group(), Sum, 0);
+  Sum = sycl::select_from_group(item_ct1.get_sub_group(), Sum, 0);
 
   ex[0] = ex[0] / Sum;
   ex[1] = ex[1] / Sum;
@@ -1164,11 +1163,16 @@ void softmax_opt_64_kernel(T* output, const T* input,
 // C threads per block, N blocks
 template <typename T>
 void softmax_kernel(T* output, const T* input, const T* input2,
-                    const sycl::nd_item<3> &item_ct1, float &sum, float &maxval) {
+                    const sycl::nd_item<3> &item_ct1, float &localsum,
+                    float &localmax) {
   int n = item_ct1.get_group(2);
   int c = item_ct1.get_local_id(2);
   int C = item_ct1.get_local_range(2);
   int index = n * C + c;
+  sycl::atomic_ref<float, sycl::memory_order::relaxed,
+                   sycl::memory_scope::work_group> maxval(localmax);
+  sycl::atomic_ref<float, sycl::memory_order::relaxed,
+                   sycl::memory_scope::work_group> sum(localsum);
 
   // softmax = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), axis)
 
@@ -1185,7 +1189,7 @@ void softmax_kernel(T* output, const T* input, const T* input2,
 
   // Get max across warp first, and then update across C dimension
   float warpmax = warpMax(x, item_ct1);
-  if ((c & 0x1F) == 0) atomicMaxFloat(&maxval, warpmax);
+  if ((c & 0x1F) == 0) maxval.fetch_max(warpmax);
 
   
   item_ct1.barrier(sycl::access::fence_space::local_space);
@@ -1197,8 +1201,7 @@ void softmax_kernel(T* output, const T* input, const T* input2,
 
   // update shared memory sum across C dimension
   if ((c & 0x1F) == 0)
-      dpct::atomic_fetch_add<sycl::access::address_space::generic_space>(&sum,
-                                                                         val);
+      sum.fetch_add(val);
 
   
   item_ct1.barrier(sycl::access::fence_space::local_space);
@@ -1245,7 +1248,8 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2, sycl::que
   }
 }
 
-__dpct_inline__ float shared_sum_for_layer_norm(
+[[gnu::always_inline]]
+inline float shared_sum_for_layer_norm(
     float x, const sycl::nd_item<3>& item_ct1,
     sycl::local_accessor<float, 2> sum) {
   // compute warp-wide sum
