@@ -893,6 +893,12 @@ class CudaNetwork : public Network {
     return 2 * sm_count_;
   }
 
+  int GetPreferredBatchStep() const override {
+    int preferred_split = 7;
+    while (sm_count_ % preferred_split != 0) preferred_split++;
+    return preferred_split;
+  }
+
   int GetThreads() const override { return 1 + multi_stream_; }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
