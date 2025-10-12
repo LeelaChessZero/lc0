@@ -33,6 +33,7 @@
 #include <cctype>
 #include <cerrno>
 #include <fstream>
+#include <optional>
 
 #include "chess/bitboard.h"
 #include "chess/board.h"
@@ -77,7 +78,7 @@ class PgnReader {
     while (GzGetLine(file, line)) {
       // Check if we have a UTF-8 BOM. If so, just ignore it.
       // Only supposed to exist in the first line, but should not matter.
-      if (line.substr(0,3) == "\xEF\xBB\xBF") line = line.substr(3);
+      if (line.substr(0, 3) == "\xEF\xBB\xBF") line = line.substr(3);
       if (!line.empty() && line.back() == '\r') line.pop_back();
       // TODO: support line breaks in tags to ensure they are properly ignored.
       if (line.empty() || line[0] == '[') {
@@ -151,9 +152,7 @@ class PgnReader {
         // Board ApplyMove wants mirrored for black, but outside code wants
         // normal, so mirror it back again.
         // Check equal to 0 since we've already added the position.
-        if ((cur_game_.size() % 2) == 0) {
-          cur_game_.back().Mirror();
-        }
+        if ((cur_game_.size() % 2) == 0) cur_game_.back().Flip();
         cur_board_.Mirror();
       }
     }
@@ -173,18 +172,18 @@ class PgnReader {
     cur_startpos_ = ChessBoard::kStartposFen;
   }
 
-  Move::Promotion PieceToPromotion(int p) {
+  static std::optional<PieceType> PieceToPieceType(int p) {
     switch (p) {
       case -1:
-        return Move::Promotion::None;
+        return std::nullopt;
       case 2:
-        return Move::Promotion::Queen;
+        return kQueen;
       case 3:
-        return Move::Promotion::Bishop;
+        return kBishop;
       case 4:
-        return Move::Promotion::Knight;
+        return kKnight;
       case 5:
-        return Move::Promotion::Rook;
+        return kRook;
       default:
         // 0 and 1 are pawn and king, which are not legal promotions, other
         // numbers don't correspond to a known piece type.
@@ -206,18 +205,14 @@ class PgnReader {
       p = 4;
     } else if (san[0] == 'R') {
       p = 5;
-    } else if (san[0] == 'O' && san.size() > 2 && san[1] == '-' &&
-               san[2] == 'O') {
+    } else if (san.substr(0, 3) == "O-O") {
       Move m;
       auto king_board = board.kings() & board.ours();
-      BoardSquare king_sq(GetLowestBit(king_board.as_int()));
-      if (san.size() > 4 && san[3] == '-' && san[4] == 'O') {
-        m = Move(BoardSquare(0, king_sq.col()),
-                 BoardSquare(0, board.castlings().our_queenside_rook()));
-      } else {
-        m = Move(BoardSquare(0, king_sq.col()),
-                 BoardSquare(0, board.castlings().our_kingside_rook()));
-      }
+      Square king_sq(File::FromIdx(GetLowestBit(king_board.as_int())), kRank1);
+      m = Move::WhiteCastling(king_sq.file(),
+                              san.substr(3, 2) == "-O"
+                                  ? board.castlings().our_queenside_rook
+                                  : board.castlings().our_kingside_rook);
       return m;
     }
     if (p != 0) idx++;
@@ -285,20 +280,29 @@ class PgnReader {
       auto plm = board.GenerateLegalMoves();
       int pr1 = -1;
       int pc1 = -1;
-      for (BoardSquare sq : searchBits) {
-        if (sr1 != -1 && sq.row() != sr1) continue;
-        if (c1 != -1 && sq.col() != c1) continue;
-        if (std::find(plm.begin(), plm.end(),
-                      Move(sq, BoardSquare(sr2, c2), PieceToPromotion(p2))) ==
-            plm.end()) {
+      for (Square sq : searchBits) {
+        if (sr1 != -1 && sq.rank().idx != sr1) continue;
+        if (c1 != -1 && sq.file().idx != c1) continue;
+        std::optional<PieceType> promotion = PieceToPieceType(p2);
+        std::optional<Square> enpassant = std::nullopt;
+        if (!board.en_passant().empty()) {
+          auto sq = *board.en_passant().begin();
+          enpassant = Square(sq.file(), kRank6);
+        }
+        Square to(File::FromIdx(c2), Rank::FromIdx(sr2));
+        Move move_to_find = promotion ? Move::WhitePromotion(sq, to, *promotion)
+                            : enpassant && *enpassant == to
+                                ? Move::WhiteEnPassant(sq, to)
+                                : Move::White(sq, to);
+        if (std::find(plm.begin(), plm.end(), move_to_find) == plm.end()) {
           continue;
         }
         if (pc1 != -1) {
           CERR << "Ambiguous!!";
           throw Exception("Opening book move seems ambiguous.");
         }
-        pr1 = sq.row();
-        pc1 = sq.col();
+        pr1 = sq.rank().idx;
+        pc1 = sq.file().idx;
       }
       if (pc1 == -1) {
         CERR << "No Match!!";
@@ -310,8 +314,19 @@ class PgnReader {
         r1 = 7 - r1;
       }
     }
-    Move m(BoardSquare(r1, c1), BoardSquare(r2, c2), PieceToPromotion(p2));
-    if (board.flipped()) m.Mirror();
+    std::optional<PieceType> promotion = PieceToPieceType(p2);
+
+    std::optional<Square> enpassant = std::nullopt;
+    if (!board.en_passant().empty()) {
+      auto sq = *board.en_passant().begin();
+      enpassant = Square(sq.file(), board.flipped() ? kRank3 : kRank6);
+    }
+    Square from(File::FromIdx(c1), Rank::FromIdx(r1));
+    Square to(File::FromIdx(c2), Rank::FromIdx(r2));
+    Move m = promotion ? Move::WhitePromotion(from, to, *promotion)
+             : enpassant && *enpassant == to ? Move::WhiteEnPassant(from, to)
+                                             : Move::White(from, to);
+    if (board.flipped()) m.Flip();
     return m;
   }
 

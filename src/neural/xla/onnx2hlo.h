@@ -27,12 +27,13 @@
 
 #pragma once
 
+#include <optional>
 #include <string_view>
 #include <vector>
 
-#include "neural/onnx/onnx.pb.h"
-#include "neural/xla/hlo.pb.h"
-#include "neural/xla/xla_runner.h"
+#include "neural/xla/xla_tensor.h"
+#include "proto/hlo.pb.h"
+#include "proto/onnx.pb.h"
 
 namespace lczero {
 

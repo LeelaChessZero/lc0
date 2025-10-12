@@ -25,12 +25,14 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#pragma once
+
 #include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
 
-#include "neural/xla/hlo.pb.h"
+#include "proto/hlo.pb.h"
 #include "utils/logging.h"
 
 namespace lczero {

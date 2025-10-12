@@ -129,7 +129,7 @@ void XlaMutableTensor::Cast(pblczero::XlaShapeProto::Type new_type) {
         convert(FP32toBF16);
         break;
       case pblczero::XlaShapeProto::F8E5M2:
-        convert(FP32toFP8E5M2);
+        convert(FP32toFP8E5M2_Saturate);
         break;
       default:
         throw Exception("Unsupported cast F32 -> " +

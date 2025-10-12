@@ -30,24 +30,30 @@
 #include <initializer_list>
 
 #include "neural/onnx/adapters.h"
-#include "neural/onnx/onnx.pb.h"
 #include "utils/exception.h"
-#include "utils/random.h"
 #include "version.h"
 
 namespace lczero {
 
-OnnxBuilder::OnnxBuilder(int opset) : opset_(opset) {
-  if (opset < 7 || opset > 18) {
-    throw Exception("Only ONNX opsets between 7 and 18 are supported.");
+OnnxBuilder::OnnxBuilder(int opset, int ir) : opset_(opset) {
+  if (opset < 7 || opset > 22) {
+    throw Exception("Only ONNX opsets between 7 and 22 are supported.");
   }
-  model_.set_ir_version(4);
+  // Map of latest opset corresponding to IR version.
+  std::map<int, int> opset_to_ir = {{8, 3},  {9, 4},   {10, 5},
+                                    {11, 6}, {14, 7},  {18, 8},
+                                    {20, 9}, {22, 10}, {99, 11}};
+  if (ir < 0) ir = opset_to_ir.upper_bound(opset - 1)->second;
+  if (ir < 3 || ir > 10) {
+    throw Exception("Only ONNX IR between 3 and 10 is supported.");
+  }
+  model_.set_ir_version(ir);
   model_.set_domain("org.lczero.models.*");
   model_.set_producer_name("Lc0");
   model_.set_producer_version(GetVersionStr());
   model_.add_opset_import()->set_version(opset);
-  model_.mutable_graph()->set_name("org.lczero/converted/" +
-                                   Random::Get().GetString(16));
+  // TODO change to real network name when it becomes available.
+  model_.mutable_graph()->set_name("org.lczero/converted");
 }
 
 namespace {
