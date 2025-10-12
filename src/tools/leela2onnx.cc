@@ -116,10 +116,10 @@ bool ProcessParameters(OptionsParser* options) {
   if (!options->ProcessAllFlags()) return false;
 
   const OptionsDict& dict = options->GetOptionsDict();
-  dict.EnsureExists<std::string>(kInputFilenameId);
-  if (!dict.OwnExists<std::string>(kOutputFilenameId) &&
-      !dict.OwnExists<std::string>(kHloTextOutputFilenameId) &&
-      !dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+  dict.EnsureHasKey<std::string>(kInputFilenameId);
+  if (!dict.HasOwnKey<std::string>(kOutputFilenameId) &&
+      !dict.HasOwnKey<std::string>(kHloTextOutputFilenameId) &&
+      !dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
     throw Exception(
         "At least one of --output, --hlo-text-output or --hlo-proto-output "
         "must be specified.");
@@ -162,11 +162,11 @@ void ConvertLeelaToOnnx() {
   }
 
   const auto& onnx = weights_file.onnx_model();
-  if (dict.OwnExists<std::string>(kOutputFilenameId)) {
+  if (dict.HasOwnKey<std::string>(kOutputFilenameId)) {
     WriteStringToFile(dict.Get<std::string>(kOutputFilenameId), onnx.model());
   }
-  if (dict.OwnExists<std::string>(kHloTextOutputFilenameId) ||
-      dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+  if (dict.HasOwnKey<std::string>(kHloTextOutputFilenameId) ||
+      dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
     Onnx2HloOptions hlo_options;
     hlo_options.debugging_allow_partial_result =
         dict.Get<bool>(kHloAllowPartialResultId);
@@ -174,7 +174,7 @@ void ConvertLeelaToOnnx() {
     onnx_model.ParseFromString(onnx.model());
     auto hlo_result = ConvertOnnxToHlo(
         onnx_model, dict.Get<int>(kHloBatchSizeId), hlo_options);
-    if (dict.OwnExists<std::string>(kHloTextOutputFilenameId)) {
+    if (dict.HasOwnKey<std::string>(kHloTextOutputFilenameId)) {
       std::string filename = dict.Get<std::string>(kHloTextOutputFilenameId);
       if (filename == "-") {
         PrettyPrintHlo(hlo_result.hlo_module, {}, std::cout);
@@ -183,7 +183,7 @@ void ConvertLeelaToOnnx() {
         PrettyPrintHlo(hlo_result.hlo_module, {}, file);
       }
     }
-    if (dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
+    if (dict.HasOwnKey<std::string>(kHloProtoOutputFilenameId)) {
       WriteStringToFile(dict.Get<std::string>(kHloProtoOutputFilenameId),
                         hlo_result.hlo_module.OutputAsString());
     }

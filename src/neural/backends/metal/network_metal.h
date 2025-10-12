@@ -105,7 +105,7 @@ class MetalNetworkComputation : public NetworkComputation {
 
 class MetalNetwork : public Network {
  public:
-  MetalNetwork(const WeightsFile& file, const OptionsDict& options);
+  MetalNetwork(const WeightsFile& file, const InlineConfig& options);
   ~MetalNetwork() {
     // if (builder_) { /** @todo clean-up delegate first */ delete builder;
     // builder = NULL; }

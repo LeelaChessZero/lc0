@@ -120,8 +120,8 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
 template <typename DataType>
 class CudaNetworkComputation : public NetworkComputation {
  public:
-  CudaNetworkComputation(CudaNetwork<DataType>* network,
-                         bool wdl, bool moves_left);
+  CudaNetworkComputation(CudaNetwork<DataType>* network, bool wdl,
+                         bool moves_left);
   ~CudaNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
@@ -184,12 +184,12 @@ class CudaNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudaNetwork : public Network {
  public:
-  CudaNetwork(const WeightsFile& file, const OptionsDict& options)
+  CudaNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
-    gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+    gpu_id_ = options.GetOrValue<int>("gpu", 0);
 
     const auto nf = file.format().network_format();
     using NF = pblczero::NetworkFormat;
@@ -198,13 +198,13 @@ class CudaNetwork : public Network {
     attn_body_ = nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
                  nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
 
-    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    max_batch_size_ = options.GetOrValue<int>("max_batch", 1024);
     // min_batch_size_ is chosen as 4 as it is common that for sizes less than
     // 4 that there is no performance gain, but there is variance in the
     // outputs, which means that there is extra non-determinism in some
     // scenarios, including using the multiplexing backend.
     min_batch_size_ =
-        options.GetOrDefault<int>("min_batch", std::min(4, max_batch_size_));
+        options.GetOrValue<int>("min_batch", std::min(4, max_batch_size_));
     if (max_batch_size_ < min_batch_size_)
       throw Exception("Max batch must not be less than min_batch setting.");
 
@@ -223,12 +223,12 @@ class CudaNetwork : public Network {
     l2_cache_size_ = deviceProp.l2CacheSize;
     sm_count_ = deviceProp.multiProcessorCount;
 
-    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
+    allow_cache_opt_ = options.GetOrValue<bool>("cache_opt", false);
 
     // Select GPU to run on (for *the current* thread).
     ReportCUDAErrors(cudaSetDevice(gpu_id_));
 
-    multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
+    multi_stream_ = options.GetOrValue<bool>("multi_stream", false);
 
     // layout used by cuda backend is nchw.
     has_tensor_cores_ = false;
@@ -306,7 +306,7 @@ class CudaNetwork : public Network {
       use_res_block_winograd_fuse_opt_ = false;
     }
     // Override if set in backend-opts.
-    if (options.Exists<bool>("res_block_fusing")) {
+    if (options.HasKey<bool>("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
     }
 
@@ -340,14 +340,14 @@ class CudaNetwork : public Network {
     }
 
     std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
+        options.GetOrValue<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
     if (!weights.policy_heads.contains(policy_head)) {
       throw Exception("The policy head you specified '" + policy_head +
                       "' does not exist in this net.");
     }
     std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
+        options.GetOrValue<std::string>("value_head", "winner");
     // Check that selected value head exists.
     if (!weights.value_heads.contains(value_head)) {
       throw Exception("The value head you specified '" + value_head +
@@ -530,15 +530,15 @@ class CudaNetwork : public Network {
              pblczero::NetworkFormat::VALUE_WDL;
       BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
       auto value_main = std::make_unique<ValueHead<DataType>>(
-          lastlayer, head, scratch_mem_, attn_body_, wdl_, act,
-          max_batch_size_, use_gemm_ex);
+          lastlayer, head, scratch_mem_, attn_body_, wdl_, act, max_batch_size_,
+          use_gemm_ex);
       network_.emplace_back(std::move(value_main));
     }
 
     // Moves left head
     moves_left_ = (file.format().network_format().moves_left() ==
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                  options.GetOrDefault<bool>("mlh", true);
+                  options.GetOrValue<bool>("mlh", true);
     if (moves_left_) {
       if (attn_body_) {
         auto embedded_mov = std::make_unique<EmbeddingLayer<DataType>>(
@@ -1065,7 +1065,7 @@ void CudaNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const InlineConfig& options) {
   if (!w) {
     throw Exception(
         "The cuda" +
@@ -1135,8 +1135,8 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
 }
 
 std::unique_ptr<Network> MakeCudaNetworkAuto(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
+  int gpu_id = options.GetOrValue<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
   // No error checking here, this will be repeated later.
   cudaGetDeviceProperties(&deviceProp, gpu_id);

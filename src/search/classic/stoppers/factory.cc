@@ -75,11 +75,11 @@ void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
 std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
-  OptionsDict tm_options;
-  tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
-  if (!options.IsDefault<float>(kSlowMoverId)) {
+  InlineConfig tm_options;
+  ParseInlineConfig(options.Get<std::string>(kTimeManagerId), &tm_options);
+  if (!options.IsUnmodified<float>(kSlowMoverId)) {
     // Assume that default behavior of simple and normal mode is the same.
-    if (!options.IsDefault<std::string>(kTimeManagerId)) {
+    if (!options.IsUnmodified<std::string>(kTimeManagerId)) {
       throw Exception("You can't set both time manager and slowmover value");
     }
     float slowmover = options.Get<float>(kSlowMoverId);

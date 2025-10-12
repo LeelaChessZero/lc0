@@ -68,15 +68,15 @@ class LegacyStopper : public TimeLimitStopper {
 
 class LegacyTimeManager : public TimeManager {
  public:
-  LegacyTimeManager(int64_t move_overhead, const OptionsDict& params)
+  LegacyTimeManager(int64_t move_overhead, const InlineConfig& params)
       : move_overhead_(move_overhead),
-        slowmover_(params.GetOrDefault<float>("slowmover", 1.0f)),
+        slowmover_(params.GetOrValue<float>("slowmover", 1.0f)),
         time_curve_midpoint_(
-            params.GetOrDefault<float>("midpoint-move", 51.5f)),
-        time_curve_steepness_(params.GetOrDefault<float>("steepness", 7.0f)),
-        spend_saved_time_(params.GetOrDefault<float>("immediate-use", 1.0f)),
-        first_move_bonus_(params.GetOrDefault<float>("first-move-bonus", 1.8f)),
-        book_ply_bonus_(params.GetOrDefault<float>("book-ply-bonus", 0.25f)) {}
+            params.GetOrValue<float>("midpoint-move", 51.5f)),
+        time_curve_steepness_(params.GetOrValue<float>("steepness", 7.0f)),
+        spend_saved_time_(params.GetOrValue<float>("immediate-use", 1.0f)),
+        first_move_bonus_(params.GetOrValue<float>("first-move-bonus", 1.8f)),
+        book_ply_bonus_(params.GetOrValue<float>("book-ply-bonus", 0.25f)) {}
   std::unique_ptr<SearchStopper> GetStopper(const GoParams& params,
                                             const Position& position,
                                             size_t /*total_memory*/,
@@ -172,7 +172,7 @@ std::unique_ptr<SearchStopper> LegacyTimeManager::GetStopper(
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeLegacyTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params) {
+                                                   const InlineConfig& params) {
   return std::make_unique<LegacyTimeManager>(move_overhead, params);
 }
 }  // namespace classic

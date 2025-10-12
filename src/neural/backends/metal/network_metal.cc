@@ -85,14 +85,14 @@ std::string activationString(pblczero::NetworkFormat::ActivationFunction act) {
   }
 }
 
-MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
+MetalNetwork::MetalNetwork(const WeightsFile& file, const InlineConfig& options)
     : capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()} {
   MultiHeadWeights weights(file.weights());
 
   try {
-    const int gpu_id = options.GetOrDefault<int>("gpu", 0);
+    const int gpu_id = options.GetOrValue<int>("gpu", 0);
     builder_ = std::make_unique<MetalNetworkBuilder>();
     std::string device = builder_->init(gpu_id);
     CERR << "Initialized metal backend on device " << device;
@@ -100,8 +100,8 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
     throw Exception("There was an error initializing the GPU device.");
   }
 
-  max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
-  batch_size_ = options.GetOrDefault<int>("batch", 64);
+  max_batch_size_ = options.GetOrValue<int>("max_batch", 1024);
+  batch_size_ = options.GetOrValue<int>("batch", 64);
 
   conv_policy_ = file.format().network_format().policy() ==
                  pblczero::NetworkFormat::POLICY_CONVOLUTION;
@@ -114,7 +114,7 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 
   moves_left_ = (file.format().network_format().moves_left() ==
                  pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                options.GetOrDefault<bool>("mlh", true);
+                options.GetOrValue<bool>("mlh", true);
 
   bool attn_body =
       (file.format().network_format().network()) ==
@@ -146,14 +146,14 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                     ffn_activation));
 
   std::string policy_head =
-      options.GetOrDefault<std::string>("policy_head", "vanilla");
+      options.GetOrValue<std::string>("policy_head", "vanilla");
   // Check that selected policy head exists.
   if (weights.policy_heads.count(policy_head) == 0) {
     throw Exception("The policy head you specified '" + policy_head +
                     "' does not exist in this net.");
   }
   std::string value_head =
-      options.GetOrDefault<std::string>("value_head", "winner");
+      options.GetOrValue<std::string>("value_head", "winner");
   // Check that selected value head exists.
   if (weights.value_heads.count(value_head) == 0) {
     throw Exception("The value head you specified '" + value_head +
@@ -187,7 +187,7 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,
-                                          const OptionsDict& options) {
+                                          const InlineConfig& options) {
   if (!w) {
     throw Exception("The Metal backend requires a network file.");
   }

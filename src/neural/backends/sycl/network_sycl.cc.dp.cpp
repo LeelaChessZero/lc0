@@ -15,21 +15,21 @@
 
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
-   
+
   SPDX-License-Identifier:GNU General Public License v3.0 or later
 */
 
 #define DPCT_COMPAT_RT_VERSION 12020
 
-#include <sycl/sycl.hpp>
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
+#include <sycl/sycl.hpp>
 
-#include "sycl_common.h"
 #include "inputs_outputs.h"
 #include "kernels.h"
 #include "layers.h"
@@ -38,9 +38,9 @@
 #include "neural/network_legacy.h"
 #include "neural/tables/attention_policy_map.h"
 #include "neural/tables/policy_map.h"
+#include "sycl_common.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
-#include <cmath>
 
 namespace lczero {
 using namespace sycldnn_backend;
@@ -185,12 +185,12 @@ class SyclNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class SyclNetwork : public Network {
  public:
-  SyclNetwork(const WeightsFile& file, const OptionsDict& options)
+  SyclNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
-    gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+    gpu_id_ = options.GetOrValue<int>("gpu", 0);
 
     const auto nf = file.format().network_format();
     using NF = pblczero::NetworkFormat;
@@ -199,72 +199,73 @@ class SyclNetwork : public Network {
     attn_body_ = nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
                  nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
 
-    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    max_batch_size_ = options.GetOrValue<int>("max_batch", 1024);
 
     // Get all available platforms
     auto platforms = sycl::platform::get_platforms();
-    
+
     if (platforms.empty()) {
       throw Exception("No SYCL platform found.");
     }
     showPlatformInfo(platforms);
-    
+
     // A vector to store all sycl devices.
     std::vector<sycl::device> devices;
 
     for (const auto& platform : platforms) {
-       auto platform_devices = platform.get_devices();
-       devices.insert(devices.end(), platform_devices.begin(), platform_devices.end());
+      auto platform_devices = platform.get_devices();
+      devices.insert(devices.end(), platform_devices.begin(),
+                     platform_devices.end());
     }
 
     if (gpu_id_ >= (int)devices.size() || gpu_id_ < 0)
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
-    
+
     // Is it a cpu device?
     is_cpu_ = devices[gpu_id_].is_cpu();
     // Get the number of compute units(execution units).
-    compute_units_ = devices[gpu_id_].get_info<sycl::info::device::max_compute_units>();
+    compute_units_ =
+        devices[gpu_id_].get_info<sycl::info::device::max_compute_units>();
     // Get context.
     sycl::context context{devices[gpu_id_]};
-    auto exceptions_handler = [&] (sycl::exception_list exceptions) {
-        for (std::exception_ptr const& e : exceptions) {
-           try {
-               std::rethrow_exception(e);
-            } catch(sycl::exception const& e) {
-				CERR 
-                << "Caught asynchronous SYCL exception during GEMM:\n"
-                << e.what() 
-                << "\n ";
-                std::terminate();
-            }
+    auto exceptions_handler = [&](sycl::exception_list exceptions) {
+      for (std::exception_ptr const& e : exceptions) {
+        try {
+          std::rethrow_exception(e);
+        } catch (sycl::exception const& e) {
+          CERR << "Caught asynchronous SYCL exception during GEMM:\n"
+               << e.what() << "\n ";
+          std::terminate();
         }
+      }
     };
-    
-    sycl_queue_ = new sycl::queue{context, devices[gpu_id_], 
-              exceptions_handler, sycl::property_list{sycl::property::queue::in_order{}} };
+
+    sycl_queue_ =
+        new sycl::queue{context, devices[gpu_id_], exceptions_handler,
+                        sycl::property_list{sycl::property::queue::in_order{}}};
 
     showDeviceInfo(*sycl_queue_);
 
-    l2_cache_size_ =  sycl_queue_->get_device().get_info<sycl::info::device::local_mem_size>();
+    l2_cache_size_ = sycl_queue_->get_device()
+                         .get_info<sycl::info::device::local_mem_size>();
 
-    allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
+    allow_cache_opt_ = options.GetOrValue<bool>("cache_opt", false);
 
     // Select GPU to run on (for *the current* thread).
-    multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
+    multi_stream_ = options.GetOrValue<bool>("multi_stream", false);
 
     // layout used by cuda backend is nchw.
     has_tensor_cores_ = false;
     constexpr bool fp16 = std::is_same<sycl::half, DataType>::value;
 
-    //dpct::device_info deviceProp = {};
-    //sycl_queue_->get_device().get_device_info(deviceProp);
-
+    // dpct::device_info deviceProp = {};
+    // sycl_queue_->get_device().get_device_info(deviceProp);
 
     if (fp16) {
       if (!sycl_queue_->get_device().has(sycl::aspect::fp16)) {
         throw Exception("Requested fp16 is not supported by the device");
       }
-      CERR << "Using Fp16 "; 
+      CERR << "Using Fp16 ";
     } else {
       CERR << "Using Fp32 ";
     }
@@ -288,7 +289,9 @@ class SyclNetwork : public Network {
         residual_single_layer_weight_size * numBlocks_ * 2;
     size_t transformed_residual_weight_size = residual_weight_size * 4;
 
-    size_t global_mem_size = sycl_queue_->get_device().get_info<sycl::info::device::max_mem_alloc_size>();
+    size_t global_mem_size =
+        sycl_queue_->get_device()
+            .get_info<sycl::info::device::max_mem_alloc_size>();
 
     if (transformed_residual_weight_size > 0.4 * global_mem_size) {
       CERR << "WARNING: Low GPU video memory. You may run into OOM errors. Try "
@@ -309,8 +312,8 @@ class SyclNetwork : public Network {
       use_res_block_winograd_fuse_opt_ = false;
     }
     // Override if set in backend-opts.
-#if  0
-    if (options.Exists<bool>("res_block_fusing")) {
+#if 0
+    if (options.HasKey<bool>("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
     }
 #endif
@@ -333,9 +336,9 @@ class SyclNetwork : public Network {
     // MB is way more than that what we need but make sure it's at least 3x of
     // single layer's weight size to be safe.
     if (max_weight_size < 3 * residual_single_layer_weight_size)
-        max_weight_size = 3 * residual_single_layer_weight_size;
+      max_weight_size = 3 * residual_single_layer_weight_size;
 
-     scratch_size_ = max_weight_size;
+    scratch_size_ = max_weight_size;
 
     // times size (4x4 block transformed into 6x6).
     if (numBlocks_ > 0) {
@@ -346,14 +349,14 @@ class SyclNetwork : public Network {
     }
 
     std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
+        options.GetOrValue<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
     if (weights.policy_heads.count(policy_head) == 0) {
       throw Exception("The policy head you specified '" + policy_head +
                       "' does not exist in this net.");
     }
     std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
+        options.GetOrValue<std::string>("value_head", "winner");
     // Check that selected value head exists.
     if (weights.value_heads.count(value_head) == 0) {
       throw Exception("The value head you specified '" + value_head +
@@ -386,7 +389,7 @@ class SyclNetwork : public Network {
       {
         auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
             nullptr, kNumFilters, 8, 8, kNumInputPlanes, act, true, false,
-            false, 0,  *sycl_queue_, use_res_block_winograd_fuse_opt_);
+            false, 0, *sycl_queue_, use_res_block_winograd_fuse_opt_);
 
         inputConv->LoadWeights(&weights.input.weights[0],
                                &weights.input.biases[0], scratch_mem_);
@@ -398,7 +401,7 @@ class SyclNetwork : public Network {
         bool has_se = weights.residual[block].has_se;
         int se_k = (int)weights.residual[block].se.b1.size();
 
-        /*   
+        /*
         if (use_res_block_winograd_fuse_opt_) {
           auto layer = std::make_unique<ResidualBlock<DataType>>(
               getLastLayer(), kNumFilters, has_se, se_k,
@@ -418,28 +421,27 @@ class SyclNetwork : public Network {
                                  scratch_mem_);
           network_.emplace_back(std::move(layer));
         } else { */
-          auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, false,
-              false, 0, *sycl_queue_);
+        auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+            getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, false,
+            false, 0, *sycl_queue_);
 
-          conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
-                             &weights.residual[block].conv1.biases[0],
-                             scratch_mem_);
-          network_.emplace_back(std::move(conv1));
+        conv1->LoadWeights(&weights.residual[block].conv1.weights[0],
+                           &weights.residual[block].conv1.biases[0],
+                           scratch_mem_);
+        network_.emplace_back(std::move(conv1));
 
-          auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
-              getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, true,
-              has_se, se_k, *sycl_queue_);
-          conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
-                             &weights.residual[block].conv2.biases[0],
-                             scratch_mem_);
-          if (has_se)
-            conv2->LoadSEWeights(&weights.residual[block].se.w1[0],
-                                 &weights.residual[block].se.b1[0],
-                                 &weights.residual[block].se.w2[0],
-                                 &weights.residual[block].se.b2[0],
-                                 scratch_mem_);
-          network_.emplace_back(std::move(conv2));
+        auto conv2 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
+            getLastLayer(), kNumFilters, 8, 8, kNumFilters, act, true, true,
+            has_se, se_k, *sycl_queue_);
+        conv2->LoadWeights(&weights.residual[block].conv2.weights[0],
+                           &weights.residual[block].conv2.biases[0],
+                           scratch_mem_);
+        if (has_se)
+          conv2->LoadSEWeights(&weights.residual[block].se.w1[0],
+                               &weights.residual[block].se.b1[0],
+                               &weights.residual[block].se.w2[0],
+                               &weights.residual[block].se.b2[0], scratch_mem_);
+        network_.emplace_back(std::move(conv2));
         //}
       }
       resi_last_ = getLastLayer();
@@ -483,7 +485,8 @@ class SyclNetwork : public Network {
         network_.emplace_back(std::move(AttentionPolicy));
 
         auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-            getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true, *sycl_queue_);
+            getLastLayer(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true,
+            *sycl_queue_);
         policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
         network_.emplace_back(std::move(policymap));
 
@@ -508,7 +511,8 @@ class SyclNetwork : public Network {
           network_.emplace_back(std::move(conv2));
 
           auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
-              getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8, false, *sycl_queue_);
+              getLastLayer(), kNumOutputPolicy, 1, 1, 73 * 8 * 8, false,
+              *sycl_queue_);
           policymap->LoadWeights(kConvPolicyMap, scratch_mem_);
 
           network_.emplace_back(std::move(policymap));
@@ -522,8 +526,8 @@ class SyclNetwork : public Network {
           network_.emplace_back(std::move(convPol));
 
           auto FCPol = std::make_unique<FCLayer<DataType>>(
-              getLastLayer(), head.ip_pol_b.size(), 1, 1, true,
-              ACTIVATION_NONE, *sycl_queue_);
+              getLastLayer(), head.ip_pol_b.size(), 1, 1, true, ACTIVATION_NONE,
+              *sycl_queue_);
           FCPol->LoadWeights(&head.ip_pol_w[0], &head.ip_pol_b[0],
                              scratch_mem_);
           network_.emplace_back(std::move(FCPol));
@@ -540,15 +544,15 @@ class SyclNetwork : public Network {
 
       BaseLayer<DataType>* lastlayer = attn_body_ ? encoder_last_ : resi_last_;
       auto value_main = std::make_unique<ValueHead<DataType>>(
-          lastlayer, head, scratch_mem_, attn_body_, wdl_, act,
-          max_batch_size_, *sycl_queue_);
+          lastlayer, head, scratch_mem_, attn_body_, wdl_, act, max_batch_size_,
+          *sycl_queue_);
       network_.emplace_back(std::move(value_main));
     }
 
     // Moves left head
     moves_left_ = (file.format().network_format().moves_left() ==
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                  options.GetOrDefault<bool>("mlh", true);
+                  options.GetOrValue<bool>("mlh", true);
     if (moves_left_) {
       if (attn_body_) {
         auto embedded_mov = std::make_unique<EmbeddingLayer<DataType>>(
@@ -564,13 +568,14 @@ class SyclNetwork : public Network {
         network_.emplace_back(std::move(convMov));
       }
       auto FCMov1 = std::make_unique<FCLayer<DataType>>(
-          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, act, *sycl_queue_);
+          getLastLayer(), weights.ip1_mov_b.size(), 1, 1, true, act,
+          *sycl_queue_);
       FCMov1->LoadWeights(&weights.ip1_mov_w[0], &weights.ip1_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov1));
 
-      auto FCMov2 = std::make_unique<FCLayer<DataType>>(getLastLayer(), 1, 1, 1,
-                                                        true, ACTIVATION_RELU, *sycl_queue_);
+      auto FCMov2 = std::make_unique<FCLayer<DataType>>(
+          getLastLayer(), 1, 1, 1, true, ACTIVATION_RELU, *sycl_queue_);
       FCMov2->LoadWeights(&weights.ip2_mov_w[0], &weights.ip2_mov_b[0],
                           scratch_mem_);
       network_.emplace_back(std::move(FCMov2));
@@ -595,9 +600,9 @@ class SyclNetwork : public Network {
 
     if (!multi_stream_) {
       for (auto& mem : tensor_mem_) {
-            //mem = (typename std::remove_reference<decltype(mem)>::type)
-            mem = (DataType *)sycl::malloc_device(maxSize, *sycl_queue_);
-            sycl_queue_->memset(mem, 0, maxSize).wait();
+        // mem = (typename std::remove_reference<decltype(mem)>::type)
+        mem = (DataType*)sycl::malloc_device(maxSize, *sycl_queue_);
+        sycl_queue_->memset(mem, 0, maxSize).wait();
       }
     }
 
@@ -606,14 +611,12 @@ class SyclNetwork : public Network {
     // pre-allocate one InputsOutputs object
     // The first call to allocate memory, create cublas,
     // strem, etc takes really long (600 ms)
-    //CERR << "Creating Inputs Outputs. ";
+    // CERR << "Creating Inputs Outputs. ";
     std::unique_ptr<InputsOutputs> io = GetInputsOutputs();
-    //CERR << "Done loading network. ";
+    // CERR << "Done loading network. ";
   }
 
   void forwardEval(InputsOutputs* io, int batchSize) {
-    
-    
     if (!multi_stream_) lock_.lock();
 
 #ifdef DEBUG_RAW_NPS
@@ -631,41 +634,36 @@ class SyclNetwork : public Network {
     DataType*** head_offset_pointers;
 
     if (multi_stream_) {
-      
       // We use tensor and scratch memory from InputOutputs (so that multiple
       // requests can run in parallel)
       for (int i = 0; i < 3; i++) tensor_mem[i] = (DataType*)io->tensor_mem_[i];
       scratch_mem = io->scratch_mem_;
       offset_pointers = (DataType***)&io->offset_pointers_;
       head_offset_pointers = (DataType***)&io->head_offset_pointers_;
-      //stream = io->stream_;
-      //cublas = io->cublas_;
+      // stream = io->stream_;
+      // cublas = io->cublas_;
     } else {
-      
       for (int i = 0; i < 3; i++) tensor_mem[i] = tensor_mem_[i];
       scratch_mem = scratch_mem_;
       offset_pointers = (DataType***)&offset_pointers_;
       head_offset_pointers = (DataType***)&head_offset_pointers_;
-      //stream = &dpct::get_default_queue();  // default stream
-      //cublas = cublas_;
+      // stream = &dpct::get_default_queue();  // default stream
+      // cublas = cublas_;
     }
 
-    
     bool fp16 = std::is_same<sycl::half, DataType>::value;
     if (fp16) {
-      expandPlanes_Fp16_NCHW((sycl::half*)(tensor_mem[0]), ipDataMasks, ipDataValues,
-                             batchSize * kInputPlanes, io_sycl_queue_);
+      expandPlanes_Fp16_NCHW((sycl::half*)(tensor_mem[0]), ipDataMasks,
+                             ipDataValues, batchSize * kInputPlanes,
+                             io_sycl_queue_);
     } else {
       expandPlanes_Fp32_NCHW((float*)(tensor_mem[0]), ipDataMasks, ipDataValues,
                              batchSize * kInputPlanes, io_sycl_queue_);
     }
-    
 
     float* opPol = io->op_policy_mem_gpu_;
     float* opVal = io->op_value_mem_shared_;
     float* opMov = io->op_moves_left_mem_shared_;
-
-    
 
     // Figure out if the memory requirment for running the res block would fit
     // in the L2 cache.
@@ -673,48 +671,50 @@ class SyclNetwork : public Network {
     DataType* skip_connection =
         use_res_block_winograd_fuse_opt_ ? tensor_mem[1] : tensor_mem[2];
 
-    
-//#if DPCT_COMPAT_RT_VERSION >= 11000
+    // #if DPCT_COMPAT_RT_VERSION >= 11000
     const int pre_transform_tensor_size =
         batchSize * numFilters_ * 8 * 8 * sizeof(DataType);
     const int transformed_tensor_size = pre_transform_tensor_size * 36 / 16;
     const int res_block_mem =
         transformed_tensor_size * 2 + pre_transform_tensor_size;
 
-    //cudaStreamAttrValue stream_attribute = {};
-    //stream_attribute.accessPolicyWindow.base_ptr = tensor_mem[2];
-    //stream_attribute.accessPolicyWindow.num_bytes = res_block_mem;
-    //stream_attribute.accessPolicyWindow.hitRatio = 1.0f;
-    //stream_attribute.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;
-    //stream_attribute.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
+    // cudaStreamAttrValue stream_attribute = {};
+    // stream_attribute.accessPolicyWindow.base_ptr = tensor_mem[2];
+    // stream_attribute.accessPolicyWindow.num_bytes = res_block_mem;
+    // stream_attribute.accessPolicyWindow.hitRatio = 1.0f;
+    // stream_attribute.accessPolicyWindow.hitProp =
+    // cudaAccessPropertyPersisting;
+    // stream_attribute.accessPolicyWindow.missProp =
+    // cudaAccessPropertyStreaming;
 
-    //if (allow_cache_opt_ && use_res_block_winograd_fuse_opt_ &&
-    //    (res_block_mem <= scratch_size_) && (res_block_mem <= l2_cache_size_)) {
-      // we can use a single alloc to hold all the required tensors, and enable
-      // persistent L2 caching on it
-      /*
-      DPCT1007:87: Migration of cudaStreamSetAttribute is not supported.
-      */
-      //cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
+    // if (allow_cache_opt_ && use_res_block_winograd_fuse_opt_ &&
+    //     (res_block_mem <= scratch_size_) && (res_block_mem <=
+    //     l2_cache_size_)) {
+    //  we can use a single alloc to hold all the required tensors, and enable
+    //  persistent L2 caching on it
+    /*
+    DPCT1007:87: Migration of cudaStreamSetAttribute is not supported.
+    */
+    // cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow,
+    // &stream_attribute);
 
-     // enableCacheOpt = true;
+    // enableCacheOpt = true;
     //  skip_connection =
     //      tensor_mem[2] + 2 * transformed_tensor_size / sizeof(DataType);
-   // }
-//#endif
+    // }
+    // #endif
 
     int l = 0;
 
     DataType* flow = tensor_mem[0];
     DataType* spare1 = tensor_mem[1];
     DataType* spare2 = tensor_mem[2];
-    
 
     if (numBlocks_ > 0) {
       // Input.
       network_[l++]->Eval(batchSize, skip_connection, tensor_mem[0], nullptr,
-                          scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // input conv
-      
+                          scratch_mem, scratch_size_, io_sycl_queue_,
+                          nullptr);  // input conv
 
       // Residual block.
       for (int block = 0; block < numBlocks_; block++) {
@@ -724,14 +724,13 @@ class SyclNetwork : public Network {
                               scratch_size_, io_sycl_queue_, nullptr);  // block
         } else {
           network_[l++]->Eval(batchSize, tensor_mem[0], tensor_mem[2], nullptr,
-                              scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // conv1
+                              scratch_mem, scratch_size_, io_sycl_queue_,
+                              nullptr);  // conv1
 
           network_[l++]->Eval(batchSize, tensor_mem[2], tensor_mem[0],
                               tensor_mem[2], scratch_mem, scratch_size_,
                               io_sycl_queue_, nullptr);  // conv2
         }
-
-        
       }
 
       flow = tensor_mem[2];
@@ -739,7 +738,6 @@ class SyclNetwork : public Network {
       spare2 = tensor_mem[1];
     }
 
-    
     if (attn_body_) {
       network_[l++]->Eval(
           batchSize, tensor_mem[1],
@@ -754,52 +752,53 @@ class SyclNetwork : public Network {
     }
 
     // Policy head.
-   
+
     if (attn_policy_) {
-      
       network_[l++]->Eval(
-          batchSize, spare1, flow, spare2, scratch_mem, scratch_size_, io_sycl_queue_,
+          batchSize, spare1, flow, spare2, scratch_mem, scratch_size_,
+          io_sycl_queue_,
           head_offset_pointers);  // Entire Attention policy head except for the
                                   // policy map
       if (fp16) {
         network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
-                            scratch_size_, io_sycl_queue_, nullptr);  // policy map layer
-
+                            scratch_size_, io_sycl_queue_,
+                            nullptr);  // policy map layer
 
         copyTypeConverted(opPol, (sycl::half*)spare2,
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY output
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
-                            scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // policy map layer  // POLICY output
-        
+                            scratch_mem, scratch_size_, io_sycl_queue_,
+                            nullptr);  // policy map layer  // POLICY output
       }
- 
-    } else if (conv_policy_) {
 
+    } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
-                          scratch_size_, io_sycl_queue_, nullptr);  // policy conv1
+                          scratch_size_, io_sycl_queue_,
+                          nullptr);  // policy conv1
 
       network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
-                          scratch_size_, io_sycl_queue_, nullptr);  // policy conv2
+                          scratch_size_, io_sycl_queue_,
+                          nullptr);  // policy conv2
 
       if (fp16) {
         network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
-                            scratch_size_, io_sycl_queue_, nullptr);  // policy map layer
+                            scratch_size_, io_sycl_queue_,
+                            nullptr);  // policy map layer
 
         copyTypeConverted(opPol, (sycl::half*)(spare1),
                           batchSize * kNumOutputPolicy,
                           io_sycl_queue_);  // POLICY output
 
-
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare2, nullptr,
-                            scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  
-                            // policy map layer  // POLICY output
+                            scratch_mem, scratch_size_, io_sycl_queue_,
+                            nullptr);
+        // policy map layer  // POLICY output
       }
 
     } else {
-      
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // pol conv
 
@@ -812,28 +811,30 @@ class SyclNetwork : public Network {
                           io_sycl_queue_);  // POLICY
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
-                            scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // pol FC  // POLICY
+                            scratch_mem, scratch_size_, io_sycl_queue_,
+                            nullptr);  // pol FC  // POLICY
       }
     }
-
 
     // value head
     if (fp16) {
       network_[l++]->Eval(batchSize, spare1, flow, spare2, scratch_mem,
-                          scratch_size_, io_sycl_queue_, nullptr);  // value head
+                          scratch_size_, io_sycl_queue_,
+                          nullptr);  // value head
 
-      copyTypeConverted(opVal, (sycl::half*)spare1, wdl_ ? 3 * batchSize : batchSize,
-                        io_sycl_queue_);
+      copyTypeConverted(opVal, (sycl::half*)spare1,
+                        wdl_ ? 3 * batchSize : batchSize, io_sycl_queue_);
     } else {
       network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2,
-                          scratch_mem, scratch_size_, io_sycl_queue_, nullptr);  // value head
+                          scratch_mem, scratch_size_, io_sycl_queue_,
+                          nullptr);  // value head
     }
 
     if (moves_left_) {
-
       // Moves left head
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
-                          scratch_size_, io_sycl_queue_, nullptr);  // moves conv or embedding
+                          scratch_size_, io_sycl_queue_,
+                          nullptr);  // moves conv or embedding
 
       network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem,
                           scratch_size_, io_sycl_queue_, nullptr);  // moves FC1
@@ -841,28 +842,28 @@ class SyclNetwork : public Network {
       // Moves left FC2
       if (fp16) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
-        
-        
+
         network_[l++]->Eval(batchSize, spare1, spare2, nullptr, scratch_mem,
                             scratch_size_, io_sycl_queue_, nullptr);
-        
 
-        copyTypeConverted(opMov, (sycl::half*)(spare1), batchSize, io_sycl_queue_);
-      
+        copyTypeConverted(opMov, (sycl::half*)(spare1), batchSize,
+                          io_sycl_queue_);
+
       } else {
-
         network_[l++]->Eval(batchSize, (DataType*)opMov, spare2, nullptr,
-                            scratch_mem, scratch_size_, io_sycl_queue_, nullptr);
-
+                            scratch_mem, scratch_size_, io_sycl_queue_,
+                            nullptr);
       }
     }
-    
+
     // Copy policy output from device memory to host memory.
-    auto event = io_sycl_queue_.memcpy(io->op_policy_mem_, io->op_policy_mem_gpu_, sizeof(float) * kNumOutputPolicy * batchSize);
+    auto event =
+        io_sycl_queue_.memcpy(io->op_policy_mem_, io->op_policy_mem_gpu_,
+                              sizeof(float) * kNumOutputPolicy * batchSize);
 
     if (!multi_stream_) {
-      //ReportCUDAErrors(
-        //  DPCT_CHECK_ERROR(dpct::get_current_device().queues_wait_and_throw()));
+      // ReportCUDAErrors(
+      //   DPCT_CHECK_ERROR(dpct::get_current_device().queues_wait_and_throw()));
       // The next thread can start using the GPU now.
       lock_.unlock();
     }
@@ -891,18 +892,15 @@ class SyclNetwork : public Network {
   }
 
   ~SyclNetwork() {
-    if (scratch_mem_) 
-        sycl::free(scratch_mem_, *sycl_queue_);
+    if (scratch_mem_) sycl::free(scratch_mem_, *sycl_queue_);
     if (!multi_stream_) {
       for (auto mem : tensor_mem_) {
-        if (mem) 
-          sycl::free(mem, *sycl_queue_);
+        if (mem) sycl::free(mem, *sycl_queue_);
       }
-      if (offset_pointers_) 
-          sycl::free(offset_pointers_, *sycl_queue_);
+      if (offset_pointers_) sycl::free(offset_pointers_, *sycl_queue_);
       if (head_offset_pointers_)
-          sycl::free(head_offset_pointers_, *sycl_queue_);
-      //cublas_ = nullptr;
+        sycl::free(head_offset_pointers_, *sycl_queue_);
+      // cublas_ = nullptr;
     }
   }
 
@@ -916,11 +914,11 @@ class SyclNetwork : public Network {
   int GetThreads() const override { return 1 + multi_stream_; }
 
   int GetMiniBatchSize() const override {
-     if (is_cpu_) return 47;
-       // Simple heuristic that seems to work for a wide range of GPUs.
-       return 2 * compute_units_;
-    }
-  
+    if (is_cpu_) return 47;
+    // Simple heuristic that seems to work for a wide range of GPUs.
+    return 2 * compute_units_;
+  }
+
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<SyclNetworkComputation<DataType>>(this, wdl_,
                                                               moves_left_);
@@ -930,7 +928,8 @@ class SyclNetwork : public Network {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs>(
-          max_batch_size_, wdl_, moves_left_, *sycl_queue_, tensor_mem_size_, scratch_size_,
+          max_batch_size_, wdl_, moves_left_, *sycl_queue_, tensor_mem_size_,
+          scratch_size_,
           !has_tensor_cores_ && std::is_same<sycl::half, DataType>::value);
     } else {
       std::unique_ptr<InputsOutputs> resource =
@@ -945,7 +944,6 @@ class SyclNetwork : public Network {
     free_inputs_outputs_.push_back(std::move(resource));
   }
 
-
  private:
   const NetworkCapabilities capabilities_;
   int gpu_id_;
@@ -959,13 +957,11 @@ class SyclNetwork : public Network {
   bool multi_stream_;                     // run multiple parallel network evals
   bool allow_cache_opt_;  // try to fit residual block activations in L2 cache
 
-
   // Currently only one NN Eval can happen a time (we can fix this if needed
   // by allocating more memory).
   mutable std::mutex lock_;
   sycl::queue* sycl_queue_;
   bool is_cpu_;
-
 
   int numBlocks_;
   int numFilters_;
@@ -992,58 +988,71 @@ class SyclNetwork : public Network {
   bool has_tensor_cores_;
 
   // not used when multi-steam is enabled
-  //dpct::queue_ptr cublas_;
+  // dpct::queue_ptr cublas_;
   DataType* tensor_mem_[3];
 
   mutable std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 
-  void showDeviceInfo(const sycl::queue &mqueue) const {
+  void showDeviceInfo(const sycl::queue& mqueue) const {
     CERR << "Device-Info...";
-    CERR << "Platform: " 
-         << mqueue.get_device().get_platform().get_info<sycl::info::platform::name>() 
+    CERR << "Platform: "
+         << mqueue.get_device()
+                .get_platform()
+                .get_info<sycl::info::platform::name>()
          << " selected";
     std::string device_type = mqueue.get_device().is_gpu() ? "GPU" : "CPU";
-    CERR << device_type << ": " 
+    CERR << device_type << ": "
          << mqueue.get_device().get_info<sycl::info::device::name>();
-    CERR << device_type << ": " 
-         << mqueue.get_device().get_info<sycl::info::device::max_mem_alloc_size>() / (1024 * 1024) 
+    CERR << device_type << ": "
+         << mqueue.get_device()
+                    .get_info<sycl::info::device::max_mem_alloc_size>() /
+                (1024 * 1024)
          << " MB (max allocation)";
-    CERR << device_type << " clock frequency: " 
-         << mqueue.get_device().get_info<sycl::info::device::max_clock_frequency>() 
+    CERR << device_type << " clock frequency: "
+         << mqueue.get_device()
+                .get_info<sycl::info::device::max_clock_frequency>()
          << " MHz";
-    CERR << "L2 cache capacity: " 
-         << mqueue.get_device().get_info<sycl::info::device::local_mem_size>() / (1024) 
+    CERR << "L2 cache capacity: "
+         << mqueue.get_device().get_info<sycl::info::device::local_mem_size>() /
+                (1024)
          << " KB";
-    CERR << "Global memory size: " 
-         << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() / (1024 * 1024) 
-         << " MB";         
+    CERR
+        << "Global memory size: "
+        << mqueue.get_device().get_info<sycl::info::device::global_mem_size>() /
+               (1024 * 1024)
+        << " MB";
     CERR << "...Device-Info-End";
-    }
-    
-    void showPlatformInfo(const std::vector<sycl::platform>& platforms) {
-       CERR << "Platform-List...";
-       for (size_t i = 0; i < platforms.size(); ++i) {
-           std::string version = platforms[i].get_info<sycl::info::platform::version>();
-           
-           for (const auto& device : platforms[i].get_devices()) {
-               std::string device_type;
-               switch (device.get_info<sycl::info::device::device_type>()) {
-                   case sycl::info::device_type::gpu: 
-                       device_type = "GPU"; break;
-                   case sycl::info::device_type::cpu: 
-                       device_type = "CPU"; break;
-                   default: 
-                       device_type = "Other"; break;
-                }
-                CERR << "Platform " << i << " (version: " << version << "):" << device_type
-                     << " (Name" << ": " 
-                     << device.get_platform().get_info<sycl::info::platform::name>() << ")";
-            }
+  }
+
+  void showPlatformInfo(const std::vector<sycl::platform>& platforms) {
+    CERR << "Platform-List...";
+    for (size_t i = 0; i < platforms.size(); ++i) {
+      std::string version =
+          platforms[i].get_info<sycl::info::platform::version>();
+
+      for (const auto& device : platforms[i].get_devices()) {
+        std::string device_type;
+        switch (device.get_info<sycl::info::device::device_type>()) {
+          case sycl::info::device_type::gpu:
+            device_type = "GPU";
+            break;
+          case sycl::info::device_type::cpu:
+            device_type = "CPU";
+            break;
+          default:
+            device_type = "Other";
+            break;
         }
-        
-        CERR << "...Platform-List-End";
+        CERR << "Platform " << i << " (version: " << version
+             << "):" << device_type << " (Name" << ": "
+             << device.get_platform().get_info<sycl::info::platform::name>()
+             << ")";
+      }
     }
+
+    CERR << "...Platform-List-End";
+  }
 };
 
 template <typename DataType>
@@ -1066,7 +1075,7 @@ void SyclNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& options) {
+                                         const InlineConfig& options) {
   if (!w) {
     throw Exception(
         "The sycl" +
@@ -1136,17 +1145,17 @@ std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
 }
 
 std::unique_ptr<Network> MakeSyclNetworkAuto(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
+  int gpu_id = options.GetOrValue<int>("gpu", 0);
 
   auto devices = sycl::device::get_devices();
   if (gpu_id >= devices.size()) {
-      throw Exception("Invalid GPU ID");
-   }
+    throw Exception("Invalid GPU ID");
+  }
   CERR << "Trying to switch to [sycl-fp16]...";
   if (devices[gpu_id].has(sycl::aspect::fp16)) {
-    CERR << "Switched to [sycl-fp16]..."; 
-    return MakeSyclNetwork<sycl::half>(weights, options);     
+    CERR << "Switched to [sycl-fp16]...";
+    return MakeSyclNetwork<sycl::half>(weights, options);
   } else {
     CERR << "Device does not support sycl-fp16";
   }

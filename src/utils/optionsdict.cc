@@ -33,6 +33,7 @@
 #include <string>
 
 #include "utils/exception.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 
@@ -323,9 +324,9 @@ class Parser {
 
 }  // namespace
 
-void OptionsDict::AddSubdictFromString(const std::string& str) {
+void ParseInlineConfig(const std::string& str, InlineConfig* options_dict) {
   Parser parser(str);
-  parser.ParseMain(this);
+  parser.ParseMain(options_dict);
 }
 
 void OptionsDict::CheckAllOptionsRead(

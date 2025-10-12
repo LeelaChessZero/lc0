@@ -27,13 +27,13 @@
 
 #pragma once
 
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 namespace classic {
 
 std::unique_ptr<TimeManager> MakeSimpleTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params);
+                                                   const InlineConfig& params);
 
 }  // namespace classic
 }  // namespace lczero

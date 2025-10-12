@@ -22,6 +22,7 @@
 #include <sycl/sycl.hpp>
 #include "neural/network.h"
 #include "cuBlasContext.h"
+#include "sycl_common.h"
 
 namespace lczero {
 namespace sycldnn_backend {

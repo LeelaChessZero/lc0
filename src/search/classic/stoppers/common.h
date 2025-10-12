@@ -28,8 +28,7 @@
 #pragma once
 
 #include "search/classic/stoppers/stoppers.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 namespace classic {
