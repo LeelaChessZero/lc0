@@ -61,9 +61,9 @@ T GetEnumValueFromString(const std::string& str_value,
 }
 
 const OptionId kInputFilenameId{"input", "InputFile",
-                                "Path of the input Lc0 weights file."};
+                                "Path of the input ONNX file."};
 const OptionId kOutputFilenameId{"output", "OutputFile",
-                                 "Path of the output ONNX file."};
+                                 "Path of the output Lc0 weights file."};
 
 const OptionId kInputFormatId(
     "input-format", "InputFormat",
