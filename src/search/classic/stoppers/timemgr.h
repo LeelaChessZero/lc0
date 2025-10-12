@@ -33,7 +33,7 @@
 #include <vector>
 
 #include "chess/uciloop.h"
-#include "utils/optionsdict.h"
+#include "utils/inline_config.h"
 
 namespace lczero {
 namespace classic {

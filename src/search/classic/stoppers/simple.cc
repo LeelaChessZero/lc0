@@ -34,13 +34,13 @@ namespace {
 
 class SimpleTimeManager : public TimeManager {
  public:
-  SimpleTimeManager(int64_t move_overhead, const OptionsDict& params)
+  SimpleTimeManager(int64_t move_overhead, const InlineConfig& params)
       : move_overhead_(move_overhead),
-        base_pct_(params.GetOrDefault<float>("base-pct", 1.4f)),
-        ply_pct_(params.GetOrDefault<float>("ply-pct", 0.049f)),
-        time_factor_(params.GetOrDefault<float>("time-factor", 1.5f)),
+        base_pct_(params.GetOrValue<float>("base-pct", 1.4f)),
+        ply_pct_(params.GetOrValue<float>("ply-pct", 0.049f)),
+        time_factor_(params.GetOrValue<float>("time-factor", 1.5f)),
         opening_bonus_pct_(
-            params.GetOrDefault<float>("opening-bonus-pct", 0.0f)) {
+            params.GetOrValue<float>("opening-bonus-pct", 0.0f)) {
     if (base_pct_ <= 0.0f || base_pct_ > 100.0f) {
       throw Exception("base-pct value to be in range [0.0, 100.0]");
     }
@@ -128,7 +128,7 @@ std::unique_ptr<SearchStopper> SimpleTimeManager::GetStopper(
 }  // namespace
 
 std::unique_ptr<TimeManager> MakeSimpleTimeManager(int64_t move_overhead,
-                                                   const OptionsDict& params) {
+                                                   const InlineConfig& params) {
   return std::make_unique<SimpleTimeManager>(move_overhead, params);
 }
 }  // namespace classic

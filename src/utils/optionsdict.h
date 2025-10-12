@@ -185,27 +185,27 @@ class OptionsDict : TypeDict<bool>,
 
   // Checks whether the given key exists for given type.
   template <typename T>
-  bool Exists(const std::string& key) const;
+  bool HasKey(const std::string& key) const;
   template <typename T>
-  bool Exists(const OptionId& option_id) const;
+  bool HasKey(const OptionId& option_id) const;
 
   // Checks whether the given key exists for given type, and throws an exception
   // if not.
   template <typename T>
-  void EnsureExists(const OptionId& option_id) const;
+  void EnsureHasKey(const OptionId& option_id) const;
 
   // Checks whether the given key exists for given type. Does not fall back to
   // check parents.
   template <typename T>
-  bool OwnExists(const std::string& key) const;
+  bool HasOwnKey(const std::string& key) const;
   template <typename T>
-  bool OwnExists(const OptionId& option_id) const;
+  bool HasOwnKey(const OptionId& option_id) const;
 
   // Returns value of given type. Returns default if not found.
   template <typename T>
-  T GetOrDefault(const std::string& key, const T& default_val) const;
+  T GetOrValue(const std::string& key, const T& default_val) const;
   template <typename T>
-  T GetOrDefault(const OptionId& option_id, const T& default_val) const;
+  T GetOrValue(const OptionId& option_id, const T& default_val) const;
 
   // Sets value for a given type.
   template <typename T>
@@ -222,9 +222,9 @@ class OptionsDict : TypeDict<bool>,
   // Returns true when the value is not set anywhere maybe except the root
   // dictionary;
   template <typename T>
-  bool IsDefault(const std::string& key) const;
+  bool IsUnmodified(const std::string& key) const;
   template <typename T>
-  bool IsDefault(const OptionId& option_id) const;
+  bool IsUnmodified(const OptionId& option_id) const;
 
   // Returns subdictionary. Throws exception if doesn't exist.
   const OptionsDict& GetSubdict(const std::string& name) const;
@@ -295,49 +295,49 @@ std::optional<T> OptionsDict::OwnGet(const OptionId& option_id) const {
 }
 
 template <typename T>
-bool OptionsDict::Exists(const std::string& key) const {
+bool OptionsDict::HasKey(const std::string& key) const {
   for (const auto* alias : aliases_) {
-    if (alias->OwnExists<T>(key)) return true;
+    if (alias->HasOwnKey<T>(key)) return true;
   }
-  return parent_ && parent_->Exists<T>(key);
+  return parent_ && parent_->HasKey<T>(key);
 }
 template <typename T>
-bool OptionsDict::Exists(const OptionId& option_id) const {
-  return Exists<T>(GetOptionId(option_id));
+bool OptionsDict::HasKey(const OptionId& option_id) const {
+  return HasKey<T>(GetOptionId(option_id));
 }
 template <typename T>
-void OptionsDict::EnsureExists(const OptionId& option_id) const {
-  if (!OwnExists<T>(option_id)) {
+void OptionsDict::EnsureHasKey(const OptionId& option_id) const {
+  if (!HasOwnKey<T>(option_id)) {
     throw Exception(std::string("The flag --") + option_id.long_flag() +
                     " must be specified.");
   }
 }
 
 template <typename T>
-bool OptionsDict::OwnExists(const std::string& key) const {
+bool OptionsDict::HasOwnKey(const std::string& key) const {
   const auto& dict = TypeDict<T>::dict();
   auto iter = dict.find(key);
   return iter != dict.end();
 }
 template <typename T>
-bool OptionsDict::OwnExists(const OptionId& option_id) const {
-  return OwnExists<T>(GetOptionId(option_id));
+bool OptionsDict::HasOwnKey(const OptionId& option_id) const {
+  return HasOwnKey<T>(GetOptionId(option_id));
 }
 
 template <typename T>
-T OptionsDict::GetOrDefault(const std::string& key,
+T OptionsDict::GetOrValue(const std::string& key,
                             const T& default_val) const {
   for (const auto* alias : aliases_) {
     const auto value = alias->OwnGet<T>(key);
     if (value) return *value;
   }
-  if (parent_) return parent_->GetOrDefault<T>(key, default_val);
+  if (parent_) return parent_->GetOrValue<T>(key, default_val);
   return default_val;
 }
 template <typename T>
-T OptionsDict::GetOrDefault(const OptionId& option_id,
+T OptionsDict::GetOrValue(const OptionId& option_id,
                             const T& default_val) const {
-  return GetOrDefault<T>(GetOptionId(option_id), default_val);
+  return GetOrValue<T>(GetOptionId(option_id), default_val);
 }
 
 template <typename T>
@@ -359,16 +359,16 @@ T& OptionsDict::GetRef(const OptionId& option_id) {
 }
 
 template <typename T>
-bool OptionsDict::IsDefault(const std::string& key) const {
+bool OptionsDict::IsUnmodified(const std::string& key) const {
   if (!parent_) return true;
   for (const auto* alias : aliases_) {
-    if (alias->OwnExists<T>(key)) return false;
+    if (alias->HasOwnKey<T>(key)) return false;
   }
-  return parent_->IsDefault<T>(key);
+  return parent_->IsUnmodified<T>(key);
 }
 template <typename T>
-bool OptionsDict::IsDefault(const OptionId& option_id) const {
-  return IsDefault<T>(GetOptionId(option_id));
+bool OptionsDict::IsUnmodified(const OptionId& option_id) const {
+  return IsUnmodified<T>(GetOptionId(option_id));
 }
 
 }  // namespace lczero

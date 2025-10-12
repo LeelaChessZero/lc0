@@ -87,7 +87,7 @@ class OnnxComputation : public NetworkComputation {
 
 class OnnxNetwork : public Network {
  public:
-  OnnxNetwork(const WeightsFile& file, const OptionsDict& options,
+  OnnxNetwork(const WeightsFile& file, const InlineConfig& options,
               OnnxProvider provider, bool cpu_wdl);
   std::unique_ptr<NetworkComputation> NewComputation() override {
     if (fp16_) {
@@ -430,7 +430,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
   return options;
 }
 
-OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
+OnnxNetwork::OnnxNetwork(const WeightsFile& file, const InlineConfig& opts,
                          OnnxProvider provider, bool cpu_wdl)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       capabilities_{file.format().network_format().input(),
@@ -442,14 +442,13 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       provider_(provider) {
   onnx_env_.DisableTelemetryEvents();
   batch_size_ =
-      opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
-  steps_ =
-      opts.GetOrDefault<int>("steps", provider == OnnxProvider::DML ? 4 : 1);
-  min_batch_size_ = opts.GetOrDefault<int>(
-      "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
-  int gpu = opts.GetOrDefault<int>("gpu", 0);
+      opts.GetOrValue<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
+  steps_ = opts.GetOrValue<int>("steps", provider == OnnxProvider::DML ? 4 : 1);
+  min_batch_size_ =
+      opts.GetOrValue<int>("min_batch", provider == OnnxProvider::TRT ? 4 : 1);
+  int gpu = opts.GetOrValue<int>("gpu", 0);
   int threads =
-      opts.GetOrDefault<int>("threads", provider == OnnxProvider::CPU ? 1 : 0);
+      opts.GetOrValue<int>("threads", provider == OnnxProvider::CPU ? 1 : 0);
 
   // Sanity checks.
   if (batch_size_ <= 0) {
@@ -502,31 +501,31 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
 
 template <OnnxProvider kProvider>
 std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
-                                         const OptionsDict& opts) {
+                                         const InlineConfig& opts) {
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
   if (w->has_onnx_model()) {
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, false);
   } else {
     WeightsToOnnxConverterOptions converter_options;
-    converter_options.opset = opts.GetOrDefault<int>("opset", 17);
-    converter_options.ir = opts.GetOrDefault<int>("ir", -1);
-    converter_options.alt_mish = opts.GetOrDefault<bool>(
+    converter_options.opset = opts.GetOrValue<int>("opset", 17);
+    converter_options.ir = opts.GetOrValue<int>("ir", -1);
+    converter_options.alt_mish = opts.GetOrValue<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
-    converter_options.alt_layernorm = opts.GetOrDefault<bool>(
+    converter_options.alt_layernorm = opts.GetOrValue<bool>(
         "alt_layernorm", kProvider == OnnxProvider::DML ? true : false);
-    converter_options.no_shape = opts.GetOrDefault<bool>("no_shape", false);
+    converter_options.no_shape = opts.GetOrValue<bool>("no_shape", false);
     converter_options.policy_head =
-        opts.GetOrDefault<std::string>("policy_head", "vanilla");
+        opts.GetOrValue<std::string>("policy_head", "vanilla");
     converter_options.value_head =
-        opts.GetOrDefault<std::string>("value_head", "winner");
+        opts.GetOrValue<std::string>("value_head", "winner");
     converter_options.no_wdl_softmax = true;
 
     std::string datatype;
-    if (opts.Exists<std::string>("datatype")) {
+    if (opts.HasKey<std::string>("datatype")) {
       datatype = opts.Get<std::string>("datatype");
     } else {
-      bool fp16 = opts.GetOrDefault<bool>(
+      bool fp16 = opts.GetOrValue<bool>(
           "fp16", kProvider == OnnxProvider::CPU ? false : true);
       datatype = fp16 ? "f16" : "f32";
     }

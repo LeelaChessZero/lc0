@@ -41,7 +41,7 @@ bool ProcessParameters(OptionsParser* options) {
   options->Add<StringOption>(kWeightsFilenameId);
   if (!options->ProcessAllFlags()) return false;
   const OptionsDict& dict = options->GetOptionsDict();
-  dict.EnsureExists<std::string>(kWeightsFilenameId);
+  dict.EnsureHasKey<std::string>(kWeightsFilenameId);
 
   return true;
 }

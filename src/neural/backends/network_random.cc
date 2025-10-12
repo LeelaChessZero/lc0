@@ -103,13 +103,13 @@ class RandomNetworkComputation : public NetworkComputation {
 
 class RandomNetwork : public Network {
  public:
-  RandomNetwork(const OptionsDict& options)
-      : delay_ms_(options.GetOrDefault<int>("delay", 0)),
-        seed_(options.GetOrDefault<int>("seed", 0)),
-        uniform_mode_(options.GetOrDefault<bool>("uniform", false)),
+  RandomNetwork(const InlineConfig& options)
+      : delay_ms_(options.GetOrValue<int>("delay", 0)),
+        seed_(options.GetOrValue<int>("seed", 0)),
+        uniform_mode_(options.GetOrValue<bool>("uniform", false)),
         capabilities_{
             static_cast<pblczero::NetworkFormat::InputFormat>(
-                options.GetOrDefault<int>(
+                options.GetOrValue<int>(
                     "input_mode",
                     pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)),
             pblczero::NetworkFormat::OUTPUT_WDL,
@@ -134,7 +134,8 @@ class RandomNetwork : public Network {
 }  // namespace
 
 std::unique_ptr<Network> MakeRandomNetwork(
-    const std::optional<WeightsFile>& /*weights*/, const OptionsDict& options) {
+    const std::optional<WeightsFile>& /*weights*/,
+    const InlineConfig& options) {
   return std::make_unique<RandomNetwork>(options);
 }
 

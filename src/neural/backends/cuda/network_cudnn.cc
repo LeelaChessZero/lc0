@@ -156,12 +156,12 @@ class CudnnNetworkComputation : public NetworkComputation {
 template <typename DataType>
 class CudnnNetwork : public Network {
  public:
-  CudnnNetwork(const WeightsFile& file, const OptionsDict& options)
+  CudnnNetwork(const WeightsFile& file, const InlineConfig& options)
       : capabilities_{file.format().network_format().input(),
                       file.format().network_format().output(),
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
-    gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+    gpu_id_ = options.GetOrValue<int>("gpu", 0);
 
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
@@ -169,13 +169,13 @@ class CudnnNetwork : public Network {
     attn_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_ATTENTION;
 
-    max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
+    max_batch_size_ = options.GetOrValue<int>("max_batch", 1024);
     // min_batch_size_ is chosen as 4 as it is common that for sizes less than
     // 4 that there is no performance gain, but there is variance in the
     // outputs, which means that there is extra non-determinism in some
     // scenarios, including using the multiplexing backend.
     min_batch_size_ =
-        options.GetOrDefault<int>("min_batch", std::min(4, max_batch_size_));
+        options.GetOrValue<int>("min_batch", std::min(4, max_batch_size_));
     if (max_batch_size_ < min_batch_size_)
       throw Exception("Max batch must not be less than min_batch setting.");
 
@@ -227,7 +227,7 @@ class CudnnNetwork : public Network {
       }
 
       // Override if forced from backend option
-      if (options.Exists<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
+      if (options.HasKey<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
     }
 
     if (hasTensorCores)
@@ -288,7 +288,7 @@ class CudnnNetwork : public Network {
     }
 
     const bool custom_winograd_override =
-        options.Exists<bool>("custom_winograd");
+        options.HasKey<bool>("custom_winograd");
 
     if (!custom_winograd_override && use_custom_winograd_ &&
         transformed_residual_weight_size > 0.5 * deviceProp.totalGlobalMem) {
@@ -320,7 +320,7 @@ class CudnnNetwork : public Network {
         use_res_block_winograd_fuse_opt_ = true;
       }
       // Override if set in backend-opts.
-      if (options.Exists<bool>("res_block_fusing")) {
+      if (options.HasKey<bool>("res_block_fusing")) {
         use_res_block_winograd_fuse_opt_ =
             options.Get<bool>("res_block_fusing");
       }
@@ -606,7 +606,7 @@ class CudnnNetwork : public Network {
     // Moves left head
     moves_left_ = (file.format().network_format().moves_left() ==
                    pblczero::NetworkFormat::MOVES_LEFT_V1) &&
-                  options.GetOrDefault<bool>("mlh", true);
+                  options.GetOrValue<bool>("mlh", true);
     if (moves_left_) {
       auto convMov = std::make_unique<ConvLayer<DataType>>(
           resi_last_, weights.moves_left.biases.size(), 8, 8, 1, kNumFilters,
@@ -1104,7 +1104,7 @@ void CudnnNetworkComputation<DataType>::ComputeBlocking() {
 
 template <typename DataType>
 std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
-                                          const OptionsDict& options) {
+                                          const InlineConfig& options) {
   if (!w) {
     throw Exception(
         "The cudnn" +
@@ -1173,8 +1173,8 @@ std::unique_ptr<Network> MakeCudnnNetwork(const std::optional<WeightsFile>& w,
 }
 
 std::unique_ptr<Network> MakeCudnnNetworkAuto(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  int gpu_id = options.GetOrDefault<int>("gpu", 0);
+    const std::optional<WeightsFile>& weights, const InlineConfig& options) {
+  int gpu_id = options.GetOrValue<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
   // No error checking here, this will be repeated later.
   cudaGetDeviceProperties(&deviceProp, gpu_id);

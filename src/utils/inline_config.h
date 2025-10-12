@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2018-2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,14 +27,13 @@
 
 #pragma once
 
-#include "search/classic/stoppers/timemgr.h"
-#include "utils/inline_config.h"
+#include <string>
+
+#include "utils/optionsdict.h"
 
 namespace lczero {
-namespace classic {
 
-std::unique_ptr<TimeManager> MakeSmoothTimeManager(int64_t move_overhead,
-                                                   const InlineConfig& params);
+using InlineConfig = OptionsDict;
+void ParseInlineConfig(const std::string& str, InlineConfig* options_dict);
 
-}  // namespace classic
 }  // namespace lczero
