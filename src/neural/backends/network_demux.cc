@@ -343,9 +343,10 @@ void DemuxingComputation::ComputeBlocking(ComputationCallback callback) {
       splits - split_size_per_backend * backend_->backends_.size();
 
   // Find the first backend which got less work from the previous batch.
-  size_t start_index = backend_->start_index_.fetch_add(
-                           extra_split_backends, std::memory_order_relaxed) %
-                       backend_->backends_.size();
+  size_t start_index =
+      backend_->start_index_.fetch_add(std::max(1, extra_split_backends),
+                                       std::memory_order_relaxed) %
+      backend_->backends_.size();
 
   size_t end_index =
       (start_index + extra_split_backends) % backend_->backends_.size();
