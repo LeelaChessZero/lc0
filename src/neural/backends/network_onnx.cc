@@ -27,6 +27,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
@@ -178,7 +180,8 @@ class OnnxNetwork final : public Network {
   }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
-  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash);
+  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash,
+                                 int attempt);
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
@@ -196,6 +199,10 @@ class OnnxNetwork final : public Network {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     free_inputs_outputs_.push_back(std::move(resource));
   }
+
+  std::string TRTCachePrefix(int batch_size, uint64_t hash);
+  bool IsTRTEngineGood(std::filesystem::file_time_type start, int batch_size,
+                       uint64_t hash, size_t onnx_model_size, int attempt);
 
   Ort::Env onnx_env_;
   // Prepare sessions for this many multiples of the batch size;
@@ -640,8 +647,80 @@ void OnnxComputation<DataType>::ComputeBlocking() {
   }
 }
 
+std::string OnnxNetwork::TRTCachePrefix(int batch_size, uint64_t hash) {
+  std::ostringstream oss;
+  oss << std::hex << hash;
+  // We need the batch size as well as the hash, as it is set after
+  // loading.
+  return "Lc0_ONNX_TRT_ORT_" + Ort::GetVersionString() + "_batch_" +
+         (batch_size < 0 ? std::to_string(batch_size) + "-" +
+                               std::to_string(min_batch_size_) + "-" +
+                               std::to_string(max_batch_size_)
+                         : std::to_string(batch_size - batch_size_ + 1) + "-" +
+                               std::to_string(batch_size)) +
+         "_" + oss.str() + "_";
+}
+
+bool OnnxNetwork::IsTRTEngineGood(std::filesystem::file_time_type start, int batch_size, uint64_t hash,
+                                  size_t onnx_model_size, int attempt) {
+  std::filesystem::path cache_dir =
+      CommandLine::BinaryDirectory() + "/trt_cache";
+  const auto prefix = TRTCachePrefix(batch_size, hash);
+  std::filesystem::file_time_type last_edit{};
+  std::filesystem::directory_entry latest_matching{};
+  std::filesystem::path timing_cache{};
+  bool found = false;
+  for (const auto& dir_entry : std::filesystem::directory_iterator(cache_dir)) {
+    const auto& filename = dir_entry.path().filename().string();
+    const auto& extension = dir_entry.path().extension();
+    if (extension == ".timing") {
+      timing_cache = dir_entry.path();
+      continue;
+    }
+    if (dir_entry.is_regular_file() && filename.starts_with(prefix) &&
+        extension == ".engine" &&
+        (!found || last_edit < dir_entry.last_write_time())) {
+      latest_matching = dir_entry;
+      last_edit = dir_entry.last_write_time();
+      found = true;
+    }
+  }
+  if (!found || !latest_matching.exists()) {
+    throw Exception("TRT engine cache file not found: " +
+                    (cache_dir / prefix).string() + "*.engine");
+  }
+  if (latest_matching.last_write_time() < start) {
+    // Reusing an engine. We don't know which one was used if there is more than
+    // one.
+    return true;
+  }
+  if (latest_matching.file_size() > onnx_model_size * 4 / 3) {
+    CERR << "TRT engine is bad: " << latest_matching.path() << " size "
+         << latest_matching.file_size() << " vs model size " << onnx_model_size;
+    if (!std::filesystem::remove(latest_matching.path())) {
+      throw Exception("Failed to remove slow TRT engine file: " +
+                      latest_matching.path().string());
+    }
+    std::filesystem::path profile = latest_matching.path();
+    profile.replace_extension(".profile");
+    if (!std::filesystem::remove(profile)) {
+      throw Exception("Failed to remove slow TRT profile file: " +
+                      profile.string());
+    }
+    if (attempt < 3) {
+      return false;
+    }
+    if (!std::filesystem::remove(timing_cache)) {
+      throw Exception("Failed to remove TRT timing cache file: " +
+                      timing_cache.string());
+    }
+    return false;
+  }
+  return true;
+}
+
 Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
-                                            uint64_t hash) {
+                                            uint64_t hash, int attempt) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -676,21 +755,14 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
-      // We need the batch size as well as the hash, as it is set after loading.
-      std::ostringstream oss;
-      oss << std::hex << hash;
-      trt_options["trt_engine_cache_prefix"] =
-          "Lc0_ONNX_TRT_ORT_" + Ort::GetVersionString() + "_batch_" +
-          (batch_size < 0 ? std::to_string(batch_size)
-                          : std::to_string(batch_size - batch_size_ + 1) + "-" +
-                                std::to_string(batch_size)) +
-          "_" + oss.str() + "_";
+      trt_options["trt_engine_cache_prefix"] = TRTCachePrefix(batch_size, hash);
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_timing_cache_path"] = cache_dir;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
       trt_options["trt_context_memory_sharing_enable"] = "1";
+      trt_options["trt_builder_optimization_level"] = attempt < 2 ? "4" : "5";
       // Looks like we need I/O binding to enable this.
 #if USE_ONNX_CUDART
       trt_options["has_user_compute_stream"] = "1";
@@ -870,10 +942,35 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       break;
   }
 
-  for (int step = 1; step <= steps_; step++)
-    session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
-                          file.onnx_model().model().size(),
-                          GetOptions(threads, batch_size_ * step, hash));
+  int attempt = 0;
+  std::filesystem::file_time_type start = std::chrono::file_clock::now();
+  for (int step = 1; step <= steps_; step++) {
+    int max_batch = batch_size_ > 0 ? batch_size_ * step : max_batch_size_;
+    int min_batch =
+        batch_size_ > 0 ? max_batch - batch_size_ + 1 : min_batch_size_;
+    COUT << "Building engine for step " << step << " with batch size "
+         << min_batch << "-" << max_batch << ".";
+    session_.emplace_back(
+        onnx_env_, file.onnx_model().model().data(),
+        file.onnx_model().model().size(),
+        GetOptions(threads, batch_size_ * step, hash, attempt++));
+
+    if (provider == OnnxProvider::TRT && (fp16_ || bf16_)) {
+      if (!IsTRTEngineGood(start, batch_size_ * step, hash,
+                           file.onnx_model().model().size(), attempt)) {
+        if (attempt > 3) {
+          throw Exception("TensorRT failed to build a good engine after " +
+                          std::to_string(attempt) + " attempts.");
+        }
+        COUT << "WARNING: TensorRT build a bad engine! Deleted the bad engine "
+                "and retrying.";
+        session_.pop_back();
+        step--;
+        continue;
+      }
+    }
+    attempt = 0;
+  }
 }
 
 template <OnnxProvider kProvider>
