@@ -281,7 +281,6 @@ struct TaskArray {
   int size_;
   int capacity_;
 };
-;
 
 // Unpack task_count_ atomic which holds both task_count_ and tasks_taken_. It
 // can unpack a value from an already read value or load it from the atomic
@@ -317,7 +316,7 @@ std::tuple<int, int, int> ReadTaskCount(T& task_count) {
 // a little random false sharing when a writer happens to target the same cache
 // line as a reader.
 template <typename TasksArray>
-TasksArray::value_type& PickingTaskIndex(TasksArray& tasks, unsigned index) {
+typename TasksArray::value_type& PickingTaskIndex(TasksArray& tasks, unsigned index) {
   const unsigned number_of_cache_lines = sizeof(tasks) / kCacheLineSize;
   const unsigned buckets_per_cache_line = tasks.size() / number_of_cache_lines;
   unsigned cache_line = index % number_of_cache_lines;
@@ -2445,7 +2444,7 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
 
           end = std::copy_if(
               visits_to_perform.begin() + 1, end, visits_to_perform.begin() + 1,
-              [&](CurrentPath v) {
+              [&, node](CurrentPath v) {
                 // Don't split if not expanded or terminal.
                 if (!v.bits_.stop_picking_ && v >= kMinimumSize) {
                   int i = v.bits_.index_;
@@ -3055,7 +3054,7 @@ void SearchWorker::UpdateCounters() {
 #else
     Mutex::Lock lock(search_->fallback_threads_mutex_);
     search_->fallback_threads_cond_.wait(
-        lock.get_raw(), [this]() { return tc != search_->thread_count_; });
+        lock.get_raw(), [this, tc]() { return tc != search_->thread_count_; });
 #endif
   }
 }

@@ -401,6 +401,12 @@ struct CurrentPath {
     uint32_t visit_child_ : 1;   // bool
     uint32_t stop_picking_ : 1;  // bool
     uint32_t index_ : 8;         // < 218
+    Bits(unsigned visits, bool last, bool visit, bool stop, unsigned index)
+        : visits_(visits),
+          last_child_(last),
+          visit_child_(visit),
+          stop_picking_(stop),
+          index_(index) {}
   };
   union {
     Bits bits_;
