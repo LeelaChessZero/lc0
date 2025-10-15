@@ -70,7 +70,7 @@ class BlasComputation : public NetworkComputation {
                   const ActivationFunction smolgen_activation,
                   const ActivationFunction ffn_activation,
                   const bool attn_policy, const bool attn_body,
-                  bool is_pe_dense_embedding);
+                  bool is_pe_dense_embedding, int threads);
 
   virtual ~BlasComputation() {}
 
@@ -157,13 +157,14 @@ template <bool use_eigen>
 class BlasNetwork : public Network {
  public:
   BlasNetwork(const WeightsFile& weights, const OptionsDict& options);
-  virtual ~BlasNetwork(){};
+  virtual ~BlasNetwork() {};
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
         this, weights_, policy_head_, value_head_, max_batch_size_, wdl_,
         moves_left_, conv_policy_, default_activation_, smolgen_activation_,
-        ffn_activation_, attn_policy_, attn_body_, is_pe_dense_embedding_);
+        ffn_activation_, attn_policy_, attn_body_, is_pe_dense_embedding_,
+        threads_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -223,7 +224,8 @@ BlasComputation<use_eigen>::BlasComputation(
     const bool conv_policy, const ActivationFunction default_activation,
     const ActivationFunction smolgen_activation,
     const ActivationFunction ffn_activation, const bool attn_policy,
-    const bool attn_body, bool is_pe_dense_embedding)
+    const bool attn_body, bool is_pe_dense_embedding,
+    [[maybe_unused]] int threads)
     : weights_(weights),
       max_batch_size_(max_batch_size),
       policies_(0),
@@ -241,7 +243,7 @@ BlasComputation<use_eigen>::BlasComputation(
       value_head_(value_head),
       network_(network) {
 #ifdef USE_DNNL
-  omp_set_num_threads(network_->threads_);
+  omp_set_num_threads(threads);
 #endif
 }
 
