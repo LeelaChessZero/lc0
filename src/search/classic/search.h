@@ -278,7 +278,7 @@ class SearchWorker {
   // The same operations one by one:
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
-  void InitializeIteration(std::unique_ptr<BackendComputation> computation);
+  void InitializeIteration();
 
   // 2. Gather minibatch.
   void GatherMinibatch();

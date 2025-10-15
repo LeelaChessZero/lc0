@@ -20,14 +20,9 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 #include "sycl_common.h"
 #include "neural/backends/shared/activation.h"
 
-// Allow building on an old architecture.
-#if DPCT_COMPATIBILITY_TEMP < 530
-#define SKIP_FP16_BITS 1
-#endif
 #include "winograd_helper.h"
 
 namespace lczero {
