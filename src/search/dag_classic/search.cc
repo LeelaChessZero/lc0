@@ -2441,10 +2441,11 @@ SearchWorker::PickNodesToExtendTask(int collision_limit, int tid,
 
         if (task_count > 0) {
           PickTaskGather::Initializer gather_init(full_path, history);
+          Node* node = node;
 
           end = std::copy_if(
               visits_to_perform.begin() + 1, end, visits_to_perform.begin() + 1,
-              [&, node](CurrentPath v) {
+              [&](CurrentPath v) {
                 // Don't split if not expanded or terminal.
                 if (!v.bits_.stop_picking_ && v >= kMinimumSize) {
                   int i = v.bits_.index_;
