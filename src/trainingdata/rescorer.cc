@@ -487,7 +487,8 @@ FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
   data.fileContents = std::move(fileContents);
 
   Validate(data.fileContents);
-
+  games += 1;
+  positions += data.fileContents.size();
   // Decode moves from input data
   for (size_t i = 1; i < data.fileContents.size(); i++) {
     data.moves.push_back(
