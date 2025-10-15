@@ -248,3 +248,9 @@ option('dag_classic',
        type: 'boolean',
        value: true,
        description: 'Enable dag-classic search algorithm')
+
+option('fixed_tt',
+       type: 'boolean',
+       value: true,
+       description: 'Build dag using fixed size transposition table.')
+

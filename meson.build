@@ -230,6 +230,15 @@ if get_option('dag_classic')
     'src/search/dag_classic/search.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
+
+  ## ~~~~~~~~~~
+  ## Transposition table
+  ## ~~~~~~~~~~
+  fix_tt = get_option('fixed_tt')
+  if fix_tt
+    # Change transposition table to a fixed size one.
+    add_project_arguments('-DFIX_TT', language : 'cpp')
+  endif
 endif
 
 #############################################################################
