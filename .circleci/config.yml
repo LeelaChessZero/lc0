@@ -106,7 +106,7 @@ jobs:
           name: Test onnx-coreml
           command: |
             wget https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -O 792013.pb.gz
-            build-arm/lc0 bench -w 792013.pb.gz -b onnx-coreml
+            build-arm/lc0 bench -w 792013.pb.gz -b onnx-coreml -o fp16=false
   "upload-github-release":
     macos:
       xcode: 14.1.0
