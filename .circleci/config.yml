@@ -92,11 +92,21 @@ jobs:
             pip3 install meson
             pip3 install ninja
       - run:
+          name: Install onnxruntime
+          command: |
+            wget https://github.com/microsoft/onnxruntime/releases/download/v1.23.1/onnxruntime-osx-arm64-1.23.1.tgz -P /tmp
+            tar xzf /tmp/onnxruntime-osx-arm64-1.23.1.tgz -C /tmp
+      - run:
           name: Build lc0 arm
           command: |
-            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false -Donnx_include=/tmp/onnxruntime-osx-arm64-1.23.1/include -Donnx_libdir=/tmp/onnxruntime-osx-arm64-1.23.1/lib
             cd build-arm
             ninja
+      - run:
+          name: Test onnx-coreml
+          command: |
+            wget https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -O 792013.pb.gz
+            build-arm/lc0 bench -w 792013.pb.gz -b onnx-coreml
   "upload-github-release":
     macos:
       xcode: 14.1.0
