@@ -351,6 +351,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       std::unordered_map<std::string, std::string> provider_options;
       provider_options["ModelFormat"] = "MLProgram";
       provider_options["ProfileComputePlan"] = "1";
+      provider_options["AllowLowPrecisionAccumulationOnGPU"] = "1";
       options.AppendExecutionProvider("CoreML", provider_options);
       break;
     }
