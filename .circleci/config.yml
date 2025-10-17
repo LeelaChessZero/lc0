@@ -106,21 +106,21 @@ jobs:
           name: Test onnx-coreml 754042
           command: |
             wget https://training.lczero.org/get_network?sha=5b3bc98eb1f20249daae9f26622c8ba40cd6878f6b4ac2aba76b0d81fc98af70 -O 754042.pb.gz
-            build-arm/lc0 bench -w 754042.pb.gz -b onnx-coreml -o fp16=false,batch=16,steps=1
+            build-arm/lc0 bench -w 754042.pb.gz -b onnx-coreml -o fp16=false
       - run:
           name: Test onnx-coreml 754042 fp16
           command: |
-            build-arm/lc0 bench -w 754042.pb.gz -b onnx-coreml -o batch=16,steps=1
+            build-arm/lc0 bench -w 754042.pb.gz -b onnx-coreml
       - run:
           name: Test onnx-coreml 11248
           command: |
             wget https://storage.lczero.org/files/networks/994de36c13ddf2540bf588817fcca0cb4e279e61c7d118c3bccc9c74419caecd -O 11248.pb.gz
-            build-arm/lc0 bench -w 11248.pb.gz -b onnx-coreml -o fp16=false,batch=16,steps=1
+            build-arm/lc0 bench -w 11248.pb.gz -b onnx-coreml -o fp16=false
 
       - run:
           name: Test onnx-coreml 11248 fp16
           command: |
-            build-arm/lc0 bench -w 11248.pb.gz -b onnx-coreml -o batch=16,steps=1
+            build-arm/lc0 bench -w 11248.pb.gz -b onnx-coreml
 
   "upload-github-release":
     macos:
