@@ -47,6 +47,11 @@ struct BackendAttributes {
   int suggested_num_search_threads;
   int recommended_batch_size;
   int maximum_batch_size;
+  int preferred_batch_step;
+
+  BackendAttributes() = default;
+  BackendAttributes(const Network& network);
+  BackendAttributes& operator+=(const BackendAttributes& other);
 };
 
 struct EvalResultPtr {
@@ -72,6 +77,12 @@ struct EvalPosition {
   std::span<const Move> legal_moves;
 };
 
+enum class ComputationEvent {
+  FIRST_BACKEND_IDLE,
+};
+
+using ComputationCallback = std::function<void(ComputationEvent)>;
+
 class BackendComputation {
  public:
   virtual ~BackendComputation() = default;
@@ -83,7 +94,7 @@ class BackendComputation {
   virtual AddInputResult AddInput(
       const EvalPosition& pos,    // Input position.
       EvalResultPtr result) = 0;  // Where to fetch data into.
-  virtual void ComputeBlocking() = 0;
+  virtual void ComputeBlocking(ComputationCallback callback = [](ComputationEvent) {}) = 0;
 };
 
 class Backend {
