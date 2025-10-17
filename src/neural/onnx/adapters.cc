@@ -37,7 +37,7 @@ namespace lczero {
 namespace {
 template <class T>
 std::string TransposeAndReturnRaw(const std::vector<int>& dims,
-                                  std::vector<int> order,
+                                  const std::vector<int>& order,
                                   const std::vector<T>& from) {
   if (order.empty()) {
     return {reinterpret_cast<const char*>(from.data()),
