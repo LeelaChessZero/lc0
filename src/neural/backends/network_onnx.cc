@@ -56,7 +56,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT, COREML };
 
 class OnnxNetwork;
 
@@ -347,6 +347,14 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       throw Exception("ONNX backend internal error.");
 #endif
       break;
+    case OnnxProvider::COREML: {
+      std::unordered_map<std::string, std::string> provider_options;
+      provider_options["ModelFormat"] = "MLProgram";
+      provider_options["ProfileComputePlan"] = "1";
+      provider_options["AllowLowPrecisionAccumulationOnGPU"] = "1";
+      options.AppendExecutionProvider("CoreML", provider_options);
+      break;
+    }
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
@@ -432,7 +440,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
                          OnnxProvider provider, bool cpu_wdl)
-    : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
+    : onnx_env_(ORT_LOGGING_LEVEL_VERBOSE, "lc0"),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
@@ -544,6 +552,7 @@ REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
+REGISTER_NETWORK("onnx-coreml", MakeOnnxNetwork<OnnxProvider::COREML>, 59)
 REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
