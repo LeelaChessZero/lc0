@@ -944,7 +944,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     int max_batch = batch_size_ > 0 ? batch_size_ * step : max_batch_size_;
     int min_batch =
         batch_size_ > 0 ? max_batch - batch_size_ + 1 : min_batch_size_;
-    COUT << "Building engine for step " << step << " with batch size "
+    CERR << "Building engine for step " << step << " with batch size "
          << min_batch << "-" << max_batch << ".";
     session_.emplace_back(
         onnx_env_, file.onnx_model().model().data(),
@@ -958,7 +958,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
           throw Exception("TensorRT failed to build a good engine after " +
                           std::to_string(attempt) + " attempts.");
         }
-        COUT << "WARNING: TensorRT build a bad engine! Deleted the bad engine "
+        CERR << "WARNING: TensorRT build a bad engine! Deleted the bad engine "
                 "and retrying.";
         session_.pop_back();
         step--;
