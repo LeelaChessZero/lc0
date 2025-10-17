@@ -59,7 +59,8 @@ OnnxBuilder::OnnxBuilder(int opset, int ir) : opset_(opset) {
 namespace {
 void FillValueInfo(pblczero::ValueInfoProto* vip, const std::string& name,
                    std::initializer_list<int> dims,
-                   pblczero::TensorProto::DataType datatype) {
+                   pblczero::TensorProto::DataType datatype,
+                   const std::string& batch_name = "batch") {
   vip->set_name(name);
   auto* type = vip->mutable_type()->mutable_tensor_type();
   type->set_elem_type(datatype);
@@ -67,7 +68,7 @@ void FillValueInfo(pblczero::ValueInfoProto* vip, const std::string& name,
   for (const auto d : dims) {
     auto* dim = shape->add_dim();
     if (d < 0) {
-      dim->set_dim_param("batch");
+      dim->set_dim_param(batch_name);
     } else {
       dim->set_dim_value(d);
     }
@@ -251,6 +252,22 @@ std::string OnnxBuilder::Reshape(const std::string& name,
   auto out = PopulateStdNodeFields(node, name, input, "Reshape");
   node->add_input(shape);
   return out;
+}
+
+std::string OnnxBuilder::Reshape(const std::string& name,
+                                 const std::string& input,
+                                 std::initializer_list<int> shape,
+                                 pblczero::TensorProto::DataType datatype,
+                                 const std::string& batch_name) {
+  FillValueInfo(model_.mutable_graph()->add_value_info(), name, shape, datatype,
+                batch_name.empty() ? "unk_" + std::to_string(unknown_count_++)
+                                   : batch_name);
+  return Reshape(
+      name, input,
+      AddInitializer(
+          name + "/shape",
+          Int64OnnxConst(std::vector<int64_t>(begin(shape), end(shape)),
+                         {static_cast<int>(shape.size())})));
 }
 
 std::string OnnxBuilder::Transpose(const std::string& name,

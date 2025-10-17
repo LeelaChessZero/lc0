@@ -85,6 +85,10 @@ class OnnxBuilder {
   std::string AddInitializer(const std::string& name, const OnnxConst& weights);
   std::string Reshape(const std::string& name, const std::string& input,
                       const std::string& shape);
+  std::string Reshape(const std::string& name, const std::string& input,
+                      std::initializer_list<int> shape,
+                      pblczero::TensorProto::DataType datatype,
+                      const std::string& batch_name = "");
   std::vector<std::string> Split(const std::string& name,
                                  const std::string& input, int axis,
                                  std::initializer_list<int> split = {});
@@ -134,6 +138,7 @@ class OnnxBuilder {
  private:
   const int opset_;
   pblczero::ModelProto model_;
+  int unknown_count_ = 0;
 };
 
 }  // namespace lczero
