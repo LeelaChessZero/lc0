@@ -387,7 +387,8 @@ static const NSInteger kMinSubBatchSize = 20;
 
     MPSGraphTensor * convTensor = [self convolution2DWithSourceTensor:parent
                                                         weightsTensor:weightsTensor
-                                                           descriptor:convolution2DDescriptor];
+                                                           descriptor:convolution2DDescriptor
+                                                           name:[NSString stringWithFormat:@"%@/conv", label]];
 
     MPSGraphTensor * convBiasTensor = [self additionWithPrimaryTensor:convTensor
                                                       secondaryTensor:biasTensor
