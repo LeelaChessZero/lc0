@@ -29,8 +29,6 @@
 #include "winograd_transform_ispc.h"
 #endif
 
-#include <Eigen/Core>
-
 namespace lczero {
 template <typename T>
 using EigenMatrixMap =

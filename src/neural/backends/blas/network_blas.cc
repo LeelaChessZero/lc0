@@ -16,7 +16,6 @@
  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <Eigen/Core>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
