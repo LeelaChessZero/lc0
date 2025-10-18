@@ -694,7 +694,7 @@ bool OnnxNetwork::IsTRTEngineGood(std::filesystem::file_time_type start, int bat
     // one.
     return true;
   }
-  if (latest_matching.file_size() > onnx_model_size * 4 / 3) {
+  if (latest_matching.file_size() > onnx_model_size * 7 / 4) {
     CERR << "TRT engine is bad: " << latest_matching.path() << " size "
          << latest_matching.file_size() << " vs model size " << onnx_model_size;
     if (!std::filesystem::remove(latest_matching.path())) {
