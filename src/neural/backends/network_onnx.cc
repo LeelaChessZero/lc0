@@ -782,7 +782,10 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       CERR << "GPU: " << deviceProp.name;
       CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
            << " Gb";
-      CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+      int clockRate = 0;
+      ReportCUDAErrors(
+          cudaDeviceGetAttribute(&clockRate, cudaDevAttrClockRate, gpu_));
+      CERR << "GPU clock frequency: " << clockRate / 1e3f << " MHz";
     }
 #if CUDART_VERSION >= 12080
     int runtime_version;
