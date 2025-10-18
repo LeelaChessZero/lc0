@@ -48,6 +48,10 @@
 #include "utils/logging.h"
 #include "utils/mutex.h"
 
+#if __GNUC__ && !__clang__
+#pragma GCC diagnostic ignored "-Winterference-size"
+#endif
+
 #if __cpp_lib_atomic_wait < 201907L
 #include <condition_variable>
 #define NO_STD_ATOMIC_WAIT 1
