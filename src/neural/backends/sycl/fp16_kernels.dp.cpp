@@ -20,14 +20,9 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 #include "sycl_common.h"
 #include "neural/backends/shared/activation.h"
 
-// Allow building on an old architecture.
-#if DPCT_COMPATIBILITY_TEMP < 530
-#define SKIP_FP16_BITS 1
-#endif
 #include "winograd_helper.h"
 
 namespace lczero {
@@ -597,9 +592,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
   int c = k;
   // top-left
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -617,9 +610,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
   // top-right
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -637,9 +628,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
   // bottom-left
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)
@@ -657,9 +646,7 @@ void OutputInputTransformKernel_fp16_shmem_board(
 
   // bottom-right
   {
-    sycl::half inEl[6][6] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    sycl::half inEl[6][6] = {};
 
 #pragma unroll
     for (int i = 0; i < 5; i++)

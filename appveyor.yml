@@ -19,9 +19,11 @@ for:
 -
   matrix:
     only:
+    - NAME: gpu-nvidia-cudnn
     - NAME: gpu-nvidia-cuda11
 #    - NAME: gpu-opencl
     - NAME: cpu-dnnl
+    - NAME: cpu-openblas
   skip_non_tags: true
 clone_folder: c:\projects\lc0
 install:
@@ -43,9 +45,9 @@ install:
 - cmd: IF %NAME%==gpu-opencl set OPENCL=true
 - cmd: IF %NAME%==cpu-dnnl set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
-- cmd: IF %NAME%==cpu-openblas set GTEST=true
 - cmd: IF %NAME%==onednn set ONEDNN=true
 - cmd: IF %NAME%==onnx set ONNX=true
+- cmd: IF %NAME%==onnx set GTEST=true
 - cmd: set NET=753723
 - cmd: set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
 - cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET=791556
@@ -122,7 +124,6 @@ cache:
   - C:\projects\lc0\subprojects\packagecache
   - C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
-- cmd: git submodule update --init --recursive
 - cmd: IF %BLAS%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: IF %ANDROID%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: SET BUILD_BLAS=%BLAS%
@@ -137,7 +138,7 @@ before_build:
 - cmd: IF %CUDA%==true SET F16C=false
 - cmd: SET EXTRA=
 - cmd: IF %ANDROID%==false SET EXTRA=-Db_vscrt=md
-- cmd: IF %ONNX%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\runtimes\win-x64\native\ -Donnx_include=C:\cache\%ONNX_NAME%\build\native\include
+- cmd: IF %ONNX%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\runtimes\win-x64\native\ -Donnx_include=C:\cache\%ONNX_NAME%\build\native\include -Ddefault_backend=onnx-trt
 - cmd: IF %ANDROID%==false meson build --backend vs2019 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
 - cmd: IF %ANDROID%==true meson arm64-v8a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-aarch64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-aarch64\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-aarch64
 - cmd: IF %ANDROID%==true meson armeabi-v7a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-armv7a\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-armv7a\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-armv7a -Dispc=false -Dneon=false
@@ -180,6 +181,7 @@ deploy:
 test_script:
 - cmd: IF %GTEST%==true cd build
 - cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
+- cmd: IF %GTEST%==true IF %ONNX%==true copy %PKG_FOLDER%\%ONNX_NAME%\runtimes\win-x64\native\onnxruntime.dll
 - cmd: IF %GTEST%==true meson test --print-errorlogs
 - cmd: cd C:\projects\lc0
 on_finish:

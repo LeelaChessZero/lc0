@@ -31,8 +31,8 @@
 #include <fstream>
 #include <set>
 
-#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "proto/onnx.pb.h"
 #include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/fp16_utils.h"
@@ -61,9 +61,9 @@ T GetEnumValueFromString(const std::string& str_value,
 }
 
 const OptionId kInputFilenameId{"input", "InputFile",
-                                "Path of the input Lc0 weights file."};
+                                "Path of the input ONNX file."};
 const OptionId kOutputFilenameId{"output", "OutputFile",
-                                 "Path of the output ONNX file."};
+                                 "Path of the output Lc0 weights file."};
 
 const OptionId kInputFormatId(
     "input-format", "InputFormat",
@@ -167,7 +167,7 @@ bool ValidateNetwork(const pblczero::Net& weights, pblczero::ModelProto& onnx) {
 
   auto check_exists = [](std::string_view n, std::set<std::string>* nodes) {
     std::string name(n);
-    if (nodes->count(name) == 0) {
+    if (!nodes->contains(name)) {
       CERR << "Node '" << name << "' doesn't exist in ONNX.";
       return false;
     }
@@ -465,9 +465,11 @@ void ConvertOnnxToLeela() {
       NetworkFormat::ValueFormat_AllValues, NetworkFormat::ValueFormat_Name));
   if (dict.OwnExists<std::string>(kOnnxOutputValueId)) {
     onnx->set_output_value(dict.Get<std::string>(kOnnxOutputValueId));
+    format->set_output(NetworkFormat::OUTPUT_CLASSICAL);
   }
   if (dict.OwnExists<std::string>(kOnnxOutputWdlId)) {
     onnx->set_output_wdl(dict.Get<std::string>(kOnnxOutputWdlId));
+    format->set_output(NetworkFormat::OUTPUT_WDL);
   }
 
   // Mlh.

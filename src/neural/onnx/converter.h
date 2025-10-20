@@ -29,8 +29,8 @@
 
 #include <string>
 
-#include "neural/onnx/onnx.pb.h"
 #include "proto/net.pb.h"
+#include "proto/onnx.pb.h"
 
 namespace lczero {
 
@@ -49,6 +49,7 @@ struct WeightsToOnnxConverterOptions {
   bool alt_mish = false;       // Use "Mish" approximation (fp32 only).
   bool alt_layernorm = false;  // Discrete "LayerNormalization" implementation.
   bool no_shape = false;       // Avoid use of "Shape" operator.
+  bool no_wdl_softmax = false; // Skip wdl softmax.
   std::string policy_head = "vanilla";
   std::string value_head = "winner";
 

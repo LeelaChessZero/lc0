@@ -100,6 +100,8 @@ class Search {
   // from temperature having been applied again.
   void ResetBestMove();
 
+  void RecordNPSStartTime();
+
  private:
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
@@ -116,8 +118,9 @@ class Search {
   int64_t GetTimeSinceFirstBatch() const;
   void MaybeTriggerStop(const classic::IterationStats& stats,
                         classic::StoppersHints* hints);
-  void MaybeOutputInfo();
-  void SendUciInfo();  // Requires nodes_mutex_ to be held.
+  void MaybeOutputInfo(const classic::IterationStats& stats);
+  // Requires nodes_mutex_ to be held.
+  void SendUciInfo(const classic::IterationStats& stats);
   // Sets stop to true and notifies watchdog thread.
   void FireStopInternal();
 
@@ -135,15 +138,12 @@ class Search {
   // Node can only be root or ponder (depth 1) and move_to_node is only given
   // for the ponder node.
   std::vector<std::string> GetVerboseStats(
-      Node* node, std::optional<Move> move_to_node) const;
+      const Node* node, std::optional<Move> move_to_node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
   // Depth of a root node is 0 (even number).
   float GetDrawScore(bool is_odd_depth) const;
-
-  // Ensure that all shared collisions are cancelled and clear them out.
-  void CancelSharedCollisions();
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -157,6 +157,8 @@ class Search {
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
+  // Node garbage collection has been started for this search.
+  bool gc_started_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
   Move final_bestmove_ GUARDED_BY(counters_mutex_);
@@ -195,15 +197,13 @@ class Search {
   // Cumulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
 
-  std::optional<std::chrono::steady_clock::time_point> nps_start_time_
-      GUARDED_BY(counters_mutex_);
+  // The start time of search. It is set when the first thread exits
+  // GatherMinibatch. It is guarded by nodes mutex until set once.
+  std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
 
   std::atomic<int> pending_searchers_{0};
   std::atomic<int> backend_waiting_counter_{0};
   std::atomic<int> thread_count_{0};
-
-  std::vector<std::pair<const BackupPath, int>> shared_collisions_
-      GUARDED_BY(nodes_mutex_);
 
   std::unique_ptr<UciResponder> uci_responder_;
   ContemptMode contempt_mode_;
@@ -215,6 +215,12 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
+  static constexpr int kTaskCountDigits = std::numeric_limits<int>::digits + 1;
+  static constexpr int kTasksTakenShift = kTaskCountDigits/2;
+  static constexpr int kTasksTakenOne = 1 << kTasksTakenShift;
+  // Suspend is -1 for the low half.
+  static constexpr int kTaskCountSuspend = kTasksTakenOne - 1;
+
   SearchWorker(Search* search, const SearchParams& params)
       : search_(search),
         history_(search_->played_history_),
@@ -233,7 +239,11 @@ class SearchWorker {
     }
     for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() { this->RunTasks(i); });
+      task_threads_.emplace_back([this, i]() {
+          LOGFILE << "Task worker " << i << " starting.";
+          this->RunTasks(i);
+          LOGFILE << "Task worker " << i << " exiting.";
+        });
     }
     target_minibatch_size_ = params_.GetMiniBatchSize();
     if (target_minibatch_size_ == 0) {
@@ -245,17 +255,7 @@ class SearchWorker {
                                      target_minibatch_size_));
   }
 
-  ~SearchWorker() {
-    {
-      task_count_.store(-1, std::memory_order_release);
-      Mutex::Lock lock(picking_tasks_mutex_);
-      exiting_ = true;
-      task_added_.notify_all();
-    }
-    for (size_t i = 0; i < task_threads_.size(); i++) {
-      task_threads_[i].join();
-    }
-  }
+  ~SearchWorker();
 
   // Runs iterations while needed.
   void RunBlocking() {
@@ -286,7 +286,7 @@ class SearchWorker {
   // The same operations one by one:
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
-  void InitializeIteration(std::unique_ptr<BackendComputation> computation);
+  void InitializeIteration();
 
   // 2. Gather minibatch.
   void GatherMinibatch();
@@ -361,7 +361,7 @@ class SearchWorker {
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
         auto n = std::get<0>(*it);
-        auto nl = n->GetLowNode();
+        const auto& nl = n->GetLowNode();
         oss << n << ":" << n->GetNInFlight();
         if (nl) {
           oss << "(" << nl << ")";
@@ -460,6 +460,7 @@ class SearchWorker {
                              PositionHistory& history,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
+  void CancelCollisions();
 
   // Check if the situation described by @depth under root and @position is a
   // safe two-fold or a draw by repetition and return the number of safe
@@ -470,6 +471,10 @@ class SearchWorker {
   void ProcessPickedTask(int batch_start, int batch_end);
   void ExtendNode(NodeToProcess& picked_node);
   void FetchSingleNodeResult(NodeToProcess* node_to_process);
+  std::tuple<PickTask*, int, int> PickTaskToProcess();
+  void ProcessTask(PickTask* task, int id,
+                   std::vector<NodeToProcess>* receiver,
+                   TaskWorkspace* workspace);
   void RunTasks(int tid);
   void ResetTasks();
   // Returns how many tasks there were.
@@ -495,9 +500,8 @@ class SearchWorker {
 
   Mutex picking_tasks_mutex_;
   std::vector<PickTask> picking_tasks_;
-  std::atomic<int> task_count_ = -1;
-  std::atomic<int> task_taking_started_ = 0;
-  std::atomic<int> tasks_taken_ = 0;
+  // A packed atomic. LSB half is task_count_. MSB half is tasks_taken_.
+  std::atomic<int> task_count_ = kTaskCountSuspend;
   std::atomic<int> completed_tasks_ = 0;
   std::condition_variable task_added_;
   std::vector<std::thread> task_threads_;

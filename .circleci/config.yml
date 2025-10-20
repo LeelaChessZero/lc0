@@ -9,24 +9,26 @@ jobs:
           name: Install build tools
           command: |
             apt-get update
-            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev
+            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev wget
             pip3 install meson==0.63
             pip3 install ninja
       - run:
-          name: "Pull Submodules"
-          command: git submodule update --init
+          name: Install onnxruntime
+          command: |
+            wget https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz -P /tmp
+            tar xzf /tmp/onnxruntime-linux-x64-1.22.0.tgz -C /tmp
       - run:
           name: Meson GCC
           environment:
             CC: gcc-10
             CXX: g++-10
-          command: meson build-gcc -Dgtest=false
+          command: meson build-gcc -Dgtest=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
       - run:
           name: Meson Clang
           environment:
             CC: clang-12
             CXX: clang++-12
-          command: meson build-clang -Dgtest=false -Db_lto=false
+          command: meson build-clang -Dgtest=false -Db_lto=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
       - run:
           name: Build GCC
           command: |
@@ -43,9 +45,6 @@ jobs:
     resource_class: macos.m1.medium.gen1
     steps:
       - checkout
-      - run:
-          name: "Pull Submodules"
-          command: git submodule update --init
       - run:
           name: Install build tools
           command: |
@@ -88,9 +87,6 @@ jobs:
     steps:
       - checkout
       - run:
-          name: "Pull Submodules"
-          command: git submodule update --init
-      - run:
           name: Install build tools
           command: |
             pip3 install meson
@@ -121,7 +117,7 @@ jobs:
             gh release upload \
               "$CIRCLE_TAG" \
               /tmp/lc0-$CIRCLE_TAG-macos_12.6.1 \
-              --clobber
+              --clobber --repo LeelaChessZero/lc0
 workflows:
   version: 2
   builds:

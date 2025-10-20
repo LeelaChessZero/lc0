@@ -30,7 +30,6 @@
 #include <initializer_list>
 
 #include "neural/onnx/adapters.h"
-#include "neural/onnx/onnx.pb.h"
 #include "utils/exception.h"
 #include "version.h"
 

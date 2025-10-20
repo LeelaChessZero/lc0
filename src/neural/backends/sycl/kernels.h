@@ -20,7 +20,6 @@
 */
 
 #include <sycl/sycl.hpp>
-#include "dpct/dpct.hpp"
 #include "sycl_common.h"
 #include "neural/backends/shared/activation.h"
 
@@ -146,5 +145,9 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, sycl::queue &sycl_queue);
+
+template <typename T>
+void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
+                       int d_model, T* k, T* q, T* b1, T* v, T* b2, sycl::queue &sycl_queue);
 }  // namespace sycldnn_backend
 }  // namespace lczero

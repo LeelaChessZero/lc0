@@ -159,7 +159,7 @@ int GetNumeric(const std::unordered_map<std::string, std::string>& params,
 
 bool ContainsKey(const std::unordered_map<std::string, std::string>& params,
                  const std::string& key) {
-  return params.find(key) != params.end();
+  return params.contains(key);
 }
 }  // namespace
 
@@ -258,7 +258,7 @@ bool UciLoop::ProcessLine(const std::string& line) {
 
 void StringUciResponder::PopulateParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
-  options->Add<BoolOption>(kShowWDL) = true;
+  options->Add<BoolOption>(kShowWDL) = false;
   options->Add<BoolOption>(kShowMovesleft) = false;
   options_ = &options->GetOptionsDict();
 }

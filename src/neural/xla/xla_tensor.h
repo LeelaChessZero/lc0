@@ -33,7 +33,7 @@
 #include <string>
 #include <vector>
 
-#include "neural/xla/hlo.pb.h"
+#include "proto/hlo.pb.h"
 #include "utils/exception.h"
 
 namespace lczero {

@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++20', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
-        meson_version: '>=0.55')
+        meson_version: '>=0.57')
 
 cc = meson.get_compiler('cpp')
 
@@ -60,37 +60,19 @@ includes += include_directories('third_party', is_system: true)
 compile_proto = find_program('scripts/compile_proto.py')
 gen = generator(compile_proto, output: ['@BASENAME@.pb.h'],
   arguments : [
-    '--proto_path=@CURRENT_SOURCE_DIR@/libs/lczero-common',
+    '--proto_path=@CURRENT_SOURCE_DIR@',
     '--cpp_out=@BUILD_DIR@',
     '@INPUT@'])
 
-# Handle submodules.
-git = find_program('git', required: false)
-if run_command('scripts/checkdir.py', 'libs/lczero-common/proto', check : false).returncode() != 0
-  if git.found()
-    if run_command(git, 'status', check : false).returncode() == 0
-      message('updating git submodule libs/lczero-common')
-      run_command(git, 'submodule', 'update', '--init', '--recursive', check : false)
-    else
-      message('cloning lczero-common.git into libs/lczero-common')
-      run_command(git, 'clone', '--depth=1',
-                  'https://github.com/LeelaChessZero/lczero-common.git',
-                  'libs/lczero-common/', check : false)
-    endif
-  else
-    error('Please install git to automatically fetch submodules or download the archives manually from GitHub.')
-  endif
-endif
-
 pb_files = [
   'src/utils/protomessage.cc',
-  gen.process('libs/lczero-common/proto/net.proto',
-    preserve_path_from : meson.current_source_dir() + '/libs/lczero-common/')
+  gen.process('proto/net.proto', preserve_path_from : meson.current_source_dir())
 ]
 common_files += pb_files
 
 # Extract git short revision.
 short_rev = 'unknown'
+git = find_program('git', required: false)
 if git.found()
   r = run_command(git, 'rev-parse', '--short', 'HEAD', check : false)
   if r.returncode() == 0
@@ -132,17 +114,11 @@ elif get_option('malloc') != ''
 endif
 
 # ONNX and HLO protobufs.
-gen_proto_src = generator(compile_proto, output: ['@BASENAME@.pb.h'],
-  arguments : [
-    '--proto_path=@CURRENT_SOURCE_DIR@/src',
-    '--cpp_out=@BUILD_DIR@',
-    '@INPUT@'])
+files += gen.process('proto/onnx.proto',
+  preserve_path_from : meson.current_source_dir())
 
-files += gen_proto_src.process('src/neural/onnx/onnx.proto',
-  preserve_path_from : meson.current_source_dir() + '/src/')
-
-files += gen_proto_src.process('src/neural/xla/hlo.proto',
-  preserve_path_from : meson.current_source_dir() + '/src/')
+files += gen.process('proto/hlo.proto',
+  preserve_path_from : meson.current_source_dir())
 
 #############################################################################
 ## Main files
@@ -229,6 +205,11 @@ files += [
 
 includes += include_directories('src')
 
+deps += dependency('absl_flat_hash_map',
+                   include_type: 'system',
+                   fallback: ['abseil-cpp', 'absl_container_dep'],
+                   default_options : ['warning_level=0', 'cpp_std=c++20'])
+
 deps += dependency('threads')
 
 #############################################################################
@@ -249,9 +230,6 @@ if get_option('dag_classic')
     'src/search/dag_classic/search.cc',
     'src/search/dag_classic/wrapper.cc',
   ]
-
-  absl = subproject('abseil-cpp', default_options : ['warning_level=0', 'cpp_std=c++20'])
-  deps += absl.get_variable('absl_container_dep').as_system()
 endif
 
 #############################################################################
@@ -338,7 +316,13 @@ if get_option('build_backends')
 
     endif
 
-    deps += dependency('eigen3', fallback: ['eigen', 'eigen_dep']).as_system()
+    eigen_dep = dependency('eigen3')
+    # Check for needed header, bad dependency seen in the widl.
+    if eigen_dep.found() and cc.has_header('Eigen/Core', dependencies: eigen_dep)
+      deps += eigen_dep.as_system()
+    else
+      deps += subproject('eigen').get_variable('eigen_dep').as_system()
+    endif
 
     ispc = find_program('ispc', required: false)
     ispc_arch = 'x86-64'
@@ -504,7 +488,7 @@ if get_option('build_backends')
         cuda_arguments += ['-Xcompiler', '-MD']
       endif
     else
-      cuda_arguments += ['--std=c++14', '-Xcompiler', '-fPIC']
+      cuda_arguments += ['--std=c++17', '-Xcompiler', '-fPIC']
     endif
     if get_option('nvcc_ccbin') != ''
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
@@ -592,9 +576,11 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   ## ONNX
   ## ~~~~~~~~~~
-  if get_option('onnx_libdir') != '' and get_option('onnx_include') != ''
-    deps += cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
-                            required: true)
+  onnxruntime = cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
+                                required: false)
+  if get_option('onnx') and onnxruntime.found() and\
+     run_command('scripts/checkdir.py', get_option('onnx_include'), check: false).returncode() == 0
+    deps += onnxruntime
     includes += include_directories(get_option('onnx_include'), is_system: true)
     cc.has_header('onnxruntime_cxx_api.h', required: true,
                   args: '-I' + get_option('onnx_include'))
@@ -622,7 +608,7 @@ if get_option('build_backends')
                                 modules : ['Foundation', 'Metal', 'MetalPerformanceShaders', 'MetalPerformanceShadersGraph'],
                                 required: get_option('metal'))
 
-  if (metal_frameworks.found() and add_languages('objc', 'objcpp'))
+  if metal_frameworks.found() and add_languages('objc', 'objcpp', native: false)
     deps += metal_frameworks
 
     files += [
@@ -665,26 +651,6 @@ if get_option('build_backends')
       add_project_arguments('-fsycl', language : 'cpp')
       add_project_link_arguments('-fsycl', language : 'cpp')
 
-      dpct_args = []
-      foreach onemkl_include : get_option('onemkl_include')
-        if run_command('scripts/checkdir.py', onemkl_include, check : false).returncode() == 0
-          includes += include_directories(onemkl_include, is_system: true)
-          dpct_args += '-I' + onemkl_include
-        endif
-      endforeach
-      # Check for oneMKL header which is used by DPC++ CT. It could also depend
-      # on oneMATH headers but L0 Sycl uses oneMKL kernels too.
-      cc.has_header('oneapi/mkl.hpp', required: true, args: dpct_args)
-
-      foreach dpct_include : get_option('dpct_include')
-        if run_command('scripts/checkdir.py', dpct_include, check : false).returncode() == 0
-          includes += include_directories(dpct_include, is_system: true)
-          dpct_args += '-I' + dpct_include
-        endif
-      endforeach
-      # Check for DPC++ Compatibility Tool header.
-      cc.has_header('dpct/dpct.hpp', required: true, args: dpct_args)
-
       files += 'src/neural/backends/sycl/layers.cc.dp.cpp'
       files += 'src/neural/backends/sycl/network_sycl.cc.dp.cpp'
       files += 'src/neural/backends/sycl/common_kernels.dp.cpp'
@@ -702,7 +668,7 @@ if get_option('build_backends')
         hip_libdirs = get_option('hip_libdirs')
         hip_args = []
         foreach hip_include : get_option('hip_include')
-          if run_command('scripts/checkdir.py', dpct_include, check : false).returncode() == 0
+          if run_command('scripts/checkdir.py', hip_include, check : false).returncode() == 0
             includes += include_directories(hip_include, is_system: true)
             hip_args += '-I' + hip_include
           endif
@@ -713,11 +679,39 @@ if get_option('build_backends')
         cc.has_header('hip/hip_runtime.h', required: true, args: hip_args)
         add_project_arguments('-DUSE_HIPBLAS=ON', language : 'cpp')
         add_project_arguments('-D__HIP_PLATFORM_AMD__', language : 'cpp')
-        if get_option('amd_gfx') == ''
-          error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. 90a, 1100 or similar)')
+        amd_gfx = get_option('amd_gfx')
+        if amd_gfx == ''
+          amd_gfx = []
+          agent_enum = find_program('rocm_agent_enumerator', '/opt/rocm/bin/rocm_agent_enumerator',
+                      required: false)
+          if not agent_enum.found()
+            warning( '\'rocm_agent_enumerator\' not found. AMD GPU detection doesn\'t work. You can install rocminfo or set -Damd_gfx.')
+          elif meson.version().version_compare('<1.2.0')
+            warning( 'Automatic AMD GPU detection requires Meson 1.2.0')
+          else
+            agents = run_command(agent_enum, check : false).stdout()
+            agent_list = agents.splitlines()
+            foreach agent : agent_list
+              if agent.startswith('gfx')
+                amd_gfx += 'amd_gpu_' + agent
+              else
+                error( '\'' + agent_enum.full_path() + '\' unexpected output: ' + agent)
+              endif
+            endforeach
+            if amd_gfx.length() == 0
+              warning( '\'' + agent_enum.full_path() + '\' failed to detect any AMD GPUs in the system.')
+            else
+              message( 'Detected AMD GPU cores: ' + ','.join(amd_gfx))
+            endif
+          endif
+        else
+          amd_gfx = ['amd_gpu_' + amd_gfx]
         endif
-        add_project_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
-        add_project_link_arguments('-fsycl-targets=amd_gpu_gfx'+get_option('amd_gfx'), language : 'cpp')
+        if amd_gfx.length() == 0
+          error('-Dsycl=amd requires specifying -Damd_gfx architecture identifier (e.g. gfx90a, gfx1100 or similar)')
+        endif
+        add_project_arguments('-fsycl-targets=' + ','.join(amd_gfx), language : 'cpp')
+        add_project_link_arguments('-fsycl-targets=' + ','.join(amd_gfx), language : 'cpp')
       else
         deps += cc.find_library('cublas', required: true)
         deps += cc.find_library('cudart', required: true)
@@ -734,6 +728,7 @@ if get_option('build_backends')
         # For sycl under windows we need to link using icx to generate the device code.
         # This script edits build.ninja for this and for an icx dependency issue.
         meson.add_postconf_script('scripts/sycl_build_hack.py')
+        add_project_link_arguments('-rtlib=compiler-rt', language : 'cpp')
       endif
   endif
 
@@ -768,11 +763,11 @@ endif
   ## Profiler
   ## ~~~~~~~~
   if get_option('buildtype') != 'release'
-    deps += cc.find_library('libprofiler',
+    deps += cc.find_library('profiler',
       dirs: ['/usr/local/lib'], required: false)
   endif
 
-  deps += cc.find_library('libatomic', required: false)
+  deps += cc.find_library('atomic', required: false)
 
 #############################################################################
 ## Main Executable
@@ -823,10 +818,10 @@ endif
 #############################################################################
 
 if get_option('rescorer')
-  deps += subproject('gaviotatb').get_variable('gaviotatb_dep')
+  gaviota_dep = subproject('gaviotatb').get_variable('gaviotatb_dep')
   executable('rescorer', 'src/rescorer_main.cc',
        [common_files, 'src/trainingdata/rescorer.cc'],
-       include_directories: includes, dependencies: deps, install: true)
+       include_directories: includes, dependencies: [deps, gaviota_dep], install: true)
 endif
 
 #############################################################################
@@ -836,7 +831,7 @@ endif
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
   gmock = dependency('gmock', fallback: ['gtest', 'gmock_dep'])
-  lc0_lib = library('lc0_lib', files, include_directories: includes, dependencies: deps)
+  lc0_lib = library('lc0_lib', common_files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
@@ -870,7 +865,8 @@ if get_option('gtest')
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
   test('EngineTest',
-    executable('engine_test', 'src/engine_test.cc', pb_files,
+    executable('engine_test', 'src/engine_test.cc', 'src/engine.cc',
+               'src/neural/memcache.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
 endif

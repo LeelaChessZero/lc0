@@ -1,8 +1,12 @@
-Lc0
+# Lc0
 
 Lc0 is a UCI-compliant chess engine designed to play chess via
 neural network, specifically those of the LeelaChessZero project
 (https://lczero.org).
+
+# Installation
+
+Summary: run `instrall.cmd` and follow the instructions.
 
 To run this version you will also need several dll files from NVIDA's
 CUDA, cuDNN and TensorRT. Those dlls can either be on the system path
@@ -28,7 +32,37 @@ The dlls needed are the following:
 * nvinfer_plugin_10.dll
 * nvonnxparser_10.dll
 
-License
+The install.cmd script included in this package will download the
+CUDA and cuDNN files needed and will open the TensorRT download page
+using your browser. If it fails, you can download the files manually
+using the following addresses, the dlls are in the `bin` directory
+in the CUDA/cuDNN zips and the `lib` directory in the TensorRT zip.
+
+* https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-12.9.79-archive.zip
+* https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-12.9.1.4-archive.zip
+* https://developer.download.nvidia.com/compute/cuda/redist/libcufft/windows-x86_64/libcufft-windows-x86_64-11.4.1.4-archive.zip
+* https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.11.0.98_cuda12-archive.zip
+* https://developer.nvidia.com/tensorrt/download/10x#trt1012
+
+The TensorRT link will take you to the download page, after
+registering go to the "TensorRT 10.12 GA for x86_64 Architecture"
+section and get the "TensorRT 10.12 GA for Windows 10, 11,
+Server 2022 and CUDA 12.0 to 12.9 ZIP Package".
+
+Finally, if Lc0 still won't run, get the latest Visual C++
+redistributable from: https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+# Running
+
+When running Lc0 with a new network file, it will take some time to
+create the optimized model to use. This is normal. The model will be
+cached for future runs in the `trt_cache` folder, so next time it will
+be faster. If you want to experiment you can rename the `trt_cache`
+folder and rerun, sometimes TensorRT will generate a different model
+that may be faster. Moreover, if you are having issues, you can
+delete/rename the cache and rerun.
+
+# License
 
 Leela Chess is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

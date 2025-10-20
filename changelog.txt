@@ -1,4 +1,26 @@
-﻿v0.32.0-rc1 (2025-07-18)
+﻿v0.32.0 (2025-08-21)
+~~~~~~~
+* Support for building with cuda 13.
+* README update.
+* Build system improvements.
+
+v0.32.0-rc2 (2025-08-12)
+~~~~~~~
+* Fix for onnx-trt bug, where the wrong network could be used from the cache.
+* Added code to detect RPE nets and give an error instead of bad results.
+* Better instructions in the readme and install script for onnx-trt.
+* Made `UCI_ShowWDL` again off by default again as some GUIs have issues.
+* Fixed a long standing issue when compiled with `-ffast-math` (or `icx -O3`).
+* Several improvements to the sycl backend.
+* Several improvements to the metal backend.
+* Refactored the rescorer code and training data header to make them usable by
+  external tools.
+* Relaxed cuda/cudnn version checks so that no warnings are shown for mismatched
+  versions that are supported.
+* Several build system updates.
+* Assorted small fixes and improvements.
+
+v0.32.0-rc1 (2025-07-18)
 ~~~~~~~
 The code has been reorganized and undergone major changes. Therefore this
 changelog will be less detailed and describe the changes in major groups.

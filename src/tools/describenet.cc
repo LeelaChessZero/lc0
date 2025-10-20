@@ -28,7 +28,7 @@
 #include "tools/describenet.h"
 
 #include "neural/loader.h"
-#include "neural/onnx/onnx.pb.h"
+#include "proto/onnx.pb.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -109,6 +109,11 @@ void ShowNetworkFormatInfo(const pblczero::Net& weights) {
   if (net_format.has_ffn_activation()) {
     COUT << Justify("FFN activation")
          << NetworkFormat::ActivationFunction_Name(net_format.ffn_activation());
+  }
+  if (net_format.has_input_embedding()) {
+    COUT << Justify("Input embedding")
+         << NetworkFormat::InputEmbeddingFormat_Name(
+                net_format.input_embedding());
   }
 }
 

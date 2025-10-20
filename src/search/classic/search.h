@@ -126,7 +126,7 @@ class Search {
 
   // Returns verbose information about given node, as vector of strings.
   // Node can only be root or ponder (depth 1).
-  std::vector<std::string> GetVerboseStats(Node* node) const;
+  std::vector<std::string> GetVerboseStats(const Node* node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
@@ -278,7 +278,7 @@ class SearchWorker {
   // The same operations one by one:
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
-  void InitializeIteration(std::unique_ptr<BackendComputation> computation);
+  void InitializeIteration();
 
   // 2. Gather minibatch.
   void GatherMinibatch();
@@ -404,8 +404,8 @@ class SearchWorker {
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(Node* starting_point, int collision_limit,
-                             int base_depth,
+  void PickNodesToExtendTask(Node* starting_point, int base_depth,
+                             int collision_limit,
                              const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
@@ -431,7 +431,6 @@ class SearchWorker {
   PositionHistory history_;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
-  std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;

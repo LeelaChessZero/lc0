@@ -218,7 +218,7 @@ class CudaNetwork : public Network {
 
     cudaDeviceProp deviceProp = {};
     cudaGetDeviceProperties(&deviceProp, gpu_id_);
-    showDeviceInfo(deviceProp);
+    showDeviceInfo(deviceProp, gpu_id_);
 
     l2_cache_size_ = deviceProp.l2CacheSize;
     sm_count_ = deviceProp.multiProcessorCount;
@@ -342,14 +342,14 @@ class CudaNetwork : public Network {
     std::string policy_head =
         options.GetOrDefault<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
-    if (weights.policy_heads.count(policy_head) == 0) {
+    if (!weights.policy_heads.contains(policy_head)) {
       throw Exception("The policy head you specified '" + policy_head +
                       "' does not exist in this net.");
     }
     std::string value_head =
         options.GetOrDefault<std::string>("value_head", "winner");
     // Check that selected value head exists.
-    if (weights.value_heads.count(value_head) == 0) {
+    if (!weights.value_heads.contains(value_head)) {
       throw Exception("The value head you specified '" + value_head +
                       "' does not exist in this net.");
     }
@@ -997,9 +997,12 @@ class CudaNetwork : public Network {
       major = CUDART_VERSION / 1000;
       minor = (CUDART_VERSION - major * 1000) / 10;
       pl = CUDART_VERSION - major * 1000 - minor * 10;
-      CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
-              "version "
-           << major << "." << minor << "." << pl;
+      // After cuda 11, newer version with same major is OK.
+      if (major < 11 || (major != version / 1000) || version < CUDART_VERSION) {
+        CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
+                "version "
+             << major << "." << minor << "." << pl;
+      }
     }
     cudaDriverGetVersion(&version);
     major = version / 1000;
@@ -1012,11 +1015,26 @@ class CudaNetwork : public Network {
     }
   }
 
-  void showDeviceInfo(const cudaDeviceProp& deviceProp) const {
+  void showDeviceInfo(const cudaDeviceProp& deviceProp,
+                      [[maybe_unused]] int deviceId) const {
     CERR << "GPU: " << deviceProp.name;
     CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
          << " Gb";
-    CERR << "GPU clock frequency: " << deviceProp.clockRate / 1e3f << " MHz";
+    // Get clock rate
+    float clockRateMHz;
+#if CUDART_VERSION >= 13000
+    int clockRatekHz;
+    cudaError_t err = cudaDeviceGetAttribute(&clockRatekHz, cudaDevAttrClockRate, deviceId);
+    if (err != cudaSuccess) {
+        CERR << "Error getting clock rate: " << cudaGetErrorString(err);
+        clockRateMHz = 0.0f; // Fallback value
+    } else {
+        clockRateMHz = clockRatekHz / 1e3f;
+    }
+#else
+    clockRateMHz = deviceProp.clockRate / 1e3f;
+#endif
+    CERR << "GPU clock frequency: " << clockRateMHz << " MHz";
     CERR << "GPU compute capability: " << deviceProp.major << "."
          << deviceProp.minor;
     CERR << "L2 cache capacity: " << deviceProp.l2CacheSize;

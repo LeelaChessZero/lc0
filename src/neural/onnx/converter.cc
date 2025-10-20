@@ -921,7 +921,7 @@ void Converter::MakePolicyHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                                const std::string& input,
                                const MultiHeadWeights& weights) {
   // Check that selected policy head exists.
-  if (weights.policy_heads.count(options_.policy_head) == 0) {
+  if (!weights.policy_heads.contains(options_.policy_head)) {
     throw Exception("The policy head you specified '" + options_.policy_head +
                     "'" + " does not exist in this net.");
   }
@@ -989,7 +989,7 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                               const std::string& input,
                               const MultiHeadWeights& weights) {
   // Check that selected value head exists.
-  if (weights.value_heads.count(options_.value_head) == 0) {
+  if (!weights.value_heads.contains(options_.value_head)) {
     throw Exception("The value head you specified '" + options_.value_head +
                     "'" + " does not exist in this net.");
   }
@@ -1033,9 +1033,11 @@ void Converter::MakeValueHead(pblczero::OnnxModel* onnx, OnnxBuilder* builder,
                         *GetWeghtsConverter(head.ip2_val_w, {128, 3}, {1, 0}));
     flow = builder->Add("/value/dense2/add", flow,
                         *GetWeghtsConverter(head.ip2_val_b, {3}));
-    auto output = builder->Softmax(options_.output_wdl, flow);
-    builder->AddOutput(output, {options_.batch_size, 3}, GetDataType());
-    onnx->set_output_wdl(output);
+    if (!options_.no_wdl_softmax) {
+      flow = builder->Softmax(options_.output_wdl, flow);
+    }
+    builder->AddOutput(flow, {options_.batch_size, 3}, GetDataType());
+    onnx->set_output_wdl(flow);
   } else {
     flow =
         builder->MatMul("/value/dense2/matmul", flow,
@@ -1092,8 +1094,8 @@ void Converter::MakeMovesLeftHead(pblczero::OnnxModel* onnx,
       *GetWeghtsConverter(weights.ip2_mov_w, {mlh_fc1_outputs, 1}, {1, 0}));
   flow = builder->Add("/mlh/dense2/add", flow,
                       *GetWeghtsConverter(weights.ip2_mov_b, {1}));
-  flow = MakeActivation(builder, flow, "/mlh/dense2", default_activation_);
-  auto output = builder->Identity(options_.output_mlh, flow);
+  // Explicity ReLU activation.
+  auto output = builder->Relu(options_.output_mlh, flow);
   builder->AddOutput(output, {options_.batch_size, 1}, GetDataType());
   onnx->set_output_mlh(output);
 }
