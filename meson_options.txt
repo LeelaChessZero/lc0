@@ -45,7 +45,7 @@ option('cudnn_include',
 
 option('cutlass_include',
        type: 'string',
-       value: '/usr',
+       value: '',
        description: 'Paths to cutlass include directory')
 
 option('build_backends',
