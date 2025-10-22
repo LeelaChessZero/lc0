@@ -449,10 +449,18 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       cpu_wdl_(cpu_wdl),
       provider_(provider) {
   onnx_env_.DisableTelemetryEvents();
-  batch_size_ =
-      opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
-  steps_ =
-      opts.GetOrDefault<int>("steps", provider == OnnxProvider::DML ? 4 : 1);
+  switch (provider) {
+    case OnnxProvider::DML:
+    case OnnxProvider::COREML:
+      batch_size_ = 16;
+      steps_ = 4;
+      break;
+    default:
+      batch_size_ = -1;
+      steps_ = 1;
+  }
+  batch_size_ = opts.GetOrDefault<int>("batch", batch_size_);
+  steps_ = opts.GetOrDefault<int>("steps", steps_);
   min_batch_size_ = opts.GetOrDefault<int>(
       "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
   int gpu = opts.GetOrDefault<int>("gpu", 0);
