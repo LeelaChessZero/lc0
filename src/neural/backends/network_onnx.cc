@@ -537,6 +537,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
     converter_options.no_wdl_softmax = true;
+    converter_options.alt_selu =
+        kProvider == OnnxProvider::COREML ? true : false;
 
     std::string datatype;
     if (opts.Exists<std::string>("datatype")) {

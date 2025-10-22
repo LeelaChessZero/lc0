@@ -473,6 +473,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
     onnx_op_to_builder_["Greater"] = &Onnx2HloConverter::OpGreater;
+    onnx_op_to_builder_["Elu"] = &Onnx2HloConverter::OpElu;
     onnx_op_to_builder_["Exp"] = &Onnx2HloConverter::OpExp;
     onnx_op_to_builder_["Expand"] = &Onnx2HloConverter::OpExpand;
     onnx_op_to_builder_["Identity"] = &Onnx2HloConverter::OpIdentity;
@@ -842,6 +843,21 @@ class Onnx2HloConverter {
         flow,
         builder_.Broadcast(MakeScalar(gamma, input->shape().element_type()),
                            HloTensorType(input->shape()), {}))};
+  }
+
+  std::vector<HloFlow> OpElu(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"alpha"});
+    auto* input = GetInput(node, 0);
+    double alpha = GetOptionalAttributeAs<double>(node, "alpha").value_or(1.0);
+    auto* neg = builder_.Multiply(
+        builder_.Broadcast(MakeScalar(alpha, input->shape().element_type()),
+                           HloTensorType(input->shape()), {}),
+        builder_.ExponentialMinusOne(input));
+    auto* zeros =
+        builder_.Broadcast(MakeScalar(0, input->shape().element_type()),
+                           HloTensorType(input->shape()), {});
+    auto* preds = builder_.Compare(input, zeros, "GE");
+    return {builder_.Select(preds, input, neg)};
   }
 
   std::vector<HloFlow> OpIdentity(const pblczero::NodeProto& node) {
