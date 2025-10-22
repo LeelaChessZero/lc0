@@ -163,7 +163,10 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
       *options_, &tt_, syzygy_tb_);
-
+#ifdef FIX_TT
+  LOGFILE << "Transposition table load factor is "
+          << tt_.GetSize() / static_cast<float>(tt_.GetCapacity());
+#endif
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
   search_->StartThreads(options_->Get<int>(kThreadsOptionId));
