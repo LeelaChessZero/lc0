@@ -90,7 +90,7 @@ option('plain_cuda',
 
 option('cutlass',
        type: 'boolean',
-       value: false,
+       value: true,
        description: 'Enable cutlass lib for cuda backend. Only supports Ampere+ right now')
 
 option('opencl',
