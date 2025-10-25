@@ -135,6 +135,7 @@ struct OnnxComputationBase : public NetworkComputation {
     binding.SynchronizeOutputs();
   }
 
+  void WaitForWDL(OnnxInputsOutputsBase<NetworkInfo>&) {}
   void WaitForOutputs(OnnxInputsOutputsBase<NetworkInfo>&) {}
 };
 
@@ -334,6 +335,8 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
     ReportCUDAErrors(
         cudaEventCreate(&evaluation_done_event_, cudaEventDisableTiming));
     ReportCUDAErrors(
+        cudaEventCreate(&wdl_download_event_, cudaEventDisableTiming));
+    ReportCUDAErrors(
         cudaEventCreate(&outputs_download_event_, cudaEventDisableTiming));
     ReportCUDAErrors(cudaHostAlloc(
         &input_mask_data_,
@@ -365,6 +368,7 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
     ReportCUDAErrors(cudaEventDestroy(inputs_uploaded_event_));
     ReportCUDAErrors(cudaEventDestroy(inputs_processed_event_));
     ReportCUDAErrors(cudaEventDestroy(evaluation_done_event_));
+    ReportCUDAErrors(cudaEventDestroy(wdl_download_event_));
     ReportCUDAErrors(cudaEventDestroy(outputs_download_event_));
     ReportCUDAErrors(cudaFree(input_tensor_upload_device_));
     ReportCUDAErrors(cudaFree(input_tensor_data_device_));
@@ -391,6 +395,7 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
   cudaEvent_t inputs_uploaded_event_ = nullptr;
   cudaEvent_t inputs_processed_event_ = nullptr;
   cudaEvent_t evaluation_done_event_ = nullptr;
+  cudaEvent_t wdl_download_event_ = nullptr;
   cudaEvent_t outputs_download_event_ = nullptr;
 };
 
@@ -577,9 +582,17 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
           inputs_outputs.output_tensors_data_device_[i] + offset,
           batch * step * sizeof(DataType), cudaMemcpyDeviceToHost,
           network.download_stream_));
+      if (NetworkInfo::cpu_wdl_ && i == (size_t)NetworkInfo::wdl_head_) {
+        ReportCUDAErrors(cudaEventRecord(inputs_outputs.wdl_download_event_,
+                                         network.download_stream_));
+      }
     }
     ReportCUDAErrors(cudaEventRecord(inputs_outputs.outputs_download_event_,
                                      network.download_stream_));
+  }
+
+  void WaitForWDL(OnnxCUDAInputsOutputs<NetworkInfo>& inputs_outputs) {
+    ReportCUDAErrors(cudaEventSynchronize(inputs_outputs.wdl_download_event_));
   }
 
   void WaitForOutputs(OnnxCUDAInputsOutputs<NetworkInfo>& inputs_outputs) {
@@ -1128,10 +1141,11 @@ void OnnxComputation<NetworkInfoType>::ComputeBlocking() {
     Base::DownloadOutputs(binding, *network_, *inputs_outputs_, i, batch);
     i += batch;
   }
-  Base::WaitForOutputs(*inputs_outputs_);
   if constexpr (NetworkInfo::cpu_wdl_) {
     static_assert(NetworkInfo::wdl_head_ != -1,
                   "WDL head required for CPU softmax.");
+
+    Base::WaitForWDL(*inputs_outputs_);
 
     const DataType* data =
         inputs_outputs_->GetOutputData(NetworkInfo::wdl_head_);
@@ -1153,6 +1167,7 @@ void OnnxComputation<NetworkInfoType>::ComputeBlocking() {
       inputs_outputs_->wdl_output_data_[2 * i + 1] = d;
     }
   }
+  Base::WaitForOutputs(*inputs_outputs_);
 }
 
 template <typename Provider>
@@ -1187,10 +1202,6 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
     throw Exception("NN doesn't have input planes defined.");
   }
   inputs_.emplace_back(md.input_planes());
-  if (!md.has_output_policy()) {
-    throw Exception("NN doesn't have policy head defined.");
-  }
-  outputs_.emplace_back(md.output_policy());
   if (NetworkInfo::wdl_head_ != -1) {
     outputs_.emplace_back(md.output_wdl());
   } else if (md.has_output_value()) {
@@ -1198,6 +1209,10 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
   } else {
     throw Exception("NN doesn't have value head.");
   }
+  if (!md.has_output_policy()) {
+    throw Exception("NN doesn't have policy head defined.");
+  }
+  outputs_.emplace_back(md.output_policy());
   if (NetworkInfo::mlh_head_ != -1) {
     outputs_.emplace_back(md.output_mlh());
   }
@@ -1237,13 +1252,13 @@ template <typename T, bool cpu_wdl, bool wdl_head, bool mlh_head>
 struct NetworkInfo {
   using DataType = T;
   static constexpr bool cpu_wdl_ = cpu_wdl && wdl_head;
-  static constexpr int policy_head_ = 0;
-  static constexpr int wdl_head_ = wdl_head ? 1 : -1;
-  static constexpr int value_head_ = !wdl_head ? 1 : -1;
+  static constexpr int wdl_head_ = wdl_head ? 0 : -1;
+  static constexpr int value_head_ = !wdl_head ? 0 : -1;
+  static constexpr int policy_head_ = 1;
   static constexpr int mlh_head_ = mlh_head ? 2 : -1;
   static constexpr int output_size_ = mlh_head ? 3 : 2;
   static constexpr size_t output_tensors_step_[3] = {
-      kNumOutputPolicy, wdl_head ? 3 : 1, mlh_head ? 1 : 0};
+      wdl_head ? 3 : 1, kNumOutputPolicy, mlh_head ? 1 : 0};
 };
 
 template <typename NetworkInfoType>
