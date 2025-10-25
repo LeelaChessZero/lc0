@@ -162,11 +162,12 @@ struct OnnxNetworkBase : public Network {
 
     SessionParams(const WeightsFile&, const OptionsDict& opts)
         : threads_(opts.GetOrDefault<int>("threads", 0)),
-          batch_size_(opts.GetOrDefault<int>("batch_size", -1)),
+          batch_size_(opts.GetOrDefault<int>("batch", -1)),
           steps_(opts.GetOrDefault<int>("steps", 1)),
           min_batch_size_(opts.GetOrDefault<int>("min_batch", 1)),
           max_batch_size_(opts.GetOrDefault<int>("max_batch", 1024)),
-          opt_batch_size_(opts.GetOrDefault<int>("opt_batch", 256)) {
+          opt_batch_size_(opts.GetOrDefault<int>(
+              "opt_batch", batch_size_ < 0 ? 256 : batch_size_ * steps_)) {
       ValidateOptions();
     }
   };
@@ -406,38 +407,57 @@ struct OnnxCUDANetwork : public OnnxNetworkBase<NetworkInfoType> {
   using Base = OnnxNetworkBase<NetworkInfoType>;
   using NetworkInfo = NetworkInfoType;
   using DataType = typename NetworkInfo::DataType;
-  using SessionParams = Base::SessionParams;
+  struct SessionParams : public Base::SessionParams {
+    using Base = Base::SessionParams;
+    SessionParams(const WeightsFile& file, const OptionsDict& opts)
+        : Base(file, opts) {
+#ifdef USE_ONNX_CUDART
+      int gpu = opts.GetOrDefault<int>("gpu", 0);
+      cudaDeviceProp deviceProp = {};
+      if (!cudaGetDeviceProperties(&deviceProp, gpu)) {
+        CERR << "GPU: " << deviceProp.name;
+        CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
+             << " Gb";
+        CERR << "GPU SM count: " << deviceProp.multiProcessorCount;
+
+        const int divisor = deviceProp.multiProcessorCount >= 128 ? 2 : 1;
+
+        Base::opt_batch_size_ = opts.GetOrDefault<int>(
+            "opt_batch",
+            std::max(Base::batch_size_ * Base::steps_,
+                     (deviceProp.multiProcessorCount & ~3) / divisor));
+
+        Base::ValidateOptions();
+
+        int clockRate = 0;
+        ReportCUDAErrors(
+            cudaDeviceGetAttribute(&clockRate, cudaDevAttrClockRate, gpu));
+        CERR << "GPU clock frequency: " << clockRate / 1e3f << " MHz";
+      }
+#if CUDART_VERSION >= 12080
+      int runtime_version;
+      ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
+      if (runtime_version >= 12080) {
+        int attr;
+        ReportCUDAErrors(
+            cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciDeviceId, gpu));
+        uint32_t pci_device = attr;
+        CERR << "GPU device ID: " << std::hex << (pci_device & 0xffff) << ":"
+             << (pci_device >> 16);
+        ReportCUDAErrors(
+            cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciSubsystemId, gpu));
+        uint32_t pci_subsystem = attr;
+        CERR << "GPU subsystem ID: " << std::hex << (pci_subsystem & 0xffff)
+             << ":" << (pci_subsystem >> 16) << std::dec;
+      }
+#endif
+#endif
+    }
+  };
 
   OnnxCUDANetwork(const OptionsDict& opts)
       : gpu_(opts.GetOrDefault<int>("gpu", 0)) {
 #ifdef USE_ONNX_CUDART
-    cudaDeviceProp deviceProp = {};
-    if (!cudaGetDeviceProperties(&deviceProp, gpu_)) {
-      CERR << "GPU: " << deviceProp.name;
-      CERR << "GPU memory: " << deviceProp.totalGlobalMem / std::pow(2.0f, 30)
-           << " Gb";
-      int clockRate = 0;
-      ReportCUDAErrors(
-          cudaDeviceGetAttribute(&clockRate, cudaDevAttrClockRate, gpu_));
-      CERR << "GPU clock frequency: " << clockRate / 1e3f << " MHz";
-    }
-#if CUDART_VERSION >= 12080
-    int runtime_version;
-    ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
-    if (runtime_version >= 12080) {
-      int attr;
-      ReportCUDAErrors(
-          cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciDeviceId, gpu_));
-      uint32_t pci_device = attr;
-      CERR << "GPU device ID: " << std::hex << (pci_device & 0xffff) << ":"
-           << (pci_device >> 16);
-      ReportCUDAErrors(
-          cudaDeviceGetAttribute(&attr, cudaDevAttrGpuPciSubsystemId, gpu_));
-      uint32_t pci_subsystem = attr;
-      CERR << "GPU subsystem ID: " << std::hex << (pci_subsystem & 0xffff)
-           << ":" << (pci_subsystem >> 16) << std::dec;
-    }
-#endif
     ReportCUDAErrors(cudaSetDevice(gpu_));
     ReportCUDAErrors(cudaStreamCreate(&compute_stream_));
     ReportCUDAErrors(cudaStreamCreate(&upload_stream_));
@@ -828,8 +848,11 @@ struct OnnxDMLNetwork : public OnnxNetworkBase<NetworkInfoType> {
 
     SessionParams(const WeightsFile& file, const OptionsDict& opts)
         : Base(file, opts) {
-      Base::batch_size_ = opts.GetOrDefault<int>("batch_size", 16);
+      Base::batch_size_ = opts.GetOrDefault<int>("batch", 16);
       Base::steps_ = opts.GetOrDefault<int>("steps", 4);
+      Base::opt_batch_size_ = opts.GetOrDefault<int>(
+          "opt_batch",
+          Base::batch_size_ < 0 ? 256 : Base::batch_size_ * Base::steps_);
       Base::ValidateOptions();
     }
   };
@@ -954,8 +977,8 @@ class OnnxNetwork final : public Provider::NetworkBase {
     return capabilities_;
   }
   int GetMiniBatchSize() const override {
-    return batch_size_ == -1 ? Network::GetMiniBatchSize()
-                             : batch_size_ * steps_;
+    return batch_size_ == -1 ? opt_batch_size_
+                             : std::max(batch_size_ * steps_, opt_batch_size_);
   }
 
   Ort::SessionOptions GetOptions(const SessionParams& params, int attempt);
@@ -1196,6 +1219,7 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
   steps_ = params.steps_;
   min_batch_size_ = params.min_batch_size_;
   max_batch_size_ = params.max_batch_size_;
+  opt_batch_size_ = params.opt_batch_size_;
 
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
@@ -1227,7 +1251,8 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
                                  ? params.max_batch_size_ - batch_size_ + 1
                                  : min_batch_size_;
     CERR << "Building engine for step " << step << " with batch size "
-         << params.min_batch_size_ << "-" << params.max_batch_size_ << ".";
+         << params.min_batch_size_ << "-" << params.max_batch_size_
+         << " with optimization target " << params.opt_batch_size_ << ".";
     session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
                           file.onnx_model().model().size(),
                           GetOptions(params, attempt++));
