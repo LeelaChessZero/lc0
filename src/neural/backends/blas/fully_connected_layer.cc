@@ -23,8 +23,6 @@
 #include <cassert>
 #include <cmath>
 
-#include <Eigen/Core>
-
 namespace lczero {
 namespace {
 void ApplyBias(size_t batch_size, const size_t output_size, const float* biases,
