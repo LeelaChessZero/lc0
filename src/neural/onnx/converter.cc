@@ -758,7 +758,7 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
 
   if (weights.ip_mult_gate.size() > 0 || weights.ip_add_gate.size() > 0) {
     flow = builder->Reshape(
-        "/attn_body/ma_gating/rehape1", flow,
+        "/attn_body/ma_gating/rehape", flow,
         builder->AddInitializer("/const/ma_gating/shape1",
                                 Int64OnnxConst({-1, 64, embedding_size}, {3})));
     if (weights.ip_mult_gate.size() > 0) {
@@ -771,11 +771,12 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                           *GetWeghtsConverter(weights.ip_add_gate,
                                               {64, embedding_size}, {1, 0}));
     }
-    flow = builder->Reshape(
-        "/attn_body/ma_gating/rehape2", flow,
-        builder->AddInitializer("/const/ma_gating/shape2",
-                                Int64OnnxConst({-1, embedding_size}, {2})));
   }
+
+  flow = builder->Reshape(
+      "/attn_body/rehape", flow,
+      builder->AddInitializer("/const/ma_gating/shape2",
+                              Int64OnnxConst({-1, embedding_size}, {2})));
 
   float alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
 
