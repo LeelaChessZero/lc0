@@ -42,7 +42,6 @@ jobs:
   "mac":
     macos:
       xcode: 14.1.0
-    resource_class: macos.m1.medium.gen1
     steps:
       - checkout
       - run:
@@ -83,7 +82,6 @@ jobs:
   "mac latest":
     macos:
       xcode: 16.4.0
-    resource_class: macos.m1.medium.gen1
     steps:
       - checkout
       - run:
