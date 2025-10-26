@@ -25,13 +25,14 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <cuda_fp16.h>
 #include <cuda_bf16.h>
 
-#include "cuda_common.h"
-#include "onnx_kernels.h"
+#include "onnx_cuda.h"
+#include "utils/intdiv.h"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace onnx {
 
 template <unsigned bits_per_thread, typename DataType>
 __global__ void expandPlanes_kernel(DataType* output, const uint64_t* masks,
@@ -58,8 +59,8 @@ __global__ void expandPlanes_kernel(DataType* output, const uint64_t* masks,
 }
 
 template <typename DataType>
-void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
-                      cudaStream_t stream) {
+void expandPlanes(DataType* output, const void* input, unsigned n,
+                  cudaStream_t stream) {
   constexpr unsigned bits_per_thread = 2;
   int threads = n * 8 * 8 / bits_per_thread;
   const int blockSize = 256;
@@ -74,13 +75,13 @@ void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
   ReportCUDAErrors(cudaGetLastError());
 }
 
-template void expandPlanesOnnx<half>(half* output, const void* input,
-                                     unsigned n, cudaStream_t stream);
-template void expandPlanesOnnx<float>(float* output, const void* input,
-                                      unsigned n, cudaStream_t stream);
-template void expandPlanesOnnx<__nv_bfloat16>(__nv_bfloat16* output,
-                                              const void* input, unsigned n,
-                                              cudaStream_t stream);
+template void expandPlanes<half>(half* output, const void* input, unsigned n,
+                                 cudaStream_t stream);
+template void expandPlanes<float>(float* output, const void* input, unsigned n,
+                                  cudaStream_t stream);
+template void expandPlanes<__nv_bfloat16>(__nv_bfloat16* output,
+                                          const void* input, unsigned n,
+                                          cudaStream_t stream);
 
-}  // namespace cudnn_backend
+}  // namespace onnx
 }  // namespace lczero

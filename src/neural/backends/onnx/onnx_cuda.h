@@ -27,14 +27,36 @@
 
 #pragma once
 
-#include "cuda_common.h"
+#include <string>
+
+#include "utils/exception.h"
+
+#ifdef USE_ONNX_CUDART
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <cuda_bf16.h>
+#endif
 
 namespace lczero {
-namespace cudnn_backend {
+namespace onnx {
+
+#if CUDART_VERSION
+namespace {
+[[maybe_unused]]
+void CudaError(cudaError_t status, const char* file, int line) {
+  if (status != cudaSuccess) {
+    auto err = std::string("CUDA error: ") + cudaGetErrorString(status) + " (" +
+               file + ":" + std::to_string(line) + ") ";
+    throw Exception(err);
+  }
+}
+}
+#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
 
 template <typename DataType>
-void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
-                      cudaStream_t stream);
+void expandPlanes(DataType* output, const void* input, unsigned n,
+                  cudaStream_t stream);
+#endif
 
-}  // namespace cudnn_backend
+}  // namespace onnx
 }  // namespace lczero

@@ -592,7 +592,7 @@ if get_option('build_backends')
       includes += include_directories(get_option('onnx_include') + '/../providers/cpu',
                                       is_system: true)
     endif
-    files += 'src/neural/backends/network_onnx.cc'
+    files += 'src/neural/backends/onnx/network_onnx.cc'
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
       add_project_arguments('-DUSE_ROCM', language : 'cpp')
@@ -606,7 +606,7 @@ if get_option('build_backends')
         endif
       endforeach
       files += custom_target('cuda onnx code',
-        input : 'src/neural/backends/cuda/onnx.cu',
+        input : 'src/neural/backends/onnx/onnx.cu',
         output : outputname,
         command : [nvcc, nvcc_extra_args, cuda_arguments]
         )

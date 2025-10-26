@@ -41,16 +41,12 @@
 #define USE_DML
 #endif
 
-#ifdef USE_ONNX_CUDART
-#include "cuda_runtime.h"
-#include "neural/backends/cuda/onnx_kernels.h"
-#endif
-
 #include "cpu_provider_factory.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
+#include "onnx_cuda.h"
 #include "onnxruntime_cxx_api.h"
 #include "utils/bf16_utils.h"
 #include "utils/bititer.h"
@@ -59,24 +55,13 @@
 #include "utils/fp16_utils.h"
 #include "utils/logging.h"
 
-namespace lczero {
+namespace lczero::onnx {
 namespace {
 
 template <typename Provider>
 class OnnxNetwork;
 
 static constexpr int kNumOutputPolicy = 1858;
-
-#ifdef USE_ONNX_CUDART
-void CudaError(cudaError_t status, const char* file, int line) {
-  if (status != cudaSuccess) {
-    auto err = std::string("CUDA error: ") + cudaGetErrorString(status) + " (" +
-               file + ":" + std::to_string(line) + ") ";
-    throw Exception(err);
-  }
-}
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
-#endif
 
 void AsDataType(float x, float* y) { *y = x; }
 void AsDataType(float x, Ort::Float16_t* y) {
@@ -578,8 +563,7 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
     CUDADataType* dst = reinterpret_cast<CUDADataType*>(
         inputs_outputs.input_tensor_data_device_);
     dst += start * kInputPlanes * 8 * 8;
-    cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
-                                    network.compute_stream_);
+    expandPlanes(dst, dst_masks, batch * kInputPlanes, network.compute_stream_);
 
     ReportCUDAErrors(cudaEventRecord(inputs_outputs.inputs_processed_event_,
                                      network.upload_stream_));
@@ -1417,4 +1401,4 @@ REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
 }  // namespace
-}  // namespace lczero
+}  // namespace lczero::onnx
