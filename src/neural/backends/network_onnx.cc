@@ -210,6 +210,8 @@ struct OnnxCPUInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
   DataType* GetInputData() { return input_tensor_data_device_.get(); }
 
   const DataType* GetOutputData(int index) const {
+    assert(index >= 0);
+    assert(index < NetworkInfo::output_size_);
     return output_tensors_data_device_[index].get();
   }
 
@@ -384,6 +386,8 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
   }
 
   const DataType* GetOutputData(int index) const {
+    assert(index >= 0);
+    assert(index < NetworkInfo::output_size_);
     return output_tensors_data_[index];
   }
 
