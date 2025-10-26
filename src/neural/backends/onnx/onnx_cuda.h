@@ -47,6 +47,7 @@ void CudaError(cudaError_t status, const char* file, int line) {
   if (status != cudaSuccess) {
     auto err = std::string("CUDA error: ") + cudaGetErrorString(status) + " (" +
                file + ":" + std::to_string(line) + ") ";
+    CERR << err;
     throw Exception(err);
   }
 }
