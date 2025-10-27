@@ -477,9 +477,9 @@ struct OnnxCUDANetwork : public OnnxNetworkBase<NetworkInfoType> {
   using NetworkInfo = NetworkInfoType;
   using DataType = typename NetworkInfo::DataType;
   struct SessionParams : public Base::SessionParams {
-    using Base = Base::SessionParams;
+    using BaseS = typename Base::SessionParams;
     SessionParams(const WeightsFile& file, const OptionsDict& opts)
-        : Base(file, opts) {
+        : BaseS(file, opts) {
 #ifdef USE_ONNX_CUDART
       int gpu = opts.GetOrDefault<int>("gpu", 0);
       cudaDeviceProp deviceProp = {};
@@ -491,12 +491,12 @@ struct OnnxCUDANetwork : public OnnxNetworkBase<NetworkInfoType> {
 
         const int divisor = deviceProp.multiProcessorCount >= 128 ? 2 : 1;
 
-        Base::opt_batch_size_ = opts.GetOrDefault<int>(
+        BaseS::opt_batch_size_ = opts.GetOrDefault<int>(
             "opt_batch",
-            std::max(Base::batch_size_ * Base::steps_,
+            std::max(BaseS::batch_size_ * BaseS::steps_,
                      (deviceProp.multiProcessorCount & ~3) / divisor));
 
-        Base::ValidateOptions();
+        BaseS::ValidateOptions();
 
         int clockRate = 0;
         ReportCUDAErrors(
@@ -758,15 +758,15 @@ struct OnnxTRTNetwork : public OnnxCUDANetwork<NetworkInfoType> {
   using Base::Base;
 
   struct SessionParams : public Base::SessionParams {
-    using Base = Base::SessionParams;
+    using BaseS = typename Base::SessionParams;
     uint64_t hash_;
     std::filesystem::file_time_type start_time_ =
         std::chrono::file_clock::now();
 
     SessionParams(const WeightsFile& file, const OptionsDict& opts)
-        : Base(file, opts), hash_(GetModelHash(file.onnx_model())) {
-      Base::min_batch_size_ = opts.GetOrDefault<int>("min_batch", 4);
-      Base::ValidateOptions();
+        : BaseS(file, opts), hash_(GetModelHash(file.onnx_model())) {
+      BaseS::min_batch_size_ = opts.GetOrDefault<int>("min_batch", 4);
+      BaseS::ValidateOptions();
     }
   };
 
@@ -942,16 +942,16 @@ struct OnnxDMLNetwork : public OnnxNetworkBase<NetworkInfoType> {
   using DataType = typename NetworkInfo::DataType;
 
   struct SessionParams : public Base::SessionParams {
-    using Base = Base::SessionParams;
+    using BaseS = typename Base::SessionParams;
 
     SessionParams(const WeightsFile& file, const OptionsDict& opts)
-        : Base(file, opts) {
-      Base::batch_size_ = opts.GetOrDefault<int>("batch", 16);
-      Base::steps_ = opts.GetOrDefault<int>("steps", 4);
-      Base::opt_batch_size_ = opts.GetOrDefault<int>(
+        : BaseS(file, opts) {
+      BaseS::batch_size_ = opts.GetOrDefault<int>("batch", 16);
+      BaseS::steps_ = opts.GetOrDefault<int>("steps", 4);
+      BaseS::opt_batch_size_ = opts.GetOrDefault<int>(
           "opt_batch",
-          Base::batch_size_ < 0 ? 256 : Base::batch_size_ * Base::steps_);
-      Base::ValidateOptions();
+          BaseS::batch_size_ < 0 ? 256 : BaseS::batch_size_ * BaseS::steps_);
+      BaseS::ValidateOptions();
     }
   };
 
@@ -1203,7 +1203,7 @@ Ort::IoBinding OnnxComputation<NetworkInfoType>::PrepareInputs(int start,
     DataType* iter = inputs_outputs_->GetInputData();
     const auto& raw_input = inputs_outputs_->raw_input_;
     iter += start * kInputPlanes * 8 * 8;
-    std::memset(iter, 0, batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
+    std::fill(iter, iter + batch_size * kInputPlanes * 8 * 8, DataType{});
     int end = std::min(start + batch_size, static_cast<int>(raw_input.size()));
     for (int i = start; i < end; i++) {
       for (const auto& plane : raw_input[i]) {
