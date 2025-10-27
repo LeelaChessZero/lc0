@@ -89,9 +89,25 @@ float AsFloat(Ort::BFloat16_t x) {
 
 template <typename NetworkInfoType>
 struct OnnxNetworkBase;
-template <typename NetworkInfoType>
+template <typename NetworkInfoType, typename = void>
 struct OnnxInputsOutputsBase {
+  template <typename Provider>
+  OnnxInputsOutputsBase(const OnnxNetwork<Provider>&) {}
   void Clear() {}
+};
+
+template <typename NetworkInfoType>
+struct OnnxInputsOutputsBase<NetworkInfoType,
+                             std::enable_if_t<NetworkInfoType::cpu_wdl_>> {
+  template <typename Provider>
+  OnnxInputsOutputsBase(const OnnxNetwork<Provider>& network) {
+    const auto max_batch_size = network.max_batch_size_;
+    wdl_output_data_ = std::make_unique<float[]>(max_batch_size * 2);
+  }
+
+  void Clear() {}
+
+  std::unique_ptr<float[]> wdl_output_data_;
 };
 
 template <typename NetworkInfoType>
@@ -106,7 +122,13 @@ struct OnnxComputationBase : public NetworkComputation {
     return {batch, step};
   }
 
-  std::unique_lock<std::mutex> LockComputeSession(std::mutex&) { return {}; }
+  std::unique_lock<std::mutex> LockComputeSession(std::mutex& m) {
+    if (NetworkInfo::exclusive_session_) {
+      return std::unique_lock<std::mutex>(m);
+    } else {
+      return {};
+    }
+  }
 
   static constexpr bool UseCPUExpandPlanes() { return true; }
 
@@ -179,11 +201,12 @@ struct OnnxNetworkBase : public Network {
 
 template <typename NetworkInfoType>
 struct OnnxCPUInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
+  using Base = OnnxInputsOutputsBase<NetworkInfoType>;
   using NetworkInfo = NetworkInfoType;
   using DataType = typename NetworkInfo::DataType;
 
   template <typename Provider>
-  OnnxCPUInputsOutputs(const OnnxNetwork<Provider>& network) {
+  OnnxCPUInputsOutputs(const OnnxNetwork<Provider>& network) : Base(network) {
     const auto max_batch_size = network.max_batch_size_;
     input_tensor_data_device_ =
         std::make_unique<DataType[]>(max_batch_size * kInputPlanes * 8 * 8);
@@ -252,29 +275,6 @@ struct OnnxCPUComputation : public OnnxComputationBase<NetworkInfoType> {
   }
 };
 
-template <typename WrappedIO>
-struct OnnxWDLIOWrapper : public WrappedIO {
-  template <typename Provider>
-  OnnxWDLIOWrapper(const OnnxNetwork<Provider>& network) : WrappedIO(network) {
-    const auto max_batch_size = network.max_batch_size_;
-    wdl_output_data_ = std::make_unique<float[]>(max_batch_size * 2);
-  }
-  std::unique_ptr<float[]> wdl_output_data_;
-};
-
-template <typename WrappedComputation>
-struct OnnxExclusiveComputationWrapper : public WrappedComputation {
-  using Base = WrappedComputation;
-  using NetworkInfo = typename Base::NetworkInfo;
-
-  OnnxExclusiveComputationWrapper(OnnxNetworkBase<NetworkInfo>* network)
-      : Base(network) {}
-
-  std::unique_lock<std::mutex> LockComputeSession(std::mutex& mutex) {
-    return std::unique_lock<std::mutex>{mutex};
-  }
-};
-
 template <typename T>
 struct OnnxCPUProvider {
   using NetworkInfo = T;
@@ -283,10 +283,7 @@ struct OnnxCPUProvider {
 
   using NetworkBase = OnnxCPUNetwork<NetworkInfo>;
   using ComputationBase = OnnxCPUComputation<NetworkInfo>;
-  using InputsOutputsBase =
-      std::conditional_t<cpu_wdl_,
-                         OnnxWDLIOWrapper<OnnxCPUInputsOutputs<NetworkInfo>>,
-                         OnnxCPUInputsOutputs<NetworkInfo>>;
+  using InputsOutputsBase = OnnxCPUInputsOutputs<NetworkInfo>;
 };
 
 #if USE_ONNX_CUDART
@@ -308,12 +305,13 @@ struct OnnxToCUDAType<Ort::BFloat16_t> {
 
 template <typename NetworkInfoType>
 struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
+  using Base = OnnxInputsOutputsBase<NetworkInfoType>;
   using NetworkInfo = NetworkInfoType;
   using DataType = typename NetworkInfo::DataType;
   using CUDADataType = typename OnnxToCUDAType<DataType>::Type;
 
   template <typename Provider>
-  OnnxCUDAInputsOutputs(const OnnxNetwork<Provider>& network) {
+  OnnxCUDAInputsOutputs(const OnnxNetwork<Provider>& network) : Base(network) {
     const auto max_batch_size = network.max_batch_size_;
     const int outputs_size = NetworkInfo::output_size_;
     const size_t data_size = sizeof(DataType);
@@ -616,22 +614,22 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
 
 template <typename T>
 struct OnnxCUDAProvider {
-  using NetworkInfo = T;
+  using NetworkInfo =
+#if USE_ONNX_CUDART
+      T::ExclusiveSession;
+#else
+      T;
+#endif
   using DataType = NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
-  using NetworkBase = OnnxCUDANetwork<T>;
+  using NetworkBase = OnnxCUDANetwork<NetworkInfo>;
 #if USE_ONNX_CUDART
-  using ComputationBase =
-      OnnxExclusiveComputationWrapper<OnnxCUDAComputation<T>>;
-  using InputsOutputsBase =
-      std::conditional_t<cpu_wdl_, OnnxWDLIOWrapper<OnnxCUDAInputsOutputs<T>>,
-                         OnnxCUDAInputsOutputs<T>>;
+  using ComputationBase = OnnxCUDAComputation<NetworkInfo>;
+  using InputsOutputsBase = OnnxCUDAInputsOutputs<NetworkInfo>;
 #else
-  using ComputationBase = OnnxCPUComputation<T>;
-  using InputsOutputsBase =
-      std::conditional_t<cpu_wdl_, OnnxWDLIOWrapper<OnnxCPUInputsOutputs<T>>,
-                         OnnxCPUInputsOutputs<T>>;
+  using ComputationBase = OnnxCPUComputation<NetworkInfo>;
+  using InputsOutputsBase = OnnxCPUInputsOutputs<NetworkInfo>;
 #endif
 };
 
@@ -807,23 +805,17 @@ struct OnnxTRTNetwork : public OnnxCUDANetwork<NetworkInfoType> {
 
 template <typename T>
 struct OnnxTRTProvider {
-  using NetworkInfo = T;
+  using NetworkInfo = T::ExclusiveSession;
   using DataType = NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
-  using NetworkBase = OnnxTRTNetwork<T>;
+  using NetworkBase = OnnxTRTNetwork<NetworkInfo>;
 #if USE_ONNX_CUDART
-  using ComputationBase =
-      OnnxExclusiveComputationWrapper<OnnxCUDAComputation<T>>;
-  using InputsOutputsBase =
-      std::conditional_t<cpu_wdl_, OnnxWDLIOWrapper<OnnxCUDAInputsOutputs<T>>,
-                         OnnxCUDAInputsOutputs<T>>;
+  using ComputationBase = OnnxCUDAComputation<NetworkInfo>;
+  using InputsOutputsBase = OnnxCUDAInputsOutputs<NetworkInfo>;
 #else
-  using ComputationBase =
-      OnnxExclusiveComputationWrapper<OnnxCPUComputation<T>>;
-  using InputsOutputsBase =
-      std::conditional_t<cpu_wdl_, OnnxWDLIOWrapper<OnnxCPUInputsOutputs<T>>,
-                         OnnxCPUInputsOutputs<T>>;
+  using ComputationBase = OnnxCPUComputation<NetworkInfo>;
+  using InputsOutputsBase = OnnxCPUInputsOutputs<NetworkInfo>;
 #endif
 };
 
@@ -871,16 +863,13 @@ struct OnnxDMLNetwork : public OnnxNetworkBase<NetworkInfoType> {
 
 template <typename T>
 struct OnnxDMLProvider {
-  using NetworkInfo = T;
+  using NetworkInfo = T::ExclusiveSession;
   using DataType = NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
-  using NetworkBase = OnnxDMLNetwork<T>;
-  using ComputationBase =
-      OnnxExclusiveComputationWrapper<OnnxCPUComputation<T>>;
-  using InputsOutputsBase =
-      std::conditional_t<cpu_wdl_, OnnxWDLIOWrapper<OnnxCPUInputsOutputs<T>>,
-                         OnnxCPUInputsOutputs<T>>;
+  using NetworkBase = OnnxDMLNetwork<NetworkInfo>;
+  using ComputationBase = OnnxCPUComputation<NetworkInfo>;
+  using InputsOutputsBase = OnnxCPUInputsOutputs<NetworkInfo>;
 };
 
 template <typename NetworkInfoType>
@@ -907,16 +896,13 @@ struct OnnxROCMNetwork : public OnnxNetworkBase<NetworkInfoType> {
 
 template <typename T>
 struct OnnxROCMProvider {
-  using NetworkInfo = T;
+  using NetworkInfo = T::ExclusiveSession;
   using DataType = NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
-  using NetworkBase = OnnxROCMNetwork<T>;
-  using ComputationBase =
-      OnnxExclusiveComputationWrapper<OnnxCPUComputation<T>>;
-  using InputsOutputsBase =
-      std::conditional_t<cpu_wdl_, OnnxWDLIOWrapper<OnnxCPUInputsOutputs<T>>,
-                         OnnxCPUInputsOutputs<T>>;
+  using NetworkBase = OnnxROCMNetwork<NetworkInfo>;
+  using ComputationBase = OnnxCPUComputation<NetworkInfo>;
+  using InputsOutputsBase = OnnxCPUInputsOutputs<NetworkInfo>;
 };
 
 enum class OnnxProvider { CPU, CUDA, TRT, DML, ROCM };
@@ -1263,17 +1249,23 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
   }
 }
 
-template <typename T, bool cpu_wdl, bool wdl_head, bool mlh_head>
+template <typename T, bool cpu_wdl, bool wdl_head, bool mlh_head,
+          bool exclusive_session = false>
 struct NetworkInfo {
   using DataType = T;
+  static constexpr bool exclusive_session_ = exclusive_session;
   static constexpr bool cpu_wdl_ = cpu_wdl && wdl_head;
+
   static constexpr int wdl_head_ = wdl_head ? 0 : -1;
   static constexpr int value_head_ = !wdl_head ? 0 : -1;
   static constexpr int policy_head_ = 1;
   static constexpr int mlh_head_ = mlh_head ? 2 : -1;
+
   static constexpr int output_size_ = mlh_head ? 3 : 2;
   static constexpr size_t output_tensors_step_[3] = {
       wdl_head ? 3 : 1, kNumOutputPolicy, mlh_head ? 1 : 0};
+
+  using ExclusiveSession = NetworkInfo<T, cpu_wdl, wdl_head, mlh_head, true>;
 };
 
 template <typename NetworkInfoType>
