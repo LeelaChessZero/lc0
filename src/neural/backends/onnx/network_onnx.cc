@@ -1396,6 +1396,25 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
     }
     attempt = 0;
   }
+
+  if (Provider::ComputationBase::CanUseCaptureGraph()) {
+    // Prepare two sets of graphs.
+    OnnxComputation<Provider> comp1{this};
+    OnnxComputation<Provider> comp2{this};
+    for (int i = 0; i < opt_batch_size_; i++) {
+      comp1.AddInput(InputPlanes(kInputPlanes));
+      comp2.AddInput(InputPlanes(kInputPlanes));
+
+      // Make sure EP has initialized evaluation state.
+      comp1.ComputeBlockingImplement();
+
+      std::unique_lock<std::mutex> lock{};
+      comp1.CaptureGraph(lock);
+      comp2.CaptureGraph(lock);
+
+    }
+  }
+
 }
 
 template <typename T, bool cpu_wdl, bool wdl_head, bool mlh_head,
