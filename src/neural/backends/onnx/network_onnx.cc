@@ -99,6 +99,8 @@ struct OnnxInputsOutputsBase {
   OnnxInputsOutputsBase(const OnnxNetwork<Provider>&) {}
   void Clear() {}
   void UploadGraph(const CaptureSession&, int) {}
+  bool IsGraphCaptured(int) const { return false; }
+  void ExecuteGraph(int) const {}
 };
 
 template <typename NetworkInfoType>
@@ -112,6 +114,8 @@ struct OnnxInputsOutputsBase<NetworkInfoType,
 
   void Clear() {}
   void UploadGraph(const CaptureSession&, int) {}
+  bool IsGraphCaptured(int) const { return false; }
+  void ExecuteGraph(int) const {}
 
   std::unique_ptr<float[]> wdl_output_data_;
 };
@@ -671,9 +675,9 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
     dst += start * kInputPlanes * 8 * 8;
     expandPlanes(dst, dst_masks, batch * kInputPlanes, network.compute_stream_);
 
-    ReportCUDAErrors(cudaStreamWaitEvent(network.compute_stream_,
-          network.run_exclusion_event_,
-          capture_graph ? cudaEventWaitExternal : 0));
+    ReportCUDAErrors(cudaStreamWaitEvent(
+        network.compute_stream_, network.run_exclusion_event_,
+        capture_graph ? cudaEventWaitExternal : 0));
   }
 
   Ort::RunOptions GetRunOptions() {
@@ -685,9 +689,9 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
   void DownloadOutputs(Ort::IoBinding&, OnnxCUDANetwork<NetworkInfo>& network,
                        OnnxCUDAInputsOutputs<NetworkInfo>& inputs_outputs,
                        int start, int batch, bool capture_graph) {
-    ReportCUDAErrors(cudaEventRecordWithFlags(network.run_exclusion_event_,
-          network.compute_stream_,
-          capture_graph ? cudaEventRecordExternal : 0));
+    ReportCUDAErrors(cudaEventRecordWithFlags(
+        network.run_exclusion_event_, network.compute_stream_,
+        capture_graph ? cudaEventRecordExternal : 0));
     for (size_t i = 0; i < NetworkInfo::output_size_; i++) {
       size_t step = NetworkInfo::output_tensors_step_[i];
       ReportCUDAErrors(cudaEventRecord(inputs_outputs.evaluation_done_event_,
@@ -1071,6 +1075,11 @@ class OnnxNetwork final : public Provider::NetworkBase {
                              : std::max(batch_size_ * steps_, opt_batch_size_);
   }
 
+  bool CanUseCaptureGraph() const {
+    return OnnxComputation<Provider>::CanUseCaptureGraph() &&
+           enable_graph_capture_;
+  }
+
   Ort::SessionOptions GetOptions(const SessionParams& params, int attempt);
 
   std::unique_ptr<InputsOutputs<Provider>> GetInputsOutputs() {
@@ -1095,18 +1104,19 @@ class OnnxNetwork final : public Provider::NetworkBase {
                        uint64_t hash, size_t onnx_model_size, int attempt);
 
   Ort::Env onnx_env_;
-  // Prepare sessions for this many multiples of the batch size;
-  int steps_;
   std::vector<Ort::Session> session_;
   std::vector<std::string> inputs_;
   std::vector<std::string> outputs_;
   NetworkCapabilities capabilities_;
+  // Prepare sessions for this many multiples of the batch size;
+  int steps_;
   // The batch size to use, or -1 for variable.
   int batch_size_;
   // The lower limit for variable batch size.
   int min_batch_size_ = 1;
   int opt_batch_size_ = 256;
   int max_batch_size_ = 1024;
+  bool enable_graph_capture_ = true;
   Ort::MemoryInfo memory_info_{nullptr};
   // For conditional locking if running the DML/ROCM/TRT provider.
   std::mutex lock_;
@@ -1275,7 +1285,7 @@ void OnnxComputation<NetworkInfoType>::CaptureGraph(
 
 template <typename NetworkInfoType>
 void OnnxComputation<NetworkInfoType>::ComputeBlocking() {
-  if constexpr (Base::CanUseCaptureGraph()) {
+  if (network_->CanUseCaptureGraph()) {
     auto lock = Base::LockComputeSession(network_->lock_);
     if (inputs_outputs_->IsGraphCaptured(GetBatchSize())) {
       inputs_outputs_->ExecuteGraph(GetBatchSize());
@@ -1345,6 +1355,7 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
   min_batch_size_ = params.min_batch_size_;
   max_batch_size_ = params.max_batch_size_;
   opt_batch_size_ = params.opt_batch_size_;
+  enable_graph_capture_ = opts.GetOrDefault<bool>("graph_capture", true);
 
   const auto& md = file.onnx_model();
   if (!md.has_input_planes()) {
@@ -1397,7 +1408,7 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
     attempt = 0;
   }
 
-  if (Provider::ComputationBase::CanUseCaptureGraph()) {
+  if (CanUseCaptureGraph()) {
     // Prepare two sets of graphs.
     OnnxComputation<Provider> comp1{this};
     OnnxComputation<Provider> comp2{this};
@@ -1411,10 +1422,8 @@ OnnxNetwork<Provider>::OnnxNetwork(const WeightsFile& file,
       std::unique_lock<std::mutex> lock{};
       comp1.CaptureGraph(lock);
       comp2.CaptureGraph(lock);
-
     }
   }
-
 }
 
 template <typename T, bool cpu_wdl, bool wdl_head, bool mlh_head,
