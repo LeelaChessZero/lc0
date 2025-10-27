@@ -40,7 +40,7 @@
 namespace lczero {
 namespace onnx {
 
-#if CUDART_VERSION
+#if USE_ONNX_CUDART
 namespace {
 [[maybe_unused]]
 void CudaError(cudaError_t status, const char* file, int line) {

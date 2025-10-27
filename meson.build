@@ -475,7 +475,8 @@ if get_option('build_backends')
     includes += include_directories('src/neural/backends/cuda/')
 
     cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
-                      '-I', meson.current_source_dir() + '/src']
+                      '-I', meson.current_source_dir() + '/src',
+                      '-I', meson.current_build_dir()]
     nvcc_help = run_command(nvcc, '-h', check : false).stdout()
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
@@ -582,6 +583,7 @@ if get_option('build_backends')
   if get_option('onnx') and onnxruntime.found() and\
      run_command('scripts/checkdir.py', get_option('onnx_include'), check: false).returncode() == 0
     deps += onnxruntime
+    onnx_config = configuration_data()
     includes += include_directories(get_option('onnx_include'), is_system: true)
     cc.has_header('onnxruntime_cxx_api.h', required: true,
                   args: '-I' + get_option('onnx_include'))
@@ -595,10 +597,10 @@ if get_option('build_backends')
     files += 'src/neural/backends/onnx/network_onnx.cc'
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
-      add_project_arguments('-DUSE_ROCM', language : 'cpp')
+      onnx_config.set('USE_ROCM', 1)
     endif
     if get_option('cudnn') or get_option('plain_cuda') and cu_dart.found() and nvcc.found()
-      add_project_arguments('-DUSE_ONNX_CUDART=1', language : 'cpp')
+      onnx_config.set('USE_ONNX_CUDART', 1)
       deps += cu_dart
       foreach d : get_option('cudnn_include')
         if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
@@ -613,6 +615,7 @@ if get_option('build_backends')
     else
       warning('No CUDA support build. Using compatibility implementation for onnx-trt and onnx-cuda. Enable plain_cuda to use CUDA optimisations.')
     endif
+    configure_file(output: 'onnx_config.h', configuration: onnx_config)
     has_backends = true
   endif
 

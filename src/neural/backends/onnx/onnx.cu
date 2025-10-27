@@ -25,8 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <cuda_fp16.h>
-#include <cuda_bf16.h>
+#include "onnx_config.h"
 
 #include "onnx_cuda.h"
 #include "utils/intdiv.h"

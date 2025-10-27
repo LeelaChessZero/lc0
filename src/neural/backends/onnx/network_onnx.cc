@@ -36,6 +36,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "onnx_config.h"
+
 #if __has_include("dml_provider_factory.h")
 #include "dml_provider_factory.h"
 #define USE_DML
