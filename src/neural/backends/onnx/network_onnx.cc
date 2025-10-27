@@ -255,7 +255,7 @@ struct OnnxCPUInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
 template <typename NetworkInfoType>
 struct OnnxCPUNetwork : public OnnxNetworkBase<NetworkInfoType> {
   using Base = OnnxNetworkBase<NetworkInfoType>;
-  using SessionParams = Base::SessionParams;
+  using SessionParams = typename Base::SessionParams;
 
   OnnxCPUNetwork(const OptionsDict&) {}
 
@@ -297,7 +297,7 @@ struct OnnxCPUComputation : public OnnxComputationBase<NetworkInfoType> {
 template <typename T>
 struct OnnxCPUProvider {
   using NetworkInfo = T;
-  using DataType = NetworkInfo::DataType;
+  using DataType = typename NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
   using NetworkBase = OnnxCPUNetwork<NetworkInfo>;
@@ -732,11 +732,11 @@ template <typename T>
 struct OnnxCUDAProvider {
   using NetworkInfo =
 #if USE_ONNX_CUDART
-      T::ExclusiveSession;
+      typename T::ExclusiveSession;
 #else
       T;
 #endif
-  using DataType = NetworkInfo::DataType;
+  using DataType = typename NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
   using NetworkBase = OnnxCUDANetwork<NetworkInfo>;
@@ -921,8 +921,8 @@ struct OnnxTRTNetwork : public OnnxCUDANetwork<NetworkInfoType> {
 
 template <typename T>
 struct OnnxTRTProvider {
-  using NetworkInfo = T::ExclusiveSession;
-  using DataType = NetworkInfo::DataType;
+  using NetworkInfo = typename T::ExclusiveSession;
+  using DataType = typename NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
   using NetworkBase = OnnxTRTNetwork<NetworkInfo>;
@@ -979,8 +979,8 @@ struct OnnxDMLNetwork : public OnnxNetworkBase<NetworkInfoType> {
 
 template <typename T>
 struct OnnxDMLProvider {
-  using NetworkInfo = T::ExclusiveSession;
-  using DataType = NetworkInfo::DataType;
+  using NetworkInfo = typename T::ExclusiveSession;
+  using DataType = typename NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
   using NetworkBase = OnnxDMLNetwork<NetworkInfo>;
@@ -993,7 +993,7 @@ struct OnnxROCMNetwork : public OnnxNetworkBase<NetworkInfoType> {
   using Base = OnnxNetworkBase<NetworkInfoType>;
   using NetworkInfo = NetworkInfoType;
   using DataType = typename NetworkInfo::DataType;
-  using SessionParams = Base::SessionParams;
+  using SessionParams = typename Base::SessionParams;
 
   OnnxROCMNetwork(const OptionsDict& opts)
       : gpu_(opts.GetOrDefault<int>("gpu", 0)) {}
@@ -1012,8 +1012,8 @@ struct OnnxROCMNetwork : public OnnxNetworkBase<NetworkInfoType> {
 
 template <typename T>
 struct OnnxROCMProvider {
-  using NetworkInfo = T::ExclusiveSession;
-  using DataType = NetworkInfo::DataType;
+  using NetworkInfo = typename T::ExclusiveSession;
+  using DataType = typename NetworkInfo::DataType;
   static constexpr bool cpu_wdl_ = NetworkInfo::cpu_wdl_;
 
   using NetworkBase = OnnxROCMNetwork<NetworkInfo>;
@@ -1163,11 +1163,12 @@ float OnnxComputation<NetworkInfo>::GetQVal(int sample) const {
     DataType l = inputs_outputs_->GetOutputData(
         NetworkInfo::wdl_head_)[sample * step + 2];
     return AsFloat(w) - AsFloat(l);
+  } else {
+    auto step = NetworkInfo::output_tensors_step_[NetworkInfo::value_head_];
+    DataType value =
+        inputs_outputs_->GetOutputData(NetworkInfo::value_head_)[sample * step];
+    return AsFloat(value);
   }
-  auto step = NetworkInfo::output_tensors_step_[NetworkInfo::value_head_];
-  DataType value =
-      inputs_outputs_->GetOutputData(NetworkInfo::value_head_)[sample * step];
-  return AsFloat(value);
 }
 
 template <typename NetworkInfo>
@@ -1176,9 +1177,10 @@ float OnnxComputation<NetworkInfo>::GetDVal(int sample) const {
     return 0.0f;
   } else if constexpr (NetworkInfo::cpu_wdl_) {
     return inputs_outputs_->wdl_output_data_[sample * 2 + 1];
+  } else {
+    return AsFloat(
+        inputs_outputs_->GetOutputData(NetworkInfo::wdl_head_)[sample * 3 + 1]);
   }
-  return AsFloat(
-      inputs_outputs_->GetOutputData(NetworkInfo::wdl_head_)[sample * 3 + 1]);
 }
 
 template <typename NetworkInfo>
