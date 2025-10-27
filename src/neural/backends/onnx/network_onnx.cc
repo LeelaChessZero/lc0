@@ -1099,10 +1099,6 @@ class OnnxNetwork final : public Provider::NetworkBase {
     free_inputs_outputs_.push_back(std::move(resource));
   }
 
-  std::string TRTCachePrefix(int batch_size, uint64_t hash);
-  bool IsTRTEngineGood(std::filesystem::file_time_type start, int batch_size,
-                       uint64_t hash, size_t onnx_model_size, int attempt);
-
   Ort::Env onnx_env_;
   std::vector<Ort::Session> session_;
   std::vector<std::string> inputs_;
