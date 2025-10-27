@@ -87,6 +87,10 @@ float AsFloat(Ort::BFloat16_t x) {
   return BF16toFP32(tmp);
 }
 
+struct CaptureSession {
+  void EndCapture() {}
+};
+
 template <typename NetworkInfoType>
 struct OnnxNetworkBase;
 template <typename NetworkInfoType, typename = void>
@@ -94,6 +98,7 @@ struct OnnxInputsOutputsBase {
   template <typename Provider>
   OnnxInputsOutputsBase(const OnnxNetwork<Provider>&) {}
   void Clear() {}
+  void UploadGraph(const CaptureSession&, int) {}
 };
 
 template <typename NetworkInfoType>
@@ -106,6 +111,7 @@ struct OnnxInputsOutputsBase<NetworkInfoType,
   }
 
   void Clear() {}
+  void UploadGraph(const CaptureSession&, int) {}
 
   std::unique_ptr<float[]> wdl_output_data_;
 };
@@ -133,19 +139,28 @@ struct OnnxComputationBase : public NetworkComputation {
   static constexpr bool UseCPUExpandPlanes() { return true; }
 
   void UploadInputs(Ort::IoBinding& binding, OnnxNetworkBase<NetworkInfo>&,
-                    OnnxInputsOutputsBase<NetworkInfo>&, int, int) {
+                    OnnxInputsOutputsBase<NetworkInfo>&, int, int, bool) {
     binding.SynchronizeInputs();
   }
 
   Ort::RunOptions GetRunOptions() { return {}; }
 
   void DownloadOutputs(Ort::IoBinding& binding, OnnxNetworkBase<NetworkInfo>&,
-                       OnnxInputsOutputsBase<NetworkInfo>&, int, int) {
+                       OnnxInputsOutputsBase<NetworkInfo>&, int, int, bool) {
     binding.SynchronizeOutputs();
   }
 
+  static constexpr bool CanUseCaptureGraph() { return false; }
+
   void WaitForWDL(OnnxInputsOutputsBase<NetworkInfo>&) {}
   void WaitForOutputs(OnnxInputsOutputsBase<NetworkInfo>&) {}
+
+  bool EnsureEnoughMemoryForGraphCapture() { return true; }
+
+  CaptureSession BeginGraphCapture(OnnxNetworkBase<NetworkInfo>&,
+                                   OnnxInputsOutputsBase<NetworkInfo>&) {
+    return {};
+  }
 };
 
 template <typename NetworkInfoType>
@@ -303,6 +318,40 @@ struct OnnxToCUDAType<Ort::BFloat16_t> {
   using Type = __nv_bfloat16;
 };
 
+struct CUDACaptureSession {
+  cudaStream_t upload_stream_;
+  cudaStream_t download_stream_;
+  cudaEvent_t capture_join_event_;
+  cudaGraph_t graph_ = nullptr;
+  CUDACaptureSession(cudaStream_t upload_stream, cudaStream_t download_stream,
+                     cudaEvent_t join_event)
+      : upload_stream_(upload_stream),
+        download_stream_(download_stream),
+        capture_join_event_(join_event) {
+    ReportCUDAErrors(cudaStreamBeginCapture(upload_stream,
+                                            cudaStreamCaptureModeThreadLocal));
+  }
+  ~CUDACaptureSession() {
+    if (graph_) {
+      ReportCUDAErrors(cudaGraphDestroy(graph_));
+    }
+  }
+
+  void EndCapture() {
+    // Join download stream to upload stream for graph capture.
+    ReportCUDAErrors(cudaEventRecord(capture_join_event_, download_stream_));
+    ReportCUDAErrors(cudaStreamWaitEvent(upload_stream_, capture_join_event_));
+    ReportCUDAErrors(cudaStreamEndCapture(upload_stream_, &graph_));
+  }
+
+  operator cudaGraphExec_t() const {
+    cudaGraphExec_t graph_exec;
+    ReportCUDAErrors(
+        cudaGraphInstantiate(&graph_exec, graph_, nullptr, nullptr, 0));
+    return graph_exec;
+  }
+};
+
 template <typename NetworkInfoType>
 struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
   using Base = OnnxInputsOutputsBase<NetworkInfoType>;
@@ -311,13 +360,12 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
   using CUDADataType = typename OnnxToCUDAType<DataType>::Type;
 
   template <typename Provider>
-  OnnxCUDAInputsOutputs(const OnnxNetwork<Provider>& network) : Base(network) {
+  OnnxCUDAInputsOutputs(const OnnxNetwork<Provider>& network)
+      : Base(network), captured_graphs_(network.max_batch_size_, nullptr) {
     const auto max_batch_size = network.max_batch_size_;
     const int outputs_size = NetworkInfo::output_size_;
     const size_t data_size = sizeof(DataType);
 
-    ReportCUDAErrors(
-        cudaEventCreate(&inputs_processed_event_, cudaEventDisableTiming));
     ReportCUDAErrors(
         cudaEventCreate(&inputs_uploaded_event_, cudaEventDisableTiming));
     ReportCUDAErrors(
@@ -326,6 +374,8 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
         cudaEventCreate(&wdl_download_event_, cudaEventDisableTiming));
     ReportCUDAErrors(
         cudaEventCreate(&outputs_download_event_, cudaEventDisableTiming));
+    ReportCUDAErrors(
+        cudaEventCreate(&capture_join_event_, cudaEventDisableTiming));
     ReportCUDAErrors(cudaHostAlloc(
         &input_mask_data_,
         max_batch_size * kInputPlanes * sizeof(*input_mask_data_), 0));
@@ -346,6 +396,8 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
     ReportCUDAErrors(
         cudaMalloc(&input_tensor_data_device_,
                    max_batch_size * kInputPlanes * 8 * 8 * data_size));
+    ReportCUDAErrors(
+        cudaStreamCreateWithFlags(&exec_stream_, cudaStreamNonBlocking));
     for (int i = 0; i < outputs_size; i++) {
       ReportCUDAErrors(cudaMalloc(
           &output_tensors_data_device_[i],
@@ -354,10 +406,10 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
   }
   ~OnnxCUDAInputsOutputs() {
     ReportCUDAErrors(cudaEventDestroy(inputs_uploaded_event_));
-    ReportCUDAErrors(cudaEventDestroy(inputs_processed_event_));
     ReportCUDAErrors(cudaEventDestroy(evaluation_done_event_));
     ReportCUDAErrors(cudaEventDestroy(wdl_download_event_));
     ReportCUDAErrors(cudaEventDestroy(outputs_download_event_));
+    ReportCUDAErrors(cudaEventDestroy(capture_join_event_));
     ReportCUDAErrors(cudaFree(input_tensor_upload_device_));
     ReportCUDAErrors(cudaFree(input_tensor_data_device_));
     for (void* ptr : output_tensors_data_device_) {
@@ -368,12 +420,34 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
     for (void* ptr : output_tensors_data_) {
       ReportCUDAErrors(cudaFreeHost(ptr));
     }
+    for (cudaGraphExec_t graph : captured_graphs_) {
+      if (graph) {
+        ReportCUDAErrors(cudaGraphExecDestroy(graph));
+      }
+    }
+    ReportCUDAErrors(cudaStreamDestroy(exec_stream_));
   }
 
   const DataType* GetOutputData(int index) const {
     assert(index >= 0);
     assert(index < NetworkInfo::output_size_);
     return output_tensors_data_[index];
+  }
+
+  bool IsGraphCaptured(int batch_size) const {
+    return captured_graphs_[batch_size - 1] != nullptr;
+  }
+
+  void ExecuteGraph(int batch_size) const {
+    cudaGraphExec_t graph = captured_graphs_[batch_size - 1];
+    assert(graph != nullptr);
+    ReportCUDAErrors(cudaGraphLaunch(graph, exec_stream_));
+  }
+
+  void UploadGraph(const CUDACaptureSession& session, int batch_size) {
+    cudaGraphExec_t graph_exec = static_cast<cudaGraphExec_t>(session);
+    ReportCUDAErrors(cudaGraphUpload(graph_exec, exec_stream_));
+    captured_graphs_[batch_size - 1] = graph_exec;
   }
 
   uint64_t* input_mask_data_ = nullptr;
@@ -383,10 +457,12 @@ struct OnnxCUDAInputsOutputs : public OnnxInputsOutputsBase<NetworkInfoType> {
   DataType* output_tensors_data_[NetworkInfo::output_size_] = {nullptr};
   DataType* output_tensors_data_device_[NetworkInfo::output_size_] = {nullptr};
   cudaEvent_t inputs_uploaded_event_ = nullptr;
-  cudaEvent_t inputs_processed_event_ = nullptr;
   cudaEvent_t evaluation_done_event_ = nullptr;
   cudaEvent_t wdl_download_event_ = nullptr;
   cudaEvent_t outputs_download_event_ = nullptr;
+  cudaEvent_t capture_join_event_ = nullptr;
+  cudaStream_t exec_stream_ = nullptr;
+  std::vector<cudaGraphExec_t> captured_graphs_;
 };
 
 #endif
@@ -451,6 +527,8 @@ struct OnnxCUDANetwork : public OnnxNetworkBase<NetworkInfoType> {
     ReportCUDAErrors(cudaStreamCreate(&compute_stream_));
     ReportCUDAErrors(cudaStreamCreate(&upload_stream_));
     ReportCUDAErrors(cudaStreamCreate(&download_stream_));
+    ReportCUDAErrors(
+        cudaEventCreate(&run_exclusion_event_, cudaEventDisableTiming));
 #else
     CERR << "WARNING: CUDA support missing. Enable plain_cuda build option "
             "for CUDA optimisations.";
@@ -459,6 +537,7 @@ struct OnnxCUDANetwork : public OnnxNetworkBase<NetworkInfoType> {
 
   ~OnnxCUDANetwork() {
 #ifdef USE_ONNX_CUDART
+    ReportCUDAErrors(cudaEventDestroy(run_exclusion_event_));
     ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
     ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
     ReportCUDAErrors(cudaStreamDestroy(download_stream_));
@@ -490,10 +569,12 @@ struct OnnxCUDANetwork : public OnnxNetworkBase<NetworkInfoType> {
   cudaStream_t compute_stream_ = nullptr;
   cudaStream_t upload_stream_ = nullptr;
   cudaStream_t download_stream_ = nullptr;
+  cudaEvent_t run_exclusion_event_ = nullptr;
 #endif
 };
 
 #if USE_ONNX_CUDART
+
 template <typename NetworkInfoType>
 struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
   using Base = OnnxComputationBase<NetworkInfoType>;
@@ -505,6 +586,31 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
     OnnxCUDANetwork<NetworkInfo>* cuda_network =
         static_cast<OnnxCUDANetwork<NetworkInfo>*>(network);
     ReportCUDAErrors(cudaSetDevice(cuda_network->gpu_));
+  }
+
+  static constexpr bool CanUseCaptureGraph() { return true; }
+
+  static constexpr size_t kMinFreeMemoryForGraphCapture = 100 * 1024 * 1024;
+
+  bool EnsureEnoughMemoryForGraphCapture() {
+    size_t free = 0, total = 0;
+    ReportCUDAErrors(cudaMemGetInfo(&free, &total));
+    if (free < kMinFreeMemoryForGraphCapture) {
+      static std::once_flag once_flag;
+      std::call_once(once_flag, [&] {
+        CERR << "WARNING: Not enough free GPU memory for graph capture: "
+             << free << " bytes free";
+      });
+      return false;
+    }
+    return true;
+  }
+
+  CUDACaptureSession BeginGraphCapture(
+      OnnxCUDANetwork<NetworkInfo>& network,
+      OnnxCUDAInputsOutputs<NetworkInfo>& inputs_outputs) {
+    return {network.upload_stream_, network.download_stream_,
+            inputs_outputs.capture_join_event_};
   }
 
   int GetBatchSizeImplement(const OnnxCUDAInputsOutputs<NetworkInfo>&) const {
@@ -541,7 +647,7 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
 
   void UploadInputs(Ort::IoBinding&, OnnxCUDANetwork<NetworkInfo>& network,
                     OnnxCUDAInputsOutputs<NetworkInfo>& inputs_outputs,
-                    int start, int batch) {
+                    int start, int batch, bool capture_graph) {
     const auto* src_masks =
         &inputs_outputs.input_mask_data_[start * kInputPlanes];
     char* dst_masks =
@@ -565,8 +671,9 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
     dst += start * kInputPlanes * 8 * 8;
     expandPlanes(dst, dst_masks, batch * kInputPlanes, network.compute_stream_);
 
-    ReportCUDAErrors(cudaEventRecord(inputs_outputs.inputs_processed_event_,
-                                     network.upload_stream_));
+    ReportCUDAErrors(cudaStreamWaitEvent(network.compute_stream_,
+          network.run_exclusion_event_,
+          capture_graph ? cudaEventWaitExternal : 0));
   }
 
   Ort::RunOptions GetRunOptions() {
@@ -577,7 +684,10 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
 
   void DownloadOutputs(Ort::IoBinding&, OnnxCUDANetwork<NetworkInfo>& network,
                        OnnxCUDAInputsOutputs<NetworkInfo>& inputs_outputs,
-                       int start, int batch) {
+                       int start, int batch, bool capture_graph) {
+    ReportCUDAErrors(cudaEventRecordWithFlags(network.run_exclusion_event_,
+          network.compute_stream_,
+          capture_graph ? cudaEventRecordExternal : 0));
     for (size_t i = 0; i < NetworkInfo::output_size_; i++) {
       size_t step = NetworkInfo::output_tensors_step_[i];
       ReportCUDAErrors(cudaEventRecord(inputs_outputs.evaluation_done_event_,
@@ -591,12 +701,14 @@ struct OnnxCUDAComputation : public OnnxComputationBase<NetworkInfoType> {
           batch * step * sizeof(DataType), cudaMemcpyDeviceToHost,
           network.download_stream_));
       if (NetworkInfo::cpu_wdl_ && i == (size_t)NetworkInfo::wdl_head_) {
-        ReportCUDAErrors(cudaEventRecord(inputs_outputs.wdl_download_event_,
-                                         network.download_stream_));
+        ReportCUDAErrors(cudaEventRecordWithFlags(
+            inputs_outputs.wdl_download_event_, network.download_stream_,
+            capture_graph ? cudaEventRecordExternal : 0));
       }
     }
-    ReportCUDAErrors(cudaEventRecord(inputs_outputs.outputs_download_event_,
-                                     network.download_stream_));
+    ReportCUDAErrors(cudaEventRecordWithFlags(
+        inputs_outputs.outputs_download_event_, network.download_stream_,
+        capture_graph ? cudaEventRecordExternal : 0));
   }
 
   void WaitForWDL(OnnxCUDAInputsOutputs<NetworkInfo>& inputs_outputs) {
@@ -925,6 +1037,8 @@ class OnnxComputation final : public Provider::ComputationBase {
   void AddInput(InputPlanes&& input) override;
   int GetBatchSize() const override;
   void ComputeBlocking() override;
+  void ComputeBlockingImplement(bool capture_graph = false);
+  void CaptureGraph(std::unique_lock<std::mutex>& lock);
   float GetQVal(int sample) const override;
   float GetDVal(int sample) const override;
   float GetPVal(int sample, int move_id) const override;
@@ -1121,7 +1235,8 @@ Ort::IoBinding OnnxComputation<NetworkInfoType>::PrepareInputs(int start,
 }
 
 template <typename NetworkInfoType>
-void OnnxComputation<NetworkInfoType>::ComputeBlocking() {
+void OnnxComputation<NetworkInfoType>::ComputeBlockingImplement(
+    bool capture_graph) {
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
     batch_size = std::max(GetBatchSize(), network_->min_batch_size_);
@@ -1132,13 +1247,47 @@ void OnnxComputation<NetworkInfoType>::ComputeBlocking() {
 
     auto binding = PrepareInputs(i, batch, step);
 
-    auto lock = Base::LockComputeSession(network_->lock_);
-    Base::UploadInputs(binding, *network_, *inputs_outputs_, i, batch);
+    Base::UploadInputs(binding, *network_, *inputs_outputs_, i, batch,
+                       capture_graph);
 
     network_->session_[step - 1].Run(Base::GetRunOptions(), binding);
 
-    Base::DownloadOutputs(binding, *network_, *inputs_outputs_, i, batch);
+    Base::DownloadOutputs(binding, *network_, *inputs_outputs_, i, batch,
+                          capture_graph);
     i += batch;
+  }
+}
+
+template <typename NetworkInfoType>
+void OnnxComputation<NetworkInfoType>::CaptureGraph(
+    std::unique_lock<std::mutex>& lock) {
+  if (!Base::EnsureEnoughMemoryForGraphCapture()) {
+    return;
+  }
+  auto capture = Base::BeginGraphCapture(*network_, *inputs_outputs_);
+  ComputeBlockingImplement(true);
+  capture.EndCapture();
+  if (lock.owns_lock()) {
+    lock.unlock();
+  }
+  inputs_outputs_->UploadGraph(capture, GetBatchSize());
+}
+
+template <typename NetworkInfoType>
+void OnnxComputation<NetworkInfoType>::ComputeBlocking() {
+  if constexpr (Base::CanUseCaptureGraph()) {
+    auto lock = Base::LockComputeSession(network_->lock_);
+    if (inputs_outputs_->IsGraphCaptured(GetBatchSize())) {
+      inputs_outputs_->ExecuteGraph(GetBatchSize());
+    } else {
+      // Send work to GPU first.
+      ComputeBlockingImplement();
+      // Capture graph for future uses while GPU is processing our request.
+      CaptureGraph(lock);
+    }
+  } else {
+    auto lock = Base::LockComputeSession(network_->lock_);
+    ComputeBlockingImplement();
   }
   if constexpr (NetworkInfo::cpu_wdl_) {
     static_assert(NetworkInfo::wdl_head_ != -1,
