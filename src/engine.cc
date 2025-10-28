@@ -67,7 +67,7 @@ const OptionId kPreload{"preload", "",
 void Engine::PopulateOptions(OptionsParser* options) {
   options->Add<BoolOption>(kPonderId) = false;
   options->Add<StringOption>(kSyzygyTablebaseId);
-  options->Add<BoolOption>(kStrictUciTiming) = true;
+  options->Add<BoolOption>(kStrictUciTiming) = false;
   options->Add<BoolOption>(kPreload) = false;
 }
 
