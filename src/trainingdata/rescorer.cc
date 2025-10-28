@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <source_location>
 #include <span>
 #include <sstream>
 
@@ -120,8 +121,12 @@ bool deblunderEnabled = false;
 float deblunderQBlunderThreshold = 2.0f;
 float deblunderQBlunderWidth = 0.0f;
 
-void DataAssert(bool check_result) {
-  if (!check_result) throw Exception("Range Violation");
+void DataAssert(bool check_result,
+                std::source_location loc = std::source_location::current()) {
+  if (!check_result) {
+    throw Exception(std::string("Range Violation at ") + loc.file_name() + ":" +
+                    std::to_string(loc.line()));
+  }
 }
 
 void Validate(std::span<const V6TrainingData> fileContents) {
