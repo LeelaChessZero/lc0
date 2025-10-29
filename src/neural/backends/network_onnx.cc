@@ -52,6 +52,7 @@
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 #include "utils/logging.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace {
@@ -267,6 +268,7 @@ Ort::Value OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
 
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
+  LCTRACE_FUNCTION_SCOPE;
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
     batch_size = std::max(static_cast<int>(raw_input_.size()),

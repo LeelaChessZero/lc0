@@ -224,6 +224,11 @@ option('hip_include',
        value: ['/opt/rocm/include'],
        description: 'Path to AMD HIP includes')
 
+option('nvtx',
+       type: 'boolean',
+       value: false,
+       description: 'Enable NVTX tracing support')
+
 option('lc0',
        type: 'boolean',
        value: true,
