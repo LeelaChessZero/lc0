@@ -38,7 +38,7 @@ class MockBackendComputation : public BackendComputation {
   MOCK_METHOD(size_t, UsedBatchSize, (), (const, override));
   MOCK_METHOD(AddInputResult, AddInput,
               (const EvalPosition& pos, EvalResultPtr result), (override));
-  MOCK_METHOD(void, ComputeBlocking, (), (override));
+  MOCK_METHOD(void, ComputeBlocking, (ComputationCallback), (override));
 };
 
 class MockBackend : public Backend {
