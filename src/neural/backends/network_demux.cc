@@ -256,9 +256,6 @@ class DemuxingComputation final : public BackendComputation {
 
   void ProcessResults(const DemuxingWork& work);
 
-  void SoftmaxPolicy(std::span<float> dst, const DemuxingWork& work,
-                     size_t index);
-
  private:
   DemuxingBackend* backend_;
   AtomicVector<NetworkComputationRequest> entries_;
