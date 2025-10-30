@@ -32,6 +32,8 @@
 namespace lczero {
 namespace cudnn_backend {
 
+// Expand input planes from bitmask to floating point tensors. It is used as a
+// preprocessing step of ONNX models.
 template <typename DataType>
 void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
                       cudaStream_t stream);

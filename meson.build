@@ -611,7 +611,7 @@ if get_option('build_backends')
         command : [nvcc, nvcc_extra_args, cuda_arguments]
         )
     else
-      warning('No CUDA support build. Using compatibility implementation for onnx-trt and onnx-cuda. Enable plain_cuda to use CUDA optimisations.')
+      warning('No CUDA support build. Using compatibility implementation for onnx-trt and onnx-cuda. Enable plain_cuda to use CUDA optimizations.')
     endif
     has_backends = true
   endif

@@ -118,7 +118,7 @@ struct InputsOutputs {
   // To be removed when converting to new backend interface.
   std::vector<float> wdl_output_data_;
   Ort::MemoryInfo memory_info_{nullptr};
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
   cudaEvent_t inputs_uploaded_event_ = nullptr;
   cudaEvent_t inputs_processed_event_ = nullptr;
   cudaEvent_t evaluation_done_event_ = nullptr;
@@ -144,7 +144,7 @@ class OnnxComputation final : public NetworkComputation {
 
   OnnxNetwork* network_;
   std::vector<InputPlanes> raw_input_;
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
   size_t input_size_ = 0;
 #endif
   std::unique_ptr<InputsOutputs> inputs_outputs_;
@@ -156,7 +156,7 @@ class OnnxNetwork final : public Network {
               OnnxProvider provider, bool cpu_wdl);
   ~OnnxNetwork();
   std::unique_ptr<NetworkComputation> NewComputation() override {
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
     if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
       ReportCUDAErrors(cudaSetDevice(gpu_));
     }
@@ -222,7 +222,7 @@ class OnnxNetwork final : public Network {
   OnnxProvider provider_;
   std::mutex lock_;
   // For shared device addresses.
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
   cudaStream_t compute_stream_ = nullptr;
   cudaStream_t upload_stream_ = nullptr;
   cudaStream_t download_stream_ = nullptr;
@@ -316,6 +316,9 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
 OnnxNetwork::~OnnxNetwork() {
 #ifdef USE_ONNX_CUDART
   if (provider_ == OnnxProvider::TRT || provider_ == OnnxProvider::CUDA) {
+    ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
+    ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
+    ReportCUDAErrors(cudaStreamDestroy(download_stream_));
   }
 #endif
 }
@@ -343,7 +346,7 @@ void AsDataType(float x, Ort::BFloat16_t* y) {
 
 template <typename DataType>
 void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
   if (network_->provider_ == OnnxProvider::CUDA ||
       network_->provider_ == OnnxProvider::TRT) {
     assert(input.size() == kInputPlanes);
@@ -377,7 +380,7 @@ void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
 }
 template <typename DataType>
 int OnnxComputation<DataType>::GetBatchSize() const {
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
   if (network_->provider_ == OnnxProvider::CUDA ||
       network_->provider_ == OnnxProvider::TRT) {
     return input_size_;
@@ -435,7 +438,7 @@ template <typename DataType>
 Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
                                                         int batch_size,
                                                         int step) {
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
   if (network_->provider_ != OnnxProvider::CUDA &&
       network_->provider_ != OnnxProvider::TRT)
 #endif
@@ -692,7 +695,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       trt_options["trt_force_sequential_engine_build"] = "1";
       trt_options["trt_context_memory_sharing_enable"] = "1";
       // Looks like we need I/O binding to enable this.
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
       trt_options["has_user_compute_stream"] = "1";
 #endif
       if (batch_size < 0) {
@@ -723,7 +726,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trt_options_v2));
       Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(
           trt_options_v2, keys.data(), values.data(), keys.size()));
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
       Ort::ThrowOnError(api.UpdateTensorRTProviderOptionsWithValue(
           trt_options_v2, "user_compute_stream", compute_stream_));
 #endif
@@ -740,7 +743,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
     case OnnxProvider::CUDA: {
       OrtCUDAProviderOptions cuda_options;
       cuda_options.device_id = gpu_;
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
       cuda_options.has_user_compute_stream = true;
       cuda_options.user_compute_stream = compute_stream_;
 #endif
@@ -856,14 +859,14 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   switch (provider) {
     case OnnxProvider::TRT:
     case OnnxProvider::CUDA:
-#if USE_ONNX_CUDART
+#ifdef USE_ONNX_CUDART
       ReportCUDAErrors(cudaSetDevice(gpu_));
       ReportCUDAErrors(cudaStreamCreate(&compute_stream_));
       ReportCUDAErrors(cudaStreamCreate(&upload_stream_));
       ReportCUDAErrors(cudaStreamCreate(&download_stream_));
 #else
       CERR << "WARNING: CUDA support missing. Enable plain_cuda build option "
-              "for CUDA optimisations.";
+              "for CUDA optimizations.";
 #endif
       break;
     default:
