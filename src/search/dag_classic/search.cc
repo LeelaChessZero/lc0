@@ -335,7 +335,7 @@ void Search::SendUciInfo(const classic::IterationStats& stats)
   }
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 #ifdef FIX_TT
-  common_info.hashfull = tt_->GetSize() * 1000 / tt_->GetCapacity();
+  common_info.hashfull = tt_->GetSize() * 1000.0f / tt_->GetCapacity();
 #endif
 
   int multipv = 0;
