@@ -268,23 +268,16 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
     auto in = input;
     if (options_.data_type !=
         WeightsToOnnxConverterOptions::DataType::kFloat32) {
-      in = builder->Cast(name + "/to_float", in,
-                         pblczero::TensorProto::FLOAT);
+      in = builder->Cast(name + "/to_float", in, pblczero::TensorProto::FLOAT);
     }
-    const OnnxConst& two =
-        static_cast<const OnnxConst&>(FloatOnnxConst({2.0f}, {1}));
-    const OnnxConst& zero =
-        static_cast<const OnnxConst&>(FloatOnnxConst({0.0f}, {1}));
-    auto e = builder->Exp(name + "/exp", in);
+    auto one = builder->AddInitializer(name + "/one", FloatOnnxConst({1}, {1}));
+    auto two = builder->AddInitializer(name + "/two", FloatOnnxConst({2}, {1}));
+    auto e = builder->Exp(name + "/e", in);
     auto flow = builder->Add(name + "/e+2", e, two);
-    auto n = builder->Mul(name + "/n", e, flow);
-    flow = builder->Add(name + "/n+2", n, two);
-    auto d = builder->Div(name + "/d", in, flow);
-    auto f = builder->Mul(name + "/n*d", n, d);
-    flow = builder->Mul(name + "/2*d", d, two);
-    auto t = builder->Sub(name + "/in-2*d", in, flow);
-    flow = builder->Greater(name + "/compare", in, zero);
-    flow = builder->Where(name, flow, t, f);
+    flow = builder->Mul(name + "/e*e+2e", e, flow);
+    flow = builder->Div(name + "/2/(e*e+2e)", two, flow);
+    flow = builder->Add(name + "/1+2/(e*e+2e)", flow, one);
+    flow = builder->Div(name + "/in/(1+2/(e*e+2e))", in, flow);
     if (options_.data_type !=
         WeightsToOnnxConverterOptions::DataType::kFloat32) {
       flow = builder->Cast(name + "/to_data_type", flow, GetDataType());
@@ -771,7 +764,7 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
 
   if (weights.ip_mult_gate.size() > 0 || weights.ip_add_gate.size() > 0) {
     flow = builder->Reshape(
-        "/attn_body/ma_gating/rehape1", flow,
+        "/attn_body/ma_gating/rehape", flow,
         builder->AddInitializer("/const/ma_gating/shape1",
                                 Int64OnnxConst({-1, 64, embedding_size}, {3})));
     if (weights.ip_mult_gate.size() > 0) {
@@ -784,11 +777,12 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
                           *GetWeghtsConverter(weights.ip_add_gate,
                                               {64, embedding_size}, {1, 0}));
     }
-    flow = builder->Reshape(
-        "/attn_body/ma_gating/rehape2", flow,
-        builder->AddInitializer("/const/ma_gating/shape2",
-                                Int64OnnxConst({-1, embedding_size}, {2})));
   }
+
+  flow = builder->Reshape(
+      "/attn_body/rehape", flow,
+      builder->AddInitializer("/const/ma_gating/shape2",
+                              Int64OnnxConst({-1, embedding_size}, {2})));
 
   float alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
 
