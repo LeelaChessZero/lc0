@@ -34,6 +34,7 @@
 #include "neural/shared_params.h"
 #include "utils/atomic_vector.h"
 #include "utils/fastmath.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace {
@@ -121,6 +122,7 @@ class NetworkAsBackendComputation : public BackendComputation {
   void ComputeBlocking() override {
     for (auto& entry : entries_) computation_->AddInput(std::move(entry.input));
     computation_->ComputeBlocking();
+    LCTRACE_FUNCTION_SCOPE;
     for (size_t i = 0; i < entries_.size(); ++i) {
       const EvalResultPtr& result = entries_[i].result;
       if (result.q) *result.q = computation_->GetQVal(i);
@@ -132,6 +134,7 @@ class NetworkAsBackendComputation : public BackendComputation {
 
   void SoftmaxPolicy(std::span<float> dst,
                      const NetworkComputation* computation, int idx) {
+    LCTRACE_FUNCTION_SCOPE;
     const std::vector<Move>& moves = entries_[idx].legal_moves;
     const int transform = entries_[idx].transform;
     // Copy the values to the destination array and compute the maximum.

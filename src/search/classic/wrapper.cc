@@ -30,7 +30,8 @@
 #include "search/classic/stoppers/factory.h"
 #include "search/register.h"
 #include "search/search.h"
-#include "src/neural/shared_params.h"
+#include "neural/shared_params.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace classic {
@@ -97,18 +98,21 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 }
 
 void ClassicSearch::NewGame() {
+  LCTRACE_FUNCTION_SCOPE;
   search_.reset();
   tree_.reset();
   time_manager_ = MakeTimeManager(*options_);
 }
 
 void ClassicSearch::SetPosition(const GameState& pos) {
+  LCTRACE_FUNCTION_SCOPE;
   if (!tree_) tree_ = std::make_unique<NodeTree>();
   const bool is_same_game = tree_->ResetToPosition(pos);
   if (!is_same_game) time_manager_ = MakeTimeManager(*options_);
 }
 
 void ClassicSearch::StartSearch(const GoParams& params) {
+  LCTRACE_FUNCTION_SCOPE;
   auto forwarder =
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
   if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
@@ -140,6 +144,7 @@ class ClassicSearchFactory : public SearchFactory {
   std::string_view GetName() const override { return "classic"; }
   std::unique_ptr<SearchBase> CreateSearch(
       UciResponder* responder, const OptionsDict* options) const override {
+    LCTRACE_FUNCTION_SCOPE;
     return std::make_unique<ClassicSearch>(responder, options);
   }
 
