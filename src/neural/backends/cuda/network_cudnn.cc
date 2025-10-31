@@ -684,11 +684,11 @@ class CudnnNetwork : public Network {
     // pre-allocate cuda graphs for search threads
     auto allocateCudaGraphs = [&] {
       CudnnNetworkComputation<NetworkInfo> comp(this, wdl_, moves_left_);
-      comp.AddInput(InputPlanes{kNumInputPlanes});
+      comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
       // Make sure cublas is initialized in this thread.
       comp.ComputeBlocking();
       for (int i = 0; i < GetMiniBatchSize(); i++) {
-        comp.AddInput(InputPlanes{kNumInputPlanes});
+        comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
         auto lock = LockEval();
         comp.CaptureGraph(std::move(lock));
       }
