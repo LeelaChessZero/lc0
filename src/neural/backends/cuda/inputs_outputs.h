@@ -27,11 +27,30 @@
 
 #pragma once
 
+#include <cassert>
+
 #include "cuda_common.h"
 #include "neural/network.h"
 
 namespace lczero {
 namespace cudnn_backend {
+
+struct CudaGraphCapture;
+struct CudaGraphExec {
+  ~CudaGraphExec() {
+    if (graph_exec_ != nullptr) {
+      ReportCUDAErrors(cudaGraphExecDestroy(graph_exec_));
+    }
+  }
+
+  CudaGraphExec& operator=(const CudaGraphCapture&);
+  explicit operator bool() const { return graph_exec_ != nullptr; }
+
+  void Launch(cudaStream_t stream) {
+    ReportCUDAErrors(cudaGraphLaunch(graph_exec_, stream));
+  }
+  cudaGraphExec_t graph_exec_ = nullptr;
+};
 
 struct InputsOutputs {
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
@@ -83,6 +102,13 @@ struct InputsOutputs {
                                                 cudaEventDisableTiming));
     }
 
+    ReportCUDAErrors(
+        cudaStreamCreateWithFlags(&exec_stream_, cudaStreamNonBlocking));
+    ReportCUDAErrors(
+        cudaEventCreateWithFlags(&join_capture_event_, cudaEventDisableTiming));
+    cuda_graphs_ =
+        std::make_unique<CudaGraphExec[]>(maxBatchSize);
+
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
       multi_stream_ = true;
@@ -126,6 +152,8 @@ struct InputsOutputs {
       ReportCUDAErrors(cudaFree(op_moves_left_mem_gpu_));
       ReportCUDAErrors(cudaEventDestroy(moves_left_done_event_));
     }
+    ReportCUDAErrors(cudaEventDestroy(join_capture_event_));
+    ReportCUDAErrors(cudaStreamDestroy(exec_stream_));
 
     if (multi_stream_) {
       for (auto mem : tensor_mem_) {
@@ -178,9 +206,61 @@ struct InputsOutputs {
   cudaEvent_t wdl_download_done_event_ = nullptr;
   cudaEvent_t download_done_event_ = nullptr;
 
+  // cuda graph support
+  cudaStream_t exec_stream_ = nullptr;
+  std::unique_ptr<CudaGraphExec[]> cuda_graphs_;
+  cudaEvent_t join_capture_event_ = nullptr;
+
   // cublas handle used to run the network
   cublasHandle_t cublas_ = nullptr;
 };
+
+struct CudaGraphCapture {
+  static constexpr int kMinimumFreeMemory = 100 * 1024 * 1024;
+
+  CudaGraphCapture(InputsOutputs& io, cudaStream_t upload_stream, cudaStream_t download_stream) : io_(io), upload_stream_(upload_stream), download_stream_(download_stream) {
+    ReportCUDAErrors(cudaStreamBeginCapture(upload_stream_,
+                                            cudaStreamCaptureModeThreadLocal));
+  }
+
+  ~CudaGraphCapture() {
+    if (graph_ != nullptr) {
+      ReportCUDAErrors(cudaGraphDestroy(graph_));
+    }
+  }
+
+  static bool EnsureEnoughFreeMemory() {
+    size_t free_mem = 0;
+    size_t total_mem = 0;
+    ReportCUDAErrors(cudaMemGetInfo(&free_mem, &total_mem));
+    return free_mem > kMinimumFreeMemory;
+  }
+
+  void EndCapture() {
+    ReportCUDAErrors(
+        cudaEventRecord(io_.join_capture_event_, download_stream_));
+    ReportCUDAErrors(
+        cudaStreamWaitEvent(upload_stream_, io_.join_capture_event_, 0));
+    ReportCUDAErrors(cudaStreamEndCapture(upload_stream_, &graph_));
+  }
+
+  InputsOutputs& io_;
+  cudaStream_t upload_stream_;
+  cudaStream_t download_stream_;
+
+  cudaGraph_t graph_ = nullptr;
+};
+
+inline CudaGraphExec& CudaGraphExec::operator=(const CudaGraphCapture& graph) {
+  assert(graph_exec_ == nullptr);
+  if (graph.graph_ == nullptr) {
+    throw Exception("Trying to instantiate an nullptr cuda graph");
+  }
+  ReportCUDAErrors(
+      cudaGraphInstantiate(&graph_exec_, graph.graph_, nullptr, nullptr, 0));
+  ReportCUDAErrors(cudaGraphUpload(graph_exec_, graph.io_.exec_stream_));
+  return *this;
+}
 
 }  // namespace cudnn_backend
 }  // namespace lczero

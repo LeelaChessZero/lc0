@@ -140,6 +140,8 @@ class CudaNetworkComputation : public NetworkComputation {
 
   void ComputeBlocking() override;
 
+  void CaptureGraph(std::unique_lock<std::mutex>&& lock = {});
+
   int GetBatchSize() const override { return batch_size_; }
 
   float GetQVal(int sample) const override {
@@ -259,6 +261,8 @@ class CudaNetwork : public Network {
           cudaStreamCreateWithFlags(&upload_stream_, cudaStreamNonBlocking));
       ReportCUDAErrors(
           cudaStreamCreateWithFlags(&download_stream_, cudaStreamNonBlocking));
+      ReportCUDAErrors(cudaEventCreateWithFlags(&compute_ordering_event_,
+                                                cudaEventDisableTiming));
       ReportCUBLASErrors(cublasCreate(&cublas_));
       ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
       if (has_tensor_cores_)
@@ -603,12 +607,27 @@ class CudaNetwork : public Network {
     std::unique_ptr<InputsOutputs> io = GetInputsOutputs();
   }
 
-  void forwardEval(InputsOutputs* io, int batchSize) {
+  std::unique_lock<std::mutex> LockEval() {
+    if (multi_stream_) {
+      return {};
+    } else {
+      return std::unique_lock<std::mutex>{lock_};
+    }
+  }
+
+  CudaGraphCapture BeginCapture(InputsOutputs& io) {
+    if (!multi_stream_) {
+      return CudaGraphCapture{io, upload_stream_, download_stream_};
+    } else {
+      return CudaGraphCapture{io, io.upload_stream_, io.download_stream_};
+    }
+  }
+
+  void forwardEval(InputsOutputs* io, int batchSize, bool capture = false) {
     // It is safe to evaluate larger than the batchSize
     // as all buffers are designed to handle max_batch_size
     // and the extra invalid results are never read.
     if (batchSize < min_batch_size_) batchSize = min_batch_size_;
-    if (!multi_stream_) lock_.lock();
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
@@ -656,6 +675,12 @@ class CudaNetwork : public Network {
     ReportCUDAErrors(cudaEventRecord(io->upload_done_event_, upload_stream));
     ReportCUDAErrors(
         cudaStreamWaitEvent(compute_stream, io->upload_done_event_, 0));
+
+    if (!multi_stream_) {
+      ReportCUDAErrors(
+          cudaStreamWaitEvent(compute_stream, compute_ordering_event_,
+                              capture ? cudaEventWaitExternal : 0));
+    }
 
     bool fp16 = std::is_same<half, DataType>::value;
     if (fp16) {
@@ -845,6 +870,11 @@ class CudaNetwork : public Network {
                           scratch_mem, scratch_size_, nullptr, cublas,
                           compute_stream);  // value head
     }
+    if (!moves_left_ && !multi_stream_) {
+      ReportCUDAErrors(
+          cudaEventRecordWithFlags(compute_ordering_event_, compute_stream,
+                                   capture ? cudaEventRecordExternal : 0));
+    }
     ReportCUDAErrors(cudaEventRecord(io->value_done_event_, compute_stream));
     ReportCUDAErrors(
         cudaStreamWaitEvent(download_stream, io->value_done_event_, 0));
@@ -853,8 +883,9 @@ class CudaNetwork : public Network {
                                      cudaMemcpyDeviceToHost, download_stream));
 
     if (wdl_) {
-      ReportCUDAErrors(cudaEventRecord(io->wdl_download_done_event_,
-                                         download_stream));
+      ReportCUDAErrors(cudaEventRecordWithFlags(
+          io->wdl_download_done_event_, download_stream,
+          capture ? cudaEventRecordExternal : 0));
     }
 
     if (moves_left_) {
@@ -878,6 +909,11 @@ class CudaNetwork : public Network {
                             scratch_mem, scratch_size_, nullptr, cublas,
                             compute_stream);
       }
+      if (!multi_stream_) {
+        ReportCUDAErrors(
+            cudaEventRecordWithFlags(compute_ordering_event_, compute_stream,
+                                     capture ? cudaEventRecordExternal : 0));
+      }
       ReportCUDAErrors(
           cudaEventRecord(io->moves_left_done_event_, compute_stream));
       ReportCUDAErrors(
@@ -888,11 +924,11 @@ class CudaNetwork : public Network {
     }
 
     ReportCUDAErrors(
-        cudaEventRecord(io->download_done_event_, download_stream));
+        cudaEventRecordWithFlags(io->download_done_event_, download_stream,
+                                 capture ? cudaEventRecordExternal : 0));
+  }
 
-    if (!multi_stream_) {
-      lock_.unlock();
-    }
+  void finishEval(InputsOutputs* io, int batchSize) {
     if (wdl_) {
       ReportCUDAErrors(cudaEventSynchronize(io->wdl_download_done_event_));
       // Value softmax done cpu side.
@@ -929,6 +965,7 @@ class CudaNetwork : public Network {
       ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
       ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
       ReportCUDAErrors(cudaStreamDestroy(download_stream_));
+      ReportCUDAErrors(cudaEventDestroy(compute_ordering_event_));
     }
   }
 
@@ -1023,6 +1060,7 @@ class CudaNetwork : public Network {
   cudaStream_t compute_stream_ = nullptr;
   cudaStream_t upload_stream_ = nullptr;
   cudaStream_t download_stream_ = nullptr;
+  cudaEvent_t compute_ordering_event_ = nullptr;
   cublasHandle_t cublas_;
   DataType* tensor_mem_[3];
 
@@ -1111,8 +1149,35 @@ CudaNetworkComputation<DataType>::~CudaNetworkComputation() {
 }
 
 template <typename DataType>
+void CudaNetworkComputation<DataType>::CaptureGraph(
+    std::unique_lock<std::mutex>&& lock) {
+  if (!CudaGraphCapture::EnsureEnoughFreeMemory()) {
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+      CERR << "WARNING: Not enough GPU memory to capture CUDA graphs.";
+    });
+    return;
+  }
+  CudaGraphCapture capture = network_->BeginCapture(*inputs_outputs_);
+  network_->forwardEval(inputs_outputs_.get(), GetBatchSize(), true);
+  capture.EndCapture();
+  if (lock.owns_lock()) lock.unlock();
+  inputs_outputs_->cuda_graphs_[GetBatchSize() - 1] = capture;
+}
+
+template <typename DataType>
 void CudaNetworkComputation<DataType>::ComputeBlocking() {
-  network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
+  assert(GetBatchSize() >= 1);
+  if (inputs_outputs_->cuda_graphs_[GetBatchSize() - 1]) {
+    std::unique_lock<std::mutex> lock = network_->LockEval();
+    inputs_outputs_->cuda_graphs_[GetBatchSize() - 1].Launch(
+        inputs_outputs_->exec_stream_);
+  } else {
+    std::unique_lock<std::mutex> lock = network_->LockEval();
+    network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
+    CaptureGraph(std::move(lock));
+  }
+  network_->finishEval(inputs_outputs_.get(), GetBatchSize());
 }
 
 template <typename DataType>
