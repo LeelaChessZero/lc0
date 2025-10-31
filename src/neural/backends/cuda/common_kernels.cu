@@ -381,12 +381,13 @@ __global__ void NCHWtoNHWC_kernel(dT* output_tensor, const sT* input_tensor,
 
 template <typename DstType, typename SrcType>
 void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
-                       int Nin, int Cin, int Nout, int Cout, int H, int W) {
+                       int Nin, int Cin, int Nout, int Cout, int H, int W,
+                       cudaStream_t stream) {
   size_t numElements = Nout * Cout * H * W;
   const int blockSize = 256;
   int blocks = DivUp(numElements, blockSize);
-  NCHWtoNHWC_kernel<<<blocks, blockSize>>>(output_tensor, input_tensor, Nin,
-                                           Cin, Nout, Cout, H, W);
+  NCHWtoNHWC_kernel<<<blocks, blockSize, 0, stream>>>(
+      output_tensor, input_tensor, Nin, Cin, Nout, Cout, H, W);
 }
 
 template <typename DstType, typename SrcType>
@@ -1584,15 +1585,16 @@ template void ComputePromotionLogits<float>(int N, int C, float* output,
 template void convertNCHWtoNHWC<half, float>(half* output_tensor,
                                              const float* input_tensor, int Nin,
                                              int Cin, int Nout, int Cout, int H,
-                                             int W);
+                                             int W, cudaStream_t stream);
 template void convertNCHWtoNHWC<float, float>(float* output_tensor,
                                               const float* input_tensor,
                                               int Nin, int Cin, int Nout,
-                                              int Cout, int H, int W);
+                                              int Cout, int H, int W,
+                                              cudaStream_t stream);
 template void convertNCHWtoNHWC<half, half>(half* output_tensor,
                                             const half* input_tensor, int Nin,
                                             int Cin, int Nout, int Cout, int H,
-                                            int W);
+                                            int W, cudaStream_t stream);
 
 template void inputPreprocessForAttentionBody<half>(
     half* output, const half* input, const half* encoding, int N,

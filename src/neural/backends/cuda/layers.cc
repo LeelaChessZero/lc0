@@ -219,7 +219,7 @@ void ConvLayer<half>::LoadWeights(float* pfilter, float* pBias, void* scratch) {
 
   if (nhwc_) {
     convertNCHWtoNHWC((half*)weights, (float*)scratch, C, c_input_, C, c_input_,
-                      filter_size_, filter_size_);
+                      filter_size_, filter_size_, 0);
   } else {
     copyTypeConverted((half*)weights, (float*)scratch,
                       C * c_input_ * filter_size_ * filter_size_, 0);
@@ -593,7 +593,7 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
   if (nhwc_) {
     convertNCHWtoNHWC((half*)weights_, (float*)scratch, (int)num_biases,
                       input_->GetC(), (int)num_biases, input_->GetC(),
-                      input_->GetH(), input_->GetW());
+                      input_->GetH(), input_->GetW(), 0);
   } else {
     copyTypeConverted((half*)weights_, (float*)scratch, (int)num_weights, 0);
   }
@@ -1903,7 +1903,8 @@ void AttentionPolicyHead<DataType>::Eval(
 
   int inputC = this->input_->GetC();
   if (!attention_body_)
-    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8);
+    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8,
+                      stream);
 
   // 1. Policy embedding (fully connected layer)
   // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
@@ -2184,7 +2185,8 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       const int num_inputs = 64 * 12;
       const int batch = N;
 
-      convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, 12, 8, 8);
+      convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, 12, 8, 8,
+                        stream);
       cublasXgemm<DataType>(
           cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs,
           1.0f, (const DataType*)ip_emb_pre_w_, num_inputs,
@@ -2219,7 +2221,8 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
     // #redirect flow through encoder blocks
     // flow = tf.transpose(flow, perm = [ 0, 2, 3, 1 ])
     // flow = tf.reshape(flow, [ -1, 64, self.RESIDUAL_FILTERS ])
-    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8);
+    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8,
+                      stream);
   }
 
   if (is_pe_dense_embedding_) {
