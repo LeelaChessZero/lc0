@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "cuda_common.h"
 #include "neural/network.h"
 
 namespace lczero {
@@ -39,14 +40,14 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_masks_mem_gpu_, input_masks_mem_, 0));
+    ReportCUDAErrors(cudaMalloc(
+        &input_masks_mem_gpu_, maxBatchSize * kInputPlanes * sizeof(uint64_t)));
 
     ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
                                    maxBatchSize * kInputPlanes * sizeof(float),
                                    cudaHostAllocMapped));
-    ReportCUDAErrors(
-        cudaHostGetDevicePointer(&input_val_mem_gpu_, input_val_mem_, 0));
+    ReportCUDAErrors(cudaMalloc(&input_val_mem_gpu_,
+                                maxBatchSize * kInputPlanes * sizeof(float)));
 
     ReportCUDAErrors(cudaHostAlloc(
         &op_policy_mem_, maxBatchSize * kNumOutputPolicy * sizeof(float), 0));
@@ -60,42 +61,71 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaHostAlloc(&op_value_mem_,
                                    maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
                                    cudaHostAllocMapped));
+    ReportCUDAErrors(cudaMalloc(&op_value_mem_gpu_,
+                                maxBatchSize * (wdl ? 3 : 1) * sizeof(float)));
     ReportCUDAErrors(
-        cudaHostGetDevicePointer(&op_value_mem_gpu_, op_value_mem_, 0));
+        cudaEventCreateWithFlags(&upload_done_event_, cudaEventDisableTiming));
+    ReportCUDAErrors(
+        cudaEventCreateWithFlags(&policy_done_event_, cudaEventDisableTiming));
+    ReportCUDAErrors(
+        cudaEventCreateWithFlags(&value_done_event_, cudaEventDisableTiming));
+    ReportCUDAErrors(cudaEventCreateWithFlags(&wdl_download_done_event_,
+                                              cudaEventDisableTiming));
+    ReportCUDAErrors(cudaEventCreateWithFlags(&download_done_event_,
+                                              cudaEventDisableTiming));
     if (moves_left) {
       ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
                                      maxBatchSize * sizeof(float),
                                      cudaHostAllocMapped));
-      ReportCUDAErrors(cudaHostGetDevicePointer(&op_moves_left_mem_gpu_,
-                                                op_moves_left_mem_, 0));
+      ReportCUDAErrors(
+          cudaMalloc(&op_moves_left_mem_gpu_, maxBatchSize * sizeof(float)));
+      ReportCUDAErrors(cudaEventCreateWithFlags(&moves_left_done_event_,
+                                                cudaEventDisableTiming));
     }
 
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
       multi_stream_ = true;
-      ReportCUDAErrors(cudaStreamCreate(&stream_));
+      ReportCUDAErrors(
+          cudaStreamCreateWithFlags(&compute_stream_, cudaStreamNonBlocking));
+      ReportCUDAErrors(
+          cudaStreamCreateWithFlags(&upload_stream_, cudaStreamNonBlocking));
+      ReportCUDAErrors(
+          cudaStreamCreateWithFlags(&download_stream_, cudaStreamNonBlocking));
       ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size));
       for (auto& mem : tensor_mem_) {
         ReportCUDAErrors(cudaMalloc(&mem, tensor_mem_size));
-        ReportCUDAErrors(cudaMemsetAsync(mem, 0, tensor_mem_size, stream_));
+        ReportCUDAErrors(
+            cudaMemsetAsync(mem, 0, tensor_mem_size, compute_stream_));
       }
       ReportCUBLASErrors(cublasCreate(&cublas_));
       ReportCUBLASErrors(cublasSetMathMode(
           cublas_, cublasDisableTensorCores ? CUBLAS_PEDANTIC_MATH
                                             : CUBLAS_TENSOR_OP_MATH));
-      ReportCUBLASErrors(cublasSetStream(cublas_, stream_));
+      ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
     } else {
       multi_stream_ = false;
     }
   }
   ~InputsOutputs() {
     ReportCUDAErrors(cudaFreeHost(input_masks_mem_));
+    ReportCUDAErrors(cudaFree(input_masks_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(input_val_mem_));
+    ReportCUDAErrors(cudaFree(input_val_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
     ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(op_value_mem_));
-    if (op_moves_left_mem_ != nullptr)
+    ReportCUDAErrors(cudaFree(op_value_mem_gpu_));
+    ReportCUDAErrors(cudaEventDestroy(upload_done_event_));
+    ReportCUDAErrors(cudaEventDestroy(policy_done_event_));
+    ReportCUDAErrors(cudaEventDestroy(value_done_event_));
+    ReportCUDAErrors(cudaEventDestroy(wdl_download_done_event_));
+    ReportCUDAErrors(cudaEventDestroy(download_done_event_));
+    if (op_moves_left_mem_ != nullptr) {
       ReportCUDAErrors(cudaFreeHost(op_moves_left_mem_));
+      ReportCUDAErrors(cudaFree(op_moves_left_mem_gpu_));
+      ReportCUDAErrors(cudaEventDestroy(moves_left_done_event_));
+    }
 
     if (multi_stream_) {
       for (auto mem : tensor_mem_) {
@@ -106,8 +136,10 @@ struct InputsOutputs {
       if (head_offset_pointers_) {
         ReportCUDAErrors(cudaFree(head_offset_pointers_));
       }
-      cudaStreamDestroy(stream_);
-      cublasDestroy(cublas_);
+      ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
+      ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
+      ReportCUDAErrors(cudaStreamDestroy(download_stream_));
+      ReportCUBLASErrors(cublasDestroy(cublas_));
     }
   }
   uint64_t* input_masks_mem_;
@@ -134,10 +166,20 @@ struct InputsOutputs {
   void** head_offset_pointers_ = nullptr;
 
   // cuda stream used to run the network
-  cudaStream_t stream_;
+  cudaStream_t compute_stream_ = nullptr;
+  cudaStream_t upload_stream_ = nullptr;
+  cudaStream_t download_stream_ = nullptr;
+
+  // cuda events to synchronize between streams
+  cudaEvent_t upload_done_event_ = nullptr;
+  cudaEvent_t policy_done_event_ = nullptr;
+  cudaEvent_t value_done_event_ = nullptr;
+  cudaEvent_t moves_left_done_event_ = nullptr;
+  cudaEvent_t wdl_download_done_event_ = nullptr;
+  cudaEvent_t download_done_event_ = nullptr;
 
   // cublas handle used to run the network
-  cublasHandle_t cublas_;
+  cublasHandle_t cublas_ = nullptr;
 };
 
 }  // namespace cudnn_backend
