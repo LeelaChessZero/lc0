@@ -673,6 +673,22 @@ class CudnnNetwork : public Network {
     CERR << "allocated " << 3 * maxSize
          << " bytes of GPU memory to run the network";
 #endif
+
+    // pre-allocate cuda graphs for search threads
+    auto allocateCudaGraphs = [&] {
+      CudnnNetworkComputation<DataType> comp(this, wdl_, moves_left_);
+      comp.AddInput(InputPlanes{});
+      // Make sure cublas is initialized in this thread.
+      comp.ComputeBlocking();
+      for (int i = 0; i < GetMiniBatchSize(); i++) {
+        comp.AddInput(InputPlanes{});
+        auto lock = LockEval();
+        comp.CaptureGraph(std::move(lock));
+      }
+    };
+    std::thread t2(allocateCudaGraphs);
+    allocateCudaGraphs();
+    t2.join();
   }
 
   std::unique_lock<std::mutex> LockEval() {
