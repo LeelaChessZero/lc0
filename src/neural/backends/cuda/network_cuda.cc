@@ -202,6 +202,7 @@ class CudaNetwork : public Network {
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+    enable_graph_capture_ = options.GetOrDefault<bool>("graph_capture", true);
 
     const auto nf = file.format().network_format();
     using NF = pblczero::NetworkFormat;
@@ -638,6 +639,8 @@ class CudaNetwork : public Network {
     }
   }
 
+  bool GetGraphCaptureEnabled() const { return enable_graph_capture_; }
+
   CudaGraphCapture<NetworkInfo> BeginCapture(InputsOutputs<NetworkInfo>& io) {
     if (!multi_stream_) {
       return {io, upload_stream_, download_stream_};
@@ -1055,6 +1058,7 @@ class CudaNetwork : public Network {
   int sm_count_;
   int max_batch_size_;
   int min_batch_size_;
+  bool enable_graph_capture_;
   bool wdl_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual
@@ -1185,6 +1189,7 @@ CudaNetworkComputation<NetworkInfo>::~CudaNetworkComputation() {
 template <typename NetworkInfo>
 void CudaNetworkComputation<NetworkInfo>::CaptureGraph(
     std::unique_lock<std::mutex>&& lock) {
+  if (!network_->GetGraphCaptureEnabled()) return;
   if (!CudaGraphCapture<NetworkInfo>::EnsureEnoughFreeMemory()) {
     static std::once_flag flag;
     std::call_once(flag, []() {

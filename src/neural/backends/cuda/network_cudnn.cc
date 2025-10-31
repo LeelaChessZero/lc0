@@ -168,6 +168,7 @@ class CudnnNetwork : public Network {
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+    enable_graph_capture_ = options.GetOrDefault<bool>("graph_capture", true);
 
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
@@ -701,6 +702,8 @@ class CudnnNetwork : public Network {
     return std::unique_lock<std::mutex>{lock_};
   }
 
+  bool GetGraphCaptureEnabled() const { return enable_graph_capture_; }
+
   CudaGraphCapture<NetworkInfo> BeginCapture(InputsOutputs<NetworkInfo>& io) {
     return CudaGraphCapture{io, upload_stream_, download_stream_};
   }
@@ -1074,6 +1077,7 @@ class CudnnNetwork : public Network {
   int gpu_id_;
   int max_batch_size_;
   int min_batch_size_;
+  bool enable_graph_capture_;
   bool wdl_;
   bool moves_left_;
 
@@ -1215,6 +1219,7 @@ CudnnNetworkComputation<DataType>::~CudnnNetworkComputation() {
 template <typename NetworkInfo>
 void CudnnNetworkComputation<NetworkInfo>::CaptureGraph(
     std::unique_lock<std::mutex>&& lock) {
+  if (!network_->GetGraphCaptureEnabled()) return;
   if (!CudaGraphCapture<NetworkInfo>::EnsureEnoughFreeMemory()) {
     static std::once_flag flag;
     std::call_once(flag, []() {
