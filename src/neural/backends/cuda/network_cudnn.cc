@@ -26,7 +26,6 @@
 */
 #include <algorithm>
 #include <cassert>
-#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -39,7 +38,6 @@
 #include "neural/network_legacy.h"
 #include "neural/tables/attention_policy_map.h"
 #include "neural/tables/policy_map.h"
-#include "utils/bititer.h"
 #include "utils/exception.h"
 
 // #define DEBUG_RAW_NPS
