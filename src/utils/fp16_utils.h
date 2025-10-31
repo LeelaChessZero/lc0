@@ -42,6 +42,8 @@ namespace lczero {
 
 #if defined(HAS_FLOAT16)
 
+#define FAST_FP16_CONVERSION 1
+
 inline uint16_t FP32toFP16(float f32) {
   _Float16 f16 = static_cast<_Float16>(f32);
   uint16_t x;
@@ -58,6 +60,8 @@ inline float FP16toFP32(uint16_t f16) {
 #elif !defined(NO_POPCNT) && !defined(NO_F16C) && \
     (!defined(__GNUC__) || defined(__F16C__))
 
+#define FAST_FP16_CONVERSION 1
+
 inline uint16_t FP32toFP16(float f32) {
   __m128 A = _mm_set_ss(f32);
   __m128i H = _mm_cvtps_ph(A, 0);
@@ -72,6 +76,8 @@ inline float FP16toFP32(uint16_t f16) {
 }
 
 #else
+
+#define FAST_FP16_CONVERSION 0
 
 inline uint16_t FP32toFP16(float f32) {
   unsigned int x;

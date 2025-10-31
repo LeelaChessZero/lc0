@@ -31,6 +31,7 @@
 #include "cuda_common.h"
 #include "neural/tables/activation_function.h"
 #include "neural/tables/attention_policy_map.h"
+#include "utils/exception.h"
 #include "winograd_helper.inc"
 
 namespace lczero {
@@ -451,41 +452,36 @@ void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
 
 __global__ void expandPlanes_kernel_Fp32_NCHW(float* output,
                                               const uint64_t* masks,
-                                              const float* values, int n) {
-  // Block size of 256, same mask/val for 64 consecutive threads.
-  constexpr int kNumShmemElements = 256 / 64;
+                                              const float* values, unsigned n) {
 
-  __shared__ uint64_t shMasks[kNumShmemElements];
-  __shared__ float shVals[kNumShmemElements];
+  unsigned index = threadIdx.x + blockDim.x * blockIdx.x;
 
-  int index = threadIdx.x + blockDim.x * blockIdx.x;
+  index *= 2;
 
-  int planeIndex = index >> 6;
+  unsigned planeIndex = index >> 6;
 
   if (planeIndex >= n) return;
-
-  // Load inputs to shared memory.
-  if (threadIdx.x < kNumShmemElements) {
-    shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
-    shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
-  }
-  __syncthreads();
-
-  uint64_t mask = shMasks[threadIdx.x >> 6];
+  uint64_t mask = masks[planeIndex];
 
   int sqIndex = index & 0x3F;
-  float op = 0;
+  half op[2] = {0, 0};
 
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
-    op = shVals[threadIdx.x >> 6];
+    op[0] = values[planeIndex];
   }
-  output[index] = op;
+  sqIndex++;
+  set = !!(mask & (1ull << sqIndex));
+  if (set) {
+    op[1] = values[planeIndex];
+  }
+  output[index + 0] = op[0];
+  output[index + 1] = op[1];
 }
 
 void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
                             const float* values, int n, cudaStream_t stream) {
-  int threads = n * 8 * 8;  // Each thread writes a single element.
+  int threads = n * 8 * 8 / 2;  // Each thread writes two elements.
   const int blockSize = 256;
   int blocks = DivUp(threads, blockSize);
   expandPlanes_kernel_Fp32_NCHW<<<blocks, blockSize, 0, stream>>>(output, masks,
@@ -494,9 +490,10 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
 }
 
 // TODO: Can optimize using shared memory if this becomes a bottleneck.
+template <typename IOType>
 __global__ void expandPlanes_kernel_Fp16_NHWC(half* output,
                                               const uint64_t* masks,
-                                              const float* values, int n) {
+                                              const IOType* values, int n) {
   const int index = threadIdx.x + blockDim.x * blockIdx.x;
   if (index >= n * 8 * 8) return;
 
@@ -515,8 +512,9 @@ __global__ void expandPlanes_kernel_Fp16_NHWC(half* output,
   output[index] = op;
 }
 
+template <typename IOType>
 void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream) {
+                            const IOType* values, int n, cudaStream_t stream) {
   int threads = n * 8 * 8;  // Each thread writes a single element.
   const int kBlockSize = 256;
   int blocks = DivUp(threads, kBlockSize);
@@ -525,45 +523,41 @@ void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename IOType>
 __global__ void expandPlanes_kernel_Fp16_NCHW(half* output,
                                               const uint64_t* masks,
-                                              const float* values, int n) {
-  // block size of 256, same mask/val for 64 consecutive threads
-  constexpr int kNumShmemElements = 256 / 64;
+                                              const IOType* values, unsigned n) {
+  unsigned index = threadIdx.x + blockDim.x * blockIdx.x;
 
-  __shared__ uint64_t shMasks[kNumShmemElements];
-  __shared__ half shVals[kNumShmemElements];
-
-  int index = threadIdx.x + blockDim.x * blockIdx.x;
-
-  int planeIndex = index >> 6;
+  index *= 2;
+  unsigned planeIndex = index >> 6;
 
   if (planeIndex >= n) return;
 
-  // load inputs to shared memory
-  if (threadIdx.x < kNumShmemElements) {
-    shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
-    shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
-  }
-  __syncthreads();
-
-  uint64_t mask = shMasks[threadIdx.x >> 6];
+  uint64_t mask = masks[planeIndex];
 
   int sqIndex = index & 0x3F;
-  half op = 0;
+  half op[2] = {0, 0};
 
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
-    op = (half)shVals[threadIdx.x >> 6];
+    op[0] = (half)values[planeIndex];
   }
-  output[index] = op;
+  sqIndex++;
+  set = !!(mask & (1ull << sqIndex));
+  if (set) {
+    op[1] = (half)values[planeIndex];
+  }
+  output[index + 0] = op[0];
+  output[index + 1] = op[1];
 }
 
+template <typename IOType>
 void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream) {
-  int threads = n * 8 * 8;  // each thread writes a single element
+                            const IOType* values, int n, cudaStream_t stream) {
+  unsigned threads = n * 8 * 8 / 2;  // each thread writes two elements.
   const int blockSize = 256;
-  int blocks = DivUp(threads, blockSize);
+  unsigned blocks = DivUp(threads, blockSize);
   expandPlanes_kernel_Fp16_NCHW<<<blocks, blockSize, 0, stream>>>(output, masks,
                                                                   values, n);
   ReportCUDAErrors(cudaGetLastError());
@@ -815,7 +809,7 @@ __device__ __forceinline__ float clamp(float val, float low, float high) {
 }
 
 namespace {
-constexpr float kTwiceHalfMax = 131008.0f; // Twice the max finite fp16 value.
+constexpr float kTwiceHalfMax = 131008.0f;  // Twice the max finite fp16 value.
 }  // namespace
 
 // softmax along C dimension which is assumed to be 64
@@ -1261,7 +1255,8 @@ __global__ void preprocess_for_attention_body_kernel(
   if (c >= input_size) {
     // concatenate from position encoding array
     if (is_pe_dense_embedding) {
-      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size + (c - input_size)]);
+      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size +
+                        (c - input_size)]);
     } else {
       op = (T)(encoding[64 * hw + (c - input_size)]);
     }
@@ -1390,6 +1385,20 @@ template void globalAvgPool<float>(int N, int C, float* output,
                                    const float* prevLayerBias, bool nhwc);
 template void globalAvgPool<half>(int N, int C, half* output, const half* input,
                                   const half* prevLayerBias, bool nhwc);
+
+template void expandPlanes_Fp16_NHWC<float>(half* output, const uint64_t* masks,
+                                            const float* values, int n,
+                                            cudaStream_t stream);
+template void expandPlanes_Fp16_NHWC<half>(half* output, const uint64_t* masks,
+                                           const half* values, int n,
+                                           cudaStream_t stream);
+
+template void expandPlanes_Fp16_NCHW<float>(half* output, const uint64_t* masks,
+                                            const float* values, int n,
+                                            cudaStream_t stream);
+template void expandPlanes_Fp16_NCHW<half>(half* output, const uint64_t* masks,
+                                           const half* values, int n,
+                                           cudaStream_t stream);
 
 template void globalScale<float>(int N, int C, float* output,
                                  const float* input, const float* scaleBias,

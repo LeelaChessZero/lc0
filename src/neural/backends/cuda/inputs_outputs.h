@@ -28,6 +28,7 @@
 #pragma once
 
 #include <cassert>
+#include <memory>
 
 #include "cuda_common.h"
 #include "neural/network.h"
@@ -35,7 +36,10 @@
 namespace lczero {
 namespace cudnn_backend {
 
+template <typename NetworkInfo>
 struct CudaGraphCapture;
+
+template <typename NetworkInfo>
 struct CudaGraphExec {
   ~CudaGraphExec() {
     if (graph_exec_ != nullptr) {
@@ -43,7 +47,7 @@ struct CudaGraphExec {
     }
   }
 
-  CudaGraphExec& operator=(const CudaGraphCapture&);
+  CudaGraphExec& operator=(const CudaGraphCapture<NetworkInfo>&);
   explicit operator bool() const { return graph_exec_ != nullptr; }
 
   void Launch(cudaStream_t stream) {
@@ -52,7 +56,10 @@ struct CudaGraphExec {
   cudaGraphExec_t graph_exec_ = nullptr;
 };
 
+template <typename NetworkInfo>
 struct InputsOutputs {
+  using DataType = std::conditional_t<NetworkInfo::fast_cpu_conversion_,
+                                      typename NetworkInfo::DataType, float>;
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
                 bool cublasDisableTensorCores = false) {
@@ -62,26 +69,30 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaMalloc(
         &input_masks_mem_gpu_, maxBatchSize * kInputPlanes * sizeof(uint64_t)));
 
-    ReportCUDAErrors(cudaHostAlloc(&input_val_mem_,
-                                   maxBatchSize * kInputPlanes * sizeof(float),
-                                   cudaHostAllocMapped));
-    ReportCUDAErrors(cudaMalloc(&input_val_mem_gpu_,
-                                maxBatchSize * kInputPlanes * sizeof(float)));
-
     ReportCUDAErrors(cudaHostAlloc(
-        &op_policy_mem_, maxBatchSize * kNumOutputPolicy * sizeof(float), 0));
+        &input_val_mem_, maxBatchSize * kInputPlanes * sizeof(input_val_mem_[0]),
+        cudaHostAllocMapped));
+    ReportCUDAErrors(cudaMalloc(
+        &input_val_mem_gpu_, maxBatchSize * kInputPlanes * sizeof(input_val_mem_gpu_[0])));
+
+    ReportCUDAErrors(
+        cudaHostAlloc(&op_policy_mem_,
+                      maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0]), 0));
 
     // Seperate device memory copy for policy output.
     // It's faster to write to device memory and then copy to host memory
     // than having the kernel write directly to it.
+    ReportCUDAErrors(
+        cudaMalloc(&op_policy_mem_gpu_,
+                   maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
+    ReportCUDAErrors(cudaHostAlloc(
+        &op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(op_value_mem_[0]),
+        cudaHostAllocMapped));
     ReportCUDAErrors(cudaMalloc(
-        &op_policy_mem_gpu_, maxBatchSize * kNumOutputPolicy * sizeof(float)));
-
-    ReportCUDAErrors(cudaHostAlloc(&op_value_mem_,
-                                   maxBatchSize * (wdl ? 3 : 1) * sizeof(float),
-                                   cudaHostAllocMapped));
-    ReportCUDAErrors(cudaMalloc(&op_value_mem_gpu_,
-                                maxBatchSize * (wdl ? 3 : 1) * sizeof(float)));
+        &op_value_mem_gpu_, maxBatchSize * (wdl ? 3 : 1) * sizeof(op_value_mem_gpu_[0])));
+    if (wdl && sizeof(DataType) != sizeof(float)) {
+      wdl_cpu_softmax_ = std::make_unique<float[]>(maxBatchSize * 2);
+    }
     ReportCUDAErrors(
         cudaEventCreateWithFlags(&upload_done_event_, cudaEventDisableTiming));
     ReportCUDAErrors(
@@ -94,10 +105,10 @@ struct InputsOutputs {
                                               cudaEventDisableTiming));
     if (moves_left) {
       ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
-                                     maxBatchSize * sizeof(float),
+                                     maxBatchSize * sizeof(op_moves_left_mem_[0]),
                                      cudaHostAllocMapped));
       ReportCUDAErrors(
-          cudaMalloc(&op_moves_left_mem_gpu_, maxBatchSize * sizeof(float)));
+          cudaMalloc(&op_moves_left_mem_gpu_, maxBatchSize * sizeof(op_moves_left_mem_gpu_[0])));
       ReportCUDAErrors(cudaEventCreateWithFlags(&moves_left_done_event_,
                                                 cudaEventDisableTiming));
     }
@@ -106,8 +117,7 @@ struct InputsOutputs {
         cudaStreamCreateWithFlags(&exec_stream_, cudaStreamNonBlocking));
     ReportCUDAErrors(
         cudaEventCreateWithFlags(&join_capture_event_, cudaEventDisableTiming));
-    cuda_graphs_ =
-        std::make_unique<CudaGraphExec[]>(maxBatchSize);
+    cuda_graphs_ = std::make_unique<CudaGraphExec<NetworkInfo>[]>(maxBatchSize);
 
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
@@ -171,19 +181,19 @@ struct InputsOutputs {
     }
   }
   uint64_t* input_masks_mem_;
-  float* input_val_mem_;
-  float* op_policy_mem_;
-  float* op_value_mem_;
-  float* op_moves_left_mem_ = nullptr;
+  DataType* input_val_mem_;
+  DataType* op_policy_mem_;
+  DataType* op_value_mem_;
+  DataType* op_moves_left_mem_ = nullptr;
 
-  // GPU pointers for the above allocations.
+  // Copies in VRAM.
   uint64_t* input_masks_mem_gpu_;
-  float* input_val_mem_gpu_;
-  float* op_value_mem_gpu_;
-  float* op_moves_left_mem_gpu_;
+  DataType* input_val_mem_gpu_;
+  DataType* op_policy_mem_gpu_;
+  DataType* op_value_mem_gpu_;
+  DataType* op_moves_left_mem_gpu_ = nullptr;
 
-  // This is a seperate copy.
-  float* op_policy_mem_gpu_;
+  std::unique_ptr<float []> wdl_cpu_softmax_;
 
   // memory needed to run the network owned by InputsOutputs when multi_stream
   // is enabled
@@ -208,17 +218,22 @@ struct InputsOutputs {
 
   // cuda graph support
   cudaStream_t exec_stream_ = nullptr;
-  std::unique_ptr<CudaGraphExec[]> cuda_graphs_;
+  std::unique_ptr<CudaGraphExec<NetworkInfo>[]> cuda_graphs_;
   cudaEvent_t join_capture_event_ = nullptr;
 
   // cublas handle used to run the network
   cublasHandle_t cublas_ = nullptr;
 };
 
+template <typename NetworkInfo>
 struct CudaGraphCapture {
   static constexpr int kMinimumFreeMemory = 100 * 1024 * 1024;
 
-  CudaGraphCapture(InputsOutputs& io, cudaStream_t upload_stream, cudaStream_t download_stream) : io_(io), upload_stream_(upload_stream), download_stream_(download_stream) {
+  CudaGraphCapture(InputsOutputs<NetworkInfo>& io, cudaStream_t upload_stream,
+                   cudaStream_t download_stream)
+      : io_(io),
+        upload_stream_(upload_stream),
+        download_stream_(download_stream) {
     ReportCUDAErrors(cudaStreamBeginCapture(upload_stream_,
                                             cudaStreamCaptureModeThreadLocal));
   }
@@ -244,14 +259,16 @@ struct CudaGraphCapture {
     ReportCUDAErrors(cudaStreamEndCapture(upload_stream_, &graph_));
   }
 
-  InputsOutputs& io_;
+  InputsOutputs<NetworkInfo>& io_;
   cudaStream_t upload_stream_;
   cudaStream_t download_stream_;
 
   cudaGraph_t graph_ = nullptr;
 };
 
-inline CudaGraphExec& CudaGraphExec::operator=(const CudaGraphCapture& graph) {
+template <typename NetworkInfo>
+inline CudaGraphExec<NetworkInfo>& CudaGraphExec<NetworkInfo>::operator=(
+    const CudaGraphCapture<NetworkInfo>& graph) {
   assert(graph_exec_ == nullptr);
   if (graph.graph_ == nullptr) {
     throw Exception("Trying to instantiate an nullptr cuda graph");
