@@ -27,6 +27,7 @@
 
 #include "cuda_common.h"
 #include "neural/tables/activation_function.h"
+#include "utils/exception.h"
 
 // Allow building on an old architecture.
 #if __CUDA_ARCH__ < 530
