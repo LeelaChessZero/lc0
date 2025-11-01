@@ -1902,7 +1902,8 @@ void AttentionPolicyHead<DataType>::Eval(
   DataType* buffer2 = input2_tensor + scratch_size / (2 * sizeof(DataType));
 
   int inputC = this->input_->GetC();
-  if (!attention_body_)
+  bool input_nhwc = attention_body_ || this->input_->isNHWC();
+  if (!input_nhwc)
     convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8);
 
   // 1. Policy embedding (fully connected layer)
@@ -1915,7 +1916,7 @@ void AttentionPolicyHead<DataType>::Eval(
     cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                           num_inputs, 1.0f, (const DataType*)ip_pol_w_,
                           num_inputs,
-                          attention_body_ ? input : (DataType*)scratch,
+                          input_nhwc ? input : (DataType*)scratch,
                           num_inputs, 0.0f, pol_embedding, num_outputs);
     addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
                    num_outputs, act_, stream);
