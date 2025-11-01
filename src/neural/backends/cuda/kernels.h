@@ -78,7 +78,7 @@ void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream);
 template <typename T>
 void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
                int H, int W, float* means, float* var_multipliers,
-               ActivationFunction activation);
+               ActivationFunction activation, cudaStream_t stream);
 
 // Unpack planes (input to network).
 void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
@@ -95,20 +95,20 @@ void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
 // Perform global avg pool.
 template <typename T>
 void globalAvgPool(int N, int C, T* output, const T* input,
-                   const T* prevLayerBias, bool nhwc);
+                   const T* prevLayerBias, bool nhwc, cudaStream_t steam);
 
 // Perform global scale.
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                  const T* prevLayerBias, bool nhwc,
-                 ActivationFunction activation);
+                 ActivationFunction activation, cudaStream_t steam);
 
 // Perform Squeeze-and-Excitation (SE) in a single fused kernel.
 // Returns false if the fused kernel can't handle the sizes.
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
                   const half* w2, const half* b2, const half* bPrev,
-                  ActivationFunction activation);
+                  ActivationFunction activation, cudaStream_t stream);
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
@@ -117,7 +117,8 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
 
 // Custom winograd helper functions
 template <typename T>
-void FilterTransform(int N, int C, T* transformedFilter, const T* filter);
+void FilterTransform(int N, int C, T* transformedFilter, const T* filter,
+                     cudaStream_t stream);
 
 template <typename T, bool nhcw>
 void InputTransform(int N, int C, T* transformedInput, const T* input,

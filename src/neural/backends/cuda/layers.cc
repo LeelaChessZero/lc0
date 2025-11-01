@@ -495,7 +495,7 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
 
   // 1. Global avg pooling (also adds previous layer bias before computing
   // averages).
-  globalAvgPool(N, C, op2, input, bPrev_, false);
+  globalAvgPool(N, C, op2, input, bPrev_, false, stream);
 
   // 2. First fully connected layer.
   float alpha = 1.0f, beta = 0.0f;
@@ -514,7 +514,7 @@ void SELayer<float>::Eval(int N, float* output, const float* input,
 
   // 4. (Optional prev layer bias add), Global scale, residual add, relu and
   // bias.
-  globalScale(N, C, output, input, op2, bPrev_, false, act_);
+  globalScale(N, C, output, input, op2, bPrev_, false, act_, stream);
 }
 
 template <>
@@ -525,7 +525,7 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
   bool se_done = false;
   if (kUseFusedSELayer && nhwc_) {
     se_done = Se_Fp16_NHWC(N, C, numFc1Out_, output, input2, input, w1_t_, b1_,
-                           w2_t_, b2_, bPrev_, act_);
+                           w2_t_, b2_, bPrev_, act_, stream);
   }
   if (!se_done) {
     assert(output == input2);
@@ -535,7 +535,7 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
 
     // 1. Global avg pooling (also adds previous layer bias before computing
     // averages).
-    globalAvgPool(N, C, op2, input, bPrev_, nhwc_);
+    globalAvgPool(N, C, op2, input, bPrev_, nhwc_, stream);
 
     // 2. First fully connected layer.
     __half_raw one_h{0x3C00};
@@ -557,7 +557,7 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
 
     // 4. (Optional prev layer bias add), Global scale, residual add, relu and
     // bias.
-    globalScale(N, C, output, input, op2, bPrev_, nhwc_, act_);
+    globalScale(N, C, output, input, op2, bPrev_, nhwc_, act_, stream);
   }
 }
 
@@ -851,7 +851,7 @@ void FusedWinogradConvSELayer<DataType>::LoadWeights(float* pfilter,
   }
 
   // run winograd transform kernel for the filter
-  FilterTransform(C, c_input_, transformed_weights_, weights);
+  FilterTransform(C, c_input_, transformed_weights_, weights, 0);
 }
 
 // TODO: Do this on the GPU to improve network load time!
@@ -1200,7 +1200,7 @@ void ResidualBlock<DataType>::LoadWeights0(float* pfilter, float* pBias,
   }
 
   // run winograd transform kernel for the filter
-  FilterTransform(C, c_input_, transformed_weights0_, weights);
+  FilterTransform(C, c_input_, transformed_weights0_, weights, 0);
 }
 
 template <typename DataType>
@@ -1226,7 +1226,7 @@ void ResidualBlock<DataType>::LoadWeights1(float* pfilter, float* pBias,
   }
 
   // run winograd transform kernel for the filter
-  FilterTransform(C, C, transformed_weights1_, weights);
+  FilterTransform(C, C, transformed_weights1_, weights, 0);
 }
 
 template <typename DataType>
