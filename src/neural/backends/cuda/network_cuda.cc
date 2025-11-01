@@ -171,12 +171,13 @@ class CudaNetworkComputation : public NetworkComputation {
   }
 
   float GetPVal(int sample, int move_id) const override {
-    return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
+    return FromType(
+        inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id]);
   }
 
   float GetMVal(int sample) const override {
     if (moves_left_) {
-      return inputs_outputs_->op_moves_left_mem_[sample];
+      return FromType(inputs_outputs_->op_moves_left_mem_[sample]);
     }
     return 0.0f;
   }
