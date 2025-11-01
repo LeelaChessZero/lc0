@@ -18,6 +18,8 @@ project('lc0', 'cpp',
         default_options : ['cpp_std=c++20', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.57')
 
+fs = import('fs')
+
 cc = meson.get_compiler('cpp')
 
 if cc.get_id() == 'clang'
@@ -450,10 +452,16 @@ if get_option('build_backends')
   ## cuDNN
   ## ~~~~~
   cudnn_libdirs = get_option('cudnn_libdirs')
+  nvcc_paths = []
+  foreach p : cudnn_libdirs
+    nvcc_paths += fs.parent(p) + '/bin/nvcc'
+  endforeach
+  nvcc_paths += ['nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc']
+  message('Looking for nvcc in: ' + ', '.join(nvcc_paths))
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
+  nvcc = find_program(nvcc_paths,
                       required: false)
 
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
@@ -489,6 +497,9 @@ if get_option('build_backends')
       endif
     else
       cuda_arguments += ['--std=c++17', '-Xcompiler', '-fPIC']
+      if get_option('debug')
+        cuda_arguments += ['-g']
+      endif
     endif
     if get_option('nvcc_ccbin') != ''
       cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
