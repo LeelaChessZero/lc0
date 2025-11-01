@@ -776,6 +776,10 @@ class CudnnNetwork : public Network {
     auto* opVal = io->op_value_mem_gpu_;
     auto* opMov = io->op_moves_left_mem_gpu_;
 
+    using opPolType = std::remove_reference_t<decltype(opPol[0])>;
+    using opValType = std::remove_reference_t<decltype(opVal[0])>;
+    using opMovType = std::remove_reference_t<decltype(opMov[0])>;
+
     int l = 0;
     // Input.
     network_[l++]->Eval(
@@ -828,11 +832,11 @@ class CudnnNetwork : public Network {
           scratch_mem_, scratch_size_, nullptr, cublas_, compute_stream,
           &head_offset_pointers_);  // Entire Attention policy head except for
                                     // the policy map
-      if (!std::is_same_v<decltype(opPol[0]), DataType>) {
+      if (!std::is_same_v<opPolType, DataType>) {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, nullptr, cublas_,
                             compute_stream);  // policy map layer
-        copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
+        copyTypeConverted(opPol, (DataType*)(tensor_mem_[1]),
                           batchSize * kNumOutputPolicy,
                           compute_stream);  // POLICY output
       } else {
@@ -851,7 +855,7 @@ class CudnnNetwork : public Network {
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
                           compute_stream);  // policy conv2
 
-      if (!std::is_same_v<decltype(opPol[0]), DataType>) {
+      if (!std::is_same_v<opPolType, DataType>) {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_, cublas_,
                             compute_stream);  // policy map layer
@@ -869,7 +873,7 @@ class CudnnNetwork : public Network {
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
                           compute_stream);  // pol conv
 
-      if (!std::is_same_v<decltype(opPol[0]), DataType>) {
+      if (!std::is_same_v<opPolType, DataType>) {
         network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                             scratch_mem_, scratch_size_, cudnn_, cublas_,
                             compute_stream);  // pol FC
@@ -903,7 +907,7 @@ class CudnnNetwork : public Network {
                         scratch_mem_, scratch_size_, cudnn_, cublas_,
                         compute_stream);  // value FC1
 
-    if (!std::is_same_v<decltype(opVal[0]), DataType>) {
+    if (!std::is_same_v<opValType, DataType>) {
       // TODO: consider fusing the bias-add of FC2 with format conversion.
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
@@ -936,7 +940,7 @@ class CudnnNetwork : public Network {
                           compute_stream);  // moves FC1
 
       // Moves left FC2
-      if (!std::is_same_v<decltype(opMov[0]), DataType>) {
+      if (!std::is_same_v<opMovType, DataType>) {
         // TODO: consider fusing the bias-add of FC2 with format conversion.
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_, cublas_,
