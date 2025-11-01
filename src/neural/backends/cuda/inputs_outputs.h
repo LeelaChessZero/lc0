@@ -69,27 +69,30 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaMalloc(
         &input_masks_mem_gpu_, maxBatchSize * kInputPlanes * sizeof(uint64_t)));
 
-    ReportCUDAErrors(cudaHostAlloc(
-        &input_val_mem_, maxBatchSize * kInputPlanes * sizeof(input_val_mem_[0]),
-        cudaHostAllocMapped));
-    ReportCUDAErrors(cudaMalloc(
-        &input_val_mem_gpu_, maxBatchSize * kInputPlanes * sizeof(input_val_mem_gpu_[0])));
-
     ReportCUDAErrors(
-        cudaHostAlloc(&op_policy_mem_,
-                      maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0]), 0));
+        cudaHostAlloc(&input_val_mem_,
+                      maxBatchSize * kInputPlanes * sizeof(input_val_mem_[0]),
+                      cudaHostAllocMapped));
+    ReportCUDAErrors(cudaMalloc(
+        &input_val_mem_gpu_,
+        maxBatchSize * kInputPlanes * sizeof(input_val_mem_gpu_[0])));
+
+    ReportCUDAErrors(cudaHostAlloc(
+        &op_policy_mem_,
+        maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0]), 0));
 
     // Seperate device memory copy for policy output.
     // It's faster to write to device memory and then copy to host memory
     // than having the kernel write directly to it.
-    ReportCUDAErrors(
-        cudaMalloc(&op_policy_mem_gpu_,
-                   maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
+    ReportCUDAErrors(cudaMalloc(
+        &op_policy_mem_gpu_,
+        maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
     ReportCUDAErrors(cudaHostAlloc(
         &op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(op_value_mem_[0]),
         cudaHostAllocMapped));
     ReportCUDAErrors(cudaMalloc(
-        &op_value_mem_gpu_, maxBatchSize * (wdl ? 3 : 1) * sizeof(op_value_mem_gpu_[0])));
+        &op_value_mem_gpu_,
+        maxBatchSize * (wdl ? 3 : 1) * sizeof(op_value_mem_gpu_[0])));
     if (wdl && sizeof(DataType) != sizeof(float)) {
       wdl_cpu_softmax_ = std::make_unique<float[]>(maxBatchSize * 2);
     }
@@ -104,11 +107,12 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaEventCreateWithFlags(&download_done_event_,
                                               cudaEventDisableTiming));
     if (moves_left) {
-      ReportCUDAErrors(cudaHostAlloc(&op_moves_left_mem_,
-                                     maxBatchSize * sizeof(op_moves_left_mem_[0]),
-                                     cudaHostAllocMapped));
+      ReportCUDAErrors(cudaHostAlloc(
+          &op_moves_left_mem_, maxBatchSize * sizeof(op_moves_left_mem_[0]),
+          cudaHostAllocMapped));
       ReportCUDAErrors(
-          cudaMalloc(&op_moves_left_mem_gpu_, maxBatchSize * sizeof(op_moves_left_mem_gpu_[0])));
+          cudaMalloc(&op_moves_left_mem_gpu_,
+                     maxBatchSize * sizeof(op_moves_left_mem_gpu_[0])));
       ReportCUDAErrors(cudaEventCreateWithFlags(&moves_left_done_event_,
                                                 cudaEventDisableTiming));
     }
@@ -193,7 +197,7 @@ struct InputsOutputs {
   DataType* op_value_mem_gpu_;
   DataType* op_moves_left_mem_gpu_ = nullptr;
 
-  std::unique_ptr<float []> wdl_cpu_softmax_;
+  std::unique_ptr<float[]> wdl_cpu_softmax_;
 
   // memory needed to run the network owned by InputsOutputs when multi_stream
   // is enabled
