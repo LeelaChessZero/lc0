@@ -66,6 +66,8 @@ struct ThinkingInfo {
   int64_t nodes = -1;
   // Nodes per second.
   int nps = -1;
+  // Evaluations per second.
+  int eps = -1;
   // Hash fullness * 1000
   int hashfull = -1;
   // Moves to mate.

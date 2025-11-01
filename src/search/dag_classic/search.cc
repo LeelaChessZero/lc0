@@ -329,6 +329,7 @@ void Search::SendUciInfo(const classic::IterationStats& stats)
     const auto time_since_first_batch_ms = stats.time_since_first_batch;
     if (time_since_first_batch_ms > 0) {
       common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
+      common_info.eps = network_evaluations_ * 1000 / time_since_first_batch_ms;
     }
   }
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
@@ -2369,6 +2370,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     nm = pm;
   }
   search_->total_playouts_ += node_to_process.multivisit;
+  if (node_to_process.nn_queried && !node_to_process.is_cache_hit) {
+    search_->network_evaluations_++;
+  }
   search_->cum_depth_ +=
       node_to_process.path.size() * node_to_process.multivisit;
   search_->max_depth_ =
