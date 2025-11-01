@@ -2454,6 +2454,7 @@ void CudnnError(cudnnStatus_t status, const char* file, const int& line) {
     char message[128];
     sprintf(message, "CUDNN error: %s (%s:%d) ", cudnnGetErrorString(status),
             file, line);
+    CERR << message;
     throw Exception(message);
   }
 }
@@ -2490,6 +2491,7 @@ void CublasError(cublasStatus_t status, const char* file, const int& line) {
     char message[128];
     sprintf(message, "CUBLAS error: %s (%s:%d) ", CublasGetErrorString(status),
             file, line);
+    CERR << message;
     throw Exception(message);
   }
 }
@@ -2499,6 +2501,7 @@ void CudaError(cudaError_t status, const char* file, const int& line) {
     char message[128];
     sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
             file, line);
+    CERR << message;
     throw Exception(message);
   }
 }
