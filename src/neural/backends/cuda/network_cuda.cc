@@ -42,6 +42,14 @@
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 
+#if CUDART_VERSION >= 11010
+#define CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS 1
+#else
+#define CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS 0
+#undef cudaEventWaitExternal
+#undef cudaEventRecordExternal
+#endif
+
 namespace lczero {
 using namespace cudnn_backend;
 
@@ -644,14 +652,56 @@ class CudaNetwork : public Network {
 
   CudaGraphCapture<NetworkInfo> BeginCapture(InputsOutputs<NetworkInfo>& io) {
     if (!multi_stream_) {
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
       return {io, upload_stream_, download_stream_};
+#else
+      return {io, compute_stream_, download_stream_};
+#endif
     } else {
       return {io, io.upload_stream_, io.download_stream_};
     }
   }
 
+  void UploadInputs(InputsOutputs<NetworkInfo>* io, int batchSize) {
+    // Multu-stream can capture uploads without external events.
+    if (multi_stream_) return;
+    ReportCUDAErrors(
+        cudaMemcpyAsync(io->input_masks_mem_gpu_, io->input_masks_mem_,
+                        batchSize * kInputPlanes * sizeof(uint64_t),
+                        cudaMemcpyHostToDevice, upload_stream_));
+    ReportCUDAErrors(cudaMemcpyAsync(
+        io->input_val_mem_gpu_, io->input_val_mem_,
+        batchSize * kInputPlanes * sizeof(io->input_val_mem_[0]),
+        cudaMemcpyHostToDevice, upload_stream_));
+    ReportCUDAErrors(cudaEventRecord(io->upload_done_event_, upload_stream_));
+    ReportCUDAErrors(
+        cudaStreamWaitEvent(compute_stream_, io->upload_done_event_, 0));
+  }
+
+  void GraphLaunch(InputsOutputs<NetworkInfo>* io, int batchSize) {
+#if !CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
+    if (!multi_stream_) {
+      UploadInputs(io, batchSize);
+
+      // Make sure graph has completed upload before launching it.
+      ReportCUDAErrors(cudaStreamSynchronize(io->exec_stream_));
+
+      io->cuda_graphs_[batchSize - 1].Launch(compute_stream_);
+      ReportCUDAErrors(
+          cudaEventRecord(io->download_done_event_, compute_stream_));
+    } else
+#endif
+    {
+      io->cuda_graphs_[batchSize - 1].Launch(io->exec_stream_);
+#if !CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
+      ReportCUDAErrors(
+          cudaEventRecord(io->download_done_event_, io->exec_stream_));
+#endif
+    }
+  }
+
   void forwardEval(InputsOutputs<NetworkInfo>* io, int batchSize,
-                   bool capture = false) {
+                   [[maybe_unused]] bool capture = false) {
     // It is safe to evaluate larger than the batchSize
     // as all buffers are designed to handle max_batch_size
     // and the extra invalid results are never read.
@@ -693,22 +743,26 @@ class CudaNetwork : public Network {
       cublas = cublas_;
     }
 
-    ReportCUDAErrors(
-        cudaMemcpyAsync(io->input_masks_mem_gpu_, io->input_masks_mem_,
-                        batchSize * kInputPlanes * sizeof(uint64_t),
-                        cudaMemcpyHostToDevice, upload_stream));
-    ReportCUDAErrors(cudaMemcpyAsync(
-        io->input_val_mem_gpu_, io->input_val_mem_,
-        batchSize * kInputPlanes * sizeof(io->input_val_mem_[0]),
-        cudaMemcpyHostToDevice, upload_stream));
-    ReportCUDAErrors(cudaEventRecord(io->upload_done_event_, upload_stream));
-    ReportCUDAErrors(
-        cudaStreamWaitEvent(compute_stream, io->upload_done_event_, 0));
+    if (multi_stream_ || CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS) {
+      ReportCUDAErrors(
+          cudaMemcpyAsync(io->input_masks_mem_gpu_, io->input_masks_mem_,
+                          batchSize * kInputPlanes * sizeof(uint64_t),
+                          cudaMemcpyHostToDevice, upload_stream));
+      ReportCUDAErrors(cudaMemcpyAsync(
+          io->input_val_mem_gpu_, io->input_val_mem_,
+          batchSize * kInputPlanes * sizeof(io->input_val_mem_[0]),
+          cudaMemcpyHostToDevice, upload_stream));
+      ReportCUDAErrors(cudaEventRecord(io->upload_done_event_, upload_stream));
+      ReportCUDAErrors(
+          cudaStreamWaitEvent(compute_stream, io->upload_done_event_, 0));
+    }
 
     if (!multi_stream_) {
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
       ReportCUDAErrors(
           cudaStreamWaitEvent(compute_stream, compute_ordering_event_,
                               capture ? cudaEventWaitExternal : 0));
+#endif
     }
 
     constexpr bool fp16 = std::is_same<half, DataType>::value;
@@ -907,9 +961,11 @@ class CudaNetwork : public Network {
                           compute_stream);  // value head
     }
     if (!moves_left_ && !multi_stream_) {
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
       ReportCUDAErrors(
           cudaEventRecordWithFlags(compute_ordering_event_, compute_stream,
                                    capture ? cudaEventRecordExternal : 0));
+#endif
     }
     ReportCUDAErrors(cudaEventRecord(io->value_done_event_, compute_stream));
     ReportCUDAErrors(
@@ -920,9 +976,11 @@ class CudaNetwork : public Network {
         cudaMemcpyDeviceToHost, download_stream));
 
     if (wdl_) {
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
       ReportCUDAErrors(cudaEventRecordWithFlags(
           io->wdl_download_done_event_, download_stream,
           capture ? cudaEventRecordExternal : 0));
+#endif
     }
 
     if (moves_left_) {
@@ -948,9 +1006,11 @@ class CudaNetwork : public Network {
                             compute_stream);
       }
       if (!multi_stream_) {
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
         ReportCUDAErrors(
             cudaEventRecordWithFlags(compute_ordering_event_, compute_stream,
                                      capture ? cudaEventRecordExternal : 0));
+#endif
       }
       ReportCUDAErrors(
           cudaEventRecord(io->moves_left_done_event_, compute_stream));
@@ -961,15 +1021,26 @@ class CudaNetwork : public Network {
                           sizeof(io->op_moves_left_mem_[0]) * batchSize,
                           cudaMemcpyDeviceToHost, download_stream));
     }
-
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
     ReportCUDAErrors(
         cudaEventRecordWithFlags(io->download_done_event_, download_stream,
                                  capture ? cudaEventRecordExternal : 0));
+#else
+    if (!capture) {
+      ReportCUDAErrors(
+          cudaEventRecord(io->download_done_event_, download_stream));
+    }
+#endif
   }
 
   void finishEval(InputsOutputs<NetworkInfo>* io, int batchSize) {
+#if !CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
+    ReportCUDAErrors(cudaEventSynchronize(io->download_done_event_));
+#endif
     if (wdl_) {
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
       ReportCUDAErrors(cudaEventSynchronize(io->wdl_download_done_event_));
+#endif
       // Value softmax done cpu side.
       for (int i = 0; i < batchSize; i++) {
         float* wdl = sizeof(io->op_value_mem_[0]) == sizeof(float)
@@ -990,7 +1061,9 @@ class CudaNetwork : public Network {
         wdl[2 * i + 1] = d;
       }
     }
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
     ReportCUDAErrors(cudaEventSynchronize(io->download_done_event_));
+#endif
   }
 
   ~CudaNetwork() {
@@ -1214,10 +1287,12 @@ void CudaNetworkComputation<NetworkInfo>::ComputeBlocking() {
   assert(GetBatchSize() >= 1);
   if (inputs_outputs_->cuda_graphs_[GetBatchSize() - 1]) {
     std::unique_lock<std::mutex> lock = network_->LockEval();
-    inputs_outputs_->cuda_graphs_[GetBatchSize() - 1].Launch(
-        inputs_outputs_->exec_stream_);
+    network_->GraphLaunch(inputs_outputs_.get(), GetBatchSize());
   } else {
     std::unique_lock<std::mutex> lock = network_->LockEval();
+#if !CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
+    network_->UploadInputs(inputs_outputs_.get(), GetBatchSize());
+#endif
     network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
     CaptureGraph(std::move(lock));
   }
