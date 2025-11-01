@@ -143,10 +143,8 @@ class OnnxComputation final : public NetworkComputation {
   Ort::IoBinding PrepareInputs(int start, int batch_size, int step);
 
   OnnxNetwork* network_;
-  std::vector<InputPlanes> raw_input_;
-#ifdef USE_ONNX_CUDART
   size_t input_size_ = 0;
-#endif
+  std::vector<InputPlanes> raw_input_;
   std::unique_ptr<InputsOutputs> inputs_outputs_;
 };
 
@@ -346,6 +344,10 @@ void AsDataType(float x, Ort::BFloat16_t* y) {
 
 template <typename DataType>
 void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
+  if (input_size_ >= network_->max_batch_size_) {
+    throw Exception("NN input exceeds max batch size of " +
+                    std::to_string(network_->max_batch_size_) + ".");
+  }
 #ifdef USE_ONNX_CUDART
   if (network_->provider_ == OnnxProvider::CUDA ||
       network_->provider_ == OnnxProvider::TRT) {
@@ -372,21 +374,12 @@ void OnnxComputation<DataType>::AddInput(InputPlanes&& input) {
     return;
   }
 #endif
-  raw_input_.emplace_back(input);
-  if (raw_input_.size() > network_->max_batch_size_) {
-    throw Exception("NN input exceeds max batch size of " +
-                    std::to_string(network_->max_batch_size_) + ".");
-  }
+  raw_input_.emplace_back(std::move(input));
+  input_size_++;
 }
 template <typename DataType>
 int OnnxComputation<DataType>::GetBatchSize() const {
-#ifdef USE_ONNX_CUDART
-  if (network_->provider_ == OnnxProvider::CUDA ||
-      network_->provider_ == OnnxProvider::TRT) {
-    return input_size_;
-  }
-#endif
-  return raw_input_.size();
+  return input_size_;
 }
 
 float AsFloat(float x) { return x; }
@@ -447,7 +440,7 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
         static_cast<DataType*>(inputs_outputs_->input_tensor_data_);
     iter += start * kInputPlanes * 8 * 8;
     std::memset(iter, 0, batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
-    int end = std::min(start + batch_size, static_cast<int>(raw_input_.size()));
+    int end = std::min(start + batch_size, static_cast<int>(input_size_));
     for (int i = start; i < end; i++) {
       for (const auto& plane : raw_input_[i]) {
         DataType value;
@@ -490,14 +483,14 @@ void OnnxComputation<DataType>::ComputeBlocking() {
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
     batch_size =
-        std::max(static_cast<int>(GetBatchSize()), network_->min_batch_size_);
+        std::max(static_cast<int>(input_size_), network_->min_batch_size_);
   }
-  for (size_t i = 0; i < (size_t)GetBatchSize();) {
-    int step = (GetBatchSize() - i + batch_size - 1) / batch_size;
+  for (size_t i = 0; i < (size_t)input_size_;) {
+    int step = (input_size_ - i + batch_size - 1) / batch_size;
     if (step > network_->steps_) step = network_->steps_;
     int batch = batch_size * step;
     if (network_->provider_ == OnnxProvider::TRT && network_->batch_size_ > 0) {
-      batch = std::min(GetBatchSize() - (int)i, batch);
+      batch = std::min((int)input_size_ - (int)i, batch);
     }
 
     auto binding = PrepareInputs(i, batch, step);
@@ -621,7 +614,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
   if (network_->wdl_head_ != -1) {
     const DataType* data = static_cast<DataType*>(
         inputs_outputs_->output_tensors_data_[network_->wdl_head_]);
-    for (size_t i = 0; i < (size_t)GetBatchSize(); i++) {
+    for (size_t i = 0; i < input_size_; i++) {
       float w = AsFloat(data[i * 3 + 0]);
       float d = AsFloat(data[i * 3 + 1]);
       float l = AsFloat(data[i * 3 + 2]);
