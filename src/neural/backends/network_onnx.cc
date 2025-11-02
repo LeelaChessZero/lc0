@@ -56,7 +56,7 @@
 namespace lczero {
 namespace {
 
-enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT, COREML };
 
 class OnnxNetwork;
 
@@ -347,6 +347,14 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
       throw Exception("ONNX backend internal error.");
 #endif
       break;
+    case OnnxProvider::COREML: {
+      std::unordered_map<std::string, std::string> provider_options;
+      provider_options["ModelFormat"] = "MLProgram";
+      provider_options["ProfileComputePlan"] = "1";
+      provider_options["AllowLowPrecisionAccumulationOnGPU"] = "1";
+      options.AppendExecutionProvider("CoreML", provider_options);
+      break;
+    }
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
@@ -432,7 +440,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int gpu, int threads,
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
                          OnnxProvider provider, bool cpu_wdl)
-    : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
+    : onnx_env_(ORT_LOGGING_LEVEL_VERBOSE, "lc0"),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
@@ -441,10 +449,18 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       cpu_wdl_(cpu_wdl),
       provider_(provider) {
   onnx_env_.DisableTelemetryEvents();
-  batch_size_ =
-      opts.GetOrDefault<int>("batch", provider == OnnxProvider::DML ? 16 : -1);
-  steps_ =
-      opts.GetOrDefault<int>("steps", provider == OnnxProvider::DML ? 4 : 1);
+  switch (provider) {
+    case OnnxProvider::DML:
+    case OnnxProvider::COREML:
+      batch_size_ = 16;
+      steps_ = 4;
+      break;
+    default:
+      batch_size_ = -1;
+      steps_ = 1;
+  }
+  batch_size_ = opts.GetOrDefault<int>("batch", batch_size_);
+  steps_ = opts.GetOrDefault<int>("steps", steps_);
   min_batch_size_ = opts.GetOrDefault<int>(
       "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
   int gpu = opts.GetOrDefault<int>("gpu", 0);
@@ -521,6 +537,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
     converter_options.no_wdl_softmax = true;
+    converter_options.alt_selu =
+        kProvider == OnnxProvider::COREML ? true : false;
 
     std::string datatype;
     if (opts.Exists<std::string>("datatype")) {
@@ -544,6 +562,7 @@ REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
+REGISTER_NETWORK("onnx-coreml", MakeOnnxNetwork<OnnxProvider::COREML>, 59)
 REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
