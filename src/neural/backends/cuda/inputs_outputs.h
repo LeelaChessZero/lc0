@@ -279,7 +279,9 @@ inline CudaGraphExec<NetworkInfo>& CudaGraphExec<NetworkInfo>::operator=(
   }
   ReportCUDAErrors(
       cudaGraphInstantiate(&graph_exec_, graph.graph_, nullptr, nullptr, 0));
+#if CUDART_VERSION >= 11010
   ReportCUDAErrors(cudaGraphUpload(graph_exec_, graph.io_.exec_stream_));
+#endif
   return *this;
 }
 
