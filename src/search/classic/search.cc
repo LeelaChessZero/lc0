@@ -1389,6 +1389,7 @@ void SearchWorker::GatherMinibatch() {
       }
     }
     if (some_ooo) {
+      LCTRACE_FUNCTION_SCOPE;
       SharedMutex::Lock lock(search_->nodes_mutex_);
       for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start;
            i--) {
@@ -1413,6 +1414,7 @@ void SearchWorker::GatherMinibatch() {
       }
     }
 
+    LCTRACE_FUNCTION_SCOPE;
     // Check for stop at the end so we have at least one node.
     for (size_t i = new_start; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
@@ -1441,6 +1443,7 @@ void SearchWorker::GatherMinibatch() {
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
                                      TaskWorkspace* workspace) {
+  LCTRACE_FUNCTION_SCOPE;
   auto& history = workspace->history;
   history = search_->played_history_;
 
