@@ -759,11 +759,24 @@ endif
     deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
   endif
 
+  trace_lib = get_option('trace_library')
+  trace_config = configuration_data()
+
+  common_files += 'src/utils/trace.cc'
+  ## ~~~~~~~~
+  ## perfetto
+  ## ~~~~~~~~
+  if trace_lib == 'perfetto'
+    perfetto_dep = dependency('perfetto', required: true,
+                             fallback: ['perfetto', 'dep_perfetto'])
+    deps += perfetto_dep
+    trace_config.set('USE_PERFETTO_TRACE', 1)
+  endif
+
   ## ~~~~
   ## nvtx
   ## ~~~~
-  trace_config = configuration_data()
-  if get_option('nvtx')
+  if trace_lib == 'nvtx'
     nvtx_includes = get_option('cudnn_include')
     nvtx_header_found = false
     foreach d : nvtx_includes

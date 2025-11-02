@@ -25,48 +25,6 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#pragma once
+#include "trace.h"
 
-#include "trace_config.h"
-
-#if USE_PERFETTO_TRACE
-#include <perfetto.h>
-
-PERFETTO_DEFINE_CATEGORIES(
-    perfetto::Category("lc0").SetDescription("Leela Chess Zero"));
-#endif
-
-#if USE_NVTX_TRACE
-#include <nvtx3/nvtx3.hpp>
-#endif
-
-namespace lczero {
-#if USE_PERFETTO_TRACE
-#define LCTRACE_DECLARE_CATEGORIES PERFETTO_TRACK_EVENT_STATIC_STORAGE();
-
-#define LCTRACE_INITIALIZE                     \
-  do {                                         \
-    perfetto::TracingInitArgs args;            \
-    args.backends |= perfetto::kSystemBackend; \
-    perfetto::Tracing::Initialize(args);       \
-    perfetto::TrackEvent::Register();          \
-  } while (false)
-
-#define LCTRACE_FUNCTION_SCOPE \
-  const auto& name = __func__; \
-  TRACE_EVENT("lc0", name)
-
-#elif USE_NVTX_TRACE
-#define LCTRACE_DEFINE_CATEGORIES /* nop */
-#define LCTRACE_INITIALIZE        /* nop */
-struct lc0_domain {
-  static constexpr char name[] = "lc0";
-};
-#define LCTRACE_FUNCTION_SCOPE NVTX3_FUNC_RANGE_IN(lc0_domain)
-#else
-
-#define LCTRACE_DEFINE_CATEGORIES
-#define LCTRACE_INITIALIZE
-#define LCTRACE_FUNCTION_SCOPE
-#endif
-}  // namespace lczero
+LCTRACE_DECLARE_CATEGORIES;
