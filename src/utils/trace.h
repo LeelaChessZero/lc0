@@ -57,15 +57,15 @@ namespace lczero {
   TRACE_EVENT("lc0", name)
 
 #elif USE_NVTX_TRACE
-#define LCTRACE_DEFINE_CATEGORIES /* nop */
-#define LCTRACE_INITIALIZE        /* nop */
+#define LCTRACE_DECLARE_CATEGORIES /* nop */
+#define LCTRACE_INITIALIZE         /* nop */
 struct lc0_domain {
   static constexpr char name[] = "lc0";
 };
 #define LCTRACE_FUNCTION_SCOPE NVTX3_FUNC_RANGE_IN(lc0_domain)
 #else
 
-#define LCTRACE_DEFINE_CATEGORIES
+#define LCTRACE_DECLARE_CATEGORIES
 #define LCTRACE_INITIALIZE
 #define LCTRACE_FUNCTION_SCOPE
 #endif
