@@ -683,9 +683,6 @@ class CudaNetwork : public Network {
     if (!multi_stream_) {
       UploadInputs(io, batchSize);
 
-      // Make sure graph has completed upload before launching it.
-      ReportCUDAErrors(cudaStreamSynchronize(io->exec_stream_));
-
       io->cuda_graphs_[batchSize - 1].Launch(compute_stream_);
       ReportCUDAErrors(
           cudaEventRecord(io->download_done_event_, compute_stream_));
