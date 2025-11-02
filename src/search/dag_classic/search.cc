@@ -1755,11 +1755,15 @@ void SearchWorker::RunBlocking() {
 #endif
   }
   try {
+    // Start task workers early. This leaves scheduler a little extra time if it
+    // needs to wake up a new CPU core.
+    search_->state_.task_queue_.ActivateTasks();
     // A very early stop may arrive before this point, so the test is at the
     // end to ensure at least one iteration runs before exiting.
     do {
       ExecuteOneIteration();
     } while (search_->IsSearchActive());
+    search_->state_.task_queue_.DeactivateTasks();
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception in worker thread: " << e.what()
               << std::endl;
@@ -1946,8 +1950,6 @@ void SearchWorker::GatherMinibatch() {
   collisions_left_.store(collisions_left, std::memory_order_relaxed);
   // Number of nodes processed out of order.
   number_out_of_order_ = 0;
-
-  search_->state_.task_queue_.ActivateTasks();
 
   absl::Cleanup record_batch_start_time = [&] {
     if (minibatch_size) search_->RecordNPSStartTime();
@@ -2747,6 +2749,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
+  // Start task workers early. This leaves scheduler a little extra time if it
+  // needs to wake up a new CPU core.
+  search_->state_.task_queue_.ActivateTasks();
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
   auto& tc = search_->thread_count_;
