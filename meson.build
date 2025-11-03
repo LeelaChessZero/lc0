@@ -603,6 +603,21 @@ if get_option('build_backends')
                                       is_system: true)
     endif
     files += 'src/neural/backends/network_onnx.cc'
+    if get_option('openvino')
+       add_project_arguments('-DUSE_OPENCL', language : 'cpp')
+       # Add OpenCL dependency for OpenVINO GPU plugin
+       opencl_libdirs = get_option('opencl_libdirs')
+       opencl_lib = cc.find_library('OpenCL', dirs: opencl_libdirs, required: false)
+       opencl_framework=dependency('OpenCL', method: 'extraframework', required: false)
+       if opencl_framework.found()
+          deps += [ opencl_framework ]
+       elif opencl_lib.found() and cc.has_header('CL/opencl.h', args: '-I' + get_option('opencl_include'))
+          deps += [ opencl_lib ]
+          includes += include_directories(get_option('opencl_include'))
+       else
+          warning('OpenVINO-EP needs OpenCL headers for IO binding.')
+       endif
+    endif
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
       add_project_arguments('-DUSE_ROCM', language : 'cpp')

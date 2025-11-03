@@ -224,6 +224,11 @@ option('hip_include',
        value: ['/opt/rocm/include'],
        description: 'Path to AMD HIP includes')
 
+option('openvino',
+       type: 'boolean',
+       value: false,
+       description: 'Enable onnx-openvino backend')
+
 option('lc0',
        type: 'boolean',
        value: true,
