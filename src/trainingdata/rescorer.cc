@@ -206,7 +206,6 @@ void Validate(std::span<const V6TrainingData> fileContents) {
                (data.orig_q >= -1.0f && data.orig_q <= 1.0f));
     DataAssert(std::isnan(data.orig_d) ||
                (data.orig_d >= 0.0f && data.orig_d <= 1.0f));
-    DataAssert(std::isnan(data.orig_m) || data.orig_m >= 0.0f);
     // TODO: if visits > 0 - assert best_idx/played_idx are valid in
     // probabilities.
   }
@@ -505,6 +504,21 @@ FileData ProcessAndValidateFileData(std::vector<V6TrainingData> fileContents) {
       data.fileContents[0].input_format);
 
   return data;
+}
+
+void NormalizeOriginalMetrics(FileData& data) {
+  bool warning_printed = false;
+  for (auto& position : data.fileContents) {
+    if (std::isnan(position.orig_m)) continue;
+    if (position.orig_m < 0.0f) {
+      if (!warning_printed) {
+        std::cerr << "Warning: negative orig_m (" << position.orig_m
+                  << ") encountered; clamping to 0" << std::endl;
+        warning_printed = true;
+      }
+      position.orig_m = 0.0f;
+    }
+  }
 }
 
 void ApplyPolicySubstitutions(FileData& data) {
@@ -1132,6 +1146,8 @@ FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
                              int newInputFormat) {
   // Process and validate file data
   FileData data = ProcessAndValidateFileData(std::move(fileContents));
+
+  NormalizeOriginalMetrics(data);
 
   // Apply policy substitutions if available
   ApplyPolicySubstitutions(data);
