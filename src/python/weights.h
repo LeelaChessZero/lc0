@@ -246,7 +246,7 @@ class GameState {
                    full_moves * 2 - (starting_board.flipped() ? 1 : 2));
 
     for (const auto& m : moves) {
-      Move move(m, history_.IsBlackToMove());
+      Move move = history_.Last().GetBoard().ParseMove(m);
       history_.Append(move);
     }
   }
@@ -260,12 +260,13 @@ class GameState {
   }
 
   std::vector<std::string> moves() const {
-    auto ms = history_.Last().GetBoard().GenerateLegalMoves();
+    auto board = history_.Last().GetBoard();
     bool is_black = history_.IsBlackToMove();
+    if (is_black) board.Mirror();
+    auto ms = board.GenerateLegalMoves();
     std::vector<std::string> result;
     for (auto m : ms) {
-      if (is_black) m.Mirror();
-      result.push_back(m.as_string());
+      result.push_back(m.ToString(true));
     }
     return result;
   }
@@ -274,7 +275,7 @@ class GameState {
     auto ms = history_.Last().GetBoard().GenerateLegalMoves();
     std::vector<int> result;
     for (auto m : ms) {
-      result.push_back(m.as_nn_index(/* transform= */ 0));
+      result.push_back(MoveToNNIndex(m, 0));
     }
     return result;
   }
