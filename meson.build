@@ -535,6 +535,7 @@ if get_option('build_backends')
     else
       outputname = '@BASENAME@.o'
     endif
+
 	 files += cuda_files
     files += custom_target('cuda fp32 code',
       input : 'src/neural/backends/cuda/common_kernels.cu',
@@ -606,6 +607,22 @@ if get_option('build_backends')
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
       add_project_arguments('-DUSE_ROCM', language : 'cpp')
+    endif
+    if get_option('cudnn') or get_option('plain_cuda') and cu_dart.found() and nvcc.found()
+      add_project_arguments('-DUSE_ONNX_CUDART=1', language : 'cpp')
+      deps += cu_dart
+      foreach d : get_option('cudnn_include')
+        if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
+          includes += include_directories(d, is_system: true)
+        endif
+      endforeach
+      files += custom_target('cuda onnx code',
+        input : 'src/neural/backends/cuda/onnx.cu',
+        output : outputname,
+        command : [nvcc, nvcc_extra_args, cuda_arguments]
+        )
+    else
+      warning('No CUDA support build. Using compatibility implementation for onnx-trt and onnx-cuda. Enable plain_cuda to use CUDA optimisations.')
     endif
     has_backends = true
   endif
