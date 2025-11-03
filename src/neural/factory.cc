@@ -28,6 +28,7 @@
 #include "neural/factory.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "default_backend.h"
 #include "neural/loader.h"
@@ -44,7 +45,7 @@ NetworkFactory* NetworkFactory::Get() {
 
 NetworkFactory::Register::Register(const std::string& name, FactoryFunc factory,
                                    int priority) {
-  NetworkFactory::Get()->RegisterNetwork(name, factory, priority);
+  NetworkFactory::Get()->RegisterNetwork(name, std::move(factory), priority);
 }
 
 void NetworkFactory::RegisterNetwork(const std::string& name,
