@@ -115,6 +115,9 @@ class Converter {
   std::string MakeSwish(OnnxBuilder* builder, const std::string& input,
                         const std::string& name);
 
+  std::string MakeSelu(OnnxBuilder* builder, const std::string& input,
+                       const std::string& name);
+
   std::string MakeActivation(OnnxBuilder* builder, const std::string& input,
                              const std::string& name,
                              ActivationFunction activation);
@@ -263,22 +266,14 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
     return builder->Mul(name, flow, input);
   } else {
     auto in = input;
-    if (options_.data_type !=
-        WeightsToOnnxConverterOptions::DataType::kFloat32) {
-      in = builder->Cast(name + "/to_float", in, pblczero::TensorProto::FLOAT);
-    }
-    auto one = builder->AddInitializer(name + "/one", FloatOnnxConst({1}, {1}));
-    auto two = builder->AddInitializer(name + "/two", FloatOnnxConst({2}, {1}));
+    auto one = builder->AddInitializer(name + "/one", *GetScalarConverter(1));
+    auto two = builder->AddInitializer(name + "/two", *GetScalarConverter(2));
     auto e = builder->Exp(name + "/e", in);
     auto flow = builder->Add(name + "/e+2", e, two);
     flow = builder->Mul(name + "/e*e+2e", e, flow);
     flow = builder->Div(name + "/2/(e*e+2e)", two, flow);
     flow = builder->Add(name + "/1+2/(e*e+2e)", flow, one);
     flow = builder->Div(name + "/in/(1+2/(e*e+2e))", in, flow);
-    if (options_.data_type !=
-        WeightsToOnnxConverterOptions::DataType::kFloat32) {
-      flow = builder->Cast(name + "/to_data_type", flow, GetDataType());
-    }
     return flow;
   }
 }
@@ -287,6 +282,20 @@ std::string Converter::MakeSwish(OnnxBuilder* builder, const std::string& input,
                                  const std::string& name) {
   auto flow = builder->Sigmoid(name + "/sigmoid", input);
   return builder->Mul(name, flow, input);
+}
+
+std::string Converter::MakeSelu(OnnxBuilder* builder, const std::string& input,
+                                const std::string& name) {
+  auto flow = input;
+  flow = StartOptionalBf16Fix(builder, flow, name);
+  if (!options_.alt_selu) {
+    flow = builder->Selu(name + "/selu", flow);
+  } else {
+    flow = builder->Elu(name + "/selu/elu", flow, 1.6732632423543772f);
+    flow = builder->Mul(name + "/selu/mul", flow,
+                        *GetScalarConverter(1.0507009873554805f));
+  }
+  return EndOptionalBf16Fix(builder, flow, name);
 }
 
 std::string Converter::MakeActivation(OnnxBuilder* builder,
@@ -298,12 +307,8 @@ std::string Converter::MakeActivation(OnnxBuilder* builder,
       return builder->Relu(name + "/relu", input);
     case ACTIVATION_MISH:
       return MakeMish(builder, input, name + "/mish");
-    case ACTIVATION_SELU: {
-      auto flow = input;
-      flow = StartOptionalBf16Fix(builder, flow, name);
-      flow = builder->Selu(name + "/selu", flow);
-      return EndOptionalBf16Fix(builder, flow, name);
-    }
+    case ACTIVATION_SELU:
+      return MakeSelu(builder, input, name + "/selu");
     case ACTIVATION_SWISH:
       return MakeSwish(builder, input, name + "/swish");
     case ACTIVATION_RELU_2: {
