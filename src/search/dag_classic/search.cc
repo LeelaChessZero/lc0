@@ -591,11 +591,15 @@ void TaskQueue::SubmitTasks(const TaskVector& tasks, int tid) {
   for (unsigned i = 0; i < tasks.size(); i++) {
     auto& bucket = PickingTaskIndex(picking_tasks_, (tc + i) % size);
     // Make sure that previous read has completed.
-    while (bucket.load(std::memory_order_relaxed)) {
-      SpinloopPause();
-    }
-    bucket.store(static_cast<const PickTask*>(tasks.data() + i),
-                 std::memory_order_release);
+    const PickTask* expected;
+    do {
+      while (bucket.load(std::memory_order_relaxed)) {
+        SpinloopPause();
+      }
+      expected = nullptr;
+    } while (!bucket.compare_exchange_strong(
+        expected, static_cast<const PickTask*>(tasks.data() + i),
+        std::memory_order_release));
   }
 }
 
@@ -619,10 +623,15 @@ void TaskQueue::SubmitTask(const TaskType& task, int tid) {
 
   assert(nta != (tc + 1) % size);
   auto& bucket = PickingTaskIndex(picking_tasks_, tc);
-  while (bucket.load(std::memory_order_acquire)) {
-    SpinloopPause();
-  }
-  bucket.store(static_cast<const PickTask*>(&task), std::memory_order_release);
+  const PickTask* expected;
+  do {
+    while (bucket.load(std::memory_order_acquire)) {
+      SpinloopPause();
+    }
+    expected = nullptr;
+  } while (!bucket.compare_exchange_strong(expected,
+                                           static_cast<const PickTask*>(&task),
+                                           std::memory_order_release));
 }
 
 void TaskQueue::ActivateTasks() {
