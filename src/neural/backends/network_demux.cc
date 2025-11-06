@@ -70,7 +70,7 @@ class DemuxingComputation final : public NetworkComputation {
  public:
   DemuxingComputation(DemuxingNetwork* network) : network_(network) {}
   ~DemuxingComputation() {
-    // Wait for other threads to stop using this thread. It must be spinloop for
+    // Wait for other threads to stop using this object. It must be spinloop for
     // correct synchronization between notify_one and destructor.
     while (dataready_.load(std::memory_order_acquire) != -1) {
       SpinloopPause();
