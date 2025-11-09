@@ -40,7 +40,7 @@
 
 namespace lczero {
 
-#if defined(HAS_FLOAT16)
+#if defined(HAS_FLOAT16) && (defined(__F16C__) || defined(__aarch64__))
 
 inline uint16_t FP32toFP16(float f32) {
   _Float16 f16 = static_cast<_Float16>(f32);
@@ -74,50 +74,56 @@ inline float FP16toFP32(uint16_t f16) {
 #else
 
 inline uint16_t FP32toFP16(float f32) {
-  unsigned int x;
-  unsigned int sign = 0;
+  uint32_t x;
+  uint32_t sign = 0;
   memcpy(&x, &f32, sizeof(float));
   if (x & 0x80000000) sign = 0x8000;
   x &= 0x7fffffff;
-  if (x >= 0x477ff000) {
-    if ((x & 0x7f800000) == 0x7f800000 && (x & 0x7fffff)) {
+  if (x < 0x477ff000) {
+    if (x >= 0x387ff000) {
+      // Normal fp16 result. Adjust exponent and round to nearest even.
+      x -= 0x38000000;
+      if (x & 0x2fff) {
+        x += 0x1000;
+      }
+      x >>= 13;
+    } else {
+      // Subnormal or zero. The result is the last bits of fabs(f32) + 0.5f.
+      float f;
+      memcpy(&f, &x, sizeof(float));
+      f += 0.5f;
+      memcpy(&x, &f, sizeof(float));
+    }
+  } else {
+    if (x > 0x7f800000) {
+      // NaN
       x = ((x >> 13) - 0x38000) | 0x200;
     } else {
+      // Inf
       x = 0x7c00;
     }
-  } else if (x <= 0x33000000)
-    x = 0;
-  else if (x <= 0x387fefff) {
-    int shift = 126 - ((x >> 23) & 0xff);
-    x = (x & 0x7fffff) | 0x800000;
-    if (x & (0x17fffff >> (24 - shift))) x += 0x800000 >> (24 - shift);
-    x >>= shift;
-  } else {
-    // Adjust exponent and round to nearest even.
-    if (x & 0x2fff) {
-      x -= 0x37fff000;
-    } else {
-      x -= 0x38000000;
-    }
-    x >>= 13;
   }
   return x | sign;
 }
 
 inline float FP16toFP32(uint16_t f16) {
-  unsigned int x;
+  int32_t s = static_cast<int16_t>(f16);
+  uint32_t x;
   float f;
-  x = f16 & 0x7fff;
-  if ((x & 0x7c00) == 0) {
+  if ((s & 0x7c00) == 0) {
+    // Subnormal or zero. Scale to float.
+    x = s & 0x7fff;
     f = 5.9604645e-8f * x;
     memcpy(&x, &f, sizeof(float));
-  } else if (x >= 0x7c00) {
-    if (x & 0x1ff) x |= 0x200;
-    x = (x + 0x38000) << 13;
+    if (s & 0x8000) x |= 0x80000000;
+  } else if ((s & 0x7c00) == 0x7c00) {
+    // Inf or NaN. Adjust exponent and shift.
+    if (s & 0x1ff) s |= 0x200; // Change sNaN to qNaN as intel does.
+    x = ((s & 0x47fff) + 0x38000) << 13;
   } else {
-    x = (x + 0x1c000) << 13;
+    // Normal. Adjust exponent and shift.
+    x = ((s & 0x47fff) + 0x1c000U) << 13;
   }
-  if (f16 & 0x8000) x |= 0x80000000;
   memcpy(&f, &x, sizeof(float));
   return f;
 }
