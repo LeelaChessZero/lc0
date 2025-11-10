@@ -75,9 +75,8 @@ inline float FP16toFP32(uint16_t f16) {
 
 inline uint16_t FP32toFP16(float f32) {
   uint32_t x;
-  uint32_t sign = 0;
   memcpy(&x, &f32, sizeof(float));
-  if (x & 0x80000000) sign = 0x8000;
+  uint32_t sign = (x & 0x80000000) >> 16;
   x &= 0x7fffffff;
   if (x < 0x477ff000) {
     if (x >= 0x387ff000) {
