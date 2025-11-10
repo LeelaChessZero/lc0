@@ -82,10 +82,9 @@ inline uint16_t FP32toFP16(float f32) {
   if (x < 0x477ff000) {
     if (x >= 0x387ff000) {
       // Normal fp16 result. Adjust exponent and round to nearest even.
-      x -= 0x38000000;
-      if (x & 0x2fff) {
-        x += 0x1000;
-      }
+      // Branchless idea from <https://gist.github.com/rygorous/2156668>.
+      x += (x >> 13) & 1;
+      x -= 0x37fff001;
       x >>= 13;
     } else {
       // Subnormal or zero. The result is the last bits of fabs(f32) + 0.5f.
