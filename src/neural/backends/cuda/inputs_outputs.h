@@ -36,10 +36,10 @@
 namespace lczero {
 namespace cudnn_backend {
 
-template <typename NetworkInfo>
+template <typename DataType>
 struct CudaGraphCapture;
 
-template <typename NetworkInfo>
+template <typename DataType>
 struct CudaGraphExec {
   ~CudaGraphExec() {
     if (graph_exec_ != nullptr) {
@@ -47,7 +47,7 @@ struct CudaGraphExec {
     }
   }
 
-  CudaGraphExec& operator=(const CudaGraphCapture<NetworkInfo>&);
+  CudaGraphExec& operator=(const CudaGraphCapture<DataType>&);
   explicit operator bool() const { return graph_exec_ != nullptr; }
 
   void Launch(cudaStream_t stream) {
@@ -56,10 +56,8 @@ struct CudaGraphExec {
   cudaGraphExec_t graph_exec_ = nullptr;
 };
 
-template <typename NetworkInfo>
+template <typename DataType>
 struct InputsOutputs {
-  using DataType = std::conditional_t<NetworkInfo::fast_cpu_conversion_,
-                                      typename NetworkInfo::DataType, float>;
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
                 bool cublasDisableTensorCores = false) {
@@ -121,7 +119,7 @@ struct InputsOutputs {
         cudaStreamCreateWithFlags(&exec_stream_, cudaStreamNonBlocking));
     ReportCUDAErrors(
         cudaEventCreateWithFlags(&join_capture_event_, cudaEventDisableTiming));
-    cuda_graphs_ = std::make_unique<CudaGraphExec<NetworkInfo>[]>(maxBatchSize);
+    cuda_graphs_ = std::make_unique<CudaGraphExec<DataType>[]>(maxBatchSize);
 
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
@@ -222,18 +220,18 @@ struct InputsOutputs {
 
   // cuda graph support
   cudaStream_t exec_stream_ = nullptr;
-  std::unique_ptr<CudaGraphExec<NetworkInfo>[]> cuda_graphs_;
+  std::unique_ptr<CudaGraphExec<DataType>[]> cuda_graphs_;
   cudaEvent_t join_capture_event_ = nullptr;
 
   // cublas handle used to run the network
   cublasHandle_t cublas_ = nullptr;
 };
 
-template <typename NetworkInfo>
+template <typename DataType>
 struct CudaGraphCapture {
   static constexpr int kMinimumFreeMemory = 100 * 1024 * 1024;
 
-  CudaGraphCapture(InputsOutputs<NetworkInfo>& io, cudaStream_t upload_stream,
+  CudaGraphCapture(InputsOutputs<DataType>& io, cudaStream_t upload_stream,
                    cudaStream_t download_stream)
       : io_(io),
         upload_stream_(upload_stream),
@@ -263,16 +261,16 @@ struct CudaGraphCapture {
     ReportCUDAErrors(cudaStreamEndCapture(upload_stream_, &graph_));
   }
 
-  InputsOutputs<NetworkInfo>& io_;
+  InputsOutputs<DataType>& io_;
   cudaStream_t upload_stream_;
   cudaStream_t download_stream_;
 
   cudaGraph_t graph_ = nullptr;
 };
 
-template <typename NetworkInfo>
-inline CudaGraphExec<NetworkInfo>& CudaGraphExec<NetworkInfo>::operator=(
-    const CudaGraphCapture<NetworkInfo>& graph) {
+template <typename DataType>
+inline CudaGraphExec<DataType>& CudaGraphExec<DataType>::operator=(
+    const CudaGraphCapture<DataType>& graph) {
   assert(graph_exec_ == nullptr);
   if (graph.graph_ == nullptr) {
     throw Exception("Trying to instantiate an nullptr cuda graph");
