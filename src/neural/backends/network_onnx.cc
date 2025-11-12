@@ -60,24 +60,13 @@
 #include "utils/logging.h"
 
 namespace lczero {
-namespace {
+namespace onnx {
 
 enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
 
 class OnnxNetwork;
 
 static constexpr int kNumOutputPolicy = 1858;
-
-#ifdef USE_ONNX_CUDART
-void CudaError(cudaError_t status, const char* file, int line) {
-  if (status != cudaSuccess) {
-    auto err = std::string("CUDA error: ") + cudaGetErrorString(status) + " (" +
-               file + ":" + std::to_string(line) + ") ";
-    throw Exception(err);
-  }
-}
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
-#endif
 
 struct InputsOutputs {
   InputsOutputs(OnnxNetwork* network);
@@ -538,20 +527,20 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         half* dst =
             reinterpret_cast<half*>(inputs_outputs_->input_tensor_data_device_);
         dst += i * kInputPlanes * 8 * 8;
-        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                         network_->compute_stream_);
       } else if (network_->bf16_) {
         __nv_bfloat16* dst = reinterpret_cast<__nv_bfloat16*>(
             inputs_outputs_->input_tensor_data_device_);
         dst += i * kInputPlanes * 8 * 8;
-        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                         network_->compute_stream_);
       } else {
         float* dst = reinterpret_cast<float*>(
             inputs_outputs_->input_tensor_data_device_);
         dst += i * kInputPlanes * 8 * 8;
-        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                         network_->compute_stream_);
       }
 
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_processed_event_,
@@ -920,5 +909,5 @@ REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
-}  // namespace
+}  // namespace onnx
 }  // namespace lczero
