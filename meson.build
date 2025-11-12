@@ -115,6 +115,12 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
+numa_config = configuration_data()
+if cc.has_function('pthread_setaffinity_np', prefix : '#include <pthread.h>')
+  numa_config.set('HAVE_PTHREAD_SETAFFINITY_NP', 1)
+endif
+configure_file(output: 'numa_config.h', configuration: numa_config)
+
 # ONNX and HLO protobufs.
 files += gen.process('proto/onnx.proto',
   preserve_path_from : meson.current_source_dir())

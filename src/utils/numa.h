@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 namespace lczero {
 
 class Numa {
@@ -38,6 +40,16 @@ class Numa {
 
   // Bind thread to processor group.
   static void BindThread(int id);
+
+  // Reserve cores for SearchWorkers.
+  // Mustbe called before any threads are bound.
+  static void ReserveSearchWorkers(size_t socket_id, size_t num_search_workers);
+
+  // Bind SearchWorker to a reserved core.
+  static void BindSearchWorker(size_t id);
+
+  // Bind task workers to a socket.
+  static void BindTaskWorkersToSocket(size_t socket_id);
 
  private:
   static int threads_per_core_;

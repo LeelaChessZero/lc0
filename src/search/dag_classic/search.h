@@ -65,7 +65,7 @@ class Search {
   ~Search();
 
   // Starts worker threads and returns immediately.
-  void StartThreads(size_t how_many);
+  void StartThreads(size_t socket_id, size_t how_many);
 
   // Starts search with k threads and wait until it finishes.
   void RunBlocking(size_t threads);
@@ -222,7 +222,7 @@ class SearchWorker {
   // Suspend is -1 for the low half.
   static constexpr int kTaskCountSuspend = kTasksTakenOne - 1;
 
-  SearchWorker(Search* search, const SearchParams& params)
+  SearchWorker(Search* search, const SearchParams& params, size_t socket_id)
       : search_(search),
         history_(search_->played_history_),
         params_(params),
@@ -240,9 +240,9 @@ class SearchWorker {
     }
     for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() {
+      task_threads_.emplace_back([this, i, socket_id]() {
           LOGFILE << "Task worker " << i << " starting.";
-          this->RunTasks(i);
+          this->RunTasks(socket_id, i);
           LOGFILE << "Task worker " << i << " exiting.";
         });
     }
@@ -476,7 +476,7 @@ class SearchWorker {
   void ProcessTask(PickTask* task, int id,
                    std::vector<NodeToProcess>* receiver,
                    TaskWorkspace* workspace);
-  void RunTasks(int tid);
+  void RunTasks(size_t socket_id, int tid);
   void ResetTasks();
   // Returns how many tasks there were.
   int WaitForTasks();
