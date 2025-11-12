@@ -18,6 +18,11 @@ jobs:
             wget https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz -P /tmp
             tar xzf /tmp/onnxruntime-linux-x64-1.22.0.tgz -C /tmp
       - run:
+          name: Run on fail status
+          command: |
+              cat /root/project/build-gcc/meson-logs/meson-log.txt
+          when: on_fail
+      - run:
           name: Meson GCC
           environment:
             CC: gcc-10
@@ -58,11 +63,6 @@ jobs:
             meson build --buildtype=release -Dgtest=false -Dopencl=false  --cross-file cross-files/x86_64-darwin
             cd build
             ninja
-      - run:
-          name: Run on fail status
-          command: |
-              cat /root/project/build-gcc/meson-logs/meson-log.txt
-          when: on_fail
       - run:
           name: Build lc0 arm
           command: |
