@@ -81,7 +81,8 @@ jobs:
             - lc0
   "mac latest":
     macos:
-      xcode: 16.4.0
+      xcode: 26.1.0
+    resource_class: m4pro.medium
     steps:
       - checkout
       - run:
