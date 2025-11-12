@@ -248,3 +248,8 @@ option('dag_classic',
        type: 'boolean',
        value: true,
        description: 'Enable dag-classic search algorithm')
+
+option('nvcc',
+       type: 'boolean',
+       value: true,
+       description: 'Use nvcc: required for cuda, optional for onnx')
