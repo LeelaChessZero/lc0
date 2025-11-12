@@ -59,6 +59,11 @@ jobs:
             cd build
             ninja
       - run:
+          name: Run on fail status
+          command: |
+              cat /root/project/build-gcc/meson-logs/meson-log.txt
+          when: on_fail
+      - run:
           name: Build lc0 arm
           command: |
             meson build-arm --buildtype=release -Dgtest=false -Dopencl=false
