@@ -116,8 +116,10 @@ elif get_option('malloc') != ''
 endif
 
 numa_config = configuration_data()
-if cc.has_function('pthread_setaffinity_np', prefix : '#define _GNU_SOURCE\n#include <pthread.h>', required: true)
+if cc.has_function('pthread_setaffinity_np', prefix : '#define _GNU_SOURCE\n#include <pthread.h>')
   numa_config.set('HAVE_PTHREAD_SETAFFINITY_NP', 1)
+else
+  error('pthread_setaffinity_np not found.')
 endif
 configure_file(output: 'numa_config.h', configuration: numa_config)
 
