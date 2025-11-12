@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#define _GNU_SOURCE
+#include <pthread.h>
 #include "utils/numa.h"
 
 #include <bitset>
@@ -164,7 +166,7 @@ class LSCPUInit {
 
       Config::LogicalProcessor config;
 
-      sscanf(buffer, "%d,%d,%d,%d", &config.cpu_, &config.core_,
+      sscanf(buffer, "%u,%u,%u,%u", &config.cpu_, &config.core_,
              &config.socket_, &config.node_);
 
       configs.push_back(config);
