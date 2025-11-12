@@ -464,7 +464,7 @@ if get_option('build_backends')
   nvcc = find_program(nvcc_paths,
                       required: false)
   nvcc_ok = false
-  if nvcc.found()
+  if get_option('nvcc') and nvcc.found()
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
         includes += include_directories(d, is_system: true)
