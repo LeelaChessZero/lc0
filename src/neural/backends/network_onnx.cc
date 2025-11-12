@@ -428,7 +428,8 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
     DataType* iter =
         static_cast<DataType*>(inputs_outputs_->input_tensor_data_);
     iter += start * kInputPlanes * 8 * 8;
-    std::memset(iter, 0, batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
+    std::memset(static_cast<void*>(iter), 0,
+                batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
     int end = std::min(start + batch_size, static_cast<int>(input_size_));
     for (int i = start; i < end; i++) {
       for (const auto& plane : raw_input_[i]) {
