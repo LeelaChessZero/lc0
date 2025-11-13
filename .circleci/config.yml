@@ -24,21 +24,11 @@ jobs:
             CXX: g++-10
           command: meson build-gcc -Dgtest=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
       - run:
-          name: Run on fail status
-          command: |
-              cat /root/project/build-gcc/meson-logs/meson-log.txt
-          when: on_fail
-      - run:
           name: Meson Clang
           environment:
             CC: clang-12
             CXX: clang++-12
           command: meson build-clang -Dgtest=false -Db_lto=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
-      - run:
-          name: Run on fail status Clang
-          command: |
-              cat /root/project/build-gcc/meson-logs/meson-log.txt
-          when: on_fail
       - run:
           name: Build GCC
           command: |
