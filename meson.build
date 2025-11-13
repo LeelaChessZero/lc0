@@ -123,7 +123,7 @@ int main(void) {
   CPU_SET(0, &cpuset);
   return pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 }'''
-if cc.links(code, name: 'pthread_setaffinity_np', dependencies: [deps])
+if cc.links(code, name: 'pthread_setaffinity_np', dependencies: [dependency('threads')])
   numa_config.set('HAVE_PTHREAD_SETAFFINITY_NP', 1)
 else
   error('pthread_setaffinity_np not found.')
