@@ -25,9 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#define _GNU_SOURCE
-#include <pthread.h>
 #include "utils/numa.h"
+
+#include <pthread.h>
 
 #include <bitset>
 

@@ -116,17 +116,10 @@ elif get_option('malloc') != ''
 endif
 
 numa_config = configuration_data()
-code = '''#include <pthread.h>
-int main(void) {
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  CPU_SET(0, &cpuset);
-  return pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
-}'''
-if cc.links(code, name: 'pthread_setaffinity_np', dependencies: [dependency('threads')])
+if cc.has_function('pthread_setaffinity_np',
+                   dependencies: [dependency('threads')],
+                   prefix: '#include <pthread.h>')
   numa_config.set('HAVE_PTHREAD_SETAFFINITY_NP', 1)
-else
-  error('pthread_setaffinity_np not found.')
 endif
 configure_file(output: 'numa_config.h', configuration: numa_config)
 
