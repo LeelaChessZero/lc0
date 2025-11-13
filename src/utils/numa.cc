@@ -25,13 +25,16 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include "numa_config.h"
 #include "utils/numa.h"
 
 #include <pthread.h>
 #include <string.h>
+#if HAVE_PTHREAD_SETAFFINITY_NP
+#include <unistd.h>
+#endif
 
 #include "chess/bitboard.h"
-#include "numa_config.h"
 #include "utils/logging.h"
 
 #ifdef _WIN32
