@@ -26,13 +26,13 @@
 */
 
 #include "numa_config.h"
-#include "utils/numa.h"
-
-#include <pthread.h>
-#include <string.h>
 #if HAVE_PTHREAD_SETAFFINITY_NP
+#include <pthread.h>
 #include <unistd.h>
 #endif
+
+#include "utils/numa.h"
+#include <string.h>
 
 #include "chess/bitboard.h"
 #include "utils/logging.h"
