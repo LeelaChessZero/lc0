@@ -41,6 +41,7 @@
 
 #include "search/dag_classic/node.h"
 #include "utils/fastmath.h"
+#include "utils/numa.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
 
@@ -951,21 +952,27 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   return {};
 }
 
-void Search::StartThreads(size_t how_many) {
+void Search::StartThreads(size_t socket_id, size_t how_many) {
   Mutex::Lock lock(threads_mutex_);
   if (how_many == 0 && threads_.size() == 0) {
     how_many = backend_attributes_.suggested_num_search_threads +
                !backend_attributes_.runs_on_cpu;
   }
+  Numa::ReserveSearchWorkers(socket_id, how_many);
+
   thread_count_.store(how_many, std::memory_order_release);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
-    threads_.emplace_back([this]() { WatchdogThread(); });
+    threads_.emplace_back([this, socket_id]() {
+      Numa::BindTaskWorkersToSocket(socket_id);
+      WatchdogThread();
+    });
   }
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
-    threads_.emplace_back([this]() {
-      SearchWorker worker(this, params_);
+    threads_.emplace_back([this, i, socket_id]() {
+      Numa::BindSearchWorker(i);
+      SearchWorker worker(this, params_, socket_id);
       worker.RunBlocking();
     });
   }
@@ -977,7 +984,7 @@ void Search::StartThreads(size_t how_many) {
 }
 
 void Search::RunBlocking(size_t threads) {
-  StartThreads(threads);
+  StartThreads(0, threads);
   Wait();
 }
 
@@ -1201,7 +1208,8 @@ void SearchWorker::ProcessTask(PickTask* task, int id,
   completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
 }
 
-void SearchWorker::RunTasks(int tid) {
+void SearchWorker::RunTasks(size_t socket_id, int tid) {
+  Numa::BindTaskWorkersToSocket(socket_id);
   while (true) {
     PickTask* task = nullptr;
     int id = 0;
