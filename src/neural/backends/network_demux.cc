@@ -220,11 +220,6 @@ class DemuxingComputation final : public BackendComputation {
   DemuxingComputation(DemuxingBackend* backend)
       : backend_(backend), entries_(backend_->attrs_.maximum_batch_size) {}
   ~DemuxingComputation() {
-    // Wait for other threads to stop using this thread. It must be spinloop for
-    // correct synchronization between notify_one and destructor.
-    while (dataready_.load(std::memory_order_acquire) != -1) {
-      SpinloopPause();
-    }
   }
 
   AddInputResult AddInput(const EvalPosition& pos,
@@ -244,14 +239,16 @@ class DemuxingComputation final : public BackendComputation {
 
   size_t UsedBatchSize() const override { return entries_.size(); }
 
-  void NotifyComplete() {
-    if (1 == dataready_.fetch_sub(1, std::memory_order_release)) {
-      {
-        std::lock_guard lock(mutex_);
-      }
-      dataready_cv_.notify_one();
-      dataready_.store(-1, std::memory_order_release);
+  void NotifyFirstDone() {
+    callback_(ComputationEvent::FIRST_BACKEND_IDLE);
+    {
+      std::lock_guard lock(mutex_);
     }
+    first_done_cv_.notify_one();
+  }
+
+  void NotifyComplete() {
+    dataready_.fetch_sub(1, std::memory_order_release);
   }
 
   void ProcessResults(const DemuxingWork& work);
@@ -263,8 +260,8 @@ class DemuxingComputation final : public BackendComputation {
   ComputationCallback callback_;
 
   std::mutex mutex_;
-  std::condition_variable dataready_cv_;
-  std::atomic<int> dataready_ = -1;
+  std::condition_variable first_done_cv_;
+  std::atomic<int> dataready_ = 0;
   std::atomic<bool> first_done_ = false;
 
   friend class DemuxingChildBackend;
@@ -319,7 +316,7 @@ void DemuxingChildBackend::Worker(std::atomic<bool>& abort) {
       bool expected = false;
       if (work->source_->first_done_.compare_exchange_strong(
               expected, true, std::memory_order_relaxed)) {
-        work->source_->callback_(ComputationEvent::FIRST_BACKEND_IDLE);
+        work->source_->NotifyFirstDone();
       }
       work->ProcessResults();
       work->source_->NotifyComplete();
@@ -382,10 +379,15 @@ void DemuxingComputation::ComputeBlocking(ComputationCallback callback) {
   assert(work_start == UsedBatchSize());
   assert(work_items == (int)children_.size());
   // Wait until all backends complete their work.
-  std::unique_lock<std::mutex> lock(mutex_);
-  dataready_cv_.wait(lock, [this]() {
-    return dataready_.load(std::memory_order_acquire) <= 0;
-  });
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    first_done_cv_.wait(
+        lock, [this]() { return first_done_.load(std::memory_order_acquire); });
+  }
+  // Use spinloop to reduce wake-up latency.
+  while (dataready_.load(std::memory_order_acquire) != 0) {
+    SpinloopPause();
+  }
 }
 
 class DemuxingBackendFactory : public BackendFactory {
