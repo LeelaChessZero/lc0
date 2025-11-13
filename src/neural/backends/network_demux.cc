@@ -72,7 +72,7 @@ class DemuxingChildBackend {
     network_ = std::move(network);
     int nn_threads = opts.GetOrDefault<int>("threads", 0);
     if (nn_threads == 0) {
-      nn_threads = network_->GetThreads();
+      nn_threads = network_->GetThreads() + !network_->IsCpu();
     }
     for (int i = 0; i < nn_threads; i++) {
       threads_.emplace_back([&] { Worker(abort); });
