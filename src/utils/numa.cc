@@ -28,8 +28,7 @@
 #include "utils/numa.h"
 
 #include <pthread.h>
-
-#include <bitset>
+#include <string.h>
 
 #include "chess/bitboard.h"
 #include "numa_config.h"
@@ -55,22 +54,29 @@ struct Config {
 
   Config(std::vector<LogicalProcessor>& logical_processors)
       : logical_processors_(logical_processors) {
-    static constexpr size_t kMaxLogicalProcessors = 2048;
-    std::bitset<kMaxLogicalProcessors> core_set;
-    std::bitset<kMaxLogicalProcessors> socket_set;
-    std::bitset<kMaxLogicalProcessors> node_set;
-    assert(logical_processors_.size() <= kMaxLogicalProcessors);
+    sort();
+    size_t nodes = 0;
+    size_t current_node = -1;
+    size_t sockets = 0;
+    size_t current_socket = -1;
+    size_t cores = 0;
+    size_t current_core = -1;
     for (const auto& lp : logical_processors_) {
-      socket_set.set(lp.socket_);
-      node_set.set(lp.node_);
+      if (current_node != lp.node_) {
+        current_node = lp.node_;
+        nodes++;
+      }
+      if (current_socket != lp.socket_) {
+        current_socket = lp.socket_;
+        sockets++;
+        cores += current_core + 1;
+        current_core = 0;
+      }
+      current_core = std::max(current_core, static_cast<size_t>(lp.core_));
     }
-    sockets_ = socket_set.count();
-    nodes_ = node_set.count();
-    const size_t kNumaStride = kMaxLogicalProcessors / nodes_;
-    for (const auto& lp : logical_processors_) {
-      core_set.set(lp.core_ + lp.node_ * kNumaStride);
-    }
-    cores_ = core_set.count();
+    nodes_ = nodes;
+    sockets_ = sockets;
+    cores_ = cores + current_core + 1;
   }
 
   template <typename Func>
@@ -115,6 +121,32 @@ struct Config {
                          return lp.socket_ == socket_id && lp.core_ == core_id;
                        }),
         logical_processors_.end());
+  }
+
+  bool CheckReservedCores(size_t socket_id, size_t num_workers) {
+    size_t reserved_cores = 0;
+    size_t core = -1;
+    for (const auto& lp : reserved_processors_) {
+      if (lp.socket_ != socket_id) {
+        break;
+      }
+      if (lp.core_ != core) {
+        core = lp.core_;
+        reserved_cores++;
+      }
+    }
+    if (reserved_cores == num_workers) return true;
+
+    std::copy(reserved_processors_.begin(), reserved_processors_.end(),
+              std::back_inserter(logical_processors_));
+    reserved_processors_.clear();
+    sort();
+    return false;
+  }
+
+  void sort() {
+    std::sort(logical_processors_.begin(), logical_processors_.end(),
+              [](const auto& a, const auto& b) { return a.cpu_ < b.cpu_; });
   }
 
   size_t GetThreadCount() const { return logical_processors_.size(); }
@@ -267,6 +299,9 @@ void Numa::ReserveSearchWorkers(size_t socket_id, size_t num_workers) {
          << (config.GetSocketCount() - 1) << " instead.";
     socket_id = config.GetSocketCount() - 1;
   }
+  if (config.CheckReservedCores(socket_id, num_workers)) {
+    return;
+  }
   for (size_t i = 0; i < num_workers; i++) {
     config.ReserveCoreOnSocket(socket_id);
   }
@@ -276,7 +311,7 @@ void Numa::ReserveSearchWorkers(size_t socket_id, size_t num_workers) {
       [](const Config::LogicalProcessor& a, const Config::LogicalProcessor& b) {
         return a.core_ < b.core_;
       });
-  cpu_set_t cpuset;
+  cpu_set_t cpuset, emptyset;
   auto thread = pthread_self();
   int err;
   if ((err = pthread_getaffinity_np(thread, sizeof(cpu_set_t), &cpuset))) {
@@ -288,6 +323,30 @@ void Numa::ReserveSearchWorkers(size_t socket_id, size_t num_workers) {
   }
   if ((err = pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset))) {
     CERR << "Failed to remove reserved affinity. Error code: " << err;
+  }
+  CPU_ZERO(&emptyset);
+  if (CPU_EQUAL(&cpuset, &emptyset)) {
+    return;
+  }
+  std::ostringstream ss;
+  std::array<unsigned long, sizeof(cpuset) / sizeof(unsigned long)> bitset;
+  memcpy((void*)bitset.data(), &cpuset, sizeof(cpuset));
+
+  ss << "pgrep -wg " << getpid() << " | xargs -n1 taskset -p " << std::hex;
+
+  auto start = std::find_if(bitset.rbegin(), bitset.rend(),
+                            [](const auto& a) { return a != 0; });
+  if (start != bitset.rend()) {
+    ss << *start++ << std::setfill('0');
+  }
+  std::for_each(start, bitset.rend(),
+                [&](const auto& a) { ss << std::setw(sizeof(a) * 2) << a; });
+
+  ss << " > /dev/null";
+
+  if ((err = std::system(ss.str().c_str()))) {
+    CERR << "Failed to run command:" << ss.str();
+    CERR << "Error code: " << err;
   }
 #endif
 }

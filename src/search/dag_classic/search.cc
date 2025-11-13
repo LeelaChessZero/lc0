@@ -958,6 +958,8 @@ void Search::StartThreads(size_t socket_id, size_t how_many) {
     how_many = backend_attributes_.suggested_num_search_threads +
                !backend_attributes_.runs_on_cpu;
   }
+  Numa::ReserveSearchWorkers(socket_id, how_many);
+
   thread_count_.store(how_many, std::memory_order_release);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {

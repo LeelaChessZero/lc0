@@ -59,8 +59,6 @@ class DagClassicSearch : public SearchBase {
  public:
   DagClassicSearch(UciResponder* responder, const OptionsDict* options)
       : SearchBase(responder), options_(options) {
-    Numa::ReserveSearchWorkers(options_->Get<int>(kSearchSocketOptionId),
-                               options_->Get<int>(kThreadsOptionId));
   }
   ~DagClassicSearch() { search_.reset(); }
 
