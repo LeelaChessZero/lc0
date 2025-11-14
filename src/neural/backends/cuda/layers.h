@@ -29,6 +29,7 @@
 #include <cublas_v2.h>
 
 #include <cstddef>
+#include <memory>
 
 #include "cuda_common.h"
 #include "neural/network_legacy.h"

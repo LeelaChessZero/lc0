@@ -843,14 +843,15 @@ __global__ __launch_bounds__(
 }
 
 template <typename T>
-void FilterTransform(int N, int C, T* transformedFilter, const T* filter) {
+void FilterTransform(int N, int C, T* transformedFilter, const T* filter,
+                     cudaStream_t stream) {
   // Each thread processes entire filter block (input 3x3 elements -> output 6x6
   // elements)
   const int kBlockSize = 64;
   const int kBlocks = DivUp(N * C, kBlockSize);
 
-  filterTransform_kernel<<<kBlocks, kBlockSize>>>(N, C, N * C,
-                                                  transformedFilter, filter);
+  filterTransform_kernel<<<kBlocks, kBlockSize, 0, stream>>>(
+      N, C, N * C, transformedFilter, filter);
 
   ReportCUDAErrors(cudaGetLastError());
 }
