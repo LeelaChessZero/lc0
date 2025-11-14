@@ -199,8 +199,11 @@ class LSCPUInit {
 
       Config::LogicalProcessor config;
 
-      sscanf(buffer, "%u,%u,%u,%u", &config.cpu_, &config.core_,
-             &config.socket_, &config.node_);
+      if (sscanf(buffer, "%u,%u,%u,%u", &config.cpu_, &config.core_,
+                 &config.socket_, &config.node_) != 4) {
+        CERR << "Failed to parse lscpu output line: " << buffer;
+        continue;
+      }
 
       configs.push_back(config);
     }
