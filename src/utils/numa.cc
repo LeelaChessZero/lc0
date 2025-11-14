@@ -31,11 +31,9 @@
 #include <unistd.h>
 #endif
 
-#include "utils/numa.h"
-#include <string.h>
-
 #include "chess/bitboard.h"
 #include "utils/logging.h"
+#include "utils/numa.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -332,8 +330,16 @@ void Numa::ReserveSearchWorkers(size_t socket_id, size_t num_workers) {
     return;
   }
   std::ostringstream ss;
-  std::array<unsigned long, sizeof(cpuset) / sizeof(unsigned long)> bitset;
-  memcpy((void*)bitset.data(), &cpuset, sizeof(cpuset));
+  std::array<unsigned long, sizeof(cpuset) / sizeof(unsigned long)> bitset = {};
+
+  for (auto& element : bitset) {
+    for (unsigned bit = 0; bit < sizeof(element) * 8; bit++) {
+      size_t cpu = (&element - &bitset[0]) * sizeof(element) * 8 + bit;
+      if (CPU_ISSET(cpu, &cpuset)) {
+        element |= 1UL << bit;
+      }
+    }
+  }
 
   ss << "pgrep -wg " << getpid() << " | xargs -n1 taskset -p " << std::hex;
 
