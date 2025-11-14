@@ -621,6 +621,7 @@ class CudaNetwork : public Network {
 
     // pre-allocate cuda graphs for search threads
     auto allocateCudaGraphs = [&] {
+      ReportCUDAErrors(cudaSetDevice(gpu_id_));
       CudaNetworkComputation<DataType> comp(this, wdl_, moves_left_);
       comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
       // Make sure cublas is initialized in this thread.
