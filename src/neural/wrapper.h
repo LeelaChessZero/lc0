@@ -30,10 +30,24 @@
 #include <functional>
 #include <string>
 
+#include "neural/encoder.h"
 #include "neural/network.h"
 #include "neural/register.h"
 
 namespace lczero {
+
+FillEmptyHistory EncodeHistoryFill(std::string history_fill);
+
+class NetworkComputationRequest {
+ public:
+  InputPlanes input;
+  MoveList legal_moves;
+  EvalResultPtr result;
+  int transform;
+
+  void ProcessResult(const NetworkComputation& computation, int sample,
+                     const float temperature);
+};
 
 class NetworkAsBackendFactory : public BackendFactory {
  public:

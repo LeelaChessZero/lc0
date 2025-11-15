@@ -208,6 +208,8 @@ class CudaNetwork : public Network {
     if (max_batch_size_ < min_batch_size_)
       throw Exception("Max batch must not be less than min_batch setting.");
 
+    preferred_batch_size_ = options.GetOrDefault("batch", -1);
+
     showInfo();
 
     int total_gpus;
@@ -893,6 +895,13 @@ class CudaNetwork : public Network {
     return 2 * sm_count_;
   }
 
+  int GetPreferredBatchStep() const override {
+    if (preferred_batch_size_ > 0) return preferred_batch_size_;
+    int preferred_split = 7;
+    while (sm_count_ % preferred_split != 0) preferred_split++;
+    return preferred_split;
+  }
+
   int GetThreads() const override { return 1 + multi_stream_; }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -936,6 +945,7 @@ class CudaNetwork : public Network {
   int sm_count_;
   int max_batch_size_;
   int min_batch_size_;
+  int preferred_batch_size_;
   bool wdl_;
   bool moves_left_;
   bool use_res_block_winograd_fuse_opt_;  // fuse operations inside the residual

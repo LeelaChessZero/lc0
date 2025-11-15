@@ -139,8 +139,8 @@ class MemCacheComputation : public BackendComputation {
                                     : std::span<float>{}});
   }
 
-  virtual void ComputeBlocking() override {
-    wrapped_computation_->ComputeBlocking();
+  virtual void ComputeBlocking(ComputationCallback callback) override {
+    wrapped_computation_->ComputeBlocking(callback);
     for (auto& entry : entries_) {
       CachedValueToEvalResult(*entry.value, entry.result_ptr);
       memcache_->cache_.Insert(entry.key, std::move(entry.value));

@@ -1203,7 +1203,6 @@ void SearchWorker::ExecuteOneIteration() {
   // 2. Gather minibatch.
   GatherMinibatch();
   task_count_.store(-1, std::memory_order_release);
-  search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
 
   // 2b. Collect collisions.
   CollectCollisions();
@@ -1217,7 +1216,6 @@ void SearchWorker::ExecuteOneIteration() {
 
   // 4. Run NN computation.
   RunNNComputation();
-  search_->backend_waiting_counter_.fetch_add(-1, std::memory_order_relaxed);
 
   // 5. Retrieve NN computations (and terminal values) into nodes.
   FetchMinibatchResults();
@@ -2134,7 +2132,19 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::RunNNComputation() {
-  if (computation_->UsedBatchSize() > 0) computation_->ComputeBlocking();
+  if (computation_->UsedBatchSize() > 0) {
+    int old = search_->backend_waiting_counter_.fetch_add(1, std::memory_order_relaxed);
+    assert(old <= search_->thread_count_);
+    std::ignore = old;
+    computation_->ComputeBlocking([&](ComputationEvent event) {
+      assert(event == ComputationEvent::FIRST_BACKEND_IDLE);
+      int old = search_->backend_waiting_counter_.fetch_sub(
+          1, std::memory_order_relaxed);
+      assert(old > 0);
+      std::ignore = old;
+      std::ignore = event;
+    });
+  }
 }
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
