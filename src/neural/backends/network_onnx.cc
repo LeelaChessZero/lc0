@@ -58,6 +58,7 @@
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 #include "utils/logging.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace {
@@ -480,6 +481,7 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
 
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
+  LCTRACE_FUNCTION_SCOPE;
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
     batch_size =

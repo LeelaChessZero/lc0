@@ -787,6 +787,44 @@ endif
     deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
   endif
 
+  trace_lib = get_option('trace_library')
+  trace_config = configuration_data()
+
+  common_files += 'src/utils/trace.cc'
+  ## ~~~~~~~~
+  ## perfetto
+  ## ~~~~~~~~
+  if trace_lib == 'perfetto'
+    perfetto_dep = dependency('perfetto', required: true,
+                             fallback: ['perfetto', 'dep_perfetto'])
+    deps += perfetto_dep
+    trace_config.set('USE_PERFETTO_TRACE', 1)
+  endif
+
+  ## ~~~~
+  ## nvtx
+  ## ~~~~
+  if trace_lib == 'nvtx'
+    nvtx_includes = get_option('cudnn_include')
+    nvtx_header_found = false
+    foreach d : nvtx_includes
+      if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
+        if cc.has_header('nvtx3/nvtx3.hpp', args: '-I' + d)
+          includes += include_directories(d)
+          nvtx_header_found = true
+          break
+        endif
+      endif
+    endforeach
+    if not nvtx_header_found
+      error('nvtx3/nvtx3.hpp header not found in cudnn_include paths')
+    endif
+    # This could support other tracing apis like systemtap.
+    trace_config.set('USE_NVTX_TRACE', 1)
+  endif
+  configure_file(output : 'trace_config.h',
+                 configuration : trace_config)
+
   ## ~~~~~~~~
   ## Profiler
   ## ~~~~~~~~
