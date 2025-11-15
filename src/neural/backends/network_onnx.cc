@@ -311,7 +311,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         float sum = w + d + l;
         w /= sum;
         l /= sum;
-        d = 1.0f - w - l;
+        d /= sum;
       }
       wdl_output_data_[3 * i + 0] = w;
       wdl_output_data_[3 * i + 1] = d;

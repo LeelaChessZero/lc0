@@ -879,7 +879,7 @@ class CudnnNetwork : public Network {
         float sum = w + d + l;
         w /= sum;
         l /= sum;
-        d = 1.0f - w - l;
+        d /= sum;
         io->op_value_mem_[3 * i + 0] = w;
         io->op_value_mem_[3 * i + 1] = d;
         io->op_value_mem_[3 * i + 2] = l;
