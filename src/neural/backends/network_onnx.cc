@@ -848,8 +848,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       ReportCUDAErrors(cudaStreamCreate(&upload_stream_));
       ReportCUDAErrors(cudaStreamCreate(&download_stream_));
 #else
-      CERR << "WARNING: CUDA support missing. Enable plain_cuda build option "
-              "for CUDA optimizations.";
+      CERR << "WARNING: Simplified version without CUDA enhancements.";
 #endif
       break;
     default:
