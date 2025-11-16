@@ -884,7 +884,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, false);
   } else {
     WeightsToOnnxConverterOptions converter_options;
-    converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
@@ -907,6 +906,11 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     }
     converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
+    converter_options.opset = opts.GetOrDefault<int>(
+        "opset", converter_options.data_type ==
+                         WeightsToOnnxConverterOptions::DataType::kBFloat16
+                     ? 22
+                     : 17);
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, true);
