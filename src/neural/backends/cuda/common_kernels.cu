@@ -1323,6 +1323,64 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename T, int kWorkPerThread>
+__global__ void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
+                                         int depth, int d_model, T* k, T* q,
+                                         T* b1, T* v, T* b2) {
+  const int i = (blockIdx.x * blockDim.x + threadIdx.x) * kWorkPerThread;
+  if (i >= block_size) return;
+  const int h = i % heads;
+  const int n = i / heads;
+  int w;
+  T* res[kWorkPerThread];
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = k + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = q + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = b1 + i * 64 * 64 + w * 64 * 64;
+    offsets[i + w + 2 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = v + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 3 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = b2 + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 4 * block_size] = res[w];
+  }
+}
+
+template <typename T>
+void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
+                       int d_model, T* k, T* q, T* b1, T* v, T* b2,
+                       cudaStream_t stream) {
+  const int block_size = heads * max_batch;
+  // Process two elements per thread to use 128 bit store instructions.
+  constexpr int kWorkPerThread = 2;
+  constexpr int kWorkGroupSize = 128;
+  if (block_size % kWorkPerThread != 0) {
+    // Handle odd block sizes.
+    int grid = DivUp(block_size, kWorkGroupSize);
+    genOffsetPointers_kernel<T, 1><<<grid, kWorkGroupSize, 0, stream>>>(
+        offsets, heads, block_size, depth, d_model, k, q, b1, v, b2);
+  } else {
+    // Handle even block size
+    int grid = DivUp(block_size, kWorkGroupSize * kWorkPerThread);
+    genOffsetPointers_kernel<T, kWorkPerThread>
+        <<<grid, kWorkGroupSize, 0, stream>>>(offsets, heads, block_size, depth,
+                                              d_model, k, q, b1, v, b2);
+  }
+}
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
                                              cudaStream_t stream);
@@ -1629,6 +1687,15 @@ template void applyInputGating<half>(half* output, const half* input,
 template void applyInputGating<float>(float* output, const float* input,
                                       const float* mult, const float* add,
                                       int N, int C, int output_size,
+                                      cudaStream_t stream);
+
+template void genOffsetPointers<float>(float** offsets, int heads,
+                                       int max_batch, int depth, int d_model,
+                                       float* k, float* q, float* b1, float* v,
+                                       float* b2, cudaStream_t stream);
+template void genOffsetPointers<half>(half** offsets, int heads, int max_batch,
+                                      int depth, int d_model, half* k, half* q,
+                                      half* b1, half* v, half* b2,
                                       cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero

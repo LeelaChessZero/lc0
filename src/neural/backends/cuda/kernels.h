@@ -161,5 +161,10 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, cudaStream_t stream);
+
+template <typename T>
+void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
+                       int d_model, T* k, T* q, T* b1, T* v, T* b2,
+                       cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero
