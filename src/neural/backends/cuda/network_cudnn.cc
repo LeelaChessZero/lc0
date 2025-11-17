@@ -924,7 +924,7 @@ class CudnnNetwork : public Network {
         float sum = w + d + l;
         w /= sum;
         l /= sum;
-        d = 1.0f - w - l;
+        d /= sum;
         wdl[2 * i + 0] = w - l;
         wdl[2 * i + 1] = d;
       }
