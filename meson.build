@@ -120,6 +120,13 @@ if cc.has_function('pthread_setaffinity_np',
                    dependencies: [dependency('threads')],
                    prefix: '#include <pthread.h>')
   numa_config.set('HAVE_PTHREAD_SETAFFINITY_NP', 1)
+elif host_machine.system() == 'windows'
+  if cc.has_member('NUMA_NODE_RELATIONSHIP', 'GroupCount',
+                    prefix: '#include <windows.h>\n#include <winnt.h>')
+    numa_config.set('HAVE_WINDOWS_NUMA_NODE_GROUP', 1)
+  else
+    warning('WARNING: Old Windows SDK detected. NUMA support is limited to 64 processors.')
+  endif
 endif
 configure_file(output: 'numa_config.h', configuration: numa_config)
 
