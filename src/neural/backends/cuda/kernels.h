@@ -81,16 +81,13 @@ void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
                ActivationFunction activation, cudaStream_t stream);
 
 // Unpack planes (input to network).
-void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream);
+template <typename T>
+void expandPlanes_NHWC(T* output, const uint64_t* masks, const T* values, int n,
+                       cudaStream_t stream);
 
-template <typename IOType>
-void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
-                            const IOType* values, int n, cudaStream_t stream);
-
-template <typename IOType>
-void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
-                            const IOType* values, int n, cudaStream_t stream);
+template <typename T>
+void expandPlanes_NCHW(T* output, const uint64_t* masks, const T* values, int n,
+                       cudaStream_t stream);
 
 // Perform global avg pool.
 template <typename T>

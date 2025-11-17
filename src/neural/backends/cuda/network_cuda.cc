@@ -759,14 +759,8 @@ class CudaNetwork : public Network {
 #endif
     }
 
-    constexpr bool fp16 = std::is_same<half, DataType>::value;
-    if constexpr (fp16) {
-      expandPlanes_Fp16_NCHW((half*)(tensor_mem[0]), ipDataMasks, ipDataValues,
-                             batchSize * kInputPlanes, compute_stream);
-    } else {
-      expandPlanes_Fp32_NCHW((float*)(tensor_mem[0]), ipDataMasks, ipDataValues,
-                             batchSize * kInputPlanes, compute_stream);
-    }
+    expandPlanes_NCHW(tensor_mem[0], ipDataMasks, ipDataValues,
+                      batchSize * kInputPlanes, compute_stream);
 
     auto* opPol = io->op_policy_mem_gpu_;
     auto* opVal = io->op_value_mem_gpu_;
