@@ -677,22 +677,21 @@ class CudaNetwork : public Network {
   }
 
   void GraphLaunch(InputsOutputs<DataType>* io, int batchSize) {
-#if !CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
+#if CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
+    io->cuda_graphs_[batchSize - 1].Launch(io->exec_stream_);
+#else
     if (!multi_stream_) {
       UploadInputs(io, batchSize);
 
       io->cuda_graphs_[batchSize - 1].Launch(compute_stream_);
       ReportCUDAErrors(
           cudaEventRecord(io->download_done_event_, compute_stream_));
-    } else
-#endif
-    {
+    } else {
       io->cuda_graphs_[batchSize - 1].Launch(io->exec_stream_);
-#if !CUDA_GRAPH_SUPPORTS_EXTERNAL_EVENTS
       ReportCUDAErrors(
           cudaEventRecord(io->download_done_event_, io->exec_stream_));
-#endif
     }
+#endif
   }
 
   void forwardEval(InputsOutputs<DataType>* io, int batchSize,
