@@ -723,8 +723,11 @@ class CudnnNetwork : public Network {
   void GraphLaunch(InputsOutputs<DataType>* io, int batchSize) {
     UploadInputs(io, batchSize);
 
+    // cudaGraphUpload was added in CUDA 11.1
+#if CUDART_VERSION >= 11010
     // Make sure graph has completed upload before launching it.
     ReportCUDAErrors(cudaStreamSynchronize(io->exec_stream_));
+#endif
 
     io->cuda_graphs_[batchSize - 1].Launch(compute_stream_);
     ReportCUDAErrors(
