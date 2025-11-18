@@ -41,6 +41,7 @@
 #include "neural/tables/policy_map.h"
 #include "utils/bititer.h"
 #include "utils/exception.h"
+#include "utils/trace.h"
 
 namespace lczero {
 using namespace cudnn_backend;
@@ -863,7 +864,7 @@ class CudaNetwork : public Network {
         float sum = w + d + l;
         w /= sum;
         l /= sum;
-        d = 1.0f - w - l;
+        d /= sum;
         io->op_value_mem_[3 * i + 0] = w;
         io->op_value_mem_[3 * i + 1] = d;
         io->op_value_mem_[3 * i + 2] = l;
@@ -1060,6 +1061,7 @@ CudaNetworkComputation<DataType>::~CudaNetworkComputation() {
 
 template <typename DataType>
 void CudaNetworkComputation<DataType>::ComputeBlocking() {
+  LCTRACE_FUNCTION_SCOPE;
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 

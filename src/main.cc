@@ -39,6 +39,7 @@
 #include "utils/esc_codes.h"
 #include "utils/logging.h"
 #include "utils/numa.h"
+#include "utils/trace.h"
 #include "version.h"
 
 namespace lczero {
@@ -77,6 +78,7 @@ void ChooseAndRunEngine() {
 }  // namespace lczero
 
 int main(int argc, const char** argv) {
+  LCTRACE_INITIALIZE;
   using namespace lczero;
   EscCodes::Init();
   LOGFILE << "Lc0 started.";
