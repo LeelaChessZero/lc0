@@ -250,10 +250,10 @@ std::string Converter::EndOptionalBf16Fix(OnnxBuilder* builder,
 
 std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
                                 const std::string& name) {
-  if (!options_.alt_mish || options_.opset < 9) {
+  if (!options_.alt_mish) {
     std::string flow = input;
     flow = StartOptionalBf16Fix(builder, flow, name);
-    if (options_.opset >= 18) {
+    if (options_.opset >= 18 && options_.real_mish) {
       flow = builder->Mish(name, flow);
       return EndOptionalBf16Fix(builder, flow, name);
     }
