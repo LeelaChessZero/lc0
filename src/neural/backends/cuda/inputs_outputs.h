@@ -37,15 +37,26 @@
 namespace lczero {
 namespace cudnn_backend {
 
+#if __cpp_lib_bit_cast >= 201806L
+using std::bit_cast;
+#else
+template <class To, class From>
+To bit_cast(const From& src) noexcept {
+  To dst;
+  std::memcpy((void*)&dst, &src, sizeof(To));
+  return dst;
+}
+#endif
+
 inline void ToType(float& dst, float src) { dst = src; }
 inline void ToType(half& dst, float src) {
   auto temp = FP32toFP16(src);
-  dst = std::bit_cast<half>(temp);
+  dst = bit_cast<half>(temp);
 }
 
 inline float FromType(float src) { return src; }
 inline float FromType(half src) {
-  uint16_t temp = std::bit_cast<uint16_t>(src);
+  uint16_t temp = bit_cast<uint16_t>(src);
   return FP16toFP32(temp);
 }
 
