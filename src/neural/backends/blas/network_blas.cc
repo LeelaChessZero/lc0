@@ -987,7 +987,6 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
       weights_(file.weights()) {
-  Numa::Init();
 
   max_batch_size_ =
       static_cast<size_t>(options.GetOrDefault<int>("batch_size", 256));

@@ -31,28 +31,27 @@
 
 namespace lczero {
 
+class OptionsParser;
+
 class Numa {
  public:
   Numa() = delete;
 
   // Initialize and display statistics about processor configuration.
-  static void Init();
+  static void Init(OptionsParser* parser);
 
   // Bind thread to processor group.
   static void BindThread(int id);
 
   // Reserve cores for SearchWorkers.
   // Mustbe called before any threads are bound.
-  static void ReserveSearchWorkers(size_t socket_id, size_t num_search_workers);
+  static void ReserveSearchWorkers(size_t num_search_workers);
 
   // Bind SearchWorker to a reserved core.
   static void BindSearchWorker(size_t id);
 
   // Bind task workers to a socket.
-  static void BindTaskWorkersToSocket(size_t socket_id);
-
- private:
-  static int threads_per_core_;
+  static void BindTaskWorkersToSocket();
 };
 
 }  // namespace lczero

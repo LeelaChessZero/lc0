@@ -45,11 +45,6 @@ const OptionId kThreadsOptionId{
          "Number of (CPU) worker threads to use, 0 for the backend default.",
      .short_flag = 't',
      .visibility = OptionId::kAlwaysVisible}};
-const OptionId kSearchSocketOptionId{
-    {.long_flag = "search-numa-socket",
-     .uci_option = "SearchNUMASocket",
-     .help_text = "The NUMA socket to use for the search threads.",
-     .visibility = OptionId::kProOnly}};
 const OptionId kClearTree{
     {.long_flag = "",
      .uci_option = "ClearTree",
@@ -157,8 +152,7 @@ void DagClassicSearch::StartSearch(const GoParams& params) {
 
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
-  search_->StartThreads(options_->Get<int>(kSearchSocketOptionId),
-                        options_->Get<int>(kThreadsOptionId));
+  search_->StartThreads(options_->Get<int>(kThreadsOptionId));
 }
 
 class DagClassicSearchFactory : public SearchFactory {
@@ -171,7 +165,6 @@ class DagClassicSearchFactory : public SearchFactory {
 
   void PopulateParams(OptionsParser* parser) const override {
     parser->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
-    parser->Add<IntOption>(kSearchSocketOptionId, 0, 512) = 0;
     SearchParams::Populate(parser);
     classic::PopulateTimeManagementOptions(classic::RunType::kUci, parser);
 

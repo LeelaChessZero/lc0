@@ -25,11 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <cassert>
 #include <cstring>
-#include <bit>
 #include <mutex>
 
 #include "numa_config.h"
+#include "utils/optionsparser.h"
 #if HAVE_PTHREAD_SETAFFINITY_NP
 #include <pthread.h>
 #include <unistd.h>
@@ -37,19 +38,37 @@
 
 #include <system_error>
 
-#include "chess/bitboard.h"
-#include "utils/bititer.h"
 #include "utils/logging.h"
 #include "utils/numa.h"
 
 #ifdef _WIN32
+// clang-format off
 #include <windows.h>
 #include <tlhelp32.h>
+// clang-format on
+
+#include <bit>
+
+#include "chess/bitboard.h"
+#include "utils/bititer.h"
 #endif
 
 namespace lczero {
 
 namespace {
+
+const OptionId kUseAllCoresOptionId{
+    {.long_flag = "use-all-cores",
+     .uci_option = "UseAllCores",
+     .help_text = "Default is to use only core which were included in the "
+                  "initial CPU affinity mask. This options allows search and "
+                  "task workers to use cores also outside the initial set.",
+     .visibility = OptionId::kProOnly}};
+const OptionId kSearchSocketOptionId{
+    {.long_flag = "search-numa-socket",
+     .uci_option = "SearchNUMASocket",
+     .help_text = "The NUMA socket to use for the search threads.",
+     .visibility = OptionId::kProOnly}};
 
 #ifdef _WIN32
 static bool CheckIsWin11() {
@@ -57,7 +76,7 @@ static bool CheckIsWin11() {
   osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
   GetVersionExA(&osvi);
   return osvi.dwMajorVersion >= 11 ||
-    (osvi.dwMajorVersion == 10 && osvi.dwBuildNumber >= 20348);
+         (osvi.dwMajorVersion == 10 && osvi.dwBuildNumber >= 20348);
 }
 
 static bool IsWin11() {
@@ -68,174 +87,14 @@ static bool IsWin11() {
 static constexpr unsigned kMaxProcessorsPerGroup = 64;
 
 #endif
-    
+
 auto DivUp = [](size_t a, size_t b) { return (a + b - 1) / b; };
 
-struct Config {
-  struct LogicalProcessor {
-    unsigned cpu_;
-    unsigned core_;
-    unsigned socket_;
-    unsigned node_;
-  };
-
-  static std::vector<LogicalProcessor> FallbackProcessorConfig() {
-    std::vector<Config::LogicalProcessor> logical_processors;
-    for (unsigned cpu = 0; cpu < std::thread::hardware_concurrency(); cpu++) {
-      logical_processors.push_back({cpu, cpu, 0, 0});
-    }
-    return logical_processors;
-  }
-
-  Config() : logical_processors_(FallbackProcessorConfig()) {
-    ProcessProcessors();
-  }
-
-  Config(std::vector<LogicalProcessor>& logical_processors)
-      : logical_processors_(logical_processors) {
-    ProcessProcessors();
-  }
-  void ProcessProcessors() {
-    Sort();
-    size_t nodes = 0;
-    size_t current_node = -1;
-    size_t sockets = 0;
-    size_t current_socket = -1;
-    size_t cores = 0;
-    size_t current_core = -1;
-    size_t max_thread = 0;
-    for (const auto& lp : logical_processors_) {
-      if (current_node != lp.node_) {
-        current_node = lp.node_;
-        nodes++;
-      }
-      if (current_socket != lp.socket_) {
-        current_socket = lp.socket_;
-        sockets++;
-        cores += current_core + 1;
-        current_core = 0;
-      }
-      current_core = std::max(current_core, static_cast<size_t>(lp.core_));
-      max_thread = std::max(max_thread, static_cast<size_t>(lp.cpu_));
-    }
-    nodes_ = nodes;
-    sockets_ = sockets;
-    cores_ = cores + current_core + 1;
-    max_thread_ = max_thread;
-  }
-
-  template <typename Func>
-  void ForEachOnSocket(size_t socket_id, Func func) const {
-    assert(socket_id < GetSocketCount());
-    for (const auto& lp : logical_processors_) {
-      if (lp.socket_ == socket_id) {
-        func(lp.cpu_);
-      }
-    }
-  }
-
-  template <typename Func>
-  void ForEachCore(size_t logical_id, Func func) const {
-    assert(logical_id < GetThreadCount());
-    const auto& lp = logical_processors_[logical_id];
-    for (const auto& other_lp : logical_processors_) {
-      if (other_lp.core_ == lp.core_ && other_lp.socket_ == lp.socket_ &&
-          other_lp.node_ == lp.node_) {
-        func(other_lp.cpu_);
-      }
-    }
-  }
-
-  void ReserveCoreOnSocket(size_t socket_id) {
-    assert(socket_id < GetSocketCount());
-    bool socket_found = false;
-    size_t core_id;
-    for (const auto& lp : logical_processors_) {
-      if (socket_found && lp.socket_ == socket_id && lp.core_ == core_id) {
-        reserved_processors_.push_back(lp);
-      }
-      if (!socket_found && lp.socket_ == socket_id) {
-        core_id = lp.core_;
-        reserved_processors_.push_back(lp);
-        socket_found = true;
-      }
-    }
-    logical_processors_.erase(
-        std::remove_if(logical_processors_.begin(), logical_processors_.end(),
-                       [&](const LogicalProcessor& lp) {
-                         return lp.socket_ == socket_id && lp.core_ == core_id;
-                       }),
-        logical_processors_.end());
-  }
-
-  unsigned GetCoreForThread(int id) {
-#ifdef _WIN32
-    if (!IsWin11() && GetMaxThread() >= kMaxProcessorsPerGroup) {
-      // Distribute threads to different processor groups on Windows before 11.
-      id *= DivUp(logical_processors_.size(), DivUp(GetMaxThread(), kMaxProcessorsPerGroup));
-    }
-#endif
-    id %= logical_processors_.size();
-    return logical_processors_[id].cpu_;
-  }
-
-  bool CheckReservedCores(size_t socket_id, size_t num_workers) {
-    size_t reserved_cores = 0;
-    size_t core = -1;
-    for (const auto& lp : reserved_processors_) {
-      if (lp.socket_ != socket_id) {
-        break;
-      }
-      if (lp.core_ != core) {
-        core = lp.core_;
-        reserved_cores++;
-      }
-    }
-    if (reserved_cores == num_workers) return true;
-
-    std::copy(reserved_processors_.begin(), reserved_processors_.end(),
-              std::back_inserter(logical_processors_));
-    reserved_processors_.clear();
-    Sort();
-    return false;
-  }
-
-  void Sort() {
-    std::sort(logical_processors_.begin(), logical_processors_.end(),
-              [](const auto& a, const auto& b) { return a.cpu_ < b.cpu_; });
-  }
-
-  class ConfigLock {
-   public:
-    explicit ConfigLock(Config& config)
-        : config_(config), lock_(config.mutex_) {}
-    ConfigLock(const ConfigLock&) = delete;
-    ConfigLock& operator=(const ConfigLock&) = delete;
-    ~ConfigLock() {}
-    Config* operator->() { return &config_; }
-
-   private:
-    Config& config_;
-    std::unique_lock<std::mutex> lock_;
-  };
-
-  static ConfigLock Lock() { return ConfigLock(Instance()); }
-
-  static Config& Instance();
-
-  size_t GetThreadCount() const { return logical_processors_.size(); }
-  size_t GetMaxThread() const { return max_thread_; }
-  size_t GetCoreCount() const { return cores_; }
-  size_t GetSocketCount() const { return sockets_; }
-  size_t GetNodeCount() const { return nodes_; }
-
-  size_t max_thread_ = 0;
-  size_t cores_ = 0;
-  size_t sockets_ = 0;
-  size_t nodes_ = 0;
-  std::vector<LogicalProcessor> logical_processors_;
-  std::vector<LogicalProcessor> reserved_processors_;
-  mutable std::mutex mutex_;
+struct LogicalProcessor {
+  unsigned cpu_;
+  unsigned core_;
+  unsigned socket_;
+  unsigned node_;
 };
 
 #if HAVE_PTHREAD_SETAFFINITY_NP
@@ -254,19 +113,19 @@ class LSCPUInit {
     pipe_ = nullptr;
   }
 
-  Config ReadConfig() {
+  std::vector<LogicalProcessor> ReadConfig() {
     if (!pipe_) {
       CERR << "Failed to run lscpu. Assumming single socket system with one "
               "thread per core. Install lscpu to enable NUMA support.";
       return {};
     }
-    std::vector<Config::LogicalProcessor> configs;
+    std::vector<LogicalProcessor> configs;
     char buffer[128];
     std::string result = "";
     while (fgets(buffer, sizeof(buffer), pipe_) != NULL) {
       if (buffer[0] == '#') continue;
 
-      Config::LogicalProcessor config;
+      LogicalProcessor config;
 
       if (sscanf(buffer, "%u,%u,%u,%u", &config.cpu_, &config.core_,
                  &config.socket_, &config.node_) != 4) {
@@ -278,24 +137,27 @@ class LSCPUInit {
     }
 
     Close();
-    return {configs};
+    return configs;
   }
 
  private:
   FILE* pipe_;
 } numa_config;
 
-Config& Config::Instance() {
-  static Config instance = numa_config.ReadConfig();
-  return instance;
-}
-
 class CpuSet {
  public:
+  CpuSet() : cpuset_{nullptr} {}
+
   CpuSet(unsigned max_lp) : cpuset_(CPU_ALLOC(max_lp + 1)), size_(max_lp + 1) {
     CPU_ZERO_S(Bytes(), cpuset_);
   }
   ~CpuSet() { CPU_FREE(cpuset_); }
+
+  CpuSet& operator=(CpuSet&& other) {
+    std::swap(cpuset_, other.cpuset_);
+    std::swap(size_, other.size_);
+    return *this;
+  }
 
   void Set(size_t cpu) {
     assert(cpu < size_);
@@ -348,9 +210,9 @@ class CpuSet {
     int err;
     auto thread = pthread_self();
     if ((err = pthread_getaffinity_np(thread, Bytes(), cpuset_))) {
-      CERR << "Failed to get thread affinity(" << thread
-           << ", " << Bytes() << ", " << cpuset_ << "). Error code: "
-           << std::system_category().message(err);
+      CERR << "Failed to get thread affinity(" << thread << ", " << Bytes()
+           << ", " << cpuset_
+           << "). Error code: " << std::system_category().message(err);
     }
   }
 
@@ -414,8 +276,8 @@ class CpuSet {
 
 #define USE_THREAD_AFINITTY 1
 
-Config WindowsReadConfig() {
-  std::vector<Config::LogicalProcessor> logical_processors;
+std::vector<LogicalProcessor> WindowsReadConfig() {
+  std::vector<LogicalProcessor> logical_processors;
 
   DWORD len = 0;
 
@@ -436,7 +298,7 @@ Config WindowsReadConfig() {
   unsigned offset = 0;
   unsigned core_id = 0;
   unsigned socket_id = 0;
-  auto get_or_insert_lp = [&](unsigned cpu_index) -> Config::LogicalProcessor& {
+  auto get_or_insert_lp = [&](unsigned cpu_index) -> LogicalProcessor& {
     auto lp_iter =
         std::find_if(logical_processors.begin(), logical_processors.end(),
                      [&](const auto& lp) { return lp.cpu_ == cpu_index; });
@@ -525,14 +387,10 @@ Config WindowsReadConfig() {
   return {logical_processors};
 }
 
-Config& Config::Instance() {
-  static Config instance = WindowsReadConfig();
-  return instance;
-}
-
 class CpuSet {
-
  public:
+  CpuSet() {}
+
   CpuSet(unsigned max_lp)
       : group_affinities_(std::make_unique<GROUP_AFFINITY[]>(
             DivUp(max_lp + 1, kMaxProcessorsPerGroup))),
@@ -541,6 +399,12 @@ class CpuSet {
       group_affinities_[i].Group = i;
       group_affinities_[i].Mask = 0;
     }
+  }
+
+  CpuSet& operator=(CpuSet&& other) {
+    std::swap(group_affinities_, other.group_affinities_);
+    std::swap(size_, other.size_);
+    return *this;
   }
 
   void Set(size_t cpu) {
@@ -608,7 +472,7 @@ class CpuSet {
     // see details: https://stackoverflow.com/questions/76317127
     if (IsWin11()) {
       if (!SetThreadSelectedCpuSetMasks(thread, group_affinities_.get(),
-                                         DivUp(size_, kMaxProcessorsPerGroup))) {
+                                        DivUp(size_, kMaxProcessorsPerGroup))) {
         CERR << "Failed to set thread affinity. Error code: "
              << std::system_category().message(GetLastError());
       }
@@ -618,8 +482,7 @@ class CpuSet {
       // We select the first available group affinity.
       for (unsigned i = 0; i < DivUp(size_, kMaxProcessorsPerGroup); i++) {
         if (group_affinities_[i].Mask != 0) {
-          if (!SetThreadGroupAffinity(thread, &group_affinities_[i],
-                                      nullptr)) {
+          if (!SetThreadGroupAffinity(thread, &group_affinities_[i], nullptr)) {
             CERR << "Failed to set thread group affinity. Error code: "
                  << std::system_category().message(GetLastError());
             break;
@@ -646,7 +509,7 @@ class CpuSet {
       GROUP_AFFINITY current_affinity;
       if (!GetThreadGroupAffinity(thread, &current_affinity)) {
         CERR << "Failed to get thread group affinity. Error code: "
-          << std::system_category().message(GetLastError());
+             << std::system_category().message(GetLastError());
         return;
       }
       group_affinities_[current_affinity.Group].Mask = current_affinity.Mask;
@@ -655,7 +518,8 @@ class CpuSet {
   }
 
   void SetAffintyAll() {
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, GetCurrentProcessId());
+    HANDLE snapshot =
+        CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, GetCurrentProcessId());
     if (snapshot == INVALID_HANDLE_VALUE) {
       CERR << "Failed to create thread snapshot. Error code: "
            << std::system_category().message(GetLastError());
@@ -672,9 +536,11 @@ class CpuSet {
       return;
     }
     do {
-      if (te.dwSize >= FIELD_OFFSET(THREADENTRY32, th32ThreadID) +
-                        sizeof(te.th32ThreadID)) {
-        HANDLE thread = OpenThread(THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION, FALSE, te.th32ThreadID);
+      if (te.dwSize >=
+          FIELD_OFFSET(THREADENTRY32, th32ThreadID) + sizeof(te.th32ThreadID)) {
+        HANDLE thread =
+            OpenThread(THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION, FALSE,
+                       te.th32ThreadID);
         if (!thread) {
           CERR << "Failed to open thread " << te.th32ThreadID
                << ". Error code: "
@@ -695,13 +561,229 @@ class CpuSet {
 };
 
 #endif
+
+struct Config {
+  static std::vector<LogicalProcessor> FallbackProcessorConfig() {
+    std::vector<LogicalProcessor> logical_processors;
+    for (unsigned cpu = 0; cpu < std::thread::hardware_concurrency(); cpu++) {
+      logical_processors.push_back({cpu, cpu, 0, 0});
+    }
+    return logical_processors;
+  }
+
+  Config(const std::vector<LogicalProcessor>& logical_processors)
+      : logical_processors_(logical_processors) {
+    if (logical_processors_.empty()) {
+      logical_processors_ = FallbackProcessorConfig();
+    }
+    ProcessProcessors();
+  }
+
+  void ProcessProcessors() {
+    Sort();
+    if (!use_all_cores_) {
+      logical_processors_.erase(
+          std::remove_if(logical_processors_.begin(), logical_processors_.end(),
+                         [&](const LogicalProcessor& lp) {
+                           if (!initial_affinity_.IsSet(lp.cpu_)) {
+                             restricted_processors_.push_back(lp);
+                             return true;
+                           }
+                           return false;
+                         }),
+          logical_processors_.end());
+    }
+    size_t nodes = 0;
+    size_t current_node = -1;
+    size_t sockets = 0;
+    size_t current_socket = -1;
+    size_t cores = 0;
+    size_t current_core = -1;
+    size_t max_thread = 0;
+    for (const auto& lp : logical_processors_) {
+      if (current_node != lp.node_) {
+        current_node = lp.node_;
+        nodes++;
+      }
+      if (current_socket != lp.socket_) {
+        current_socket = lp.socket_;
+        sockets++;
+        cores += current_core + 1;
+        current_core = 0;
+      }
+      current_core = std::max(current_core, static_cast<size_t>(lp.core_));
+      max_thread = std::max(max_thread, static_cast<size_t>(lp.cpu_));
+    }
+    nodes_ = nodes;
+    sockets_ = sockets;
+    cores_ = cores + current_core + 1;
+    max_thread_ = max_thread;
+  }
+
+  template <typename Func>
+  void ForEachOnSocket(size_t socket_id, Func func) const {
+    assert(socket_id < GetSocketCount());
+    for (const auto& lp : logical_processors_) {
+      if (lp.socket_ == socket_id) {
+        func(lp.cpu_);
+      }
+    }
+  }
+
+  template <typename Func>
+  void ForEachCore(size_t logical_id, Func func) const {
+    assert(logical_id < GetThreadCount());
+    const auto& lp = logical_processors_[logical_id];
+    for (const auto& other_lp : logical_processors_) {
+      if (other_lp.core_ == lp.core_ && other_lp.socket_ == lp.socket_ &&
+          other_lp.node_ == lp.node_) {
+        func(other_lp.cpu_);
+      }
+    }
+  }
+
+  void ReserveCoreOnSocket(size_t socket_id) {
+    assert(socket_id < GetSocketCount());
+    bool socket_found = false;
+    size_t core_id;
+    for (const auto& lp : logical_processors_) {
+      if (socket_found && lp.socket_ == socket_id && lp.core_ == core_id) {
+        reserved_processors_.push_back(lp);
+      }
+      if (!socket_found && lp.socket_ == socket_id) {
+        core_id = lp.core_;
+        reserved_processors_.push_back(lp);
+        socket_found = true;
+      }
+    }
+    logical_processors_.erase(
+        std::remove_if(logical_processors_.begin(), logical_processors_.end(),
+                       [&](const LogicalProcessor& lp) {
+                         return lp.socket_ == socket_id && lp.core_ == core_id;
+                       }),
+        logical_processors_.end());
+  }
+
+  unsigned GetCoreForThread(int id) {
+#ifdef _WIN32
+    if (!IsWin11() && GetMaxThread() >= kMaxProcessorsPerGroup) {
+      // Distribute threads to different processor groups on Windows before 11.
+      id *= DivUp(logical_processors_.size(),
+                  DivUp(GetMaxThread(), kMaxProcessorsPerGroup));
+    }
+#endif
+    id %= logical_processors_.size();
+    return logical_processors_[id].cpu_;
+  }
+
+  bool CheckReservedCores(size_t socket_id, size_t num_workers) {
+    size_t reserved_cores = 0;
+    size_t core = -1;
+    for (const auto& lp : reserved_processors_) {
+      if (lp.socket_ != socket_id) {
+        break;
+      }
+      if (lp.core_ != core) {
+        core = lp.core_;
+        reserved_cores++;
+      }
+    }
+    if (reserved_cores == num_workers) return true;
+
+    std::copy(reserved_processors_.begin(), reserved_processors_.end(),
+              std::back_inserter(logical_processors_));
+    reserved_processors_.clear();
+    Sort();
+    return false;
+  }
+
+  void Sort() {
+    std::sort(logical_processors_.begin(), logical_processors_.end(),
+              [](const auto& a, const auto& b) { return a.cpu_ < b.cpu_; });
+  }
+
+  class ConfigLock {
+   public:
+    explicit ConfigLock(Config& config)
+        : config_(config), lock_(config.mutex_) {}
+    ConfigLock(const ConfigLock&) = delete;
+    ConfigLock& operator=(const ConfigLock&) = delete;
+    ~ConfigLock() {}
+    Config* operator->() { return &config_; }
+
+   private:
+    Config& config_;
+    std::unique_lock<std::mutex> lock_;
+  };
+
+  void SetOptions(const OptionsDict& options) {
+    options_ = &options;
+    initial_affinity_ = CpuSet(GetMaxThread());
+    initial_affinity_.GetAffinity();
+  }
+
+  void UpdateOptions() {
+    bool all_cores = options_->Get<bool>(kUseAllCoresOptionId);
+    search_socket_id_ = options_->Get<int>(kSearchSocketOptionId);
+    if (search_socket_id_ >= GetSocketCount()) {
+      CERR << "Requested search to use socket " << search_socket_id_
+           << " is out of range. Only " << GetSocketCount()
+           << " socket(s) available. Using socket " << (GetSocketCount() - 1)
+           << " instead.";
+      search_socket_id_ = GetSocketCount() - 1;
+    }
+    if (all_cores != use_all_cores_) {
+      use_all_cores_ = all_cores;
+      std::copy(restricted_processors_.begin(), restricted_processors_.end(),
+                std::back_inserter(logical_processors_));
+      restricted_processors_.clear();
+      ProcessProcessors();
+    }
+  }
+
+  static ConfigLock Lock() { return ConfigLock(Instance()); }
+
+  static Config& Instance() {
+#if HAVE_PTHREAD_SETAFFINITY_NP
+    static Config instance{numa_config.ReadConfig()};
+#elif defined(_WIN32) && _WIN32_WINNT >= 0x0601
+    static Config instance{WindowsReadConfig()};
+#else
+    static Config instance{FallbackProcessorConfig()};
+#endif
+    return instance;
+  }
+
+  size_t GetThreadCount() const { return logical_processors_.size(); }
+  size_t GetMaxThread() const { return max_thread_; }
+  size_t GetCoreCount() const { return cores_; }
+  size_t GetSocketCount() const { return sockets_; }
+  size_t GetNodeCount() const { return nodes_; }
+
+  size_t max_thread_ = 0;
+  size_t cores_ = 0;
+  size_t sockets_ = 0;
+  size_t nodes_ = 0;
+
+  CpuSet initial_affinity_;
+  const OptionsDict* options_ = nullptr;
+  bool use_all_cores_ = true;
+  size_t search_socket_id_ = 0;
+
+  std::vector<LogicalProcessor> logical_processors_;
+  std::vector<LogicalProcessor> reserved_processors_;
+  std::vector<LogicalProcessor> restricted_processors_;
+  mutable std::mutex mutex_;
+};
+
 }  // namespace
 
-int Numa::threads_per_core_ = 1;
-
-void Numa::Init() {
-#if USE_THREAD_AFINITTY
+void Numa::Init(OptionsParser* parser) {
+  parser->Add<BoolOption>(kUseAllCoresOptionId) = false;
+  parser->Add<IntOption>(kSearchSocketOptionId, 0, 512) = 0;
   auto config = Config::Lock();
+  config->SetOptions(parser->GetOptionsDict());
+#if USE_THREAD_AFINITTY
   size_t threads = config->GetThreadCount();
   size_t cores = config->GetCoreCount();
   size_t nodes = config->GetNodeCount();
@@ -722,18 +804,12 @@ void Numa::BindThread([[maybe_unused]] int id) {
 #endif
 }
 
-void Numa::ReserveSearchWorkers([[maybe_unused]] size_t socket_id,
-                                size_t num_workers) {
+void Numa::ReserveSearchWorkers(size_t num_workers) {
   if (num_workers == 0) return;
 #if USE_THREAD_AFINITTY
   auto config = Config::Lock();
-  if (socket_id >= config->GetSocketCount()) {
-    CERR << "Requested to reserve workers on invalid socket " << socket_id
-         << ". Only " << config->GetSocketCount()
-         << " socket(s) available. Using socket "
-         << (config->GetSocketCount() - 1) << " instead.";
-    socket_id = config->GetSocketCount() - 1;
-  }
+  config->UpdateOptions();
+  unsigned socket_id = config->search_socket_id_;
   if (config->CheckReservedCores(socket_id, num_workers)) {
     return;
   }
@@ -741,11 +817,9 @@ void Numa::ReserveSearchWorkers([[maybe_unused]] size_t socket_id,
     config->ReserveCoreOnSocket(socket_id);
   }
 
-  std::sort(
-      config->reserved_processors_.begin(), config->reserved_processors_.end(),
-      [](const Config::LogicalProcessor& a, const Config::LogicalProcessor& b) {
-        return a.core_ < b.core_;
-      });
+  std::sort(config->reserved_processors_.begin(),
+            config->reserved_processors_.end(),
+            [](const auto& a, const auto& b) { return a.core_ < b.core_; });
   CpuSet cpuset(config->GetMaxThread()), emptyset(config->GetMaxThread());
   cpuset.GetAffinity();
   for (const auto& rp : config->reserved_processors_) {
@@ -780,12 +854,11 @@ void Numa::BindSearchWorker([[maybe_unused]] size_t id) {
 #endif
 }
 
-void Numa::BindTaskWorkersToSocket([[maybe_unused]] size_t socket_id) {
+void Numa::BindTaskWorkersToSocket() {
 #if USE_THREAD_AFINITTY
   auto config = Config::Lock();
-  socket_id = std::min(socket_id, config->GetSocketCount() - 1);
   CpuSet cpuset(config->GetMaxThread());
-  config->ForEachOnSocket(socket_id,
+  config->ForEachOnSocket(config->search_socket_id_,
                           [&](unsigned cpu_id) { cpuset.Set(cpu_id); });
   cpuset.SetAffinity();
 #endif

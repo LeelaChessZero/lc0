@@ -32,6 +32,7 @@
 #include "engine.h"
 #include "neural/shared_params.h"
 #include "utils/configfile.h"
+#include "utils/numa.h"
 
 namespace lczero {
 namespace {
@@ -56,6 +57,7 @@ void RunEngine(SearchFactory* factory) {
   if (factory) factory->PopulateParams(&options_parser);  // Search params.
   uci_responder.PopulateParams(&options_parser);          // UCI params.
   SharedBackendParams::Populate(&options_parser);
+  Numa::Init(&options_parser);
 
   // Parse flags, show help, initialize logging, read config etc.
   if (!ConfigFile::Init() || !options_parser.ProcessAllFlags()) return;

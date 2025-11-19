@@ -88,7 +88,6 @@ int main(int argc, const char** argv) {
        << " built " << __DATE__;
 
   try {
-    Numa::Init();
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
