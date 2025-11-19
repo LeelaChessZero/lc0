@@ -582,6 +582,7 @@ struct Config {
   void ProcessProcessors() {
     Sort();
     if (!use_all_cores_) {
+#if USE_THREAD_AFINITTY
       logical_processors_.erase(
           std::remove_if(logical_processors_.begin(), logical_processors_.end(),
                          [&](const LogicalProcessor& lp) {
@@ -592,6 +593,7 @@ struct Config {
                            return false;
                          }),
           logical_processors_.end());
+#endif
     }
     size_t nodes = 0;
     size_t current_node = -1;
@@ -718,8 +720,10 @@ struct Config {
 
   void SetOptions(const OptionsDict& options) {
     options_ = &options;
+#if USE_THREAD_AFINITTY
     initial_affinity_ = CpuSet(GetMaxThread());
     initial_affinity_.GetAffinity();
+#endif
   }
 
   void UpdateOptions() {
@@ -769,7 +773,9 @@ struct Config {
   size_t sockets_ = 0;
   size_t nodes_ = 0;
 
+#if USE_THREAD_AFINITTY
   CpuSet initial_affinity_;
+#endif
   const OptionsDict* options_ = nullptr;
   bool use_all_cores_ = true;
   size_t search_socket_id_ = 0;
