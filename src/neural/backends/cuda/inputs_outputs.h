@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <bit>
 #include <cassert>
 #include <memory>
 
