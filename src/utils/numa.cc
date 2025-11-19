@@ -725,19 +725,23 @@ struct Config {
   void UpdateOptions() {
     bool all_cores = options_->Get<bool>(kUseAllCoresOptionId);
     search_socket_id_ = options_->Get<int>(kSearchSocketOptionId);
-    if (search_socket_id_ >= GetSocketCount()) {
-      CERR << "Requested search to use socket " << search_socket_id_
-           << " is out of range. Only " << GetSocketCount()
-           << " socket(s) available. Using socket " << (GetSocketCount() - 1)
-           << " instead.";
-      search_socket_id_ = GetSocketCount() - 1;
-    }
     if (all_cores != use_all_cores_) {
       use_all_cores_ = all_cores;
       std::copy(restricted_processors_.begin(), restricted_processors_.end(),
                 std::back_inserter(logical_processors_));
       restricted_processors_.clear();
       ProcessProcessors();
+    }
+    if (std::none_of(logical_processors_.begin(),
+                    logical_processors_.end(),
+                    [&](const LogicalProcessor& lp) {
+                      return lp.socket_ == search_socket_id_;
+                    })) {
+      CERR << "Requested search to use socket " << search_socket_id_
+           << " is out of range. Only " << GetSocketCount()
+           << " socket(s) available. Using socket " << logical_processors_.front().socket_
+           << " instead.";
+      search_socket_id_ = logical_processors_.front().socket_;
     }
   }
 
