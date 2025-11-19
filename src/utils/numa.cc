@@ -50,6 +50,24 @@
 namespace lczero {
 
 namespace {
+
+#ifdef _WIN32
+static bool CheckIsWin11() {
+  OSVERSIONINFOA osvi = {};
+  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
+  GetVersionExA(&osvi);
+  return osvi.dwMajorVersion >= 11 ||
+    (osvi.dwMajorVersion == 10 && osvi.dwBuildNumber >= 20348);
+}
+
+static bool IsWin11() {
+  static bool is_win11 = CheckIsWin11();
+  return is_win11;
+}
+
+static constexpr unsigned kMaxProcessorsPerGroup = 64;
+
+#endif
     
 auto DivUp = [](size_t a, size_t b) { return (a + b - 1) / b; };
 
@@ -148,6 +166,17 @@ struct Config {
                          return lp.socket_ == socket_id && lp.core_ == core_id;
                        }),
         logical_processors_.end());
+  }
+
+  unsigned GetCoreForThread(int id) {
+#ifdef _WIN32
+    if (!IsWin11() && GetMaxThread() >= kMaxProcessorsPerGroup) {
+      // Distribute threads to different processor groups on Windows before 11.
+      id *= DivUp(logical_processors_.size(), DivUp(GetMaxThread(), kMaxProcessorsPerGroup));
+    }
+#endif
+    id %= logical_processors_.size();
+    return logical_processors_[id].cpu_;
   }
 
   bool CheckReservedCores(size_t socket_id, size_t num_workers) {
@@ -385,19 +414,6 @@ class CpuSet {
 
 #define USE_THREAD_AFINITTY 1
 
-static bool CheckIsWin11() {
-  OSVERSIONINFOA osvi = {};
-  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-  GetVersionExA(&osvi);
-  return osvi.dwMajorVersion >= 11 ||
-    (osvi.dwMajorVersion == 10 && osvi.dwBuildNumber >= 20348);
-}
-
-static bool IsWin11() {
-  static bool is_win11 = CheckIsWin11();
-  return is_win11;
-}
-
 Config WindowsReadConfig() {
   std::vector<Config::LogicalProcessor> logical_processors;
 
@@ -440,7 +456,7 @@ Config WindowsReadConfig() {
         for (DWORD i = 0; i < core_info.GroupCount; i++) {
           uint64_t mask = core_info.GroupMask[i].Mask;
           for (auto bit : IterateBits(mask)) {
-            unsigned cpu_index = bit + i * 64;
+            unsigned cpu_index = bit + i * kMaxProcessorsPerGroup;
             auto& lp = get_or_insert_lp(cpu_index);
             lp.core_ = this_core;
           }
@@ -453,7 +469,7 @@ Config WindowsReadConfig() {
         for (DWORD i = 0; i < package_info.GroupCount; i++) {
           uint64_t mask = package_info.GroupMask[i].Mask;
           for (auto bit : IterateBits(mask)) {
-            unsigned cpu_index = bit + i * 64;
+            unsigned cpu_index = bit + i * kMaxProcessorsPerGroup;
             auto& lp = get_or_insert_lp(cpu_index);
             lp.socket_ = this_socket;
           }
@@ -475,7 +491,7 @@ Config WindowsReadConfig() {
           uint64_t mask = node_info.GroupMask.Mask;
 #endif
           for (auto bit : IterateBits(mask)) {
-            unsigned cpu_index = bit + i * 64;
+            unsigned cpu_index = bit + i * kMaxProcessorsPerGroup;
             auto& lp = get_or_insert_lp(cpu_index);
             lp.node_ = this_node;
           }
@@ -515,7 +531,6 @@ Config& Config::Instance() {
 }
 
 class CpuSet {
-  static constexpr unsigned kMaxProcessorsPerGroup = 64;
 
  public:
   CpuSet(unsigned max_lp)
@@ -700,9 +715,9 @@ void Numa::Init() {
 void Numa::BindThread([[maybe_unused]] int id) {
 #if USE_THREAD_AFINITTY
   auto config = Config::Lock();
-  id %= config->GetThreadCount();
+  auto core = config->GetCoreForThread(id);
   CpuSet cpuset(config->GetMaxThread());
-  config->ForEachCore(id, [&](unsigned cpu_id) { cpuset.Set(cpu_id); });
+  config->ForEachCore(core, [&](unsigned cpu_id) { cpuset.Set(cpu_id); });
   cpuset.SetAffinity();
 #endif
 }
