@@ -51,9 +51,11 @@ const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
 
-void Clippy(std::string title, std::string msg3, std::string best3,
-            std::string msg2, std::string best2, std::string msg,
-            std::string best) {
+void Clippy(const std::string& title, const std::string& msg3, const std::string
+            & best3,
+            const std::string& msg2, const std::string& best2, const std::string
+            & msg,
+            const std::string& best) {
   std::cout << "  __" << std::endl;
   std::cout << " /  \\" << std::endl;
   std::cout << " |  |    " << std::string(title.length() + 2, '_') << std::endl;

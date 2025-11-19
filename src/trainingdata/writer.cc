@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <utility>
+
 #include "trainingdata/writer.h"
 
 #include "trainingdata/trainingdata.h"
@@ -61,7 +63,7 @@ TrainingDataWriter::TrainingDataWriter(int game_id) {
 }
 
 TrainingDataWriter::TrainingDataWriter(std::string filename)
-    : filename_(filename) {
+    : filename_(std::move(filename)) {
   fout_ = gzopen(filename_.c_str(), "wb");
   if (!fout_) throw Exception("Cannot create gzip file " + filename_);
 }
