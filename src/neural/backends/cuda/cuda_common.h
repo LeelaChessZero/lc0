@@ -74,18 +74,5 @@ void CudaError(cudaError_t status, const char* file, const int& line);
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
-inline void ToType(float& dst, float src) { dst = src; }
-inline void ToType(half& dst, float src) {
-  auto temp = FP32toFP16(src);
-  std::memcpy(&dst, &temp, sizeof(half));
-}
-
-inline float FromType(float src) { return src; }
-inline float FromType(half src) {
-  uint16_t temp;
-  std::memcpy(&temp, &src, sizeof(half));
-  return FP16toFP32(temp);
-}
-
 }  // namespace cudnn_backend
 }  // namespace lczero

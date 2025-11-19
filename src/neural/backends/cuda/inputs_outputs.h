@@ -36,6 +36,18 @@
 namespace lczero {
 namespace cudnn_backend {
 
+inline void ToType(float& dst, float src) { dst = src; }
+inline void ToType(half& dst, float src) {
+  auto temp = FP32toFP16(src);
+  dst = std::bit_cast<half>(temp);
+}
+
+inline float FromType(float src) { return src; }
+inline float FromType(half src) {
+  uint16_t temp = std::bit_cast<uint16_t>(src);
+  return FP16toFP32(temp);
+}
+
 template <typename DataType>
 struct CudaGraphCapture;
 
