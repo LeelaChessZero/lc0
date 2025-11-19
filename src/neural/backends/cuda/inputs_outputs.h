@@ -27,26 +27,15 @@
 
 #pragma once
 
-#include <bit>
 #include <cassert>
 #include <memory>
 
 #include "cuda_common.h"
 #include "neural/network.h"
+#include "utils/bit.h"
 
 namespace lczero {
 namespace cudnn_backend {
-
-#if __cpp_lib_bit_cast >= 201806L
-using std::bit_cast;
-#else
-template <class To, class From>
-To bit_cast(const From& src) noexcept {
-  To dst;
-  std::memcpy((void*)&dst, &src, sizeof(To));
-  return dst;
-}
-#endif
 
 inline void ToType(float& dst, float src) { dst = src; }
 inline void ToType(half& dst, float src) {
