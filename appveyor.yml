@@ -94,6 +94,14 @@ install:
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" appveyor DownloadFile https://github.com/microsoft/mimalloc/archive/refs/tags/v1.8.7.zip
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" 7z x v1.8.7.zip -oC:\cache\
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%"\out msbuild "%MIMALLOC_PATH%"\ide\vs2019\mimalloc-override.vcxproj /p:Configuration=Release /m
+- cmd: set ABSEIL_PATH=C:\cache\abseil-cpp-20250814.1
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" appveyor DownloadFile https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.1.zip
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" 7z x 20250814.1.zip -o.
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cd abseil-cpp-20250814.1
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" mkdir build
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cd build
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cmake -DCMAKE_CXX_STANDARD=20 -DCMAKE_INSTALL_PREFIX="%ABSEIL_PATH%" ..
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cmake --build . --target INSTALL --config Release
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64 appveyor DownloadFile https://dl.google.com/android/repository/android-ndk-r27c-windows.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r27c-windows.zip -oC:\ndk
 - cmd: IF %NAME%==android set PATH=C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64\bin;%PATH%
@@ -139,7 +147,7 @@ before_build:
 - cmd: SET EXTRA=
 - cmd: IF %ANDROID%==false SET EXTRA=-Db_vscrt=md
 - cmd: IF %ONNX%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\runtimes\win-x64\native\ -Donnx_include=C:\cache\%ONNX_NAME%\build\native\include -Ddefault_backend=onnx-trt
-- cmd: IF %ANDROID%==false meson build --backend vs2019 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
+- cmd: IF %ANDROID%==false meson build --backend vs2019 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release --cmake-prefix-path="%ABSEIL_PATH%"\lib\cmake %EXTRA%
 - cmd: IF %ANDROID%==true meson arm64-v8a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-aarch64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-aarch64\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-aarch64
 - cmd: IF %ANDROID%==true meson armeabi-v7a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-armv7a\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-armv7a\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-armv7a -Dispc=false -Dneon=false
 build_script:
