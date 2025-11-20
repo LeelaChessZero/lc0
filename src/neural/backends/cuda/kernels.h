@@ -165,3 +165,8 @@ void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
                        cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero
+
+// Work around to avoid "nvcc error : 'cudafe++' died with status 0xC0000409" error
+// For some reason nvcc runs into this random error when trying to compile this function inside the namespaces
+bool fusedMHA(void* output, void* mha_q, void* mha_k, void* mha_v, void* skip,
+              int batch_size, int num_heads, int depth, cudaStream_t stream);
