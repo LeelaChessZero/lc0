@@ -117,6 +117,10 @@ InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {
   return result;
 }
 
+InputPlanes PlanesFromTrainingData(const V7TrainingData& data) {
+  return PlanesFromTrainingData(reinterpret_cast<const V6TrainingData&>(data));
+}
+
 TrainingDataReader::TrainingDataReader(std::string filename)
     : filename_(filename) {
   fin_ = gzopen(filename_.c_str(), "rb");
