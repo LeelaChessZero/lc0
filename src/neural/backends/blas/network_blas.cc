@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <iostream>
 
 #include "neural/backends/blas/blas.h"
 #include "neural/backends/blas/convolution1.h"
@@ -34,7 +33,6 @@
 #include "neural/network_legacy.h"
 #include "neural/tables/attention_policy_map.h"
 #include "neural/tables/policy_map.h"
-#include "utils/numa.h"
 
 #ifdef USE_DNNL
 #include <omp.h>
@@ -173,8 +171,6 @@ class BlasNetwork : public Network {
   int GetMiniBatchSize() const override { return 7; }
 
   bool IsCpu() const override { return true; }
-
-  void InitThread(int id) override { Numa::BindThread(id); }
 
   std::unique_ptr<Buffers> GetBuffers() {
     std::lock_guard<std::mutex> lock(buffers_lock_);

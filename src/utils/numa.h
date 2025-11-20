@@ -40,15 +40,12 @@ class Numa {
   // Initialize and display statistics about processor configuration.
   static void Init(OptionsParser* parser);
 
-  // Bind thread to processor group.
-  static void BindThread(int id);
+  // Bind a search thread to a processor core.
+  static void BindThread(size_t id);
 
   // Reserve cores for SearchWorkers.
   // Mustbe called before any threads are bound.
-  static void ReserveSearchWorkers(size_t num_search_workers);
-
-  // Bind SearchWorker to a reserved core.
-  static void BindSearchWorker(size_t id);
+  static void ReserveSearchWorkers(size_t num_search_workers, bool runs_on_cpu = false);
 
   // Bind task workers to a socket.
   static void BindTaskWorkersToSocket();
