@@ -369,17 +369,19 @@ std::string OnnxBuilder::Sigmoid(const std::string& name,
 }
 
 // This is only defined in opset 17 but onnxruntime supports it from 1.
-std::string OnnxBuilder::LayerNormalization(const std::string& name,
-                                            const std::string& input,
-                                            const OnnxConst& scale,
-                                            const OnnxConst& bias, int axis,
-                                            float epsilon) {
+std::string OnnxBuilder::LayerNormalization(
+    const std::string& name, const std::string& input, const OnnxConst& scale,
+    const OnnxConst& bias, int axis, float epsilon,
+    pblczero::TensorProto::DataType type) {
   auto* node = model_.mutable_graph()->add_node();
   auto out = PopulateStdNodeFields(node, name, input, "LayerNormalization");
   node->add_input(AddInitializer(name + "/w/scale", scale));
   node->add_input(AddInitializer(name + "/w/bias", bias));
   AddIntAttribute(node, "axis", axis);
   AddFloatAttribute(node, "epsilon", epsilon);
+  if (type != pblczero::TensorProto::FLOAT) {
+    AddIntAttribute(node, "stash_type", type);
+  }
   return out;
 }
 

@@ -677,7 +677,6 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_timing_cache_path"] = cache_dir;
-      trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
       trt_options["trt_context_memory_sharing_enable"] = "1";
       // Looks like we need I/O binding to enable this.
@@ -877,7 +876,12 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
     converter_options.alt_layernorm = opts.GetOrDefault<bool>(
-        "alt_layernorm", kProvider == OnnxProvider::DML ? true : false);
+        "alt_layernorm",
+        kProvider == OnnxProvider::DML &&
+                w->format().network_format().ffn_activation() ==
+                    pblczero::NetworkFormat::ACTIVATION_RELU_2
+            ? true
+            : false);
     converter_options.no_shape = opts.GetOrDefault<bool>("no_shape", false);
     converter_options.policy_head =
         opts.GetOrDefault<std::string>("policy_head", "vanilla");
