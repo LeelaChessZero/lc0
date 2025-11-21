@@ -103,10 +103,10 @@ class OnnxBuilder {
                     std::initializer_list<int> ends);
   std::string Concat(const std::string& name,
                      const std::vector<std::string>& input, int axis);
-  std::string LayerNormalization(const std::string& name,
-                                 const std::string& input,
-                                 const OnnxConst& scale, const OnnxConst& bias,
-                                 int axis, float epsilon = 1e-6);
+  std::string LayerNormalization(
+      const std::string& name, const std::string& input, const OnnxConst& scale,
+      const OnnxConst& bias, int axis, float epsilon = 1e-6,
+      pblczero::TensorProto::DataType type = pblczero::TensorProto::FLOAT);
   std::string Expand(const std::string& name, const std::string& input,
                      const std::string& shape);
   std::string Shape(const std::string& name, const std::string& input);

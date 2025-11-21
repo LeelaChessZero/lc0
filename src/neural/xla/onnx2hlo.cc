@@ -1086,14 +1086,16 @@ class Onnx2HloConverter {
   }
 
   std::vector<HloFlow> OpLayerNormalization(const pblczero::NodeProto& node) {
-    CheckKnownAttributes(node, 3, {"axis", "epsilon"});
+    CheckKnownAttributes(node, 3, {"axis", "epsilon", "stash_type"});
     auto* input = GetInput(node, 0);
     auto axis = GetAttributeAs<int>(node, "axis");
     axis = NormalizeDimension(axis, input->shape().dimensions_size());
     const auto epsilon = GetAttributeAs<float>(node, "epsilon");
     auto* scale = GetInput(node, 1);
     auto* bias = GetInput(node, 2, true);
-    constexpr auto kAccType = pblczero::XlaShapeProto::F32;
+    const auto kAccType =
+        OnnxTypeToXlaType(static_cast<pblczero::TensorProto::DataType>(
+            GetOptionalAttributeAs<int>(node, "stash_type").value_or(1)));
     const auto input_type = input->shape().element_type();
     const bool need_conv = input_type != kAccType;
     input = need_conv ? builder_.Convert(input, kAccType) : input;
