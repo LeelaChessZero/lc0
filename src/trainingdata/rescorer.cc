@@ -345,8 +345,7 @@ void gaviota_tb_probe_hard(const Position& pos, unsigned int& info,
   tb_probe_hard(stm, epsq, tb_NOCASTLE, wsq, bsq, wpc, bpc, &info, &dtm);
 }
 
-template <typename FrameType>
-void ChangeInputFormat(int newInputFormat, FrameType* data,
+void ChangeInputFormat(int newInputFormat, V6TrainingData* data,
                        const PositionHistory& history) {
   data->input_format = newInputFormat;
   auto input_format =
@@ -431,8 +430,7 @@ void ChangeInputFormat(int newInputFormat, FrameType* data,
   data->invariance_info |= invariance_mask;
 }
 
-template <typename FrameType>
-int ResultForData(const FrameType& data) {
+int ResultForData(const V6TrainingData& data) {
   // Ensure we aren't reprocessing some data that has had custom adjustments to
   // result training target applied.
   DataAssert(data.result_q == -1.0f || data.result_q == 1.0f ||
