@@ -481,9 +481,13 @@ std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
   in = builder->Sub(name + "/centered", in, flow);
   flow = builder->Mul(name + "/squared", in, in);
   flow = builder->ReduceMean(name + "/var", flow, {1});
-  flow =
-      builder->Add(name + "/var_eps", flow,
-                   static_cast<const OnnxConst&>(FloatOnnxConst({eps}, {1})));
+  if (use_fp32) {
+    flow =
+        builder->Add(name + "/var_eps", flow,
+                     static_cast<const OnnxConst&>(FloatOnnxConst({eps}, {1})));
+  } else {
+    flow = builder->Add(name + "/var_eps", flow, *GetScalarConverter(eps));
+  }
   flow = builder->Sqrt(name + "/std", flow);
   flow = builder->Reciprocal(name + "/inv_std", flow);
   flow = builder->Mul(name + "/normalized", in, flow);
