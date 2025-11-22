@@ -27,6 +27,7 @@
 
 #include "cuda_common.h"
 #include "neural/tables/activation_function.h"
+#include "utils/exception.h"
 
 // Allow building on an old architecture.
 #if __CUDA_ARCH__ < 530
@@ -137,61 +138,61 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
                   const half* w2, const half* b2, const half* bPrev,
-                  ActivationFunction activation) {
+                  ActivationFunction activation, cudaStream_t stream) {
   // TODO: Think of more elegant way to avoid this hardcoding :-/
   if (numFc1Out == 16) {
     if (C == 64) {
-      SE_Layer_NHWC<64, 16>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<64, 16><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                 w2, b2, bPrev, activation);
     } else {
       // TODO: support other channel counts.
       throw Exception("channel count unsupported by SE layer");
     }
   } else if (numFc1Out == 32) {
     if (C == 64) {
-      SE_Layer_NHWC<64, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<64, 32><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                 w2, b2, bPrev, activation);
     } else if (C == 128) {
-      SE_Layer_NHWC<128, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<128, 32><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 192) {
-      SE_Layer_NHWC<192, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<192, 32><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 256) {
-      SE_Layer_NHWC<256, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<256, 32><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 320) {
-      SE_Layer_NHWC<320, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<320, 32><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 352) {
-      SE_Layer_NHWC<352, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<352, 32><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 384) {
-      SE_Layer_NHWC<384, 32>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<384, 32><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else {
       // TODO: support other channel counts.
       return false;
     }
   } else if (numFc1Out == 64) {
     if (C == 64) {
-      SE_Layer_NHWC<64, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<64, 64><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                 w2, b2, bPrev, activation);
     } else if (C == 128) {
-      SE_Layer_NHWC<128, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<128, 64><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 192) {
-      SE_Layer_NHWC<192, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<192, 64><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 256) {
-      SE_Layer_NHWC<256, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<256, 64><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 320) {
-      SE_Layer_NHWC<320, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<320, 64><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else if (C == 384) {
-      SE_Layer_NHWC<384, 64>
-          <<<N, C>>>(output, skip, input, w1, b1, w2, b2, bPrev, activation);
+      SE_Layer_NHWC<384, 64><<<N, C, 0, stream>>>(output, skip, input, w1, b1,
+                                                  w2, b2, bPrev, activation);
     } else {
       // TODO: support other channel counts.
       return false;
@@ -474,7 +475,7 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
 }
 
 template void FilterTransform<half>(int N, int C, half* transformedFilter,
-                                    const half* filter);
+                                    const half* filter, cudaStream_t stream);
 
 template void InputTransform<half, true>(int N, int C, half* transformed_input,
                                          const half* input,
