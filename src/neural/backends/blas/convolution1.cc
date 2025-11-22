@@ -19,8 +19,6 @@
 #include "neural/backends/blas/convolution1.h"
 #include "neural/backends/blas/blas.h"
 
-#include <Eigen/Core>
-
 namespace lczero {
 template <typename T>
 using EigenMatrixMap =
