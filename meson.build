@@ -118,11 +118,7 @@ endif
 
 # libhwloc for thread affinity and numa support
 numa_config = configuration_data()
-if host_machine.system() == 'windows'
-  hwloc_dep = dependency('hwloc', required: false, fallback: ['hwloc'])
-else
-  hwloc_dep = dependency('hwloc', required: false)
-endif
+hwloc_dep = dependency('hwloc', required: false, fallback: ['hwloc'])
 if hwloc_dep.found()
   deps += hwloc_dep
   numa_config.set('HAVE_LIBHWLOC', '1')

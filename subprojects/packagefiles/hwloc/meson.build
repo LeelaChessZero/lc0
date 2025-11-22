@@ -1,6 +1,7 @@
 project('hwloc', 'c')
 
 if not (host_machine.system() == 'windows' and host_machine.cpu_family() == 'x86_64')
+  meson.override_dependency('hwloc', disabler())
   error('This wrap of hwloc is a binary wrap for x64_64 Windows, and will not work on your system')
 endif
 
