@@ -101,7 +101,7 @@ void BackendBenchmark::Run() {
     classic::NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
     EvalPosition pos{tree.GetPositionHistory().GetPositions(), {}};
-    std::vector<std::jthread> handles;
+    std::vector<std::thread> handles;
 
     // Do any backend initialization outside the loop.
     auto warm = [&]() {
@@ -118,6 +118,9 @@ void BackendBenchmark::Run() {
       handles.emplace_back(warm);
     }
     warm();
+    for (auto& handle : handles) {
+      handle.join();
+    }
     handles.clear();
 
     const int batches = option_dict.Get<int>(kBatchesId);
@@ -163,6 +166,9 @@ void BackendBenchmark::Run() {
       }
 
       compute(0);
+      for (auto& handle : handles) {
+        handle.join();
+      }
 
       handles.clear();
 
