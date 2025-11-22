@@ -298,16 +298,16 @@ struct Config {
     }
   }
 
-  void GetSocketSet(size_t socket_id, CpuSet& cpuset) const {
-    assert(socket_id < GetSocketCount());
-    hwloc_obj_t socket_obj;
-    ReportHWLocError(socket_obj = hwloc_get_obj_by_type(
-                         topology_, HWLOC_OBJ_PACKAGE, socket_id));
-    cpuset |= socket_obj->cpuset;
+  void GetNumaSet(size_t numa_id, CpuSet& cpuset) const {
+    assert(numa_id < GetNodeCount());
+    hwloc_obj_t node_obj;
+    ReportHWLocError(node_obj = hwloc_get_obj_by_type(
+                         topology_, HWLOC_OBJ_NUMANODE, numa_id));
+    cpuset |= node_obj->cpuset;
     cpuset &= ~reserved_set_;
     if (!cpuset) {
       // all reserved, return full socket
-      cpuset |= socket_obj->cpuset;
+      cpuset |= node_obj->cpuset;
     }
   }
 
@@ -375,7 +375,7 @@ struct Config {
     reserved_cores_.clear();
 
     ReportHWLocError(numa_obj = hwloc_get_obj_by_type(
-                         topology_, HWLOC_OBJ_PACKAGE, node_id));
+                         topology_, HWLOC_OBJ_NUMANODE, node_id));
     ReserveCores(numa_obj, count);
   }
 
@@ -448,11 +448,11 @@ struct Config {
 
   bool CheckReservedCores(size_t node_id, size_t num_workers) {
     if (reserved_cores_.size() != num_workers) return false;
-    hwloc_obj_t socket_obj;
-    ReportHWLocError(socket_obj = hwloc_get_obj_by_type(
+    hwloc_obj_t node_obj;
+    ReportHWLocError(node_obj = hwloc_get_obj_by_type(
                          topology_, HWLOC_OBJ_NUMANODE, node_id));
     for (auto core : reserved_cores_) {
-      if (!hwloc_bitmap_intersects(socket_obj->cpuset, core->cpuset)) {
+      if (!hwloc_bitmap_intersects(node_obj->cpuset, core->cpuset)) {
         return false;
       }
     }
@@ -610,7 +610,7 @@ void Numa::BindTaskWorkersToSocket() {
   auto config = Config::Lock();
   if (!config->use_search_thread_affinity_) return;
   CpuSet cpuset;
-  config->GetSocketSet(config->search_node_id_, cpuset);
+  config->GetNumaSet(config->search_node_id_, cpuset);
   config->SetAffinity(cpuset);
 #endif
 }
