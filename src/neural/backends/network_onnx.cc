@@ -130,7 +130,8 @@ class OnnxComputation final : public NetworkComputation {
   float GetMVal(int sample) const override;
 
  private:
-  Ort::IoBinding PrepareInputs(int start, int batch_size, int step);
+  void PrepareInputs(int start, int batch_size);
+  Ort::IoBinding PrepareBindings(int start, int batch_size, int step);
 
   OnnxNetwork* network_;
   size_t input_size_ = 0;
@@ -297,7 +298,7 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
         output_tensors_data_device_[i] = output_tensors_data_[i];
       }
       memory_info_ =
-          Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+          Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
   }
 }
 
@@ -418,9 +419,7 @@ float OnnxComputation<DataType>::GetMVal(int sample) const {
 }
 
 template <typename DataType>
-Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
-                                                        int batch_size,
-                                                        int step) {
+void OnnxComputation<DataType>::PrepareInputs(int start, int batch_size) {
 #ifdef USE_ONNX_CUDART
   if (network_->provider_ != OnnxProvider::CUDA &&
       network_->provider_ != OnnxProvider::TRT)
@@ -443,7 +442,12 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
       }
     }
   }
+}
 
+template <typename DataType>
+Ort::IoBinding OnnxComputation<DataType>::PrepareBindings(int start,
+                                                          int batch_size,
+                                                          int step) {
   Ort::IoBinding binding{network_->session_[step - 1]};
   for (size_t i = 0; i < inputs_outputs_->output_tensors_step_.size(); i++) {
     int size = inputs_outputs_->output_tensors_step_[i];
@@ -485,7 +489,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
       batch = std::min((int)input_size_ - (int)i, batch);
     }
 
-    auto binding = PrepareInputs(i, batch, step);
+    PrepareInputs(i, batch);
 
     // The DML onnxruntime execution provider is documented as not supporting
     // multi-threaded calls to Run on the same inference session. We found the
@@ -496,6 +500,8 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         network_->provider_ == OnnxProvider::TRT) {
       network_->lock_.lock();
     }
+    auto binding = PrepareBindings(i, batch, step);
+
     Ort::RunOptions options = {};
 #ifdef USE_ONNX_CUDART
     if (network_->provider_ == OnnxProvider::TRT ||
