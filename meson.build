@@ -18,6 +18,8 @@ project('lc0', 'cpp',
         default_options : ['cpp_std=c++20', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
         meson_version: '>=0.57')
 
+fs = import('fs')
+
 cc = meson.get_compiler('cpp')
 
 if cc.get_id() == 'clang'
@@ -450,48 +452,45 @@ if get_option('build_backends')
   ## cuDNN
   ## ~~~~~
   cudnn_libdirs = get_option('cudnn_libdirs')
+  nvcc_paths = []
+  foreach p : cudnn_libdirs
+    nvcc_paths += fs.parent(p) + '/bin/nvcc'
+  endforeach
+  nvcc_paths += ['nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc']
+  message('Looking for nvcc in: ' + ', '.join(nvcc_paths))
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
+  nvcc = find_program(nvcc_paths,
                       required: false)
-
-  if (get_option('cudnn') or get_option('plain_cuda')) and cu_blas.found() and cu_dart.found() and nvcc.found()
-    deps += [cu_blas, cu_dart]
-    cuda_files = ['src/neural/backends/cuda/layers.cc']
-    if get_option('cudnn') and cu_dnn.found()
-      deps += cu_dnn
-      cuda_files += 'src/neural/backends/cuda/network_cudnn.cc'
-      cuda_files += 'src/neural/backends/cuda/network_cuda.cc' # To support newer nets.
-      add_project_arguments('-DUSE_CUDNN', language : 'cpp')
-    elif get_option('plain_cuda')
-      cuda_files += 'src/neural/backends/cuda/network_cuda.cc'
-    endif
+  nvcc_ok = false
+  if get_option('nvcc') and nvcc.found()
     foreach d : get_option('cudnn_include')
       if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
         includes += include_directories(d, is_system: true)
       endif
     endforeach
-    includes += include_directories('src/neural/backends/cuda/')
-
-    cuda_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
+    nvcc_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src']
     nvcc_help = run_command(nvcc, '-h', check : false).stdout()
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
-        cuda_arguments += ['-Xcompiler', '-MT']
+        nvcc_arguments += ['-Xcompiler', '-MT']
       elif get_option('b_vscrt') == 'mtd'
-        cuda_arguments += ['-Xcompiler', '-MTd']
+        nvcc_arguments += ['-Xcompiler', '-MTd']
       elif get_option('b_vscrt') == 'mdd' or (get_option('b_vscrt') == 'from_buildtype' and get_option('buildtype') == 'debug')
-        cuda_arguments += ['-Xcompiler', '-MDd']
+        nvcc_arguments += ['-Xcompiler', '-MDd']
       elif get_option('b_vscrt') != 'none'
-        cuda_arguments += ['-Xcompiler', '-MD']
+        nvcc_arguments += ['-Xcompiler', '-MD']
       endif
     else
-      cuda_arguments += ['--std=c++17', '-Xcompiler', '-fPIC']
+      nvcc_arguments += ['--std=c++17', '-Xcompiler', '-fPIC']
+      if get_option('debug')
+        nvcc_arguments += ['-g']
+      endif
     endif
     if get_option('nvcc_ccbin') != ''
-      cuda_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
+      nvcc_arguments += ['-ccbin=' + get_option('nvcc_ccbin')]
     endif
     cuda_cc = get_option('cc_cuda') # Unfortunately option cuda_cc is reserved.
     nvcc_extra_args = []
@@ -517,26 +516,40 @@ if get_option('build_backends')
       endif
     endif
     foreach x : get_option('cudnn_include')
-      cuda_arguments += ['-I', x]
+      nvcc_arguments += ['-I', x]
     endforeach
     if host_machine.system() == 'windows'
       outputname = '@BASENAME@.obj'
     else
       outputname = '@BASENAME@.o'
     endif
+    nvcc_ok = true
+  endif
+  if (get_option('cudnn') or get_option('plain_cuda')) and cu_dart.found() and cu_blas.found() and nvcc_ok
+    deps += [cu_blas, cu_dart]
+    cuda_files = ['src/neural/backends/cuda/layers.cc']
+    if get_option('cudnn') and cu_dnn.found()
+      deps += cu_dnn
+      cuda_files += 'src/neural/backends/cuda/network_cudnn.cc'
+      cuda_files += 'src/neural/backends/cuda/network_cuda.cc' # To support newer nets.
+      add_project_arguments('-DUSE_CUDNN', language : 'cpp')
+    elif get_option('plain_cuda')
+      cuda_files += 'src/neural/backends/cuda/network_cuda.cc'
+    endif
+    includes += include_directories('src/neural/backends/cuda/')
 	 files += cuda_files
     files += custom_target('cuda fp32 code',
       input : 'src/neural/backends/cuda/common_kernels.cu',
       output : outputname,
       depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
-      command : [nvcc, nvcc_extra_args, cuda_arguments]
+      command : [nvcc, nvcc_extra_args, nvcc_arguments]
     )
 
     files += custom_target('cuda fp16 code',
       input : 'src/neural/backends/cuda/fp16_kernels.cu',
       output : outputname,
       depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
-      command : [nvcc, nvcc_extra_args, cuda_arguments]
+      command : [nvcc, nvcc_extra_args, nvcc_arguments]
     )
     has_backends = true
   endif
@@ -595,6 +608,17 @@ if get_option('build_backends')
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
       add_project_arguments('-DUSE_ROCM', language : 'cpp')
+    endif
+    if cu_dart.found() and nvcc_ok
+      add_project_arguments('-DUSE_ONNX_CUDART=1', language : 'cpp')
+      deps += cu_dart
+      files += custom_target('cuda onnx code',
+        input : 'src/neural/backends/cuda/onnx.cu',
+        output : outputname,
+        command : [nvcc, nvcc_extra_args, nvcc_arguments]
+        )
+    else
+      warning('No CUDA support available. Using compatibility implementation for onnx-trt and onnx-cuda.')
     endif
     has_backends = true
   endif
@@ -758,6 +782,44 @@ endif
   else
     deps += dependency('zlib', fallback: ['zlib', 'zlib_dep'])
   endif
+
+  trace_lib = get_option('trace_library')
+  trace_config = configuration_data()
+
+  common_files += 'src/utils/trace.cc'
+  ## ~~~~~~~~
+  ## perfetto
+  ## ~~~~~~~~
+  if trace_lib == 'perfetto'
+    perfetto_dep = dependency('perfetto', required: true,
+                             fallback: ['perfetto', 'dep_perfetto'])
+    deps += perfetto_dep
+    trace_config.set('USE_PERFETTO_TRACE', 1)
+  endif
+
+  ## ~~~~
+  ## nvtx
+  ## ~~~~
+  if trace_lib == 'nvtx'
+    nvtx_includes = get_option('cudnn_include')
+    nvtx_header_found = false
+    foreach d : nvtx_includes
+      if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
+        if cc.has_header('nvtx3/nvtx3.hpp', args: '-I' + d)
+          includes += include_directories(d)
+          nvtx_header_found = true
+          break
+        endif
+      endif
+    endforeach
+    if not nvtx_header_found
+      error('nvtx3/nvtx3.hpp header not found in cudnn_include paths')
+    endif
+    # This could support other tracing apis like systemtap.
+    trace_config.set('USE_NVTX_TRACE', 1)
+  endif
+  configure_file(output : 'trace_config.h',
+                 configuration : trace_config)
 
   ## ~~~~~~~~
   ## Profiler

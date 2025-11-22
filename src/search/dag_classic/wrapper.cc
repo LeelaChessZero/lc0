@@ -30,7 +30,8 @@
 #include "search/dag_classic/search.h"
 #include "search/register.h"
 #include "search/search.h"
-#include "src/neural/shared_params.h"
+#include "neural/shared_params.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace dag_classic {
@@ -101,6 +102,7 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 }
 
 void DagClassicSearch::NewGame() {
+  LCTRACE_FUNCTION_SCOPE;
   LOGFILE << "New game.";
   search_.reset();
   tt_.clear();
@@ -109,6 +111,7 @@ void DagClassicSearch::NewGame() {
 }
 
 void DagClassicSearch::SetPosition(const GameState& pos) {
+  LCTRACE_FUNCTION_SCOPE;
   if (!tree_) tree_ = std::make_unique<NodeTree>();
   const bool is_same_game = tree_->ResetToPosition(pos);
   LOGFILE << "Tree reset to a new position.";
@@ -116,6 +119,7 @@ void DagClassicSearch::SetPosition(const GameState& pos) {
 }
 
 void DagClassicSearch::StartSearch(const GoParams& params) {
+  LCTRACE_FUNCTION_SCOPE;
   auto forwarder =
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
   if (options_->Get<Button>(kClearTree).TestAndReset()) {
@@ -157,6 +161,7 @@ class DagClassicSearchFactory : public SearchFactory {
   std::string_view GetName() const override { return "dag-preview"; }
   std::unique_ptr<SearchBase> CreateSearch(
       UciResponder* responder, const OptionsDict* options) const override {
+    LCTRACE_FUNCTION_SCOPE;
     return std::make_unique<DagClassicSearch>(responder, options);
   }
 
