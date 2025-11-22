@@ -305,6 +305,10 @@ struct Config {
                          topology_, HWLOC_OBJ_PACKAGE, socket_id));
     cpuset |= socket_obj->cpuset;
     cpuset &= ~reserved_set_;
+    if (!cpuset) {
+      // all reserved, return full socket
+      cpuset |= socket_obj->cpuset;
+    }
   }
 
   struct ObjectIterator {
