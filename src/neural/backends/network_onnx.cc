@@ -666,7 +666,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
       trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
+#if ORT_API_VERSION >= 23
       trt_options["trt_bf16_enable"] = bf16_ ? "1" : "0";
+#endif
       trt_options["trt_int8_enable"] = "0";
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
