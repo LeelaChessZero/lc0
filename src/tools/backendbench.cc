@@ -191,7 +191,7 @@ void BackendBenchmark::Run() {
       }
       stddev = std::sqrt(stddev / (batches_done - 1));
 
-      std::sort(times.begin(), times.end());
+      std::sort(times.begin(), times.begin() + batches_done);
 
       mean *= 1000;
 
