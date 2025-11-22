@@ -203,7 +203,7 @@ struct Config {
       ReportHWLocError(hwloc_cpukinds_get_info(topology_, i, cpuset, &eff,
                                                nullptr, nullptr, 0));
 
-      effiency_[eff < 0 ? i : eff] = std::move(cpuset);
+      effiency_[eff < 0 ? 0 : eff] |= cpuset;
     }
 #endif
 
