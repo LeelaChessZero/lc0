@@ -480,6 +480,8 @@ struct Config {
     size_t node_id = options_->Get<int>(kSearchNodeOptionId);
     if (all_cores != use_all_cores_) {
       use_all_cores_ = all_cores;
+      reserved_set_.Clear();
+      reserved_cores_.clear();
       ProcessProcessors();
     }
     if (shuffle_reservations != shuffle_reservations_) {
