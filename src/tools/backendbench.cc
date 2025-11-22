@@ -47,6 +47,8 @@ const OptionId kMaxBatchSizeId{"max-batch-size", "",
                                "Maximum batch size to benchmark."};
 const OptionId kBatchStepId{"batch-step", "",
                             "Step of batch size in benchmark."};
+const OptionId kHeaderOnlyOnceId{"header-only-once", "",
+                                 "Print CSV header only once."};
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
@@ -84,6 +86,7 @@ void BackendBenchmark::Run() {
   options.Add<IntOption>(kStartBatchSizeId, 1, 1024) = 1;
   options.Add<IntOption>(kMaxBatchSizeId, 1, 1024) = 256;
   options.Add<IntOption>(kBatchStepId, 1, 256) = 1;
+  options.Add<BoolOption>(kHeaderOnlyOnceId) = false;
   options.Add<StringOption>(kFenId) = ChessBoard::kStartposFen;
   options.Add<BoolOption>(kClippyId) = false;
 
@@ -103,7 +106,7 @@ void BackendBenchmark::Run() {
     // Do any backend initialization outside the loop.
     auto warm = [&]() {
       // Give GPU enough work to make it go from idle clocks to max clocks.
-      for (int i = 0; i < 2; i ++) {
+      for (int i = 0; i < 2; i++) {
         auto warmup = backend->CreateComputation();
         for (int j = 0; j < option_dict.Get<int>(kMaxBatchSizeId); ++j) {
           warmup->AddInput(pos, {});
@@ -136,29 +139,25 @@ void BackendBenchmark::Run() {
     for (int i = option_dict.Get<int>(kStartBatchSizeId);
          i <= option_dict.Get<int>(kMaxBatchSizeId);
          i += option_dict.Get<int>(kBatchStepId)) {
-
       handles.reserve(threads);
       std::atomic<int> j{0};
 
       auto compute = [&](int tid = 0) {
         int count = 0;
         auto& end = ends[tid];
-        end[0] = std::chrono::steady_clock::now();
-        while(j++ < batches) {
+        // Ignore the first batch to let GPU queue fill for stable measurements.
+        while (j++ < batches) {
           // Put i copies of tree root node into computation and compute.
           auto computation = backend->CreateComputation();
           for (int k = 0; k < i; k++) {
             computation->AddInput(pos, {});
           }
           computation->ComputeBlocking();
-          count++;
-          end[count] = std::chrono::steady_clock::now();
+          end[count++] = std::chrono::steady_clock::now();
         }
         thread_counts[tid] = count;
-
       };
 
-      const auto start = std::chrono::steady_clock::now();
       for (int t = 1; t < threads; t++) {
         handles.emplace_back(compute, t);
       }
@@ -166,48 +165,64 @@ void BackendBenchmark::Run() {
       compute(0);
 
       handles.clear();
-      const auto end = std::chrono::steady_clock::now();
 
-      std::chrono::duration<double> time = end - start;
       double stddev = 0;
-      double mean = 0;
-      int k = 0;
+      double total = 0;
+      int batches_done = 0;
       for (int t = 0; t < threads; t++) {
-        for (int j = 0; j < thread_counts[t]; j++) {
-          times[k] = ends[t][j + 1] - ends[t][j];
-          mean += times[k].count();
-          k++;
+        for (int j = 1; j < thread_counts[t]; j++) {
+          times[batches_done] = (ends[t][j] - ends[t][j - 1]) / threads;
+          total += times[batches_done].count();
+          batches_done++;
         }
       }
 
-      mean /= batches;
+      double mean = total / batches_done;
 
-      for (int j = 0; j < batches; j++) {
+      for (int j = 0; j < batches_done; j++) {
         double diff = times[j].count() - mean;
         stddev += diff * diff;
       }
-      stddev = std::sqrt(stddev / (batches - 1));
+      stddev = std::sqrt(stddev / (batches_done - 1));
 
       std::sort(times.begin(), times.end());
 
       mean *= 1000;
 
-      const auto nps = i * batches / time.count();
-      const auto median = batches % 2 == 0 ?
-          2 * i / (times[batches/2 - 1].count() + times[batches/2].count()) :
-          i / times[batches/2].count();
-      std::cout << "Batch size," << std::setw(3) << i
+      const auto nps = i * batches_done / total;
+      const auto median = batches_done % 2 == 0
+                              ? 2 * i /
+                                    (times[batches_done / 2 - 1].count() +
+                                     times[batches_done / 2].count())
+                              : i / times[batches_done / 2].count();
+      if (option_dict.Get<bool>(kHeaderOnlyOnceId)
+              ? i == option_dict.Get<int>(kStartBatchSizeId)
+              : ((i - option_dict.Get<int>(kStartBatchSizeId)) /
+                     option_dict.Get<int>(kBatchStepId) % 32 ==
+                 0)) {
+        std::cout << "size,"
+                     " mean nps,"
+                     " mean ms,"
+                     "  sdev,"
+                     " max nps,"
+                     "  median,"
+                     " min nps,"
+                  << std::endl;
+      }
+      // clang-format off
+      std::cout << std::setw(4) << i << ","
                 << std::fixed << std::setprecision(0)
-                << ",total nps, " << std::setw(6) << nps
+                << std::setw(9) << nps << ","
                 << std::defaultfloat << std::setprecision(4)
-                << ",batch mean time, " << std::setw(5) << mean << "ms"
+                << std::setw(8) << mean  << ","
                 << std::fixed << std::setprecision(3)
-                << ",sdev, " << std::setw(5) << stddev * 1000
+                << std::setw(6) << stddev * 1000 << ","
                 << std::fixed << std::setprecision(0)
-                << ",batch nps max, " << std::setw(6) << i / times[0].count()
-                << ",median, " << std::setw(6) << median
-                << ",min, " << std::setw(6) << i / times[batches - 1].count()
+                << std::setw(8) << i / times[0].count() << ","
+                << std::setw(8) << median << ","
+                << std::setw(8) << i / times[batches_done - 1].count()
                 << std::endl;
+      // clang-format on
 
       if (option_dict.Get<bool>(kClippyId)) {
         float nps_ingame = std::pow((nps + best_nps) / 2, 1.085);
@@ -236,7 +251,8 @@ void BackendBenchmark::Run() {
           }
         }
         if (pending) {
-          time = std::chrono::steady_clock::now() - *pending;
+          std::chrono::duration<double> time =
+              std::chrono::steady_clock::now() - *pending;
           if (time.count() > 10) {
             Clippy("Recommended minibatch-size for this net (so far):",
                    "1s/move   (Bullet):     ", std::to_string(best3),
