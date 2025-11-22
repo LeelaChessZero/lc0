@@ -297,7 +297,7 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
         output_tensors_data_device_[i] = output_tensors_data_[i];
       }
       memory_info_ =
-          Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+          Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
   }
 }
 
@@ -477,6 +477,11 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     batch_size =
         std::max(static_cast<int>(input_size_), network_->min_batch_size_);
   }
+  // Only the DML onnxruntime execution provider is documented as needing
+  // locking, but it seems all GPU backends need it.
+  if (network_->provider_ != OnnxProvider::CPU) {
+    network_->lock_.lock();
+  }
   for (size_t i = 0; i < (size_t)input_size_;) {
     int step = (input_size_ - i + batch_size - 1) / batch_size;
     if (step > network_->steps_) step = network_->steps_;
@@ -487,15 +492,6 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 
     auto binding = PrepareInputs(i, batch, step);
 
-    // The DML onnxruntime execution provider is documented as not supporting
-    // multi-threaded calls to Run on the same inference session. We found the
-    // same to be true for the ROCm execution provider (at least for CNNs).
-    // TODO: This may be a onnxruntime/ROCm bug, check onnxruntime 1.16 release.
-    if (network_->provider_ == OnnxProvider::DML ||
-        network_->provider_ == OnnxProvider::ROCM ||
-        network_->provider_ == OnnxProvider::TRT) {
-      network_->lock_.lock();
-    }
     Ort::RunOptions options = {};
 #ifdef USE_ONNX_CUDART
     if (network_->provider_ == OnnxProvider::TRT ||
@@ -589,12 +585,10 @@ void OnnxComputation<DataType>::ComputeBlocking() {
     {
       binding.SynchronizeOutputs();
     }
-    if (network_->provider_ == OnnxProvider::DML ||
-        network_->provider_ == OnnxProvider::ROCM ||
-        network_->provider_ == OnnxProvider::TRT) {
-      network_->lock_.unlock();
-    }
     i += batch;
+  }
+  if (network_->provider_ != OnnxProvider::CPU) {
+    network_->lock_.unlock();
   }
 #ifdef USE_ONNX_CUDART
   if (network_->provider_ == OnnxProvider::TRT ||
@@ -660,7 +654,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
       trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
+#if ORT_API_VERSION >= 23
       trt_options["trt_bf16_enable"] = bf16_ ? "1" : "0";
+#endif
       trt_options["trt_int8_enable"] = "0";
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
