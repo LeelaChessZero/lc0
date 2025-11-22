@@ -27,23 +27,46 @@
 
 #pragma once
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include "trace_config.h"
+
+#if USE_PERFETTO_TRACE
+#include <perfetto.h>
+
+PERFETTO_DEFINE_CATEGORIES(
+    perfetto::Category("lc0").SetDescription("Leela Chess Zero"));
+#endif
+
+#if USE_NVTX_TRACE
+#include <nvtx3/nvtx3.hpp>
+#endif
 
 namespace lczero {
-namespace onnx {
+#if USE_PERFETTO_TRACE
+#define LCTRACE_DECLARE_CATEGORIES PERFETTO_TRACK_EVENT_STATIC_STORAGE();
 
-// Expand input planes from bitmask to floating point tensors. It is used as a
-// preprocessing step of ONNX models.
-template <typename DataType>
-void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
-                      cudaStream_t stream);
+#define LCTRACE_INITIALIZE                     \
+  do {                                         \
+    perfetto::TracingInitArgs args;            \
+    args.backends |= perfetto::kSystemBackend; \
+    perfetto::Tracing::Initialize(args);       \
+    perfetto::TrackEvent::Register();          \
+  } while (false)
 
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
-void CudaError(cudaError_t status, const char* file, int line);
+#define LCTRACE_FUNCTION_SCOPE \
+  const auto& name = __func__; \
+  TRACE_EVENT("lc0", name)
 
-inline int DivUp(int a, int b) { return (a + b - 1) / b; }
+#elif USE_NVTX_TRACE
+#define LCTRACE_DECLARE_CATEGORIES /* nop */
+#define LCTRACE_INITIALIZE         /* nop */
+struct lc0_domain {
+  static constexpr char name[] = "lc0";
+};
+#define LCTRACE_FUNCTION_SCOPE NVTX3_FUNC_RANGE_IN(lc0_domain)
+#else
 
-}  // namespace onnx_backend
+#define LCTRACE_DECLARE_CATEGORIES
+#define LCTRACE_INITIALIZE
+#define LCTRACE_FUNCTION_SCOPE
+#endif
 }  // namespace lczero

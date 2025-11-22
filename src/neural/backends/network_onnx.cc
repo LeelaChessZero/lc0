@@ -58,26 +58,16 @@
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 #include "utils/logging.h"
+#include "utils/trace.h"
 
 namespace lczero {
-namespace {
+namespace onnx {
 
 enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT };
 
 class OnnxNetwork;
 
 static constexpr int kNumOutputPolicy = 1858;
-
-#ifdef USE_ONNX_CUDART
-void CudaError(cudaError_t status, const char* file, int line) {
-  if (status != cudaSuccess) {
-    auto err = std::string("CUDA error: ") + cudaGetErrorString(status) + " (" +
-               file + ":" + std::to_string(line) + ") ";
-    throw Exception(err);
-  }
-}
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
-#endif
 
 struct InputsOutputs {
   InputsOutputs(OnnxNetwork* network);
@@ -442,7 +432,8 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
     DataType* iter =
         static_cast<DataType*>(inputs_outputs_->input_tensor_data_);
     iter += start * kInputPlanes * 8 * 8;
-    std::memset(iter, 0, batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
+    std::memset(static_cast<void*>(iter), 0,
+                batch_size * kInputPlanes * 8 * 8 * sizeof(DataType));
     int end = std::min(start + batch_size, static_cast<int>(input_size_));
     for (int i = start; i < end; i++) {
       for (const auto& plane : raw_input_[i]) {
@@ -483,6 +474,7 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
 
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
+  LCTRACE_FUNCTION_SCOPE;
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
     batch_size =
@@ -541,20 +533,20 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         half* dst =
             reinterpret_cast<half*>(inputs_outputs_->input_tensor_data_device_);
         dst += i * kInputPlanes * 8 * 8;
-        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                         network_->compute_stream_);
       } else if (network_->bf16_) {
         __nv_bfloat16* dst = reinterpret_cast<__nv_bfloat16*>(
             inputs_outputs_->input_tensor_data_device_);
         dst += i * kInputPlanes * 8 * 8;
-        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                         network_->compute_stream_);
       } else {
         float* dst = reinterpret_cast<float*>(
             inputs_outputs_->input_tensor_data_device_);
         dst += i * kInputPlanes * 8 * 8;
-        cudnn_backend::expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
-                                        network_->compute_stream_);
+        expandPlanesOnnx(dst, dst_masks, batch * kInputPlanes,
+                         network_->compute_stream_);
       }
 
       ReportCUDAErrors(cudaEventRecord(inputs_outputs_->inputs_processed_event_,
@@ -630,7 +622,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
         float sum = w + d + l;
         w /= sum;
         l /= sum;
-        d = 1.0f - w - l;
+        d /= sum;
       }
       inputs_outputs_->wdl_output_data_[3 * i + 0] = w;
       inputs_outputs_->wdl_output_data_[3 * i + 1] = d;
@@ -671,6 +663,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
       trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
+      trt_options["trt_bf16_enable"] = bf16_ ? "1" : "0";
       trt_options["trt_int8_enable"] = "0";
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
@@ -861,8 +854,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       ReportCUDAErrors(cudaStreamCreate(&upload_stream_));
       ReportCUDAErrors(cudaStreamCreate(&download_stream_));
 #else
-      CERR << "WARNING: CUDA support missing. Enable plain_cuda build option "
-              "for CUDA optimizations.";
+      CERR << "WARNING: Simplified version without CUDA enhancements.";
 #endif
       break;
     default:
@@ -884,7 +876,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, false);
   } else {
     WeightsToOnnxConverterOptions converter_options;
-    converter_options.opset = opts.GetOrDefault<int>("opset", 17);
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
@@ -896,6 +887,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
     converter_options.no_wdl_softmax = true;
+    // No execution provider has a better mish version, some don't even have it.
+    converter_options.real_mish = false;
 
     std::string datatype;
     if (opts.Exists<std::string>("datatype")) {
@@ -907,6 +900,11 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     }
     converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
+    converter_options.opset = opts.GetOrDefault<int>(
+        "opset", converter_options.data_type ==
+                         WeightsToOnnxConverterOptions::DataType::kBFloat16
+                     ? 22
+                     : 17);
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, true);
@@ -923,5 +921,5 @@ REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
 
-}  // namespace
+}  // namespace onnx
 }  // namespace lczero

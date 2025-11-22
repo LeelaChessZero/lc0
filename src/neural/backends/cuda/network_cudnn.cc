@@ -26,7 +26,6 @@
 */
 #include <algorithm>
 #include <cassert>
-#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -39,8 +38,8 @@
 #include "neural/network_legacy.h"
 #include "neural/tables/attention_policy_map.h"
 #include "neural/tables/policy_map.h"
-#include "utils/bititer.h"
 #include "utils/exception.h"
+#include "utils/fp16_utils.h"
 
 // #define DEBUG_RAW_NPS
 
@@ -99,11 +98,10 @@ class CudnnNetworkComputation : public NetworkComputation {
     const auto iter_val =
         &inputs_outputs_->input_val_mem_[batch_size_ * kInputPlanes];
 
-    int i = 0;
-    for (const auto& plane : input) {
+    for (int i = 0; i < kInputPlanes; i++) {
+      const auto& plane = input[i];
       iter_mask[i] = plane.mask;
-      iter_val[i] = plane.value;
-      i++;
+      ToType(iter_val[i], plane.value);
     }
 
     batch_size_++;
@@ -111,41 +109,47 @@ class CudnnNetworkComputation : public NetworkComputation {
 
   void ComputeBlocking() override;
 
+  void CaptureGraph(std::unique_lock<std::mutex>&& lock = {});
+
   int GetBatchSize() const override { return batch_size_; }
 
   float GetQVal(int sample) const override {
     if (wdl_) {
-      auto w = inputs_outputs_->op_value_mem_[3 * sample + 0];
-      auto l = inputs_outputs_->op_value_mem_[3 * sample + 2];
-      return w - l;
-    } else {
-      return inputs_outputs_->op_value_mem_[sample];
+      const float* wdl =
+          sizeof(inputs_outputs_->op_value_mem_[0]) == sizeof(float)
+              ? (float*)inputs_outputs_->op_value_mem_
+              : inputs_outputs_->wdl_cpu_softmax_.get();
+      return wdl[2 * sample];
     }
+    return FromType(inputs_outputs_->op_value_mem_[sample]);
   }
 
   float GetDVal(int sample) const override {
     if (wdl_) {
-      auto d = inputs_outputs_->op_value_mem_[3 * sample + 1];
-      return d;
-    } else {
-      return 0.0f;
+      const float* wdl =
+          sizeof(inputs_outputs_->op_value_mem_[0]) == sizeof(float)
+              ? (float*)inputs_outputs_->op_value_mem_
+              : inputs_outputs_->wdl_cpu_softmax_.get();
+      return wdl[2 * sample + 1];
     }
+    return 0.0f;
   }
 
   float GetPVal(int sample, int move_id) const override {
-    return inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id];
+    return FromType(
+        inputs_outputs_->op_policy_mem_[sample * kNumOutputPolicy + move_id]);
   }
 
   float GetMVal(int sample) const override {
     if (moves_left_) {
-      return inputs_outputs_->op_moves_left_mem_[sample];
+      return FromType(inputs_outputs_->op_moves_left_mem_[sample]);
     }
     return 0.0f;
   }
 
  private:
   // Memory holding inputs, outputs.
-  std::unique_ptr<InputsOutputs> inputs_outputs_;
+  std::unique_ptr<InputsOutputs<DataType>> inputs_outputs_;
   int batch_size_;
   bool wdl_;
   bool moves_left_;
@@ -162,6 +166,7 @@ class CudnnNetwork : public Network {
                       file.format().network_format().moves_left()} {
     MultiHeadWeights weights(file.weights());
     gpu_id_ = options.GetOrDefault<int>("gpu", 0);
+    enable_graph_capture_ = options.GetOrDefault<bool>("graph_capture", true);
 
     conv_policy_ = file.format().network_format().policy() ==
                    pblczero::NetworkFormat::POLICY_CONVOLUTION;
@@ -229,6 +234,17 @@ class CudnnNetwork : public Network {
       // Override if forced from backend option
       if (options.Exists<bool>("nhwc")) nhwc_ = options.Get<bool>("nhwc");
     }
+    ReportCUDAErrors(
+        cudaStreamCreateWithFlags(&compute_stream_, cudaStreamNonBlocking));
+    ReportCUDAErrors(
+        cudaStreamCreateWithFlags(&upload_stream_, cudaStreamNonBlocking));
+    ReportCUDAErrors(
+        cudaStreamCreateWithFlags(&download_stream_, cudaStreamNonBlocking));
+    ReportCUDAErrors(cudaEventCreateWithFlags(&compute_ordering_event_,
+                                              cudaEventDisableTiming));
+
+    ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
+    ReportCUDNNErrors(cudnnSetStream(cudnn_, compute_stream_));
 
     if (hasTensorCores)
       ReportCUBLASErrors(cublasSetMathMode(
@@ -586,8 +602,7 @@ class CudnnNetwork : public Network {
       auto FCVal1 = std::make_unique<FCLayer<DataType>>(
           getLastLayer(), head.ip1_val_b.size(), 1, 1, true,
           mish_net ? ACTIVATION_MISH : ACTIVATION_RELU);
-      FCVal1->LoadWeights(&head.ip1_val_w[0], &head.ip1_val_b[0],
-                          scratch_mem_);
+      FCVal1->LoadWeights(&head.ip1_val_w[0], &head.ip1_val_b[0], scratch_mem_);
       network_.emplace_back(std::move(FCVal1));
 
       wdl_ = file.format().network_format().value() ==
@@ -597,8 +612,7 @@ class CudnnNetwork : public Network {
       auto FCVal2 = std::make_unique<FCLayer<DataType>>(
           getLastLayer(), head.ip2_val_b.size(), 1, 1, true,
           fc2_tanh ? ACTIVATION_TANH : ACTIVATION_NONE);
-      FCVal2->LoadWeights(&head.ip2_val_w[0], &head.ip2_val_b[0],
-                          scratch_mem_);
+      FCVal2->LoadWeights(&head.ip2_val_w[0], &head.ip2_val_b[0], scratch_mem_);
       network_.emplace_back(std::move(FCVal2));
     }
     value_out_ = getLastLayer();
@@ -664,45 +678,94 @@ class CudnnNetwork : public Network {
     CERR << "allocated " << 3 * maxSize
          << " bytes of GPU memory to run the network";
 #endif
+
+    // pre-allocate cuda graphs for search threads
+    auto allocateCudaGraphs = [&] {
+      CudnnNetworkComputation<DataType> comp(this, wdl_, moves_left_);
+      comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
+      // Make sure cublas is initialized in this thread.
+      comp.ComputeBlocking();
+      for (int i = 0; i < GetMiniBatchSize(); i++) {
+        comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
+        auto lock = LockEval();
+        comp.CaptureGraph(std::move(lock));
+      }
+    };
+    std::thread t2(allocateCudaGraphs);
+    allocateCudaGraphs();
+    t2.join();
   }
 
-  void forwardEval(InputsOutputs* io, int batchSize) {
+  std::unique_lock<std::mutex> LockEval() {
+    return std::unique_lock<std::mutex>{lock_};
+  }
+
+  bool GetGraphCaptureEnabled() const { return enable_graph_capture_; }
+
+  CudaGraphCapture<DataType> BeginCapture(InputsOutputs<DataType>& io) {
+    return {io, compute_stream_, download_stream_};
+  }
+
+  void UploadInputs(InputsOutputs<DataType>* io, int batchSize) {
+    ReportCUDAErrors(
+        cudaMemcpyAsync(io->input_masks_mem_gpu_, io->input_masks_mem_,
+                        batchSize * kInputPlanes * sizeof(uint64_t),
+                        cudaMemcpyHostToDevice, upload_stream_));
+    ReportCUDAErrors(cudaMemcpyAsync(
+        io->input_val_mem_gpu_, io->input_val_mem_,
+        batchSize * kInputPlanes * sizeof(io->input_val_mem_[0]),
+        cudaMemcpyHostToDevice, upload_stream_));
+    ReportCUDAErrors(cudaEventRecord(io->upload_done_event_, upload_stream_));
+    ReportCUDAErrors(
+        cudaStreamWaitEvent(compute_stream_, io->upload_done_event_, 0));
+  }
+
+  void GraphLaunch(InputsOutputs<DataType>* io, int batchSize) {
+    UploadInputs(io, batchSize);
+
+    // cudaGraphUpload was added in CUDA 11.1
+#if CUDART_VERSION >= 11010
+    // Make sure graph has completed upload before launching it.
+    ReportCUDAErrors(cudaStreamSynchronize(io->exec_stream_));
+#endif
+
+    io->cuda_graphs_[batchSize - 1].Launch(compute_stream_);
+    ReportCUDAErrors(
+        cudaEventRecord(io->download_done_event_, compute_stream_));
+  }
+
+  void forwardEval(InputsOutputs<DataType>* io, int batchSize,
+                   bool capture = false) {
     // It is safe to evaluate larger than the batchSize
     // as all buffers are designed to handle max_batch_size
     // and the extra invalid results are never read.
     if (batchSize < min_batch_size_) batchSize = min_batch_size_;
-    std::unique_lock<std::mutex> lock(lock_);
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
 #endif
 
     // TODO: consider supporting multi-stream path for cudnn backend too.
-    cudaStream_t stream = 0;  // default stream
+    cudaStream_t compute_stream = compute_stream_;
+    cudaStream_t download_stream = download_stream_;
 
     // Expand packed planes to full planes.
-    uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
-    float* ipDataValues = io->input_val_mem_gpu_;
+    const uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
+    const auto* ipDataValues = io->input_val_mem_gpu_;
 
-    bool fp16 = std::is_same<half, DataType>::value;
-    if (fp16) {
-      if (nhwc_)
-        expandPlanes_Fp16_NHWC((half*)(tensor_mem_[0]), ipDataMasks,
-                               ipDataValues, batchSize * kInputPlanes, stream);
-      else
-        expandPlanes_Fp16_NCHW((half*)(tensor_mem_[0]), ipDataMasks,
-                               ipDataValues, batchSize * kInputPlanes, stream);
-    } else {
-      expandPlanes_Fp32_NCHW((float*)(tensor_mem_[0]), ipDataMasks,
-                             ipDataValues, batchSize * kInputPlanes, stream);
-    }
+    if (nhwc_)
+      expandPlanes_NHWC(tensor_mem_[0], ipDataMasks, ipDataValues,
+                        batchSize * kInputPlanes, compute_stream);
+    else
+      expandPlanes_NCHW(tensor_mem_[0], ipDataMasks, ipDataValues,
+                        batchSize * kInputPlanes, compute_stream);
 
     // debug code example
     // dumpTensor(tensor_mem_[0], 1024, "After expand Planes", fp16);
 
-    float* opPol = io->op_policy_mem_gpu_;
-    float* opVal = io->op_value_mem_gpu_;
-    float* opMov = io->op_moves_left_mem_gpu_;
+    auto* opPol = io->op_policy_mem_gpu_;
+    auto* opVal = io->op_value_mem_gpu_;
+    auto* opMov = io->op_moves_left_mem_gpu_;
 
     int l = 0;
     // Input.
@@ -710,40 +773,40 @@ class CudnnNetwork : public Network {
         batchSize,
         use_res_block_winograd_fuse_opt_ ? tensor_mem_[1] : tensor_mem_[2],
         tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_, cublas_,
-        stream);  // input conv
+        compute_stream);  // input conv
 
     // Residual block.
     for (int block = 0; block < numBlocks_; block++) {
       if (use_res_block_winograd_fuse_opt_) {
         network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1], nullptr,
                             scratch_mem_, scratch_size_, cudnn_, cublas_,
-                            stream);  // block
+                            compute_stream);  // block
       } else {
         network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                             scratch_mem_, scratch_size_, cudnn_, cublas_,
-                            stream);  // conv1
+                            compute_stream);  // conv1
 
         if (use_custom_winograd_) {
           network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                               tensor_mem_[2], scratch_mem_, scratch_size_,
-                              cudnn_, cublas_, stream);  // conv2
+                              cudnn_, cublas_, compute_stream);  // conv2
         } else {
           // For SE Resnet, skip connection is added after SE (and bias is added
           // as part of SE).
           if (has_se_) {
             network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0],
                                 nullptr, scratch_mem_, scratch_size_, cudnn_,
-                                cublas_, stream);  // conv2
+                                cublas_, compute_stream);  // conv2
           } else {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
-                                cudnn_, cublas_, stream);  // conv2
+                                cudnn_, cublas_, compute_stream);  // conv2
           }
 
           if (has_se_) {
             network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
                                 tensor_mem_[2], scratch_mem_, scratch_size_,
-                                cudnn_, cublas_, stream);  // SE layer
+                                cudnn_, cublas_, compute_stream);  // SE layer
           }
         }
       }
@@ -753,125 +816,110 @@ class CudnnNetwork : public Network {
     if (attn_policy_) {
       network_[l++]->Eval(
           batchSize, tensor_mem_[0], tensor_mem_[2], tensor_mem_[1],
-          scratch_mem_, scratch_size_, nullptr, cublas_, stream,
+          scratch_mem_, scratch_size_, nullptr, cublas_, compute_stream,
           &head_offset_pointers_);  // Entire Attention policy head except for
                                     // the policy map
-      if (fp16) {
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                            scratch_mem_, scratch_size_, nullptr, cublas_,
-                            stream);  // policy map layer
-        copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
-                          batchSize * kNumOutputPolicy,
-                          stream);  // POLICY output
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0],
-                            nullptr, scratch_mem_, scratch_size_, nullptr,
-                            cublas_, stream);  // policy map layer
-                                               // POLICY output
-      }
+      network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0], nullptr,
+                          scratch_mem_, scratch_size_, nullptr, cublas_,
+                          compute_stream);  // policy map layer
+                                            // POLICY output
 
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
-                          stream);  // policy conv1
+                          compute_stream);  // policy conv1
 
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
-                          stream);  // policy conv2
+                          compute_stream);  // policy conv2
 
-      if (fp16) {
-        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_, cublas_,
-                            stream);  // policy map layer
-        copyTypeConverted(opPol, (half*)(tensor_mem_[0]),
-                          batchSize * kNumOutputPolicy,
-                          stream);  // POLICY output
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[1],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_,
-                            stream);  // policy map layer  // POLICY output
-      }
+      network_[l++]->Eval(
+          batchSize, (DataType*)opPol, tensor_mem_[1], nullptr, scratch_mem_,
+          scratch_size_, cudnn_, cublas_,
+          compute_stream);  // policy map layer  // POLICY output
     } else {
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
-                          stream);  // pol conv
+                          compute_stream);  // pol conv
 
-      if (fp16) {
-        network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_, cublas_,
-                            stream);  // pol FC
-
-        copyTypeConverted(opPol, (half*)(tensor_mem_[1]),
-                          batchSize * kNumOutputPolicy, stream);  // POLICY
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_, stream);  // pol FC  // POLICY
-      }
+      network_[l++]->Eval(batchSize, (DataType*)opPol, tensor_mem_[0], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          compute_stream);  // pol FC  // POLICY
     }
+
+    ReportCUDAErrors(cudaEventRecord(io->policy_done_event_, compute_stream));
+    ReportCUDAErrors(
+        cudaStreamWaitEvent(download_stream, io->policy_done_event_, 0));
 
     // Copy policy output from device memory to host memory.
     ReportCUDAErrors(cudaMemcpyAsync(
         io->op_policy_mem_, io->op_policy_mem_gpu_,
-        sizeof(float) * kNumOutputPolicy * batchSize, cudaMemcpyDeviceToHost));
+        sizeof(io->op_policy_mem_[0]) * kNumOutputPolicy * batchSize,
+        cudaMemcpyDeviceToHost, download_stream));
 
     // value head
     network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                         scratch_mem_, scratch_size_, cudnn_, cublas_,
-                        stream);  // value conv
+                        compute_stream);  // value conv
 
     network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                         scratch_mem_, scratch_size_, cudnn_, cublas_,
-                        stream);  // value FC1
+                        compute_stream);  // value FC1
 
-    if (fp16) {
-      // TODO: consider fusing the bias-add of FC2 with format conversion.
-      network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_, cublas_,
-                          stream);  // value FC2
-      copyTypeConverted(opVal, (half*)(tensor_mem_[0]),
-                        wdl_ ? 3 * batchSize : batchSize, stream);  // VALUE
-    } else {
-      network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1], nullptr,
-                          scratch_mem_, scratch_size_, cudnn_, cublas_,
-                          stream);  // value FC2    // VALUE
-    }
+    network_[l++]->Eval(batchSize, (DataType*)opVal, tensor_mem_[1], nullptr,
+                        scratch_mem_, scratch_size_, cudnn_, cublas_,
+                        compute_stream);  // value FC2    // VALUE
+
+    ReportCUDAErrors(cudaEventRecord(io->value_done_event_, compute_stream));
+    ReportCUDAErrors(
+        cudaStreamWaitEvent(download_stream, io->value_done_event_, 0));
+    ReportCUDAErrors(cudaMemcpyAsync(
+        io->op_value_mem_, io->op_value_mem_gpu_,
+        sizeof(io->op_value_mem_[0]) * (wdl_ ? 3 : 1) * batchSize,
+        cudaMemcpyDeviceToHost, download_stream));
 
     if (moves_left_) {
       // Moves left head
       network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
-                          stream);  // moves conv
+                          compute_stream);  // moves conv
 
       network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0], nullptr,
                           scratch_mem_, scratch_size_, cudnn_, cublas_,
-                          stream);  // moves FC1
+                          compute_stream);  // moves FC1
 
       // Moves left FC2
-      if (fp16) {
-        // TODO: consider fusing the bias-add of FC2 with format conversion.
-        network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[1], nullptr,
-                            scratch_mem_, scratch_size_, cudnn_, cublas_,
-                            stream);
-        copyTypeConverted(opMov, (half*)(tensor_mem_[0]), batchSize, stream);
-      } else {
-        network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem_[1],
-                            nullptr, scratch_mem_, scratch_size_, cudnn_,
-                            cublas_, stream);
-      }
+      network_[l++]->Eval(batchSize, (DataType*)opMov, tensor_mem_[1], nullptr,
+                          scratch_mem_, scratch_size_, cudnn_, cublas_,
+                          compute_stream);
+
+      ReportCUDAErrors(
+          cudaEventRecord(io->moves_left_done_event_, compute_stream));
+      ReportCUDAErrors(
+          cudaStreamWaitEvent(download_stream, io->moves_left_done_event_, 0));
+      ReportCUDAErrors(
+          cudaMemcpyAsync(io->op_moves_left_mem_, io->op_moves_left_mem_gpu_,
+                          sizeof(io->op_moves_left_mem_[0]) * batchSize,
+                          cudaMemcpyDeviceToHost, download_stream));
     }
 
-    ReportCUDAErrors(cudaDeviceSynchronize());
-    // The next thread can start using the GPU now.
-    lock.unlock();
+    if (!capture) {
+      ReportCUDAErrors(
+          cudaEventRecord(io->download_done_event_, download_stream));
+    }
+  }
 
+  void finishEval(InputsOutputs<DataType>* io, int batchSize) {
+    ReportCUDAErrors(cudaEventSynchronize(io->download_done_event_));
     if (wdl_) {
       // Value softmax done cpu side.
       for (int i = 0; i < batchSize; i++) {
-        float w = io->op_value_mem_[3 * i + 0];
-        float d = io->op_value_mem_[3 * i + 1];
-        float l = io->op_value_mem_[3 * i + 2];
+        float* wdl = sizeof(io->op_value_mem_[0]) == sizeof(float)
+                         ? (float*)io->op_value_mem_
+                         : io->wdl_cpu_softmax_.get();
+        float w = FromType(io->op_value_mem_[3 * i + 0]);
+        float d = FromType(io->op_value_mem_[3 * i + 1]);
+        float l = FromType(io->op_value_mem_[3 * i + 2]);
         float m = std::max({w, d, l});
         w = std::exp(w - m);
         d = std::exp(d - m);
@@ -879,10 +927,9 @@ class CudnnNetwork : public Network {
         float sum = w + d + l;
         w /= sum;
         l /= sum;
-        d = 1.0f - w - l;
-        io->op_value_mem_[3 * i + 0] = w;
-        io->op_value_mem_[3 * i + 1] = d;
-        io->op_value_mem_[3 * i + 2] = l;
+        d /= sum;
+        wdl[2 * i + 0] = w - l;
+        wdl[2 * i + 1] = d;
       }
     }
 
@@ -921,6 +968,9 @@ class CudnnNetwork : public Network {
       ReportCUDAErrors(cudaFree(head_offset_pointers_));
     cudnnDestroy(cudnn_);
     cublasDestroy(cublas_);
+    ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
+    ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
+    ReportCUDAErrors(cudaStreamDestroy(download_stream_));
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -935,20 +985,20 @@ class CudnnNetwork : public Network {
                                                                moves_left_);
   }
 
-  std::unique_ptr<InputsOutputs> GetInputsOutputs() {
+  std::unique_ptr<InputsOutputs<DataType>> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-      return std::make_unique<InputsOutputs>(max_batch_size_, wdl_,
-                                             moves_left_);
+      return std::make_unique<InputsOutputs<DataType>>(max_batch_size_, wdl_,
+                                                       moves_left_);
     } else {
-      std::unique_ptr<InputsOutputs> resource =
+      std::unique_ptr<InputsOutputs<DataType>> resource =
           std::move(free_inputs_outputs_.front());
       free_inputs_outputs_.pop_front();
       return resource;
     }
   }
 
-  void ReleaseInputsOutputs(std::unique_ptr<InputsOutputs> resource) {
+  void ReleaseInputsOutputs(std::unique_ptr<InputsOutputs<DataType>> resource) {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     free_inputs_outputs_.push_back(std::move(resource));
   }
@@ -956,7 +1006,9 @@ class CudnnNetwork : public Network {
   // Apparently nvcc doesn't see constructor invocations through make_unique.
   // This function invokes constructor just to please complier and silence
   // warning. Is never called (but compiler thinks that it could).
-  void UglyFunctionToSilenceNvccWarning() { InputsOutputs io(0, false, false, false); }
+  void UglyFunctionToSilenceNvccWarning() {
+    InputsOutputs<DataType> io(0, false, false, false);
+  }
 
  private:
   const NetworkCapabilities capabilities_;
@@ -965,6 +1017,7 @@ class CudnnNetwork : public Network {
   int gpu_id_;
   int max_batch_size_;
   int min_batch_size_;
+  bool enable_graph_capture_;
   bool wdl_;
   bool moves_left_;
 
@@ -999,7 +1052,12 @@ class CudnnNetwork : public Network {
   size_t scratch_size_;
 
   mutable std::mutex inputs_outputs_lock_;
-  std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
+  std::list<std::unique_ptr<InputsOutputs<DataType>>> free_inputs_outputs_;
+
+  cudaStream_t compute_stream_ = nullptr;
+  cudaStream_t upload_stream_ = nullptr;
+  cudaStream_t download_stream_ = nullptr;
+  cudaEvent_t compute_ordering_event_ = nullptr;
 
   void showInfo() const {
     int version;
@@ -1058,12 +1116,13 @@ class CudnnNetwork : public Network {
     float clockRateMHz;
 #if CUDART_VERSION >= 13000
     int clockRatekHz;
-    cudaError_t err = cudaDeviceGetAttribute(&clockRatekHz, cudaDevAttrClockRate, deviceId);
+    cudaError_t err =
+        cudaDeviceGetAttribute(&clockRatekHz, cudaDevAttrClockRate, deviceId);
     if (err != cudaSuccess) {
-        CERR << "Error getting clock rate: " << cudaGetErrorString(err);
-        clockRateMHz = 0.0f; // Fallback value
+      CERR << "Error getting clock rate: " << cudaGetErrorString(err);
+      clockRateMHz = 0.0f;  // Fallback value
     } else {
-        clockRateMHz = clockRatekHz / 1e3f;
+      clockRateMHz = clockRatekHz / 1e3f;
     }
 #else
     clockRateMHz = deviceProp.clockRate / 1e3f;
@@ -1098,8 +1157,36 @@ CudnnNetworkComputation<DataType>::~CudnnNetworkComputation() {
 }
 
 template <typename DataType>
+void CudnnNetworkComputation<DataType>::CaptureGraph(
+    std::unique_lock<std::mutex>&& lock) {
+  if (!network_->GetGraphCaptureEnabled()) return;
+  if (!CudaGraphCapture<DataType>::EnsureEnoughFreeMemory()) {
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+      CERR << "WARNING: Not enough GPU memory to capture CUDA graphs.";
+    });
+    return;
+  }
+  CudaGraphCapture capture = network_->BeginCapture(*inputs_outputs_);
+  network_->forwardEval(inputs_outputs_.get(), GetBatchSize(), true);
+  capture.EndCapture();
+  if (lock.owns_lock()) lock.unlock();
+  inputs_outputs_->cuda_graphs_[GetBatchSize() - 1] = capture;
+}
+
+template <typename DataType>
 void CudnnNetworkComputation<DataType>::ComputeBlocking() {
-  network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
+  assert(GetBatchSize() >= 1);
+  if (inputs_outputs_->cuda_graphs_[GetBatchSize() - 1]) {
+    std::unique_lock<std::mutex> lock = network_->LockEval();
+    network_->GraphLaunch(inputs_outputs_.get(), GetBatchSize());
+  } else {
+    std::unique_lock<std::mutex> lock = network_->LockEval();
+    network_->UploadInputs(inputs_outputs_.get(), GetBatchSize());
+    network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
+    CaptureGraph(std::move(lock));
+  }
+  network_->finishEval(inputs_outputs_.get(), GetBatchSize());
 }
 
 template <typename DataType>
