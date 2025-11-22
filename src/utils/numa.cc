@@ -36,7 +36,9 @@
 #include <cstring>
 #include <mutex>
 #include <random>
+#if __has_include(<source_location>)
 #include <source_location>
+#endif
 #include <sstream>
 #include <system_error>
 
@@ -80,22 +82,38 @@ const OptionId kShuffleCoreReservationOptionId{
 
 #if HAVE_LIBHWLOC
 template <typename T>
-void ReportHWLocError(
-    T result, std::source_location loc = std::source_location::current()) {
+void ReportHWLocError(T result
+#if __cpp_lib_source_location >= 201907L
+                      ,
+                      std::source_location loc = std::source_location::current()
+#endif
+) {
   if (result != 0) {
     std::ostringstream ss;
-    ss << "HWLoc error at " << loc.file_name() << ":" << loc.line() << " - "
+    ss << "HWLoc error "
+#if __cpp_lib_source_location >= 201907L
+          "at "
+       << loc.file_name() << ":" << loc.line() << " - "
+#endif
        << result << ": " << std::system_category().message(errno);
     CERR << ss.str();
     throw Exception(ss.str());
   }
 }
 template <typename T>
-void ReportHWLocError(
-    T* result, std::source_location loc = std::source_location::current()) {
+void ReportHWLocError(T* result
+#if __cpp_lib_source_location >= 201907L
+                      ,
+                      std::source_location loc = std::source_location::current()
+#endif
+) {
   if (result == nullptr) {
     std::ostringstream ss;
-    ss << "HWLoc error at " << loc.file_name() << ":" << loc.line() << " - "
+    ss << "HWLoc error "
+#if __cpp_lib_source_location >= 201907L
+          "at "
+       << loc.file_name() << ":" << loc.line() << " - "
+#endif
        << std::system_category().message(errno);
     CERR << ss.str();
     throw Exception(ss.str());
@@ -187,7 +205,6 @@ struct Config {
       effiency_[eff < 0 ? i : eff] = std::move(cpuset);
     }
 
-
     if (IsAffinitySupported()) {
       use_search_thread_affinity_ = true;
       GetAffinity(initial_affinity_);
@@ -254,8 +271,8 @@ struct Config {
                << std::system_category().message(GetLastError());
         } else {
           CERR << "Setting affinity for thread " << te.th32ThreadID << ".";
-          ReportHWLocError(hwloc_set_thread_cpubind(
-              topology_, thread, cpuset_, HWLOC_CPUBIND_THREAD));
+          ReportHWLocError(hwloc_set_thread_cpubind(topology_, thread, cpuset_,
+                                                    HWLOC_CPUBIND_THREAD));
           CloseHandle(thread);
         }
       }
