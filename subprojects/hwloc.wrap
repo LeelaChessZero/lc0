@@ -1,0 +1,9 @@
+[wrap-file]
+directory = hwloc-win64-build-2.12.2
+source_url = https://download.open-mpi.org/release/hwloc/v2.12/hwloc-win64-build-2.12.2.zip
+source_filename = hwloc-win64-build-2.12.2.zip
+source_hash = ae7426d4dd1fbe33afffd5ccfa599e1ea9479484f0b9ba54af58f5412916fd4f
+patch_directory = hwloc
+
+[provide]
+dependency_names = hwloc
