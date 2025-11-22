@@ -195,6 +195,7 @@ struct Config {
     // TODO: Maybe use xml loading instead of detection.
     ReportHWLocError(hwloc_topology_load(initial_topology_));
     ReportHWLocError(hwloc_topology_dup(&topology_, initial_topology_));
+#if HWLOC_API_VERSION >= 0x00020400
     effiency_.resize(hwloc_cpukinds_get_nr(topology_, 0));
     for (size_t i = 0; i < effiency_.size(); i++) {
       CpuSet cpuset;
@@ -204,6 +205,7 @@ struct Config {
 
       effiency_[eff < 0 ? i : eff] = std::move(cpuset);
     }
+#endif
 
     if (IsAffinitySupported()) {
       use_search_thread_affinity_ = true;
