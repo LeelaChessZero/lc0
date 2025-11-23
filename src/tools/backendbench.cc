@@ -190,6 +190,7 @@ void BackendBenchmark::Run() {
         stddev += diff * diff;
       }
       stddev = std::sqrt(stddev / (batches_done - 1));
+      double cv = stddev / mean;
 
       std::sort(times.begin(), times.begin() + batches_done);
 
@@ -210,6 +211,7 @@ void BackendBenchmark::Run() {
                      " mean nps,"
                      " mean ms,"
                      "  sdev,"
+                     "    cv,"
                      " max nps,"
                      "  median,"
                      " min nps,"
@@ -223,6 +225,8 @@ void BackendBenchmark::Run() {
                 << std::setw(8) << mean  << ","
                 << std::fixed << std::setprecision(3)
                 << std::setw(6) << stddev * 1000 << ","
+                << std::fixed << std::setprecision(4)
+                << std::setw(6) << cv << ","
                 << std::fixed << std::setprecision(0)
                 << std::setw(8) << i / times[0].count() << ","
                 << std::setw(8) << median << ","
