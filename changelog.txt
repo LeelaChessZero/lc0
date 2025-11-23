@@ -1,4 +1,23 @@
-﻿v0.32.0 (2025-08-21)
+﻿v0.32.1 (2025-11-23)
+~~~~~~~
+* Strict timing is applied only if `isready` was seen, for more accurate timing.
+* Better onnx-trt installation script that will download everything needed
+  without user intervention.
+* Improved transposition table memory use calculation for the memory limit.
+* A small speed improvement for dag-preview search.
+* Some important bug fixes:
+  - Two en-passant related bugs
+  - Guard against infinite fp16 input in cuda Softmax kernel.
+  - Changed the way the WDL draw value is calculated in some backends to avoid
+    underflows.
+  - The onnx backend WDL Softmax calculation was moved to the cpu for improved
+    accuracy (like other backends already do).
+  - Correct onnx moves left head final activation.
+  - Fix for cudnn attention policy with convolutional nets.
+  - A few more minor fixes.
+* Assorted build system improvements.
+
+v0.32.0 (2025-08-21)
 ~~~~~~~
 * Support for building with cuda 13.
 * README update.
