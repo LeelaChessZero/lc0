@@ -16,7 +16,7 @@
 
 project('lc0', 'cpp',
         default_options : ['cpp_std=c++20', 'b_ndebug=if-release', 'warning_level=3', 'b_lto=true', 'b_vscrt=mt'],
-        meson_version: '>=0.57')
+        meson_version: '>=0.60')
 
 fs = import('fs')
 
@@ -207,7 +207,7 @@ files += [
 
 includes += include_directories('src')
 
-deps += dependency('absl_flat_hash_map',
+deps += dependency('absl_flat_hash_map', 'absl', modules:['absl::flat_hash_map'],
                    include_type: 'system',
                    fallback: ['abseil-cpp', 'absl_container_dep'],
                    default_options : ['warning_level=0', 'cpp_std=c++20'])
