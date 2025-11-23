@@ -27,7 +27,8 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
+
+#include "utils/bit.h"
 
 // Define NO_F16C to avoid the F16C intrinsics. Also disabled with NO_POPCNT
 // since it catches most processors without F16C instructions.
@@ -43,16 +44,11 @@ namespace lczero {
 #if defined(HAS_FLOAT16) && (defined(__F16C__) || defined(__aarch64__))
 
 inline uint16_t FP32toFP16(float f32) {
-  _Float16 f16 = static_cast<_Float16>(f32);
-  uint16_t x;
-  std::memcpy(&x, &f16, sizeof(uint16_t));
-  return x;
+  return bit_cast<uint16_t>(static_cast<_Float16>(f32));
 }
 
 inline float FP16toFP32(uint16_t f16) {
-  _Float16 x;
-  std::memcpy(&x, &f16, sizeof(uint16_t));
-  return static_cast<float>(x);
+  return static_cast<float>(bit_cast<_Float16>(f16));
 }
 
 #elif !defined(NO_POPCNT) && !defined(NO_F16C) && \
@@ -74,8 +70,7 @@ inline float FP16toFP32(uint16_t f16) {
 #else
 
 inline uint16_t FP32toFP16(float f32) {
-  uint32_t x;
-  memcpy(&x, &f32, sizeof(float));
+  uint32_t x = bit_cast<uint32_t>(f32);
   uint32_t sign = (x & 0x80000000) >> 16;
   x &= 0x7fffffff;
   if (x < 0x477ff000) {
@@ -87,10 +82,7 @@ inline uint16_t FP32toFP16(float f32) {
       x >>= 13;
     } else {
       // Subnormal or zero. The result is the last bits of fabs(f32) + 0.5f.
-      float f;
-      memcpy(&f, &x, sizeof(float));
-      f += 0.5f;
-      memcpy(&x, &f, sizeof(float));
+      x = bit_cast<uint32_t>(bit_cast<float>(x) + 0.5f);
     }
   } else {
     if (x > 0x7f800000) {
@@ -112,18 +104,17 @@ inline float FP16toFP32(uint16_t f16) {
     // Subnormal or zero. Scale to float.
     x = s & 0x7fff;
     f = 5.9604645e-8f * x;
-    memcpy(&x, &f, sizeof(float));
+    x = bit_cast<uint32_t>(f);
     if (s & 0x8000) x |= 0x80000000;
   } else if ((s & 0x7c00) == 0x7c00) {
     // Inf or NaN. Adjust exponent and shift.
-    if (s & 0x1ff) s |= 0x200; // Change sNaN to qNaN as intel does.
+    if (s & 0x1ff) s |= 0x200;  // Change sNaN to qNaN as intel does.
     x = ((s & 0x47fff) + 0x38000) << 13;
   } else {
     // Normal. Adjust exponent and shift.
     x = ((s & 0x47fff) + 0x1c000U) << 13;
   }
-  memcpy(&f, &x, sizeof(float));
-  return f;
+  return bit_cast<float>(x);
 }
 
 #endif
