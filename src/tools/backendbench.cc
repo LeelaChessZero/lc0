@@ -210,8 +210,8 @@ void BackendBenchmark::Run() {
         std::cout << "size,"
                      " mean nps,"
                      " mean ms,"
-                     "  sdev,"
-                     "    cv,"
+                     "   sdev,"
+                     "     cv,"
                      " max nps,"
                      "  median,"
                      " min nps,"
@@ -223,10 +223,9 @@ void BackendBenchmark::Run() {
                 << std::setw(9) << nps << ","
                 << std::defaultfloat << std::setprecision(4)
                 << std::setw(8) << mean  << ","
-                << std::fixed << std::setprecision(3)
-                << std::setw(6) << stddev * 1000 << ","
                 << std::fixed << std::setprecision(4)
-                << std::setw(6) << cv << ","
+                << std::setw(7) << stddev * 1000 << ","
+                << std::setw(7) << cv << ","
                 << std::fixed << std::setprecision(0)
                 << std::setw(8) << i / times[0].count() << ","
                 << std::setw(8) << median << ","
