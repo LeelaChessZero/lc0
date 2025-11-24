@@ -263,22 +263,14 @@ std::string Converter::MakeMish(OnnxBuilder* builder, const std::string& input,
     return builder->Mul(name, flow, input);
   } else {
     auto in = input;
-    if (options_.data_type !=
-        WeightsToOnnxConverterOptions::DataType::kFloat32) {
-      in = builder->Cast(name + "/to_float", in, pblczero::TensorProto::FLOAT);
-    }
-    auto one = builder->AddInitializer(name + "/one", FloatOnnxConst({1}, {1}));
-    auto two = builder->AddInitializer(name + "/two", FloatOnnxConst({2}, {1}));
+    auto one = builder->AddInitializer(name + "/one", *GetScalarConverter(1));
+    auto two = builder->AddInitializer(name + "/two", *GetScalarConverter(2));
     auto e = builder->Exp(name + "/e", in);
     auto flow = builder->Add(name + "/e+2", e, two);
     flow = builder->Mul(name + "/e*e+2e", e, flow);
     flow = builder->Div(name + "/2/(e*e+2e)", two, flow);
     flow = builder->Add(name + "/1+2/(e*e+2e)", flow, one);
     flow = builder->Div(name + "/in/(1+2/(e*e+2e))", in, flow);
-    if (options_.data_type !=
-        WeightsToOnnxConverterOptions::DataType::kFloat32) {
-      flow = builder->Cast(name + "/to_data_type", flow, GetDataType());
-    }
     return flow;
   }
 }
