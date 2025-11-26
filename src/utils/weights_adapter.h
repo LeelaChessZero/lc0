@@ -56,15 +56,15 @@ class LayerAdapter {
       return data_ != other.data_;
     }
     Iterator& operator++() {
-      ++data_;
+      data_ += adapter_->element_size_;
       return *this;
     }
     Iterator& operator--() {
-      --data_;
+      data_ -= adapter_->element_size_;
       return *this;
     }
     ptrdiff_t operator-(const Iterator& other) const {
-      return data_ - other.data_;
+      return (data_ - other.data_) / adapter_->element_size_;
     }
 
     // TODO(crem) implement other iterator functions when they are needed.
@@ -84,7 +84,7 @@ class LayerAdapter {
   size_t size() const { return size_; }
   float operator[](size_t idx) const { return begin()[idx]; }
   Iterator begin() const { return {this, data_}; }
-  Iterator end() const { return {this, data_ + size_}; }
+  Iterator end() const { return {this, data_ + size_ * element_size_}; }
 
  private:
   const uint16_t* data_ = nullptr;
@@ -92,6 +92,7 @@ class LayerAdapter {
   const float min_;
   const float max_;
   const pblczero::Weights::Layer::Encoding encoding_;
+  const size_t element_size_ = 1;  // In uint16_t units (1 for 16-bit, 2 for 32-bit)
 };
 
 }  // namespace lczero
