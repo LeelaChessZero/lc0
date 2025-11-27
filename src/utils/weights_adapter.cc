@@ -29,29 +29,26 @@
 
 #include <absl/base/optimization.h>
 
-#include <cstring>
-
 #include "utils/bf16_utils.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
 
 namespace lczero {
 
-float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
+float LayerAdapter::Iterator::ExtractValue(const std::byte* ptr,
                                            const LayerAdapter* adapter) {
   switch (adapter->encoding_) {
     case pblczero::Weights::Layer::LINEAR16: {
-      float theta = *ptr / static_cast<float>(0xffff);
+      float theta =
+          *reinterpret_cast<const uint16_t*>(ptr) / static_cast<float>(0xffff);
       return adapter->min_ * (1 - theta) + adapter->max_ * theta;
     }
     case pblczero::Weights::Layer::FLOAT16:
-      return FP16toFP32(*ptr);
+      return FP16toFP32(*reinterpret_cast<const uint16_t*>(ptr));
     case pblczero::Weights::Layer::BFLOAT16:
-      return BF16toFP32(*ptr);
+      return BF16toFP32(*reinterpret_cast<const uint16_t*>(ptr));
     case pblczero::Weights::Layer::FLOAT32: {
-      float result;
-      std::memcpy(&result, ptr, sizeof(float));
-      return result;
+      return *reinterpret_cast<const float*>(ptr);
     }
     [[unlikely]] default:  // To silence a couple of warnings.
 #if defined(ABSL_UNREACHABLE)
@@ -61,38 +58,19 @@ float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
 #else
       __assume(false);
 #endif
-
   }
 }
-
-namespace {
-size_t ComputeElementCount(const pblczero::Weights::Layer& layer,
-                           pblczero::Weights::Layer::Encoding encoding) {
-  if (encoding == pblczero::Weights::Layer::FLOAT32) {
-    return layer.params().size() / sizeof(float);
-  }
-  return layer.params().size() / sizeof(uint16_t);
-}
-
-size_t ComputeElementSize(pblczero::Weights::Layer::Encoding encoding) {
-  // Element size in uint16_t units
-  if (encoding == pblczero::Weights::Layer::FLOAT32) {
-    return sizeof(float) / sizeof(uint16_t);  // 2
-  }
-  return 1;
-}
-}  // namespace
 
 LayerAdapter::LayerAdapter(const pblczero::Weights::Layer& layer)
-    : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
-      size_(ComputeElementCount(
-          layer, layer.has_encoding() ? layer.encoding()
-                                      : pblczero::Weights::Layer::LINEAR16)),
-      min_(layer.min_val()),
-      max_(layer.max_val()),
-      encoding_(layer.has_encoding() ? layer.encoding()
+    : encoding_(layer.has_encoding() ? layer.encoding()
                                      : pblczero::Weights::Layer::LINEAR16),
-      element_size_(ComputeElementSize(encoding_)) {
+      element_size_(encoding_ == pblczero::Weights::Layer::FLOAT32
+                        ? sizeof(float)
+                        : sizeof(uint16_t)),
+      data_(reinterpret_cast<const std::byte*>(layer.params().data())),
+      size_(layer.params().size() / element_size_),
+      min_(layer.min_val()),
+      max_(layer.max_val()) {
   switch (encoding_) {
     case pblczero::Weights::Layer::LINEAR16:
     case pblczero::Weights::Layer::FLOAT16:

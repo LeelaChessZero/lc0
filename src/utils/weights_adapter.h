@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <iterator>
 #include <vector>
 
@@ -71,12 +72,13 @@ class LayerAdapter {
 
    private:
     friend class LayerAdapter;
-    Iterator(const LayerAdapter* adapter, const uint16_t* ptr)
+    Iterator(const LayerAdapter* adapter, const std::byte* ptr)
         : adapter_(adapter), data_(ptr) {}
-    static float ExtractValue(const uint16_t* ptr, const LayerAdapter* adapter);
+    static float ExtractValue(const std::byte* ptr,
+                              const LayerAdapter* adapter);
 
     const LayerAdapter* adapter_ = nullptr;
-    const uint16_t* data_ = nullptr;
+    const std::byte* data_ = nullptr;
   };
 
   LayerAdapter(const pblczero::Weights::Layer& layer);
@@ -87,12 +89,12 @@ class LayerAdapter {
   Iterator end() const { return {this, data_ + size_ * element_size_}; }
 
  private:
-  const uint16_t* data_ = nullptr;
+  const pblczero::Weights::Layer::Encoding encoding_;
+  const size_t element_size_ = 0;
+  const std::byte* data_ = nullptr;
   const size_t size_ = 0;
   const float min_;
   const float max_;
-  const pblczero::Weights::Layer::Encoding encoding_;
-  const size_t element_size_ = 1;  // In uint16_t units (1 for 16-bit, 2 for 32-bit)
 };
 
 }  // namespace lczero
