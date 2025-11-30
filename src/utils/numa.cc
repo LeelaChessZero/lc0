@@ -96,6 +96,9 @@ void ReportHWLocError(T result
        << loc.file_name() << ":" << loc.line() << " - "
 #endif
        << result << ": " << std::system_category().message(errno);
+#ifdef _WIN32
+    ss << " Windows error: " <<  std::system_category().message(GetLastError());
+#endif
     CERR << ss.str();
     throw Exception(ss.str());
   }
