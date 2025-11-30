@@ -774,8 +774,13 @@ std::string Converter::MakeAttentionBody(OnnxBuilder* builder,
   float alpha = std::pow(2.0f * NumEncBlocks(), -0.25f);
 
   if (input_embedding == network_format::INPUT_EMBEDDING_PE_DENSE) {
-    flow = MakeFFN(builder, weights.ip_emb_ffn, embedding_size, flow,
-                   "/attn_body", default_activation_, alpha);
+    const auto ffn_activation = static_cast<ActivationFunction>(
+        src_.format().network_format().ffn_activation());
+    flow =
+        MakeFFN(builder, weights.ip_emb_ffn, embedding_size, flow, "/attn_body",
+                ffn_activation == ACTIVATION_DEFAULT ? default_activation_
+                                                     : ffn_activation,
+                alpha);
     flow = MakeLayerNorm(
         builder, flow, "/attn_body/ln2",
         *GetWeghtsConverter(weights.ip_emb_ffn_ln_gammas, {embedding_size}),
