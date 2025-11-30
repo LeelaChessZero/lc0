@@ -146,7 +146,11 @@ class OnnxNetwork final : public Network {
   std::unique_ptr<NetworkComputation> NewComputation() override {
 #ifdef USE_ONNX_CUDART
     if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
-      ReportCUDAErrors(cudaSetDevice(gpu_));
+      int device = -1;
+      ReportCUDAErrors(cudaGetDevice(&device));
+      if (device != gpu_) {
+        ReportCUDAErrors(cudaSetDevice(gpu_));
+      }
     }
 #endif
     if (fp16_) {
