@@ -30,6 +30,9 @@
 #include "numa_config.h"
 #if HAVE_LIBHWLOC
 #include <hwloc.h>
+#ifdef _WIN32
+#include <hwloc/windows.h>
+#endif
 #endif
 
 #include <cassert>
@@ -95,9 +98,9 @@ void ReportHWLocError(T result
           "at "
        << loc.file_name() << ":" << loc.line() << " - "
 #endif
-       << result << ": " << std::system_category().message(errno);
+       << result << ": " << std::generic_category().message(errno);
 #ifdef _WIN32
-    ss << " Windows error: " <<  std::system_category().message(GetLastError());
+    ss << " Windows error: " << std::system_category().message(GetLastError());
 #endif
     CERR << ss.str();
     throw Exception(ss.str());
@@ -117,7 +120,10 @@ void ReportHWLocError(T* result
           "at "
        << loc.file_name() << ":" << loc.line() << " - "
 #endif
-       << std::system_category().message(errno);
+       << std::generic_category().message(errno);
+#ifdef _WIN32
+    ss << " Windows error: " << std::system_category().message(GetLastError());
+#endif
     CERR << ss.str();
     throw Exception(ss.str());
   }
@@ -130,6 +136,9 @@ class CpuSet {
   ~CpuSet() { hwloc_bitmap_free(cpuset_); }
 
   CpuSet(CpuSet&& other) : cpuset_(other.cpuset_) { other.cpuset_ = nullptr; }
+  CpuSet(const CpuSet& other) : cpuset_(hwloc_bitmap_alloc()) {
+    ReportHWLocError(hwloc_bitmap_copy(cpuset_, other.cpuset_));
+  }
 
   CpuSet& operator=(CpuSet&& other) {
     std::swap(cpuset_, other.cpuset_);
@@ -171,6 +180,21 @@ class CpuSet {
     ReportHWLocError(hwloc_bitmap_xor(cpuset_, cpuset_, other));
     return *this;
   }
+  CpuSet operator&(const CpuSet& other) const {
+    CpuSet result;
+    ReportHWLocError(hwloc_bitmap_and(result.cpuset_, cpuset_, other.cpuset_));
+    return result;
+  }
+  CpuSet operator|(const CpuSet& other) const {
+    CpuSet result;
+    ReportHWLocError(hwloc_bitmap_or(result.cpuset_, cpuset_, other.cpuset_));
+    return result;
+  }
+  CpuSet operator^(const CpuSet& other) const {
+    CpuSet result;
+    ReportHWLocError(hwloc_bitmap_xor(result.cpuset_, cpuset_, other.cpuset_));
+    return result;
+  }
 
   CpuSet operator~() const {
     CpuSet result;
@@ -192,6 +216,10 @@ struct Config {
   using GeneratorType =
       std::linear_congruential_engine<uint64_t, 2862933555777941757, 3037000493,
                                       0>;
+  struct WindowsGroup {
+    CpuSet cpuset_;
+    unsigned thread_count_ = 0;
+  };
   Config() : rng_(std::random_device{}()) {
     ReportHWLocError(hwloc_topology_init(&initial_topology_));
     // TODO: Add filters to make discovery faster.
@@ -207,6 +235,19 @@ struct Config {
                                                nullptr, nullptr, 0));
 
       effiency_[eff < 0 ? 0 : eff] |= cpuset;
+    }
+#endif
+
+#ifdef _WIN32
+    int group_count = hwloc_windows_get_nr_processor_groups(topology_, 0);
+    windows_groups_.reserve(group_count);
+    CERR << "Detected " << group_count << " Windows processor groups.";
+    for (int i = 0; i < group_count; i++) {
+      windows_groups_.emplace_back();
+      ReportHWLocError(hwloc_windows_get_processor_group_cpuset(
+          topology_, i, windows_groups_.back().cpuset_, 0));
+      CERR << "Windows processor group " << i << " has CPU set "
+           << windows_groups_.back().cpuset_;
     }
 #endif
 
@@ -230,29 +271,66 @@ struct Config {
     if (topology_) hwloc_topology_destroy(topology_);
   }
 
-  void SetAffinity(const CpuSet& cpuset_) {
-    assert(topology_);
-    assert(cpuset_);
-    ReportHWLocError(
-        hwloc_set_cpubind(topology_, cpuset_, HWLOC_CPUBIND_THREAD));
+  void MaybeModifyGroupSet([[maybe_unused]] CpuSet& cpuset) {
+#ifdef _WIN32
+    auto match = windows_groups_.end();
+    double lowest_load_factor = std::numeric_limits<double>::max();
+    for (auto iter = windows_groups_.begin(); iter != windows_groups_.end();
+         ++iter) {
+      if (hwloc_bitmap_intersects(cpuset, iter->cpuset_)) {
+        if (match == windows_groups_.end() &&
+            hwloc_bitmap_isincluded(cpuset, iter->cpuset_)) {
+          iter->thread_count_++;
+          return;
+        }
+        unsigned processor_count = (cpuset & iter->cpuset_).Count();
+        double load_factor =
+            static_cast<double>(iter->thread_count_) / processor_count;
+        if (load_factor < lowest_load_factor) {
+          lowest_load_factor = load_factor;
+          match = iter;
+        }
+      }
+    }
+    if (match == windows_groups_.end()) {
+      CERR
+          << "No matching windows processor group found for requested CPU set.";
+      return;
+    }
+    match->thread_count_++;
+    cpuset &= match->cpuset_;
+#endif
   }
 
-  void GetAffinity(CpuSet& cpuset_) {
+  void SetAffinity(const CpuSet& cpuset) {
     assert(topology_);
+    assert(cpuset);
+#ifdef _WIN32
+    CpuSet modified_set = cpuset;
+    MaybeModifyGroupSet(modified_set);
+#else
+    const CpuSet& modified_set = cpuset;
+#endif
     ReportHWLocError(
-        hwloc_get_cpubind(topology_, cpuset_, HWLOC_CPUBIND_THREAD));
+        hwloc_set_cpubind(topology_, modified_set, HWLOC_CPUBIND_THREAD));
   }
 
-  void SetAffintyAll(const CpuSet& cpuset_) {
+  void GetAffinity(CpuSet& cpuset) {
     assert(topology_);
-    assert(cpuset_);
+    ReportHWLocError(
+        hwloc_get_cpubind(topology_, cpuset, HWLOC_CPUBIND_THREAD));
+  }
+
+  void SetAffintyAll(const CpuSet& cpuset) {
+    assert(topology_);
+    assert(cpuset);
 #if _WIN32
     HANDLE snapshot =
         CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, GetCurrentProcessId());
     if (snapshot == INVALID_HANDLE_VALUE) {
       CERR << "Failed to create thread snapshot. Error code: "
            << std::system_category().message(GetLastError());
-      SetAffinity(cpuset_);
+      SetAffinity(cpuset);
       return;
     }
     THREADENTRY32 te = {};
@@ -261,7 +339,7 @@ struct Config {
       CERR << "Failed to get first thread from snapshot. Error code: "
            << std::system_category().message(GetLastError());
       CloseHandle(snapshot);
-      SetAffinity(cpuset_);
+      SetAffinity(cpuset);
       return;
     }
     do {
@@ -278,8 +356,10 @@ struct Config {
                << ". Error code: "
                << std::system_category().message(GetLastError());
         } else {
-          CERR << "Setting affinity for thread " << te.th32ThreadID << ".";
-          ReportHWLocError(hwloc_set_thread_cpubind(topology_, thread, cpuset_,
+          CpuSet modified_set = cpuset;
+          MaybeModifyGroupSet(modified_set);
+
+          ReportHWLocError(hwloc_set_thread_cpubind(topology_, thread, cpuset,
                                                     HWLOC_CPUBIND_THREAD));
           CloseHandle(thread);
         }
@@ -290,7 +370,7 @@ struct Config {
 #else
     assert(topology_);
     ReportHWLocError(
-        hwloc_set_cpubind(topology_, cpuset_, HWLOC_CPUBIND_PROCESS));
+        hwloc_set_cpubind(topology_, cpuset, HWLOC_CPUBIND_PROCESS));
 #endif
   }
 
@@ -386,6 +466,7 @@ struct Config {
   }
 
   void ReserveCores(size_t count) {
+    CERR << "Reserving " << count << " cores for search workers.";
     hwloc_obj_t root_obj = hwloc_get_root_obj(topology_);
     reserved_set_.Clear();
     reserved_cores_.clear();
@@ -394,8 +475,11 @@ struct Config {
   }
 
   void ReserveCores(hwloc_obj_t parent, size_t count) {
+    CERR << "Reserving " << parent << " with " << count
+         << " cores for search workers.";
     ObjectRange cores{topology_, parent, HWLOC_OBJ_CORE};
     std::vector<hwloc_obj_t> core_objs;
+    CERR << "Found " << &cores;
     std::copy(cores.begin(), cores.end(), std::back_inserter(core_objs));
     // Use random shuffle to avoid using same cores for all SearchWorkers when
     // multiple lc0 process are runnig at the same time.
@@ -535,6 +619,7 @@ struct Config {
   CpuSet initial_affinity_;
   CpuSet reserved_set_;
   std::vector<hwloc_obj_t> reserved_cores_;
+  std::vector<WindowsGroup> windows_groups_;
   const OptionsDict* options_ = nullptr;
   bool use_search_thread_affinity_ = true;
   bool use_all_cores_ = false;
