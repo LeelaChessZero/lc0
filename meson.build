@@ -196,6 +196,7 @@ files += [
   'src/tools/describenet.cc',
   'src/tools/leela2onnx.cc',
   'src/tools/onnx2leela.cc',
+  'src/utils/clippy.cc',
   'src/utils/histogram.cc',
   'src/utils/numa.cc',
   'src/utils/weights_adapter.cc',
