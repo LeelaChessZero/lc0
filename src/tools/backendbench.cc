@@ -31,6 +31,7 @@
 #include "neural/register.h"
 #include "neural/shared_params.h"
 #include "search/classic/node.h"
+#include "utils/numa.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -80,6 +81,7 @@ void Clippy(std::string title, std::string msg3, std::string best3,
 void BackendBenchmark::Run() {
   OptionsParser options;
   SharedBackendParams::Populate(&options);
+  Numa::Init(&options);
   options.Add<IntOption>(kThreadsOptionId, 1, 128) = kDefaultThreads;
 
   options.Add<IntOption>(kBatchesId, 1, 999999999) = 100;
