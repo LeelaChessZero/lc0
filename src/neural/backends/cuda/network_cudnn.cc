@@ -980,7 +980,11 @@ class CudnnNetwork : public Network {
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
-    ReportCUDAErrors(cudaSetDevice(gpu_id_));
+    int device = -1;
+    ReportCUDAErrors(cudaGetDevice(&device));
+    if (device != gpu_id_) {
+      ReportCUDAErrors(cudaSetDevice(gpu_id_));
+    }
     return std::make_unique<CudnnNetworkComputation<DataType>>(this, wdl_,
                                                                moves_left_);
   }

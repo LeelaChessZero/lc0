@@ -1032,12 +1032,22 @@ class CudaNetwork : public Network {
     return 2 * sm_count_;
   }
 
+  int GetPreferredBatchStep() const override {
+    int preferred_split = 7;
+    while (sm_count_ % preferred_split != 0) preferred_split++;
+    return preferred_split;
+  }
+
   int GetThreads() const override { return 1 + multi_stream_; }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
-    ReportCUDAErrors(cudaSetDevice(gpu_id_));
+    int device = -1;
+    ReportCUDAErrors(cudaGetDevice(&device));
+    if (device != gpu_id_) {
+      ReportCUDAErrors(cudaSetDevice(gpu_id_));
+    }
     return std::make_unique<CudaNetworkComputation<DataType>>(this, wdl_,
                                                               moves_left_);
   }
