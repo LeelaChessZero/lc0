@@ -190,6 +190,88 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   return net;
 }
 
+using FloatVector = std::vector<float>;
+using FloatVectors = std::vector<FloatVector>;
+
+FloatVectors LoadFloatsFromFile(std::string* buffer) {
+  // Parse buffer.
+  FloatVectors result;
+  FloatVector line;
+  (*buffer) += "\n";
+  size_t start = 0;
+  for (size_t i = 0; i < buffer->size(); ++i) {
+    char& c = (*buffer)[i];
+    const bool is_newline = (c == '\n' || c == '\r');
+    if (!std::isspace(c)) continue;
+    if (start < i) {
+      // If previous character was not space too.
+      c = '\0';
+      line.push_back(std::atof(&(*buffer)[start]));
+    }
+    if (is_newline && !line.empty()) {
+      result.emplace_back();
+      result.back().swap(line);
+    }
+    start = i + 1;
+  }
+
+  result.erase(result.begin());
+  return result;
+}
+
+void PopulateLastIntoVector(FloatVectors* vecs, pblczero::Weights::Layer* out) {
+  out->set_params(
+      std::string_view(reinterpret_cast<const char*>(vecs->back().data()),
+                       vecs->back().size() * sizeof(float)));
+  out->set_encoding(pblczero::Weights::Layer::FLOAT32);
+  vecs->pop_back();
+}
+
+void PopulateConvBlockWeights(FloatVectors* vecs,
+                              pblczero::Weights::ConvBlock* block) {
+  PopulateLastIntoVector(vecs, block->mutable_bn_stddivs());
+  PopulateLastIntoVector(vecs, block->mutable_bn_means());
+  PopulateLastIntoVector(vecs, block->mutable_biases());
+  PopulateLastIntoVector(vecs, block->mutable_weights());
+}
+
+WeightsFile ParseWeightsTxt(std::string& buffer) {
+  WeightsFile net;
+
+  FloatVectors vecs;
+  vecs = LoadFloatsFromFile(&buffer);
+
+  auto result = net.mutable_weights();
+
+  // Populating backwards.
+  PopulateLastIntoVector(&vecs, result->mutable_ip2_val_b());
+  PopulateLastIntoVector(&vecs, result->mutable_ip2_val_w());
+  PopulateLastIntoVector(&vecs, result->mutable_ip1_val_b());
+  PopulateLastIntoVector(&vecs, result->mutable_ip1_val_w());
+  PopulateConvBlockWeights(&vecs, result->mutable_value());
+
+  PopulateLastIntoVector(&vecs, result->mutable_ip_pol_b());
+  PopulateLastIntoVector(&vecs, result->mutable_ip_pol_w());
+  PopulateConvBlockWeights(&vecs, result->mutable_policy());
+
+  // Input + all the residual should be left.
+  if ((vecs.size() - 4) % 8 != 0)
+    throw Exception("Invalid weight file: parse error.");
+
+  const int num_residual = (vecs.size() - 4) / 8;
+
+  for (int i = 0; i < num_residual; i++) result->add_residual();
+
+  for (int i = num_residual - 1; i >= 0; --i) {
+    auto residual = result->mutable_residual(i);
+    PopulateConvBlockWeights(&vecs, residual->mutable_conv2());
+    PopulateConvBlockWeights(&vecs, residual->mutable_conv1());
+  }
+  PopulateConvBlockWeights(&vecs, result->mutable_input());
+
+  FixOlderWeightsFile(&net);
+  return net;
+}
 }  // namespace
 
 WeightsFile LoadWeightsFromFile(const std::string& filename) {
@@ -203,9 +285,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
     throw Exception("Invalid weight file: no longer supported.");
   }
   if (buffer[0] == '2' && buffer[1] == '\n') {
-    throw Exception(
-        "Text format weights files are no longer supported. Use a command line "
-        "tool to convert it to the new format.");
+    return ParseWeightsTxt(buffer);
   }
 
   return ParseWeightsProto(buffer);
