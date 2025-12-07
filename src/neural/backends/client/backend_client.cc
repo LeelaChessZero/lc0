@@ -38,7 +38,6 @@
 #include <asio.hpp>
 #include <asio/io_context.hpp>
 #include <atomic>
-#include <regex>
 #include <stdio.h>
 #include <thread>
 
@@ -87,8 +86,7 @@ class ClientConnection final : public Context,
  public:
   ClientConnection(const OptionsDict& options)
       : Context(),
-        Base(SocketType{this->io_context()}),
-        wraped_pipe_(this->io_context()) {
+        Base(SocketType{this->io_context()}) {
     // Initialize connection.
     LCTRACE_FUNCTION_SCOPE;
     Endpoint endpoint;
@@ -97,14 +95,14 @@ class ClientConnection final : public Context,
       const std::string pipe =
           options.GetOrDefault("pipe_name", kDefaultPipeName);
       endpoint = GetEndpoint<Endpoint>(pipe);
-      args += "--protocol=unix --pipe-name='" + pipe + "'";
+      args += "--protocol=unix --pipe-name=" + pipe;
     } else {
       const std::string host = options.GetOrDefault("tcp-host", kDefaultHost);
       const int port = options.GetOrDefault("tcp-port", kDefaultPort);
       const std::string port_str = std::to_string(port);
       endpoint = GetEndpoint<Endpoint>(this->io_context(), host, port_str);
-      args += "--protocol=tcp --tcp-host='" + host + "' --tcp-port='" +
-              port_str + "'";
+      args += "--protocol=tcp --tcp-host=" + host + " --tcp-port=" +
+              port_str;
     }
     try {
       this->Connect(endpoint);
@@ -115,29 +113,24 @@ class ClientConnection final : public Context,
         CERR << "Failed to start backend server with command: " << command;
         throw Exception("Failed to start backend server");
       }
-#ifdef _WIN32
-      wraped_pipe_.assign((asio::windows::stream_handle::native_handle_type)_get_osfhandle(fileno(pipe_)));
-#else
-      wraped_pipe_.assign(fileno(pipe_));
-#endif
-      std::regex ready_message("^info string Backend server listening on ");
-      do {
-        std::string buffer;
-        size_t count =
-            asio::read_until(wraped_pipe_, asio::dynamic_buffer(buffer), '\n');
-        if (!count || std::regex_search(buffer, ready_message)) {
+      const std::string ready_message("info string Backend server listening on ");
+      std::string buffer;
+      buffer.resize(512);
+      while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe_)) {
+        CERR << buffer << " : " << buffer.find(ready_message);
+        if (buffer.find(ready_message) != std::string::npos) {
           break;
         }
-      } while (true);
-      pipe_input_buffer_.resize(512);
-      ReadPipe();
+      }
+
+      close(fileno(pipe_));
+
       this->Connect(endpoint);
     }
     CERR << "Connected to backend server " << endpoint;
   }
 
   ~ClientConnection() {
-    wraped_pipe_.release();
     Base::Close();
     this->io_context().stop();
     if (pipe_) {
@@ -180,20 +173,6 @@ class ClientConnection final : public Context,
       // Clang warns about unused this if not using this for the call.
       return this->HandleMessage(message);
     });
-  }
-
-  void ReadPipe() {
-    wraped_pipe_.async_read_some(
-        asio::buffer(pipe_input_buffer_), [this](std::error_code ec, size_t) {
-          if (ec) {
-            if (ec != asio::error::eof &&
-                ec != asio::error::operation_aborted) {
-              CERR << "Pipe read error: " << ec.message();
-            }
-            return;
-          }
-          ReadPipe();
-        });
   }
 
   void WriteHandshake(const std::string& network) {
@@ -271,7 +250,6 @@ class ClientConnection final : public Context,
 
   SpinMutex mutex_;
   FILE* pipe_ = nullptr;
-  asio::readable_pipe wraped_pipe_;
   std::vector<char> pipe_input_buffer_;
   BackendAttributes attrs_{};
   std::atomic<bool> handshake_completed_ = false;
