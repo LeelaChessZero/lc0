@@ -117,7 +117,6 @@ class ClientConnection final : public Context,
       std::string buffer;
       buffer.resize(512);
       while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe_)) {
-        CERR << buffer << " : " << buffer.find(ready_message);
         if (buffer.find(ready_message) != std::string::npos) {
           break;
         }
