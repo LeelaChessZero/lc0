@@ -57,7 +57,6 @@ template <typename T>
 int write(OutputBufferType& os, const T& value, size_t& offset) {
   size_t reserve = sizeof(T);
   if (os.size() < offset + reserve) {
-    TRACE << "Resizing output buffer to " << (offset + reserve);
     os.resize(offset + reserve);
   }
   char* data = os.data() + offset;
@@ -94,7 +93,6 @@ int write<std::string_view>(OutputBufferType& os, const std::string_view& value,
                             size_t& offset) {
   size_t reserve = sizeof(uint16_t) + value.size();
   if (os.size() < offset + reserve) {
-    TRACE << "Resizing output buffer to " << (offset + reserve);
     os.resize(offset + reserve);
   }
   char* data = os.data() + offset;
@@ -138,7 +136,7 @@ int read<NetworkResult>(NetworkResult& out, const char*& data, size_t& left) {
 }
 template <>
 int write<NetworkResult>(OutputBufferType& os, const NetworkResult& value,
-                        size_t& offset) {
+                         size_t& offset) {
   TRACE << "Writing NetworkResult to output buffer";
   if (write(os, value.value_, offset)) {
     CERR << "Failed to write NetworkResult value";
@@ -155,6 +153,46 @@ int write<NetworkResult>(OutputBufferType& os, const NetworkResult& value,
   if (write(os, value.policy_, offset)) {
     CERR << "Failed to write NetworkResult policy";
     return -1;
+  }
+  return 0;
+}
+
+template <>
+int read<InputPosition>(InputPosition& out, const char*& data, size_t& left) {
+  TRACE << "Reading InputPosition from data, " << left << " bytes left";
+  if (read(out.base_, data, left)) {
+    CERR << "Failed to read InputPosition base";
+    return -1;
+  }
+  if (read(out.history_length_, data, left)) {
+    CERR << "Failed to read InputPosition history_length";
+    return -1;
+  }
+  for (size_t i = 0; i < out.history_length_; ++i) {
+    if (read(out.history_[i], data, left)) {
+      CERR << "Failed to read InputPosition history item " << i;
+      return -1;
+    }
+  }
+  return 0;
+}
+template <>
+int write<InputPosition>(OutputBufferType& os, const InputPosition& value,
+                         size_t& offset) {
+  TRACE << "Writing InputPosition to output buffer";
+  if (write(os, value.base_, offset)) {
+    CERR << "Failed to write InputPosition base";
+    return -1;
+  }
+  if (write(os, value.history_length_, offset)) {
+    CERR << "Failed to write InputPosition history_length";
+    return -1;
+  }
+  for (size_t i = 0; i < value.history_length_; ++i) {
+    if (write(os, value.history_[i], offset)) {
+      CERR << "Failed to write InputPosition history item " << i;
+      return -1;
+    }
   }
   return 0;
 }
@@ -187,7 +225,6 @@ template <typename T>
 int write(OutputBufferType& os, const std::span<T>& value, size_t& offset) {
   size_t reserve = sizeof(uint16_t) + value.size() * sizeof(T);
   if (os.size() < offset + reserve) {
-    TRACE << "Resizing output buffer to " << (offset + reserve);
     os.resize(offset + reserve);
   }
   char* data = os.data() + offset;
@@ -234,7 +271,6 @@ template <typename T>
 int write(OutputBufferType& os, const std::vector<T>& value, size_t& offset) {
   size_t reserve = sizeof(uint16_t);
   if (os.size() < offset + reserve) {
-    TRACE << "Resizing output buffer to " << (offset + reserve);
     os.resize(offset + reserve);
   }
   char* data = os.data() + offset;

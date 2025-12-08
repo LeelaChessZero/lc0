@@ -64,6 +64,8 @@ class Position {
     cycle_length_ = cycle_length;
   }
 
+  Move GetNextMove(const Position& next_position) const;
+
   // Number of ply with no captures and pawn moves.
   int GetRule50Ply() const { return rule50_ply_; }
 

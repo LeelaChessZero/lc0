@@ -313,9 +313,10 @@ class ClientComputation {
   using CompletionType = std::function<void(ClientComputation&)>;
   static constexpr unsigned kMaxMovesPerPosition = 218;
 
-  ClientComputation(BackendHandler* backend, CompletionType&& completion,
-                    unsigned priority)
-      : priority_(priority),
+  ClientComputation(unsigned id, BackendHandler* backend,
+                    CompletionType&& completion, unsigned priority)
+      : id_(id),
+        priority_(priority),
         backend_(backend),
         completion_handler_(std::move(completion)) {
     LCTRACE_FUNCTION_SCOPE;
@@ -337,7 +338,7 @@ class ClientComputation {
     }
   }
 
-  int ComputeBlocking(const std::vector<std::span<const Position>>& inputs) {
+  int ComputeBlocking(const std::vector<client::InputPosition>& inputs) {
     if (inputs.empty()) {
       CERR << "ComputeBlocking called with empty inputs.";
       return -1;
@@ -347,8 +348,15 @@ class ClientComputation {
            << " maximum: " << maximum_batch_size_;
       return -1;
     }
+    PositionHistory history;
+    history.Reserve(kMoveHistory);
     for (const auto& input : inputs) {
-      inputs_.emplace_back(input.begin(), input.end());
+      history.Reset(input.base_);
+      for (size_t i = 0; i < input.history_length_; ++i) {
+        history.Append(input.history_[i]);
+      }
+      auto pos = history.GetPositions();
+      inputs_.emplace_back(pos.begin(), pos.end());
     }
     SharedQueue::Get().Enqueue(priority_, backend_, this, 0, inputs_.size());
     computed_ = true;
@@ -364,9 +372,10 @@ class ClientComputation {
     size_t policy_offset =
         policy_reserved_.fetch_add(legal_moves, std::memory_order_relaxed);
     assert(policy_offset + legal_moves <= policy_.size());
-    TRACE << "Allocating eval result for index " << index
-          << " legal moves: " << legal_moves
-          << " policy offset: " << policy_offset;
+    TRACE << "Allocating eval " << id_ << "[" << index
+          << "] legal moves: " << legal_moves
+          << " policy offset: " << policy_offset << " fen "
+          << inputs_[index].back().DebugString();
     results_[index].policy_ =
         std::span<float>(policy_.data() + policy_offset, legal_moves);
     return {&results_[index].value_,
@@ -387,6 +396,7 @@ class ClientComputation {
   }
 
  private:
+  unsigned id_;
   unsigned priority_;
   unsigned maximum_batch_size_;
   bool computed_ = false;
@@ -491,7 +501,7 @@ class ServerConnection
     size_t id = message.computation_id_;
     unsigned priority = 0;
     auto iter = computations_.try_emplace(
-        id, backend_,
+        id, id, backend_,
         [self = std::move(self), this](ClientComputation& computation) {
           this->Defer([self = std::move(self), this, &computation]() {
             CompleteComputation(computation);

@@ -111,10 +111,16 @@ struct HandshakeReply {
   std::string_view error_message_;
 };
 
+struct InputPosition {
+  Position base_;
+  unsigned char history_length_{0};
+  std::array<Move, kMoveHistory> history_{};
+};
+
 struct ComputeBlocking {
   MessageHeader header_ = {kMagic, 0, MessageType::COMPUTE_BLOCKING};
   uint16_t computation_id_;
-  std::vector<std::span<const Position>> inputs_;
+  std::vector<InputPosition> inputs_;
 };
 
 struct NetworkResult {

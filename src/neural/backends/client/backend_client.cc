@@ -29,16 +29,16 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
-#include <io.h>
 #define popen _popen
 #define pclose _pclose
 #endif
 // clang-format on
 
+#include <stdio.h>
+
 #include <asio.hpp>
 #include <asio/io_context.hpp>
 #include <atomic>
-#include <stdio.h>
 #include <thread>
 
 #include "neural/backend.h"
@@ -85,8 +85,7 @@ class ClientConnection final : public Context,
 
  public:
   ClientConnection(const OptionsDict& options)
-      : Context(),
-        Base(SocketType{this->io_context()}) {
+      : Context(), Base(SocketType{this->io_context()}) {
     // Initialize connection.
     LCTRACE_FUNCTION_SCOPE;
     Endpoint endpoint;
@@ -101,8 +100,7 @@ class ClientConnection final : public Context,
       const int port = options.GetOrDefault("tcp-port", kDefaultPort);
       const std::string port_str = std::to_string(port);
       endpoint = GetEndpoint<Endpoint>(this->io_context(), host, port_str);
-      args += "--protocol=tcp --tcp-host=" + host + " --tcp-port=" +
-              port_str;
+      args += "--protocol=tcp --tcp-host=" + host + " --tcp-port=" + port_str;
     }
     try {
       this->Connect(endpoint);
@@ -113,7 +111,8 @@ class ClientConnection final : public Context,
         CERR << "Failed to start backend server with command: " << command;
         throw Exception("Failed to start backend server");
       }
-      const std::string ready_message("info string Backend server listening on ");
+      const std::string ready_message(
+          "info string Backend server listening on ");
       std::string buffer;
       buffer.resize(512);
       while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe_)) {
@@ -151,7 +150,7 @@ class ClientConnection final : public Context,
   BackendAttributes GetAttributes() const { return attrs_; }
 
   void ComputeBlocking(size_t computation_id,
-                       std::vector<std::span<const Position>>& inputs) {
+                       std::vector<InputPosition>& inputs) {
     client::ComputeBlocking message;
     message.computation_id_ = computation_id;
     message.inputs_ = std::move(inputs);
@@ -241,7 +240,7 @@ class ClientConnection final : public Context,
     handshake_completed_.store(true, std::memory_order_release);
     handshake_completed_.notify_one();
     TRACE << "Received handshake response. Batch size: "
-         << attrs_.recommended_batch_size << "/" << attrs_.maximum_batch_size;
+          << attrs_.recommended_batch_size << "/" << attrs_.maximum_batch_size;
     // Handshake complete, ready to proceed.
     this->Defer([this] { Read(); });
     return 0;
@@ -286,8 +285,7 @@ class BackendClient final : public Backend {
     connection_.GetComputations().erase(id);
   }
 
-  void ComputeBlocking(size_t id,
-                       std::vector<std::span<const Position>>& inputs) {
+  void ComputeBlocking(size_t id, std::vector<InputPosition>& inputs) {
     connection_.ComputeBlocking(id, inputs);
   }
 
@@ -310,22 +308,27 @@ class BackendClientComputation final : public BackendComputation {
 
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
-    entries_.emplace_back(Entry{pos, result});
+    InputPosition input_pos;
+    size_t len = std::min(pos.pos.size(), (size_t)kMoveHistory);
+    input_pos.history_length_ = len - 1;
+    input_pos.base_ = pos.pos[pos.pos.size() - len];
+    for (size_t i = 1; i < len; ++i) {
+      Move move = pos.pos[pos.pos.size() - len + i - 1].GetNextMove(
+          pos.pos[pos.pos.size() - len + i]);
+      input_pos.history_[i - 1] = move;
+    }
+    auto idx = entries_.emplace_back(input_pos, result);
+    TRACE << "Adding input " << id_ << "[" << idx << "] legal moves "
+          << pos.legal_moves.size() << " fen " << pos.pos.back().DebugString();
     return ENQUEUED_FOR_EVAL;
   }
 
   void ComputeBlocking() override {
     LCTRACE_FUNCTION_SCOPE;
-    std::vector<std::span<const Position>> inputs;
+    std::vector<InputPosition> inputs;
     inputs.reserve(entries_.size());
     for (const auto& entry : entries_) {
-      if (entry.pos_.pos.size() <= kMoveHistory) {
-        inputs.emplace_back(entry.pos_.pos);
-      } else {
-        inputs.emplace_back(
-            entry.pos_.pos.begin() + (entry.pos_.pos.size() - kMoveHistory),
-            entry.pos_.pos.end());
-      }
+      inputs.emplace_back(entry.pos_);
     }
     backend_.InsertComputation(GetId(), this);
     backend_.ComputeBlocking(GetId(), inputs);
@@ -348,7 +351,7 @@ class BackendClientComputation final : public BackendComputation {
 
  private:
   struct Entry {
-    const EvalPosition pos_;
+    const InputPosition pos_;
     const EvalResultPtr result_;
   };
 
