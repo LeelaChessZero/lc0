@@ -266,6 +266,7 @@ class Connection {
                 ec != asio::error::operation_aborted) {
               CERR << "Connection error in ReadHeader: " << ec.message();
             }
+            Close();
             return;
           }
           input_read_bytes_ += length;
@@ -361,6 +362,7 @@ class Connection {
             if (ec != asio::error::eof) {
               CERR << "Connection error in ReadBody: " << ec.message();
             }
+            Close();
             return;
           }
           input_read_bytes_ += length;
