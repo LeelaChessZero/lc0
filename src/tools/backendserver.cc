@@ -249,10 +249,14 @@ class SharedQueue {
 
   void Close() {
     LCTRACE_FUNCTION_SCOPE;
-    SpinMutex::Lock lock(mutex_);
-    assert(active_computations_ == 0);
-    assert(queue_.empty());
-    backend_map_.clear();
+    BackendMap map;
+    {
+      SpinMutex::Lock lock(mutex_);
+      assert(active_computations_ == 0);
+      assert(queue_.empty());
+      map = std::move(backend_map_);
+    }
+    map.clear();
   }
 
  private:
