@@ -540,8 +540,14 @@ class BackendServer {
   using AcceptorType = typename Proto::acceptor;
   using SocketType = typename Proto::socket;
   using Endpoint = typename Proto::endpoint;
+
+  // Windows bind returns not supported if we request reuse_address on local
+  // stream. The library default is to set the option but it won't do anything
+  // for local streams.
+  // https://stackoverflow.com/questions/68791319
   BackendServer(asio::io_context& ctx, const OptionsDict& params)
-      : acceptor_(ctx, GetEndpoint(ctx, params)),
+      : acceptor_(ctx, GetEndpoint(ctx, params),
+                  !std::is_same_v<Proto, asio::local::stream_protocol>),
         params_(const_cast<OptionsDict&>(params)) {
     do_accept();
     COUT << "info string Backend server listening on "
