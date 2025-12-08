@@ -122,6 +122,8 @@ class ClientConnection final : public Context,
         }
       }
 
+      // Close the pipe to avoid need to read from it further. Keep the server
+      // process running.
       close(fileno(pipe_));
 
       this->Connect(endpoint);
@@ -213,23 +215,23 @@ class ClientConnection final : public Context,
            << static_cast<unsigned>(message.attributes_.runs_on_cpu);
       return -1;
     }
-    if (message.attributes_.maximum_batch_size >=
-            static_cast<int>(kMaxMessageSize) &&
+    if (message.attributes_.maximum_batch_size >
+            static_cast<int>(kMaxMinibatchSizes) ||
         message.attributes_.maximum_batch_size < 0) {
       CERR << "maximum_batch_size outside accepted range: "
            << message.attributes_.maximum_batch_size;
       return -1;
     }
-    if (message.attributes_.recommended_batch_size >=
-            message.attributes_.maximum_batch_size &&
+    if (message.attributes_.recommended_batch_size >
+            message.attributes_.maximum_batch_size ||
         message.attributes_.recommended_batch_size < 0) {
       CERR << "recommended_batch_size outside 0 < "
            << message.attributes_.recommended_batch_size << " < "
            << message.attributes_.maximum_batch_size;
       return -1;
     }
-    if (message.attributes_.suggested_num_search_threads >=
-            static_cast<int>(kMaxSearchThreads) &&
+    if (message.attributes_.suggested_num_search_threads >
+            static_cast<int>(kMaxSearchThreads) ||
         message.attributes_.suggested_num_search_threads < 0) {
       CERR << "suggested_num_search_threads outside accepted range: "
            << message.attributes_.suggested_num_search_threads;

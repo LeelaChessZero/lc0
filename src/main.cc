@@ -135,7 +135,7 @@ int main(int argc, const char** argv) {
       lczero::ConvertOnnxToLeela();
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
-    } else if (CommandLine::ConsumeCommand( "backendserver")) {
+    } else if (CommandLine::ConsumeCommand("backendserver")) {
       lczero::RunBackendServer();
     } else {
       lczero::ChooseAndRunEngine();

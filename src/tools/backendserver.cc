@@ -64,8 +64,10 @@ const OptionId kProtocolOptionId{
     "Protocol to use for client connections (tcp or unix)."};
 const OptionId kPipeNameOptionId{"pipe-name", "PipeName",
                                  "Named pipe allows client connections."};
-const OptionId kHostOptionId{"tcp-host", "TCPHost", "Host to listen on for TCP."};
-const OptionId kPortOptionId{"tcp-port", "TCPPort", "Port to listen on for TCP."};
+const OptionId kHostOptionId{"tcp-host", "TCPHost",
+                             "Host to listen on for TCP."};
+const OptionId kPortOptionId{"tcp-port", "TCPPort",
+                             "Port to listen on for TCP."};
 const OptionId kNetworkDirectoryOptionId{
     "network-directory", "NetworkDirectory",
     "Directory where neural network files are stored."};
@@ -311,7 +313,7 @@ class ClientComputation {
                     unsigned priority)
       : priority_(priority),
         backend_(backend),
-        completetion_(std::move(completion)) {
+        completion_handler_(std::move(completion)) {
     LCTRACE_FUNCTION_SCOPE;
     SharedQueue::Get().NewComputation();
     auto attrs = backend->GetAttributes();
@@ -376,7 +378,7 @@ class ClientComputation {
       LCTRACE_FUNCTION_SCOPE;
       results_.resize(inputs_.size());
       policy_.resize(policy_reserved_.load(std::memory_order_relaxed));
-      completetion_(*this);
+      completion_handler_(*this);
     }
   }
 
@@ -386,7 +388,7 @@ class ClientComputation {
   bool computed_ = false;
 
   BackendHandler* backend_;
-  CompletionType completetion_;
+  CompletionType completion_handler_;
   std::vector<std::vector<Position>> inputs_;
   std::vector<client::NetworkResult> results_;
   std::vector<float> policy_;
@@ -542,11 +544,16 @@ class BackendServer {
       : acceptor_(ctx, GetEndpoint(ctx, params)),
         params_(const_cast<OptionsDict&>(params)) {
     do_accept();
-    COUT << "info string Backend server listening on " << acceptor_.local_endpoint();
+    COUT << "info string Backend server listening on "
+         << params.Get<std::string>(kProtocolOptionId) << "://"
+         << acceptor_.local_endpoint();
   }
 
   ~BackendServer() {
-    std::filesystem::remove(params_.Get<std::string>(kPipeNameOptionId));
+    if constexpr (std::is_same_v<Proto, asio::local::stream_protocol>) {
+      // Remove the named pipe file.
+      std::filesystem::remove(params_.Get<std::string>(kPipeNameOptionId));
+    }
   }
 
  private:
