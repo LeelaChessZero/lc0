@@ -42,7 +42,6 @@
 #include <filesystem>
 #include <map>
 #include <memory>
-#include <regex>
 #include <utility>
 
 #include "neural/backends/client/proto.h"
@@ -230,6 +229,11 @@ class SharedQueue {
   }
 
   BackendMap& GetBackendMap() { return backend_map_; }
+  void SetDiscovery(const std::filesystem::path& path) {
+    network_discovery_ = backend_map_.find(path.filename().string());
+  }
+
+  BackendMap::iterator GetDiscovery() const { return network_discovery_; }
 
   void BackendThreads(size_t count) {
     SpinMutex::Lock lock(mutex_);
@@ -299,6 +303,7 @@ class SharedQueue {
   }
 
   BackendMap backend_map_;
+  BackendMap::iterator network_discovery_;
 
   SpinMutex mutex_;
   std::condition_variable_any cv_;
@@ -453,7 +458,9 @@ class ServerConnection
     }
     std::string error;
     auto& backends = SharedQueue::Get().GetBackendMap();
-    auto iter = backends.find(message.network_name_);
+    auto iter = message.network_name_ == SharedBackendParams::kAutoDiscover
+                    ? SharedQueue::Get().GetDiscovery()
+                    : backends.find(message.network_name_);
     if (iter == backends.end()) {
       error = "Requested network not found: ";
       error.append(message.network_name_);
@@ -749,16 +756,22 @@ void RunBackendServer() {
       CERR << "Network directory is not a directory: " << network_dir;
       return;
     }
-    std::regex kNetworkFileRegex(R"(\.pb(\.gz)?$)");
+
+    std::filesystem::directory_entry newest;
+    bool first = true;
 
     for (const auto& entry : std::filesystem::directory_iterator(network_dir)) {
-      if (entry.is_regular_file() &&
-          std::regex_search(entry.path().filename().string(),
-                            kNetworkFileRegex)) {
+      if (IsPathWeightsFile(entry)) {
+        if (first || entry.last_write_time() > newest.last_write_time()) {
+          first = false;
+          newest = entry;
+        }
         CERR << entry.path().filename();
         backends.try_emplace(entry.path().filename().string(), option_dict);
       }
     }
+
+    SharedQueue::Get().SetDiscovery(newest.path());
 
     asio::io_context io_context;
     if (option_dict.Get<std::string>(kProtocolOptionId) == "unix") {
