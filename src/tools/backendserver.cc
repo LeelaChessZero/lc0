@@ -327,9 +327,6 @@ class ClientComputation {
     LCTRACE_FUNCTION_SCOPE;
     SharedQueue::Get().NewComputation();
     auto attrs = backend->GetAttributes();
-    inputs_.reserve(attrs.maximum_batch_size);
-    results_.resize(attrs.maximum_batch_size);
-    policy_.resize(attrs.maximum_batch_size * kMaxMovesPerPosition);
     maximum_batch_size_ = attrs.maximum_batch_size;
   };
 
@@ -343,7 +340,7 @@ class ClientComputation {
     }
   }
 
-  int ComputeBlocking(const std::vector<client::InputPosition>& inputs) {
+  int ComputeBlocking(std::vector<client::InputPosition>&& inputs) {
     if (inputs.empty()) {
       CERR << "ComputeBlocking called with empty inputs.";
       return -1;
@@ -353,16 +350,9 @@ class ClientComputation {
            << " maximum: " << maximum_batch_size_;
       return -1;
     }
-    PositionHistory history;
-    history.Reserve(kMoveHistory);
-    for (const auto& input : inputs) {
-      history.Reset(input.base_);
-      for (size_t i = 0; i < input.history_length_; ++i) {
-        history.Append(input.history_[i]);
-      }
-      auto pos = history.GetPositions();
-      inputs_.emplace_back(pos.begin(), pos.end());
-    }
+    inputs_ = std::move(inputs);
+    results_.resize(inputs_.size());
+    policy_.resize(inputs_.size() * kMaxMovesPerPosition);
     SharedQueue::Get().Enqueue(priority_, backend_, this, 0, inputs_.size());
     computed_ = true;
     SharedQueue::Get().ComputeBlocking();
@@ -372,15 +362,12 @@ class ClientComputation {
   std::vector<client::NetworkResult>& GetResults() { return results_; }
   std::span<float> GetPolicy() { return policy_; }
 
+  auto GetId() const { return id_; }
   auto GetInput(size_t index) { return inputs_[index]; }
   EvalResultPtr GetEvalResult(size_t index, size_t legal_moves) {
     size_t policy_offset =
         policy_reserved_.fetch_add(legal_moves, std::memory_order_relaxed);
     assert(policy_offset + legal_moves <= policy_.size());
-    TRACE << "Allocating eval " << id_ << "[" << index
-          << "] legal moves: " << legal_moves
-          << " policy offset: " << policy_offset << " fen "
-          << inputs_[index].back().DebugString();
     results_[index].policy_ =
         std::span<float>(policy_.data() + policy_offset, legal_moves);
     return {&results_[index].value_,
@@ -408,7 +395,7 @@ class ClientComputation {
 
   BackendHandler* backend_;
   CompletionType completion_handler_;
-  std::vector<std::vector<Position>> inputs_;
+  std::vector<client::InputPosition> inputs_;
   std::vector<client::NetworkResult> results_;
   std::vector<float> policy_;
   std::atomic<size_t> policy_reserved_{0};
@@ -436,7 +423,7 @@ class ServerConnection
  private:
   void Read() {
     auto self = this->shared_from_this();
-    Base::ReadHeader([this, self](const auto& message) {
+    Base::ReadHeader([this, self](auto& message) {
       // Clang warns about unused this if not using this for the call.
       return this->HandleMessage(message);
     });
@@ -496,7 +483,7 @@ class ServerConnection
     return 0;
   }
 
-  int HandleMessage([[maybe_unused]] const client::ComputeBlocking& message) {
+  int HandleMessage(client::ComputeBlocking& message) {
     LCTRACE_FUNCTION_SCOPE;
     assert(message.header_.type_ == client::MessageType::COMPUTE_BLOCKING);
     if (!backend_) {
@@ -523,7 +510,7 @@ class ServerConnection
       return -1;
     }
 
-    if (iter.first->second.ComputeBlocking(message.inputs_)) {
+    if (iter.first->second.ComputeBlocking(std::move(message.inputs_))) {
       std::string error_message =
           "ComputeBlocking failed for Computation ID: " +
           std::to_string(message.computation_id_);
@@ -697,15 +684,25 @@ void BackendHandler::Worker() {
       }
       LCTRACE_FUNCTION_SCOPE;
       auto computation = backend_->CreateComputation();
+      PositionHistory history;
+      history.Reserve(kMoveHistory);
       for (const auto& item : batch) {
         TRACE << this << " Backend adding inputs from " << item.first_ << " to "
               << item.last_;
         for (size_t i = item.first_; i < item.last_; ++i) {
           auto position = item.computation_->GetInput(i);
-          auto legal_moves = position.back().GetBoard().GenerateLegalMoves();
+          history.Reset(position.base_);
+          for (size_t i = 0; i < position.history_length_; ++i) {
+            history.Append(position.history_[i]);
+          }
+          auto pos = history.GetPositions();
+          auto legal_moves = pos.back().GetBoard().GenerateLegalMoves();
           auto results =
               item.computation_->GetEvalResult(i, legal_moves.size());
-          computation->AddInput({position, legal_moves}, results);
+          TRACE << this << " Adding input " << item.computation_->GetId() << "["
+                << i << "] legal moves: " << legal_moves.size() << " fen "
+                << pos.back().DebugString();
+          computation->AddInput({pos, legal_moves}, results);
         }
       }
       computation->ComputeBlocking();
