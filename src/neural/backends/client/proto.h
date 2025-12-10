@@ -341,6 +341,9 @@ class Connection {
   }
 
   virtual void Close() {
+    if (!socket_.is_open()) {
+      return;
+    }
     socket_.shutdown(SocketType::shutdown_both);
     socket_.close();
   }
