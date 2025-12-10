@@ -67,7 +67,7 @@ class MemCache : public CachingBackend {
   BackendAttributes GetAttributes() const override {
     return wrapped_backend_->GetAttributes();
   }
-  std::unique_ptr<BackendComputation> CreateComputation() override;
+  std::unique_ptr<BackendComputation> CreateComputation(size_t time_remaining) override;
   std::optional<EvalResult> GetCachedEvaluation(const EvalPosition&) override;
 
   void ClearCache() override { cache_.Clear(); }
@@ -158,9 +158,9 @@ class MemCacheComputation : public BackendComputation {
   AtomicVector<Entry> entries_;
 };
 
-std::unique_ptr<BackendComputation> MemCache::CreateComputation() {
+std::unique_ptr<BackendComputation> MemCache::CreateComputation(size_t time_remaining) {
   return std::make_unique<MemCacheComputation>(
-      wrapped_backend_->CreateComputation(), this);
+      wrapped_backend_->CreateComputation(time_remaining), this);
 }
 std::optional<EvalResult> MemCache::GetCachedEvaluation(
     const EvalPosition& pos) {

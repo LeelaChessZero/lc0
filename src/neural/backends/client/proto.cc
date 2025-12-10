@@ -336,12 +336,18 @@ int ParseMessage(const char*& first, const char* const last,
   if (read(out.computation_id_, first, left)) {
     return -1;
   }
+  if (read(out.priority_, first, left)) {
+    return -1;
+  }
   return read(out.inputs_, first, left);
 }
 int SerializeMessage(OutputBufferType& os, const ComputeBlocking& message,
                      size_t& offset) {
   TRACE << "Serializing ComputeBlocking message " << message.computation_id_;
   if (write(os, message.computation_id_, offset)) {
+    return -1;
+  }
+  if (write(os, message.priority_, offset)) {
     return -1;
   }
   return write(os, message.inputs_, offset);

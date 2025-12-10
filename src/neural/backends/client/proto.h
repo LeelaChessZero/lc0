@@ -87,7 +87,7 @@ using PositionWithHistory = std::array<Position, kMoveHistory>;
 static constexpr MagicType kMagic = 'L' << 0 | 'C' << 8 | 'Z' << 16 | 'B' << 24;
 // Must be incremented when any structure changes.
 static constexpr uint16_t kBackendApiVersion = 0;
-static constexpr unsigned kMaxComputationPriority = 8;
+static constexpr unsigned kMaxComputationPriority = 12;
 
 struct MessageHeader {
   MagicType magic_ = kMagic;  // "LCZB"
@@ -120,6 +120,7 @@ struct InputPosition {
 struct ComputeBlocking {
   MessageHeader header_ = {kMagic, 0, MessageType::COMPUTE_BLOCKING};
   uint16_t computation_id_;
+  unsigned char priority_;
   std::vector<InputPosition> inputs_;
 };
 

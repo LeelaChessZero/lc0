@@ -66,7 +66,7 @@ class NetworkAsBackend : public Backend {
   }
 
   BackendAttributes GetAttributes() const override { return attrs_; }
-  std::unique_ptr<BackendComputation> CreateComputation() override;
+  std::unique_ptr<BackendComputation> CreateComputation(size_t time_remaining) override;
   UpdateConfigurationResult UpdateConfiguration(
       const OptionsDict& options) override {
     Backend::UpdateConfiguration(options);
@@ -168,7 +168,7 @@ class NetworkAsBackendComputation : public BackendComputation {
   AtomicVector<Entry> entries_;
 };
 
-std::unique_ptr<BackendComputation> NetworkAsBackend::CreateComputation() {
+std::unique_ptr<BackendComputation> NetworkAsBackend::CreateComputation(size_t) {
   return std::make_unique<NetworkAsBackendComputation>(this);
 }
 

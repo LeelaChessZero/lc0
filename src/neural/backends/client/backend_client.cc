@@ -149,10 +149,11 @@ class ClientConnection final : public Context,
 
   BackendAttributes GetAttributes() const { return attrs_; }
 
-  void ComputeBlocking(size_t computation_id,
+  void ComputeBlocking(size_t computation_id, size_t priority,
                        std::vector<InputPosition>& inputs) {
     client::ComputeBlocking message;
     message.computation_id_ = computation_id;
+    message.priority_ = priority;
     message.inputs_ = std::move(inputs);
     Base::SendMessage(Self(), message);
   }
@@ -264,6 +265,17 @@ class BackendClient final : public Backend {
     LCTRACE_FUNCTION_SCOPE;
     connection_.Start(network);
 
+    ssize_t fixed_priority =
+        options.GetOrDefault("fixed-priority", -1);
+
+    if (fixed_priority >= kMaxComputationPriority) {
+      CERR << "fixed-priority option " << fixed_priority
+           << " is out of range, must be less than "
+           << kMaxComputationPriority;
+      fixed_priority = -1;
+    }
+    fixed_priority_ = fixed_priority;
+
     connection_.WaitForHandshake();
     assert(connection_.GetAttributes().maximum_batch_size != 0 ||
            connection_.io_context().stopped());
@@ -273,7 +285,8 @@ class BackendClient final : public Backend {
   BackendAttributes GetAttributes() const override {
     return connection_.GetAttributes();
   }
-  std::unique_ptr<BackendComputation> CreateComputation() override;
+  std::unique_ptr<BackendComputation> CreateComputation(
+      size_t time_remaining) override;
 
   void InsertComputation(size_t id,
                          BackendClientComputation<Proto>* computation) {
@@ -285,21 +298,28 @@ class BackendClient final : public Backend {
     connection_.GetComputations().erase(id);
   }
 
-  void ComputeBlocking(size_t id, std::vector<InputPosition>& inputs) {
-    connection_.ComputeBlocking(id, inputs);
+  void ComputeBlocking(size_t id, size_t priority, std::vector<InputPosition>& inputs) {
+    connection_.ComputeBlocking(id, priority, inputs);
+  }
+
+  ssize_t GetFixedPriority() const {
+    return fixed_priority_;
   }
 
  private:
   std::atomic<size_t> next_computation_id_ = 0;
   ClientConnection<Proto> connection_;
+  ssize_t fixed_priority_ = -1;
 };
 
 template <typename Proto>
 class BackendClientComputation final : public BackendComputation {
  public:
-  BackendClientComputation(BackendClient<Proto>& backend, size_t id)
+  BackendClientComputation(BackendClient<Proto>& backend, size_t id,
+                           size_t time_remaining)
       : backend_(backend),
         id_(id),
+        priority_(TimeToPriority(time_remaining)),
         entries_(backend_.GetAttributes().maximum_batch_size) {}
 
   ~BackendClientComputation() { backend_.EraseComputation(id_); }
@@ -331,7 +351,7 @@ class BackendClientComputation final : public BackendComputation {
       inputs.emplace_back(entry.pos_);
     }
     backend_.InsertComputation(GetId(), this);
-    backend_.ComputeBlocking(GetId(), inputs);
+    backend_.ComputeBlocking(GetId(), priority_, inputs);
     results_ready_.wait(false, std::memory_order_relaxed);
     TRACE << "Computation ID " << id_ << " completed. "
           << results_ready_.load(std::memory_order_relaxed);
@@ -350,6 +370,22 @@ class BackendClientComputation final : public BackendComputation {
   }
 
  private:
+  size_t TimeToPriority(size_t time_remaining) {
+    auto fixed = backend_.GetFixedPriority();
+    TRACE << "Computation ID " << id_ << " time remaining "
+         << time_remaining << " fixed priority " << fixed;
+    if (fixed >= 0) {
+      return fixed;
+    }
+    size_t max_limit = 125;
+    size_t priority = 0;
+    while (time_remaining > max_limit && priority < kMaxComputationPriority - 1) {
+      max_limit *= 2;
+      ++priority;
+    }
+    return priority;
+  }
+
   struct Entry {
     const InputPosition pos_;
     const EvalResultPtr result_;
@@ -358,6 +394,7 @@ class BackendClientComputation final : public BackendComputation {
   std::atomic<bool> results_ready_ = false;
   BackendClient<Proto>& backend_;
   size_t id_;
+  size_t priority_;
   AtomicVector<Entry> entries_;
 };
 
@@ -408,11 +445,13 @@ int ClientConnection<Proto>::HandleMessage(
 }
 
 template <typename Proto>
-std::unique_ptr<BackendComputation> BackendClient<Proto>::CreateComputation() {
+std::unique_ptr<BackendComputation> BackendClient<Proto>::CreateComputation(
+    size_t time_remaining) {
   LCTRACE_FUNCTION_SCOPE;
   return std::make_unique<BackendClientComputation<Proto>>(
       *this,
-      (uint16_t)next_computation_id_.fetch_add(1, std::memory_order_relaxed));
+      (uint16_t)next_computation_id_.fetch_add(1, std::memory_order_relaxed),
+      time_remaining);
 }
 
 }  // namespace

@@ -26,6 +26,7 @@
 */
 
 #include "tools/backendserver.h"
+#include <algorithm>
 
 // clang-format off
 #ifdef _WIN32
@@ -87,6 +88,7 @@ struct QueueItem {
   ClientComputation* computation_ = nullptr;
   size_t first_ = 0;
   size_t last_ = 0;
+  TimePoint enqueue_time_ = Clock::now();
 };
 
 class BackendHandler {
@@ -159,8 +161,8 @@ class BackendHandler {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
     TRACE << this << " Flush called. Pending size: " << PendingSize()
-         << " computations in flight: " << computations_in_flight_
-         << " queued computations: " << queued_computations_;
+          << " computations in flight: " << computations_in_flight_
+          << " queued computations: " << queued_computations_;
     unsigned batches = computations_in_flight_ + queued_computations_;
     if (PendingSize() > 0 && batches < backend_threads_.size()) {
       queue_size_ += batch_size_ - PendingSize();
@@ -179,8 +181,8 @@ class BackendHandler {
     queued_computations_--;
     computations_in_flight_++;
     TRACE << this << " Starting batch of size: " << size
-         << " computations in flight " << computations_in_flight_
-         << " queued computations " << queued_computations_;
+          << " computations in flight " << computations_in_flight_
+          << " queued computations " << queued_computations_;
     queue_size_ -= batch_size_;
     gpu_work_size_ += size;
     gpu_idle_time_ += std::chrono::duration_cast<Clock::duration>(
@@ -195,9 +197,9 @@ class BackendHandler {
     gpu_work_size_ -= size;
     unsigned cif = computations_in_flight_--;
     cif += queued_computations_;
-    TRACE << this << " End of  batch " << size
-         << " computations in flight " << computations_in_flight_
-         << " queued computations " << queued_computations_;
+    TRACE << this << " End of  batch " << size << " computations in flight "
+          << computations_in_flight_ << " queued computations "
+          << queued_computations_;
     if (old == TimePoint()) {
       return cif;
     }
@@ -205,7 +207,7 @@ class BackendHandler {
     auto nps = size / seconds;
     if (nps > max_nps_) {
       TRACE << "New max NPS for backend " << this << ": " << nps
-           << " previous: " << max_nps_;
+            << " previous: " << max_nps_;
       max_nps_ = nps;
     }
     now += std::chrono::duration_cast<Clock::duration>(
@@ -213,14 +215,19 @@ class BackendHandler {
                                       gpu_work_size_ / max_nps_});
     gpu_idle_time_ = now;
     TRACE << this << "idle: " << now.time_since_epoch()
-         << " max_nps: " << max_nps_ << " gpu_work_size: " << gpu_work_size_
-         << " == " << kGpuIdleBufferMultiplier * gpu_work_size_ / max_nps_;
+          << " max_nps: " << max_nps_ << " gpu_work_size: " << gpu_work_size_
+          << " == " << kGpuIdleBufferMultiplier * gpu_work_size_ / max_nps_;
     return cif;
   }
 
   size_t GetPendingSize() const {
     SpinMutex::Lock lock(mutex_);
     return PendingSize();
+  }
+
+  unsigned GetComputationsInFlight() const {
+    SpinMutex::Lock lock(mutex_);
+    return computations_in_flight_;
   }
 
   TimePoint GetIdleTime() const {
@@ -273,10 +280,9 @@ class SharedQueue {
 
   void Enqueue(unsigned priority, BackendHandler* backend,
                ClientComputation* computation, size_t first, size_t last) {
-    // TODO: Use priority for preferred fair scheduling.
     assert(priority < client::kMaxComputationPriority);
     SpinMutex::Lock lock(mutex_);
-    queue_.emplace(backend, computation, first, last);
+    priority_queue_[priority].emplace(backend, computation, first, last);
     PushWorkToBackend();
   }
 
@@ -295,9 +301,17 @@ class SharedQueue {
   void ComputationDone(unsigned computations_in_flight) {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
-    if (backend_evaluations_ == computations_in_flight) {
-      backend_evaluations_--;
-      if (!queue_.empty()) {
+    if (highest_backend_computations_ == computations_in_flight) {
+      if (highest_backend_computations_ == max_batches_in_flight_) {
+        highest_backend_computations_--;
+      } else {
+        unsigned  computations = 0;
+        for (const auto& backend : backend_map_) {
+          computations = std::max(computations, backend.second.GetComputationsInFlight());
+        }
+        highest_backend_computations_ = computations;
+      }
+      if (!Empty()) {
         PushWorkToBackend();
       }
     }
@@ -308,7 +322,7 @@ class SharedQueue {
     BackendMap map;
     {
       SpinMutex::Lock lock(mutex_);
-      assert(queue_.empty());
+      assert(Empty());
       flush_timer_.cancel();
       map = std::move(backend_map_);
     }
@@ -323,26 +337,64 @@ class SharedQueue {
   SharedQueue(const SharedQueue&) = delete;
   SharedQueue& operator=(const SharedQueue&) = delete;
 
-  void PushWorkToBackend() {
+  bool Empty() REQUIRES(mutex_) {
+    for (const auto& q : priority_queue_) {
+      if (!q.empty()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  std::tuple<unsigned, QueueItem&> Front(TimePoint evaluation_time)
+      REQUIRES(mutex_) {
+    size_t selected_priority;
+    TimePoint::duration preferred_delay;
+    bool first = true;
+    for (size_t priority = 0; priority < client::kMaxComputationPriority;
+         ++priority) {
+      if (priority_queue_[priority].empty()) continue;
+      TimePoint::duration weighted_delay =
+          evaluation_time - priority_queue_[priority].front().enqueue_time_;
+      // Each priority reperesent doubling of remaining time to make a move.
+      weighted_delay *= 1UL << (client::kMaxComputationPriority - priority - 1);
+      if (first || weighted_delay > preferred_delay) {
+        preferred_delay = weighted_delay;
+        selected_priority = priority;
+        first = false;
+      }
+    }
+    return {selected_priority, priority_queue_[selected_priority].front()};
+  }
+
+  // TODO: Does this need to be dynamically tuned?
+  static constexpr Clock::duration kEstimatedNetworkEvaluationTime =
+      std::chrono::milliseconds(40);
+
+  void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
-    TRACE << "Pushing work to backend: " << queue_.size() << " items in queue.";
+    TRACE << "Pushing work to backend: " << priority_queue_.size() << " items in queue.";
     bool needs_flush = true;
-    while (!queue_.empty() && backend_evaluations_ != max_batches_in_flight_) {
-      auto& item = queue_.front();
+    auto evaluation_time = Clock::now();
+    evaluation_time += kEstimatedNetworkEvaluationTime;
+    while (!Empty() && highest_backend_computations_ != max_batches_in_flight_) {
+      auto queue_front = Front(evaluation_time);
+      auto priority = std::get<0>(queue_front);
+      auto& item = std::get<1>(queue_front);
       size_t batch_size = item.last_ - item.first_;
       auto [flushed, batches] =
           item.backend_->AddBatchToQueue(item, batch_size);
       if (flushed) {
         needs_flush = false;
         if (item.first_ == item.last_) {
-          queue_.pop();
+          priority_queue_[priority].pop();
         }
-        backend_evaluations_ = std::max(backend_evaluations_, batches);
+        highest_backend_computations_ = std::max(highest_backend_computations_, batches);
       } else {
-        queue_.pop();
+        priority_queue_[priority].pop();
       }
     }
-    if (backend_evaluations_ == max_batches_in_flight_) {
+    if (highest_backend_computations_ == max_batches_in_flight_) {
       TRACE << "Backend queue full. Cancel flush timer.";
       flush_timer_.cancel();
     } else if (needs_flush) {
@@ -351,7 +403,7 @@ class SharedQueue {
   }
 
   void ScheduleFlush() REQUIRES(mutex_) {
-    if (!backend_evaluations_) {
+    if (!highest_backend_computations_) {
       TRACE << "Scheduling flush with no backends in flight!";
       DoFlush();
       return;
@@ -370,7 +422,7 @@ class SharedQueue {
       DoFlush();
     } else {
       TRACE << "Scheduling flush timer for backend: " << iter->first << " at "
-           << iter->second.GetIdleTime().time_since_epoch();
+            << iter->second.GetIdleTime().time_since_epoch();
       flush_timer_.expires_at(iter->second.GetIdleTime());
       WaitOnFlushTimer();
     }
@@ -387,7 +439,7 @@ class SharedQueue {
     if (iter == backend_map_.end()) {
       return;
     }
-    backend_evaluations_ = std::max(backend_evaluations_, iter->second.Flush());
+    highest_backend_computations_ = std::max(highest_backend_computations_, iter->second.Flush());
   }
 
   void WaitOnFlushTimer() REQUIRES(mutex_) {
@@ -409,9 +461,9 @@ class SharedQueue {
 
   SpinMutex mutex_;
   std::condition_variable_any cv_;
-  unsigned backend_evaluations_ = 0;
+  unsigned highest_backend_computations_ = 0;
   unsigned max_batches_in_flight_ = 0;
-  std::queue<QueueItem> queue_;
+  std::array<std::queue<QueueItem>, client::kMaxComputationPriority> priority_queue_;
   asio::io_context io_context_;
   asio::steady_timer flush_timer_{io_context_};
 };
@@ -585,9 +637,16 @@ class ServerConnection
       return -1;
     }
     client::ComputeBlockingReply reply;
+    unsigned priority = message.priority_;
+    if (priority >= client::kMaxComputationPriority) {
+      std::string error_message =
+          "Invalid computation priority: " + std::to_string(priority);
+      reply.error_message_ = error_message;
+      Base::SendMessage(this->shared_from_this(), reply);
+      return -1;
+    }
     auto self = this->shared_from_this();
     size_t id = message.computation_id_;
-    unsigned priority = 0;
     auto iter = computations_.try_emplace(
         id, id, backend_,
         [self = std::move(self), this](ClientComputation& computation) {
@@ -778,7 +837,7 @@ void BackendHandler::Worker() {
         }
       }
       LCTRACE_FUNCTION_SCOPE;
-      auto computation = backend_->CreateComputation();
+      auto computation = backend_->CreateComputation(0);
       PositionHistory history;
       history.Reserve(kMoveHistory);
       for (const auto& item : batch) {
