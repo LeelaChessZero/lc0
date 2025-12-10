@@ -124,7 +124,6 @@ class BackendHandler {
     if (minibatch_size > 0) {
       attrs.recommended_batch_size = minibatch_size;
     }
-    batch_size_ = attrs.recommended_batch_size;
     // Half size minibatches are the smallest batch which is still fast.
     attrs.recommended_batch_size /= 2;
     return attrs;
@@ -786,6 +785,7 @@ void BackendHandler::EnsureLoaded(const std::string& net, Callback&& callback) {
           backend_ = std::move(backend);
           std::error_code ec{};
           BackendAttributes attrs = GetAttributes();
+          batch_size_ = attrs.recommended_batch_size;
           size_t threads =
               attrs.suggested_num_search_threads + !attrs.runs_on_cpu;
           while (backend_threads_.size() < threads) {

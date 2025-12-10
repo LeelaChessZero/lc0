@@ -131,8 +131,8 @@ class ClientConnection final : public Context,
   }
 
   ~ClientConnection() {
-    Base::Close();
     this->io_context().stop();
+    Base::Close();
     if (pipe_) {
       pclose(pipe_);
     }
@@ -143,7 +143,9 @@ class ClientConnection final : public Context,
     throw Exception("Backend client connection closed");
   }
 
-  void Start(const std::string& network) { WriteHandshake(network); }
+  void Start(const std::string& network) {
+    Base::Dispatch([this, &network] { WriteHandshake(network); });
+  }
 
   struct FakeSelf {};
 
@@ -265,13 +267,11 @@ class BackendClient final : public Backend {
     LCTRACE_FUNCTION_SCOPE;
     connection_.Start(network);
 
-    ssize_t fixed_priority =
-        options.GetOrDefault("fixed-priority", -1);
+    ssize_t fixed_priority = options.GetOrDefault("fixed-priority", -1);
 
     if (fixed_priority >= kMaxComputationPriority) {
       CERR << "fixed-priority option " << fixed_priority
-           << " is out of range, must be less than "
-           << kMaxComputationPriority;
+           << " is out of range, must be less than " << kMaxComputationPriority;
       fixed_priority = -1;
     }
     fixed_priority_ = fixed_priority;
@@ -298,13 +298,12 @@ class BackendClient final : public Backend {
     connection_.GetComputations().erase(id);
   }
 
-  void ComputeBlocking(size_t id, size_t priority, std::vector<InputPosition>& inputs) {
+  void ComputeBlocking(size_t id, size_t priority,
+                       std::vector<InputPosition>& inputs) {
     connection_.ComputeBlocking(id, priority, inputs);
   }
 
-  ssize_t GetFixedPriority() const {
-    return fixed_priority_;
-  }
+  ssize_t GetFixedPriority() const { return fixed_priority_; }
 
  private:
   std::atomic<size_t> next_computation_id_ = 0;
@@ -372,14 +371,15 @@ class BackendClientComputation final : public BackendComputation {
  private:
   size_t TimeToPriority(size_t time_remaining) {
     auto fixed = backend_.GetFixedPriority();
-    TRACE << "Computation ID " << id_ << " time remaining "
-         << time_remaining << " fixed priority " << fixed;
+    TRACE << "Computation ID " << id_ << " time remaining " << time_remaining
+          << " fixed priority " << fixed;
     if (fixed >= 0) {
       return fixed;
     }
     size_t max_limit = 125;
     size_t priority = 0;
-    while (time_remaining > max_limit && priority < kMaxComputationPriority - 1) {
+    while (time_remaining > max_limit &&
+           priority < kMaxComputationPriority - 1) {
       max_limit *= 2;
       ++priority;
     }
