@@ -84,6 +84,13 @@ using Clock = std::chrono::steady_clock;
 using TimePoint = Clock::time_point;
 
 struct QueueItem {
+  QueueItem(BackendHandler* backend, ClientComputation* computation,
+            size_t first, size_t last)
+      : backend_(backend),
+        computation_(computation),
+        first_(first),
+        last_(last),
+        enqueue_time_(Clock::now()) {}
   BackendHandler* backend_ = nullptr;
   ClientComputation* computation_ = nullptr;
   size_t first_ = 0;

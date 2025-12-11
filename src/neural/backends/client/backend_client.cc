@@ -389,6 +389,8 @@ class BackendClientComputation final : public BackendComputation {
   }
 
   struct Entry {
+    Entry(const InputPosition& pos, const EvalResultPtr& result)
+        : pos_(pos), result_(result) {}
     const InputPosition pos_;
     const EvalResultPtr result_;
   };
