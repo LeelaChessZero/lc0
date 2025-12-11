@@ -29,6 +29,7 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
+#include <io.h>
 #define popen _popen
 #define pclose _pclose
 #define close _close
