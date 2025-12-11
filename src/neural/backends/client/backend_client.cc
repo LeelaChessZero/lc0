@@ -31,6 +31,7 @@
 #include <windows.h>
 #define popen _popen
 #define pclose _pclose
+#define close _close
 #endif
 // clang-format on
 

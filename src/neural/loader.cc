@@ -227,8 +227,11 @@ std::optional<WeightsFile> LoadWeights(std::string_view location) {
 
 bool IsPathWeightsFile(const std::filesystem::directory_entry& file) {
   if (!file.is_regular_file() || file.file_size() < kMinFileSize) return false;
-
+#ifdef _WIN32
+  const gzFile stream = gzopen_w(file.path().c_str(), "rb");
+#else
   const gzFile stream = gzopen(file.path().c_str(), "rb");
+#endif
   if (!stream) return false;
   unsigned char buf[256];
   int sz = gzread(stream, buf, sizeof(buf));
