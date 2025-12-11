@@ -269,9 +269,9 @@ class BackendClient final : public Backend {
     LCTRACE_FUNCTION_SCOPE;
     connection_.Start(network);
 
-    ssize_t fixed_priority = options.GetOrDefault("fixed-priority", -1);
+    size_t fixed_priority = options.GetOrDefault("fixed-priority", -1);
 
-    if (fixed_priority >= kMaxComputationPriority) {
+    if (fixed_priority >= kMaxComputationPriority && fixed_priority != (size_t)-1) {
       CERR << "fixed-priority option " << fixed_priority
            << " is out of range, must be less than " << kMaxComputationPriority;
       fixed_priority = -1;
@@ -305,12 +305,12 @@ class BackendClient final : public Backend {
     connection_.ComputeBlocking(id, priority, inputs);
   }
 
-  ssize_t GetFixedPriority() const { return fixed_priority_; }
+  size_t GetFixedPriority() const { return fixed_priority_; }
 
  private:
   std::atomic<size_t> next_computation_id_ = 0;
   ClientConnection<Proto> connection_;
-  ssize_t fixed_priority_ = -1;
+  size_t fixed_priority_ = -1;
 };
 
 template <typename Proto>
@@ -375,7 +375,7 @@ class BackendClientComputation final : public BackendComputation {
     auto fixed = backend_.GetFixedPriority();
     TRACE << "Computation ID " << id_ << " time remaining " << time_remaining
           << " fixed priority " << fixed;
-    if (fixed >= 0) {
+    if (fixed < kMaxComputationPriority) {
       return fixed;
     }
     size_t max_limit = 125;
