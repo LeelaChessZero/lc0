@@ -45,7 +45,7 @@ class WaitableAtomic : public std::atomic<T> {
 
  public:
   using Base::atomic;
-  using value_type = Base::value_type;
+  using value_type = typename Base::value_type;
 
   void wait(value_type old, std::memory_order order =
                                 std::memory_order_seq_cst) const noexcept {
