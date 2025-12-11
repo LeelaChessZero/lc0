@@ -39,13 +39,13 @@
 
 #include <asio.hpp>
 #include <asio/io_context.hpp>
-#include <atomic>
 #include <thread>
 
 #include "neural/backend.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
 #include "proto.h"
+#include "utils/atomic.h"
 #include "utils/atomic_vector.h"
 #include "utils/commandline.h"
 #include "utils/trace.h"
@@ -256,7 +256,7 @@ class ClientConnection final : public Context,
   FILE* pipe_ = nullptr;
   std::vector<char> pipe_input_buffer_;
   BackendAttributes attrs_{};
-  std::atomic<bool> handshake_completed_ = false;
+  WaitableAtomic<bool> handshake_completed_ = false;
   ComputationMap computations_;
 };
 
@@ -392,7 +392,7 @@ class BackendClientComputation final : public BackendComputation {
     const EvalResultPtr result_;
   };
 
-  std::atomic<bool> results_ready_ = false;
+  WaitableAtomic<bool> results_ready_ = false;
   BackendClient<Proto>& backend_;
   size_t id_;
   size_t priority_;
