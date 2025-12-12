@@ -741,7 +741,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       if (!std::filesystem::exists(cache_dir)) {
         std::filesystem::create_directories(cache_dir);
       }
-      migraphx_options["migraphx_model_cache_dir"] = cache_dir;
+      migraphx_options["migraphx_model_cache_dir"] = cache_dir.string();
 
       options.AppendExecutionProvider("MIGraphX", migraphx_options);
       break;
