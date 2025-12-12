@@ -609,6 +609,10 @@ if get_option('build_backends')
                        dirs: get_option('onnx_libdir'), required: false).found()
       add_project_arguments('-DUSE_ROCM', language : 'cpp')
     endif
+    if cc.find_library('onnxruntime_providers_migraphx',
+                       dirs: get_option('onnx_libdir'), required: false).found()
+      add_project_arguments('-DUSE_MIGRAPHX', language : 'cpp')
+    endif
     if cu_dart.found() and nvcc_ok
       add_project_arguments('-DUSE_ONNX_CUDART=1', language : 'cpp')
       deps += cu_dart
