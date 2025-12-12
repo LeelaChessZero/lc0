@@ -818,17 +818,24 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
 
   int threads =
       opts.GetOrDefault<int>("threads", provider == OnnxProvider::CPU ? 1 : 0);
+  int default_batch = -1;
+  int default_steps = 1;
+  int default_min_batch = 1;
+  switch (provider) {
+    case OnnxProvider::DML:
+    case OnnxProvider::MIGRAPHX:
+      default_batch = 16;
+      default_steps = 4;
+      break;
+    case OnnxProvider::TRT:
+      default_min_batch = 4;
+    default:
+      break;
+  }
 
-  batch_size_ = opts.GetOrDefault<int>(
-      "batch",
-      provider == OnnxProvider::DML || provider == OnnxProvider::MIGRAPHX ? 16
-                                                                          : -1);
-  steps_ = opts.GetOrDefault<int>(
-      "steps",
-      provider == OnnxProvider::DML || provider == OnnxProvider::MIGRAPHX ? 4
-                                                                          : 1);
-  min_batch_size_ = opts.GetOrDefault<int>(
-      "min_batch", provider == OnnxProvider::TRT ? 4 : 1);
+  batch_size_ = opts.GetOrDefault<int>("batch", default_batch);
+  steps_ = opts.GetOrDefault<int>("steps", default_steps);
+  min_batch_size_ = opts.GetOrDefault<int>("min_batch", default_min_batch);
 
   // Sanity checks.
   if (batch_size_ <= 0) {
