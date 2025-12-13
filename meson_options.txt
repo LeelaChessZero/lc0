@@ -83,6 +83,11 @@ option('plain_cuda',
        value: true,
        description: 'Enable CUDA backend')
 
+option('plain_hip',
+       type: 'boolean',
+       value: false,
+       description: 'Enable HIP backend')
+
 option('opencl',
        type: 'boolean',
        value: false,

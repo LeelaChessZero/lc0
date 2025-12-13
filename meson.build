@@ -536,7 +536,6 @@ if get_option('build_backends')
     elif get_option('plain_cuda')
       cuda_files += 'src/neural/backends/cuda/network_cuda.cc'
     endif
-    includes += include_directories('src/neural/backends/cuda/')
 	 files += cuda_files
     files += custom_target('cuda fp32 code',
       input : 'src/neural/backends/cuda/common_kernels.cu',
@@ -551,6 +550,47 @@ if get_option('build_backends')
       depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
       command : [nvcc, nvcc_extra_args, nvcc_arguments]
     )
+    has_backends = true
+  endif
+
+  ## ~~~
+  ## HIP
+  ## ~~~
+  hip_libdirs = get_option('hip_libdirs')
+  hipblas = dependency('hipblas', required: false)
+  hip = dependency('hip', required: false)
+  if get_option('plain_hip') and hipblas.found() and hip.found()
+    deps += [ hipblas, hip ]
+
+    hip_test_source = '''
+#include <hip/hip_runtime.h>
+
+__global__ void test_kernel(int arr[]) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    arr[idx] = idx;
+}
+
+int main() {
+  int *d_arr = nullptr;
+  hipHostMalloc(&d_arr, 32 * sizeof(int));
+  test_kernel<<<1, 32>>>(d_arr);
+  hipDeviceSynchronize();
+  hipHostFree(d_arr);
+  return 0;
+}
+'''
+
+    hip_test = cc.compiles(hip_test_source, name: 'hipcc check', dependencies: hip)
+    if not hip_test
+      error('HIP support requested but test kernel failed to compile. You need to compile using \'hipcc\'')
+    endif
+
+    files += [
+      'src/neural/backends/hip/network_hip.cc',
+      'src/neural/backends/hip/layers.cc',
+      'src/neural/backends/hip/common_kernels.cc',
+      'src/neural/backends/hip/fp16_kernels.cc',
+    ]
     has_backends = true
   endif
 
