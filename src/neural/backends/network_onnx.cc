@@ -37,17 +37,13 @@
 #include <string>
 #include <vector>
 
-#if __has_include("dml_provider_factory.h")
-#include "dml_provider_factory.h"
-#define USE_DML
-#endif
+#include "onnx_conf.h"
 
 #ifdef USE_ONNX_CUDART
 #include "cuda_runtime.h"
 #include "neural/backends/cuda/onnx_kernels.h"
 #endif
 
-#include "cpu_provider_factory.h"
 #include "neural/factory.h"
 #include "neural/loader.h"
 #include "neural/network.h"
@@ -645,16 +641,13 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
   }
 
   switch (provider_) {
-    case OnnxProvider::DML:
-      options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-      options.DisableMemPattern();
-#ifdef USE_DML
-      Ort::ThrowOnError(
-          OrtSessionOptionsAppendExecutionProvider_DML(options, gpu_));
-#else
-      throw Exception("ONNX backend internal error.");
-#endif
+    case OnnxProvider::DML:{
+      std::unordered_map<std::string, std::string> dml_options;
+      dml_options["device_id"] = std::to_string(gpu_);
+      dml_options["performance_preference"] = "high_performance";
+      options.AppendExecutionProvider("DML", dml_options);
       break;
+    }
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
@@ -757,14 +750,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       break;
     }
     case OnnxProvider::CPU:
-      auto status = OrtSessionOptionsAppendExecutionProvider_CPU(options, 0);
-      if (status) {
-        std::string error_message = Ort::GetApi().GetErrorMessage(status);
-        OrtErrorCode error_code = Ort::GetApi().GetErrorCode(status);
-        Ort::GetApi().ReleaseStatus(status);
-        throw Exception("ONNX CPU error " + std::to_string(error_code) + ": " +
-                        error_message);
-      }
+      // The CPU execution provider is always available.
       break;
   }
   return options;

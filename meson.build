@@ -591,30 +591,33 @@ if get_option('build_backends')
   ## ~~~~~~~~~~
   onnxruntime = cc.find_library('onnxruntime', dirs: get_option('onnx_libdir'),
                                 required: false)
-  if get_option('onnx') and onnxruntime.found() and\
-     run_command('scripts/checkdir.py', get_option('onnx_include'), check: false).returncode() == 0
+  if get_option('onnx') and onnxruntime.found()
     deps += onnxruntime
-    includes += include_directories(get_option('onnx_include'), is_system: true)
-    cc.has_header('onnxruntime_cxx_api.h', required: true,
-                  args: '-I' + get_option('onnx_include'))
-    if not cc.has_header('cpu_provider_factory.h',
-                         args: '-I' + get_option('onnx_include'))
-      cc.has_header('../providers/cpu/cpu_provider_factory.h', required: true,
-                    args: '-I' + get_option('onnx_include'))
-      includes += include_directories(get_option('onnx_include') + '/../providers/cpu',
-                                      is_system: true)
+    onnx_inc_dir = get_option('onnx_include')
+    if fs.is_dir(onnx_inc_dir + '/onnxruntime/core/session')
+      onnx_inc_dir += '/onnxruntime/core/session'
+    elif fs.is_dir(onnx_inc_dir + '/onnxruntime')
+      onnx_inc_dir += '/onnxruntime'
     endif
+    includes += include_directories(onnx_inc_dir, is_system: true)
+    cc.has_header('onnxruntime_cxx_api.h', required: true,
+                  include_directories: includes)
     files += 'src/neural/backends/network_onnx.cc'
+    onnx_conf = configuration_data()
+    if cc.has_header('dml_provider_factory.h', required: false,
+                     include_directories: includes)
+      onnx_conf.set('USE_DML', true)
+    endif
     if cc.find_library('onnxruntime_providers_rocm',
                        dirs: get_option('onnx_libdir'), required: false).found()
-      add_project_arguments('-DUSE_ROCM', language : 'cpp')
+      onnx_conf.set('USE_ROCM', true)
     endif
     if cc.find_library('onnxruntime_providers_migraphx',
                        dirs: get_option('onnx_libdir'), required: false).found()
-      add_project_arguments('-DUSE_MIGRAPHX', language : 'cpp')
+      onnx_conf.set('USE_MIGRAPHX', true)
     endif
     if cu_dart.found() and nvcc_ok
-      add_project_arguments('-DUSE_ONNX_CUDART=1', language : 'cpp')
+      onnx_conf.set('USE_ONNX_CUDART', true)
       deps += cu_dart
       files += custom_target('cuda onnx code',
         input : 'src/neural/backends/cuda/onnx.cu',
@@ -624,6 +627,7 @@ if get_option('build_backends')
     else
       warning('No CUDA support available. Using compatibility implementation for onnx-trt and onnx-cuda.')
     endif
+    configure_file(output : 'onnx_conf.h', configuration : onnx_conf)
     has_backends = true
   endif
 
