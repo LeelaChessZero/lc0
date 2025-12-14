@@ -641,7 +641,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
   }
 
   switch (provider_) {
-    case OnnxProvider::DML:{
+    case OnnxProvider::DML: {
       std::unordered_map<std::string, std::string> dml_options;
       dml_options["device_id"] = std::to_string(gpu_);
       dml_options["performance_preference"] = "high_performance";
@@ -766,7 +766,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
                          OnnxProvider provider, bool cpu_wdl)
-    : onnx_env_(ORT_LOGGING_LEVEL_VERBOSE, "lc0"),
+    : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
@@ -900,7 +900,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     WeightsToOnnxConverterOptions converter_options;
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
-        "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
+        "alt_mish",
+        kProvider == OnnxProvider::CPU || kProvider == OnnxProvider::COREML
+            ? true
+            : false);
     converter_options.alt_layernorm = opts.GetOrDefault<bool>(
         "alt_layernorm",
         kProvider == OnnxProvider::DML &&
@@ -923,8 +926,11 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (opts.Exists<std::string>("datatype")) {
       datatype = opts.Get<std::string>("datatype");
     } else {
-      bool fp16 = opts.GetOrDefault<bool>(
-          "fp16", kProvider == OnnxProvider::CPU ? false : true);
+      bool fp16 = kProvider == OnnxProvider::CPU ? false : true;
+#if ORT_API_VERSION < 24
+      if (kProvider == OnnxProvider::COREML) fp16 = false;
+#endif
+      fp16 = opts.GetOrDefault<bool>("fp16", fp16);
       datatype = fp16 ? "f16" : "f32";
     }
     converter_options.data_type =
