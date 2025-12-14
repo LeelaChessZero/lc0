@@ -67,7 +67,8 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
 // params, also pad/un-pad elements from Batch or Channel dimensions
 template <typename DstType, typename SrcType>
 void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
-                       int Nin, int Cin, int Nout, int Cout, int H, int W);
+                       int Nin, int Cin, int Nout, int Cout, int H, int W,
+                       cudaStream_t stream);
 
 // Plain data-type conversion (no layout conversion).
 template <typename DstType, typename SrcType>
@@ -77,35 +78,34 @@ void copyTypeConverted(DstType* op, SrcType* ip, int N, cudaStream_t stream);
 template <typename T>
 void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
                int H, int W, float* means, float* var_multipliers,
-               ActivationFunction activation);
+               ActivationFunction activation, cudaStream_t stream);
 
 // Unpack planes (input to network).
-void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream);
+template <typename T>
+void expandPlanes_NHWC(T* output, const uint64_t* masks, const T* values, int n,
+                       cudaStream_t stream);
 
-void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream);
-
-void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream);
+template <typename T>
+void expandPlanes_NCHW(T* output, const uint64_t* masks, const T* values, int n,
+                       cudaStream_t stream);
 
 // Perform global avg pool.
 template <typename T>
 void globalAvgPool(int N, int C, T* output, const T* input,
-                   const T* prevLayerBias, bool nhwc);
+                   const T* prevLayerBias, bool nhwc, cudaStream_t steam);
 
 // Perform global scale.
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                  const T* prevLayerBias, bool nhwc,
-                 ActivationFunction activation);
+                 ActivationFunction activation, cudaStream_t steam);
 
 // Perform Squeeze-and-Excitation (SE) in a single fused kernel.
 // Returns false if the fused kernel can't handle the sizes.
 bool Se_Fp16_NHWC(int N, int C, int numFc1Out, half* output, const half* skip,
                   const half* input, const half* w1, const half* b1,
                   const half* w2, const half* b2, const half* bPrev,
-                  ActivationFunction activation);
+                  ActivationFunction activation, cudaStream_t stream);
 
 template <typename T>
 void PolicyMap(int N, T* output, const T* input, const short* indices,
@@ -114,7 +114,8 @@ void PolicyMap(int N, T* output, const T* input, const short* indices,
 
 // Custom winograd helper functions
 template <typename T>
-void FilterTransform(int N, int C, T* transformedFilter, const T* filter);
+void FilterTransform(int N, int C, T* transformedFilter, const T* filter,
+                     cudaStream_t stream);
 
 template <typename T, bool nhcw>
 void InputTransform(int N, int C, T* transformedInput, const T* input,
@@ -157,5 +158,10 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, cudaStream_t stream);
+
+template <typename T>
+void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
+                       int d_model, T* k, T* q, T* b1, T* v, T* b2,
+                       cudaStream_t stream);
 }  // namespace cudnn_backend
 }  // namespace lczero

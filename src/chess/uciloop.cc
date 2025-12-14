@@ -54,6 +54,11 @@ const OptionId kShowWDL{{.long_flag = "show-wdl",
                          .uci_option = "UCI_ShowWDL",
                          .help_text = "Show win, draw and lose probability.",
                          .visibility = OptionId::kAlwaysVisible}};
+const OptionId kShowEPS{
+    {.long_flag = "show-eps",
+     .uci_option = "UCI_ShowEPS",
+     .help_text = "Show neural network evaluations per second.",
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kShowMovesleft{{.long_flag = "show-movesleft",
                                .uci_option = "UCI_ShowMovesLeft",
                                .help_text = "Show estimated moves left.",
@@ -259,6 +264,7 @@ bool UciLoop::ProcessLine(const std::string& line) {
 void StringUciResponder::PopulateParams(OptionsParser* options) {
   options->Add<BoolOption>(kUciChess960) = false;
   options->Add<BoolOption>(kShowWDL) = false;
+  options->Add<BoolOption>(kShowEPS) = false;
   options->Add<BoolOption>(kShowMovesleft) = false;
   options_ = &options->GetOptionsDict();
 }
@@ -312,6 +318,9 @@ void StringUciResponder::OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
     }
     if (info.hashfull >= 0) res += " hashfull " + std::to_string(info.hashfull);
     if (info.nps >= 0) res += " nps " + std::to_string(info.nps);
+    if (info.eps >= 0 && options_ && options_->Get<bool>(kShowEPS)) {
+      res += " eps " + std::to_string(info.eps);
+    }
     if (info.tb_hits >= 0) res += " tbhits " + std::to_string(info.tb_hits);
     if (info.multipv >= 0) res += " multipv " + std::to_string(info.multipv);
 
