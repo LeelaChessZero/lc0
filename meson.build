@@ -595,6 +595,7 @@ if get_option('build_backends')
     deps += onnxruntime
     onnx_inc_dir = get_option('onnx_include')
     if fs.is_dir(onnx_inc_dir + '/onnxruntime/core/session')
+      # Top level of source dir.
       onnx_inc_dir += '/onnxruntime/core/session'
     elif fs.is_dir(onnx_inc_dir + '/onnxruntime')
       onnx_inc_dir += '/onnxruntime'
@@ -606,6 +607,7 @@ if get_option('build_backends')
     onnx_conf = configuration_data()
     if cc.has_header('dml_provider_factory.h', required: false,
                      include_directories: includes)
+      # The header is not actually needed, used here to detect DML onnxruntime.
       onnx_conf.set('USE_DML', true)
     endif
     if cc.find_library('onnxruntime_providers_rocm',
