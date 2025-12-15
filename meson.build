@@ -622,7 +622,7 @@ if get_option('build_backends')
       onnx_conf.set('USE_ONNX_CUDART', true)
       deps += cu_dart
       files += custom_target('cuda onnx code',
-        input : 'src/neural/backends/onnx/onnx.cu',
+        input : 'src/neural/backends/onnx/onnx_kernels.cu',
         output : outputname,
         command : [nvcc, nvcc_extra_args, nvcc_arguments]
         )
