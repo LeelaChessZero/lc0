@@ -27,6 +27,8 @@
 
 #include "selfplay/multigame.h"
 
+#include <queue>
+
 namespace lczero {
 
 class PolicyEvaluator : public Evaluator {
@@ -36,27 +38,31 @@ class PolicyEvaluator : public Evaluator {
   }
   void Gather(classic::NodeTree* tree) override {
     const auto& history = tree->GetPositionHistory();
-    moves_.clear();
+    moves_.emplace();
+    moves_.back().reserve(tree->GetCurrentHead()->GetNumEdges());
     for (auto edge : tree->GetCurrentHead()->Edges()) {
-      moves_.push_back(edge.GetMove());
+      moves_.back().push_back(edge.GetMove());
     }
-    p_.resize(moves_.size());
+    p_.emplace(moves_.back().size());
     comp_->AddInput(
         EvalPosition{
             .pos = history.GetPositions(),
-            .legal_moves = moves_,
+            .legal_moves = moves_.back(),
         },
-        EvalResultPtr{.p = p_});
+        EvalResultPtr{.p = p_.back()});
   }
   void Run() override { comp_->ComputeBlocking(); }
   void MakeBestMove(classic::NodeTree* tree) override {
-    size_t best_idx = std::max_element(p_.begin(), p_.end()) - p_.begin();
-    tree->MakeMove(moves_[best_idx]);
+    auto p = std::move(p_.front());
+    p_.pop();
+    size_t best_idx = std::max_element(p.begin(), p.end()) - p.begin();
+    tree->MakeMove(moves_.front()[best_idx]);
+    moves_.pop();
   }
 
   std::unique_ptr<BackendComputation> comp_;
-  std::vector<Move> moves_;
-  std::vector<float> p_;
+  std::queue<std::vector<Move>> moves_;
+  std::queue<std::vector<float>> p_;
 };
 
 class ValueEvaluator : public Evaluator {
@@ -66,11 +72,9 @@ class ValueEvaluator : public Evaluator {
   }
   void Gather(classic::NodeTree* tree) override {
     PositionHistory history = tree->GetPositionHistory();
-    q_.clear();
-    q_.reserve(tree->GetCurrentHead()->GetNumEdges());
-    moves_.clear();
+    q_.emplace();
+    q_.back().reserve(tree->GetCurrentHead()->GetNumEdges());
     for (auto edge : tree->GetCurrentHead()->Edges()) {
-      moves_.push_back(edge.GetMove());
       history.Append(edge.GetMove());
       auto result = history.ComputeGameResult();
       if (result == GameResult::UNDECIDED) {
@@ -79,26 +83,32 @@ class ValueEvaluator : public Evaluator {
                 .pos = history.GetPositions(),
                 .legal_moves = {},
             },
-            EvalResultPtr{.q = &q_.emplace_back()});
+            EvalResultPtr{.q = &q_.back().emplace_back()});
       } else if (result == GameResult::DRAW) {
-        q_.push_back(0);
+        q_.back().push_back(0);
       } else {
         // A legal move to a non-drawn terminal without tablebases must be a
         // win.
-        q_.push_back(1);
+        q_.back().push_back(1);
       }
       history.Pop();
     }
   }
   void Run() override { comp_->ComputeBlocking(); }
   void MakeBestMove(classic::NodeTree* tree) override {
-    size_t best_idx = std::max_element(q_.begin(), q_.end()) - q_.begin();
-    tree->MakeMove(moves_[best_idx]);
+    auto q = std::move(q_.front());
+    q_.pop();
+    size_t best_idx = std::max_element(q.begin(), q.end()) - q.begin();
+    for (size_t idx = 0; auto edge : tree->GetCurrentHead()->Edges()) {
+      if (idx++ == best_idx) {
+        tree->MakeMove(edge.GetMove());
+        break;
+      }
+    }
   }
 
   std::unique_ptr<BackendComputation> comp_;
-  std::vector<Move> moves_;
-  std::vector<float> q_;
+  std::queue<std::vector<float>> q_;
 };
 
 MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
@@ -117,6 +127,7 @@ MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
     results_.push_back(GameResult::UNDECIDED);
 
     for (Move m : opening.moves) {
+      if (trees_.back()->IsBlackToMove()) m.Flip();
       trees_.back()->MakeMove(m);
     }
   }
