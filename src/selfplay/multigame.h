@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <queue>
+
 #include "selfplay/game.h"
 
 namespace lczero {
@@ -35,13 +37,17 @@ class Evaluator {
  public:
   virtual ~Evaluator() = default;
   // Run before each batch before any Gather.
-  virtual void Reset(const PlayerOptions& player) = 0;
+  void Reset(const PlayerOptions& player);
   // Run for each tree.
-  virtual void Gather(classic::NodeTree* tree) = 0;
+  virtual void Gather(classic::NodeTree* tree, std::vector<Move> moves) = 0;
   // Run once between Gather and Move.
-  virtual void Run() = 0;
+  void Run();
   // Run for each tree in the same order as Gather.
-  virtual void MakeBestMove(classic::NodeTree* tree) = 0;
+  void MakeBestMove(classic::NodeTree* tree);
+
+ protected:
+  std::unique_ptr<BackendComputation> comp_;
+  std::queue<std::vector<float>> v_;
 };
 
 // Plays a bunch of games vs itself.

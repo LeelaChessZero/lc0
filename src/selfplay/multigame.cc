@@ -27,55 +27,33 @@
 
 #include "selfplay/multigame.h"
 
-#include <queue>
-
 namespace lczero {
+
+void Evaluator::Reset(const PlayerOptions& player) {
+  comp_ = player.backend->CreateComputation();
+}
 
 class PolicyEvaluator : public Evaluator {
  public:
-  void Reset(const PlayerOptions& player) override {
-    comp_ = player.backend->CreateComputation();
-  }
-  void Gather(classic::NodeTree* tree) override {
+  void Gather(classic::NodeTree* tree, std::vector<Move> moves) override {
     const auto& history = tree->GetPositionHistory();
-    moves_.emplace();
-    moves_.back().reserve(tree->GetCurrentHead()->GetNumEdges());
-    for (auto edge : tree->GetCurrentHead()->Edges()) {
-      moves_.back().push_back(edge.GetMove());
-    }
-    p_.emplace(moves_.back().size());
+    v_.emplace(moves.size());
     comp_->AddInput(
         EvalPosition{
             .pos = history.GetPositions(),
-            .legal_moves = moves_.back(),
+            .legal_moves = moves,
         },
-        EvalResultPtr{.p = p_.back()});
+        EvalResultPtr{.p = v_.back()});
   }
-  void Run() override { comp_->ComputeBlocking(); }
-  void MakeBestMove(classic::NodeTree* tree) override {
-    auto p = std::move(p_.front());
-    p_.pop();
-    size_t best_idx = std::max_element(p.begin(), p.end()) - p.begin();
-    tree->MakeMove(moves_.front()[best_idx]);
-    moves_.pop();
-  }
-
-  std::unique_ptr<BackendComputation> comp_;
-  std::queue<std::vector<Move>> moves_;
-  std::queue<std::vector<float>> p_;
 };
 
 class ValueEvaluator : public Evaluator {
  public:
-  void Reset(const PlayerOptions& player) override {
-    comp_ = player.backend->CreateComputation();
-  }
-  void Gather(classic::NodeTree* tree) override {
+  void Gather(classic::NodeTree* tree, std::vector<Move> moves) override {
     PositionHistory history = tree->GetPositionHistory();
-    q_.emplace();
-    q_.back().reserve(tree->GetCurrentHead()->GetNumEdges());
-    for (auto edge : tree->GetCurrentHead()->Edges()) {
-      history.Append(edge.GetMove());
+    v_.emplace(moves.size());
+    for (size_t idx = 0; idx < moves.size(); idx++) {
+      history.Append(moves[idx]);
       auto result = history.ComputeGameResult();
       if (result == GameResult::UNDECIDED) {
         comp_->AddInput(
@@ -83,33 +61,32 @@ class ValueEvaluator : public Evaluator {
                 .pos = history.GetPositions(),
                 .legal_moves = {},
             },
-            EvalResultPtr{.q = &q_.back().emplace_back()});
+            EvalResultPtr{.q = &v_.back()[idx]});
       } else if (result == GameResult::DRAW) {
-        q_.back().push_back(0);
+        v_.back()[idx] = 0;
       } else {
         // A legal move to a non-drawn terminal without tablebases must be a
         // win.
-        q_.back().push_back(1);
+        v_.back()[idx] = 1;
       }
       history.Pop();
     }
   }
-  void Run() override { comp_->ComputeBlocking(); }
-  void MakeBestMove(classic::NodeTree* tree) override {
-    auto q = std::move(q_.front());
-    q_.pop();
-    size_t best_idx = std::max_element(q.begin(), q.end()) - q.begin();
-    for (size_t idx = 0; auto edge : tree->GetCurrentHead()->Edges()) {
-      if (idx++ == best_idx) {
-        tree->MakeMove(edge.GetMove());
-        break;
-      }
+};
+
+void Evaluator::Run() { comp_->ComputeBlocking(); }
+
+void Evaluator::MakeBestMove(classic::NodeTree* tree) {
+  auto v = std::move(v_.front());
+  v_.pop();
+  size_t best_idx = std::max_element(v.begin(), v.end()) - v.begin();
+  for (size_t idx = 0; auto edge : tree->GetCurrentHead()->Edges()) {
+    if (idx++ == best_idx) {
+      tree->MakeMove(edge.GetMove());
+      break;
     }
   }
-
-  std::unique_ptr<BackendComputation> comp_;
-  std::queue<std::vector<float>> q_;
-};
+}
 
 MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
                                        PlayerOptions player2,
@@ -198,7 +175,7 @@ void MultiSelfPlayGames::Play() {
       const auto& board = tree->GetPositionHistory().Last().GetBoard();
       auto legal_moves = board.GenerateLegalMoves();
       tree->GetCurrentHead()->CreateEdges(legal_moves);
-      eval_->Gather(tree.get());
+      eval_->Gather(tree.get(), std::move(legal_moves));
     }
     eval_->Run();
     for (size_t i = 0; i < trees_.size(); i++) {
