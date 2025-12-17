@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "chess/types.h"
+#include "neural/backends/client/archive.h"
 #include "utils/bititer.h"
 
 namespace lczero {
@@ -157,6 +158,10 @@ class BitBoard {
     return {a.board_ & ~b.board_};
   }
 
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar, [[maybe_unused]] const unsigned version) {
+    return ar & client::FixedInteger{board_};
+  }
  private:
   std::uint64_t board_ = 0;
 };

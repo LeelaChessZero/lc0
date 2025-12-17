@@ -47,6 +47,18 @@ struct BackendAttributes {
   int suggested_num_search_threads;
   int recommended_batch_size;
   int maximum_batch_size;
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar, const unsigned) {
+    auto r = ar & has_mlh;
+    r = r.and_then([this](Archive& ar) { return ar & has_wdl; });
+    r = r.and_then([this](Archive& ar) { return ar & runs_on_cpu; });
+    r = r.and_then(
+        [this](Archive& ar) { return ar & suggested_num_search_threads; });
+    r = r.and_then([this](Archive& ar) { return ar & recommended_batch_size; });
+    r = r.and_then([this](Archive& ar) { return ar & maximum_batch_size; });
+    return r;
+  }
 };
 
 struct EvalResultPtr {

@@ -41,6 +41,7 @@
 #include <span>
 #include <string_view>
 
+#include "archive.h"
 #include "neural/backend.h"
 #include "neural/encoder.h"
 
@@ -74,7 +75,7 @@ struct null_stream {
 #define TRACE CERR
 #endif
 
-enum MessageType : uint16_t {
+enum MessageType : uint8_t {
   HANDSHAKE = 0,
   HANDSHAKE_REPLY = 1,
   COMPUTE_BLOCKING = 2,
@@ -82,7 +83,6 @@ enum MessageType : uint16_t {
 };
 
 using MagicType = uint32_t;
-using PositionWithHistory = std::array<Position, kMoveHistory>;
 
 static constexpr MagicType kMagic = 'L' << 0 | 'C' << 8 | 'Z' << 16 | 'B' << 24;
 // Must be incremented when any structure changes.
@@ -92,50 +92,133 @@ static constexpr unsigned kMaxComputationPriority = 12;
 struct MessageHeader {
   MagicType magic_ = kMagic;  // "LCZB"
   uint32_t size_;
-  MessageType type_;
+  uint8_t type_;
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    auto r = ar & FixedInteger(magic_);
+    r = r.and_then([this](Archive& ar) { return ar & size_; });
+    r = r.and_then([this](Archive& ar) { return ar & type_; });
+    TRACE << "MessageHeader::Serialize(" << ar.Size() << "): size=" << size_
+          << " type=" << static_cast<uint32_t>(type_);
+    return r;
+  }
 
   static constexpr size_t Size() {
     return sizeof(MagicType) + sizeof(uint32_t) + sizeof(MessageType);
   }
+
+  size_t PredictedSize() const { return Size(); }
 };
 
 struct Handshake {
   MessageHeader header_ = {kMagic, 0, MessageType::HANDSHAKE};
   uint16_t backend_api_version_ = kBackendApiVersion;
-  std::string_view network_name_;
+  std::string_view network_name_{};
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    typename Archive::ResultType r{ar};
+    r = Archive::is_saving ? ar & header_ : r;
+    r = r.and_then([this](Archive& ar) { return ar & backend_api_version_; });
+    r = r.and_then([this](Archive& ar) { return ar & network_name_; });
+    TRACE << "Handshake::Serialize(" << ar.Size()
+          << "): backend_api_version=" << backend_api_version_
+          << " network_name=" << network_name_ << " size=" << ar.Size();
+    return r;
+  }
 };
 
 struct HandshakeReply {
   MessageHeader header_ = {kMagic, 0, MessageType::HANDSHAKE_REPLY};
-  BackendAttributes attributes_;
-  std::string_view error_message_;
+  BackendAttributes attributes_{};
+  std::string_view error_message_{};
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    TRACE << "HandshakeReply::Serialize(" << ar.Size()
+          << "): error_message=" << error_message_;
+    typename Archive::ResultType r{ar};
+    r = Archive::is_saving ? ar & header_ : r;
+    r = r.and_then([this](Archive& ar) { return ar & attributes_; });
+    r = r.and_then([this](Archive& ar) { return ar & error_message_; });
+    return r;
+  }
 };
 
 struct InputPosition {
-  Position base_;
+  Position base_{};
   unsigned char history_length_{0};
-  std::array<Move, kMoveHistory> history_{};
+  std::array<Move, kMoveHistory - 1> history_{};
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    auto r = ar & base_;
+    r = r.and_then([this](Archive& ar) { return ar & history_length_; });
+    const unsigned len = history_length_;
+    assert(len <= history_.size());
+    for (unsigned i = 0; i < len; ++i) {
+      r = r.and_then([this, i](Archive& ar) { return ar & history_[i]; });
+    }
+    return r;
+  }
 };
 
 struct ComputeBlocking {
   MessageHeader header_ = {kMagic, 0, MessageType::COMPUTE_BLOCKING};
-  uint16_t computation_id_;
-  unsigned char priority_;
-  std::vector<InputPosition> inputs_;
+  uint16_t computation_id_{};
+  unsigned char priority_{};
+  std::vector<InputPosition> inputs_{};
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    typename Archive::ResultType r{ar};
+    r = Archive::is_saving ? ar & header_ : r;
+    r = r.and_then([this](Archive& ar) { return ar & computation_id_; });
+    r = r.and_then([this](Archive& ar) { return ar & priority_; });
+    r = r.and_then([this](Archive& ar) { return ar & inputs_; });
+    return r;
+  }
 };
 
 struct NetworkResult {
-  float value_;
-  float draw_;
-  float moves_left_;
-  std::span<float> policy_;
+  float value_{};
+  float draw_{};
+  float moves_left_{};
+  std::span<float> policy_{};
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    auto r = ar & value_;
+    r = r.and_then([this](Archive& ar) { return ar & draw_; });
+    r = r.and_then([this](Archive& ar) { return ar & moves_left_; });
+    r = r.and_then([this](Archive& ar) { return ar & policy_; });
+    return r;
+  }
 };
 
 struct ComputeBlockingReply {
   MessageHeader header_ = {kMagic, 0, MessageType::COMPUTE_BLOCKING_REPLY};
-  uint16_t computation_id_;
-  std::vector<NetworkResult> results_;
-  std::string_view error_message_;
+  uint16_t computation_id_{};
+  std::vector<NetworkResult> results_{};
+  std::string_view error_message_{};
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    typename Archive::ResultType r{ar};
+    r = Archive::is_saving ? ar & header_ : r;
+    r = r.and_then([this](Archive& ar) { return ar & computation_id_; });
+    r = r.and_then([this](Archive& ar) { return ar & results_; });
+    r = r.and_then([this](Archive& ar) { return ar & error_message_; });
+    return r;
+  }
 };
 
 static constexpr size_t kMaxSearchThreads = 2;
@@ -148,71 +231,77 @@ static constexpr size_t kMaxMessageSize =
 static constexpr size_t kBufferSize = std::bit_ceil(kMaxMessageSize);
 
 using InputBufferType = std::array<char, kBufferSize>;
-using OutputBufferType = std::vector<char>;
 
-template <typename T>
-int SerializeMessage(OutputBufferType& os, const T& message);
+template <typename Archive, typename T>
+[[nodiscard]]
+Archive::ResultType SerializeMessage(Archive& oa, T& message);
 
-template <typename T>
-int ParseMessageType(const char*& first, const char* const last,
-                     const MessageHeader& header, T& out);
+template <typename Archive>
+[[nodiscard]]
+Archive::ResultType ParseMessageHeader(Archive& ia, MessageHeader& header);
 
-int ParseMessageHeader(const char*& first, const char* const last,
-                       MessageHeader& header);
+template <typename Archive, typename T>
+[[nodiscard]]
+Archive::ResultType ParseMessageType(Archive& ia, const MessageHeader& header,
+                                     T& out);
 
-template <typename Callback>
-int ParseMessage(const char*& first, const char* const last,
-                 const MessageHeader& header, Callback&& callback) {
-  size_t bytes = std::distance(first, last);
-  TRACE << "Parsing message " << bytes << " bytes available";
-  assert(bytes >= header.size_);
-  int r = 0;
+template <typename Archive, typename Callback>
+[[nodiscard]]
+Archive::ResultType ParseMessage(Archive& ia, const MessageHeader& header,
+                                 Callback&& callback) {
+  TRACE << "Parsing message " << ia.Size() << " bytes available";
+  assert(ia.Size() >= header.size_);
+  typename Archive::ResultType r;
   switch (header.type_) {
     case MessageType::HANDSHAKE: {
       Handshake msg;
-      if ((r = ParseMessageType(first, last, header, msg))) {
+      if (!(r = ParseMessageType(ia, header, msg))) {
+        TRACE << "Parsed Handshake message failed " << r.error();
         return r;
       }
       if (callback(msg)) {
-        return -1;
+        return Unexpected{ArchiveError::InvalidData};
       }
       break;
     }
     case MessageType::HANDSHAKE_REPLY: {
       HandshakeReply msg;
-      if ((r = ParseMessageType(first, last, header, msg))) {
+      if (!(r = ParseMessageType(ia, header, msg))) {
+        TRACE << "Parsed HandshakeReply message failed " << r.error();
         return r;
       }
       if (callback(msg)) {
-        return -1;
+        return Unexpected{ArchiveError::InvalidData};
       }
       break;
     }
     case MessageType::COMPUTE_BLOCKING: {
       ComputeBlocking msg;
-      if ((r = ParseMessageType(first, last, header, msg))) {
+      if (!(r = ParseMessageType(ia, header, msg))) {
+        TRACE << "Parsed ComputeBlocking message failed " << r.error();
         return r;
       }
       if (callback(msg)) {
-        return -1;
+        return Unexpected{ArchiveError::InvalidData};
       }
       break;
     }
     case MessageType::COMPUTE_BLOCKING_REPLY: {
       ComputeBlockingReply msg;
-      if ((r = ParseMessageType(first, last, header, msg))) {
+      if (!(r = ParseMessageType(ia, header, msg))) {
+        TRACE << "Parsed ComputeBlockingReply message failed " << r.error();
         return r;
       }
       if (callback(msg)) {
-        return -1;
+        return Unexpected{ArchiveError::InvalidData};
       }
       break;
     }
     default:
       CERR << "Unknown message type received: " << header.type_;
-      return -1;
+      return Unexpected{ArchiveError::InvalidData};
   }
-  return 0;
+  return r;
 }
 
 #ifdef ASIO_HAS_LOCAL_SOCKETS
@@ -252,10 +341,7 @@ class Connection {
   template <bool new_request = true, typename MessageCallback>
   void ReadHeader(MessageCallback&& callback) {
     if (new_request) {
-      if (ReadyBytes() >= MessageHeader::Size()) {
-        ParseHeader(std::move(callback));
-        return;
-      }
+      if (ParseHeader(std::move(callback))) return;
       if (ReadyBytes() > 0) {
         // Move unparsed data to the front.
         std::memmove(input_.data(), input_.data() + parsed_bytes_,
@@ -277,22 +363,26 @@ class Connection {
             return;
           }
           input_read_bytes_ += length;
-          if (ReadyBytes() < MessageHeader::Size()) {
-            // Need more data.
-            ReadHeader<false>(std::move(callback));
-            return;
-          }
           // Process data.
-          ParseHeader(std::move(callback));
+          if (!ParseHeader(std::move(callback))) {
+            ReadBody<false>(std::move(callback));
+          }
         });
   }
 
   template <typename SelfType, typename MessageType>
-  void SendMessage(SelfType&& self, const MessageType& message) {
-    OutputBufferType output;
-    SerializeMessage(output, message);
+  void SendMessage(SelfType&& self, MessageType& message) {
+    BinaryOArchive output(kBackendApiVersion);
+    if (!SerializeMessage(output, message)) {
+      CERR << "Error serializing message for sending.";
+      Close();
+      return;
+    }
     Dispatch([this, self = std::move(self), output = std::move(output)] {
       bool empty = queue_.empty();
+      TRACE << "Queueing message<" << typeid(MessageType).name() << "> of size "
+            << output.Size() << " for sending. Queue size was "
+            << queue_.size();
       queue_.push(std::move(output));
       if (!empty) {
         // A write is already in progress.
@@ -315,7 +405,7 @@ class Connection {
   template <typename SelfType>
   void Write(SelfType&& self) {
     asio::async_write(
-        socket_, asio::buffer(queue_.front()),
+        socket_, asio::buffer(queue_.front().GetVector()),
         [this, self](std::error_code ec, [[maybe_unused]] size_t length) {
           if (ec) {
             if (ec != asio::error::eof) {
@@ -395,17 +485,20 @@ class Connection {
   }
 
   template <typename MessageCallback>
-  void ParseHeader(MessageCallback&& callback) {
+  bool ParseHeader(MessageCallback&& callback) {
     TRACE << "Parsing header data " << ReadyBytes() << " bytes available. ";
+    if (ReadyBytes() == 0) return false;
 
-    assert(ReadyBytes() >= MessageHeader::Size());
     auto first = InputBegin();
-    if (ParseMessageHeader(first, InputEnd(), pending_header_)) {
-      CERR << "Error parsing message header.";
-      return;
+    BinaryIArchive ia(std::span<const char>(first, InputEnd()), input_.data(),
+                      kBackendApiVersion);
+    size_t size = ia.Size();
+    if (!ParseMessageHeader(ia, pending_header_)) {
+      return false;
     }
-    parsed_bytes_ += first - InputBegin();
+    parsed_bytes_ += size - ia.Size();
     ReadBody(std::forward<MessageCallback>(callback));
+    return true;
   }
 
   template <typename MessageCallback>
@@ -415,24 +508,29 @@ class Connection {
 
     assert(ReadyBytes() >= pending_header_.size_);
     auto first = InputBegin();
-    if (ParseMessage(first, InputEnd(), pending_header_,
-                     std::forward<MessageCallback>(callback))) {
+    BinaryIArchive ia(std::span<const char>(first, InputEnd()), input_.data(),
+                      kBackendApiVersion);
+    size_t size = ia.Size();
+    if (!ParseMessage(ia, pending_header_,
+                      std::forward<MessageCallback>(callback))) {
+      CERR << "Error parsing message "
+           << static_cast<uint32_t>(pending_header_.type_) << " body.";
       Close();
       return;
     }
-    parsed_bytes_ += first - InputBegin();
+    parsed_bytes_ += size - ia.Size();
   }
 
   size_t ReadyBytes() const { return input_read_bytes_ - parsed_bytes_; }
 
-  std::queue<OutputBufferType> queue_;
+  std::queue<BinaryOArchive> queue_;
 
   SocketType socket_;
 
   size_t input_read_bytes_ = 0;
   size_t parsed_bytes_ = 0;
   MessageHeader pending_header_;
-  InputBufferType input_;
+  std::vector<char> input_;
 };
 
 }  // namespace lczero::client

@@ -166,6 +166,7 @@ files += [
   'src/neural/backends/network_rr.cc',
   'src/neural/backends/network_trivial.cc',
   'src/neural/backends/client/proto.cc',
+  'src/neural/backends/client/archive.cc',
   'src/neural/backends/client/backend_client.cc',
   'src/neural/memcache.cc',
   'src/neural/network_legacy.cc',

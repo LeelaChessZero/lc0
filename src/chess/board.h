@@ -198,6 +198,12 @@ class ChessBoard {
     File our_kingside_rook;
     File their_kingside_rook;
 
+    template <typename Archive>
+    Archive::ResultType Serialize(Archive& ar,
+                                  [[maybe_unused]] const unsigned version) {
+      return ar & client::FixedInteger{data_};
+    }
+
    private:
     // - Bit 0 -- "our" side's kingside castle.
     // - Bit 1 -- "our" side's queenside castle.
@@ -227,6 +233,21 @@ class ChessBoard {
 
   bool operator==(const ChessBoard& other) const = default;
   bool operator!=(const ChessBoard& other) const = default;
+
+  template <typename Archive>
+  Archive::ResultType Serialize(Archive& ar,
+                                [[maybe_unused]] const unsigned version) {
+    auto r = ar & our_pieces_;
+    r = r.and_then([this](Archive& ar) { return ar & their_pieces_; });
+    r = r.and_then([this](Archive& ar) { return ar & rooks_; });
+    r = r.and_then([this](Archive& ar) { return ar & bishops_; });
+    r = r.and_then([this](Archive& ar) { return ar & pawns_; });
+    r = r.and_then([this](Archive& ar) { return ar & our_king_; });
+    r = r.and_then([this](Archive& ar) { return ar & their_king_; });
+    r = r.and_then([this](Archive& ar) { return ar & castlings_; });
+    r = r.and_then([this](Archive& ar) { return ar & flipped_; });
+    return r;
+  }
 
  private:
   // Sets the piece on the square.
