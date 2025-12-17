@@ -100,6 +100,8 @@ class Search {
   // from temperature having been applied again.
   void ResetBestMove();
 
+  void RecordNPSStartTime();
+
  private:
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
@@ -116,8 +118,9 @@ class Search {
   int64_t GetTimeSinceFirstBatch() const;
   void MaybeTriggerStop(const classic::IterationStats& stats,
                         classic::StoppersHints* hints);
-  void MaybeOutputInfo();
-  void SendUciInfo();  // Requires nodes_mutex_ to be held.
+  void MaybeOutputInfo(const classic::IterationStats& stats);
+  // Requires nodes_mutex_ to be held.
+  void SendUciInfo(const classic::IterationStats& stats);
   // Sets stop to true and notifies watchdog thread.
   void FireStopInternal();
 
@@ -154,6 +157,8 @@ class Search {
   // There is already one thread that responded bestmove, other threads
   // should not do that.
   bool bestmove_is_sent_ GUARDED_BY(counters_mutex_) = false;
+  // Node garbage collection has been started for this search.
+  bool gc_started_ GUARDED_BY(counters_mutex_) = false;
   // Stored so that in the case of non-zero temperature GetBestMove() returns
   // consistent results.
   Move final_bestmove_ GUARDED_BY(counters_mutex_);
@@ -186,14 +191,16 @@ class Search {
   Edge* last_outputted_info_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
+  int64_t network_evaluations_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t total_batches_ GUARDED_BY(nodes_mutex_) = 0;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cumulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
 
-  std::optional<std::chrono::steady_clock::time_point> nps_start_time_
-      GUARDED_BY(counters_mutex_);
+  // The start time of search. It is set when the first thread exits
+  // GatherMinibatch. It is guarded by nodes mutex until set once.
+  std::optional<std::chrono::steady_clock::time_point> nps_start_time_;
 
   std::atomic<int> pending_searchers_{0};
   std::atomic<int> backend_waiting_counter_{0};
@@ -280,7 +287,7 @@ class SearchWorker {
   // The same operations one by one:
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
-  void InitializeIteration(std::unique_ptr<BackendComputation> computation);
+  void InitializeIteration();
 
   // 2. Gather minibatch.
   void GatherMinibatch();

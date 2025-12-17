@@ -46,9 +46,11 @@ struct WeightsToOnnxConverterOptions {
   int batch_size = -1;
   int opset = 17;
   int ir = -1;                 // ONNX IR, -1 for auto.
-  bool alt_mish = false;       // Use "Mish" approximation (fp32 only).
+  bool alt_mish = false;       // Use "Mish" approximation.
+  bool real_mish = true;       // Use "Mish" operator (opset 18+ and !alt_mish).
   bool alt_layernorm = false;  // Discrete "LayerNormalization" implementation.
   bool no_shape = false;       // Avoid use of "Shape" operator.
+  bool no_wdl_softmax = false; // Skip wdl softmax.
   std::string policy_head = "vanilla";
   std::string value_head = "winner";
 

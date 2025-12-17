@@ -5,6 +5,13 @@ if errorlevel 1 goto error
 cd /d %~dp0
 
 cls
+
+echo This script will download and install the CUDA/cuDNN/tensorRT dlls required by the Lc0 onnx-trt backend.
+echo(
+echo If you are using a metered internet connection, be aware the download will be arounbd 3 Gb.
+echo(
+pause
+
 echo Installing the CUDA dlls required by the Lc0 onnx-trt backend.
 
 echo 1/6. Downloading cudart.
@@ -59,24 +66,28 @@ tar -xzOf tmp_cudnn.zip cudnn-windows-x86_64-9.11.0.98_cuda12-archive/LICENSE >C
 
 del /q tmp_cudnn.zip
 
-echo Installed the CUDA and cuDNN dlls needed for onnx-trt.
-echo(
-echo You will also need the following dlls from tensorRT:
-echo * nvinfer_10.dll
-echo * nvinfer_builder_resource_10.dll
-echo * nvinfer_plugin_10.dll
-echo * nvonnxparser_10.dll
-echo(
-echo You need to download these yourself from NVIDIA.
-echo The next step will take you to the download page, after registering go to
-echo the "TensorRT 10.12 GA for x86_64 Architecture" section and get the
-echo "TensorRT 10.12 GA for Windows 10, 11, Server 2022 and CUDA 12.0 to 12.9 ZIP Package"
-echo(
-echo The above files are in the "lib" directory in the zip package.
-pause
+echo Installing the tensorRT dlls required by the Lc0 onnx-trt backend.
 
-start https://developer.nvidia.com/tensorrt/download/10x#trt1012
-timeout /t 3 /nobreak >nul
+echo 1/2. Downloading tensorRT.
+curl -# --ssl-no-revoke -o tmp_tensorrt.zip https://developer.download.nvidia.com/compute/machine-learning/tensorrt/10.12.0/zip/TensorRT-10.12.0.36.Windows.win10.cuda-12.9.zip"
+if errorlevel 1 goto error
+
+echo 2/2. Extracting files.
+tar -xzOf tmp_tensorrt.zip TensorRT-10.12.0.36/lib/nvinfer_10.dll >nvinfer_10.dll
+if errorlevel 1 goto error
+
+tar -xzOf tmp_tensorrt.zip TensorRT-10.12.0.36/lib/nvinfer_builder_resource_10.dll >nvinfer_builder_resource_10.dll
+if errorlevel 1 goto error
+
+tar -xzOf tmp_tensorrt.zip TensorRT-10.12.0.36/lib/nvinfer_plugin_10.dll >nvinfer_plugin_10.dll
+if errorlevel 1 goto error
+
+tar -xzOf tmp_tensorrt.zip TensorRT-10.12.0.36/lib/nvonnxparser_10.dll >nvonnxparser_10.dll
+if errorlevel 1 goto error
+
+tar -xzOf tmp_tensorrt.zip TensorRT-10.12.0.36/doc/Readme.txt >TENSORRT.txt
+
+del /q tmp_tensorrt.zip
 
 pause
 exit /b

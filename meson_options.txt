@@ -224,16 +224,6 @@ option('sycl',
        value: 'off',
        description: 'Enable SYCL backend')
 
-option('dpct_include',
-       type: 'array',
-       value: ['/opt/intel/oneapi/dpcpp-ct/latest/include'],
-       description: 'Path to DPC++ Compatibility Tool includes')
-
-option('onemkl_include',
-       type: 'array',
-       value: ['/opt/intel/oneapi/mkl/latest/include'],
-       description: 'Path to oneMKL includes')
-
 option('hip_libdirs',
        type: 'array',
        value: ['/opt/rocm/lib'],
@@ -243,6 +233,12 @@ option('hip_include',
        type: 'array',
        value: ['/opt/rocm/include'],
        description: 'Path to AMD HIP includes')
+
+option('trace_library',
+       type: 'combo',
+       choices: ['off', 'perfetto', 'nvtx'],
+       value: 'off',
+       description: 'Enable trace library support')
 
 option('lc0',
        type: 'boolean',
@@ -268,3 +264,8 @@ option('dag_classic',
        type: 'boolean',
        value: true,
        description: 'Enable dag-classic search algorithm')
+
+option('nvcc',
+       type: 'boolean',
+       value: true,
+       description: 'Use nvcc: required for cuda, optional for onnx')
