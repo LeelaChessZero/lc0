@@ -1777,12 +1777,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   if (use_fused_mha_) {
     // TODO: check if we need skip in a different tensor than same tensor as
     // output!
-    bool success =
-        fusedMHA(buffer2, mha_q, mha_k, mha_v, has_smolgen_ ? buffer2 : nullptr,
-                 N, encoder_heads_, depth, stream);
-
-    ReportCUDAErrors(cudaGetLastError());
-    if (!success) throw Exception("Some error running fused MHA");
+    fusedMHA(buffer2, mha_q, mha_k, mha_v, has_smolgen_ ? buffer2 : nullptr, N,
+             encoder_heads_, depth, stream);
   } else
 #endif
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
@@ -2065,8 +2061,7 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                                        int num_res_blocks, int input_c,
                                        int max_batch_size,
                                        bool is_pe_dense_embedding,
-                                       bool use_gemm_ex,
-                                       bool fused_mha)
+                                       bool use_gemm_ex, bool fused_mha)
     : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr, false,
                           use_gemm_ex),
       embedding_op_size_(weights.ip_emb_b.size()),

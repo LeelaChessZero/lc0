@@ -25,17 +25,17 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "cuda_common.h"
-
-#ifdef USE_CUTLASS
+#include "neural/backends/cuda/cuda_common.h"
 
 // Fused MHA implementation from cutlass example #41
 #include "fused_multi_head_attention/kernel_forward.h"
+#include "utils/exception.h"
 
-
+namespace lczero {
+namespace cudnn_backend {
 
 template <bool bias>
-bool fusedMHACutlass(void* output, void* q, void* k, void* v, void* skip,
+void fusedMHACutlass(void* output, void* q, void* k, void* v, void* skip,
                      int batch_size, int num_heads, int depth,
                      cudaStream_t stream) {
   cutlass::half_t* mha_q = (cutlass::half_t*)q;
@@ -54,6 +54,9 @@ bool fusedMHACutlass(void* output, void* q, void* k, void* v, void* skip,
                       false,  // Supports dropout
                       bias    // Supports bias
                       >;
+  static_assert(
+      !Attention::kNeedsOutputAccumulatorBuffer,
+      "Unhandled case in cutlass MHA: needs output accumulator buffer");
 
   typename Attention::Params p;
   {  // set parameters
@@ -62,10 +65,6 @@ bool fusedMHACutlass(void* output, void* q, void* k, void* v, void* skip,
     p.value_ptr = mha_v;
     p.logsumexp_ptr = nullptr;  // Only needed for bw
     p.output_accum_ptr = nullptr;
-    if (Attention::kNeedsOutputAccumulatorBuffer) {
-      // throw Exception("Unhandled case in cutlass MHA");
-      return false;
-    }
     p.output_ptr = (cutlass::half_t*)output;
     p.attn_bias_ptr = (cutlass::half_t*)skip;
 
@@ -98,27 +97,28 @@ bool fusedMHACutlass(void* output, void* q, void* k, void* v, void* skip,
   constexpr auto kernel_fn = attention_kernel_batched_impl<Attention>;
   int smem_bytes = sizeof(typename Attention::SharedStorage);
   if (smem_bytes > 0xc000) {
-    cudaFuncSetAttribute(kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                         smem_bytes);
+    ReportCUDAErrors(cudaFuncSetAttribute(
+        kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
   }
   if (!Attention::check_supported(p)) {
-    // throw Exception("Unhandled case in cutlass MHA");
-    return false;
+    throw Exception("Unhandled case in cutlass MHA: check_supported failed.");
   }
 
   kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
 
-  // ReportCUDAErrors(cudaGetLastError());
-  return true;
+  ReportCUDAErrors(cudaGetLastError());
 }
 
-bool fusedMHA(void* output, void* mha_q, void* mha_k, void* mha_v, void* skip,
+void fusedMHA(void* output, void* mha_q, void* mha_k, void* mha_v, void* skip,
               int batch_size, int num_heads, int depth, cudaStream_t stream) {
-  if (skip == nullptr) 
-    return fusedMHACutlass<false>(output, mha_q, mha_k, mha_v, skip, batch_size,
-                                  num_heads, depth, stream);
-  else
-    return fusedMHACutlass<true>(output, mha_q, mha_k, mha_v, skip, batch_size,
-                                  num_heads, depth, stream);
+  if (skip == nullptr) {
+    fusedMHACutlass<false>(output, mha_q, mha_k, mha_v, skip, batch_size,
+                           num_heads, depth, stream);
+  } else {
+    fusedMHACutlass<true>(output, mha_q, mha_k, mha_v, skip, batch_size,
+                          num_heads, depth, stream);
+  }
 }
-#endif
+
+}  // namespace cudnn_backend
+}  // namespace lczero
