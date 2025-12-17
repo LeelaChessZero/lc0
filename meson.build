@@ -541,13 +541,13 @@ if get_option('build_backends')
 
     if get_option('cutlass') and run_command('scripts/checkdir.py', get_option('cutlass_include'), check: false).returncode() == 0
       add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
-      cuda_arguments += ['-DUSE_CUTLASS']
-      cuda_arguments += ['-I', get_option('cutlass_include')]
-      cuda_arguments += ['-isystem=@CURRENT_SOURCE_DIR@/third_party']
+      nvcc_arguments += ['-DUSE_CUTLASS']
+      nvcc_arguments += ['-I', get_option('cutlass_include')]
+      nvcc_arguments += ['-isystem=@CURRENT_SOURCE_DIR@/third_party']
       files += custom_target('cuda cutlass code',
         input : 'src/neural/backends/cuda/cutlass_kernels.cu',
         output : outputname,
-        command : [nvcc, nvcc_extra_args, cuda_arguments]
+        command : [nvcc, nvcc_extra_args, nvcc_arguments]
       )
     endif
 
