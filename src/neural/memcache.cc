@@ -140,6 +140,7 @@ class MemCacheComputation : public BackendComputation {
   }
 
   virtual void ComputeBlocking() override {
+    if (wrapped_computation_->UsedBatchSize() == 0) return;
     wrapped_computation_->ComputeBlocking();
     for (auto& entry : entries_) {
       CachedValueToEvalResult(*entry.value, entry.result_ptr);
