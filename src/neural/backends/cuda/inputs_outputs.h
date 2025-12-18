@@ -132,7 +132,8 @@ struct InputsOutputs {
         cudaStreamCreateWithFlags(&exec_stream_, cudaStreamNonBlocking));
     ReportCUDAErrors(
         cudaEventCreateWithFlags(&join_capture_event_, cudaEventDisableTiming));
-    cuda_graphs_ = std::make_unique<CudaGraphExec<DataType>[]>(maxBatchSize);
+    cuda_graphs_ = std::make_unique<CudaGraphExec<DataType>[]>(
+        static_cast<unsigned>(maxBatchSize));
 
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
