@@ -71,7 +71,7 @@ struct CudaGraphExec {
 
 template <typename DataType>
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
+  InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
                 bool cublasDisableTensorCores = false) {
     ReportCUDAErrors(cudaHostAlloc(
@@ -132,8 +132,7 @@ struct InputsOutputs {
         cudaStreamCreateWithFlags(&exec_stream_, cudaStreamNonBlocking));
     ReportCUDAErrors(
         cudaEventCreateWithFlags(&join_capture_event_, cudaEventDisableTiming));
-    cuda_graphs_ = std::make_unique<CudaGraphExec<DataType>[]>(
-        static_cast<unsigned>(maxBatchSize));
+    cuda_graphs_ = std::make_unique<CudaGraphExec<DataType>[]>(maxBatchSize);
 
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
