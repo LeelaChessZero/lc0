@@ -41,7 +41,7 @@
 #include <span>
 #include <string_view>
 
-#include "archive.h"
+#include "neural/backends/client/archive.h"
 #include "neural/backend.h"
 #include "neural/encoder.h"
 

@@ -25,9 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "proto.h"
+#include "neural/backends/client/proto.h"
 
-#include "archive.h"
+#include "neural/backends/client/archive.h"
 
 namespace lczero::client {
 

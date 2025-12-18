@@ -43,9 +43,9 @@
 #include <thread>
 
 #include "neural/backend.h"
+#include "neural/backends/client/proto.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
-#include "proto.h"
 #include "utils/atomic.h"
 #include "utils/atomic_vector.h"
 #include "utils/commandline.h"
@@ -271,7 +271,8 @@ class BackendClient final : public Backend {
 
     size_t fixed_priority = options.GetOrDefault("fixed-priority", -1);
 
-    if (fixed_priority >= kMaxComputationPriority && fixed_priority != (size_t)-1) {
+    if (fixed_priority >= kMaxComputationPriority &&
+        fixed_priority != (size_t)-1) {
       CERR << "fixed-priority option " << fixed_priority
            << " is out of range, must be less than " << kMaxComputationPriority;
       fixed_priority = -1;

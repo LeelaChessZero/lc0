@@ -25,13 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "archive.h"
+#include "neural/backends/client/archive.h"
 
 #include <ostream>
 #include <type_traits>
 #include <vector>
 
-#include "proto.h"
+#include "neural/backends/client/proto.h"
 #include "utils/bit.h"
 
 namespace lczero::client {
@@ -47,8 +47,8 @@ auto SaveImpl(R&& successed, std::vector<char>& buffer, const T& value)
     // For signed types, use zigzag encoding.
     uvalue = (uvalue << 1) ^ static_cast<UnsignedT>(value < 0 ? -1 : 0);
   }
-  TRACE << "Saving(" << buffer.size() << ") integer<" << typeid(T).name() << "> value " << std::hex
-        << static_cast<uint64_t>(uvalue);
+  TRACE << "Saving(" << buffer.size() << ") integer<" << typeid(T).name()
+        << "> value " << std::hex << static_cast<uint64_t>(uvalue);
   do {
     char byte = static_cast<char>(uvalue & 0x7f);
     uvalue >>= 7;
@@ -81,8 +81,8 @@ auto LoadImpl(R&& successed, std::span<const char>& buffer, T& value)
       return Unexpected{ArchiveError::ValueOverflow};
     }
   }
-  TRACE << "Loaded("<< buffer.size() << ") integer<" << typeid(T).name() << "> value " << std::hex
-        << static_cast<uint64_t>(uvalue);
+  TRACE << "Loaded(" << buffer.size() << ") integer<" << typeid(T).name()
+        << "> value " << std::hex << static_cast<uint64_t>(uvalue);
   if (!std::is_same_v<T, UnsignedT>) {
     // Decode zigzag encoding for signed types.
     value =
@@ -122,8 +122,8 @@ auto SaveImpl(R&& successed, std::vector<char>& buffer,
           << (buffer.capacity() - buffer.size());
     return Unexpected{ArchiveError::BufferOverflow};
   }
-  TRACE << "Saving(" << buffer.size() << ") FixedInteger<" << typeid(T).name() << "> value " << std::hex
-        << v;
+  TRACE << "Saving(" << buffer.size() << ") FixedInteger<" << typeid(T).name()
+        << "> value " << std::hex << v;
   for (size_t i = 0; i < sizeof(T); ++i) {
     buffer.push_back(static_cast<char>(v & 0xff));
     if constexpr (sizeof(T) > 1) v >>= 8;
@@ -144,8 +144,8 @@ auto LoadImpl(R&& successed, std::span<const char>& buffer,
     v |= static_cast<T>(static_cast<unsigned char>(buffer[0])) << (i * 8);
     buffer = buffer.subspan(1);
   }
-  TRACE << "Loaded("<< buffer.size() << ") FixedInteger<" << typeid(T).name() << "> value " << std::hex
-        << v;
+  TRACE << "Loaded(" << buffer.size() << ") FixedInteger<" << typeid(T).name()
+        << "> value " << std::hex << v;
   value.value = v;
   return std::forward<R>(successed);
 }
@@ -267,8 +267,8 @@ struct BinaryOSizeArchive {
     auto r = SizeImpl(ResultType{*this}, total_size_,
                       static_cast<uint64_t>(value.size()));
     if (!r) return r;
-    TRACE << "Calculated size for string value of size "
-          << value.size() << ": " << value.size();
+    TRACE << "Calculated size for string value of size " << value.size() << ": "
+          << value.size();
     total_size_ += value.size();
     return r;
   }
@@ -477,7 +477,7 @@ BinaryIArchive::ResultType BinaryIArchive::Load(std::string_view& value) {
   if (buffer_.size() < size) {
     return Unexpected{ArchiveError::BufferOverflow};
   }
-  TRACE << "Loaded("<< Size() << ") string value of size " << size;
+  TRACE << "Loaded(" << Size() << ") string value of size " << size;
   value = std::string_view(buffer_.data(), size);
   buffer_ = buffer_.subspan(size);
   return res;
