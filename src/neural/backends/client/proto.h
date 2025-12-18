@@ -323,17 +323,11 @@ Endpoint GetEndpoint(asio::io_context& ctx, const std::string& host,
 template <typename SocketType>
 class Connection {
  public:
-#if USE_TCP_SOCKETS
-  using Endpoint = asio::ip::tcp::endpoint;
-#else
-  using Endpoint = asio::local::stream_protocol::endpoint;
-#endif
   explicit Connection(SocketType&& socket) : socket_(std::move(socket)) {
-#if USE_TCP_SOCKETS
-    if (socket_.is_open()) {
+    input_.resize(kMaxMessageSize);
+    if (std::is_same_v<SocketType, asio::ip::tcp::socket> && socket_.is_open()) {
       socket_.set_option(asio::ip::tcp::no_delay(true));
     }
-#endif
   }
   virtual ~Connection() = default;
 
@@ -425,9 +419,9 @@ class Connection {
   template <typename Endpoint>
   void Connect(const Endpoint& endpoint) {
     socket_.connect(endpoint);
-#if USE_TCP_SOCKETS
-    socket_.set_option(asio::ip::tcp::no_delay(true));
-#endif
+    if constexpr (std::is_same_v<SocketType, asio::ip::tcp::socket>) {
+      socket_.set_option(asio::ip::tcp::no_delay(true));
+    }
   }
 
   virtual void Close() {
