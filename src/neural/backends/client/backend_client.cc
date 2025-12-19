@@ -174,9 +174,9 @@ class ClientConnection final : public Context,
   FakeSelf Self() { return {}; }
 
   void Read() {
-    Base::ReadHeader([this](const auto& message) {
+    Base::ReadHeader([this](const auto& message, auto& archive) {
       // Clang warns about unused this if not using this for the call.
-      return this->HandleMessage(message);
+      return this->HandleMessage(message, archive);
     });
   }
 
@@ -189,42 +189,44 @@ class ClientConnection final : public Context,
     Context::Connected();
   }
 
-  template <typename MessageType>
-  int HandleMessage(const MessageType& message) {
+  template <typename MessageType, typename Archive>
+  Archive::ResultType HandleMessage(const MessageType& message, Archive&) {
     // Handle different message types here.
     CERR << "Received unexpected message of type: " << message.header_.type_;
-    return -1;
+    return Unexpected(ArchiveError::UnknownType);
   }
 
-  int HandleMessage(const HandshakeReply& message) {
+  template <typename Archive>
+  Archive::ResultType HandleMessage(const HandshakeReply& message,
+                                    Archive& ar) {
     LCTRACE_FUNCTION_SCOPE;
     assert(message.header_.type_ == MessageType::HANDSHAKE_REPLY);
     if (!message.error_message_.empty()) {
       CERR << "Handshake error: " << message.error_message_;
-      return -1;
+      return Unexpected(ArchiveError::RemoteError);
     }
     if ((message.attributes_.has_mlh & 1) != message.attributes_.has_mlh) {
       CERR << "has_mlh support has unexpected value: " << std::hex
            << static_cast<unsigned>(message.attributes_.has_mlh);
-      return -1;
+      return Unexpected(ArchiveError::InvalidData);
     }
     if ((message.attributes_.has_wdl & 1) != message.attributes_.has_wdl) {
       CERR << "has_wdl support has unexpected value: " << std::hex
            << static_cast<unsigned>(message.attributes_.has_wdl);
-      return -1;
+      return Unexpected(ArchiveError::InvalidData);
     }
     if ((message.attributes_.runs_on_cpu & 1) !=
         message.attributes_.runs_on_cpu) {
       CERR << "runs_on_cpu has unexpected value: " << std::hex
            << static_cast<unsigned>(message.attributes_.runs_on_cpu);
-      return -1;
+      return Unexpected(ArchiveError::InvalidData);
     }
     if (message.attributes_.maximum_batch_size >
             static_cast<int>(kMaxMinibatchSizes) ||
         message.attributes_.maximum_batch_size < 0) {
       CERR << "maximum_batch_size outside accepted range: "
            << message.attributes_.maximum_batch_size;
-      return -1;
+      return Unexpected(ArchiveError::InvalidData);
     }
     if (message.attributes_.recommended_batch_size >
             message.attributes_.maximum_batch_size ||
@@ -232,14 +234,14 @@ class ClientConnection final : public Context,
       CERR << "recommended_batch_size outside 0 < "
            << message.attributes_.recommended_batch_size << " < "
            << message.attributes_.maximum_batch_size;
-      return -1;
+      return Unexpected(ArchiveError::InvalidData);
     }
     if (message.attributes_.suggested_num_search_threads >
             static_cast<int>(kMaxSearchThreads) ||
         message.attributes_.suggested_num_search_threads < 0) {
       CERR << "suggested_num_search_threads outside accepted range: "
            << message.attributes_.suggested_num_search_threads;
-      return -1;
+      return Unexpected(ArchiveError::InvalidData);
     }
     attrs_ = message.attributes_;
     handshake_completed_.store(true, std::memory_order_release);
@@ -248,10 +250,12 @@ class ClientConnection final : public Context,
           << attrs_.recommended_batch_size << "/" << attrs_.maximum_batch_size;
     // Handshake complete, ready to proceed.
     this->Defer([this] { Read(); });
-    return 0;
+    return {ar};
   }
 
-  int HandleMessage(const ComputeBlockingReply& message);
+  template <typename Archive>
+  Archive::ResultType HandleMessage(const ComputeBlockingReply& message,
+                                    Archive& ar);
 
   SpinMutex mutex_;
   FILE* pipe_ = nullptr;
@@ -404,26 +408,27 @@ class BackendClientComputation final : public BackendComputation {
 };
 
 template <typename Proto>
-int ClientConnection<Proto>::HandleMessage(
-    const ComputeBlockingReply& message) {
+template <typename Archive>
+Archive::ResultType ClientConnection<Proto>::HandleMessage(
+    const ComputeBlockingReply& message, Archive& ar) {
   LCTRACE_FUNCTION_SCOPE;
   if (!message.error_message_.empty()) {
     CERR << "Compute blocking error: " << message.error_message_;
-    return -1;
+    return Unexpected(ArchiveError::RemoteError);
   }
   auto lock = Lock();
   auto iter = computations_.find(message.computation_id_);
   if (iter == computations_.end()) {
     CERR << "Received ComputeBlockingReply for unknown computation ID "
          << message.computation_id_;
-    return -1;
+    return Unexpected(ArchiveError::InvalidData);
   }
   if (message.results_.size() != iter->second->UsedBatchSize()) {
     CERR << "Received ComputeBlockingReply with unexpected number of "
             "results: "
          << message.results_.size() << " expected "
          << iter->second->UsedBatchSize();
-    return -1;
+    return Unexpected(ArchiveError::InvalidData);
   }
 
   for (size_t i = 0; i < message.results_.size(); ++i) {
@@ -437,7 +442,7 @@ int ClientConnection<Proto>::HandleMessage(
         CERR << "Received ComputeBlockingReply with unexpected policy size: "
              << net_result.policy_.size() << " expected "
              << result_ptr.p.size();
-        return -1;
+        return Unexpected(ArchiveError::InvalidData);
       }
       std::copy(net_result.policy_.begin(), net_result.policy_.end(),
                 result_ptr.p.begin());
@@ -446,7 +451,7 @@ int ClientConnection<Proto>::HandleMessage(
   iter->second->NotifyResultsReady();
 
   this->Defer([this] { Read(); });
-  return 0;
+  return {ar};
 }
 
 template <typename Proto>

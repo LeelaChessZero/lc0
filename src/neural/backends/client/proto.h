@@ -240,10 +240,16 @@ template <typename Archive>
 [[nodiscard]]
 Archive::ResultType ParseMessageHeader(Archive& ia, MessageHeader& header);
 
-template <typename Archive, typename T>
+template <typename Archive, typename T, typename Callback>
 [[nodiscard]]
 Archive::ResultType ParseMessageType(Archive& ia, const MessageHeader& header,
-                                     T& out);
+                                     T& out, Callback&& callback) {
+  assert(ia.Size() >= header.size_);
+  out.header_ = header;
+  return (ia & out).and_then([&out, &callback](Archive& ar) {
+    return callback(out, ar);
+  });
+}
 
 template <typename Archive, typename Callback>
 [[nodiscard]]
@@ -251,57 +257,27 @@ Archive::ResultType ParseMessage(Archive& ia, const MessageHeader& header,
                                  Callback&& callback) {
   TRACE << "Parsing message " << ia.Size() << " bytes available";
   assert(ia.Size() >= header.size_);
-  typename Archive::ResultType r;
   switch (header.type_) {
     case MessageType::HANDSHAKE: {
       Handshake msg;
-      if (!(r = ParseMessageType(ia, header, msg))) {
-        TRACE << "Parsed Handshake message failed " << r.error();
-        return r;
-      }
-      if (callback(msg)) {
-        return Unexpected{ArchiveError::InvalidData};
-      }
-      break;
+      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
     }
     case MessageType::HANDSHAKE_REPLY: {
       HandshakeReply msg;
-      if (!(r = ParseMessageType(ia, header, msg))) {
-        TRACE << "Parsed HandshakeReply message failed " << r.error();
-        return r;
-      }
-      if (callback(msg)) {
-        return Unexpected{ArchiveError::InvalidData};
-      }
-      break;
+      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
     }
     case MessageType::COMPUTE_BLOCKING: {
       ComputeBlocking msg;
-      if (!(r = ParseMessageType(ia, header, msg))) {
-        TRACE << "Parsed ComputeBlocking message failed " << r.error();
-        return r;
-      }
-      if (callback(msg)) {
-        return Unexpected{ArchiveError::InvalidData};
-      }
-      break;
+      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
     }
     case MessageType::COMPUTE_BLOCKING_REPLY: {
       ComputeBlockingReply msg;
-      if (!(r = ParseMessageType(ia, header, msg))) {
-        TRACE << "Parsed ComputeBlockingReply message failed " << r.error();
-        return r;
-      }
-      if (callback(msg)) {
-        return Unexpected{ArchiveError::InvalidData};
-      }
-      break;
+      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
     }
     default:
       CERR << "Unknown message type received: " << header.type_;
       return Unexpected{ArchiveError::InvalidData};
   }
-  return r;
 }
 
 #ifdef ASIO_HAS_LOCAL_SOCKETS

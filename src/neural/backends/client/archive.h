@@ -42,6 +42,8 @@ enum class ArchiveError {
   InvalidData,
   ValueOverflow,
   SizeCalculationFailed,
+  UnknownType,
+  RemoteError
 };
 
 std::ostream& operator<<(std::ostream& os, ArchiveError error);

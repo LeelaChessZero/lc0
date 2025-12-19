@@ -52,35 +52,12 @@ Archive::ResultType ParseMessageHeader(Archive& ia, MessageHeader& header) {
 }
 
 template <typename Archive, typename T>
-Archive::ResultType ParseMessageType(Archive& ia, const MessageHeader& header,
-                                     T& out) {
-  assert(ia.Size() >= header.size_);
-  out.header_ = header;
-  return ia & out;
-}
-
-template <typename Archive, typename T>
 Archive::ResultType SerializeMessage(Archive& os, T& message) {
   return os.StartSerialize(message);
 }
 
 template BinaryIArchive::ResultType ParseMessageHeader<BinaryIArchive>(
     BinaryIArchive& ia, MessageHeader& header);
-
-template BinaryIArchive::ResultType ParseMessageType<BinaryIArchive, Handshake>(
-    BinaryIArchive& ia, const MessageHeader& header, Handshake& out);
-template BinaryIArchive::ResultType
-ParseMessageType<BinaryIArchive, HandshakeReply>(BinaryIArchive& ia,
-                                                 const MessageHeader& header,
-                                                 HandshakeReply& out);
-
-template BinaryIArchive::ResultType
-ParseMessageType<BinaryIArchive, ComputeBlocking>(BinaryIArchive& ia,
-                                                  const MessageHeader& header,
-                                                  ComputeBlocking& out);
-template BinaryIArchive::ResultType
-ParseMessageType<BinaryIArchive, ComputeBlockingReply>(
-    BinaryIArchive& ia, const MessageHeader& header, ComputeBlockingReply& out);
 
 template BinaryOArchive::ResultType SerializeMessage<BinaryOArchive, Handshake>(
     BinaryOArchive& oa, Handshake& message);

@@ -575,25 +575,26 @@ class ServerConnection
  private:
   void Read() {
     auto self = this->shared_from_this();
-    Base::ReadHeader([this, self](auto& message) {
+    Base::ReadHeader([this, self](auto& message, auto& ar) {
       // Clang warns about unused this if not using this for the call.
-      return this->HandleMessage(message);
+      return this->HandleMessage(message, ar);
     });
   }
 
-  template <typename MessageType>
-  int HandleMessage(const MessageType& message) {
+  template <typename MessageType, typename Archive>
+  Archive::ResultType HandleMessage(const MessageType& message, Archive&) {
     // Handle different message types here.
     CERR << "Received unexpected message of type: " << message.header_.type_;
-    return -1;
+    return Unexpected(client::ArchiveError::UnknownType);
   }
 
-  int HandleMessage(const client::Handshake& message) {
+  template <typename Archive>
+  Archive::ResultType HandleMessage(const client::Handshake& message, Archive& ar) {
     LCTRACE_FUNCTION_SCOPE;
     assert(message.header_.type_ == client::MessageType::HANDSHAKE);
     if (backend_) {
       CERR << "Received duplicate handshake message.";
-      return -1;
+      return Unexpected(client::ArchiveError::InvalidData);
     }
     std::string error;
     auto& backends = SharedQueue::Get().GetBackendMap();
@@ -607,7 +608,7 @@ class ServerConnection
       reply.error_message_ = error;
 
       Base::SendMessage(this->shared_from_this(), reply);
-      return -1;
+      return Unexpected(client::ArchiveError::InvalidData);
     }
     auto self = this->shared_from_this();
 
@@ -632,15 +633,16 @@ class ServerConnection
           Base::SendMessage(std::move(self), reply);
         });
     this->Defer([self = std::move(self), this] { Read(); });
-    return 0;
+    return {ar};
   }
 
-  int HandleMessage(client::ComputeBlocking& message) {
+  template <typename Archive>
+  Archive::ResultType HandleMessage(client::ComputeBlocking& message, Archive& ar) {
     LCTRACE_FUNCTION_SCOPE;
     assert(message.header_.type_ == client::MessageType::COMPUTE_BLOCKING);
     if (!backend_) {
       CERR << "Received ComputeBlocking message before handshake.";
-      return -1;
+      return Unexpected(client::ArchiveError::InvalidData);
     }
     client::ComputeBlockingReply reply;
     unsigned priority = message.priority_;
@@ -649,7 +651,7 @@ class ServerConnection
           "Invalid computation priority: " + std::to_string(priority);
       reply.error_message_ = error_message;
       Base::SendMessage(this->shared_from_this(), reply);
-      return -1;
+      return Unexpected(client::ArchiveError::InvalidData);
     }
     auto self = this->shared_from_this();
     size_t id = message.computation_id_;
@@ -666,7 +668,7 @@ class ServerConnection
           "Duplicate computation ID: " + std::to_string(id);
       reply.error_message_ = error_message;
       Base::SendMessage(this->shared_from_this(), reply);
-      return -1;
+      return Unexpected(client::ArchiveError::InvalidData);
     }
 
     if (iter.first->second.ComputeBlocking(std::move(message.inputs_))) {
@@ -675,10 +677,10 @@ class ServerConnection
           std::to_string(message.computation_id_);
       reply.error_message_ = error_message;
       Base::SendMessage(this->shared_from_this(), reply);
-      return -1;
+      return Unexpected(client::ArchiveError::InvalidData);
     }
     this->Defer([self = this->shared_from_this(), this] { Read(); });
-    return 0;
+    return {ar};
   }
 
   void CompleteComputation(ClientComputation& computation) {
