@@ -280,6 +280,9 @@ struct BinaryOSizeArchive {
 
 std::ostream& operator<<(std::ostream& os, ArchiveError error) {
   switch (error) {
+    case ArchiveError::None:
+      os << "None";
+      break;
     case ArchiveError::BufferOverflow:
       os << "BufferOverflow";
       break;
@@ -292,8 +295,11 @@ std::ostream& operator<<(std::ostream& os, ArchiveError error) {
     case ArchiveError::InvalidData:
       os << "InvalidData";
       break;
-    default:
-      os << "UnknownArchiveError";
+    case ArchiveError::UnknownType:
+      os << "UnknownType";
+      break;
+    case ArchiveError::RemoteError:
+      os << "RemoteError";
       break;
   }
   return os;
