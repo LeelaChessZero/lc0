@@ -71,7 +71,7 @@ struct CudaGraphExec {
 
 template <typename DataType>
 struct InputsOutputs {
-  InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
+  InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
                 bool cublasDisableTensorCores = false) {
     ReportCUDAErrors(cudaHostAlloc(
