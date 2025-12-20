@@ -43,7 +43,7 @@ class Evaluator {
   // Run once between Gather and Move.
   void Run();
   // Run for each tree in the same order as Gather.
-  void MakeBestMove(classic::NodeTree* tree);
+  virtual void MakeBestMove(classic::NodeTree* tree) = 0;
 
  protected:
   std::unique_ptr<BackendComputation> comp_;

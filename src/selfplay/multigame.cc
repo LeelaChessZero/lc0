@@ -45,6 +45,18 @@ class PolicyEvaluator : public Evaluator {
         },
         EvalResultPtr{.p = v_.back()});
   }
+
+  void MakeBestMove(classic::NodeTree* tree) {
+    auto v = std::move(v_.front());
+    v_.pop();
+    size_t best_idx = std::max_element(v.begin(), v.end()) - v.begin();
+    for (size_t idx = 0; auto edge : tree->GetCurrentHead()->Edges()) {
+      if (idx++ == best_idx) {
+        tree->MakeMove(edge.GetMove());
+        break;
+      }
+    }
+  }
 };
 
 class ValueEvaluator : public Evaluator {
@@ -66,27 +78,27 @@ class ValueEvaluator : public Evaluator {
         v_.back()[idx] = 0;
       } else {
         // A legal move to a non-drawn terminal without tablebases must be a
-        // win.
-        v_.back()[idx] = 1;
+        // win. At this point values are in opponent's perspective.
+        v_.back()[idx] = -1;
       }
       history.Pop();
+    }
+  }
+
+  void MakeBestMove(classic::NodeTree* tree) {
+    auto v = std::move(v_.front());
+    v_.pop();
+    size_t best_idx = std::min_element(v.begin(), v.end()) - v.begin();
+    for (size_t idx = 0; auto edge : tree->GetCurrentHead()->Edges()) {
+      if (idx++ == best_idx) {
+        tree->MakeMove(edge.GetMove());
+        break;
+      }
     }
   }
 };
 
 void Evaluator::Run() { comp_->ComputeBlocking(); }
-
-void Evaluator::MakeBestMove(classic::NodeTree* tree) {
-  auto v = std::move(v_.front());
-  v_.pop();
-  size_t best_idx = std::max_element(v.begin(), v.end()) - v.begin();
-  for (size_t idx = 0; auto edge : tree->GetCurrentHead()->Edges()) {
-    if (idx++ == best_idx) {
-      tree->MakeMove(edge.GetMove());
-      break;
-    }
-  }
-}
 
 MultiSelfPlayGames::MultiSelfPlayGames(PlayerOptions player1,
                                        PlayerOptions player2,
@@ -136,7 +148,7 @@ void MultiSelfPlayGames::Play() {
           if (board.castlings().no_legal_castle() &&
               (board.ours() | board.theirs()).count() <=
                   syzygy_tb_->max_cardinality()) {
-            auto tb_side_black = (tree->GetPlyCount() % 2) == 1;
+            auto tb_side_black = tree->IsBlackToMove();
             ProbeState state;
             const WDLScore wdl = syzygy_tb_->probe_wdl(
                 tree->GetPositionHistory().Last(), &state);
@@ -158,7 +170,7 @@ void MultiSelfPlayGames::Play() {
         }
         if (all_done) {
           all_done = false;
-          blacks_move = (tree->GetPlyCount() % 2) == 1;
+          blacks_move = tree->IsBlackToMove();
           // Don't break as we need to update result state for everything.
         }
       }
@@ -171,7 +183,7 @@ void MultiSelfPlayGames::Play() {
       if (results_[i] != GameResult::UNDECIDED) {
         continue;
       }
-      if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
+      if (tree->IsBlackToMove() != blacks_move) continue;
       const auto& board = tree->GetPositionHistory().Last().GetBoard();
       auto legal_moves = board.GenerateLegalMoves();
       tree->GetCurrentHead()->CreateEdges(legal_moves);
@@ -183,7 +195,7 @@ void MultiSelfPlayGames::Play() {
       if (results_[i] != GameResult::UNDECIDED) {
         continue;
       }
-      if (((tree->GetPlyCount() % 2) == 1) != blacks_move) continue;
+      if (tree->IsBlackToMove() != blacks_move) continue;
       eval_->MakeBestMove(tree.get());
     }
   }
