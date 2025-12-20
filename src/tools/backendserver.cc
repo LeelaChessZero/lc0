@@ -132,8 +132,6 @@ class BackendHandler {
     if (minibatch_size > 0) {
       attrs.recommended_batch_size = minibatch_size;
     }
-    // Half size minibatches are the smallest batch which is still fast.
-    attrs.recommended_batch_size /= 2;
     return attrs;
   }
 
@@ -160,7 +158,7 @@ class BackendHandler {
           << " pending size: " << pending_size
           << " computations in flight: " << computations_in_flight_
           << " queued computations: " << queued_computations_
-          << " flushed: " << flushed;
+          << " flushed: " << flushed << " batches: " << batches;
     return {flushed, batches};
   }
 
@@ -175,7 +173,7 @@ class BackendHandler {
       auto pending = PendingSize();
       auto cif = computations_in_flight_;
       auto qc = queued_computations_;
-      auto qs = queue_size_ ;
+      auto qs = queue_size_;
       queue_size_ += batch_size_ - PendingSize();
       queued_computations_++;
       batches++;
@@ -191,7 +189,8 @@ class BackendHandler {
   void FlushIfIdling() {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
-    if (PendingSize() == 0 || computations_in_flight_ > 0) {
+    if (PendingSize() == 0 ||
+        computations_in_flight_ + queued_computations_ > 0) {
       return;
     }
     auto pending = PendingSize();
@@ -222,12 +221,12 @@ class BackendHandler {
     TimePoint old = last_complete_time_;
     last_complete_time_ = now;
     gpu_work_size_ -= size;
-    unsigned queued_batches = computations_in_flight_--;
-    if (size == 0) return {queued_batches, now};
-    queued_batches += queued_computations_;
     TRACE << this << " End of  batch " << size << " computations in flight "
           << computations_in_flight_ << " queued computations "
           << queued_computations_;
+    unsigned queued_batches = computations_in_flight_--;
+    queued_batches += queued_computations_;
+    if (size == 0) return {queued_batches, now};
     if (old == TimePoint()) {
       return {queued_batches, now};
     }
@@ -325,8 +324,15 @@ class SharedQueue {
     if (highest_backend_computations_ != computations_in_flight) {
       return;
     }
+    TRACE << "Computation done. Adjusting highest_backend_computations_ from "
+          << highest_backend_computations_ << " based on "
+          << computations_in_flight;
     bool was_full_queue = false;
     if (highest_backend_computations_ == max_batches_in_flight_) {
+      for (const auto& backend : backend_map_) {
+        assert(backend.second.GetComputationsInFlight() !=
+               max_batches_in_flight_);
+      }
       highest_backend_computations_--;
       idle_timer_target_ = idle_time;
       was_full_queue = true;
@@ -411,8 +417,8 @@ class SharedQueue {
 
   void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
-    TRACE << "Pushing work to backend: " << priority_queue_.size()
-          << " items in queue.";
+    TRACE << "Pushing work to backend: " << highest_backend_computations_ << "/"
+          << max_batches_in_flight_;
     bool needs_flush = true;
     auto evaluation_time = Clock::now();
     evaluation_time += kEstimatedNetworkEvaluationTime;
@@ -431,6 +437,7 @@ class SharedQueue {
         }
         highest_backend_computations_ =
             std::max(highest_backend_computations_, batches);
+        TRACE << "Flushed " << batches;
       } else {
         priority_queue_[priority].pop();
       }
@@ -470,6 +477,7 @@ class SharedQueue {
 
   void DoFlush() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
+    if (highest_backend_computations_ == max_batches_in_flight_) return;
     auto iter = std::max_element(backend_map_.begin(), backend_map_.end(),
                                  [](const auto& a, const auto& b) {
                                    return a.second.GetPendingSize() <
@@ -481,6 +489,9 @@ class SharedQueue {
     }
     highest_backend_computations_ =
         std::max(highest_backend_computations_, iter->second.Flush());
+    TRACE << "Flushed backend with highest pending size: " << &iter->second
+          << " highest_backend_computations_: "
+          << highest_backend_computations_;
   }
 
   void WaitOnFlushTimer() REQUIRES(mutex_) {
