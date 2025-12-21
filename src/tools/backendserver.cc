@@ -50,12 +50,20 @@
 #include "neural/backends/client/proto.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
+#include "utils/configfile.h"
 #include "utils/optionsparser.h"
 #include "utils/trace.h"
 
 namespace lczero {
 namespace {
 
+const OptionId kLogFileId{
+    {.long_flag = "logfile",
+     .uci_option = "LogFile",
+     .help_text = "Write log to that file. Special value <stderr> to "
+                  "output the log to the console.",
+     .short_flag = 'l',
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kMinibatchSizeOptionId{
     "minibatch-size", "MinibatchSize",
     "How many positions the engine tries to batch together for parallel NN "
@@ -941,26 +949,30 @@ void BackendHandler::Worker() {
 }  // namespace
 
 void RunBackendServer() {
-  OptionsParser options;
-  SharedBackendParams::Populate(&options);
-  options.Add<IntOption>(kMinibatchSizeOptionId, 0, 1024) = 0;
-  options.Add<StringOption>(kProtocolOptionId) = client::kDefaultProtocol;
-  options.Add<StringOption>(kPipeNameOptionId) = client::kDefaultPipeName;
-  options.Add<StringOption>(kHostOptionId) = client::kDefaultHost;
-  options.Add<IntOption>(kPortOptionId, 1, 65535) = client::kDefaultPort;
-  options.Add<StringOption>(kNetworkDirectoryOptionId) =
+  OptionsParser options_parser;
+  options_parser.Add<StringOption>(kLogFileId);
+  ConfigFile::PopulateOptions(&options_parser);
+  SharedBackendParams::Populate(&options_parser);
+  options_parser.Add<IntOption>(kMinibatchSizeOptionId, 0, 1024) = 0;
+  options_parser.Add<StringOption>(kProtocolOptionId) =
+      client::kDefaultProtocol;
+  options_parser.Add<StringOption>(kPipeNameOptionId) =
+      client::kDefaultPipeName;
+  options_parser.Add<StringOption>(kHostOptionId) = client::kDefaultHost;
+  options_parser.Add<IntOption>(kPortOptionId, 1, 65535) = client::kDefaultPort;
+  options_parser.Add<StringOption>(kNetworkDirectoryOptionId) =
       kDefaultNetworkDirectory;
-  options.Add<IntOption>(kAcceptLimitOptionId, 0, 1024) = 0;
-  if (!options.ProcessAllFlags()) return;
+  options_parser.Add<IntOption>(kAcceptLimitOptionId, 0, 1024) = 0;
+  if (!ConfigFile::Init() || !options_parser.ProcessAllFlags()) return;
+  auto options = options_parser.GetOptionsDict();
+  Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
   try {
-    auto option_dict = options.GetOptionsDict();
-
     CERR << "Using network directory: "
-         << option_dict.Get<std::string>(kNetworkDirectoryOptionId);
+         << options.Get<std::string>(kNetworkDirectoryOptionId);
     BackendMap& backends = SharedQueue::Get().GetBackendMap();
     absl::Cleanup cleanup = [] { SharedQueue::Get().Close(); };
     std::filesystem::path network_dir(
-        option_dict.Get<std::string>(kNetworkDirectoryOptionId));
+        options.Get<std::string>(kNetworkDirectoryOptionId));
     if (!std::filesystem::exists(network_dir)) {
       CERR << "Network directory does not exist: " << network_dir;
       return;
@@ -980,25 +992,24 @@ void RunBackendServer() {
           newest = entry;
         }
         CERR << entry.path().filename();
-        backends.try_emplace(entry.path().filename().string(), option_dict);
+        backends.try_emplace(entry.path().filename().string(), options);
       }
     }
 
     SharedQueue::Get().SetDiscovery(newest.path());
 
     asio::io_context& io_context = SharedQueue::Get().GetContext();
-    if (option_dict.Get<std::string>(kProtocolOptionId) == "unix") {
-      BackendServer<asio::local::stream_protocol> server(io_context,
-                                                         option_dict);
+    if (options.Get<std::string>(kProtocolOptionId) == "unix") {
+      BackendServer<asio::local::stream_protocol> server(io_context, options);
       io_context.run();
       return;
-    } else if (option_dict.Get<std::string>(kProtocolOptionId) == "tcp") {
-      BackendServer<asio::ip::tcp> server(io_context, option_dict);
+    } else if (options.Get<std::string>(kProtocolOptionId) == "tcp") {
+      BackendServer<asio::ip::tcp> server(io_context, options);
       io_context.run();
       return;
     } else {
       CERR << "Unknown protocol: "
-           << option_dict.Get<std::string>(kProtocolOptionId);
+           << options.Get<std::string>(kProtocolOptionId);
       return;
     }
 
