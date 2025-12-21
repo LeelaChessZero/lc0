@@ -1257,7 +1257,12 @@ void SearchWorker::InitializeIteration() {
   // Free the old computation before allocating a new one. This works better
   // when backend caches buffer allocations between computations.
   computation_.reset();
-  computation_ = search_->backend_->CreateComputation();
+  size_t time_remaining =
+      latest_time_manager_hints_.GetEstimatedRemainingTimeMs();
+  if (time_remaining >= 1000000000000) {
+    time_remaining = 0;
+  }
+  computation_ = search_->backend_->CreateComputation(time_remaining);
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
 }

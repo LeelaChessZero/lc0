@@ -38,7 +38,7 @@ std::vector<EvalResult> Backend::EvaluateBatch(
     std::span<const EvalPosition> positions) {
   std::vector<EvalResult> results;
   results.reserve(positions.size());
-  std::unique_ptr<BackendComputation> computation = CreateComputation();
+  std::unique_ptr<BackendComputation> computation = CreateComputation(0);
   for (const EvalPosition& pos : positions) {
     results.emplace_back();
     EvalResult& result = results.back();
@@ -63,6 +63,12 @@ uint64_t Backend::ConfigurationHash(const OptionsDict& options) const {
   hash = HashCat(hash, std::hash<std::string>{}(options.Get<std::string>(
                            SharedBackendParams::kHistoryFill)));
   return hash;
+}
+
+std::unique_ptr<Backend> BackendFactory::Create(const OptionsDict& options) {
+  const std::string network =
+      options.Get<std::string>(SharedBackendParams::kWeightsId);
+  return this->Create(options, network);
 }
 
 }  // namespace lczero
