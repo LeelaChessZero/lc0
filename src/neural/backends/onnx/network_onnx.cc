@@ -41,7 +41,7 @@
 
 #ifdef USE_ONNX_CUDART
 #include "cuda_runtime.h"
-#include "neural/backends/cuda/onnx_kernels.h"
+#include "neural/backends/onnx/onnx_kernels.h"
 #endif
 
 #include "neural/factory.h"
@@ -641,7 +641,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
   }
 
   switch (provider_) {
-    case OnnxProvider::DML:{
+    case OnnxProvider::DML: {
       std::unordered_map<std::string, std::string> dml_options;
       dml_options["device_id"] = std::to_string(gpu_);
       dml_options["performance_preference"] = "high_performance";

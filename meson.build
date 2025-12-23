@@ -631,7 +631,7 @@ if get_option('build_backends')
     includes += include_directories(onnx_inc_dir, is_system: true)
     cc.has_header('onnxruntime_cxx_api.h', required: true,
                   include_directories: includes)
-    files += 'src/neural/backends/network_onnx.cc'
+    files += 'src/neural/backends/onnx/network_onnx.cc'
     onnx_conf = configuration_data()
     if cc.has_header('dml_provider_factory.h', required: false,
                      include_directories: includes)
@@ -650,7 +650,7 @@ if get_option('build_backends')
       onnx_conf.set('USE_ONNX_CUDART', true)
       deps += cu_dart
       files += custom_target('cuda onnx code',
-        input : 'src/neural/backends/cuda/onnx.cu',
+        input : 'src/neural/backends/onnx/onnx_kernels.cu',
         output : outputname,
         command : [nvcc, nvcc_extra_args, nvcc_arguments]
         )
