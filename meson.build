@@ -524,6 +524,17 @@ if get_option('build_backends')
       outputname = '@BASENAME@.o'
     endif
     nvcc_ok = true
+
+    max_cuda = 0
+    nvcc_dryrun = run_command(nvcc, '--dryrun', nvcc_extra_args, 'foo.cu', check : false).stderr()
+    foreach x : nvcc_dryrun.split()
+      if x.contains('-D__CUDA_ARCH__=')
+        arch = x.substring(16).to_int()
+        if arch > max_cuda
+          max_cuda = arch
+        endif
+      endif
+    endforeach
   endif
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_dart.found() and cu_blas.found() and nvcc_ok
     deps += [cu_blas, cu_dart]
@@ -539,10 +550,14 @@ if get_option('build_backends')
     includes += include_directories('src/neural/backends/cuda/')
 	 files += cuda_files
 
-    if get_option('cutlass') and run_command('scripts/checkdir.py', get_option('cutlass_include'), check: false).returncode() == 0
+    if get_option('cutlass') and max_cuda >= 800
       add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
       nvcc_arguments += ['-DUSE_CUTLASS']
-      nvcc_arguments += ['-I', get_option('cutlass_include')]
+      if get_option('cutlass_include') != ''
+        nvcc_arguments += ['-I', get_option('cutlass_include')]
+      else
+        nvcc_arguments += ['-I', subproject('cutlass').get_variable('include_directory')]
+      endif
       nvcc_arguments += ['-isystem=@CURRENT_SOURCE_DIR@/third_party']
       files += custom_target('cuda cutlass code',
         input : 'src/neural/backends/cuda/cutlass_kernels.cu',

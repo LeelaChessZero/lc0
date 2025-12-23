@@ -26,7 +26,6 @@ if not defined CUDA_PATH set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Too
 set CUDNN_PATH=%CUDA_PATH%
 set OPENCL_LIB_PATH=%CUDA_PATH%\lib\x64
 set OPENCL_INCLUDE_PATH=%CUDA_PATH%\include
-set CUTLASS_INCLUDE_PATH=C:\dev\cutlass-2.11.0\include
 set OPENBLAS_PATH=C:\OpenBLAS
 set MKL_PATH=C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl
 set DNNL_PATH=C:\dnnl_win_1.1.1_cpu_vcomp
@@ -73,7 +72,7 @@ meson setup build --backend %backend% --buildtype release -Ddx=%DX12% -Dcudnn=%C
 -Dmkl_include="%MKL_PATH%\include" -Dmkl_libdirs="%MKL_PATH%\lib\intel64" -Ddnnl_dir="%DNNL_PATH%" ^
 -Dopencl_libdirs="%OPENCL_LIB_PATH%" -Dopencl_include="%OPENCL_INCLUDE_PATH%" ^
 -Dopenblas_include="%OPENBLAS_PATH%\include" -Dopenblas_libdirs="%OPENBLAS_PATH%\lib" ^
--Dcutlass_include="%CUTLASS_INCLUDE_PATH%" -Dcutlass="%CUTLASS%" ^
+-Dcutlass="%CUTLASS%" ^
 -Ddefault_library=static
 
 if errorlevel 1 exit /b
