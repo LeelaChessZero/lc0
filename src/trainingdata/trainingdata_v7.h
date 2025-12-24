@@ -27,37 +27,24 @@
 
 #pragma once
 
-#include "trainingdata/trainingdata.h"
-#include "trainingdata/trainingdata_v7.h"
+#include <cstdint>
+
+#include "trainingdata/trainingdata_v6.h"
+#include "utils/cppattributes.h"
 
 namespace lczero {
 
-// Constructs InputPlanes from training data.
-//
-// NOTE: If the training data is a cannonical type, the canonicalization
-// transforms are reverted before returning, since it is assumed that the data
-// will be used with DecodeMoveFromInput or PopulateBoard which assume the
-// InputPlanes are not transformed.
-InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
-InputPlanes PlanesFromTrainingData(const V7TrainingData& data);
+#pragma pack(push, 1)
 
-class TrainingDataReader {
- public:
-  // Opens the given file to read chunk data from.
-  TrainingDataReader(std::string filename);
+struct V7TrainingData : V6TrainingData {
+  // D standard deviation (q_st is already defined in V6TrainingData).
+  float d_st;
+  uint16_t opp_played_idx;
+  uint16_t next_played_idx;
+  float reserved[8];
+} PACKED_STRUCT;
+static_assert(sizeof(V7TrainingData) == 8396, "Wrong struct size");
 
-  ~TrainingDataReader();
-
-  // Reads a chunk. Returns true if a chunk was read.
-  bool ReadChunk(V6TrainingData* data);
-
-  // Gets full filename of the file being read.
-  std::string GetFileName() const { return filename_; }
-
- private:
-  std::string filename_;
-  gzFile fin_;
-  bool format_v6 = false;
-};
+#pragma pack(pop)
 
 }  // namespace lczero
