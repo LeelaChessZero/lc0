@@ -524,6 +524,17 @@ if get_option('build_backends')
       outputname = '@BASENAME@.o'
     endif
     nvcc_ok = true
+
+    max_cuda = 0
+    nvcc_dryrun = run_command(nvcc, '--dryrun', nvcc_extra_args, 'foo.cu', check : false).stderr()
+    foreach x : nvcc_dryrun.split()
+      if x.contains('-D__CUDA_ARCH__=')
+        arch = x.substring(16).to_int()
+        if arch > max_cuda
+          max_cuda = arch
+        endif
+      endif
+    endforeach
   endif
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_dart.found() and cu_blas.found() and nvcc_ok
     deps += [cu_blas, cu_dart]
@@ -538,6 +549,23 @@ if get_option('build_backends')
     endif
     includes += include_directories('src/neural/backends/cuda/')
 	 files += cuda_files
+
+    if get_option('cutlass') and max_cuda >= 800
+      add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
+      nvcc_arguments += ['-DUSE_CUTLASS']
+      if get_option('cutlass_include') != ''
+        nvcc_arguments += ['-I', get_option('cutlass_include')]
+      else
+        nvcc_arguments += ['-I', subproject('cutlass').get_variable('include_directory')]
+      endif
+      nvcc_arguments += ['-isystem=@CURRENT_SOURCE_DIR@/third_party']
+      files += custom_target('cuda cutlass code',
+        input : 'src/neural/backends/cuda/cutlass_kernels.cu',
+        output : outputname,
+        command : [nvcc, nvcc_extra_args, nvcc_arguments]
+      )
+    endif
+
     files += custom_target('cuda fp32 code',
       input : 'src/neural/backends/cuda/common_kernels.cu',
       output : outputname,
@@ -603,7 +631,7 @@ if get_option('build_backends')
     includes += include_directories(onnx_inc_dir, is_system: true)
     cc.has_header('onnxruntime_cxx_api.h', required: true,
                   include_directories: includes)
-    files += 'src/neural/backends/network_onnx.cc'
+    files += 'src/neural/backends/onnx/network_onnx.cc'
     onnx_conf = configuration_data()
     if cc.has_header('dml_provider_factory.h', required: false,
                      include_directories: includes)
@@ -622,7 +650,7 @@ if get_option('build_backends')
       onnx_conf.set('USE_ONNX_CUDART', true)
       deps += cu_dart
       files += custom_target('cuda onnx code',
-        input : 'src/neural/backends/cuda/onnx.cu',
+        input : 'src/neural/backends/onnx/onnx_kernels.cu',
         output : outputname,
         command : [nvcc, nvcc_extra_args, nvcc_arguments]
         )

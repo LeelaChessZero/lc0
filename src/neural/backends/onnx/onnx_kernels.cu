@@ -25,10 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "onnx_kernels.h"
-
 #include <cstdint>
 
+#include "neural/backends/onnx/onnx_kernels.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -91,5 +90,5 @@ template void expandPlanesOnnx<__nv_bfloat16>(__nv_bfloat16* output,
                                               const void* input, unsigned n,
                                               cudaStream_t stream);
 
-}  // namespace onnx_backend
+}  // namespace onnx
 }  // namespace lczero
