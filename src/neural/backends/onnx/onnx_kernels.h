@@ -45,5 +45,5 @@ void CudaError(cudaError_t status, const char* file, int line);
 
 inline int DivUp(int a, int b) { return (a + b - 1) / b; }
 
-}  // namespace onnx_backend
+}  // namespace onnx
 }  // namespace lczero

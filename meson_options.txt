@@ -43,6 +43,11 @@ option('cudnn_include',
        value: ['/opt/cuda/include/', '/usr/local/cuda/include/', '/usr/lib/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
+option('cutlass_include',
+       type: 'string',
+       value: '',
+       description: 'Paths to cutlass include directory')
+
 option('build_backends',
        type: 'boolean',
        value: true,
@@ -82,6 +87,11 @@ option('plain_cuda',
        type: 'boolean',
        value: true,
        description: 'Enable CUDA backend')
+
+option('cutlass',
+       type: 'boolean',
+       value: true,
+       description: 'Enable cutlass lib for cuda backend. Only supports Ampere+ right now')
 
 option('opencl',
        type: 'boolean',

@@ -41,7 +41,7 @@
 
 #ifdef USE_ONNX_CUDART
 #include "cuda_runtime.h"
-#include "neural/backends/cuda/onnx_kernels.h"
+#include "neural/backends/onnx/onnx_kernels.h"
 #endif
 
 #include "neural/factory.h"
