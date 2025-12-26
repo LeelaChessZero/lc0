@@ -44,7 +44,7 @@ class Engine : public EngineControllerBase {
 
   static void PopulateOptions(OptionsParser*);
 
-  void EnsureReady() override {};
+  void EnsureReady() override;
   void NewGame() override;
   void SetPosition(const std::string& fen,
                    const std::vector<std::string>& moves) override;
@@ -77,6 +77,7 @@ class Engine : public EngineControllerBase {
   // Defaults ensure corect operation even if `go` comes first.
   bool ponder_enabled_ = false;
   bool strict_uci_timing_ = true;
+  bool isready_seen_ = true;
   // Last position set for the search. Used to:
   // 1. Detect whether the position was ever set (to initialize to startpos).
   // 2. Remember the position for ponder go (removing the last ply).

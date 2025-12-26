@@ -44,6 +44,7 @@ message Weights {
       LINEAR16 = 1;
       FLOAT16 = 2;
       BFLOAT16 = 3;
+      FLOAT32 = 4;
     }
     optional Encoding encoding = 4;
     repeated uint32 dims = 5;

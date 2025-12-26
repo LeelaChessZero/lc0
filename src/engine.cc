@@ -220,7 +220,8 @@ void Engine::SetPosition(const std::string& fen,
   EnsureSearchStopped();
   ponder_enabled_ = options_.Get<bool>(kPonderId);
   strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
-  if (!strict_uci_timing_) search_->StartClock();
+  isready_seen_ = false;
+  search_->StartClock();
   UpdateBackendConfig();
   EnsureSyzygyTablebasesLoaded();
   last_position_ = MakeGameState(fen, moves);
@@ -238,12 +239,17 @@ void Engine::Go(const GoParams& params) {
     throw Exception(
         "Ponder is not enabled, but the ponder search is requested.");
   }
-  if (strict_uci_timing_) search_->StartClock();
+  if ((strict_uci_timing_ && isready_seen_) ||
+      !(params.wtime || params.btime)) {
+    search_->StartClock();
+  }
   if (!last_position_) NewGame();
   if (ponder_enabled_) InitializeSearchPosition(params.ponder);
   last_go_params_ = params;
   search_->StartSearch(params);
 }
+
+void Engine::EnsureReady() { isready_seen_ = true; }
 
 void Engine::Wait() { search_->WaitSearch(); }
 

@@ -43,6 +43,7 @@
 #include "utils/fastmath.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace dag_classic {
@@ -331,6 +332,7 @@ void Search::SendUciInfo(const classic::IterationStats& stats)
     const auto time_since_first_batch_ms = stats.time_since_first_batch;
     if (time_since_first_batch_ms > 0) {
       common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
+      common_info.eps = network_evaluations_ * 1000 / time_since_first_batch_ms;
     }
   }
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
@@ -1327,6 +1329,7 @@ void SearchWorker::ExecuteOneIteration() {
 // 1. Initialize internal structures.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::InitializeIteration() {
+  LCTRACE_FUNCTION_SCOPE;
   // Free the old computation before allocating a new one. This works better
   // when backend caches buffer allocations between computations.
   computation_.reset();
@@ -1361,6 +1364,7 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
 }  // namespace
 
 void SearchWorker::GatherMinibatch() {
+  LCTRACE_FUNCTION_SCOPE;
   // Total number of nodes to process.
   int minibatch_size = 0;
   int cur_n = 0;
@@ -1673,6 +1677,7 @@ void SearchWorker::PickNodesToExtendTask(
     const BackupPath& path, int collision_limit, PositionHistory& history,
     std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
+  LCTRACE_FUNCTION_SCOPE;
   assert(path.size() == (size_t)history.GetLength() -
                             search_->played_history_.GetLength() + 1);
 
@@ -2131,6 +2136,7 @@ void SearchWorker::RunNNComputation() {
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
+  LCTRACE_FUNCTION_SCOPE;
   // Populate NN/cached results, or terminal results, into nodes.
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process);
@@ -2174,6 +2180,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
+  LCTRACE_FUNCTION_SCOPE;
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
@@ -2415,6 +2422,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     nm = pm;
   }
   search_->total_playouts_ += node_to_process.multivisit;
+  if (node_to_process.nn_queried && !node_to_process.is_cache_hit) {
+    search_->network_evaluations_++;
+  }
   search_->cum_depth_ +=
       node_to_process.path.size() * node_to_process.multivisit;
   search_->max_depth_ =
@@ -2494,6 +2504,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
+  LCTRACE_FUNCTION_SCOPE;
   search_->PopulateCommonIterationStats(&iteration_stats_);
   search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
   search_->MaybeOutputInfo(iteration_stats_);
