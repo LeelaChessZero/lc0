@@ -121,6 +121,7 @@ class Network {
   virtual void InitThread(int /*id*/) {}
   virtual bool IsCpu() const { return false; }
   virtual int GetMiniBatchSize() const { return 256; }
+  virtual int GetPreferredBatchStep() const { return 1; }
   virtual ~Network() = default;
 };
 

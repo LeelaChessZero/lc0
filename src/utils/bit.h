@@ -26,24 +26,20 @@
 */
 
 #pragma once
-
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <bit>
+#include <cstring>
 
 namespace lczero {
-namespace onnx {
 
-// Expand input planes from bitmask to floating point tensors. It is used as a
-// preprocessing step of ONNX models.
-template <typename DataType>
-void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
-                      cudaStream_t stream);
+#if __cpp_lib_bit_cast >= 201806L
+using std::bit_cast;
+#else
+template <class To, class From>
+To bit_cast(const From& src) noexcept {
+  To dst;
+  std::memcpy((void*)&dst, &src, sizeof(To));
+  return dst;
+}
+#endif
 
-#define ReportCUDAErrors(status) CudaError(status, __FILE__, __LINE__)
-void CudaError(cudaError_t status, const char* file, int line);
-
-inline int DivUp(int a, int b) { return (a + b - 1) / b; }
-
-}  // namespace onnx_backend
 }  // namespace lczero

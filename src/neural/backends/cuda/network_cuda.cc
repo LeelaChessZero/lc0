@@ -229,6 +229,10 @@ class CudaNetwork : public Network {
 
     showInfo();
 
+#ifdef USE_CUTLASS
+    CERR << "Compiled with CUTLASS enabled";
+#endif
+
     int total_gpus;
     ReportCUDAErrors(cudaGetDeviceCount(&total_gpus));
 
@@ -336,6 +340,11 @@ class CudaNetwork : public Network {
     // Override if set in backend-opts.
     if (options.Exists<bool>("res_block_fusing")) {
       use_res_block_winograd_fuse_opt_ = options.Get<bool>("res_block_fusing");
+    }
+
+    bool use_fused_mha = false;
+    if (deviceProp.major >= 8 && fp16) {
+      use_fused_mha = options.GetOrDefault<bool>("fused_mha", true);
     }
 
     const bool use_gemm_ex = deviceProp.major >= 5;
@@ -486,7 +495,7 @@ class CudaNetwork : public Network {
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
               InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
-          use_gemm_ex);
+          use_gemm_ex, use_fused_mha);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -1032,12 +1041,22 @@ class CudaNetwork : public Network {
     return 2 * sm_count_;
   }
 
+  int GetPreferredBatchStep() const override {
+    int preferred_split = 7;
+    while (sm_count_ % preferred_split != 0) preferred_split++;
+    return preferred_split;
+  }
+
   int GetThreads() const override { return 1 + multi_stream_; }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
     // Set correct gpu id for this computation (as it might have been called
     // from a different thread).
-    ReportCUDAErrors(cudaSetDevice(gpu_id_));
+    int device = -1;
+    ReportCUDAErrors(cudaGetDevice(&device));
+    if (device != gpu_id_) {
+      ReportCUDAErrors(cudaSetDevice(gpu_id_));
+    }
     return std::make_unique<CudaNetworkComputation<DataType>>(this, wdl_,
                                                               moves_left_);
   }
