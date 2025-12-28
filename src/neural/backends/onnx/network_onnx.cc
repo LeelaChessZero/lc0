@@ -170,7 +170,7 @@ class OnnxNetwork final : public Network {
   }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
-  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash);
+  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash, bool quantize);
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
@@ -627,7 +627,7 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 }
 
 Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
-                                            uint64_t hash) {
+                                            uint64_t hash, bool quantize) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
   options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -654,9 +654,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       std::string cache_dir = CommandLine::BinaryDirectory() + "/trt_cache";
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
-      trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
+      trt_options["trt_fp16_enable"] = quantize && fp16_ ? "1" : "0";
 #if ORT_API_VERSION >= 23
-      trt_options["trt_bf16_enable"] = bf16_ ? "1" : "0";
+      trt_options["trt_bf16_enable"] = quantize && bf16_ ? "1" : "0";
 #endif
       trt_options["trt_int8_enable"] = "0";
       trt_options["trt_max_partition_iterations"] = "1000";
@@ -819,6 +819,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       break;
   }
 
+  bool quantize = opts.GetOrDefault<bool>("quantize", false);
   batch_size_ = opts.GetOrDefault<int>("batch", default_batch);
   steps_ = opts.GetOrDefault<int>("steps", default_steps);
   min_batch_size_ = opts.GetOrDefault<int>("min_batch", default_min_batch);
@@ -878,7 +879,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   for (int step = 1; step <= steps_; step++)
     session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
                           file.onnx_model().model().size(),
-                          GetOptions(threads, batch_size_ * step, hash));
+                          GetOptions(threads, batch_size_ * step, hash, quantize));
 }
 
 template <OnnxProvider kProvider>
