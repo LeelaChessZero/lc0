@@ -269,3 +269,8 @@ option('nvcc',
        type: 'boolean',
        value: true,
        description: 'Use nvcc: required for cuda, optional for onnx')
+
+option('search_contempt',
+       type: 'boolean',
+       value: true,
+       description: 'Enable search contempt algorithm')
