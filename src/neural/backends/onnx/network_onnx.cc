@@ -837,7 +837,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       break;
   }
 
-  int optimize = opts.GetOrDefault<bool>("optimize", 3);
+  int optimize = opts.GetOrDefault<int>("optimize", 3);
   batch_size_ = opts.GetOrDefault<int>("batch", default_batch);
   steps_ = opts.GetOrDefault<int>("steps", default_steps);
   min_batch_size_ = opts.GetOrDefault<int>("min_batch", default_min_batch);
