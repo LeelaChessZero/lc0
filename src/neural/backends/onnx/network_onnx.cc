@@ -170,7 +170,7 @@ class OnnxNetwork final : public Network {
   }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
-  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash);
+  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash, int optimize);
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
@@ -627,10 +627,25 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 }
 
 Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
-                                            uint64_t hash) {
+                                            uint64_t hash, int optimize) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
-  options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+  GraphOptimizationLevel level = GraphOptimizationLevel::ORT_DISABLE_ALL;
+  switch (optimize) {
+    case 0:
+      level = GraphOptimizationLevel::ORT_DISABLE_ALL;
+      break;
+    case 1:
+      level = GraphOptimizationLevel::ORT_ENABLE_BASIC;
+      break;
+    case 2:
+      level = GraphOptimizationLevel::ORT_ENABLE_EXTENDED;
+      break;
+    default:
+      level = GraphOptimizationLevel::ORT_ENABLE_ALL;
+      break;
+  }
+  options.SetGraphOptimizationLevel(level);
 
   if (batch_size > 0 && provider_ != OnnxProvider::TRT) {
     // Override the default (variable) batch size.
@@ -654,11 +669,12 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       std::string cache_dir = CommandLine::BinaryDirectory() + "/trt_cache";
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
-      trt_options["trt_fp16_enable"] = fp16_ ? "1" : "0";
+      trt_options["trt_builder_optimization_level"] = std::to_string(std::clamp(optimize, 0, 5));
+      trt_options["trt_fp16_enable"] = optimize >= 6 ? "1" : "0";
 #if ORT_API_VERSION >= 23
-      trt_options["trt_bf16_enable"] = bf16_ ? "1" : "0";
+      trt_options["trt_bf16_enable"] = optimize >= 7 ? "1" : "0";
 #endif
-      trt_options["trt_int8_enable"] = "0";
+      trt_options["trt_int8_enable"] = optimize >= 8 ? "1" : "0";
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
@@ -670,7 +686,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
           (batch_size < 0 ? std::to_string(batch_size)
                           : std::to_string(batch_size - batch_size_ + 1) + "-" +
                                 std::to_string(batch_size)) +
-          "_" + oss.str() + "_";
+          "_" + std::to_string(optimize) + "_" + oss.str() + "_";
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
       trt_options["trt_timing_cache_path"] = cache_dir;
@@ -726,8 +742,10 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
     case OnnxProvider::MIGRAPHX: {
       std::unordered_map<std::string, std::string> migraphx_options;
       migraphx_options["device_id"] = std::to_string(gpu_);
-      migraphx_options["migraphx_fp16_enable"] = fp16_ ? "1" : "0";
-      migraphx_options["migraphx_bf16_enable"] = bf16_ ? "1" : "0";
+      migraphx_options["migraphx_exhaustive_tune"] = optimize >= 5 ? "1" : "0";
+      migraphx_options["migraphx_fp16_enable"] = optimize >= 6 ? "1" : "0";
+      migraphx_options["migraphx_bf16_enable"] = optimize >= 7 ? "1" : "0";
+      migraphx_options["migraphx_fp8_enable"] = optimize >= 8 ? "1" : "0";
       std::filesystem::path cache_dir = CommandLine::BinaryDirectory();
       cache_dir /= "migraphx_cache";
 
@@ -819,6 +837,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       break;
   }
 
+  int optimize = opts.GetOrDefault<bool>("optimize", 3);
   batch_size_ = opts.GetOrDefault<int>("batch", default_batch);
   steps_ = opts.GetOrDefault<int>("steps", default_steps);
   min_batch_size_ = opts.GetOrDefault<int>("min_batch", default_min_batch);
@@ -878,7 +897,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   for (int step = 1; step <= steps_; step++)
     session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
                           file.onnx_model().model().size(),
-                          GetOptions(threads, batch_size_ * step, hash));
+                          GetOptions(threads, batch_size_ * step, hash, optimize));
 }
 
 template <OnnxProvider kProvider>
