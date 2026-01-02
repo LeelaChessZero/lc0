@@ -10,6 +10,9 @@ type "%MIMALLOC_PATH%"\LICENSE |more /P > dist\mimalloc-LICENSE
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip "%MIMALLOC_PATH%"\out\msvc-x64\Release\mimalloc-redirect.dll
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\mimalloc-readme.md
 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\mimalloc-LICENSE
+type .\subprojects\hwloc-win64-build-2.12.2\COPYING.txt |more /P > .\dist\hwloc-COPYING.txt
+7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\subprojects\hwloc-win64-build-2.12.2\bin\libhwloc-15.dll
+7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip .\dist\hwloc-COPYING.txt
 IF %CUDA%==true copy lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%-nodll.zip
 IF %NAME%==cpu-openblas 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\OpenBLAS\dist64\bin\libopenblas.dll
 IF %NAME%==cpu-dnnl 7z a lc0-%APPVEYOR_REPO_TAG_NAME%-windows-%NAME%.zip C:\cache\%DNNL_NAME%\bin\dnnl.dll
