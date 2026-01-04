@@ -121,6 +121,10 @@ class BackendHandler {
   template <typename Callback>
   void EnsureLoaded(const std::string& net, Callback&& callback);
 
+  void EnsureReady() const {
+    SpinMutex::Lock lock(mutex_);
+  }
+
   size_t Threads() const {
     SpinMutex::Lock lock(mutex_);
     return backend_threads_.size();
@@ -382,6 +386,13 @@ class SharedQueue {
 
   bool StartServer(const OptionsDict& options);
 
+  void EnsureReady() const {
+    SpinMutex::Lock lock(mutex_);
+    for (auto& backend : backend_map_) {
+      backend.second.EnsureReady();
+    }
+  }
+
  private:
   SharedQueue() = default;
 
@@ -519,7 +530,7 @@ class SharedQueue {
   BackendMap backend_map_;
   BackendMap::iterator network_discovery_;
 
-  SpinMutex mutex_;
+  mutable SpinMutex mutex_;
   std::condition_variable_any cv_;
   unsigned highest_backend_computations_ = 0;
   unsigned max_batches_in_flight_ = 0;
@@ -965,12 +976,12 @@ bool SharedQueue::StartServer(const OptionsDict& options) {
   }
 }
 
-class FakeEngine : public EngineControllerBase {
+class BackendserverEngine : public EngineControllerBase {
  public:
-  FakeEngine() = default;
-  ~FakeEngine() override = default;
+  BackendserverEngine() = default;
+  ~BackendserverEngine() override = default;
 
-  void EnsureReady() override {}
+  void EnsureReady() override { SharedQueue::Get().EnsureReady(); }
   void NewGame() override {}
   void SetPosition(const std::string&,
                    const std::vector<std::string>&) override {}
@@ -1039,7 +1050,7 @@ void RunBackendServer() {
 
     std::cout.setf(std::ios::unitbuf);
     std::string line;
-    FakeEngine engine{};
+    BackendserverEngine engine{};
     StdoutUciResponder uci_responder;
     UciLoop loop(&uci_responder, &options_parser, &engine);
     while (std::getline(std::cin, line)) {
