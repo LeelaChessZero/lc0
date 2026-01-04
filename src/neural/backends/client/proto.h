@@ -239,9 +239,8 @@ Archive::ResultType ParseMessageType(Archive& ia, const MessageHeader& header,
                                      T& out, Callback&& callback) {
   assert(ia.Size() >= header.size_);
   out.header_ = header;
-  return (ia & out).and_then([&out, &callback](Archive& ar) {
-    return callback(out, ar);
-  });
+  return (ia & out).and_then(
+      [&out, &callback](Archive& ar) { return callback(out, ar); });
 }
 
 template <typename Archive, typename Callback>
@@ -253,19 +252,23 @@ Archive::ResultType ParseMessage(Archive& ia, const MessageHeader& header,
   switch (header.type_) {
     case MessageType::HANDSHAKE: {
       Handshake msg;
-      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
+      return ParseMessageType(ia, header, msg,
+                              std::forward<Callback>(callback));
     }
     case MessageType::HANDSHAKE_REPLY: {
       HandshakeReply msg;
-      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
+      return ParseMessageType(ia, header, msg,
+                              std::forward<Callback>(callback));
     }
     case MessageType::COMPUTE_BLOCKING: {
       ComputeBlocking msg;
-      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
+      return ParseMessageType(ia, header, msg,
+                              std::forward<Callback>(callback));
     }
     case MessageType::COMPUTE_BLOCKING_REPLY: {
       ComputeBlockingReply msg;
-      return ParseMessageType(ia, header, msg, std::forward<Callback>(callback));
+      return ParseMessageType(ia, header, msg,
+                              std::forward<Callback>(callback));
     }
     default:
       CERR << "Unknown message type received: " << header.type_;
@@ -294,7 +297,8 @@ class Connection {
  public:
   explicit Connection(SocketType&& socket) : socket_(std::move(socket)) {
     input_.resize(kMaxMessageSize);
-    if (std::is_same_v<SocketType, asio::ip::tcp::socket> && socket_.is_open()) {
+    if (std::is_same_v<SocketType, asio::ip::tcp::socket> &&
+        socket_.is_open()) {
       socket_.set_option(asio::ip::tcp::no_delay(true));
     }
   }
