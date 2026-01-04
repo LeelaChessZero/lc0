@@ -27,23 +27,13 @@
 
 #include "tools/backendserver.h"
 
-#include <algorithm>
-#include <iostream>
-
-// clang-format off
-#ifdef _WIN32
-#include <winsock2.h>
-#include <windows.h>
-#endif
-// clang-format on
-
 #include <absl/cleanup/cleanup.h>
 
-#include <asio.hpp>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <utility>
@@ -52,6 +42,7 @@
 #include "neural/backends/client/proto.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
+#include "utils/asio.h"
 #include "utils/configfile.h"
 #include "utils/optionsparser.h"
 #include "utils/trace.h"

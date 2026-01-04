@@ -25,21 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-// clang-format off
-#ifdef _WIN32
-#include <winsock2.h>
-#include <windows.h>
-#include <io.h>
-#define popen _popen
-#define pclose _pclose
-#define close _close
-#endif
-// clang-format on
-
 #include <stdio.h>
 
-#include <asio.hpp>
-#include <asio/io_context.hpp>
+#include "utils/asio.h"
 #include <thread>
 
 #include "neural/backend.h"
@@ -50,6 +38,15 @@
 #include "utils/atomic_vector.h"
 #include "utils/commandline.h"
 #include "utils/trace.h"
+
+// clang-format off
+#ifdef _WIN32
+#include <io.h>
+#define popen _popen
+#define pclose _pclose
+#define close _close
+#endif
+// clang-format on
 
 namespace lczero::client {
 

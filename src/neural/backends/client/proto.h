@@ -27,23 +27,16 @@
 
 #pragma once
 
-// clang-format off
-#ifdef _WIN32
-#include <winsock2.h>
-#include <windows.h>
-#endif
-// clang-format on
-
 #include <array>
-#include <asio.hpp>
 #include <cstdint>
 #include <queue>
 #include <span>
 #include <string_view>
 
-#include "neural/backends/client/archive.h"
 #include "neural/backend.h"
+#include "neural/backends/client/archive.h"
 #include "neural/encoder.h"
+#include "utils/asio.h"
 
 namespace lczero::client {
 
