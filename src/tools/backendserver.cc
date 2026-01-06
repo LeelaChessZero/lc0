@@ -480,7 +480,7 @@ class SharedQueue {
 
   // TODO: Does this need to be dynamically tuned?
   static constexpr Clock::duration kEstimatedNetworkEvaluationTime =
-      std::chrono::milliseconds(40);
+      std::chrono::milliseconds(20);
 
   void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
