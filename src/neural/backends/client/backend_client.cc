@@ -88,7 +88,8 @@ class ClientConnection final : public Context,
     // Initialize connection.
     LCTRACE_FUNCTION_SCOPE;
     Endpoint endpoint;
-    std::string args = " backendserver --accept-limit=1 ";
+    std::string user_arguments = options.GetOrDefault("server-arguments", std::string());
+    std::string args = " backendserver ";
     if constexpr (std::is_same_v<Proto, asio::local::stream_protocol>) {
       const std::string pipe =
           options.GetOrDefault("pipe_name", kDefaultPipeName);
@@ -104,7 +105,12 @@ class ClientConnection final : public Context,
     try {
       this->Connect(endpoint);
     } catch (const std::exception& e) {
-      std::string command = CommandLine::BinaryName() + args;
+      if (user_arguments.empty()) {
+        CERR << "Failed to connect to backend server at " << endpoint
+             << ": " << e.what();
+        throw Exception("Failed to connect to backend server");
+      }
+      std::string command = CommandLine::BinaryName() + args + " " + user_arguments;
       FILE* pipe_ = popen(command.c_str(), "r");
       if (!pipe_) {
         CERR << "Failed to start backend server with command: " << command;
