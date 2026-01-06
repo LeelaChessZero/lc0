@@ -36,6 +36,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <utility>
 
 #include "chess/uciloop.h"
@@ -77,6 +78,9 @@ const OptionId kNetworkDirectoryOptionId{
 const OptionId kAcceptLimitOptionId{
     "accept-limit", "AcceptLimit",
     "Maximum number of accepted client connections."};
+const OptionId kStatisticsIntervalOptionId{
+    "statistics-interval", "StatisticsInterval",
+    "Interval in seconds between statistics messages."};
 
 const std::string kDefaultNetworkDirectory = ".";
 
@@ -102,6 +106,15 @@ struct QueueItem {
 
 class BackendHandler {
  public:
+  struct Statistics {
+    size_t batches_ = 0;
+    size_t positions_ = 0;
+    size_t queue_positions_ = 0;
+    size_t minibatch_size_ = 0;
+    size_t batches_in_flight_ = 0;
+    double max_nps_ = 0.0;
+  };
+
   static constexpr double kGpuIdleBufferMultiplier = 0.8;
 
   BackendHandler(const OptionsDict& params) : params_(params) {}
@@ -121,9 +134,7 @@ class BackendHandler {
   template <typename Callback>
   void EnsureLoaded(const std::string& net, Callback&& callback);
 
-  void EnsureReady() const {
-    SpinMutex::Lock lock(mutex_);
-  }
+  void EnsureReady() const { SpinMutex::Lock lock(mutex_); }
 
   size_t Threads() const {
     SpinMutex::Lock lock(mutex_);
@@ -149,8 +160,8 @@ class BackendHandler {
     queue_.emplace(item);
     bool flushed = false;
     auto pending_size = PendingSize();
-    if (count + pending_size >= batch_size_) {
-      count = batch_size_ - pending_size;
+    if (count + pending_size >= minibatch_size_) {
+      count = minibatch_size_ - pending_size;
       queued_computations_++;
       batches++;
       queue_.back().last_ = queue_.back().first_ + count;
@@ -179,7 +190,7 @@ class BackendHandler {
       auto cif = computations_in_flight_;
       auto qc = queued_computations_;
       auto qs = queue_size_;
-      queue_size_ += batch_size_ - PendingSize();
+      queue_size_ += minibatch_size_ - PendingSize();
       queued_computations_++;
       batches++;
       TRACE << this << " Forcing backend flush, new queue size: " << qs
@@ -201,7 +212,7 @@ class BackendHandler {
     auto pending = PendingSize();
     auto cif = computations_in_flight_;
     auto qc = queued_computations_;
-    queue_size_ += batch_size_ - PendingSize();
+    queue_size_ += minibatch_size_ - PendingSize();
     queued_computations_++;
     cv_.notify_one();
     lock.unlock();
@@ -216,13 +227,15 @@ class BackendHandler {
     TRACE << this << " Starting batch of size: " << size
           << " computations in flight " << computations_in_flight_
           << " queued computations " << queued_computations_;
-    queue_size_ -= batch_size_;
+    queue_size_ -= minibatch_size_;
     gpu_work_size_ += size;
     return computations_in_flight_ + queued_computations_;
   }
 
   std::tuple<unsigned, TimePoint> CompleteBatch(size_t size, TimePoint now) {
     SpinMutex::Lock lock(mutex_);
+    statistics_.batches_++;
+    statistics_.positions_ += size;
     TimePoint old = last_complete_time_;
     last_complete_time_ = now;
     gpu_work_size_ -= size;
@@ -261,9 +274,20 @@ class BackendHandler {
     return computations_in_flight_;
   }
 
+  Statistics GetStatistics() {
+    Statistics stats;
+    SpinMutex::Lock lock(mutex_);
+    std::swap(stats, statistics_);
+    stats.queue_positions_ = queue_size_;
+    stats.minibatch_size_ = minibatch_size_;
+    stats.batches_in_flight_ = computations_in_flight_;
+    stats.max_nps_ = max_nps_;
+    return stats;
+  }
+
  private:
   size_t PendingSize() const {
-    size_t flushed_sizes = queued_computations_ * batch_size_;
+    size_t flushed_sizes = queued_computations_ * minibatch_size_;
     size_t pending_size = queue_size_ - flushed_sizes;
     return pending_size;
   }
@@ -282,7 +306,7 @@ class BackendHandler {
 
   double max_nps_ = 0.0;
 
-  unsigned batch_size_ = 0;
+  unsigned minibatch_size_ = 0;
   unsigned queue_size_ = 0;
   unsigned gpu_work_size_ = 0;
   unsigned queued_computations_ = 0;
@@ -290,6 +314,8 @@ class BackendHandler {
   bool exit_ = false;
 
   const OptionsDict& params_;
+
+  Statistics statistics_;
 };
 
 class ClientComputation;
@@ -307,7 +333,7 @@ class SharedQueue {
                ClientComputation* computation, size_t first, size_t last) {
     assert(priority < client::kMaxComputationPriority);
     SpinMutex::Lock lock(mutex_);
-    priority_queue_[priority].emplace(backend, computation, first, last);
+    priority_queue_[priority].emplace_back(backend, computation, first, last);
     PushWorkToBackend();
   }
 
@@ -373,6 +399,7 @@ class SharedQueue {
     {
       SpinMutex::Lock lock(mutex_);
       assert(Empty());
+      statistics_timer_.cancel();
       flush_timer_.cancel();
       map = std::move(backend_map_);
     }
@@ -384,13 +411,26 @@ class SharedQueue {
 
   asio::io_context& GetContext() { return io_context_; }
 
-  bool StartServer(const OptionsDict& options);
+  bool StartServer(const OptionsDict& options, StdoutUciResponder& responder);
 
   void EnsureReady() const {
     SpinMutex::Lock lock(mutex_);
     for (auto& backend : backend_map_) {
       backend.second.EnsureReady();
     }
+  }
+
+  void NewConnection() {
+    SpinMutex::Lock lock(mutex_);
+    active_connections_++;
+    if (active_connections_ == 1) {
+      StatisticsTimerSetup(Clock::now());
+    }
+  }
+
+  void ConnectionClosed() {
+    SpinMutex::Lock lock(mutex_);
+    active_connections_--;
   }
 
  private:
@@ -451,13 +491,13 @@ class SharedQueue {
       if (flushed) {
         needs_flush = false;
         if (item.first_ == item.last_) {
-          priority_queue_[priority].pop();
+          priority_queue_[priority].pop_front();
         }
         highest_backend_computations_ =
             std::max(highest_backend_computations_, batches);
         TRACE << "Flushed " << batches;
       } else {
-        priority_queue_[priority].pop();
+        priority_queue_[priority].pop_front();
       }
     }
     if (highest_backend_computations_ == max_batches_in_flight_) {
@@ -526,19 +566,68 @@ class SharedQueue {
     });
   }
 
+  void StatisticsTimerSetup(Clock::time_point now) {
+    if (active_connections_ == 0) {
+      return;
+    }
+    int interval = options_->Get<int>(kStatisticsIntervalOptionId);
+    statistics_timer_.expires_at(now + std::chrono::seconds(interval));
+    statistics_timer_.async_wait([this, interval](const std::error_code& ec) {
+      if (ec) {
+        if (ec != asio::error::operation_aborted) {
+          CERR << "Statistics timer failed: " << ec.message();
+        }
+        return;
+      }
+      std::vector<std::string> outputs;
+      outputs.reserve(backend_map_.size() + 1);
+      SpinMutex::Lock lock(mutex_);
+      std::ostringstream oss;
+      for (auto& backend : backend_map_) {
+        auto statistics = backend.second.GetStatistics();
+        double nps = static_cast<double>(statistics.positions_) / interval;
+        oss << "info string Backend " << backend.first << " nodes "
+            << statistics.positions_ << " batches " << statistics.batches_
+            << " nps " << nps << " mnps " << statistics.max_nps_ << " queue "
+            << statistics.queue_positions_ << "/" << statistics.minibatch_size_
+            << " bif " << statistics.batches_in_flight_;
+        outputs.emplace_back(oss.str());
+        oss.str("");
+      }
+      oss << "info string Clients " << active_connections_ << " Queue";
+      size_t p = 0;
+      for (auto& q : priority_queue_) {
+        oss << " p" << (p++) << " nodes "
+            << std::accumulate(std::begin(q), std::end(q), 0UL,
+                               [](size_t sum, const QueueItem& item) {
+                                 return sum + (item.last_ - item.first_);
+                               })
+            << "/" << q.size();
+      }
+      outputs.emplace_back(oss.str());
+      lock.unlock();
+      responder_->SendRawResponses(outputs);
+      StatisticsTimerSetup(statistics_timer_.expiry());
+    });
+  }
   std::thread io_thread_;
   BackendMap backend_map_;
   BackendMap::iterator network_discovery_;
+  const OptionsDict* options_ = nullptr;
+  StdoutUciResponder* responder_ = nullptr;
 
   mutable SpinMutex mutex_;
   std::condition_variable_any cv_;
   unsigned highest_backend_computations_ = 0;
   unsigned max_batches_in_flight_ = 0;
   TimePoint idle_timer_target_{};
-  std::array<std::queue<QueueItem>, client::kMaxComputationPriority>
+  std::array<std::deque<QueueItem>, client::kMaxComputationPriority>
       priority_queue_;
+
+  size_t active_connections_ = 0;
   asio::io_context io_context_;
   asio::steady_timer flush_timer_{io_context_};
+  asio::steady_timer statistics_timer_{io_context_};
 };
 
 class ClientComputation {
@@ -633,9 +722,13 @@ class ServerConnection
       : Base(std::forward<SocketType>(socket)) {
     // Initialize connection.
     TRACE << "New client connection.";
+    SharedQueue::Get().NewConnection();
   }
 
-  ~ServerConnection() { TRACE << "Client connection closed."; }
+  ~ServerConnection() {
+    TRACE << "Client connection closed.";
+    SharedQueue::Get().ConnectionClosed();
+  }
 
   void Start() { Read(); }
 
@@ -783,14 +876,17 @@ class BackendServer {
   // stream. The library default is to set the option but it won't do anything
   // for local streams.
   // https://stackoverflow.com/questions/68791319
-  BackendServer(asio::io_context& ctx, const OptionsDict& params)
+  BackendServer(asio::io_context& ctx, const OptionsDict& params,
+                StdoutUciResponder& responder)
       : acceptor_(ctx, GetEndpoint(ctx, params),
                   !std::is_same_v<Proto, asio::local::stream_protocol>),
         params_(const_cast<OptionsDict&>(params)) {
     do_accept();
-    COUT << "info string Backend server listening on "
-         << params.Get<std::string>(kProtocolOptionId) << "://"
-         << acceptor_.local_endpoint();
+    std::ostringstream oss;
+    oss << "info string Backend server listening on "
+        << params.Get<std::string>(kProtocolOptionId) << "://"
+        << acceptor_.local_endpoint();
+    responder.SendRawResponse(oss.str());
   }
 
   ~BackendServer() {
@@ -863,7 +959,7 @@ void BackendHandler::EnsureLoaded(const std::string& net, Callback&& callback) {
           backend_ = std::move(backend);
           std::error_code ec{};
           BackendAttributes attrs = GetAttributes();
-          batch_size_ = attrs.recommended_batch_size;
+          minibatch_size_ = attrs.recommended_batch_size;
           size_t threads =
               attrs.suggested_num_search_threads + !attrs.runs_on_cpu;
           while (backend_threads_.size() < threads) {
@@ -899,12 +995,13 @@ void BackendHandler::Worker() {
       std::vector<QueueItem> batch;
       {
         SpinMutex::Lock lock(mutex_);
-        cv_.wait(lock, [this] { return queue_size_ >= batch_size_ || exit_; });
+        cv_.wait(lock,
+                 [this] { return queue_size_ >= minibatch_size_ || exit_; });
         if (exit_) {
           TRACE << this << " Backend worker exiting.";
           return;
         }
-        while (size < batch_size_ && !queue_.empty()) {
+        while (size < minibatch_size_ && !queue_.empty()) {
           auto& item = queue_.front();
           size += item.last_ - item.first_;
           batch.emplace_back(item);
@@ -957,16 +1054,21 @@ void BackendHandler::Worker() {
   }
 }
 
-bool SharedQueue::StartServer(const OptionsDict& options) {
+bool SharedQueue::StartServer(const OptionsDict& options,
+                              StdoutUciResponder& responder) {
+  options_ = &options;
+  responder_ = &responder;
+  StatisticsTimerSetup(Clock::now());
   if (options.Get<std::string>(kProtocolOptionId) == "unix") {
-    io_thread_ = std::thread([this, &options] {
-      BackendServer<asio::local::stream_protocol> server(io_context_, options);
+    io_thread_ = std::thread([this, &options, &responder] {
+      BackendServer<asio::local::stream_protocol> server(io_context_, options,
+                                                         responder);
       io_context_.run();
     });
     return true;
   } else if (options.Get<std::string>(kProtocolOptionId) == "tcp") {
-    io_thread_ = std::thread([this, &options] {
-      BackendServer<asio::ip::tcp> server(io_context_, options);
+    io_thread_ = std::thread([this, &options, &responder] {
+      BackendServer<asio::ip::tcp> server(io_context_, options, responder);
       io_context_.run();
     });
     return true;
@@ -1011,6 +1113,7 @@ void RunBackendServer() {
   options_parser.Add<StringOption>(kNetworkDirectoryOptionId) =
       kDefaultNetworkDirectory;
   options_parser.Add<IntOption>(kAcceptLimitOptionId, 0, 1024) = 0;
+  options_parser.Add<IntOption>(kStatisticsIntervalOptionId, 0, 3600) = 60;
   if (!ConfigFile::Init() || !options_parser.ProcessAllFlags()) return;
   auto options = options_parser.GetOptionsDict();
   Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
@@ -1018,6 +1121,7 @@ void RunBackendServer() {
     CERR << "Using network directory: "
          << options.Get<std::string>(kNetworkDirectoryOptionId);
     BackendMap& backends = SharedQueue::Get().GetBackendMap();
+    StdoutUciResponder uci_responder;
     absl::Cleanup cleanup = [] { SharedQueue::Get().Close(); };
     std::filesystem::path network_dir(
         options.Get<std::string>(kNetworkDirectoryOptionId));
@@ -1046,12 +1150,11 @@ void RunBackendServer() {
 
     SharedQueue::Get().SetDiscovery(newest.path());
 
-    SharedQueue::Get().StartServer(options);
+    SharedQueue::Get().StartServer(options, uci_responder);
 
     std::cout.setf(std::ios::unitbuf);
     std::string line;
     BackendserverEngine engine{};
-    StdoutUciResponder uci_responder;
     UciLoop loop(&uci_responder, &options_parser, &engine);
     while (std::getline(std::cin, line)) {
       LOGFILE << ">> " << line;
