@@ -159,16 +159,23 @@ class BackendHandler {
     assert(batches < backend_threads_.size());
     queue_.emplace(item);
     bool flushed = false;
-    auto pending_size = PendingSize();
-    if (count + pending_size >= minibatch_size_) {
-      count = minibatch_size_ - pending_size;
+    size_t flushed_size = queued_computations_ * minibatch_size_;
+    size_t next_full_batch_size = minibatch_size_ * (queued_computations_ + 1);
+    if (queue_size_ < flushed_size) {
+      // Append to the queue because backend haven't yet processed queued items.
+      count = std::min(count, flushed_size - queue_size_);
+      queue_.back().last_ = queue_.back().first_ + count;
+    } else if (count + queue_size_ >= next_full_batch_size) {
+      // Item doesn't fully fit into the queue, we need to split it.
+      count = next_full_batch_size - queue_size_;
       queued_computations_++;
       batches++;
       queue_.back().last_ = queue_.back().first_ + count;
-      item.first_ += count;
       cv_.notify_one();
       flushed = true;
     }
+    item.first_ += count;
+    size_t pending_size = queue_size_;
     queue_size_ += count;
     TRACE << this << " Backend queue size: " << queue_size_
           << " pending size: " << pending_size
@@ -190,7 +197,6 @@ class BackendHandler {
       auto cif = computations_in_flight_;
       auto qc = queued_computations_;
       auto qs = queue_size_;
-      queue_size_ += minibatch_size_ - PendingSize();
       queued_computations_++;
       batches++;
       TRACE << this << " Forcing backend flush, new queue size: " << qs
@@ -212,7 +218,6 @@ class BackendHandler {
     auto pending = PendingSize();
     auto cif = computations_in_flight_;
     auto qc = queued_computations_;
-    queue_size_ += minibatch_size_ - PendingSize();
     queued_computations_++;
     cv_.notify_one();
     lock.unlock();
@@ -227,7 +232,7 @@ class BackendHandler {
     TRACE << this << " Starting batch of size: " << size
           << " computations in flight " << computations_in_flight_
           << " queued computations " << queued_computations_;
-    queue_size_ -= minibatch_size_;
+    queue_size_ -= size;
     gpu_work_size_ += size;
     return computations_in_flight_ + queued_computations_;
   }
@@ -287,9 +292,11 @@ class BackendHandler {
 
  private:
   size_t PendingSize() const {
-    size_t flushed_sizes = queued_computations_ * minibatch_size_;
-    size_t pending_size = queue_size_ - flushed_sizes;
-    return pending_size;
+    size_t flushed_size = queued_computations_ * minibatch_size_;
+    if (flushed_size > queue_size_) {
+      return 0;
+    }
+    return queue_size_ - flushed_size;
   }
 
   void Worker();
@@ -334,7 +341,9 @@ class SharedQueue {
     assert(priority < client::kMaxComputationPriority);
     SpinMutex::Lock lock(mutex_);
     priority_queue_[priority].emplace_back(backend, computation, first, last);
-    PushWorkToBackend();
+    if (highest_backend_computations_ == 0) {
+      PushWorkToBackend();
+    }
   }
 
   BackendMap& GetBackendMap() { return backend_map_; }
@@ -488,16 +497,14 @@ class SharedQueue {
       size_t batch_size = item.last_ - item.first_;
       auto [flushed, batches] =
           item.backend_->AddBatchToQueue(item, batch_size);
+      if (item.first_ == item.last_) {
+        priority_queue_[priority].pop_front();
+      }
       if (flushed) {
         needs_flush = false;
-        if (item.first_ == item.last_) {
-          priority_queue_[priority].pop_front();
-        }
         highest_backend_computations_ =
             std::max(highest_backend_computations_, batches);
         TRACE << "Flushed " << batches;
-      } else {
-        priority_queue_[priority].pop_front();
       }
     }
     if (highest_backend_computations_ == max_batches_in_flight_) {
@@ -995,8 +1002,7 @@ void BackendHandler::Worker() {
       std::vector<QueueItem> batch;
       {
         SpinMutex::Lock lock(mutex_);
-        cv_.wait(lock,
-                 [this] { return queue_size_ >= minibatch_size_ || exit_; });
+        cv_.wait(lock, [this] { return queued_computations_ || exit_; });
         if (exit_) {
           TRACE << this << " Backend worker exiting.";
           return;
