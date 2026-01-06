@@ -369,7 +369,7 @@ class SharedQueue {
           << computations_in_flight;
     bool was_full_queue = false;
     if (highest_backend_computations_ == max_batches_in_flight_) {
-      for (const auto& backend : backend_map_) {
+      for ([[maybe_unused]] const auto& backend : backend_map_) {
         assert(backend.second.GetComputationsInFlight() !=
                max_batches_in_flight_);
       }
