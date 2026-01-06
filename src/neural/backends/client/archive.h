@@ -91,7 +91,7 @@ class BinaryOArchive {
   template <typename T>
   ResultType Save(const T& value) {
     return Serialize(const_cast<T&>(value), *this, version_);
-  };
+  }
 
   // Integer serialization using protobuf variable encoding.
   ResultType Save(const uint64_t& value);
@@ -187,7 +187,7 @@ class BinaryIArchive {
   template <typename T>
   ResultType Load(T& value) {
     return Serialize(value, *this, version_);
-  };
+  }
 
   // Integer deserialization using protobuf variable encoding.
   ResultType Load(uint64_t& value);
