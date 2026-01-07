@@ -297,14 +297,20 @@ class Connection {
  public:
   explicit Connection(SocketType&& socket) : socket_(std::move(socket)) {
     input_.resize(kMaxMessageSize);
-    if (std::is_same_v<SocketType, asio::ip::tcp::socket> &&
-        socket_.is_open()) {
-      socket_.set_option(asio::ip::tcp::no_delay(true));
-    }
+    SetSocketOptions();
   }
   virtual ~Connection() = default;
 
  protected:
+  void SetSocketOptions() {
+    if (socket_.is_open()) {
+      if constexpr (std::is_same_v<SocketType, asio::ip::tcp::socket>) {
+        socket_.set_option(asio::ip::tcp::no_delay(true));
+      }
+      typename SocketType::keep_alive keep_alive_option(true);
+      socket_.set_option(keep_alive_option);
+    }
+  }
   template <bool new_request = true, typename MessageCallback>
   void ReadHeader(MessageCallback&& callback) {
     if (new_request) {
@@ -392,9 +398,7 @@ class Connection {
   template <typename Endpoint>
   void Connect(const Endpoint& endpoint) {
     socket_.connect(endpoint);
-    if constexpr (std::is_same_v<SocketType, asio::ip::tcp::socket>) {
-      socket_.set_option(asio::ip::tcp::no_delay(true));
-    }
+    SetSocketOptions();
   }
 
   virtual void Close() {
