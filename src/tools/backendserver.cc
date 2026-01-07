@@ -585,6 +585,9 @@ class SharedQueue {
       return;
     }
     int interval = options_->Get<int>(kStatisticsIntervalOptionId);
+    if (interval <= 0) {
+      return;
+    }
     statistics_timer_.expires_at(now + std::chrono::seconds(interval));
     statistics_timer_.async_wait([this, interval](const std::error_code& ec) {
       if (ec) {
