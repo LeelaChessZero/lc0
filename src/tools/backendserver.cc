@@ -755,15 +755,16 @@ class ServerConnection
   }
 
   template <typename MessageType, typename Archive>
-  Archive::ResultType HandleMessage(const MessageType& message, Archive&) {
+  typename Archive::ResultType HandleMessage(const MessageType& message,
+                                             Archive&) {
     // Handle different message types here.
     CERR << "Received unexpected message of type: " << message.header_.type_;
     return Unexpected(client::ArchiveError::UnknownType);
   }
 
   template <typename Archive>
-  Archive::ResultType HandleMessage(const client::Handshake& message,
-                                    Archive& ar) {
+  typename Archive::ResultType HandleMessage(const client::Handshake& message,
+                                             Archive& ar) {
     LCTRACE_FUNCTION_SCOPE;
     assert(message.header_.type_ == client::MessageType::HANDSHAKE);
     if (backend_) {
@@ -811,8 +812,8 @@ class ServerConnection
   }
 
   template <typename Archive>
-  Archive::ResultType HandleMessage(client::ComputeBlocking& message,
-                                    Archive& ar) {
+  typename Archive::ResultType HandleMessage(client::ComputeBlocking& message,
+                                             Archive& ar) {
     LCTRACE_FUNCTION_SCOPE;
     assert(message.header_.type_ == client::MessageType::COMPUTE_BLOCKING);
     if (!backend_) {

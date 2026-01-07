@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+
 #include "neural/backends/client/archive.h"
 
 namespace lczero {
@@ -125,8 +126,8 @@ class Square {
   constexpr uint8_t as_idx() const { return idx_; }
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     return ar & client::FixedInteger{idx_};
   }
 
@@ -182,8 +183,8 @@ class Move {
   uint16_t raw_data() const { return data_; }
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     return ar & client::FixedInteger{data_};
   }
 

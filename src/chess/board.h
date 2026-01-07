@@ -199,8 +199,8 @@ class ChessBoard {
     File their_kingside_rook;
 
     template <typename Archive>
-    Archive::ResultType Serialize(Archive& ar,
-                                  [[maybe_unused]] const unsigned version) {
+    typename Archive::ResultType Serialize(
+        Archive& ar, [[maybe_unused]] const unsigned version) {
       return ar & client::FixedInteger{data_};
     }
 
@@ -235,8 +235,8 @@ class ChessBoard {
   bool operator!=(const ChessBoard& other) const = default;
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     auto r = ar & our_pieces_;
     r = r.and_then([this](Archive& ar) { return ar & their_pieces_; });
     r = r.and_then([this](Archive& ar) { return ar & rooks_; });

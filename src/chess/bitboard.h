@@ -159,9 +159,11 @@ class BitBoard {
   }
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar, [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     return ar & client::FixedInteger{board_};
   }
+
  private:
   std::uint64_t board_ = 0;
 };

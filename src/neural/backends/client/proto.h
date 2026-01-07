@@ -88,8 +88,8 @@ struct MessageHeader {
   uint8_t type_;
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     auto r = ar & FixedInteger(magic_);
     r = r.and_then([this](Archive& ar) { return ar & size_; });
     r = r.and_then([this](Archive& ar) { return ar & type_; });
@@ -111,8 +111,8 @@ struct Handshake {
   std::string_view network_name_{};
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     typename Archive::ResultType r{ar};
     r = Archive::is_saving ? ar & header_ : r;
     r = r.and_then([this](Archive& ar) { return ar & backend_api_version_; });
@@ -130,8 +130,8 @@ struct HandshakeReply {
   std::string_view error_message_{};
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     TRACE << "HandshakeReply::Serialize(" << ar.Size()
           << "): error_message=" << error_message_;
     typename Archive::ResultType r{ar};
@@ -148,8 +148,8 @@ struct InputPosition {
   std::array<Move, kMoveHistory - 1> history_{};
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     auto r = ar & base_;
     r = r.and_then([this](Archive& ar) { return ar & history_length_; });
     const unsigned len = history_length_;
@@ -168,8 +168,8 @@ struct ComputeBlocking {
   std::vector<InputPosition> inputs_{};
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     typename Archive::ResultType r{ar};
     r = Archive::is_saving ? ar & header_ : r;
     r = r.and_then([this](Archive& ar) { return ar & computation_id_; });
@@ -186,8 +186,8 @@ struct NetworkResult {
   std::span<float> policy_{};
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     auto r = ar & value_;
     r = r.and_then([this](Archive& ar) { return ar & draw_; });
     r = r.and_then([this](Archive& ar) { return ar & moves_left_; });
@@ -203,8 +203,8 @@ struct ComputeBlockingReply {
   std::string_view error_message_{};
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar,
-                                [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     typename Archive::ResultType r{ar};
     r = Archive::is_saving ? ar & header_ : r;
     r = r.and_then([this](Archive& ar) { return ar & computation_id_; });
@@ -227,16 +227,18 @@ using InputBufferType = std::array<char, kBufferSize>;
 
 template <typename Archive, typename T>
 [[nodiscard]]
-Archive::ResultType SerializeMessage(Archive& oa, T& message);
+typename Archive::ResultType SerializeMessage(Archive& oa, T& message);
 
 template <typename Archive>
 [[nodiscard]]
-Archive::ResultType ParseMessageHeader(Archive& ia, MessageHeader& header);
+typename Archive::ResultType ParseMessageHeader(Archive& ia,
+                                                MessageHeader& header);
 
 template <typename Archive, typename T, typename Callback>
 [[nodiscard]]
-Archive::ResultType ParseMessageType(Archive& ia, const MessageHeader& header,
-                                     T& out, Callback&& callback) {
+typename Archive::ResultType ParseMessageType(Archive& ia,
+                                              const MessageHeader& header,
+                                              T& out, Callback&& callback) {
   assert(ia.Size() >= header.size_);
   out.header_ = header;
   return (ia & out).and_then(
@@ -245,8 +247,9 @@ Archive::ResultType ParseMessageType(Archive& ia, const MessageHeader& header,
 
 template <typename Archive, typename Callback>
 [[nodiscard]]
-Archive::ResultType ParseMessage(Archive& ia, const MessageHeader& header,
-                                 Callback&& callback) {
+typename Archive::ResultType ParseMessage(Archive& ia,
+                                          const MessageHeader& header,
+                                          Callback&& callback) {
   TRACE << "Parsing message " << ia.Size() << " bytes available";
   assert(ia.Size() >= header.size_);
   switch (header.type_) {

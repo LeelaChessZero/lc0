@@ -78,12 +78,13 @@ class Position {
   std::string DebugString() const;
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar, [[maybe_unused]] const unsigned version) {
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
     auto r = ar & us_board_;
-    r = r.and_then([this] (Archive& ar) { return ar & rule50_ply_; });
-    r = r.and_then([this] (Archive& ar) { return ar & repetitions_; });
-    r = r.and_then([this] (Archive& ar) { return ar & cycle_length_; });
-    r = r.and_then([this] (Archive& ar) { return ar & ply_count_; });
+    r = r.and_then([this](Archive& ar) { return ar & rule50_ply_; });
+    r = r.and_then([this](Archive& ar) { return ar & repetitions_; });
+    r = r.and_then([this](Archive& ar) { return ar & cycle_length_; });
+    r = r.and_then([this](Archive& ar) { return ar & ply_count_; });
     return r;
   }
 

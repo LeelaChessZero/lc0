@@ -32,7 +32,8 @@
 namespace lczero::client {
 
 template <typename Archive>
-Archive::ResultType ParseMessageHeader(Archive& ia, MessageHeader& header) {
+typename Archive::ResultType ParseMessageHeader(Archive& ia,
+                                                MessageHeader& header) {
   TRACE << "Parsing MessageHeader";
 
   auto r = ia & header;
@@ -52,7 +53,7 @@ Archive::ResultType ParseMessageHeader(Archive& ia, MessageHeader& header) {
 }
 
 template <typename Archive, typename T>
-Archive::ResultType SerializeMessage(Archive& os, T& message) {
+typename Archive::ResultType SerializeMessage(Archive& os, T& message) {
   return os.StartSerialize(message);
 }
 

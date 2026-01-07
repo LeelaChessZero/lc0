@@ -27,7 +27,6 @@
 
 #include <stdio.h>
 
-#include "utils/asio.h"
 #include <atomic>
 #include <list>
 
@@ -35,6 +34,7 @@
 #include "neural/backends/client/proto.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
+#include "utils/asio.h"
 #include "utils/atomic.h"
 #include "utils/atomic_vector.h"
 #include "utils/commandline.h"
@@ -130,7 +130,9 @@ class ClientConnection final : public Context,
   }
 
   ClientConnection(const ClientConnection& primary, const std::string& network)
-      : Context(), Base(SocketType{this->io_context()}), endpoint_(primary.endpoint_) {
+      : Context(),
+        Base(SocketType{this->io_context()}),
+        endpoint_(primary.endpoint_) {
     // Initialize connection.
     LCTRACE_FUNCTION_SCOPE;
     this->Connect(endpoint_);
@@ -176,7 +178,6 @@ class ClientConnection final : public Context,
   void Release() { reserved_.store(nullptr, std::memory_order_release); }
 
  private:
-
   BackendClientComputation<Proto>* GetReservedComputation() {
     return reserved_.load(std::memory_order_relaxed);
   }
@@ -184,10 +185,11 @@ class ClientConnection final : public Context,
   FakeSelf Self() { return {}; }
 
   void Read() {
-    Base::template ReadHeader<false>([this](const auto& message, auto& archive) {
-      // Clang warns about unused this if not using this for the call.
-      return this->HandleMessage(message, archive);
-    });
+    Base::template ReadHeader<false>(
+        [this](const auto& message, auto& archive) {
+          // Clang warns about unused this if not using this for the call.
+          return this->HandleMessage(message, archive);
+        });
   }
 
   void WriteHandshake(const std::string& network) {
@@ -200,15 +202,16 @@ class ClientConnection final : public Context,
   }
 
   template <typename MessageType, typename Archive>
-  Archive::ResultType HandleMessage(const MessageType& message, Archive&) {
+  typename Archive::ResultType HandleMessage(const MessageType& message,
+                                             Archive&) {
     // Handle different message types here.
     CERR << "Received unexpected message of type: " << message.header_.type_;
     return Unexpected(ArchiveError::UnknownType);
   }
 
   template <typename Archive>
-  Archive::ResultType HandleMessage(const HandshakeReply& message,
-                                    Archive& ar) {
+  typename Archive::ResultType HandleMessage(const HandshakeReply& message,
+                                             Archive& ar) {
     LCTRACE_FUNCTION_SCOPE;
     assert(message.header_.type_ == MessageType::HANDSHAKE_REPLY);
     if (!message.error_message_.empty()) {
@@ -261,8 +264,8 @@ class ClientConnection final : public Context,
   }
 
   template <typename Archive>
-  Archive::ResultType HandleMessage(const ComputeBlockingReply& message,
-                                    Archive& ar);
+  typename Archive::ResultType HandleMessage(
+      const ComputeBlockingReply& message, Archive& ar);
 
   FILE* pipe_ = nullptr;
   size_t computation_id_ = -1;
@@ -424,7 +427,7 @@ class BackendClientComputation final : public BackendComputation {
 
 template <typename Proto>
 template <typename Archive>
-Archive::ResultType ClientConnection<Proto>::HandleMessage(
+typename Archive::ResultType ClientConnection<Proto>::HandleMessage(
     const ComputeBlockingReply& message, Archive& ar) {
   LCTRACE_FUNCTION_SCOPE;
   if (!message.error_message_.empty()) {

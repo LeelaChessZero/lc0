@@ -50,11 +50,13 @@ std::ostream& operator<<(std::ostream& os, ArchiveError error);
 
 template <typename T>
 struct FixedInteger {
+  FixedInteger(T& v) : value(v) {}
   T& value;
 };
 
 template <typename T, typename Archive>
-Archive::ResultType Serialize(T& value, Archive& ar, const unsigned version) {
+typename Archive::ResultType Serialize(T& value, Archive& ar,
+                                       const unsigned version) {
   return value.Serialize(ar, version);
 }
 
@@ -156,8 +158,11 @@ class BinaryIArchive {
 
   using ResultType = Expected<BinaryIArchive&, ArchiveError>;
 
-  BinaryIArchive(std::span<const char> buffer, char* temporary_memory, unsigned version)
-      : buffer_(buffer), temporary_memory_(temporary_memory), version_(version) {}
+  BinaryIArchive(std::span<const char> buffer, char* temporary_memory,
+                 unsigned version)
+      : buffer_(buffer),
+        temporary_memory_(temporary_memory),
+        version_(version) {}
 
   template <typename T>
   [[nodiscard]]

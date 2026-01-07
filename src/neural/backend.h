@@ -49,7 +49,7 @@ struct BackendAttributes {
   int maximum_batch_size;
 
   template <typename Archive>
-  Archive::ResultType Serialize(Archive& ar, const unsigned) {
+  typename Archive::ResultType Serialize(Archive& ar, const unsigned) {
     auto r = ar & has_mlh;
     r = r.and_then([this](Archive& ar) { return ar & has_wdl; });
     r = r.and_then([this](Archive& ar) { return ar & runs_on_cpu; });
