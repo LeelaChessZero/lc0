@@ -122,6 +122,7 @@ files += gen.process('proto/onnx.proto',
 files += gen.process('proto/hlo.proto',
   preserve_path_from : meson.current_source_dir())
 
+#############################################################################
 ## Main files
 #############################################################################
 common_files += [
