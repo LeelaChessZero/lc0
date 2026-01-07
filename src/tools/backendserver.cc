@@ -346,6 +346,12 @@ class SharedQueue {
     }
   }
 
+  BackendMap& GetBackendMap(const OptionsDict& options,
+                            StdoutUciResponder& responder) {
+    options_ = &options;
+    responder_ = &responder;
+    return backend_map_;
+  }
   BackendMap& GetBackendMap() { return backend_map_; }
   void SetDiscovery(const std::filesystem::path& path) {
     network_discovery_ = backend_map_.find(path.filename().string());
@@ -401,26 +407,27 @@ class SharedQueue {
     WaitOnFlushTimer();
   }
 
+  void Stop() {
+    LCTRACE_FUNCTION_SCOPE;
+    io_context_.stop();
+  }
+
   void Close() {
     LCTRACE_FUNCTION_SCOPE;
     BackendMap map;
     io_context_.stop();
     {
       SpinMutex::Lock lock(mutex_);
-      assert(Empty());
       statistics_timer_.cancel();
       flush_timer_.cancel();
       map = std::move(backend_map_);
     }
     map.clear();
-    if (io_thread_.joinable()) {
-      io_thread_.join();
-    }
   }
 
   asio::io_context& GetContext() { return io_context_; }
 
-  bool StartServer(const OptionsDict& options, StdoutUciResponder& responder);
+  void StartServer();
 
   void EnsureReady() const {
     SpinMutex::Lock lock(mutex_);
@@ -617,7 +624,6 @@ class SharedQueue {
       StatisticsTimerSetup(statistics_timer_.expiry());
     });
   }
-  std::thread io_thread_;
   BackendMap backend_map_;
   BackendMap::iterator network_discovery_;
   const OptionsDict* options_ = nullptr;
@@ -1060,27 +1066,17 @@ void BackendHandler::Worker() {
   }
 }
 
-bool SharedQueue::StartServer(const OptionsDict& options,
-                              StdoutUciResponder& responder) {
-  options_ = &options;
-  responder_ = &responder;
-  StatisticsTimerSetup(Clock::now());
-  if (options.Get<std::string>(kProtocolOptionId) == "unix") {
-    io_thread_ = std::thread([this, &options, &responder] {
-      BackendServer<asio::local::stream_protocol> server(io_context_, options,
-                                                         responder);
-      io_context_.run();
-    });
-    return true;
-  } else if (options.Get<std::string>(kProtocolOptionId) == "tcp") {
-    io_thread_ = std::thread([this, &options, &responder] {
-      BackendServer<asio::ip::tcp> server(io_context_, options, responder);
-      io_context_.run();
-    });
-    return true;
+void SharedQueue::StartServer() {
+  if (options_->Get<std::string>(kProtocolOptionId) == "unix") {
+    BackendServer<asio::local::stream_protocol> server(io_context_, *options_,
+                                                       *responder_);
+    io_context_.run();
+  } else if (options_->Get<std::string>(kProtocolOptionId) == "tcp") {
+    BackendServer<asio::ip::tcp> server(io_context_, *options_, *responder_);
+    io_context_.run();
   } else {
-    CERR << "Unknown protocol: " << options.Get<std::string>(kProtocolOptionId);
-    return false;
+    CERR << "Unknown protocol: "
+         << options_->Get<std::string>(kProtocolOptionId);
   }
 }
 
@@ -1100,6 +1096,23 @@ class BackendserverEngine : public EngineControllerBase {
 
   void RegisterUciResponder(UciResponder*) override {}
   void UnregisterUciResponder(UciResponder*) override {}
+};
+
+class ConsoleThread : public std::thread {
+ public:
+  using std::thread::thread;
+  ~ConsoleThread() {
+#ifdef __WIN32__
+    _close(_fileno(stdin));
+    GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+#else
+    close(STDIN_FILENO);
+    pthread_kill(native_handle(), SIGINT);
+#endif
+    if (joinable()) {
+      join();
+    }
+  }
 };
 
 }  // namespace
@@ -1126,8 +1139,9 @@ void RunBackendServer() {
   try {
     CERR << "Using network directory: "
          << options.Get<std::string>(kNetworkDirectoryOptionId);
-    BackendMap& backends = SharedQueue::Get().GetBackendMap();
     StdoutUciResponder uci_responder;
+    BackendMap& backends =
+        SharedQueue::Get().GetBackendMap(options, uci_responder);
     absl::Cleanup cleanup = [] { SharedQueue::Get().Close(); };
     std::filesystem::path network_dir(
         options.Get<std::string>(kNetworkDirectoryOptionId));
@@ -1156,24 +1170,27 @@ void RunBackendServer() {
 
     SharedQueue::Get().SetDiscovery(newest.path());
 
-    SharedQueue::Get().StartServer(options, uci_responder);
+    ConsoleThread console([&] {
+      absl::Cleanup cleanup = [] { SharedQueue::Get().Stop(); };
+      std::cout.setf(std::ios::unitbuf);
+      std::string line;
+      BackendserverEngine engine{};
+      UciLoop loop(&uci_responder, &options_parser, &engine);
+      while (std::getline(std::cin, line)) {
+        LOGFILE << ">> " << line;
+        try {
+          if (!loop.ProcessLine(line)) break;
 
-    std::cout.setf(std::ios::unitbuf);
-    std::string line;
-    BackendserverEngine engine{};
-    UciLoop loop(&uci_responder, &options_parser, &engine);
-    while (std::getline(std::cin, line)) {
-      LOGFILE << ">> " << line;
-      try {
-        if (!loop.ProcessLine(line)) break;
-
-        Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
-      } catch (const Exception& ex) {
-        uci_responder.SendRawResponse(std::string("error ") + ex.what());
+          Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
+        } catch (const Exception& ex) {
+          uci_responder.SendRawResponse(std::string("error ") + ex.what());
+        }
       }
-    }
+    });
+
+    SharedQueue::Get().StartServer();
   } catch (Exception& ex) {
-    CERR << ex.what();
+    CERR << "Error: " << ex.what();
   }
 }
 }  // namespace lczero
