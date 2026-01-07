@@ -301,6 +301,8 @@ class Connection {
   }
   virtual ~Connection() = default;
 
+  bool IsOpen() const { return socket_.is_open(); }
+
  protected:
   void SetSocketOptions() {
     if (socket_.is_open()) {
@@ -311,10 +313,17 @@ class Connection {
       socket_.set_option(keep_alive_option);
     }
   }
-  template <bool new_request = true, typename MessageCallback>
+  template <bool async = true, bool new_request = true,
+            typename MessageCallback>
   void ReadHeader(MessageCallback&& callback) {
     if (new_request) {
-      if (ParseHeader(std::move(callback))) return;
+      auto rv = ParseHeader<async>(std::forward<MessageCallback>(callback));
+      if (rv == ArchiveError::None) return;
+      if (rv != ArchiveError::BufferOverflow) {
+        CERR << "Error parsing message header: " << rv;
+        Close();
+        return;
+      }
       if (ReadyBytes() > 0) {
         // Move unparsed data to the front.
         std::memmove(input_.data(), input_.data() + parsed_bytes_,
@@ -323,27 +332,42 @@ class Connection {
       input_read_bytes_ = ReadyBytes();
       parsed_bytes_ = 0;
     }
-    socket_.async_read_some(
-        InputBuffer(), [this, callback = std::move(callback)](
-                           std::error_code ec, size_t length) {
-          if (ec) {
-            // Handle error or disconnection.
-            if (ec != asio::error::eof &&
-                ec != asio::error::operation_aborted) {
-              CERR << "Connection error in ReadHeader: " << ec.message();
-            }
-            Close();
-            return;
-          }
-          input_read_bytes_ += length;
-          // Process data.
-          if (!ParseHeader(std::move(callback))) {
-            ReadBody<false>(std::move(callback));
-          }
-        });
+    auto handler = [this, callback = std::move(callback)](std::error_code ec,
+                                                          size_t length) {
+      if (ec) {
+        // Handle error or disconnection.
+        if (ec != asio::error::eof && ec != asio::error::operation_aborted) {
+          CERR << "Connection error in ReadHeader: " << ec.message();
+        }
+        Close();
+        return;
+      }
+      input_read_bytes_ += length;
+      // Process data.
+      auto rv = ParseHeader<async>(std::move(callback));
+      switch (rv) {
+        case ArchiveError::None:
+          return;
+        case ArchiveError::BufferOverflow:
+          // Need more data.
+          ReadHeader<async, false>(std::move(callback));
+          return;
+        default:
+          CERR << "Error parsing message header: " << rv;
+          Close();
+          return;
+      }
+    };
+    if (async) {
+      socket_.async_read_some(InputBuffer(), handler);
+    } else {
+      asio::error_code ec;
+      size_t length = socket_.read_some(InputBuffer(), ec);
+      handler(ec, length);
+    }
   }
 
-  template <typename SelfType, typename MessageType>
+  template <bool async = true, typename SelfType, typename MessageType>
   void SendMessage(SelfType&& self, MessageType& message) {
     BinaryOArchive output(kBackendApiVersion);
     if (!SerializeMessage(output, message)) {
@@ -351,18 +375,30 @@ class Connection {
       Close();
       return;
     }
-    Dispatch([this, self = std::move(self), output = std::move(output)] {
-      bool empty = queue_.empty();
-      TRACE << "Queueing message<" << typeid(MessageType).name() << "> of size "
-            << output.Size() << " for sending. Queue size was "
-            << queue_.size();
-      queue_.push(std::move(output));
-      if (!empty) {
-        // A write is already in progress.
+    TRACE << "Serialized message<" << typeid(MessageType).name() << "> of size "
+          << output.Size() << " for sending.";
+    if (async) {
+      Dispatch([this, self = std::move(self), output = std::move(output)] {
+        bool empty = queue_.empty();
+        TRACE << "Queueing message<" << typeid(MessageType).name()
+              << "> of size " << output.Size()
+              << " for sending. Queue size was " << queue_.size();
+        queue_.push(std::move(output));
+        if (!empty) {
+          // A write is already in progress.
+          return;
+        }
+        Write(std::move(self));
+      });
+    } else {
+      asio::error_code ec;
+      asio::write(socket_, asio::buffer(output.GetVector()), ec);
+      if (ec) {
+        CERR << "Connection error in SendMessage: " << ec.message();
+        Close();
         return;
       }
-      Write(std::move(self));
-    });
+    }
   }
 
   template <typename FunctionType>
@@ -410,7 +446,7 @@ class Connection {
   }
 
  private:
-  template <bool new_request = true, typename MessageCallback>
+  template <bool async, bool new_request = true, typename MessageCallback>
   void ReadBody(MessageCallback&& callback) {
     if (ReadyBytes() >= pending_header_.size_) {
       ParseInput(std::move(callback));
@@ -425,26 +461,32 @@ class Connection {
       input_read_bytes_ = ReadyBytes();
       parsed_bytes_ = 0;
     }
-    socket_.async_read_some(
-        InputBuffer(), [this, callback = std::move(callback)](
-                           std::error_code ec, size_t length) {
-          if (ec) {
-            // Handle error or disconnection.
-            if (ec != asio::error::eof) {
-              CERR << "Connection error in ReadBody: " << ec.message();
-            }
-            Close();
-            return;
-          }
-          input_read_bytes_ += length;
-          if (ReadyBytes() < pending_header_.size_) {
-            // Need more data.
-            ReadBody<false>(std::move(callback));
-            return;
-          }
-          // Process data.
-          ParseInput(std::move(callback));
-        });
+    auto handler = [this, callback = std::move(callback)](std::error_code ec,
+                                                          size_t length) {
+      if (ec) {
+        // Handle error or disconnection.
+        if (ec != asio::error::eof) {
+          CERR << "Connection error in ReadBody: " << ec.message();
+        }
+        Close();
+        return;
+      }
+      input_read_bytes_ += length;
+      if (ReadyBytes() < pending_header_.size_) {
+        // Need more data.
+        ReadBody<false>(std::move(callback));
+        return;
+      }
+      // Process data.
+      ParseInput(std::move(callback));
+    };
+    if (async) {
+      socket_.async_read_some(InputBuffer(), handler);
+    } else {
+      asio::error_code ec;
+      size_t length = socket_.read_some(InputBuffer(), ec);
+      handler(ec, length);
+    }
   }
 
   const char* InputBegin() { return input_.data() + parsed_bytes_; }
@@ -455,21 +497,22 @@ class Connection {
                         input_.size() - input_read_bytes_);
   }
 
-  template <typename MessageCallback>
-  bool ParseHeader(MessageCallback&& callback) {
+  template <bool async, typename MessageCallback>
+  ArchiveError ParseHeader(MessageCallback&& callback) {
     TRACE << "Parsing header data " << ReadyBytes() << " bytes available. ";
-    if (ReadyBytes() == 0) return false;
+    if (ReadyBytes() == 0) return ArchiveError::BufferOverflow;
 
     auto first = InputBegin();
     BinaryIArchive ia(std::span<const char>(first, InputEnd()), input_.data(),
                       kBackendApiVersion);
     size_t size = ia.Size();
-    if (!ParseMessageHeader(ia, pending_header_)) {
-      return false;
+    auto rv = ParseMessageHeader(ia, pending_header_);
+    if (!rv) {
+      return rv.error();
     }
     parsed_bytes_ += size - ia.Size();
-    ReadBody(std::forward<MessageCallback>(callback));
-    return true;
+    ReadBody<async>(std::forward<MessageCallback>(callback));
+    return ArchiveError::None;
   }
 
   template <typename MessageCallback>

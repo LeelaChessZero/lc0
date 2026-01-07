@@ -28,7 +28,8 @@
 #include <stdio.h>
 
 #include "utils/asio.h"
-#include <thread>
+#include <atomic>
+#include <list>
 
 #include "neural/backend.h"
 #include "neural/backends/client/proto.h"
@@ -54,21 +55,12 @@ namespace {
 
 class Context {
  public:
-  // TODO: Use a shared io thread for multiple connections.
-  Context() : io_thread_([this] { this->io_context().run(); }) {}
-  ~Context() {
-    work_guard_.reset();
-    io_thread_.join();
-  }
+  Context() {}
+  ~Context() {}
   asio::io_context& io_context() { return io_context_; }
-
-  void Connected() { work_guard_.reset(); }
 
  private:
   asio::io_context io_context_;
-  asio::executor_work_guard<asio::io_context::executor_type> work_guard_{
-      io_context_.get_executor()};
-  std::thread io_thread_;
 };
 
 template <typename Proto>
@@ -83,34 +75,35 @@ class ClientConnection final : public Context,
   using Endpoint = typename Proto::endpoint;
 
  public:
-  ClientConnection(const OptionsDict& options)
+  ClientConnection(const OptionsDict& options, const std::string& network)
       : Context(), Base(SocketType{this->io_context()}) {
     // Initialize connection.
     LCTRACE_FUNCTION_SCOPE;
-    Endpoint endpoint;
-    std::string user_arguments = options.GetOrDefault("server-arguments", std::string());
+    std::string user_arguments =
+        options.GetOrDefault("server-arguments", std::string());
     std::string args = " backendserver ";
     if constexpr (std::is_same_v<Proto, asio::local::stream_protocol>) {
       const std::string pipe =
           options.GetOrDefault("pipe_name", kDefaultPipeName);
-      endpoint = GetEndpoint<Endpoint>(pipe);
+      endpoint_ = GetEndpoint<Endpoint>(pipe);
       args += "--protocol=unix --pipe-name=" + pipe;
     } else {
       const std::string host = options.GetOrDefault("tcp-host", kDefaultHost);
       const int port = options.GetOrDefault("tcp-port", kDefaultPort);
       const std::string port_str = std::to_string(port);
-      endpoint = GetEndpoint<Endpoint>(this->io_context(), host, port_str);
+      endpoint_ = GetEndpoint<Endpoint>(this->io_context(), host, port_str);
       args += "--protocol=tcp --tcp-host=" + host + " --tcp-port=" + port_str;
     }
     try {
-      this->Connect(endpoint);
+      this->Connect(endpoint_);
     } catch (const std::exception& e) {
       if (user_arguments.empty()) {
-        CERR << "Failed to connect to backend server at " << endpoint
-             << ": " << e.what();
+        CERR << "Failed to connect to backend server at " << endpoint_ << ": "
+             << e.what();
         throw Exception("Failed to connect to backend server");
       }
-      std::string command = CommandLine::BinaryName() + args + " " + user_arguments;
+      std::string command =
+          CommandLine::BinaryName() + args + " " + user_arguments;
       FILE* pipe_ = popen(command.c_str(), "r");
       if (!pipe_) {
         CERR << "Failed to start backend server with command: " << command;
@@ -130,9 +123,19 @@ class ClientConnection final : public Context,
       // process running.
       close(fileno(pipe_));
 
-      this->Connect(endpoint);
+      this->Connect(endpoint_);
     }
-    CERR << "Connected to backend server " << endpoint;
+    Start(network);
+    CERR << "Connected to backend server " << endpoint_;
+  }
+
+  ClientConnection(const ClientConnection& primary, const std::string& network)
+      : Context(), Base(SocketType{this->io_context()}), endpoint_(primary.endpoint_) {
+    // Initialize connection.
+    LCTRACE_FUNCTION_SCOPE;
+    this->Connect(endpoint_);
+    Start(network);
+    CERR << "Connected to backend server " << endpoint_;
   }
 
   ~ClientConnection() {
@@ -148,9 +151,7 @@ class ClientConnection final : public Context,
     throw Exception("Backend client connection closed");
   }
 
-  void Start(const std::string& network) {
-    Base::Dispatch([this, &network] { WriteHandshake(network); });
-  }
+  void Start(const std::string& network) { WriteHandshake(network); }
 
   struct FakeSelf {};
 
@@ -162,22 +163,28 @@ class ClientConnection final : public Context,
     message.computation_id_ = computation_id;
     message.priority_ = priority;
     message.inputs_ = std::move(inputs);
-    Base::SendMessage(Self(), message);
+    Base::template SendMessage<false>(Self(), message);
+    Read();
   }
 
-  ComputationMap& GetComputations() { return computations_; }
-
-  SpinMutex::Lock Lock() ACQUIRE(mutex_) { return {mutex_}; }
-
-  void WaitForHandshake() {
-    handshake_completed_.wait(false, std::memory_order_acquire);
+  bool Reserve(BackendClientComputation<Proto>* computation) {
+    BackendClientComputation<Proto>* old = nullptr;
+    return reserved_.compare_exchange_strong(
+        old, computation, std::memory_order_acquire, std::memory_order_relaxed);
   }
+
+  void Release() { reserved_.store(nullptr, std::memory_order_release); }
 
  private:
+
+  BackendClientComputation<Proto>* GetReservedComputation() {
+    return reserved_.load(std::memory_order_relaxed);
+  }
+
   FakeSelf Self() { return {}; }
 
   void Read() {
-    Base::ReadHeader([this](const auto& message, auto& archive) {
+    Base::template ReadHeader<false>([this](const auto& message, auto& archive) {
       // Clang warns about unused this if not using this for the call.
       return this->HandleMessage(message, archive);
     });
@@ -187,9 +194,9 @@ class ClientConnection final : public Context,
     Handshake message;
     message.network_name_ = network;
 
-    Base::SendMessage(Self(), message);
+    Base::template SendMessage<false>(Self(), message);
     Read();
-    Context::Connected();
+    assert(!Base::IsOpen() || attrs_.maximum_batch_size);
   }
 
   template <typename MessageType, typename Archive>
@@ -247,12 +254,9 @@ class ClientConnection final : public Context,
       return Unexpected(ArchiveError::InvalidData);
     }
     attrs_ = message.attributes_;
-    handshake_completed_.store(true, std::memory_order_release);
-    handshake_completed_.notify_one();
     TRACE << "Received handshake response. Batch size: "
           << attrs_.recommended_batch_size << "/" << attrs_.maximum_batch_size;
     // Handshake complete, ready to proceed.
-    this->Defer([this] { Read(); });
     return {ar};
   }
 
@@ -260,22 +264,21 @@ class ClientConnection final : public Context,
   Archive::ResultType HandleMessage(const ComputeBlockingReply& message,
                                     Archive& ar);
 
-  SpinMutex mutex_;
   FILE* pipe_ = nullptr;
+  size_t computation_id_ = -1;
   std::vector<char> pipe_input_buffer_;
   BackendAttributes attrs_{};
-  WaitableAtomic<bool> handshake_completed_ = false;
-  ComputationMap computations_;
+  std::atomic<BackendClientComputation<Proto>*> reserved_{nullptr};
+  Endpoint endpoint_;
 };
 
 template <typename Proto>
 class BackendClient final : public Backend {
  public:
   BackendClient(const std::string& network, const OptionsDict& options)
-      : connection_{options} {
+      : network_(network) {
     LCTRACE_FUNCTION_SCOPE;
-    connection_.Start(network);
-
+    connections_.emplace_back(options, network_);
     size_t fixed_priority = options.GetOrDefault("fixed-priority", -1);
 
     if (fixed_priority >= kMaxComputationPriority &&
@@ -285,39 +288,51 @@ class BackendClient final : public Backend {
       fixed_priority = -1;
     }
     fixed_priority_ = fixed_priority;
-
-    connection_.WaitForHandshake();
-    assert(connection_.GetAttributes().maximum_batch_size != 0 ||
-           connection_.io_context().stopped());
-    CERR << "Connected to backend server using " << network;
   }
 
   BackendAttributes GetAttributes() const override {
-    return connection_.GetAttributes();
+    return connections_.front().GetAttributes();
   }
   std::unique_ptr<BackendComputation> CreateComputation(
       size_t time_remaining) override;
 
-  void InsertComputation(size_t id,
-                         BackendClientComputation<Proto>* computation) {
-    auto lock = connection_.Lock();
-    connection_.GetComputations().emplace(id, computation);
-  }
-  void EraseComputation(size_t id) {
-    auto lock = connection_.Lock();
-    connection_.GetComputations().erase(id);
-  }
+  struct ClientConnectionReference {
+    ClientConnectionReference(ClientConnection<Proto>& connection,
+                              BackendClient<Proto>& backend)
+        : connection_(connection), backend_{backend} {}
 
-  void ComputeBlocking(size_t id, size_t priority,
-                       std::vector<InputPosition>& inputs) {
-    connection_.ComputeBlocking(id, priority, inputs);
+    ~ClientConnectionReference() {
+      SpinMutex::Lock lock(backend_.mutex_);
+      connection_.Release();
+    }
+
+    ClientConnection<Proto>* operator->() { return &connection_; }
+
+    ClientConnection<Proto>& connection_;
+    BackendClient<Proto>& backend_;
+  };
+
+  ClientConnectionReference GetConnection(
+      BackendClientComputation<Proto>* computation) {
+    SpinMutex::Lock lock(mutex_);
+    for (auto& conn : connections_) {
+      if (conn.Reserve(computation)) {
+        return {conn, *this};
+      }
+    }
+    connections_.emplace_back(connections_.front(), network_);
+    connections_.back().Reserve(computation);
+    return {connections_.back(), *this};
   }
 
   size_t GetFixedPriority() const { return fixed_priority_; }
 
  private:
+  mutable SpinMutex mutex_;
+  const std::string network_;
+  OptionsDict options_;
   std::atomic<size_t> next_computation_id_ = 0;
-  ClientConnection<Proto> connection_;
+  std::list<ClientConnection<Proto>> connections_;
   size_t fixed_priority_ = -1;
 };
 
@@ -331,7 +346,7 @@ class BackendClientComputation final : public BackendComputation {
         priority_(TimeToPriority(time_remaining)),
         entries_(backend_.GetAttributes().maximum_batch_size) {}
 
-  ~BackendClientComputation() { backend_.EraseComputation(id_); }
+  ~BackendClientComputation() {}
 
   size_t UsedBatchSize() const override { return entries_.size(); }
 
@@ -359,23 +374,21 @@ class BackendClientComputation final : public BackendComputation {
     for (const auto& entry : entries_) {
       inputs.emplace_back(entry.pos_);
     }
-    backend_.InsertComputation(GetId(), this);
-    backend_.ComputeBlocking(GetId(), priority_, inputs);
-    results_ready_.wait(false, std::memory_order_relaxed);
-    TRACE << "Computation ID " << id_ << " completed. "
-          << results_ready_.load(std::memory_order_relaxed);
+    auto connection = backend_.GetConnection(this);
+    connection->ComputeBlocking(GetId(), priority_, inputs);
+    assert(!connection->IsOpen() || entries_.size() == 0);
+    TRACE << "Computation ID " << id_ << " completed. ";
+  }
+
+  void NotifyComputationCompleted() {
+    TRACE << "Notifying computation ID " << id_ << " completed.";
+    entries_.clear();
   }
 
   size_t GetId() const { return id_; }
 
   const EvalResultPtr& GetResult(size_t index) const {
     return entries_[index].result_;
-  }
-
-  void NotifyResultsReady() {
-    TRACE << "Results ready for computation ID " << id_;
-    results_ready_.store(true, std::memory_order_relaxed);
-    results_ready_.notify_one();
   }
 
  private:
@@ -403,7 +416,6 @@ class BackendClientComputation final : public BackendComputation {
     const EvalResultPtr result_;
   };
 
-  WaitableAtomic<bool> results_ready_ = false;
   BackendClient<Proto>& backend_;
   size_t id_;
   size_t priority_;
@@ -419,24 +431,23 @@ Archive::ResultType ClientConnection<Proto>::HandleMessage(
     CERR << "Compute blocking error: " << message.error_message_;
     return Unexpected(ArchiveError::RemoteError);
   }
-  auto lock = Lock();
-  auto iter = computations_.find(message.computation_id_);
-  if (iter == computations_.end()) {
+  auto* computation = GetReservedComputation();
+  if (message.computation_id_ != computation->GetId()) {
     CERR << "Received ComputeBlockingReply for unknown computation ID "
-         << message.computation_id_;
+         << message.computation_id_ << ", expected " << computation_id_;
     return Unexpected(ArchiveError::InvalidData);
   }
-  if (message.results_.size() != iter->second->UsedBatchSize()) {
+  if (message.results_.size() != computation->UsedBatchSize()) {
     CERR << "Received ComputeBlockingReply with unexpected number of "
             "results: "
          << message.results_.size() << " expected "
-         << iter->second->UsedBatchSize();
+         << computation->UsedBatchSize();
     return Unexpected(ArchiveError::InvalidData);
   }
 
   for (size_t i = 0; i < message.results_.size(); ++i) {
     const auto& net_result = message.results_[i];
-    const auto& result_ptr = iter->second->GetResult(i);
+    const auto& result_ptr = computation->GetResult(i);
     if (result_ptr.q) *result_ptr.q = net_result.value_;
     if (result_ptr.d) *result_ptr.d = net_result.draw_;
     if (result_ptr.m) *result_ptr.m = net_result.moves_left_;
@@ -451,9 +462,8 @@ Archive::ResultType ClientConnection<Proto>::HandleMessage(
                 result_ptr.p.begin());
     }
   }
-  iter->second->NotifyResultsReady();
+  computation->NotifyComputationCompleted();
 
-  this->Defer([this] { Read(); });
   return {ar};
 }
 
