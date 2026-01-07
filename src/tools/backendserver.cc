@@ -1103,7 +1103,7 @@ class ConsoleThread : public std::thread {
  public:
   using std::thread::thread;
   ~ConsoleThread() {
-#ifdef __WIN32__
+#ifdef _WIN32
     _close(_fileno(stdin));
     GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
 #else
