@@ -260,13 +260,14 @@ class BackendHandler {
             << " previous: " << max_nps_;
       max_nps_ = nps;
     }
-    now += std::chrono::duration_cast<Clock::duration>(
-        std::chrono::duration<double>{kGpuIdleBufferMultiplier *
-                                      gpu_work_size_ / max_nps_});
-    TRACE << this << "idle: " << now.time_since_epoch()
+    TimePoint timer =
+        now + std::chrono::duration_cast<Clock::duration>(
+                  std::chrono::duration<double>{kGpuIdleBufferMultiplier *
+                                                gpu_work_size_ / max_nps_});
+    TRACE << this << " idle: " << (timer - now).count()
           << " max_nps: " << max_nps_ << " gpu_work_size: " << gpu_work_size_
           << " == " << kGpuIdleBufferMultiplier * gpu_work_size_ / max_nps_;
-    return {queued_batches, now};
+    return {queued_batches, timer};
   }
 
   size_t GetPendingSize() const {
@@ -341,7 +342,13 @@ class SharedQueue {
     assert(priority < client::kMaxComputationPriority);
     SpinMutex::Lock lock(mutex_);
     priority_queue_[priority].emplace_back(backend, computation, first, last);
-    if (highest_backend_computations_ == 0) {
+    TRACE << "Enqueued work. Priority: " << priority
+          << " Queue size: " << priority_queue_[priority].size()
+          << " computations: " << highest_backend_computations_
+          << " pending flush: " << queue_has_pending_flush_;
+    if (highest_backend_computations_ == 0 ||
+        (highest_backend_computations_ < max_batches_in_flight_ &&
+         !queue_has_pending_flush_)) {
       PushWorkToBackend();
     }
   }
@@ -372,8 +379,8 @@ class SharedQueue {
     }
     TRACE << "Computation done. Adjusting highest_backend_computations_ from "
           << highest_backend_computations_ << " based on "
-          << computations_in_flight;
-    bool was_full_queue = false;
+          << computations_in_flight
+          << " idle_time: " << idle_time.time_since_epoch();
     if (highest_backend_computations_ == max_batches_in_flight_) {
       for ([[maybe_unused]] const auto& backend : backend_map_) {
         assert(backend.second.GetComputationsInFlight() !=
@@ -381,7 +388,8 @@ class SharedQueue {
       }
       highest_backend_computations_--;
       idle_timer_target_ = idle_time;
-      was_full_queue = true;
+      ScheduleFlush();
+      FlushIdlingBackends();
     } else {
       unsigned computations = 0;
       for (const auto& backend : backend_map_) {
@@ -389,17 +397,19 @@ class SharedQueue {
             std::max(computations, backend.second.GetComputationsInFlight());
       }
       highest_backend_computations_ = computations;
-    }
-    if (!Empty()) {
-      PushWorkToBackend();
-    }
-    if (was_full_queue) {
-      FlushIdlingBackends();
+      if (!queue_has_pending_flush_) {
+        if (!Empty()) {
+          PushWorkToBackend();
+        }
+      }
     }
   }
 
   void AddToFlushTimer(Clock::duration increment) {
     SpinMutex::Lock lock(mutex_);
+    if (!queue_has_pending_flush_) {
+      return;
+    }
     idle_timer_target_ += increment;
     TRACE << "Adjusting flush timer for backend to "
           << idle_timer_target_.time_since_epoch();
@@ -487,7 +497,7 @@ class SharedQueue {
 
   // TODO: Does this need to be dynamically tuned?
   static constexpr Clock::duration kEstimatedNetworkEvaluationTime =
-      std::chrono::milliseconds(20);
+      std::chrono::milliseconds(12);
 
   void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
@@ -540,6 +550,7 @@ class SharedQueue {
     if (idle_timer_target_ <= Clock::now()) {
       DoFlush();
     } else {
+      queue_has_pending_flush_ = true;
       TRACE << "Scheduling flush timer for backend at "
             << idle_timer_target_.time_since_epoch();
       flush_timer_.expires_at(idle_timer_target_);
@@ -549,6 +560,7 @@ class SharedQueue {
 
   void DoFlush() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
+    queue_has_pending_flush_ = false;
     if (highest_backend_computations_ == max_batches_in_flight_) return;
     auto iter = std::max_element(backend_map_.begin(), backend_map_.end(),
                                  [](const auto& a, const auto& b) {
@@ -576,6 +588,7 @@ class SharedQueue {
       }
       TRACE << "Flush timer triggered " << Clock::now().time_since_epoch();
       SpinMutex::Lock lock(mutex_);
+      PushWorkToBackend();
       DoFlush();
     });
   }
@@ -636,6 +649,7 @@ class SharedQueue {
   std::condition_variable_any cv_;
   unsigned highest_backend_computations_ = 0;
   unsigned max_batches_in_flight_ = 0;
+  bool queue_has_pending_flush_ = false;
   TimePoint idle_timer_target_{};
   std::array<std::deque<QueueItem>, client::kMaxComputationPriority>
       priority_queue_;
@@ -1029,12 +1043,12 @@ void BackendHandler::Worker() {
               std::chrono::duration<double>(kGpuIdleBufferMultiplier * size /
                                             max_nps_));
         }
-        TRACE << this << " Backend worker picked batch of size: " << size;
       }
       LCTRACE_FUNCTION_SCOPE;
       if (update_flush_timer) {
         SharedQueue::Get().AddToFlushTimer(increment_flush_timer);
       }
+      TRACE << this << " Backend worker picked batch of size: " << size;
       auto computation = backend_->CreateComputation(0);
       PositionHistory history;
       history.Reserve(kMoveHistory);
@@ -1058,6 +1072,7 @@ void BackendHandler::Worker() {
         }
       }
       if (size != 0) computation->ComputeBlocking();
+      TRACE << this << " Backend worker completed batch of size: " << size;
       TimePoint now = Clock::now();
       auto [queued_batches, idle] = CompleteBatch(size, now);
       SharedQueue::Get().ComputationDone(queued_batches, idle);
