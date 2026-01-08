@@ -1194,7 +1194,6 @@ void RunBackendServer() {
     SharedQueue::Get().SetDiscovery(newest.path());
 
     ConsoleThread console([&] {
-      absl::Cleanup cleanup = [] { SharedQueue::Get().Stop(); };
       std::cout.setf(std::ios::unitbuf);
       std::string line;
       BackendserverEngine engine{};
@@ -1202,7 +1201,10 @@ void RunBackendServer() {
       while (std::getline(std::cin, line)) {
         LOGFILE << ">> " << line;
         try {
-          if (!loop.ProcessLine(line)) break;
+          if (!loop.ProcessLine(line)) {
+            SharedQueue::Get().Stop();
+            break;
+          }
 
           Logging::Get().SetFilename(options.Get<std::string>(kLogFileId));
         } catch (const Exception& ex) {
