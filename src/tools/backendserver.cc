@@ -48,6 +48,10 @@
 #include "utils/optionsparser.h"
 #include "utils/trace.h"
 
+#ifdef _WIN32
+#include <io.h>
+#endif
+
 namespace lczero {
 namespace {
 
