@@ -64,6 +64,8 @@ class Position {
     cycle_length_ = cycle_length;
   }
 
+  Move GetNextMove(const Position& next_position) const;
+
   // Number of ply with no captures and pawn moves.
   int GetRule50Ply() const { return rule50_ply_; }
 
@@ -74,6 +76,17 @@ class Position {
   bool operator!=(const Position&) const = default;
 
   std::string DebugString() const;
+
+  template <typename Archive>
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
+    auto r = ar & us_board_;
+    r = r.and_then([this](Archive& ar) { return ar & rule50_ply_; });
+    r = r.and_then([this](Archive& ar) { return ar & repetitions_; });
+    r = r.and_then([this](Archive& ar) { return ar & cycle_length_; });
+    r = r.and_then([this](Archive& ar) { return ar & ply_count_; });
+    return r;
+  }
 
  private:
   // The board from the point of view of the player to move.

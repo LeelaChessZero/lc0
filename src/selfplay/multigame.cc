@@ -32,7 +32,7 @@ namespace lczero {
 class PolicyEvaluator : public Evaluator {
  public:
   void Reset(const PlayerOptions& player) override {
-    comp_ = player.backend->CreateComputation();
+    comp_ = player.backend->CreateComputation(0);
   }
   void Gather(classic::NodeTree* tree) override {
     const auto& history = tree->GetPositionHistory();
@@ -62,7 +62,7 @@ class PolicyEvaluator : public Evaluator {
 class ValueEvaluator : public Evaluator {
  public:
   void Reset(const PlayerOptions& player) override {
-    comp_ = player.backend->CreateComputation();
+    comp_ = player.backend->CreateComputation(0);
   }
   void Gather(classic::NodeTree* tree) override {
     PositionHistory history = tree->GetPositionHistory();
