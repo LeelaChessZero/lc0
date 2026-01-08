@@ -48,10 +48,6 @@
 #include "utils/optionsparser.h"
 #include "utils/trace.h"
 
-#ifdef _WIN32
-#include <io.h>
-#endif
-
 namespace lczero {
 namespace {
 
@@ -1126,7 +1122,7 @@ class ConsoleThread : public std::thread {
   using std::thread::thread;
   ~ConsoleThread() {
 #ifdef _WIN32
-    _close(_fileno(stdin));
+    CloseHandle(GetStdHandle(STD_INPUT_HANDLE));
     GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
 #else
     close(STDIN_FILENO);
