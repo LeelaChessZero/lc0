@@ -789,7 +789,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   gpu_ = opts.GetOrDefault<int>("gpu", 0);
 
 #ifdef USE_ONNX_CUDART
-  auto NVVersion = [](int v) {
+  auto nv_version = [](int v) {
     return std::to_string(v / 1000) + "." + std::to_string((v % 1000) / 10) +
            "." + std::to_string(v % 10);
   };
@@ -797,8 +797,8 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
   int driver_version;
   ReportCUDAErrors(cudaDriverGetVersion(&driver_version));
-  CERR << "CUDA runtime version: " << NVVersion(runtime_version);
-  CERR << "CUDA driver version: " << NVVersion(driver_version);
+  CERR << "CUDA runtime version: " << nv_version(runtime_version);
+  CERR << "CUDA driver version: " << nv_version(driver_version);
   if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
     cudaDeviceProp deviceProp = {};
     if (!cudaGetDeviceProperties(&deviceProp, gpu_)) {
