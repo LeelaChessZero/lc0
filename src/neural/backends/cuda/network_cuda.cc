@@ -1243,7 +1243,7 @@ void CudaNetworkComputation<DataType>::CaptureGraph(
 template <typename DataType>
 void CudaNetworkComputation<DataType>::ComputeBlocking() {
   LCTRACE_FUNCTION_SCOPE;
-  assert(GetBatchSize() >= 1);
+  if (GetBatchSize() == 0) return;
   if (inputs_outputs_->cuda_graphs_[GetBatchSize() - 1]) {
     std::unique_lock<std::mutex> lock = network_->LockEval();
     network_->GraphLaunch(inputs_outputs_.get(), GetBatchSize());
