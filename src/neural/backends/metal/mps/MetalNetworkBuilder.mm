@@ -303,6 +303,9 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
     else {
         [graph setResultTensors:@[policy, value]];
     }
+
+    // Compile the graph.
+    [graph compileGraph];
 }
 
 void MetalNetworkBuilder::forwardEval(float * inputs, uint64_t * masks, int batchSize, std::vector<float *> output_mems)
