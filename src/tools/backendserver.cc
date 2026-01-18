@@ -243,11 +243,16 @@ class BackendHandler {
     // Update statistics.
     statistics_.batches_++;
     statistics_.positions_ += size;
+
+    // Update active batch counters.
+    unsigned queued_batches = computations_in_flight_--;
+    queued_batches += queued_computations_;
+
+    // Update NPS estimation.
     TimePoint old = last_complete_time_;
     last_complete_time_ = now;
     gpu_work_size_ -= size;
-    unsigned queued_batches = computations_in_flight_--;
-    queued_batches += queued_computations_;
+    // Avoid division by zero.
     if (size == 0) return {queued_batches, now};
     // The first batch doesn't know when it started.
     if (old == TimePoint()) {
