@@ -103,7 +103,7 @@ class Backend {
  public:
   virtual ~Backend() = default;
   virtual BackendAttributes GetAttributes() const = 0;
-  virtual std::unique_ptr<BackendComputation> CreateComputation(size_t time_remaining) = 0;
+  virtual std::unique_ptr<BackendComputation> CreateComputation(size_t time_remaining = 0) = 0;
 
   // Simple helper with default implementation, to evaluate a batch without
   // creating a computation explicitly.

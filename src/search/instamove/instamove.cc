@@ -123,7 +123,7 @@ class ValueHeadSearch : public InstamoveSearch {
   using InstamoveSearch::InstamoveSearch;
   Move GetBestMove(const GameState& game_state) final {
     std::unique_ptr<BackendComputation> computation =
-        backend_->CreateComputation(0);
+        backend_->CreateComputation();
 
     PositionHistory history(game_state.GetPositions());
     const ChessBoard& board = history.Last().GetBoard();

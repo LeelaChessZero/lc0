@@ -38,7 +38,7 @@ std::vector<EvalResult> Backend::EvaluateBatch(
     std::span<const EvalPosition> positions) {
   std::vector<EvalResult> results;
   results.reserve(positions.size());
-  std::unique_ptr<BackendComputation> computation = CreateComputation(0);
+  std::unique_ptr<BackendComputation> computation = CreateComputation();
   for (const EvalPosition& pos : positions) {
     results.emplace_back();
     EvalResult& result = results.back();
