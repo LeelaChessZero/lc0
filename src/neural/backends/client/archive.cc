@@ -204,8 +204,8 @@ auto SizeImpl(R&& successed, size_t& size_archive, const T&)
 // memory for the serialization buffer.
 struct BinaryOSizeArchive {
   using ResultType = Expected<BinaryOSizeArchive&, ArchiveError>;
-  static constexpr bool is_loading = false;
-  static constexpr bool is_saving = true;
+  [[maybe_unused]] static constexpr bool is_loading = false;
+  [[maybe_unused]] static constexpr bool is_saving = true;
 
   // Overloaded & operator to calculate size of serialized object.
   template <typename T>
